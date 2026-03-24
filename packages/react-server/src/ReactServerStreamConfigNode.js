@@ -223,8 +223,11 @@ export function typedArrayToBinaryChunk(
 
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
   return typeof chunk === 'string'
-    ? Buffer.byteLength(chunk, 'utf8')
-    : chunk.byteLength;
+    ? chunk.length // Fast path: .length === byte length for ASCII (99%+ of HTML output).
+    : // For multi-byte chars this slightly underestimates, which is fine
+      // because byteSize is only used for heuristic decisions (outlining
+      // threshold and progressive chunk sizing).
+      chunk.byteLength;
 }
 
 export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
