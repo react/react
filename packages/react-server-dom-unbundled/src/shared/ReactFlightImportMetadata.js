@@ -16,23 +16,23 @@ export type ImportManifestEntry = {
 };
 
 // This is the parsed shape of the wire format which is why it is
-// condensed to only the essentialy information
+// condensed to only the essentially information
 export type ImportMetadata =
   | [
       /* id */ string,
-      /* chunks id/filename pairs, double indexed */ Array<string>,
       /* name */ string,
+      /* chunks id/filename pairs, double indexed */ Array<string>,
       /* async */ 1,
     ]
   | [
       /* id */ string,
-      /* chunks id/filename pairs, double indexed */ Array<string>,
       /* name */ string,
+      /* chunks id/filename pairs, double indexed */ Array<string>,
     ];
 
 export const ID = 0;
-export const CHUNKS = 1;
-export const NAME = 2;
+export const NAME = 1;
+export const CHUNKS = 2;
 // export const ASYNC = 3;
 
 // This logic is correct because currently only include the 4th tuple member

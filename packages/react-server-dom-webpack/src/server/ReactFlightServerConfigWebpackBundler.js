@@ -80,9 +80,9 @@ export function resolveClientReferenceMetadata<T>(
     );
   }
   if (resolvedModuleData.async === true || clientReference.$$async === true) {
-    return [resolvedModuleData.id, resolvedModuleData.chunks, name, 1];
+    return [resolvedModuleData.id, name, resolvedModuleData.chunks, 1];
   } else {
-    return [resolvedModuleData.id, resolvedModuleData.chunks, name];
+    return [resolvedModuleData.id, name, resolvedModuleData.chunks];
   }
 }
 
