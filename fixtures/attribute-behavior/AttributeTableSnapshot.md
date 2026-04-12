@@ -2023,6 +2023,56 @@
 | `colSpan=(null)`| (initial, ssr error, ssr mismatch)| `<number: 1>` |
 | `colSpan=(undefined)`| (initial, ssr error, ssr mismatch)| `<number: 1>` |
 
+## `command` (on `<button>` inside `<div>`)
+| Test Case | Flags | Result |
+| --- | --- | --- |
+| `command=(string)`| (changed)| `"show-popover"` |
+| `command=(empty string)`| (initial)| `<empty string>` |
+| `command=(array with string)`| (changed)| `"show-popover"` |
+| `command=(empty array)`| (initial)| `<empty string>` |
+| `command=(object)`| (initial)| `<empty string>` |
+| `command=(numeric string)`| (initial)| `<empty string>` |
+| `command=(-1)`| (initial)| `<empty string>` |
+| `command=(0)`| (initial)| `<empty string>` |
+| `command=(integer)`| (initial)| `<empty string>` |
+| `command=(NaN)`| (initial, warning)| `<empty string>` |
+| `command=(float)`| (initial)| `<empty string>` |
+| `command=(true)`| (initial, warning)| `<empty string>` |
+| `command=(false)`| (initial, warning)| `<empty string>` |
+| `command=(string 'true')`| (initial)| `<empty string>` |
+| `command=(string 'false')`| (initial)| `<empty string>` |
+| `command=(string 'on')`| (initial)| `<empty string>` |
+| `command=(string 'off')`| (initial)| `<empty string>` |
+| `command=(symbol)`| (initial, warning)| `<empty string>` |
+| `command=(function)`| (initial, warning)| `<empty string>` |
+| `command=(null)`| (initial)| `<empty string>` |
+| `command=(undefined)`| (initial)| `<empty string>` |
+
+## `commandFor` (on `<button>` inside `<div>`)
+| Test Case | Flags | Result |
+| --- | --- | --- |
+| `commandFor=(string)`| (changed)| `<HTMLDivElement>` |
+| `commandFor=(empty string)`| (initial)| `<null>` |
+| `commandFor=(array with string)`| (changed, warning, ssr warning)| `<HTMLDivElement>` |
+| `commandFor=(empty array)`| (initial, warning, ssr warning)| `<null>` |
+| `commandFor=(object)`| (initial, warning, ssr warning)| `<null>` |
+| `commandFor=(numeric string)`| (initial)| `<null>` |
+| `commandFor=(-1)`| (initial)| `<null>` |
+| `commandFor=(0)`| (initial)| `<null>` |
+| `commandFor=(integer)`| (initial)| `<null>` |
+| `commandFor=(NaN)`| (initial, warning)| `<null>` |
+| `commandFor=(float)`| (initial)| `<null>` |
+| `commandFor=(true)`| (initial, warning)| `<null>` |
+| `commandFor=(false)`| (initial, warning)| `<null>` |
+| `commandFor=(string 'true')`| (initial)| `<null>` |
+| `commandFor=(string 'false')`| (initial)| `<null>` |
+| `commandFor=(string 'on')`| (initial)| `<null>` |
+| `commandFor=(string 'off')`| (initial)| `<null>` |
+| `commandFor=(symbol)`| (initial, warning)| `<null>` |
+| `commandFor=(function)`| (initial, warning)| `<null>` |
+| `commandFor=(null)`| (initial)| `<null>` |
+| `commandFor=(undefined)`| (initial)| `<null>` |
+
 ## `content` (on `<meta>` inside `<head>`)
 | Test Case | Flags | Result |
 | --- | --- | --- |
@@ -7102,9 +7152,9 @@
 | Test Case | Flags | Result |
 | --- | --- | --- |
 | `media=(string)`| (changed)| `"a string"` |
-| `media=(empty string)`| (changed)| `<empty string>` |
+| `media=(empty string)`| (initial)| `<empty string>` |
 | `media=(array with string)`| (changed)| `"string"` |
-| `media=(empty array)`| (changed)| `<empty string>` |
+| `media=(empty array)`| (initial)| `<empty string>` |
 | `media=(object)`| (changed)| `"result of toString()"` |
 | `media=(numeric string)`| (changed)| `"42"` |
 | `media=(-1)`| (changed)| `"-1"` |
@@ -7112,16 +7162,16 @@
 | `media=(integer)`| (changed)| `"1"` |
 | `media=(NaN)`| (changed, warning)| `"NaN"` |
 | `media=(float)`| (changed)| `"99.99"` |
-| `media=(true)`| (initial, warning)| `"all"` |
-| `media=(false)`| (initial, warning)| `"all"` |
+| `media=(true)`| (initial, warning)| `<empty string>` |
+| `media=(false)`| (initial, warning)| `<empty string>` |
 | `media=(string 'true')`| (changed)| `"true"` |
 | `media=(string 'false')`| (changed)| `"false"` |
 | `media=(string 'on')`| (changed)| `"on"` |
 | `media=(string 'off')`| (changed)| `"off"` |
-| `media=(symbol)`| (initial, warning)| `"all"` |
-| `media=(function)`| (initial, warning)| `"all"` |
-| `media=(null)`| (initial)| `"all"` |
-| `media=(undefined)`| (initial)| `"all"` |
+| `media=(symbol)`| (initial, warning)| `<empty string>` |
+| `media=(function)`| (initial, warning)| `<empty string>` |
+| `media=(null)`| (initial)| `<empty string>` |
+| `media=(undefined)`| (initial)| `<empty string>` |
 
 ## `mediaGroup` (on `<video>` inside `<div>`)
 | Test Case | Flags | Result |
@@ -11102,10 +11152,10 @@
 | Test Case | Flags | Result |
 | --- | --- | --- |
 | `systemLanguage=(string)`| (changed)| `["en"]` |
-| `systemLanguage=(empty string)`| (initial)| `[]` |
+| `systemLanguage=(empty string)`| (changed)| `[<empty string>]` |
 | `systemLanguage=(array with string)`| (changed)| `["en"]` |
-| `systemLanguage=(empty array)`| (initial)| `[]` |
-| `systemLanguage=(object)`| (changed)| `["result", "of", "toString()"]` |
+| `systemLanguage=(empty array)`| (changed)| `[<empty string>]` |
+| `systemLanguage=(object)`| (changed)| `["result of toString()"]` |
 | `systemLanguage=(numeric string)`| (changed)| `["42"]` |
 | `systemLanguage=(-1)`| (changed)| `["-1"]` |
 | `systemLanguage=(0)`| (changed)| `["0"]` |
