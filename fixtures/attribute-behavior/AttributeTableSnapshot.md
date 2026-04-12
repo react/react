@@ -1,4 +1,4 @@
-﻿## `about` (on `<div>` inside `<div>`)
+## `about` (on `<div>` inside `<div>`)
 | Test Case | Flags | Result |
 | --- | --- | --- |
 | `about=(string)`| (changed)| `"a string"` |
@@ -751,27 +751,27 @@
 ## `async` (on `<script>` inside `<div>`)
 | Test Case | Flags | Result |
 | --- | --- | --- |
-| `async=(string)`| (changed)| `<boolean: true>` |
-| `async=(empty string)`| (initial)| `<boolean: false>` |
-| `async=(array with string)`| (changed)| `<boolean: true>` |
-| `async=(empty array)`| (changed)| `<boolean: true>` |
-| `async=(object)`| (changed)| `<boolean: true>` |
-| `async=(numeric string)`| (changed)| `<boolean: true>` |
-| `async=(-1)`| (changed)| `<boolean: true>` |
-| `async=(0)`| (initial)| `<boolean: false>` |
-| `async=(integer)`| (changed)| `<boolean: true>` |
+| `async=(string)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(empty string)`| (initial, warning, ssr warning)| `<boolean: false>` |
+| `async=(array with string)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(empty array)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(object)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(numeric string)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(-1)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(0)`| (initial, warning, ssr warning)| `<boolean: false>` |
+| `async=(integer)`| (changed, warning, ssr warning)| `<boolean: true>` |
 | `async=(NaN)`| (initial, warning)| `<boolean: false>` |
-| `async=(float)`| (changed)| `<boolean: true>` |
-| `async=(true)`| (changed)| `<boolean: true>` |
-| `async=(false)`| (initial)| `<boolean: false>` |
+| `async=(float)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(true)`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(false)`| (initial, warning, ssr warning)| `<boolean: false>` |
 | `async=(string 'true')`| (changed, warning)| `<boolean: true>` |
 | `async=(string 'false')`| (changed, warning)| `<boolean: true>` |
-| `async=(string 'on')`| (changed)| `<boolean: true>` |
-| `async=(string 'off')`| (changed)| `<boolean: true>` |
+| `async=(string 'on')`| (changed, warning, ssr warning)| `<boolean: true>` |
+| `async=(string 'off')`| (changed, warning, ssr warning)| `<boolean: true>` |
 | `async=(symbol)`| (initial, warning)| `<boolean: false>` |
 | `async=(function)`| (initial, warning)| `<boolean: false>` |
-| `async=(null)`| (initial)| `<boolean: false>` |
-| `async=(undefined)`| (initial)| `<boolean: false>` |
+| `async=(null)`| (initial, warning, ssr warning)| `<boolean: false>` |
+| `async=(undefined)`| (initial, warning, ssr warning)| `<boolean: false>` |
 
 ## `attributeName` (on `<animate>` inside `<svg>`)
 | Test Case | Flags | Result |
@@ -1493,7 +1493,7 @@
 | `children=(string 'false')`| (initial)| `[]` |
 | `children=(string 'on')`| (initial)| `[]` |
 | `children=(string 'off')`| (initial)| `[]` |
-| `children=(symbol)`| (initial)| `[]` |
+| `children=(symbol)`| (initial, warning)| `[]` |
 | `children=(function)`| (initial, warning)| `[]` |
 | `children=(null)`| (initial)| `[]` |
 | `children=(undefined)`| (initial)| `[]` |
@@ -10143,7 +10143,7 @@
 | `srcSet=(string 'false')`| (initial)| `<undefined>` |
 | `srcSet=(string 'on')`| (initial)| `<undefined>` |
 | `srcSet=(string 'off')`| (initial)| `<undefined>` |
-| `srcSet=(symbol)`| (initial, warning)| `<undefined>` |
+| `srcSet=(symbol)`| (changed, error, warning, ssr mismatch)| `` |
 | `srcSet=(function)`| (initial, warning)| `<undefined>` |
 | `srcSet=(null)`| (initial)| `<undefined>` |
 | `srcSet=(undefined)`| (initial)| `<undefined>` |
