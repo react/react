@@ -518,7 +518,6 @@ function create(
     isConcurrent ? ConcurrentRoot : LegacyRoot,
     null,
     isStrictMode,
-    false,
     '',
     defaultOnUncaughtError,
     defaultOnCaughtError,
