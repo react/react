@@ -144,6 +144,13 @@ export function commitHostUpdate(
   }
 }
 
+export function commitHostCloned(): void {
+  // In persistence mode, host updates are performed as clones during the render
+  // phase (completeWork) rather than as mutations during commit. We only need to
+  // track that a mutation occurred so the parent ViewTransition can detect it.
+  trackHostMutation();
+}
+
 export function commitHostTextUpdate(
   finishedWork: Fiber,
   newText: string,
