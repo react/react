@@ -1375,6 +1375,23 @@ describe('DOMPropertyOperations', () => {
       });
     });
 
+    it('sets commandFor attribute on button', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <button commandFor="demo-popover" command="show-popover">
+            show-popover
+          </button>,
+        );
+      });
+
+      const button = container.querySelector('button');
+      expect(button.getAttribute('commandfor')).toBe('demo-popover');
+      expect(button.getAttribute('command')).toBe('show-popover');
+    });
+
     it('warns when using commandFor={HTMLElement}', async () => {
       const commandTarget = document.createElement('div');
       const container = document.createElement('div');
