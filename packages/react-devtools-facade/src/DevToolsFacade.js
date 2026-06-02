@@ -20,6 +20,11 @@ import type {
 
 import {getInternalReactConstants} from 'react-devtools-shared/src/backend/fiber/shared/DevToolsFiberInternalReactConstants';
 
+// Re-export the tools assembler so the full building-block API is available
+// from the package entry point (index.js re-exports this module).
+export {createTools} from './DevToolsFacadeTools';
+export type {Tools} from './DevToolsFacadeTools';
+
 // Per-renderer internal constants, initialized at inject() time. Building
 // blocks read these to translate fibers into human-readable output.
 export type RendererInternals = {
