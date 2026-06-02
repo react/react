@@ -44,11 +44,9 @@ describe('react-devtools-facade', () => {
     act = React.act;
 
     container = document.createElement('div');
-    document.body.appendChild(container);
   });
 
   afterEach(() => {
-    document.body.removeChild(container);
     container = null;
   });
 
@@ -1889,6 +1887,161 @@ describe('react-devtools-facade', () => {
       expect(() => {
         hook.onPostCommitFiberRoot(0, {passiveEffectDuration: 0});
       }).not.toThrow();
+    });
+  });
+
+  describe('multiple roots and renderers', () => {
+    it('inject() registers a new renderer and initializes its internals', () => {
+      // react-dom registered itself as a renderer when it was required. Here we
+      // register a second (simulated) renderer to cover the registration
+      // contract; the cross-root tests below use a single react-dom renderer.
+      const before = facade.hook.renderers.size;
+      const id = facade.hook.inject({
+        reconcilerVersion: '18.2.0',
+        version: '18.2.0',
+      });
+      expect(typeof id).toBe('number');
+      expect(facade.hook.renderers.size).toBe(before + 1);
+      expect(facade.rendererInternals.has(id)).toBe(true);
+    });
+
+    it('getComponentTree aggregates components from multiple roots', () => {
+      function AppA() {
+        return <div>A</div>;
+      }
+      function AppB() {
+        return <div>B</div>;
+      }
+
+      const containerB = document.createElement('div');
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<AppA />);
+        ReactDOMClient.createRoot(containerB).render(<AppB />);
+      });
+
+      const tree = createTools(facade).getComponentTree();
+      // Two roots → exactly two HostRoot nodes.
+      expect(tree.filter(n => n.type === 'root')).toHaveLength(2);
+
+      const appA = tree.find(n => n.name === 'AppA');
+      const appB = tree.find(n => n.name === 'AppB');
+      // Uids come from a per-call counter that spans every root, in root
+      // order: root A gets r0–r2, root B gets r3–r5, so uids are
+      // globally unique across roots.
+      expect(appA).toEqual({
+        uid: 'r0',
+        type: 'function',
+        name: 'AppA',
+        key: null,
+        firstChild: 'r2',
+        nextSibling: null,
+      });
+      expect(appB).toEqual({
+        uid: 'r3',
+        type: 'function',
+        name: 'AppB',
+        key: null,
+        firstChild: 'r5',
+        nextSibling: null,
+      });
+    });
+
+    it('findComponents finds matches across multiple roots', () => {
+      function Shared() {
+        return <span>shared</span>;
+      }
+      function RootA() {
+        return <Shared />;
+      }
+      function RootB() {
+        return <Shared />;
+      }
+
+      const containerB = document.createElement('div');
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<RootA />);
+        ReactDOMClient.createRoot(containerB).render(<RootB />);
+      });
+
+      const result = createTools(facade).findComponents('Shared');
+      expect(result.totalCount).toBe(2);
+      expect(result.results.map(r => r.name)).toEqual(['Shared', 'Shared']);
+      // Globally unique uids, assigned in result order across both roots.
+      expect(result.results.map(r => r.uid)).toEqual(['r0', 'r2']);
+    });
+
+    it('resolves uids from any root via getComponentByUid', () => {
+      function Widget() {
+        return <div>w</div>;
+      }
+      function RootA() {
+        return <Widget />;
+      }
+      function RootB() {
+        return <Widget />;
+      }
+
+      const containerB = document.createElement('div');
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<RootA />);
+        ReactDOMClient.createRoot(containerB).render(<RootB />);
+      });
+
+      const tools = createTools(facade);
+      const widgets = tools.findComponents('Widget').results;
+      expect(widgets).toHaveLength(2);
+      widgets.forEach(w => {
+        expect(tools.getComponentByUid(w.uid).name).toBe('Widget');
+      });
+    });
+
+    it('profiling records commits from all roots', () => {
+      function CounterA({count}) {
+        return <div>{'A:' + count}</div>;
+      }
+      function CounterB({count}) {
+        return <div>{'B:' + count}</div>;
+      }
+
+      const containerB = document.createElement('div');
+
+      const rootA = ReactDOMClient.createRoot(container);
+      const rootB = ReactDOMClient.createRoot(containerB);
+      act(() => {
+        rootA.render(<CounterA count={0} />);
+        rootB.render(<CounterB count={0} />);
+      });
+
+      const tools = createTools(facade);
+      tools.startProfiling('multi-root-trace');
+      act(() => {
+        rootA.render(<CounterA count={1} />);
+      });
+      act(() => {
+        rootB.render(<CounterB count={1} />);
+      });
+
+      expect(tools.stopProfiling()).toEqual({
+        status: 'stopped',
+        traceName: 'multi-root-trace',
+        commits: 2,
+      });
+
+      const overview = tools.getTraceOverview('multi-root-trace');
+      expect(overview).toHaveLength(2);
+      // Separate act() blocks force exactly one commit each, in order, so
+      // commit 0 is rootA's re-render and commit 1 is rootB's.
+      const names0 = tools
+        .getCommitReport('multi-root-trace', 0)
+        .components.map(c => c.name);
+      const names1 = tools
+        .getCommitReport('multi-root-trace', 1)
+        .components.map(c => c.name);
+      expect(names0).toContain('CounterA');
+      expect(names0).not.toContain('CounterB');
+      expect(names1).toContain('CounterB');
+      expect(names1).not.toContain('CounterA');
     });
   });
 });
