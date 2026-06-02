@@ -15,6 +15,12 @@ let ReactDOMClient;
 let act;
 let container;
 
+// Profiler durations are timing-dependent: null when the build does not collect
+// them, otherwise a non-negative number.
+function isDuration(value) {
+  return value === null || (typeof value === 'number' && value >= 0);
+}
+
 describe('react-devtools-facade', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -1532,6 +1538,357 @@ describe('react-devtools-facade', () => {
       const div = getComponentTree().find(n => n.name === 'div');
       const info = getComponentByUid(div.uid);
       expect(info.hooks).toBeUndefined();
+    });
+  });
+
+  describe('profiler', () => {
+    let startProfiling;
+    let stopProfiling;
+    let getTraceOverview;
+    let getCommitReport;
+    let getComponentTree;
+    let getComponentByUid;
+
+    beforeEach(() => {
+      const tools = createTools(facade);
+      startProfiling = tools.startProfiling;
+      stopProfiling = tools.stopProfiling;
+      getTraceOverview = tools.getTraceOverview;
+      getCommitReport = tools.getCommitReport;
+      getComponentTree = tools.getComponentTree;
+      getComponentByUid = tools.getComponentByUid;
+    });
+
+    it('startProfiling returns the started status and trace name', () => {
+      expect(startProfiling('my-trace')).toEqual({
+        status: 'started',
+        traceName: 'my-trace',
+      });
+      stopProfiling();
+    });
+
+    it('startProfiling auto-generates a trace name when none is provided', () => {
+      const result = startProfiling();
+      expect(result.status).toBe('started');
+      expect(result.traceName).toMatch(/^trace-\d+$/);
+      stopProfiling();
+    });
+
+    it('stopProfiling reports the trace name and commit count', () => {
+      startProfiling('test-trace');
+      expect(stopProfiling()).toEqual({
+        status: 'stopped',
+        traceName: 'test-trace',
+        commits: 0,
+      });
+    });
+
+    it('cannot start profiling twice', () => {
+      startProfiling('first');
+      expect(startProfiling('second')).toEqual({
+        error: 'Already profiling trace "first"',
+      });
+      stopProfiling();
+    });
+
+    it('cannot stop when not profiling', () => {
+      expect(stopProfiling()).toEqual({error: 'Not currently profiling'});
+    });
+
+    it('records one commit per render and reports the count on stop', () => {
+      function Counter({count}) {
+        return <div>{'Count: ' + count}</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+
+      startProfiling('render-trace');
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+      act(() => {
+        root.render(<Counter count={2} />);
+      });
+
+      expect(stopProfiling()).toEqual({
+        status: 'stopped',
+        traceName: 'render-trace',
+        commits: 2,
+      });
+    });
+
+    it('getTraceOverview returns one row per commit', () => {
+      function Child() {
+        return <span>child</span>;
+      }
+      function Counter({count}) {
+        return (
+          <div>
+            <Child />
+            {count}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+
+      startProfiling('overview-trace');
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+      act(() => {
+        root.render(<Counter count={2} />);
+      });
+      stopProfiling();
+
+      const overview = getTraceOverview('overview-trace');
+      expect(overview).toHaveLength(2);
+      let previousCommittedAt = 0;
+      overview.forEach((row, i) => {
+        expect(row.commit).toBe(i);
+        // committedAt is relative to trace start: non-negative and monotonic.
+        expect(row.committedAt).toBeGreaterThanOrEqual(previousCommittedAt);
+        previousCommittedAt = row.committedAt;
+        // componentsChanged matches the commit report's component count.
+        expect(row.componentsChanged).toBe(
+          getCommitReport('overview-trace', i).components.length,
+        );
+        expect(isDuration(row.renderDuration)).toBe(true);
+        expect(isDuration(row.layoutDuration)).toBe(true);
+        expect(isDuration(row.passiveDuration)).toBe(true);
+      });
+    });
+
+    it('getTraceOverview returns an error for an unknown trace', () => {
+      expect(getTraceOverview('nope')).toEqual({error: 'Unknown trace "nope"'});
+    });
+
+    it('getTraceOverview returns an empty array for a trace with no commits', () => {
+      startProfiling('empty-trace');
+      stopProfiling();
+      expect(getTraceOverview('empty-trace')).toEqual([]);
+    });
+
+    it('getCommitReport returns commit metadata and the full component set', () => {
+      function Child() {
+        return <span>child</span>;
+      }
+      function Counter({count}) {
+        return (
+          <div>
+            <Child />
+            {count}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+
+      startProfiling('detail-trace');
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+      stopProfiling();
+
+      const report = getCommitReport('detail-trace', 0);
+      expect(report.priority).toBe('Normal');
+      expect(report.committedAt).toBeGreaterThanOrEqual(0);
+      expect(isDuration(report.renderDuration)).toBe(true);
+      expect(isDuration(report.layoutDuration)).toBe(true);
+      expect(isDuration(report.passiveDuration)).toBe(true);
+
+      // The exact set of components that rendered. Order is duration-dependent
+      // (sorted descending), so compare sorted by name.
+      const byName = report.components
+        .map(c => ({name: c.name, type: c.type}))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      expect(byName).toEqual([
+        {name: 'Child', type: 'function'},
+        {name: 'Counter', type: 'function'},
+        {name: 'createRoot()', type: 'root'},
+        {name: 'div', type: 'host'},
+        {name: 'span', type: 'host'},
+      ]);
+      report.components.forEach(c => {
+        expect(c.uid).toMatch(/^r\d+$/);
+        expect(isDuration(c.actualDuration)).toBe(true);
+        expect(isDuration(c.selfDuration)).toBe(true);
+      });
+    });
+
+    it('getCommitReport sorts components by actualDuration descending', () => {
+      function Child() {
+        return <span>child</span>;
+      }
+      function Counter({count}) {
+        return (
+          <div>
+            <Child />
+            {count}
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+      startProfiling('sort-trace');
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+      stopProfiling();
+
+      const durations = getCommitReport('sort-trace', 0).components.map(
+        c => c.actualDuration || 0,
+      );
+      for (let i = 1; i < durations.length; i++) {
+        expect(durations[i]).toBeLessThanOrEqual(durations[i - 1]);
+      }
+    });
+
+    it('getCommitReport committedAt matches getTraceOverview', () => {
+      function Counter({count}) {
+        return <div>{'Count: ' + count}</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+      startProfiling('match-trace');
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+      stopProfiling();
+
+      const overview = getTraceOverview('match-trace');
+      const report = getCommitReport('match-trace', 0);
+      expect(report.committedAt).toBe(overview[0].committedAt);
+    });
+
+    it('getCommitReport returns an error for an unknown trace', () => {
+      expect(getCommitReport('nope', 0)).toEqual({
+        error: 'Unknown trace "nope"',
+      });
+    });
+
+    it('getCommitReport returns an error for an out-of-range commit index', () => {
+      startProfiling('range-trace');
+      stopProfiling();
+      expect(getCommitReport('range-trace', 5)).toEqual({
+        error: 'Commit index out of range',
+      });
+      expect(getCommitReport('range-trace', -1)).toEqual({
+        error: 'Commit index out of range',
+      });
+    });
+
+    it('does not record internal nodes like Fragment, Mode, or text', () => {
+      function Child() {
+        return <span>child</span>;
+      }
+      function App() {
+        return (
+          <React.StrictMode>
+            <React.Fragment>
+              <Child />
+            </React.Fragment>
+          </React.StrictMode>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<App />);
+      });
+      startProfiling('internal-trace');
+      act(() => {
+        root.render(<App />);
+      });
+      stopProfiling();
+
+      const names = getCommitReport('internal-trace', 0).components.map(
+        c => c.name,
+      );
+      expect(names).not.toContain('Fragment');
+      expect(names).not.toContain('StrictMode');
+      // Only named components are recorded; no Unknown/internal entries.
+      names.forEach(name => {
+        expect(typeof name).toBe('string');
+        expect(name).not.toBe('Unknown');
+      });
+    });
+
+    it('uses uids consistent with the tree tools', () => {
+      function Widget() {
+        return <div>widget</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Widget />);
+      });
+      const widget = getComponentTree().find(n => n.name === 'Widget');
+
+      startProfiling('uid-trace');
+      act(() => {
+        root.render(<Widget />);
+      });
+      stopProfiling();
+
+      const report = getCommitReport('uid-trace', 0);
+      const widgetEntry = report.components.find(c => c.name === 'Widget');
+      expect(widgetEntry).toBeDefined();
+      expect(widgetEntry.uid).toBe(widget.uid);
+      // ...and the same uid resolves back through getComponentByUid.
+      expect(getComponentByUid(widget.uid).name).toBe('Widget');
+    });
+
+    it('records commits across multiple independent traces', () => {
+      function Counter({count}) {
+        return <div>{'Count: ' + count}</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+
+      startProfiling('trace-a');
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+      stopProfiling();
+
+      startProfiling('trace-b');
+      act(() => {
+        root.render(<Counter count={2} />);
+      });
+      act(() => {
+        root.render(<Counter count={3} />);
+      });
+      stopProfiling();
+
+      expect(getTraceOverview('trace-a')).toHaveLength(1);
+      expect(getTraceOverview('trace-b')).toHaveLength(2);
+    });
+
+    it('the hook onPostCommitFiberRoot is a no-op when not profiling', () => {
+      const hook = facade.hook;
+      expect(typeof hook.onPostCommitFiberRoot).toBe('function');
+      expect(() => {
+        hook.onPostCommitFiberRoot(0, {passiveEffectDuration: 0});
+      }).not.toThrow();
     });
   });
 });

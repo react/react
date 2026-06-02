@@ -91,6 +91,9 @@ export type TreeTools = {
   getComponentSource: (uid: string) => ComponentSource | ToolError,
   getOwnersStack: (uid: string) => OwnersStack | ToolError,
   getOwnersBranch: (uid: string) => Array<OwnerEntry> | ToolError,
+  // Shared with the profiler tools so component uids are consistent across all
+  // tools. Maps a fiber to its stable uid (assigning one on first encounter).
+  getUid: (fiber: Fiber) => string,
 };
 
 /**
@@ -666,5 +669,6 @@ export function createTreeTools(
     getComponentSource,
     getOwnersStack,
     getOwnersBranch,
+    getUid,
   };
 }
