@@ -72,11 +72,53 @@ describe('react-devtools-facade', () => {
     expect(globalThis.__REACT_LLM_TOOLS__).toBeUndefined();
   });
 
-  it('throws if a DevTools hook is already installed', () => {
-    // A hook was already installed on globalThis in beforeEach.
-    expect(() => installFacade()).toThrow(
-      /React DevTools global hook is already installed/,
-    );
+  it('attaches to an existing hook instead of installing a second one', () => {
+    // A facade hook is already installed on globalThis (beforeEach). A second
+    // installFacade() attaches to it rather than throwing or replacing it — this
+    // is the path taken when the React DevTools extension is present.
+    const attached = installFacade();
+    expect(attached.hook).toBe(facade.hook);
+    expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBe(facade.hook);
+  });
+
+  it('an attached facade back-fills roots already tracked by the hook', () => {
+    function App() {
+      return <div>hi</div>;
+    }
+    act(() => {
+      ReactDOMClient.createRoot(container).render(<App />);
+    });
+
+    // Attaching after the app mounted picks up the already-tracked root.
+    const attached = installFacade();
+    const tree = createTools(attached).getComponentTree();
+    expect(tree.find(n => n.name === 'App')).toBeDefined();
+  });
+
+  it('an attached facade tracks later commits and profiles them', () => {
+    function Counter({count}) {
+      return <div>{'n:' + count}</div>;
+    }
+    const root = ReactDOMClient.createRoot(container);
+    act(() => {
+      root.render(<Counter count={0} />);
+    });
+
+    const tools = createTools(installFacade());
+    expect(
+      tools.getComponentTree().find(n => n.name === 'Counter'),
+    ).toBeDefined();
+
+    // A commit after attaching flows through the wrapped onCommitFiberRoot.
+    tools.startProfiling('attached-trace');
+    act(() => {
+      root.render(<Counter count={1} />);
+    });
+    expect(tools.stopProfiling()).toEqual({
+      status: 'stopped',
+      traceName: 'attached-trace',
+      commits: 1,
+    });
   });
 
   it('installs onto an explicit target without touching globalThis', () => {
@@ -2042,6 +2084,62 @@ describe('react-devtools-facade', () => {
       expect(names0).not.toContain('CounterB');
       expect(names1).toContain('CounterB');
       expect(names1).not.toContain('CounterA');
+    });
+  });
+
+  describe('with the React DevTools extension hook already installed', () => {
+    // Simulate the extension: a real React DevTools hook is installed, and React
+    // registers with it, before the facade attaches. Re-set up the module graph
+    // so react-dom injects into this hook rather than the facade's own.
+    let localContainer;
+
+    beforeEach(() => {
+      jest.resetModules();
+      global.IS_REACT_ACT_ENVIRONMENT = true;
+      delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      require('react-devtools-shared/src/hook').installHook(window, []);
+
+      const facadeAPI = require('../../index');
+      installFacade = facadeAPI.installFacade;
+      createTools = facadeAPI.createTools;
+      React = require('react');
+      ReactDOMClient = require('react-dom/client');
+      act = React.act;
+
+      localContainer = document.createElement('div');
+      document.body.appendChild(localContainer);
+    });
+
+    afterEach(() => {
+      document.body.removeChild(localContainer);
+      localContainer = null;
+    });
+
+    it('attaches to the extension hook and reads its component tree', () => {
+      const extensionHook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+
+      function Child() {
+        return <span>c</span>;
+      }
+      function App() {
+        return (
+          <div>
+            <Child />
+          </div>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(localContainer).render(<App />);
+      });
+
+      const localFacade = installFacade();
+      // Attached to the extension's hook rather than replacing it.
+      expect(localFacade.hook).toBe(extensionHook);
+
+      const tree = createTools(localFacade).getComponentTree();
+      expect(tree.find(n => n.name === 'App')).toBeDefined();
+      expect(tree.find(n => n.name === 'Child')).toBeDefined();
     });
   });
 });
