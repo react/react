@@ -1168,13 +1168,6 @@ function updateActivityComponent(
           renderLanes,
         );
         workInProgress.lanes = laneToLanes(OffscreenLane);
-        // memoizedState on Offscreen is used to indicate whether it is hidden.
-        const nextState: OffscreenState = {
-          baseLanes: NoLanes,
-          cachePool: null,
-        };
-        primaryChildFragment.memoizedState = nextState;
-
         return bailoutOffscreenComponent(null, primaryChildFragment);
       } else {
         // We must push the suspense handler context *before* attempting to

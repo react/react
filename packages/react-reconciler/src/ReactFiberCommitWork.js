@@ -2235,6 +2235,13 @@ function commitMutationEffectsOnFiber(
               );
             }
           } else if (newResource === null && finishedWork.stateNode !== null) {
+            if (!offscreenSubtreeIsHidden) {
+              mountHoistable(
+                hoistableRoot,
+                finishedWork.type,
+                finishedWork.stateNode,
+              );
+            }
             commitHostUpdate(
               finishedWork,
               finishedWork.memoizedProps,
@@ -2640,16 +2647,6 @@ function commitMutationEffectsOnFiber(
               } else {
                 layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
               }
-              const newOffscreenSubtreeIsHidden =
-                // $FlowFixMe[constant-condition]
-                isHidden || offscreenSubtreeIsHidden;
-              const newOffscreenSubtreeWasHidden =
-                // $FlowFixMe[constant-condition]
-                wasHidden || offscreenSubtreeWasHidden;
-              const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
-              const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
-              offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
-              offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
               recursivelyTraverseDisappearLayoutEffects(
                 finishedWork,
                 layoutEffectTraversalFlags,
@@ -2670,8 +2667,6 @@ function commitMutationEffectsOnFiber(
                   componentEffectEndTime,
                 );
               }
-              offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
-              offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
             }
           }
         }
@@ -3360,6 +3355,7 @@ function reappearLayoutEffects(
       }
       // Fallthrough
     }
+    case HostHoistable:
     case HostComponent: {
       // TODO: Enable HostText for RN
       if (
@@ -3379,57 +3375,6 @@ function reappearLayoutEffects(
       // (eg DOM renderer may schedule auto-focus for inputs and form controls).
       // These effects should only be committed when components are first mounted,
       // aka when there is no current/alternate.
-      if (includeWorkInProgressEffects && current === null && flags & Update) {
-        commitHostMount(finishedWork);
-      }
-
-      // TODO: Check flags & Ref
-      safelyAttachRef(finishedWork, finishedWork.return);
-      break;
-    }
-    case HostHoistable: {
-      // $FlowFixMe[constant-condition]
-      if (supportsResources) {
-        // The reappear traversal runs whenever an Activity transitions from
-        // hidden to visible. We piggy-back on it (rather than adding a
-        // separate recursive traversal) to insert hoistable metadata such as
-        // <title> and <meta> into the document.
-        //
-        // We only act on Hoistable Instances (memoizedState === null).
-        // Resources stay mounted across Activity visibility transitions.
-        //
-        // The parentNode guard makes this idempotent and safe under StrictMode
-        // dev double-invoke: if the instance is already attached we skip.
-        //
-        // Note: this runs in the layout phase. A useLayoutEffect on an earlier
-        // sibling can therefore observe document.title before the hoistable
-        // is re-attached. Moving this to the mutation phase would require an
-        // additional unconditional traversal of the Activity subtree (the
-        // mutation traversal is gated by subtreeFlags and would skip an
-        // unchanged hoistable). This is the same tradeoff as for HostSingleton.
-        const instance = finishedWork.stateNode;
-        if (
-          finishedWork.memoizedState === null &&
-          instance !== null &&
-          !offscreenSubtreeIsHidden
-        ) {
-          // currentHoistableRoot is only maintained during the mutation phase.
-          // Derive the hoistable root from the instance's owner document so
-          // this works in the layout phase too. Hoistable Instances are
-          // hoisted to document.head, which always lives in ownerDocument.
-          mountHoistable(
-            getHoistableRoot(instance.ownerDocument),
-            finishedWork.type,
-            instance,
-          );
-        }
-      }
-      recursivelyTraverseReappearLayoutEffects(
-        finishedRoot,
-        finishedWork,
-        layoutEffectTraversalFlags,
-      );
-
       if (includeWorkInProgressEffects && current === null && flags & Update) {
         commitHostMount(finishedWork);
       }
