@@ -9771,7 +9771,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('does not hoist title tags inside hidden Activity boundaries', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9796,7 +9795,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('removes title tags when Activity transitions from visible to hidden', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9833,7 +9831,6 @@ background-color: green;
       expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
-    // @gate enableActivity
     it('adds title tags when Activity transitions from hidden to visible', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9871,7 +9868,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('handles multiple Activity boundaries with different visibility states', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9901,7 +9897,6 @@ background-color: green;
       ]);
     });
 
-    // @gate enableActivity
     it('handles nested Activity boundaries correctly', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9927,7 +9922,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('handles meta tags inside hidden Activity boundaries', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9952,7 +9946,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('does not hoist a hoistable nested under a HostComponent inside a hidden Activity', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -9972,7 +9965,6 @@ background-color: green;
       expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
-    // @gate enableActivity
     it('mounts nested hoistables when their ancestor Activity transitions to visible', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -10005,7 +9997,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('updates a hidden title without inserting it into the head', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -10046,7 +10037,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('removes a previously-mounted title when its Activity is deleted while hidden', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
@@ -10083,7 +10073,6 @@ background-color: green;
       expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
-    // @gate enableActivity
     it('does not hoist hidden Activity metadata during hydration', async () => {
       const Activity = React.Activity;
 
@@ -10132,7 +10121,6 @@ background-color: green;
       );
     });
 
-    // @gate enableActivity
     it('handles StrictMode without leaving duplicate or missing hoistables', async () => {
       const Activity = React.Activity;
       const root = ReactDOMClient.createRoot(container);
