@@ -2211,11 +2211,9 @@ function commitMutationEffectsOnFiber(
               // Transitioning from Instance to Resource. Only unmount if the
               // Instance was actually mounted in the document; it may not be
               // if it lives inside a hidden Activity boundary.
-              if (
-                current.stateNode !== null &&
-                current.stateNode.parentNode !== null
-              ) {
-                unmountHoistable(current.stateNode);
+              const instance = current.stateNode;
+              if (instance !== null && instance.parentNode !== null) {
+                unmountHoistable(instance);
               }
             } else {
               releaseResource(currentResource);
