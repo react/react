@@ -3406,8 +3406,7 @@ function reappearLayoutEffects(
         // is re-attached. Moving this to the mutation phase would require an
         // additional unconditional traversal of the Activity subtree (the
         // mutation traversal is gated by subtreeFlags and would skip an
-        // unchanged hoistable). The reviewer guidance was to reuse this
-        // existing visibility traversal, so we accept the layout-phase order.
+        // unchanged hoistable). This is the same tradeoff as for HostSingleton.
         const instance = finishedWork.stateNode;
         if (
           finishedWork.memoizedState === null &&
