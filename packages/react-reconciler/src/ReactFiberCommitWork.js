@@ -3156,6 +3156,7 @@ function disappearLayoutEffects(
       // TODO (Offscreen) Check: flags & RefStatic
       safelyDetachRef(finishedWork, finishedWork.return);
 
+      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // The disappear traversal runs from the mutation phase whenever an
         // Activity transitions from visible to hidden. We piggy-back on it
@@ -3179,7 +3180,10 @@ function disappearLayoutEffects(
         }
       }
 
-      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
       break;
     }
     case OffscreenComponent: {
@@ -3381,6 +3385,7 @@ function reappearLayoutEffects(
       break;
     }
     case HostHoistable: {
+      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // The reappear traversal runs whenever an Activity transitions from
         // hidden to visible. We piggy-back on it (rather than adding a
@@ -3420,7 +3425,7 @@ function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
 
       if (includeWorkInProgressEffects && current === null && flags & Update) {
