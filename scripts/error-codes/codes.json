@@ -553,5 +553,6 @@
   "579": "Invalid data for bytes stream.",
   "580": "Server Function has too many bound arguments. Received %s but the limit is %s.",
   "581": "BigInt is too large. Received %s digits but the limit is %s.",
-  "599": "Expected an initialized chunk but got an initialized stream chunk instead. This payload may have been submitted by an older version of React."
+  "599": "Expected an initialized chunk but got an initialized stream chunk instead. This payload may have been submitted by an older version of React.",
+  "602": "Cannot handle action key. This is a bug in React."
 }

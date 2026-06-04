@@ -920,8 +920,8 @@ function serializeAsyncIterable(
     enqueueFlush(request);
     if (typeof (iterator: any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      // $FlowFixMe[prop-missing] should be able to pass mixed
+      iterator.throw(reason).then(noop, noop);
     }
   }
   function abortIterable(reason: mixed) {
@@ -937,9 +937,11 @@ function serializeAsyncIterable(
       enqueueFlush(request);
     }
     if (typeof (iterator: any).throw === 'function') {
+      // TODO: Premature exits should call return() on the iterator if it exists
+      // to allow cleanup. See https://tc39.es/ecma262/multipage/control-abstraction-objects.html#table-async-iterator-optional
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      // $FlowFixMe[prop-missing] should be able to pass mixed
+      iterator.throw(reason).then(noop, noop);
     }
   }
   request.abortListeners.add(abortIterable);
