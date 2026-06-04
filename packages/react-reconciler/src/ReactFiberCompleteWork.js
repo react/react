@@ -40,6 +40,7 @@ import {
   passChildrenWhenCloningPersistedNodes,
   disableLegacyMode,
   enableViewTransition,
+  enableViewTransitionParentEnterExit,
   enableSuspenseyImages,
 } from 'shared/ReactFeatureFlags';
 
@@ -98,6 +99,7 @@ import {
   ShouldSuspendCommit,
   Cloned,
   ViewTransitionStatic,
+  ViewTransitionStaticParent,
   Hydrate,
   PortalStatic,
 } from './ReactFiberFlags';
@@ -2076,6 +2078,17 @@ function completeWork(
         // bubble up to the parent tree to indicate that there's a child that
         // might need an exit View Transition upon unmount.
         workInProgress.flags |= ViewTransitionStatic;
+        if (enableViewTransitionParentEnterExit) {
+          const props = workInProgress.pendingProps;
+          if (
+            props.parentEnter !== undefined ||
+            props.parentExit !== undefined
+          ) {
+            workInProgress.flags |= ViewTransitionStaticParent;
+          } else {
+            workInProgress.flags &= ~ViewTransitionStaticParent;
+          }
+        }
         bubbleProperties(workInProgress);
       }
       return null;

@@ -461,5 +461,478 @@ describe('ReactDOMViewTransition', () => {
         onEnter.mock.calls.length + enterCallsAfterFallback,
       ).toBeGreaterThanOrEqual(1);
     });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('does not fire onExit/onEnter on nested ViewTransition when the subtree is removed as one unit', async () => {
+      const onParentExit = jest.fn();
+      const onParentEnter = jest.fn();
+      const onNestedExit = jest.fn();
+      const onNestedEnter = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition
+            exit="page-exit"
+            enter="page-enter"
+            onExit={onParentExit}
+            onEnter={onParentEnter}>
+            <div>
+              <ViewTransition
+                exit="nested-exit"
+                enter="nested-enter"
+                onExit={onNestedExit}
+                onEnter={onNestedEnter}>
+                <div>Item</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      onParentEnter.mockClear();
+      onNestedEnter.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(onParentEnter).toHaveBeenCalledTimes(1);
+      expect(onNestedEnter).not.toHaveBeenCalled();
+
+      onParentExit.mockClear();
+      onNestedExit.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(onParentExit).toHaveBeenCalledTimes(1);
+      expect(onNestedExit).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('fires onParentExit when ancestor ViewTransition exits', async () => {
+      const onParentExit = jest.fn();
+      const onNestedExit = jest.fn();
+      const onParentExitNested = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition exit="page-exit" onExit={onParentExit}>
+            <div>
+              <ViewTransition
+                exit="nested-exit"
+                onExit={onNestedExit}
+                parentExit="nested-parent-exit"
+                onParentExit={onParentExitNested}>
+                <div>Item</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      onParentExit.mockClear();
+      onNestedExit.mockClear();
+      onParentExitNested.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(onParentExit).toHaveBeenCalledTimes(1);
+      expect(onNestedExit).not.toHaveBeenCalled();
+      expect(onParentExitNested).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('fires onParentEnter when ancestor ViewTransition enters', async () => {
+      const onParentEnter = jest.fn();
+      const onNestedEnter = jest.fn();
+      const onParentEnterNested = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition enter="page-enter" onEnter={onParentEnter}>
+            <div>
+              <ViewTransition
+                enter="nested-enter"
+                onEnter={onNestedEnter}
+                parentEnter="nested-parent-enter"
+                onParentEnter={onParentEnterNested}>
+                <div>Item</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      onParentEnter.mockClear();
+      onNestedEnter.mockClear();
+      onParentEnterNested.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(onParentEnter).toHaveBeenCalledTimes(1);
+      expect(onNestedEnter).not.toHaveBeenCalled();
+      expect(onParentEnterNested).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('breaks parentExit chain when intermediate ViewTransition lacks parentExit', async () => {
+      const onParentExit1 = jest.fn();
+      const onParentExit2 = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition exit="page-exit">
+            <div>
+              <ViewTransition parentExit="relay-exit">
+                <div>
+                  <ViewTransition>
+                    <div>
+                      <ViewTransition
+                        parentExit="nested-exit"
+                        onParentExit={onParentExit1}>
+                        <div>Deep</div>
+                      </ViewTransition>
+                    </div>
+                  </ViewTransition>
+                </div>
+              </ViewTransition>
+              <ViewTransition
+                parentExit="nested-exit"
+                onParentExit={onParentExit2}>
+                <div>Shallow</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      onParentExit1.mockClear();
+      onParentExit2.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(onParentExit1).not.toHaveBeenCalled();
+      expect(onParentExit2).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('does not fire onParentEnter when ancestor exits', async () => {
+      const onParentEnter = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition exit="page-exit">
+            <div>
+              <ViewTransition parentExit="relay-exit">
+                <ViewTransition
+                  parentEnter="nested-enter"
+                  onParentEnter={onParentEnter}>
+                  <div>Item</div>
+                </ViewTransition>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      onParentEnter.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(onParentEnter).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('does not fire onParentExit when ancestor shares instead of exiting', async () => {
+      const onShare = jest.fn();
+      const onParentExit = jest.fn();
+
+      function App({page}) {
+        if (page === 'a') {
+          return (
+            <ViewTransition key="a" name="hero" onShare={onShare}>
+              <ViewTransition
+                parentExit="child-parent-exit"
+                onParentExit={onParentExit}>
+                <div>Page A</div>
+              </ViewTransition>
+            </ViewTransition>
+          );
+        }
+        return (
+          <ViewTransition key="b" name="hero">
+            <ViewTransition
+              parentExit="child-parent-exit"
+              onParentExit={onParentExit}>
+              <div>Page B</div>
+            </ViewTransition>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App page="a" />);
+        });
+      });
+
+      onShare.mockClear();
+      onParentExit.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App page="b" />);
+        });
+      });
+
+      expect(onShare).toHaveBeenCalledTimes(1);
+      expect(onParentExit).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('does not fire onParentEnter when ancestor shares instead of entering', async () => {
+      const onShare = jest.fn();
+      const onParentEnter = jest.fn();
+
+      function App({page}) {
+        if (page === 'a') {
+          return (
+            <ViewTransition key="a" name="hero" onShare={onShare}>
+              <ViewTransition
+                parentEnter="child-parent-enter"
+                onParentEnter={onParentEnter}>
+                <div>Page A</div>
+              </ViewTransition>
+            </ViewTransition>
+          );
+        }
+        return (
+          <ViewTransition key="b" name="hero">
+            <ViewTransition
+              parentEnter="child-parent-enter"
+              onParentEnter={onParentEnter}>
+              <div>Page B</div>
+            </ViewTransition>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App page="a" />);
+        });
+      });
+
+      onShare.mockClear();
+      onParentEnter.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App page="b" />);
+        });
+      });
+
+      expect(onShare).toHaveBeenCalledTimes(1);
+      expect(onParentEnter).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('does not fire onParentExit when ancestor exit is none', async () => {
+      const onParentExit = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition exit="none">
+            <ViewTransition
+              parentExit="nested-parent-exit"
+              onParentExit={onParentExit}>
+              <div>Item</div>
+            </ViewTransition>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      onParentExit.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(onParentExit).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('does not fire onParentEnter when ancestor enter is none', async () => {
+      const onParentEnter = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition enter="none">
+            <ViewTransition
+              parentEnter="nested-parent-enter"
+              onParentEnter={onParentEnter}>
+              <div>Item</div>
+            </ViewTransition>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      onParentEnter.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      expect(onParentEnter).not.toHaveBeenCalled();
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('relays parentExit chain through unstyled parentExit', async () => {
+      const onParentExit = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition exit="page-exit">
+            <div>
+              <ViewTransition parentExit="auto">
+                <ViewTransition
+                  parentExit="nested-exit"
+                  onParentExit={onParentExit}>
+                  <div>Item</div>
+                </ViewTransition>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      onParentExit.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(onParentExit).toHaveBeenCalledTimes(1);
+    });
   });
 });
