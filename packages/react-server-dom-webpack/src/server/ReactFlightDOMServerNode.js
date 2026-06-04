@@ -22,6 +22,7 @@ import type {Duplex} from 'stream';
 
 import {Readable} from 'stream';
 
+import noop from 'shared/noop';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
 import {
@@ -762,8 +763,8 @@ function decodeReplyFromAsyncIterable<T>(
     reportGlobalError(response, reason);
     if (typeof (iterator: any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      // $FlowFixMe[prop-missing] should be able to pass mixed
+      iterator.throw(reason).then(noop, noop);
     }
   }
 

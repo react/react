@@ -20,6 +20,7 @@ import {
   type ServerReferenceId,
 } from '../client/ReactFlightClientConfigBundlerParcel';
 
+import noop from 'shared/noop';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
 import {
@@ -309,8 +310,8 @@ export function decodeReplyFromAsyncIterable<T>(
     reportGlobalError(response, reason);
     if (typeof (iterator: any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      // $FlowFixMe[prop-missing] should be able to pass mixed
+      iterator.throw(reason).then(noop, noop);
     }
   }
 
