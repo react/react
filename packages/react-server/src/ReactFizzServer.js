@@ -181,6 +181,7 @@ import {
   enableScopeAPI,
   enableAsyncIterableChildren,
   enableViewTransition,
+  enableViewTransitionParentEnterExit,
   enableFizzBlockingRender,
   enableAsyncDebugInfo,
   enableCPUSuspense,
@@ -2953,6 +2954,20 @@ function renderViewTransition(
     getViewTransitionClassName(props.default, props.enter),
     getViewTransitionClassName(props.default, props.exit),
     getViewTransitionClassName(props.default, props.share),
+    // Pass `undefined` (rather than the resolved class) when the prop is absent
+    // so the format context can distinguish "no parentEnter/parentExit" (which
+    // stops the relay) from an explicit "auto"/class (which continues it).
+    enableViewTransitionParentEnterExit && props.parentEnter !== undefined
+      ? getViewTransitionClassName(props.default, props.parentEnter)
+      : undefined,
+    enableViewTransitionParentEnterExit && props.parentExit !== undefined
+      ? getViewTransitionClassName(props.default, props.parentExit)
+      : undefined,
+    // A ViewTransition with an onParentEnter/onParentExit handler but no class
+    // still relays the activation to its descendants, so the relay must continue
+    // through it even though the handler itself emits no annotation.
+    enableViewTransitionParentEnterExit && props.onParentEnter != null,
+    enableViewTransitionParentEnterExit && props.onParentExit != null,
     props.name,
     autoName,
   );
