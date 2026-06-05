@@ -1519,8 +1519,7 @@ function commitDeletionEffectsOnFiber(
           // A Hoistable Instance lives in document.head only when its enclosing
           // Activity is visible. If the Activity is hidden (or has been hidden
           // since mount), the instance was either never inserted or was
-          // detached by the disappear traversal. Guard the removeChild so we
-          // don't throw in those cases.
+          // detached by the disappear traversal. Skip in those cases.
           if (!offscreenSubtreeWasHidden) {
             unmountHoistable(deletedFiber.stateNode);
           }
@@ -2207,9 +2206,10 @@ function commitMutationEffectsOnFiber(
           } else if (currentResource !== newResource) {
             // We are moving to or from Hoistable Resource, or between different Hoistable Resources
             if (currentResource === null) {
-              // Transitioning from Instance to Resource. Only unmount if the
-              // Instance was actually mounted in the document; it may not be
-              // if it lives inside a hidden Activity boundary.
+              // Transitioning from Instance to Resource. Only unmount when the
+              // Instance is currently mounted in the document; hidden Activity
+              // boundaries keep instances off-document or detach them before
+              // this update is processed.
               const instance = current.stateNode;
               if (instance !== null && !offscreenSubtreeWasHidden) {
                 unmountHoistable(instance);
