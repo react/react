@@ -7,6 +7,12 @@
 
 const skipFilter = new Set([
   /**
+   * Known-bug fixtures documenting wrong runtime behavior; remove each entry
+   * when its fix lands.
+   */
+  'bug-outlined-function-captures-local',
+
+  /**
    * Fixtures using external modules (jest, Lexical, etc.) that can't be evaluated
    * in the test harness. These were previously error.todo-* but now compile in both TS and Rust.
    */
