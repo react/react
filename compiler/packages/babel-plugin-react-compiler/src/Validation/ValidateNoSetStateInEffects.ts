@@ -193,6 +193,9 @@ function getSetStateCall(
   const enableAllowSetStateFromRefsInEffects =
     env.config.enableAllowSetStateFromRefsInEffects;
   const refDerivedValues: Set<IdentifierId> = new Set();
+  const blocksAfterAwait = fn.async
+    ? computeBlocksStartingAfterAwait(fn)
+    : null;
 
   const isDerivedFromRef = (place: Place): boolean => {
     return (
@@ -232,6 +235,7 @@ function getSetStateCall(
         }
       }
     }
+    let isAfterAwait = blocksAfterAwait?.has(block.id) ?? false;
     for (const instr of block.instructions) {
       if (enableAllowSetStateFromRefsInEffects) {
         const hasRefOperand = Iterable_some(
@@ -288,6 +292,10 @@ function getSetStateCall(
       }
 
       switch (instr.value.kind) {
+        case 'Await': {
+          isAfterAwait = true;
+          break;
+        }
         case 'LoadLocal': {
           if (setStateFunctions.has(instr.value.place.identifier.id)) {
             setStateFunctions.set(
@@ -316,6 +324,14 @@ function getSetStateCall(
             isSetStateType(callee.identifier) ||
             setStateFunctions.has(callee.identifier.id)
           ) {
+            if (isAfterAwait) {
+              /**
+               * Code that is only reachable after an await resumes in a
+               * microtask after the effect body has returned, so calling
+               * setState there cannot synchronously cascade a re-render.
+               */
+              break;
+            }
             if (enableAllowSetStateFromRefsInEffects) {
               const arg = instr.value.args.at(0);
               if (
@@ -344,4 +360,63 @@ function getSetStateCall(
     }
   }
   return null;
+}
+
+/**
+ * Computes the set of blocks which begin after an `await` has executed on
+ * *every* control flow path from the function entry. Instructions in such
+ * blocks (and instructions following an Await within any block) are guaranteed
+ * to run asynchronously, in a microtask after the synchronous portion of the
+ * function has returned.
+ *
+ * This is a forward must-dataflow: a block starts after an await iff all of
+ * its predecessors end after an await. Suppression based on this analysis is
+ * sound in the presence of try/catch because HIRBuilder.push terminates the
+ * current block after every instruction within a try region: a maybe-throw
+ * block can therefore only throw from its single instruction, and when that
+ * instruction is an Await the rejection also resumes in a microtask.
+ */
+function computeBlocksStartingAfterAwait(fn: HIRFunction): Set<BlockId> {
+  const blocksWithAwait = new Set<BlockId>();
+  for (const [id, block] of fn.body.blocks) {
+    if (block.instructions.some(instr => instr.value.kind === 'Await')) {
+      blocksWithAwait.add(id);
+    }
+  }
+  /*
+   * Initialize non-entry blocks optimistically so that loop back-edges do not
+   * pessimize the meet; the fixpoint then lowers any block reachable without
+   * passing an await.
+   */
+  const startsAfterAwait = new Map<BlockId, boolean>();
+  for (const [id] of fn.body.blocks) {
+    startsAfterAwait.set(id, id !== fn.body.entry);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, block] of fn.body.blocks) {
+      if (id === fn.body.entry) {
+        continue;
+      }
+      let startAfterAwait = block.preds.size !== 0;
+      for (const pred of block.preds) {
+        if (startsAfterAwait.get(pred) !== true && !blocksWithAwait.has(pred)) {
+          startAfterAwait = false;
+          break;
+        }
+      }
+      if (startAfterAwait !== startsAfterAwait.get(id)) {
+        startsAfterAwait.set(id, startAfterAwait);
+        changed = true;
+      }
+    }
+  }
+  const result = new Set<BlockId>();
+  for (const [id, afterAwait] of startsAfterAwait) {
+    if (afterAwait) {
+      result.add(id);
+    }
+  }
+  return result;
 }
