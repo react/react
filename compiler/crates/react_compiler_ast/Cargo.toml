@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "unbounded_depth"] }
 serde-transcode = "1"
