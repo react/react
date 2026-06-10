@@ -54,9 +54,11 @@ pub fn outline_functions(
                     // 1. No captured context variables
                     // 2. Anonymous (no explicit id on the inner function)
                     // 3. Not an fbt operand
+                    // 4. Only references names that are in scope at module level
                     if inner_func.context.is_empty()
                         && inner_func.id.is_none()
                         && !fbt_operands.contains(&lvalue_id)
+                        && !references_non_module_scope_bindings(inner_func, env)
                     {
                         actions.push(Action::RecurseAndOutline {
                             instr_idx: instr_id.0 as usize,
@@ -125,4 +127,46 @@ pub fn outline_functions(
             }
         }
     }
+}
+
+/// Returns true if `func` (or a function nested within it) references a
+/// binding that would not be in scope at module level, in which case the
+/// function cannot be outlined.
+///
+/// Ported from TS `referencesNonModuleScopeBindings` in
+/// `Optimization/OutlineFunctions.ts`. The TS implementation re-resolves
+/// each `LoadGlobal(ModuleLocal)`/`StoreGlobal` name against Babel scope
+/// data; the Rust lowering instead records the misclassified names in
+/// `env.non_module_scope_names` as it resolves identifiers (see
+/// `HirBuilder::resolve_identifier`), which encodes the same fact: the name
+/// resolves to a binding *between* module scope and the compiled function
+/// (e.g. a local of an enclosing factory function). Hoisting a function that
+/// references such a name would move the reference out of the enclosing
+/// function's scope and throw a ReferenceError at runtime.
+fn references_non_module_scope_bindings(func: &HirFunction, env: &Environment) -> bool {
+    for block in func.body.blocks.values() {
+        for &instr_id in &block.instructions {
+            let instr = &func.instructions[instr_id.0 as usize];
+            match &instr.value {
+                InstructionValue::LoadGlobal {
+                    binding: NonLocalBinding::ModuleLocal { name },
+                    ..
+                }
+                | InstructionValue::StoreGlobal { name, .. } => {
+                    if env.non_module_scope_names.contains(name) {
+                        return true;
+                    }
+                }
+                InstructionValue::FunctionExpression { lowered_func, .. }
+                | InstructionValue::ObjectMethod { lowered_func, .. } => {
+                    let inner = &env.functions[lowered_func.func.0 as usize];
+                    if references_non_module_scope_bindings(inner, env) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    false
 }

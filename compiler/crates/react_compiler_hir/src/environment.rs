@@ -87,6 +87,14 @@ pub struct Environment {
     // Uses u32 to avoid depending on react_compiler_ast types.
     hoisted_identifiers: HashSet<u32>,
 
+    // Names that HIRBuilder classified as ModuleLocal but that resolve to a
+    // binding *between* module scope and the compiled function (e.g. locals of
+    // an enclosing factory function, when the compiled function is nested).
+    // Mirrors what the TS compiler recovers from Babel scope data in
+    // OutlineFunctions: such names are not in scope at module level, so
+    // functions referencing them must not be outlined.
+    pub non_module_scope_names: HashSet<String>,
+
     // Config flags for validation passes (kept for backwards compat with existing pipeline code)
     pub validate_preserve_existing_memoization_guarantees: bool,
     pub validate_no_set_state_in_render: bool,
@@ -192,6 +200,7 @@ impl Environment {
             renames: Vec::new(),
             reference_node_ids: HashSet::new(),
             hoisted_identifiers: HashSet::new(),
+            non_module_scope_names: HashSet::new(),
             validate_preserve_existing_memoization_guarantees: config
                 .validate_preserve_existing_memoization_guarantees,
             validate_no_set_state_in_render: config.validate_no_set_state_in_render,
@@ -239,6 +248,7 @@ impl Environment {
             renames: Vec::new(),
             reference_node_ids: HashSet::new(),
             hoisted_identifiers: HashSet::new(),
+            non_module_scope_names: self.non_module_scope_names.clone(),
             validate_preserve_existing_memoization_guarantees: self
                 .validate_preserve_existing_memoization_guarantees,
             validate_no_set_state_in_render: self.validate_no_set_state_in_render,

@@ -6,8 +6,9 @@
 import {useIdentity} from 'shared-runtime';
 import {Stringify} from 'shared-runtime';
 
+const store = {value: 'hello'};
+
 function createSomething() {
-  const store = {value: 'hello'};
   const Cmp = () => {
     const getStore = useIdentity(() => store);
     return <Stringify result={getStore()} />;
@@ -35,8 +36,9 @@ import { c as _c } from "react/compiler-runtime"; // @compilationMode:"infer"
 import { useIdentity } from "shared-runtime";
 import { Stringify } from "shared-runtime";
 
+const store = { value: "hello" };
+
 function createSomething() {
-  const store = { value: "hello" };
   const Cmp = () => {
     const $ = _c(4);
     const getStore = useIdentity(_temp);
@@ -86,3 +88,5 @@ function _temp() {
 
 ```
       
+### Eval output
+(kind: ok) <div>{"result":{"value":"hello"}}</div>
