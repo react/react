@@ -7,7 +7,7 @@ function Component({items}) {
       acc.rows.push(`${id}:${item}`);
       return acc;
     },
-    {counter: 0, rows: []},
+    {counter: 0, rows: []}
   );
   return <Stringify rows={result.rows} counter={result.counter} />;
 }

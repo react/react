@@ -11,7 +11,7 @@ function Component({items}) {
       acc.rows.push(`${id}:${item}`);
       return acc;
     },
-    {counter: 0, rows: []},
+    {counter: 0, rows: []}
   );
   return <Stringify rows={result.rows} counter={result.counter} />;
 }
@@ -57,8 +57,9 @@ function Component(t0) {
   return t2;
 }
 function _temp(acc, item) {
-  acc.counter = acc.counter + 1;
-  const id = acc.counter;
+  const t0 = acc.counter;
+  acc.counter = t0 + 1;
+  const id = t0;
   acc.rows.push(`${id}:${item}`);
   return acc;
 }
@@ -70,3 +71,5 @@ export const FIXTURE_ENTRYPOINT = {
 
 ```
       
+### Eval output
+(kind: ok) <div>{"rows":["0:a","1:b","2:c"],"counter":3}</div>
