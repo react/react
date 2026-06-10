@@ -66,29 +66,45 @@ impl JsString {
     }
 
     /// Decode the bridge wire form: a UTF-8 string in which lone surrogates
-    /// appear as `__SURROGATE_XXXX__` markers.
+    /// appear as `__SURROGATE_XXXX__` markers (uppercase hex, mirroring what
+    /// `sanitizeJsonSurrogates` emits and `restoreJsonSurrogates` accepts).
+    ///
+    /// All scanning is byte-wise: a marker is 18 ASCII bytes, so byte-slice
+    /// comparisons cannot land on a UTF-8 char boundary the way `str` range
+    /// indexing can when multibyte text follows the prefix.
     pub fn from_marker_string(s: &str) -> Self {
+        const PREFIX: &[u8] = b"__SURROGATE_";
+        const MARKER_LEN: usize = 18;
         if !s.contains("__SURROGATE_") {
             return JsString::Utf8(s.to_string());
         }
+        let bytes = s.as_bytes();
         let mut units: Vec<u16> = Vec::with_capacity(s.len());
-        let mut rest = s;
-        while let Some(idx) = rest.find("__SURROGATE_") {
-            units.extend(rest[..idx].encode_utf16());
-            let tail = &rest[idx..];
-            // Marker shape: __SURROGATE_ + 4 hex digits + __
-            if tail.len() >= 18 && &tail[16..18] == "__" {
-                if let Ok(unit) = u16::from_str_radix(&tail[12..16], 16) {
-                    units.push(unit);
-                    rest = &tail[18..];
-                    continue;
-                }
+        let mut pos = 0;
+        let mut segment_start = 0;
+        while let Some(found) = s[pos..].find("__SURROGATE_") {
+            let idx = pos + found;
+            let tail = &bytes[idx..];
+            let well_formed = tail.len() >= MARKER_LEN
+                && &tail[MARKER_LEN - 2..MARKER_LEN] == b"__"
+                && tail[PREFIX.len()..PREFIX.len() + 4]
+                    .iter()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_lowercase());
+            if well_formed {
+                let hex = std::str::from_utf8(&tail[PREFIX.len()..PREFIX.len() + 4])
+                    .expect("ascii hex is valid utf8");
+                let unit = u16::from_str_radix(hex, 16).expect("validated hex digits");
+                units.extend(s[segment_start..idx].encode_utf16());
+                units.push(unit);
+                pos = idx + MARKER_LEN;
+                segment_start = pos;
+            } else {
+                // Not a well-formed marker: keep the literal text and continue
+                // scanning after the prefix.
+                pos = idx + PREFIX.len();
             }
-            // Not a well-formed marker: keep the literal text and move on.
-            units.extend("__SURROGATE_".encode_utf16());
-            rest = &tail["__SURROGATE_".len()..];
         }
-        units.extend(rest.encode_utf16());
+        units.extend(s[segment_start..].encode_utf16());
         JsString::from_code_units(units)
     }
 
@@ -241,5 +257,33 @@ mod tests {
     fn malformed_marker_text_is_kept_literally() {
         let js = JsString::from_marker_string("__SURROGATE_XYZ__");
         assert_eq!(js.as_str(), Some("__SURROGATE_XYZ__"));
+    }
+
+    #[test]
+    fn multibyte_text_after_marker_prefix_does_not_panic() {
+        let input = "__SURROGATE_\u{20AC}\u{20AC}";
+        let js = JsString::from_marker_string(input);
+        assert_eq!(js.as_str(), Some(input));
+
+        let truncated = "__SURROGATE_D8";
+        assert_eq!(
+            JsString::from_marker_string(truncated).as_str(),
+            Some(truncated)
+        );
+
+        let mixed = "a\u{20AC}__SURROGATE_D83E__b\u{20AC}";
+        let js = JsString::from_marker_string(mixed);
+        let mut expected: Vec<u16> = "a\u{20AC}".encode_utf16().collect();
+        expected.push(0xD83E);
+        expected.extend("b\u{20AC}".encode_utf16());
+        assert_eq!(js.code_units(), expected);
+    }
+
+    #[test]
+    fn lowercase_hex_markers_are_not_decoded() {
+        // The bridge emits uppercase hex only; lowercase marker-shaped text is
+        // user text and must survive verbatim.
+        let input = "__SURROGATE_d83e__";
+        assert_eq!(JsString::from_marker_string(input).as_str(), Some(input));
     }
 }
