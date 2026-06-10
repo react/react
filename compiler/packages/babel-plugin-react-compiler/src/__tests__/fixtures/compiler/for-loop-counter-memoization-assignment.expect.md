@@ -8,7 +8,7 @@ function Component({count}) {
   let a = 0;
   const items = [];
   for (let i = 0; i < count; i++) {
-    a++;
+    a = a + 1;
     items.push(a);
   }
   return <Stringify items={items} a={a} />;
@@ -29,30 +29,21 @@ import { c as _c } from "react/compiler-runtime";
 import { Stringify } from "shared-runtime";
 
 function Component(t0) {
-  const $ = _c(6);
+  const $ = _c(2);
   const { count } = t0;
-  let a = 0;
-  let items;
-  if ($[0] !== a || $[1] !== count) {
-    items = [];
+  let t1;
+  if ($[0] !== count) {
+    let a = 0;
+    const items = [];
     for (let i = 0; i < count; i++) {
-      a++;
+      a = a + 1;
       items.push(a);
     }
-    $[0] = a;
-    $[1] = count;
-    $[2] = items;
-  } else {
-    items = $[2];
-  }
-  let t1;
-  if ($[3] !== a || $[4] !== items) {
     t1 = <Stringify items={items} a={a} />;
-    $[3] = a;
-    $[4] = items;
-    $[5] = t1;
+    $[0] = count;
+    $[1] = t1;
   } else {
-    t1 = $[5];
+    t1 = $[1];
   }
   return t1;
 }

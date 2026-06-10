@@ -25,7 +25,7 @@ import {
   eachPatternOperand,
 } from '../HIR/visitors';
 import DisjointSet from '../Utils/DisjointSet';
-import {assertExhaustive} from '../Utils/utils';
+import {Iterable_some, assertExhaustive} from '../Utils/utils';
 
 /*
  * Note: this is the 1st of 4 passes that determine how to break a function into discrete
@@ -287,12 +287,31 @@ export function findDisjointMutableValues(
      * are assigned to the same scope.
      */
     for (const phi of block.phis) {
-      if (
+      const firstInstructionIdOfBlock =
+        block.instructions.at(0)?.id ?? block.terminal.id;
+      const isPhiMutatedAfterCreation =
         phi.place.identifier.mutableRange.start + 1 !==
           phi.place.identifier.mutableRange.end &&
-        phi.place.identifier.mutableRange.end >
-          (block.instructions.at(0)?.id ?? block.terminal.id)
-      ) {
+        phi.place.identifier.mutableRange.end > firstInstructionIdOfBlock;
+      /*
+       * A phi operand defined at or after the phi's block is a loop back-edge:
+       * the variable is reassigned within the loop (eg a counter `a++` or
+       * `a = a + 1`). The reassignment must count as the loop's scope
+       * reassigning the variable, so union the phi with its operands and
+       * declaration. Otherwise the variable's pre-loop value would become a
+       * dependency of the scope even though the scope changes the value as it
+       * executes, making the scope's dependencies unstable (the cached
+       * dependency would be the post-loop value, which can never match the
+       * pre-loop value compared at the top of the scope).
+       */
+      const isLoopCarriedReassignment =
+        !isPhiMutatedAfterCreation &&
+        Iterable_some(
+          phi.operands.values(),
+          operand =>
+            operand.identifier.mutableRange.start >= firstInstructionIdOfBlock,
+        );
+      if (isPhiMutatedAfterCreation || isLoopCarriedReassignment) {
         const operands = [phi.place.identifier];
         const declaration = declarations.get(
           phi.place.identifier.declarationId,
