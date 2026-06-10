@@ -4,9 +4,7 @@ function Component({data}: {data: {id: number} | null}) {
   const handleClick = () => {
     console.log(data!.id);
   };
-  return (
-    <div>{data ? <Stringify onClick={handleClick} /> : 'empty'}</div>
-  );
+  return <div>{data ? <Stringify onClick={handleClick} /> : 'empty'}</div>;
 }
 
 export const FIXTURE_ENTRYPOINT = {

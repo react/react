@@ -2517,6 +2517,15 @@ fn codegen_base_instruction_value(
                 }),
             ))
         }
+        InstructionValue::NonNullExpression { value, .. } => {
+            let expr = codegen_place_to_expression(cx, value)?;
+            Ok(ExpressionOrJsxText::Expression(
+                Expression::TSNonNullExpression(ast_expr::TSNonNullExpression {
+                    base: BaseNode::typed("TSNonNullExpression"),
+                    expression: Box::new(expr),
+                }),
+            ))
+        }
         InstructionValue::TypeCastExpression {
             value,
             type_annotation_kind,

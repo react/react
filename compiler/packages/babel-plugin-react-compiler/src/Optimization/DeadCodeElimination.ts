@@ -393,6 +393,7 @@ function pruneableValue(value: InstructionValue, state: State): boolean {
     case 'Primitive':
     case 'PropertyLoad':
     case 'TemplateLiteral':
+    case 'NonNullExpression':
     case 'TypeCastExpression':
     case 'UnaryExpression': {
       // Definitely safe to prune since they are read-only

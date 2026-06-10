@@ -227,6 +227,7 @@ export function* eachInstructionValueOperand(
       yield instrValue.tag;
       break;
     }
+    case 'NonNullExpression':
     case 'TypeCastExpression': {
       yield instrValue.value;
       break;
@@ -598,6 +599,7 @@ export function mapInstructionValueOperands(
       instrValue.tag = fn(instrValue.tag);
       break;
     }
+    case 'NonNullExpression':
     case 'TypeCastExpression': {
       instrValue.value = fn(instrValue.value);
       break;

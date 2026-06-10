@@ -8,9 +8,7 @@ function Component({data}: {data: {id: number} | null}) {
   const handleClick = () => {
     console.log(data!.id);
   };
-  return (
-    <div>{data ? <Stringify onClick={handleClick} /> : 'empty'}</div>
-  );
+  return <div>{data ? <Stringify onClick={handleClick} /> : 'empty'}</div>;
 }
 
 export const FIXTURE_ENTRYPOINT = {
@@ -31,11 +29,11 @@ function Component(t0) {
   const $ = _c(7);
   const { data } = t0;
   let t1;
-  if ($[0] !== data.id) {
+  if ($[0] !== data) {
     t1 = () => {
-      console.log(data.id);
+      console.log(data!.id);
     };
-    $[0] = data.id;
+    $[0] = data;
     $[1] = t1;
   } else {
     t1 = $[1];
@@ -69,3 +67,6 @@ export const FIXTURE_ENTRYPOINT = {
 
 ```
       
+### Eval output
+(kind: ok) <div>empty</div>
+<div><div>{"onClick":"[[ function params=0 ]]"}</div></div>
