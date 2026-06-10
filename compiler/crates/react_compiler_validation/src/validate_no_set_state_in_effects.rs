@@ -374,6 +374,11 @@ fn get_set_state_call(
     source_code: Option<&str>,
 ) -> Result<Option<SetStateInfo>, CompilerDiagnostic> {
     let mut ref_derived_values: HashSet<IdentifierId> = HashSet::new();
+    let blocks_after_await: Option<HashSet<BlockId>> = if func.is_async {
+        Some(compute_blocks_starting_after_await(func))
+    } else {
+        None
+    };
 
     // First pass: collect ref-derived values (needed before building control dominator checker)
     // We do a pre-pass to seed ref_derived_values so the control dominator checker has them.
@@ -479,6 +484,9 @@ fn get_set_state_call(
             }
         }
 
+        let mut is_after_await = blocks_after_await
+            .as_ref()
+            .is_some_and(|blocks| blocks.contains(&block.id));
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
 
@@ -517,6 +525,9 @@ fn get_set_state_call(
             }
 
             match &instr.value {
+                InstructionValue::Await { .. } => {
+                    is_after_await = true;
+                }
                 InstructionValue::LoadLocal { place, .. } => {
                     if set_state_functions.contains_key(&place.identifier) {
                         let info = set_state_functions[&place.identifier].clone();
@@ -534,6 +545,12 @@ fn get_set_state_call(
                     if is_set_state_type_by_id(callee.identifier, identifiers, types)
                         || set_state_functions.contains_key(&callee.identifier)
                     {
+                        if is_after_await {
+                            // Code that is only reachable after an await resumes in a
+                            // microtask after the effect body has returned, so calling
+                            // setState there cannot synchronously cascade a re-render.
+                            continue;
+                        }
                         if enable_allow_set_state_from_refs {
                             // Check if the first argument is ref-derived
                             if let Some(first_arg) = args.first() {
@@ -574,4 +591,63 @@ fn get_set_state_call(
         }
     }
     Ok(None)
+}
+
+/// Computes the set of blocks which begin after an `await` has executed on
+/// *every* control flow path from the function entry. Instructions in such
+/// blocks (and instructions following an Await within any block) are
+/// guaranteed to run asynchronously, in a microtask after the synchronous
+/// portion of the function has returned.
+///
+/// This is a forward must-dataflow: a block starts after an await iff all of
+/// its predecessors end after an await. Suppression based on this analysis is
+/// sound in the presence of try/catch because HirBuilder::push terminates the
+/// current block after every instruction within a try region: a MaybeThrow
+/// block can therefore only throw from its single instruction, and when that
+/// instruction is an Await the rejection also resumes in a microtask.
+///
+/// Port of computeBlocksStartingAfterAwait in ValidateNoSetStateInEffects.ts.
+fn compute_blocks_starting_after_await(func: &HirFunction) -> HashSet<BlockId> {
+    let mut blocks_with_await: HashSet<BlockId> = HashSet::new();
+    for (block_id, block) in &func.body.blocks {
+        let has_await = block.instructions.iter().any(|&instr_id| {
+            matches!(
+                func.instructions[instr_id.0 as usize].value,
+                InstructionValue::Await { .. }
+            )
+        });
+        if has_await {
+            blocks_with_await.insert(*block_id);
+        }
+    }
+    // Initialize non-entry blocks optimistically so that loop back-edges do
+    // not pessimize the meet; the fixpoint then lowers any block reachable
+    // without passing an await.
+    let mut starts_after_await: HashMap<BlockId, bool> = HashMap::new();
+    for (block_id, _block) in &func.body.blocks {
+        starts_after_await.insert(*block_id, *block_id != func.body.entry);
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (block_id, block) in &func.body.blocks {
+            if *block_id == func.body.entry {
+                continue;
+            }
+            let start_after_await = !block.preds.is_empty()
+                && block.preds.iter().all(|pred| {
+                    starts_after_await.get(pred).copied().unwrap_or(false)
+                        || blocks_with_await.contains(pred)
+                });
+            if starts_after_await.get(block_id) != Some(&start_after_await) {
+                starts_after_await.insert(*block_id, start_after_await);
+                changed = true;
+            }
+        }
+    }
+    starts_after_await
+        .into_iter()
+        .filter(|&(_, after_await)| after_await)
+        .map(|(block_id, _)| block_id)
+        .collect()
 }
