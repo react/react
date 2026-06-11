@@ -36,6 +36,11 @@ if (entries.length > 0) {
   // try to get the first paint from the performance metrics to avoid delaying further
   // than necessary.
   window['$RT'] = entries[0].startTime;
+} else if (document.visibilityState === 'hidden') {
+  // rAF never fires in hidden/occluded tabs; set $RT eagerly so
+  // completeBoundary uses the setTimeout flush path.
+  // See https://github.com/facebook/react/issues/36741
+  window['$RT'] = performance.now();
 } else {
   // Otherwise we wait for the next rAF for it.
   requestAnimationFrame(() => {
