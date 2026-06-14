@@ -974,6 +974,7 @@ type InitializationReference = {
   ) => any,
   path: Array<string>,
   isDebug?: boolean, // DEV-only
+  debugInfoOwner?: SomeChunk<any>, // DEV-only
 };
 type InitializationHandler = {
   parent: null | InitializationHandler,
@@ -986,6 +987,7 @@ type InitializationHandler = {
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
+let currentDebugInfoOwner: null | SomeChunk<any> = null;
 
 function initializeDebugChunk(
   response: Response,
@@ -998,7 +1000,9 @@ function initializeDebugChunk(
   if (debugChunk !== null) {
     const debugInfo = chunk._debugInfo;
     const prevIsInitializingDebugInfo = isInitializingDebugInfo;
+    const prevDebugInfoOwner = currentDebugInfoOwner;
     isInitializingDebugInfo = true;
+    currentDebugInfoOwner = chunk;
     try {
       if (debugChunk.status === RESOLVED_MODEL) {
         // Find the index of this debug info by walking the linked list.
@@ -1070,6 +1074,7 @@ function initializeDebugChunk(
       }
     } finally {
       isInitializingDebugInfo = prevIsInitializingDebugInfo;
+      currentDebugInfoOwner = prevDebugInfoOwner;
     }
   }
 }
@@ -1678,54 +1683,69 @@ function fulfillReference(
       break;
     }
 
-    const mappedValue = map(response, value, parentObject, key);
-    if (key !== __PROTO__) {
-      parentObject[key] = mappedValue;
-    }
-
-    // If this is the root object for a model reference, where `handler.value`
-    // is a stale `null`, the resolved value can be used directly.
-    if (key === '' && handler.value === null) {
-      handler.value = mappedValue;
-    }
-
-    // If the parent object is an unparsed React element tuple, we also need to
-    // update the props and owner of the parsed element object (i.e.
-    // handler.value).
-    if (
-      parentObject[0] === REACT_ELEMENT_TYPE &&
-      typeof handler.value === 'object' &&
-      handler.value !== null &&
-      handler.value.$$typeof === REACT_ELEMENT_TYPE
-    ) {
-      const element: any = handler.value;
-      switch (key) {
-        case '3':
-          if (__DEV__) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          element.props = mappedValue;
-          break;
-        case '4':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
-          if (__DEV__) {
-            element._owner = mappedValue;
-          }
-          break;
-        case '5':
-          // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
-          if (__DEV__) {
-            element._debugStack = mappedValue;
-          }
-          break;
-        default:
-          if (__DEV__) {
-            transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
-          }
-          break;
+    const debugInfoOwner = __DEV__ ? reference.debugInfoOwner : undefined;
+    const debugInfoWasFiltered =
+      __DEV__ &&
+      debugInfoOwner !== undefined &&
+      debugInfoOwner._debugChunk === DEBUG_INFO_FILTERED;
+    if (!debugInfoWasFiltered) {
+      const mappedValue = map(response, value, parentObject, key);
+      if (key !== __PROTO__) {
+        parentObject[key] = mappedValue;
       }
-    } else if (__DEV__ && !reference.isDebug) {
-      transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+
+      // If this is the root object for a model reference, where `handler.value`
+      // is a stale `null`, the resolved value can be used directly.
+      if (key === '' && handler.value === null) {
+        handler.value = mappedValue;
+      }
+
+      // If the parent object is an unparsed React element tuple, we also need to
+      // update the props and owner of the parsed element object (i.e.
+      // handler.value).
+      if (
+        parentObject[0] === REACT_ELEMENT_TYPE &&
+        typeof handler.value === 'object' &&
+        handler.value !== null &&
+        handler.value.$$typeof === REACT_ELEMENT_TYPE
+      ) {
+        const element: any = handler.value;
+        switch (key) {
+          case '3':
+            if (__DEV__) {
+              transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+            }
+            element.props = mappedValue;
+            break;
+          case '4':
+            // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
+            if (__DEV__) {
+              element._owner = mappedValue;
+            }
+            break;
+          case '5':
+            // This path doesn't call transferReferencedDebugInfo because this reference is to a debug chunk.
+            if (__DEV__) {
+              element._debugStack = mappedValue;
+            }
+            break;
+          default:
+            if (__DEV__) {
+              transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+            }
+            break;
+        }
+      } else if (__DEV__ && !reference.isDebug) {
+        transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
+      }
+
+      if (
+        __DEV__ &&
+        debugInfoOwner !== undefined &&
+        debugInfoOwner.status === ERRORED
+      ) {
+        pruneDebugInfoAfterError(response, debugInfoOwner);
+      }
     }
   } catch (error) {
     rejectReference(response, reference.handler, error);
@@ -1857,6 +1877,9 @@ function waitForReference<T>(
   };
   if (__DEV__) {
     reference.isDebug = isAwaitingDebugInfo;
+    if (isAwaitingDebugInfo && currentDebugInfoOwner !== null) {
+      reference.debugInfoOwner = currentDebugInfoOwner;
+    }
   }
 
   // Add "listener".
