@@ -1060,7 +1060,7 @@ function pushHaltedAwaitOnComponentStack(
         const asyncInfo: ReactAsyncInfo = info as any;
         const bestStack =
           asyncInfo.debugStack == null ? asyncInfo.awaited : asyncInfo;
-        if (bestStack.debugStack !== undefined) {
+        if (bestStack.debugStack != null) {
           task.componentStack = {
             parent: task.componentStack,
             type: asyncInfo,

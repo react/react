@@ -128,7 +128,7 @@ interface FlightStreamController {
   enqueueValue(value: any): void;
   enqueueModel(json: UninitializedModel): void;
   close(json: UninitializedModel): void;
-  error(error: Error): void;
+  error(error: mixed): void;
 }
 
 type UninitializedModel = string;
@@ -154,6 +154,7 @@ const RESOLVED_MODULE = 'resolved_module';
 const INITIALIZED = 'fulfilled';
 const ERRORED = 'rejected';
 const HALTED = 'halted'; // DEV-only. Means it never resolves even if connection closes.
+const DEBUG_INFO_FILTERED: SomeChunk<ReactDebugInfoEntry> = {} as any; // DEV-only
 
 const __PROTO__ = '__proto__';
 
@@ -164,6 +165,8 @@ type PendingChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type BlockedChunk<T> = {
@@ -173,6 +176,8 @@ type BlockedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type ResolvedModelChunk<T> = {
@@ -182,6 +187,8 @@ type ResolvedModelChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type ResolvedModuleChunk<T> = {
@@ -191,6 +198,8 @@ type ResolvedModuleChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type InitializedChunk<T> = {
@@ -200,6 +209,8 @@ type InitializedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type InitializedStreamChunk<
@@ -211,6 +222,8 @@ type InitializedStreamChunk<
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (ReadableStream) => mixed, reject?: (mixed) => mixed): void,
 };
 type ErroredChunk<T> = {
@@ -218,8 +231,10 @@ type ErroredChunk<T> = {
   value: null,
   reason: mixed,
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
-  _debugChunk: null, // DEV-only
+  _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type HaltedChunk<T> = {
@@ -229,6 +244,8 @@ type HaltedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoBackupIndex?: number, // DEV-only
+  _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type SomeChunk<T> =
@@ -362,6 +379,8 @@ type Response = {
   _debugRootTask?: null | ConsoleTask, // DEV-only
   _debugStartTime: number, // DEV-only
   _debugEndTime?: number, // DEV-only
+  // Undefined: no readable debug channel, false: buffer backups, true: replay.
+  _replayDebugInfo?: boolean, // DEV-only
   _debugIOStarted: boolean, // DEV-only
   _debugFindSourceMapURL?: void | FindSourceMapURLCallback, // DEV-only
   _debugChannel?: void | DebugChannel, // DEV-only
@@ -542,6 +561,7 @@ function pruneDebugInfoAfterError(
     if (typeof info.time === 'number' && info.time > relativeEndTime) {
       // This array may already be attached to the Lazy suspended in Fizz.
       debugInfo.length = i;
+      chunk._debugChunk = DEBUG_INFO_FILTERED;
       return;
     }
   }
@@ -747,7 +767,6 @@ function triggerErrorOnChunk<T>(
     // a stream chunk since any other row shouldn't have more than one entry.
     const streamChunk: InitializedStreamChunk<any> = chunk as any;
     const controller = streamChunk.reason;
-    // $FlowFixMe[incompatible-type]: The error method should accept mixed.
     controller.error(error);
     return;
   }
@@ -886,11 +905,14 @@ function resolveModelChunk<T>(
   value: UninitializedModel,
 ): void {
   if (chunk.status !== PENDING) {
-    // If we get more data to an already resolved ID, we assume that it's
-    // a stream chunk since any other row shouldn't have more than one entry.
-    const streamChunk: InitializedStreamChunk<any> = chunk as any;
-    const controller = streamChunk.reason;
-    controller.enqueueModel(value);
+    // Only initialized stream chunks can receive additional model rows. A
+    // settled model can receive late rows after an abort, which we ignore so
+    // that the reader can continue processing its debug rows.
+    if (chunk.status === INITIALIZED && chunk.reason !== null) {
+      const streamChunk: InitializedStreamChunk<any> = chunk as any;
+      const controller = streamChunk.reason;
+      controller.enqueueModel(value);
+    }
     return;
   }
   releasePendingChunk(response, chunk);
@@ -967,9 +989,12 @@ let isInitializingDebugInfo: boolean = false;
 
 function initializeDebugChunk(
   response: Response,
-  chunk: ResolvedModelChunk<any> | PendingChunk<any>,
+  chunk: ResolvedModelChunk<any> | PendingChunk<any> | ErroredChunk<any>,
 ): void {
   const debugChunk = chunk._debugChunk;
+  if (debugChunk === DEBUG_INFO_FILTERED) {
+    return;
+  }
   if (debugChunk !== null) {
     const debugInfo = chunk._debugInfo;
     const prevIsInitializingDebugInfo = isInitializingDebugInfo;
@@ -978,7 +1003,7 @@ function initializeDebugChunk(
       if (debugChunk.status === RESOLVED_MODEL) {
         // Find the index of this debug info by walking the linked list.
         let idx = debugInfo.length;
-        let c = debugChunk._debugChunk;
+        let c: null | SomeChunk<ReactDebugInfoEntry> = debugChunk._debugChunk;
         while (c !== null) {
           if (c.status !== INITIALIZED) {
             idx++;
@@ -1036,8 +1061,13 @@ function initializeDebugChunk(
             throw debugChunk.reason;
         }
       }
+      if (chunk.status === ERRORED) {
+        pruneDebugInfoAfterError(response, chunk);
+      }
     } catch (error) {
-      triggerErrorOnChunk(response, chunk, error);
+      if (chunk.status !== ERRORED) {
+        triggerErrorOnChunk(response, chunk, error);
+      }
     } finally {
       isInitializingDebugInfo = prevIsInitializingDebugInfo;
     }
@@ -1140,13 +1170,20 @@ function initializeModuleChunk<T>(chunk: ResolvedModuleChunk<T>): void {
 // error upon read. Also notify any pending promises.
 export function reportGlobalError(
   weakResponse: WeakResponse,
-  error: Error,
+  error: mixed,
 ): void {
   if (hasGCedResponse(weakResponse)) {
     // Ignore close signal if we are not awaiting any more pending chunks.
     return;
   }
   const response = unwrapWeakResponse(weakResponse);
+  const replayDebugInfo = __DEV__ && response._replayDebugInfo === false;
+  if (replayDebugInfo === true) {
+    response._replayDebugInfo = true;
+  }
+  if (response._closed) {
+    return;
+  }
   response._closed = true;
   response._closedReason = error;
   response._chunks.forEach(chunk => {
@@ -1157,6 +1194,9 @@ export function reportGlobalError(
       triggerErrorOnChunk(response, chunk, error);
     } else if (chunk.status === INITIALIZED && chunk.reason !== null) {
       chunk.reason.error(error);
+    }
+    if (replayDebugInfo === true) {
+      replayDebugInfoBackupRows(response, chunk);
     }
   });
   if (__DEV__) {
@@ -2790,6 +2830,9 @@ function ResponseInstance(
       setTimeout(markIOStarted.bind(this), 0);
     }
     this._debugEndTime = debugEndTime == null ? null : debugEndTime;
+    if (debugChannel !== undefined && debugChannel.hasReadable) {
+      this._replayDebugInfo = false;
+    }
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
@@ -3440,7 +3483,7 @@ function startAsyncIterable<T>(
         );
       }
     },
-    error(error: Error): void {
+    error(error: mixed): void {
       if (closed) {
         return;
       }
@@ -4120,15 +4163,13 @@ function initializeDebugInfo(
   return debugInfo;
 }
 
-function resolveDebugModel(
+function resolveDebugModelImpl(
   response: Response,
-  id: number,
   json: UninitializedModel,
+  parentChunk: SomeChunk<any>,
 ): void {
-  const parentChunk = getChunk(response, id);
   if (
     parentChunk.status === INITIALIZED ||
-    parentChunk.status === ERRORED ||
     parentChunk.status === HALTED ||
     parentChunk.status === BLOCKED
   ) {
@@ -4140,6 +4181,9 @@ function resolveDebugModel(
     return;
   }
   const previousChunk = parentChunk._debugChunk;
+  if (previousChunk === DEBUG_INFO_FILTERED) {
+    return;
+  }
   const debugChunk: ResolvedModelChunk<ReactDebugInfoEntry> =
     createResolvedModelChunk(response, json);
   debugChunk._debugChunk = previousChunk; // Linked list of the debug chunks
@@ -4164,6 +4208,81 @@ function resolveDebugModel(
         parentChunk._debugChunk = null;
       }
     }
+  }
+}
+
+function resolveDebugModel(
+  response: Response,
+  id: number,
+  json: UninitializedModel,
+): void {
+  const parentChunk = getChunk(response, id);
+  switch (response._replayDebugInfo) {
+    case true:
+      // After a global error, backup rows become authoritative.
+      return;
+    case false: {
+      // Before an error, track regular rows so matching backups can be ignored.
+      const rows = parentChunk._debugInfoBackupRows;
+      const index = parentChunk._debugInfoBackupIndex || 0;
+      if (rows !== undefined && rows.length > 0) {
+        const nextIndex = index + 1;
+        if (nextIndex === rows.length) {
+          rows.length = 0;
+          parentChunk._debugInfoBackupIndex = 0;
+        } else {
+          parentChunk._debugInfoBackupIndex = nextIndex;
+        }
+      } else {
+        parentChunk._debugInfoBackupIndex = index + 1;
+      }
+      // Fallthrough
+    }
+    default:
+      resolveDebugModelImpl(response, json, parentChunk);
+  }
+}
+
+function resolveDebugModelBackup(
+  response: Response,
+  id: number,
+  json: UninitializedModel,
+): void {
+  const replayDebugInfo = response._replayDebugInfo;
+  if (replayDebugInfo === undefined) {
+    return;
+  }
+  const parentChunk = getChunk(response, id);
+  const rows = parentChunk._debugInfoBackupRows;
+  const index = parentChunk._debugInfoBackupIndex || 0;
+  if (index > 0 && (rows === undefined || rows.length === 0)) {
+    parentChunk._debugInfoBackupIndex = index - 1;
+    return;
+  }
+  if (replayDebugInfo === false) {
+    if (rows === undefined) {
+      parentChunk._debugInfoBackupRows = [json];
+    } else {
+      rows.push(json);
+    }
+    return;
+  }
+  resolveDebugModelImpl(response, json, parentChunk);
+}
+
+function replayDebugInfoBackupRows(
+  response: Response,
+  parentChunk: SomeChunk<any>,
+): void {
+  const rows = parentChunk._debugInfoBackupRows;
+  if (rows === undefined || rows.length === 0) {
+    return;
+  }
+  const index = parentChunk._debugInfoBackupIndex || 0;
+  parentChunk._debugInfoBackupIndex = 0;
+  parentChunk._debugInfoBackupRows = undefined;
+  for (let i = index; i < rows.length; i++) {
+    resolveDebugModelImpl(response, rows[i], parentChunk);
   }
 }
 
@@ -4947,6 +5066,13 @@ function processFullStringRow(
     case 68 /* "D" */: {
       if (__DEV__) {
         resolveDebugModel(response, id, row);
+        return;
+      }
+      // Fallthrough to share the error with Console entries.
+    }
+    case 66 /* "B" */: {
+      if (__DEV__) {
+        resolveDebugModelBackup(response, id, row);
         return;
       }
       // Fallthrough to share the error with Console entries.

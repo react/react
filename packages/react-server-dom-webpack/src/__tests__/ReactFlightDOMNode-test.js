@@ -1766,6 +1766,229 @@ describe('ReactFlightDOMNode', () => {
       }
     });
 
+    // @gate __DEV__
+    it('should preserve a Flight stream error and late debug info when aborting Fizz', async () => {
+      let resolveDynamicData1;
+      let resolveDynamicData2;
+      let resolveDynamicData3;
+
+      async function getDynamicData1() {
+        return new Promise(resolve => {
+          resolveDynamicData1 = resolve;
+        });
+      }
+
+      async function getDynamicData2() {
+        return new Promise(resolve => {
+          resolveDynamicData2 = resolve;
+        });
+      }
+
+      async function getDynamicData3() {
+        return new Promise(resolve => {
+          resolveDynamicData3 = resolve;
+        });
+      }
+
+      async function loadDynamicData1() {
+        return await getDynamicData1();
+      }
+
+      async function loadDynamicData2() {
+        return await getDynamicData2();
+      }
+
+      async function loadDynamicData3() {
+        return await getDynamicData3();
+      }
+
+      async function loadDynamicData() {
+        const data1 = await loadDynamicData1();
+        const data2 = await loadDynamicData2();
+        const data3 = await loadDynamicData3();
+        return [data1, data2, data3];
+      }
+
+      async function Dynamic() {
+        const [data1, data2, data3] = await loadDynamicData();
+
+        return ReactServer.createElement(
+          'p',
+          null,
+          data1,
+          ' ',
+          data2,
+          ' ',
+          data3,
+        );
+      }
+
+      function App() {
+        return ReactServer.createElement(
+          'html',
+          null,
+          ReactServer.createElement(
+            'body',
+            null,
+            ReactServer.createElement(Dynamic),
+          ),
+        );
+      }
+
+      let staticEndTime = -1;
+      const initialContentChunks = [];
+      const initialDebugChunks = [];
+      const dynamicDebugChunks = [];
+
+      await new Promise(resolve => {
+        setTimeout(() => {
+          const debugPassThrough = new Stream.PassThrough(streamOptions);
+          const stream = ReactServerDOMServer.renderToPipeableStream(
+            ReactServer.createElement(App),
+            webpackMap,
+            {
+              filterStackFrame,
+              debugChannel: new Stream.Writable({
+                write(chunk, encoding, callback) {
+                  debugPassThrough.write(chunk, encoding);
+                  callback();
+                },
+                final(callback) {
+                  debugPassThrough.end();
+                  callback();
+                },
+              }),
+            },
+          );
+
+          const contentPassThrough = new Stream.PassThrough(streamOptions);
+          stream.pipe(contentPassThrough);
+
+          contentPassThrough.on('data', chunk => {
+            if (staticEndTime < 0) {
+              initialContentChunks.push(chunk);
+            }
+          });
+          contentPassThrough.on('end', resolve);
+
+          debugPassThrough.on('data', chunk => {
+            if (staticEndTime < 0) {
+              initialDebugChunks.push(chunk);
+            } else {
+              dynamicDebugChunks.push(chunk);
+            }
+          });
+        });
+        setTimeout(() => {
+          resolveDynamicData1('Hi');
+          setTimeout(() => {
+            resolveDynamicData2('Josh');
+            // Data 2 is included by endTime. Data 3 begins in a subsequent
+            // microtask and should be filtered out.
+            staticEndTime = performance.now() + performance.timeOrigin;
+            setTimeout(() => {
+              resolveDynamicData3('Story');
+            });
+          });
+        });
+      });
+
+      const contentStream = new Stream.Readable({
+        ...streamOptions,
+        read() {},
+      });
+      const debugStream = new Stream.Readable({...streamOptions, read() {}});
+      const flightResponse = ReactServerDOMClient.createFromNodeStream(
+        contentStream,
+        {
+          moduleMap: null,
+          moduleLoading: null,
+          serverModuleMap: null,
+        },
+        {
+          endTime: staticEndTime,
+          debugChannel: debugStream,
+        },
+      );
+      for (let i = 0; i < initialContentChunks.length; i++) {
+        contentStream.push(initialContentChunks[i]);
+      }
+      for (let i = 0; i < initialDebugChunks.length; i++) {
+        debugStream.push(initialDebugChunks[i]);
+      }
+      const decoded = await flightResponse;
+
+      function ClientRoot() {
+        return decoded;
+      }
+
+      const flightError = new Error('Flight stream errored');
+      const fizzAbortReason = new Error('Fizz aborted');
+      const fizzAbortController = new AbortController();
+      const errors = [];
+      let componentStack;
+      let ownerStack;
+
+      const {prelude} = await new Promise(resolve => {
+        let result;
+
+        setTimeout(() => {
+          result = ReactDOMFizzStatic.prerenderToNodeStream(
+            React.createElement(ClientRoot),
+            {
+              signal: fizzAbortController.signal,
+              onError(error, errorInfo) {
+                errors.push(error);
+                componentStack = errorInfo.componentStack;
+                ownerStack = React.captureOwnerStack
+                  ? React.captureOwnerStack()
+                  : null;
+              },
+            },
+          );
+        });
+
+        setTimeout(() => {
+          // Error the content transport, deliver the delayed debug rows, and
+          // then synchronously begin the Fizz abort.
+          contentStream.emit('error', flightError);
+          for (let i = 0; i < dynamicDebugChunks.length; i++) {
+            debugStream.push(dynamicDebugChunks[i]);
+          }
+          contentStream.push(null);
+          debugStream.push(null);
+          fizzAbortController.abort(fizzAbortReason);
+          resolve(result);
+        });
+      });
+
+      const prerenderHTML = await readResult(prelude);
+
+      expect(prerenderHTML).toBe('');
+      expect(errors).toEqual([flightError]);
+      expect(normalizeCodeLocInfo(componentStack)).toBe(
+        '\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo ? '    in Dynamic (at **)\n' : '',
+          ) +
+          '    in body\n' +
+          '    in html\n' +
+          '    in App (at **)\n' +
+          '    in ClientRoot',
+      );
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in loadDynamicData2 (at **)\n' +
+                '    in loadDynamicData (at **)\n' +
+                '    in Dynamic (at **)\n'
+              : '',
+          ) +
+          '    in App (at **)',
+      );
+    });
+
     function createReadableWithLateRelease(initialChunks, lateChunks, signal) {
       // Create a new Readable and push all initial chunks immediately.
       const readable = new Stream.Readable({...streamOptions, read() {}});

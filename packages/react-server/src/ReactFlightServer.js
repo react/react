@@ -4410,6 +4410,19 @@ function emitDebugHaltChunk(request: Request, id: number): void {
   request.completedDebugChunks.push(processedChunk);
 }
 
+function emitDebugInfoRow(request: Request, id: number, json: string): void {
+  const row = serializeRowHeader('D', id) + json + '\n';
+  request.completedRegularChunks.push(stringToChunk(row));
+  if (request.debugDestination !== null) {
+    // The regular row preserves ordering on a healthy content stream. The
+    // backup lets a surviving debug stream attach this information after the
+    // content stream has errored.
+    const backupRow = serializeRowHeader('B', id) + json + '\n';
+    request.pendingDebugChunks++;
+    request.completedDebugChunks.push(stringToChunk(backupRow));
+  }
+}
+
 function emitDebugChunk(
   request: Request,
   id: number,
@@ -4428,21 +4441,17 @@ function emitDebugChunk(
     if (json[0] === '"' && json[1] === '$') {
       // This is already an outlined reference so we can just emit it directly,
       // without an unnecessary indirection.
-      const row = serializeRowHeader('D', id) + json + '\n';
-      request.completedRegularChunks.push(stringToChunk(row));
+      emitDebugInfoRow(request, id, json);
     } else {
       // Outline the debug information to the debug channel.
       const outlinedId = request.nextChunkId++;
       const debugRow = outlinedId.toString(16) + ':' + json + '\n';
       request.pendingDebugChunks++;
       request.completedDebugChunks.push(stringToChunk(debugRow));
-      const row =
-        serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
-      request.completedRegularChunks.push(stringToChunk(row));
+      emitDebugInfoRow(request, id, '"$' + outlinedId.toString(16) + '"');
     }
   } else {
-    const row = serializeRowHeader('D', id) + json + '\n';
-    request.completedRegularChunks.push(stringToChunk(row));
+    emitDebugInfoRow(request, id, json);
   }
 }
 
@@ -5679,12 +5688,9 @@ function emitTimingChunk(
     const debugRow = outlinedId.toString(16) + ':' + json + '\n';
     request.pendingDebugChunks++;
     request.completedDebugChunks.push(stringToChunk(debugRow));
-    const row =
-      serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
-    request.completedRegularChunks.push(stringToChunk(row));
+    emitDebugInfoRow(request, id, '"$' + outlinedId.toString(16) + '"');
   } else {
-    const row = serializeRowHeader('D', id) + json + '\n';
-    request.completedRegularChunks.push(stringToChunk(row));
+    emitDebugInfoRow(request, id, json);
   }
 }
 
