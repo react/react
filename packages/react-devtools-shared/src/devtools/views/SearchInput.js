@@ -45,7 +45,9 @@ export default function SearchInput({
   const indexValue =
     indexDraft !== null ? indexDraft : String(currentResultNumber);
 
+  // $FlowFixMe[missing-local-annot]
   const handleIndexFocus = ({currentTarget}) => currentTarget.select();
+  // $FlowFixMe[missing-local-annot]
   const handleIndexChange = ({currentTarget}) => {
     const raw = currentTarget.value;
     setIndexDraft(raw);
@@ -67,6 +69,7 @@ export default function SearchInput({
 
   const resetSearch = () => search('');
 
+  // $FlowFixMe[missing-local-annot]
   const handleChange = ({currentTarget}) => {
     search(currentTarget.value);
   };
