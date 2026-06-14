@@ -1989,6 +1989,225 @@ describe('ReactFlightDOMNode', () => {
       );
     });
 
+    // @gate __DEV__
+    it('filters debug info when a backup row resolves after the Flight stream errors', async () => {
+      const clientModuleId = 'sync-client-module';
+      const clientModuleListeners = [];
+      const asyncClientModule = {
+        status: 'pending',
+        value: null,
+        then(resolve) {
+          if (this.status === 'fulfilled') {
+            resolve(this.value);
+          } else {
+            clientModuleListeners.push(resolve);
+          }
+        },
+      };
+      function resolveClientModule() {
+        asyncClientModule.status = 'fulfilled';
+        asyncClientModule.value = {
+          default: function ClientComponent() {
+            return null;
+          },
+        };
+        for (let i = 0; i < clientModuleListeners.length; i++) {
+          clientModuleListeners[i](asyncClientModule.value);
+        }
+      }
+      webpackMap[clientModuleId] = {
+        id: clientModuleId,
+        chunks: [],
+        name: '*',
+        async: true,
+      };
+      webpackModules[clientModuleId] = asyncClientModule;
+      const ClientReference = ReactServerDOMServer.registerClientReference(
+        function ClientComponent() {
+          return null;
+        },
+        clientModuleId,
+        '*',
+      );
+
+      let resolveDataBeforeCutoff;
+      let resolveLaterData;
+
+      async function getLaterData() {
+        return new Promise(resolve => {
+          resolveLaterData = resolve;
+        });
+      }
+
+      async function getDataBeforeCutoff() {
+        return new Promise(resolve => {
+          resolveDataBeforeCutoff = resolve;
+        });
+      }
+
+      async function loadLaterData() {
+        return await getLaterData();
+      }
+
+      async function loadDataBeforeCutoff() {
+        return await getDataBeforeCutoff();
+      }
+
+      async function Late({unusedClientReference}) {
+        const dataBeforeCutoff = await loadDataBeforeCutoff();
+        staticEndTime = performance.now() + performance.timeOrigin;
+        const laterData = await loadLaterData();
+        return ReactServer.createElement(
+          'p',
+          null,
+          dataBeforeCutoff,
+          laterData,
+        );
+      }
+
+      function Dynamic() {
+        return ReactServer.createElement(Late, {
+          unusedClientReference: ClientReference,
+        });
+      }
+
+      function App() {
+        return ReactServer.createElement(
+          'html',
+          null,
+          ReactServer.createElement(
+            'body',
+            null,
+            ReactServer.createElement(Dynamic),
+          ),
+        );
+      }
+
+      let staticEndTime = -1;
+      const initialContentChunks = [];
+      const initialDebugChunks = [];
+      const lateDebugChunks = [];
+
+      await new Promise(resolve => {
+        setTimeout(() => {
+          const stream = ReactServerDOMServer.renderToPipeableStream(
+            ReactServer.createElement(App),
+            webpackMap,
+            {
+              filterStackFrame,
+              debugChannel: new Stream.Writable({
+                ...streamOptions,
+                write(chunk, encoding, callback) {
+                  const copy = Buffer.from(chunk);
+                  if (staticEndTime < 0) {
+                    initialDebugChunks.push(copy);
+                  } else {
+                    lateDebugChunks.push(copy);
+                  }
+                  callback();
+                },
+              }),
+            },
+          );
+
+          const contentPassThrough = new Stream.PassThrough(streamOptions);
+          stream.pipe(contentPassThrough);
+          contentPassThrough.on('data', chunk => {
+            if (staticEndTime < 0) {
+              initialContentChunks.push(chunk);
+            }
+          });
+          contentPassThrough.on('end', resolve);
+        });
+
+        setTimeout(() => {
+          resolveDataBeforeCutoff('Hi');
+          setTimeout(() => {
+            resolveLaterData('Story');
+          });
+        });
+      });
+
+      const contentStream = new Stream.Readable({
+        ...streamOptions,
+        read() {},
+      });
+      const debugStream = new Stream.Readable({...streamOptions, read() {}});
+      const flightResponse = ReactServerDOMClient.createFromNodeStream(
+        contentStream,
+        {
+          moduleMap: null,
+          moduleLoading: webpackModuleLoading,
+          serverModuleMap: null,
+        },
+        {
+          endTime: staticEndTime,
+          debugChannel: debugStream,
+        },
+      );
+      for (let i = 0; i < initialContentChunks.length; i++) {
+        contentStream.push(initialContentChunks[i]);
+      }
+      for (let i = 0; i < initialDebugChunks.length; i++) {
+        debugStream.push(initialDebugChunks[i]);
+      }
+      const decoded = await flightResponse;
+
+      function ClientRoot() {
+        return decoded;
+      }
+
+      const flightError = new Error('Flight stream errored');
+      const fizzAbortController = new AbortController();
+      const errors = [];
+      let ownerStack;
+
+      const {prelude} = await new Promise(resolve => {
+        let result;
+
+        setTimeout(() => {
+          result = ReactDOMFizzStatic.prerenderToNodeStream(
+            React.createElement(ClientRoot),
+            {
+              signal: fizzAbortController.signal,
+              onError(error) {
+                errors.push(error);
+                ownerStack = React.captureOwnerStack
+                  ? React.captureOwnerStack()
+                  : null;
+              },
+            },
+          );
+        });
+
+        setTimeout(() => {
+          contentStream.emit('error', flightError);
+          for (let i = 0; i < lateDebugChunks.length; i++) {
+            debugStream.push(lateDebugChunks[i]);
+          }
+          resolveClientModule();
+          contentStream.push(null);
+          debugStream.push(null);
+          fizzAbortController.abort(flightError);
+          resolve(result);
+        });
+      });
+
+      expect(await readResult(prelude)).toBe('');
+      expect(errors).toEqual([flightError]);
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in loadDataBeforeCutoff (at **)\n' +
+                '    in Late (at **)\n' +
+                '    in Dynamic (at **)\n'
+              : '',
+          ) +
+          '    in App (at **)',
+      );
+    });
+
     function createReadableWithLateRelease(initialChunks, lateChunks, signal) {
       // Create a new Readable and push all initial chunks immediately.
       const readable = new Stream.Readable({...streamOptions, read() {}});
