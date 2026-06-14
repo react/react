@@ -523,6 +523,30 @@ function filterDebugInfo(
   value._debugInfo = debugInfo;
 }
 
+function pruneDebugInfoAfterError(
+  response: Response,
+  chunk: ErroredChunk<any>,
+): void {
+  // $FlowFixMe[invalid-compare]
+  if (response._debugEndTime === null) {
+    return;
+  }
+
+  const relativeEndTime =
+    response._debugEndTime -
+    // $FlowFixMe[prop-missing]
+    performance.timeOrigin;
+  const debugInfo = chunk._debugInfo;
+  for (let i = 0; i < debugInfo.length; i++) {
+    const info = debugInfo[i];
+    if (typeof info.time === 'number' && info.time > relativeEndTime) {
+      // This array may already be attached to the Lazy suspended in Fizz.
+      debugInfo.length = i;
+      return;
+    }
+  }
+}
+
 function moveDebugInfoFromChunkToInnerValue<T>(
   chunk: InitializedChunk<T> | InitializedStreamChunk<any>,
   value: T,
@@ -764,6 +788,9 @@ function triggerErrorOnChunk<T>(
   const erroredChunk: ErroredChunk<T> = chunk as any;
   erroredChunk.status = ERRORED;
   erroredChunk.reason = error;
+  if (__DEV__) {
+    pruneDebugInfoAfterError(response, erroredChunk);
+  }
   if (listeners !== null) {
     rejectChunk(response, listeners, error);
   }
