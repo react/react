@@ -1079,6 +1079,12 @@ function pushHaltedAwaitOnComponentStack(
 function rerenderStalledTask(request: Request, task: Task): void {
   const prevStatus = request.status;
   const prevAborted = request.aborted;
+  // The diagnostic replay may continue past the original suspension and
+  // destructively update these fields. They identify the task's resumable
+  // slot, so leaking those updates can make trackPostpone confuse an element
+  // root with one of its child slots.
+  const prevNode = task.node;
+  const prevChildIndex = task.childIndex;
   request.status = STALLED_DEV;
   // This diagnostic replay must reach the suspended call site instead of
   // taking the abort path.
@@ -1127,6 +1133,8 @@ function rerenderStalledTask(request: Request, task: Task): void {
     currentRequest = prevRequest;
     request.status = prevStatus;
     request.aborted = prevAborted;
+    task.node = prevNode;
+    task.childIndex = prevChildIndex;
   }
 }
 
