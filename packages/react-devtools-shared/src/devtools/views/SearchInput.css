@@ -28,6 +28,23 @@
   white-space: pre;
 }
 
+.IndexInput {
+  color: var(--color-dim);
+  font-size: var(--font-size-sans-normal);
+  font-family: inherit;
+  text-align: right;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  -moz-appearance: textfield;
+}
+
+.IndexInput:focus {
+  color: var(--color-text);
+}
+
 .LeftVRule{
   height: 20px;
   width: 1px;

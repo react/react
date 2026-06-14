@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import Button from './Button';
 import ButtonIcon from './ButtonIcon';
 import Icon from './Icon';
@@ -18,6 +18,7 @@ import styles from './SearchInput.css';
 type Props = {
   goToNextResult: () => void,
   goToPreviousResult: () => void,
+  goToResult: (index: number) => void,
   placeholder: string,
   search: (text: string) => void,
   searchIndex: number,
@@ -29,6 +30,7 @@ type Props = {
 export default function SearchInput({
   goToNextResult,
   goToPreviousResult,
+  goToResult,
   placeholder,
   search,
   searchIndex,
@@ -38,9 +40,33 @@ export default function SearchInput({
 }: Props): React.Node {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const [indexDraft, setIndexDraft] = useState<string | null>(null);
+  const currentResultNumber = Math.min(searchIndex + 1, searchResultsCount);
+  const indexValue =
+    indexDraft !== null ? indexDraft : String(currentResultNumber);
+
+  const handleIndexFocus = ({currentTarget}) => currentTarget.select();
+  const handleIndexChange = ({currentTarget}) => {
+    const raw = currentTarget.value;
+    setIndexDraft(raw);
+
+    const parsed = parseInt(raw, 10);
+    if (!isNaN(parsed) && searchResultsCount > 0) {
+      const clamped = Math.max(1, Math.min(parsed, searchResultsCount));
+      goToResult(clamped - 1);
+    }
+  };
+  const handleIndexBlur = () => setIndexDraft(null);
+  // $FlowFixMe[missing-local-annot]
+  const handleIndexKeyDown = event => {
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  };
+
   const resetSearch = () => search('');
 
-  // $FlowFixMe[missing-local-annot]
   const handleChange = ({currentTarget}) => {
     search(currentTarget.value);
   };
@@ -103,7 +129,25 @@ export default function SearchInput({
           <span
             className={styles.IndexLabel}
             data-testname={testName ? `${testName}-ResultsCount` : undefined}>
-            {Math.min(searchIndex + 1, searchResultsCount)} |{' '}
+            <input
+              className={styles.IndexInput}
+              data-testname={
+                testName ? `${testName}-ResultIndexInput` : undefined
+              }
+              type="text"
+              inputMode="numeric"
+              disabled={searchResultsCount === 0}
+              onBlur={handleIndexBlur}
+              onChange={handleIndexChange}
+              onFocus={handleIndexFocus}
+              onKeyDown={handleIndexKeyDown}
+              style={{
+                width: `calc(${String(searchResultsCount).length}ch + 2px)`,
+              }}
+              title="Go to search result number"
+              value={indexValue}
+            />
+            {' | '}
             {searchResultsCount}
           </span>
           <div className={styles.LeftVRule} />
