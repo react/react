@@ -54,7 +54,7 @@ const unmountFunctions: Array<() => void | boolean> = [];
 function createContainer() {
   const container = document.createElement('div');
 
-  ((document.body: any): HTMLBodyElement).appendChild(container);
+  (document.body as any as HTMLBodyElement).appendChild(container);
 
   return container;
 }
@@ -95,7 +95,7 @@ function mountLegacyApp(App: () => React$Node) {
   // $FlowFixMe[not-a-function]: These are removed in 19.
   render(createElement(LegacyRender), container);
 
-  // $FlowFixMe: These are removed in 19.
+  // $FlowFixMe[not-a-function]: These are removed in 19.
   unmountFunctions.push(() => unmountComponentAtNode(container));
 }
 

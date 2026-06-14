@@ -40,7 +40,7 @@ export function createBridge(contentWindow: any, wall?: Wall): FrontendBridge {
     };
   }
 
-  return (new Bridge(wall): FrontendBridge);
+  return new Bridge(wall) as FrontendBridge;
 }
 
 export function initialize(
@@ -58,7 +58,7 @@ export function initialize(
   }
 
   // Type refinement.
-  const frontendBridge = ((bridge: any): FrontendBridge);
+  const frontendBridge = bridge as any as FrontendBridge;
 
   if (store == null) {
     store = createStore(frontendBridge);

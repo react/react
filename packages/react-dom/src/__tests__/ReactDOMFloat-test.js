@@ -3674,6 +3674,110 @@ body {
     );
   });
 
+  it('does not suspend a transition on a stylesheet whose preload has already loaded', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">initial</Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    ReactDOM.preload('route.css', {as: 'style'});
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+
+    React.startTransition(() => {
+      root.render(
+        <html>
+          <body>
+            <Suspense fallback="loading...">
+              <link rel="stylesheet" href="route.css" precedence="default" />
+              next
+            </Suspense>
+          </body>
+        </html>,
+      );
+    });
+    await waitForAll([]);
+
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+  });
+
+  it('suspends a transition on a stylesheet whose preload has not loaded yet', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">initial</Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    ReactDOM.preload('route.css', {as: 'style'});
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    React.startTransition(() => {
+      root.render(
+        <html>
+          <body>
+            <Suspense fallback="loading...">
+              <link rel="stylesheet" href="route.css" precedence="default" />
+              next
+            </Suspense>
+          </body>
+        </html>,
+      );
+    });
+    await waitForAll([]);
+
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+  });
+
   it('can suspend commits on more than one root for the same resource at the same time', async () => {
     document.body.innerHTML = '';
     const container1 = document.createElement('div');

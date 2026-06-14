@@ -74,7 +74,7 @@ function getPrimitiveStackCache(): Map<string, Array<any>> {
     let readHookLog;
     try {
       // Use all hooks here to add them to the hook log.
-      Dispatcher.useContext(({_currentValue: null}: any));
+      Dispatcher.useContext({_currentValue: null} as any);
       Dispatcher.useState(null);
       Dispatcher.useReducer((s: mixed, a: mixed) => s, null);
       Dispatcher.useRef(null);
@@ -106,23 +106,19 @@ function getPrimitiveStackCache(): Map<string, Array<any>> {
       }
       if (typeof Dispatcher.use === 'function') {
         // This type check is for Flow only.
-        Dispatcher.use(
-          ({
-            $$typeof: REACT_CONTEXT_TYPE,
-            _currentValue: null,
-          }: any),
-        );
+        Dispatcher.use({
+          $$typeof: REACT_CONTEXT_TYPE,
+          _currentValue: null,
+        } as any);
         Dispatcher.use({
           then() {},
           status: 'fulfilled',
           value: null,
         });
         try {
-          Dispatcher.use(
-            ({
-              then() {},
-            }: any),
-          );
+          Dispatcher.use({
+            then() {},
+          } as any);
         } catch (x) {}
       }
 
@@ -174,7 +170,7 @@ function readContext<T>(context: ReactContext<T>): T {
     // For now we don't expose readContext usage in the hooks debugging info.
     if (hasOwnProperty.call(currentContextDependency, 'memoizedValue')) {
       // $FlowFixMe[incompatible-use] Flow thinks `hasOwnProperty` mutates `currentContextDependency`
-      value = ((currentContextDependency.memoizedValue: any): T);
+      value = currentContextDependency.memoizedValue as any as T;
 
       // $FlowFixMe[incompatible-use] Flow thinks `hasOwnProperty` mutates `currentContextDependency`
       currentContextDependency = currentContextDependency.next;
@@ -200,6 +196,7 @@ const SuspenseException: mixed = new Error(
 );
 
 function use<T>(usable: Usable<T>): T {
+  // $FlowFixMe[invalid-compare]
   if (usable !== null && typeof usable === 'object') {
     // $FlowFixMe[method-unbinding]
     if (typeof usable.then === 'function') {
@@ -210,7 +207,7 @@ function use<T>(usable: Usable<T>): T {
         currentThenableState !== null &&
         currentThenableIndex < currentThenableState.length
           ? currentThenableState[currentThenableIndex++]
-          : (usable: any);
+          : (usable as any);
 
       switch (thenable.status) {
         case 'fulfilled': {
@@ -244,7 +241,7 @@ function use<T>(usable: Usable<T>): T {
       });
       throw SuspenseException;
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
-      const context: ReactContext<T> = (usable: any);
+      const context: ReactContext<T> = usable as any;
       const value = readContext(context);
 
       hookLog.push({
@@ -309,7 +306,7 @@ function useReducer<S, I, A>(
   if (hook !== null) {
     state = hook.memoizedState;
   } else {
-    state = init !== undefined ? init(initialArg) : ((initialArg: any): S);
+    state = init !== undefined ? init(initialArg) : (initialArg as any as S);
   }
   hookLog.push({
     displayName: null,
@@ -607,7 +604,7 @@ function useFormState<S, P>(
       // $FlowFixMe[method-unbinding]
       typeof actionResult.then === 'function'
     ) {
-      const thenable: Thenable<Awaited<S>> = (actionResult: any);
+      const thenable: Thenable<Awaited<S>> = actionResult as any;
       switch (thenable.status) {
         case 'fulfilled': {
           value = thenable.value;
@@ -629,7 +626,7 @@ function useFormState<S, P>(
           value = thenable;
       }
     } else {
-      value = (actionResult: any);
+      value = actionResult as any;
     }
   } else {
     value = initialState;
@@ -650,7 +647,7 @@ function useFormState<S, P>(
 
   // value being a Thenable is equivalent to error being not null
   // i.e. we only reach this point with Awaited<S>
-  const state = ((value: any): Awaited<S>);
+  const state = value as any as Awaited<S>;
 
   // TODO: support displaying pending value
   return [state, (payload: P) => {}, false];
@@ -677,7 +674,7 @@ function useActionState<S, P>(
       // $FlowFixMe[method-unbinding]
       typeof actionResult.then === 'function'
     ) {
-      const thenable: Thenable<Awaited<S>> = (actionResult: any);
+      const thenable: Thenable<Awaited<S>> = actionResult as any;
       switch (thenable.status) {
         case 'fulfilled': {
           value = thenable.value;
@@ -699,7 +696,7 @@ function useActionState<S, P>(
           value = thenable;
       }
     } else {
-      value = (actionResult: any);
+      value = actionResult as any;
     }
   } else {
     value = initialState;
@@ -720,7 +717,7 @@ function useActionState<S, P>(
 
   // value being a Thenable is equivalent to error being not null
   // i.e. we only reach this point with Awaited<S>
-  const state = ((value: any): Awaited<S>);
+  const state = value as any as Awaited<S>;
 
   // TODO: support displaying pending value
   return [state, (payload: P) => {}, false];
@@ -729,10 +726,11 @@ function useActionState<S, P>(
 function useHostTransitionStatus(): TransitionStatus {
   const status = readContext<TransitionStatus>(
     // $FlowFixMe[prop-missing] `readContext` only needs _currentValue
-    ({
-      // $FlowFixMe[incompatible-cast] TODO: Incorrect bottom value without access to Fiber config.
+    // $FlowFixMe[incompatible-type]
+    {
+      // $FlowFixMe[incompatible-type] TODO: Incorrect bottom value without access to Fiber config.
       _currentValue: null,
-    }: ReactContext<TransitionStatus>),
+    } as ReactContext<TransitionStatus>,
   );
 
   hookLog.push({
@@ -1226,7 +1224,7 @@ export function inspectHooks<Props>(
   }
   const rootStack =
     ancestorStackError === undefined
-      ? ([]: ParsedStackFrame[])
+      ? ([] as Array<ParsedStackFrame>)
       : ErrorStackParser.parse(ancestorStackError);
   return buildTree(rootStack, readHookLog);
 }
@@ -1236,9 +1234,9 @@ function setupContexts(contextMap: Map<ReactContext<any>, any>, fiber: Fiber) {
   while (current) {
     if (current.tag === ContextProvider) {
       let context: ReactContext<any> = current.type;
-      if ((context: any)._context !== undefined) {
+      if ((context as any)._context !== undefined) {
         // Support inspection of pre-19+ providers.
-        context = (context: any)._context;
+        context = (context as any)._context;
       }
       if (!contextMap.has(context)) {
         // Store the current value that we're going to restore later.
@@ -1277,7 +1275,7 @@ function inspectHooksOfForwardRef<Props, Ref>(
   }
   const rootStack =
     ancestorStackError === undefined
-      ? ([]: ParsedStackFrame[])
+      ? ([] as Array<ParsedStackFrame>)
       : ErrorStackParser.parse(ancestorStackError);
   return buildTree(rootStack, readHookLog);
 }
@@ -1322,7 +1320,7 @@ export function inspectHooksOfFiber(
 
   // Set up the current hook so that we can step through and read the
   // current state from them.
-  currentHook = (fiber.memoizedState: Hook);
+  currentHook = fiber.memoizedState as Hook;
   currentFiber = fiber;
   const thenableState =
     fiber.dependencies && fiber.dependencies._debugThenableState;
@@ -1339,15 +1337,17 @@ export function inspectHooksOfFiber(
     currentContextDependency =
       dependencies !== null ? dependencies.firstContext : null;
   } else if (hasOwnProperty.call(currentFiber, 'dependencies_old')) {
-    const dependencies: Dependencies = (currentFiber: any).dependencies_old;
+    const dependencies: Dependencies = (currentFiber as any).dependencies_old;
     currentContextDependency =
+      // $FlowFixMe[invalid-compare]
       dependencies !== null ? dependencies.firstContext : null;
   } else if (hasOwnProperty.call(currentFiber, 'dependencies_new')) {
-    const dependencies: Dependencies = (currentFiber: any).dependencies_new;
+    const dependencies: Dependencies = (currentFiber as any).dependencies_new;
     currentContextDependency =
+      // $FlowFixMe[invalid-compare]
       dependencies !== null ? dependencies.firstContext : null;
   } else if (hasOwnProperty.call(currentFiber, 'contextDependencies')) {
-    const contextDependencies = (currentFiber: any).contextDependencies;
+    const contextDependencies = (currentFiber as any).contextDependencies;
     currentContextDependency =
       contextDependencies !== null ? contextDependencies.first : null;
   } else {

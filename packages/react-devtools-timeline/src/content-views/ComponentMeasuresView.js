@@ -113,8 +113,8 @@ export class ComponentMeasuresView extends View {
       return false; // Too small to render at this zoom level
     }
 
-    let textFillStyle = ((null: any): string);
-    let typeLabel = ((null: any): string);
+    let textFillStyle = null as any as string;
+    let typeLabel = null as any as string;
 
     const drawableRect = intersectionOfRects(componentMeasureRect, rect);
     context.beginPath();
