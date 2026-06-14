@@ -1105,6 +1105,101 @@ describe('ReactDOMFizzStaticBrowser', () => {
     );
   });
 
+  it('resumes segment ids past boundaries that were outlined into the shell', async () => {
+    // Regression test: getPostponedState snapshots request.nextSegmentId before
+    // the pull-driven prelude flush. Flushing the shell outlines large completed
+    // boundaries, advancing nextSegmentId past that snapshot. If the snapshot
+    // isn't finalized post-flush, the resume seeds from the stale value and
+    // re-allocates segment ids the shell already emitted, so the concatenated
+    // shell+resume document carries duplicate B:/S: ids that cross-wire $RC.
+    let prerendering = true;
+    const bigText = 'x'.repeat(800); // > 500 bytes => eligible for outlining
+
+    // Completes during the prerender; large enough that the prelude flush
+    // outlines it into the shell (consuming an id >= the snapshot).
+    function ShellBoundary() {
+      return <div>{bigText}</div>;
+    }
+
+    // Suspends during the prerender so its boundary becomes a hole the resume
+    // fills. On resume it renders a nested large boundary that is itself
+    // outlined, so the resume allocates fresh segment ids from the seed.
+    function Hole() {
+      if (prerendering) {
+        return React.use(theInfinitePromise);
+      }
+      return (
+        <Suspense fallback="LoadingC">
+          <div>{bigText}</div>
+        </Suspense>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="LoadingA">
+            <ShellBoundary />
+          </Suspense>
+          <Suspense fallback="LoadingB">
+            <Hole />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const controller = new AbortController();
+    let pendingResult;
+    await serverAct(() => {
+      pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+        signal: controller.signal,
+        progressiveChunkSize: 100, // force the completed boundary to outline
+        onError() {},
+      });
+    });
+    await serverAct(() => controller.abort());
+    const prerendered = await pendingResult;
+    expect(prerendered.postponed).not.toBe(null);
+
+    const shellHTML = await readContent(prerendered.prelude);
+
+    // Highest segment id React actually emitted into the shell.
+    let maxShellId = -1;
+    for (const m of shellHTML.matchAll(/id="[BS]:([0-9a-f]+)"/g)) {
+      maxShellId = Math.max(maxShellId, parseInt(m[1], 16));
+    }
+    // The shell must contain at least one outlined boundary for this test to be
+    // meaningful.
+    expect(maxShellId).toBeGreaterThanOrEqual(0);
+
+    // The fix: the resume must start strictly above every id the shell emitted.
+    expect(prerendered.postponed.nextSegmentId).toBeGreaterThan(maxShellId);
+
+    // End-to-end: the stitched shell+resume document must have no duplicate ids.
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+        {onError() {}},
+      ),
+    );
+    const resumeHTML = await readContent(resumed);
+
+    const seen = new Set();
+    const dupes = new Set();
+    for (const m of (shellHTML + resumeHTML).matchAll(
+      /id="([BS]:[0-9a-f]+)"/g,
+    )) {
+      const id = m[1];
+      if (seen.has(id)) {
+        dupes.add(id);
+      }
+      seen.add(id);
+    }
+    expect(Array.from(dupes)).toEqual([]);
+  });
+
   it('can omit a preamble with an empty shell if no preamble is ready when prerendering finishes', async () => {
     const errors = [];
 
