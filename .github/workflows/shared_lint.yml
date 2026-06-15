@@ -3,9 +3,6 @@ name: (Shared) Lint
   - push
   - pull_request
 permissions: {}
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
@@ -14,19 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run prettier
   eslint:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run eslint
   check_license:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Check license
   test_print_warnings:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Test print warnings
