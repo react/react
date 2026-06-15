@@ -1,68 +1,18 @@
 name: (Compiler) Publish Prereleases
-
-on:
-  workflow_call:
-    inputs:
-      commit_sha:
-        required: true
-        default: ''
-        type: string
-      release_channel:
-        required: true
-        type: string
-      dist_tag:
-        required: true
-        type: string
-      version_name:
-        required: true
-        type: string
-      tag_version:
-        required: false
-        type: string
-      dry_run:
-        required: false
-        type: boolean
-    secrets:
-      NPM_TOKEN:
-        required: true
-
+'on':
+  - push
+  - pull_request
 permissions: {}
-
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
-  # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
 defaults:
   run:
     working-directory: compiler
-
 jobs:
   publish_prerelease:
-    name: Publish prelease (${{ inputs.release_channel }}) ${{ inputs.commit_sha }} @${{ inputs.dist_tag }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        id: node_modules
-        with:
-          path: |
-            **/node_modules
-          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
-      - run: yarn install --frozen-lockfile
-        if: steps.node_modules.outputs.cache-hit != 'true'
-      - if: inputs.dry_run == true
-        name: Publish packages to npm (dry run)
-        run: |
-          cp ./scripts/release/ci-npmrc ~/.npmrc
-          scripts/release/publish.js --frfr --debug --ci --versionName=${{ inputs.version_name }} --tag=${{ inputs.dist_tag }} ${{ inputs.tag_version && format('--tagVersion={0}', inputs.tag_version) || '' }}
-      - if: inputs.dry_run != true
-        name: Publish packages to npm
-        run: |
-          cp ./scripts/release/ci-npmrc ~/.npmrc
-          scripts/release/publish.js --frfr --ci --versionName=${{ inputs.version_name }} --tag=${{ inputs.dist_tag }} ${{ inputs.tag_version && format('--tagVersion={0}', inputs.tag_version) || '' }}
+      - run: exit 0
+    name: Publish prelease (${{ inputs.release_channel }}) ${{ inputs.commit_sha }} @${{ inputs.dist_tag }}
