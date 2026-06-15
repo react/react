@@ -11,19 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Resolve release inputs
   notify_starting:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Notify Discord (release starting)
   publish:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Publish release
   notify:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Notify Discord on failure
