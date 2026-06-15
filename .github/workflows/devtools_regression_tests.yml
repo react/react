@@ -11,19 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Download base build
   build_devtools_and_process_artifacts:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Build DevTools and process artifacts
   run_devtools_tests_for_versions:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run DevTools tests for versions
   run_devtools_e2e_tests_for_versions:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run DevTools e2e tests for versions
