@@ -1,55 +1,24 @@
 name: (Shared) Label Core Team PRs
-
-on:
-  pull_request_target:
-    types: [opened]
-
+'on':
+  - push
+  - pull_request
 permissions: {}
-
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
-  # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
-
 jobs:
   check_access:
     runs-on: ubuntu-latest
-    outputs:
-      is_member_or_collaborator: ${{ steps.check_is_member_or_collaborator.outputs.is_member_or_collaborator }}
     steps:
-      - run: echo ${{ github.event.pull_request.author_association }}
-      - name: Check is member or collaborator
-        id: check_is_member_or_collaborator
-        if: ${{ github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' }}
-        run: echo "is_member_or_collaborator=true" >> "$GITHUB_OUTPUT"
-
+      - run: exit 0
+        working-directory: /tmp
   check_maintainer:
-    if: ${{ needs.check_access.outputs.is_member_or_collaborator == 'true' || needs.check_access.outputs.is_member_or_collaborator == true }}
-    needs: [check_access]
-    uses: react/react/.github/workflows/shared_check_maintainer.yml@main
-    permissions:
-      # Used by check_maintainer
-      contents: read
-    with:
-      actor: ${{ github.event.pull_request.user.login }}
-
-  label:
-    if: ${{ needs.check_maintainer.outputs.is_core_team == 'true' }}
     runs-on: ubuntu-latest
-    needs: check_maintainer
-    permissions:
-      # Used to add labels on issues
-      issues: write
-      # Used to add labels on PRs
-      pull-requests: write
     steps:
-      - name: Label PR as React Core Team
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: ${{ github.event.number }},
-              labels: ['React Core Team']
-            });
+      - run: exit 0
+        working-directory: /tmp
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 0
+        working-directory: /tmp
