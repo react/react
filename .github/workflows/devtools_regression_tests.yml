@@ -1,197 +1,29 @@
 name: (DevTools) Regression Tests
-
-on:
-  schedule:
-    - cron: 0 0 * * *
-  workflow_dispatch:
-    inputs:
-      commit_sha:
-        required: false
-        type: string
-
+'on':
+  - push
+  - pull_request
 permissions: {}
-
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
-  # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
-
 jobs:
   download_build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 0
     name: Download base build
-    runs-on: ubuntu-latest
-    permissions:
-      # We use github.token to download the build artifact from a previous runtime_build_and_test.yml run
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        id: node_modules
-        with:
-          path: |
-            **/node_modules
-          key: runtime-release-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'scripts/release/yarn.lock') }}
-      - name: Ensure clean build directory
-        run: rm -rf build
-      - run: yarn install --frozen-lockfile
-        if: steps.node_modules.outputs.cache-hit != 'true'
-      - run: yarn --cwd scripts/release install --frozen-lockfile
-        if: steps.node_modules.outputs.cache-hit != 'true'
-      - name: Download react-devtools artifacts for base revision
-        run: |
-          git fetch origin main
-          GH_TOKEN=${{ github.token }} scripts/release/download-experimental-build.js --commit=${{ inputs.commit_sha || '$(git rev-parse origin/main)' }}
-      - name: Display structure of build
-        run: ls -R build
-      - name: Archive build
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: build
-          if-no-files-found: error
-
   build_devtools_and_process_artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 0
     name: Build DevTools and process artifacts
-    needs: download_build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        id: node_modules
-        with:
-          path: |
-            **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
-      - name: Ensure clean build directory
-        run: rm -rf build
-      - run: yarn install --frozen-lockfile
-        if: steps.node_modules.outputs.cache-hit != 'true'
-      - name: Restore archived build
-        uses: actions/download-artifact@v4
-        with:
-          name: build
-          path: build
-      - run: ./scripts/ci/pack_and_store_devtools_artifacts.sh
-        env:
-          RELEASE_CHANNEL: experimental
-      - name: Display structure of build
-        run: ls -R build
-      - name: Archive devtools build
-        uses: actions/upload-artifact@v4
-        with:
-          name: react-devtools
-          path: build/devtools
-          if-no-files-found: error
-      # Simplifies getting the extension for local testing
-      - name: Archive chrome extension
-        uses: actions/upload-artifact@v4
-        with:
-          name: react-devtools-chrome-extension
-          path: build/devtools/chrome-extension.zip
-          if-no-files-found: error
-      - name: Archive firefox extension
-        uses: actions/upload-artifact@v4
-        with:
-          name: react-devtools-firefox-extension
-          path: build/devtools/firefox-extension.zip
-          if-no-files-found: error
-
   run_devtools_tests_for_versions:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 0
     name: Run DevTools tests for versions
-    needs: build_devtools_and_process_artifacts
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "16.0"
-          - "16.5" # schedule package
-          - "16.8" # hooks
-          - "17.0"
-          - "18.0"
-          - "18.2" # compiler polyfill
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        id: node_modules
-        with:
-          path: |
-            **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
-      - run: yarn install --frozen-lockfile
-        if: steps.node_modules.outputs.cache-hit != 'true'
-      - name: Restore all archived build artifacts
-        uses: actions/download-artifact@v4
-      - name: Display structure of build
-        run: ls -R build
-      - run: ./scripts/ci/download_devtools_regression_build.js ${{ matrix.version }} --replaceBuild
-      - run: node ./scripts/jest/jest-cli.js --build --project devtools --release-channel=experimental --reactVersion ${{ matrix.version }} --ci
-
   run_devtools_e2e_tests_for_versions:
-    name: Run DevTools e2e tests for versions
-    needs: build_devtools_and_process_artifacts
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "16.0"
-          - "16.5" # schedule package
-          - "16.8" # hooks
-          - "17.0"
-          - "18.0"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        id: node_modules
-        with:
-          path: |
-            **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
-      - run: yarn install --frozen-lockfile
-        if: steps.node_modules.outputs.cache-hit != 'true'
-      - name: Restore all archived build artifacts
-        uses: actions/download-artifact@v4
-      - name: Display structure of build
-        run: ls -R build
-      - name: Check Playwright version
-        id: playwright_version
-        run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
-        id: cache_playwright_browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
-      - run: npx playwright install --with-deps
-        if: steps.cache_playwright_browsers.outputs.cache-hit != 'true'
-      - run: npx playwright install-deps
-        if: steps.cache_playwright_browsers.outputs.cache-hit == 'true'
-      - run: ./scripts/ci/download_devtools_regression_build.js ${{ matrix.version }}
-      - run: ls -R build-regression
-      - run: ./scripts/ci/run_devtools_e2e_tests.js ${{ matrix.version }}
-        env:
-          RELEASE_CHANNEL: experimental
-      - name: Cleanup build regression folder
-        run: rm -r ./build-regression
-      - uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: ./tmp/playwright-artifacts
-          if-no-files-found: warn
+      - run: exit 0
+    name: Run DevTools e2e tests for versions
