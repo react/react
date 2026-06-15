@@ -12,3 +12,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
