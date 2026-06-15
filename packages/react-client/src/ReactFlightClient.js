@@ -154,7 +154,6 @@ const RESOLVED_MODULE = 'resolved_module';
 const INITIALIZED = 'fulfilled';
 const ERRORED = 'rejected';
 const HALTED = 'halted'; // DEV-only. Means it never resolves even if connection closes.
-const DEBUG_INFO_FILTERED: SomeChunk<ReactDebugInfoEntry> = {} as any; // DEV-only
 
 const __PROTO__ = '__proto__';
 
@@ -165,6 +164,7 @@ type PendingChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -176,6 +176,7 @@ type BlockedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -187,6 +188,7 @@ type ResolvedModelChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -198,6 +200,7 @@ type ResolvedModuleChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -209,6 +212,7 @@ type InitializedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -222,6 +226,7 @@ type InitializedStreamChunk<
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (ReadableStream) => mixed, reject?: (mixed) => mixed): void,
@@ -233,6 +238,7 @@ type ErroredChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -244,6 +250,7 @@ type HaltedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _debugInfoPruned?: boolean, // DEV-only
   _debugInfoBackupIndex?: number, // DEV-only
   _debugInfoBackupRows?: Array<UninitializedModel>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
@@ -561,7 +568,8 @@ function pruneDebugInfoAfterError(
     if (typeof info.time === 'number' && info.time > relativeEndTime) {
       // This array may already be attached to the Lazy suspended in Fizz.
       debugInfo.length = i;
-      chunk._debugChunk = DEBUG_INFO_FILTERED;
+      chunk._debugInfoPruned = true;
+      chunk._debugChunk = null;
       return;
     }
   }
@@ -994,9 +1002,6 @@ function initializeDebugChunk(
   chunk: ResolvedModelChunk<any> | PendingChunk<any> | ErroredChunk<any>,
 ): void {
   const debugChunk = chunk._debugChunk;
-  if (debugChunk === DEBUG_INFO_FILTERED) {
-    return;
-  }
   if (debugChunk !== null) {
     const debugInfo = chunk._debugInfo;
     const prevIsInitializingDebugInfo = isInitializingDebugInfo;
@@ -1684,11 +1689,11 @@ function fulfillReference(
     }
 
     const debugInfoOwner = __DEV__ ? reference.debugInfoOwner : undefined;
-    const debugInfoWasFiltered =
+    const debugInfoWasPruned =
       __DEV__ &&
       debugInfoOwner !== undefined &&
-      debugInfoOwner._debugChunk === DEBUG_INFO_FILTERED;
-    if (!debugInfoWasFiltered) {
+      debugInfoOwner._debugInfoPruned === true;
+    if (!debugInfoWasPruned) {
       const mappedValue = map(response, value, parentObject, key);
       if (key !== __PROTO__) {
         parentObject[key] = mappedValue;
@@ -4204,7 +4209,7 @@ function resolveDebugModelImpl(
     return;
   }
   const previousChunk = parentChunk._debugChunk;
-  if (previousChunk === DEBUG_INFO_FILTERED) {
+  if (parentChunk._debugInfoPruned === true) {
     return;
   }
   const debugChunk: ResolvedModelChunk<ReactDebugInfoEntry> =
