@@ -11,11 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
   check_maintainer:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
   label:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
