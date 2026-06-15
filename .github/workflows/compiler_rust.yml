@@ -3,18 +3,13 @@ name: React Compiler (Rust)
   - push
   - pull_request
 permissions: {}
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
-defaults:
-  run:
-    working-directory: compiler
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Tests
