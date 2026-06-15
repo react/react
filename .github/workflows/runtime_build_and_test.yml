@@ -3,9 +3,6 @@ name: (Runtime) Build and Test
   - push
   - pull_request
 permissions: {}
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
@@ -14,99 +11,119 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Cache Runtime node_modules
   runtime_compiler_node_modules_cache:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Cache Runtime, Compiler node_modules
   discover_flow_inline_configs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Discover flow inline configs
   flow:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Flow check ${{ matrix.flow_inline_config_shortname }}
   check_generated_fizz_runtime:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Confirm generated inline Fizz runtime is up to date
   flags:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Check flags
   test:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: yarn test ${{ matrix.params }} (Shard ${{ matrix.shard }})
   test-linter:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Test eslint-plugin-react-hooks
   build_and_lint:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: yarn build and lint
   test_build:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: yarn test-build
   test_build_devtools:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: yarn test-build (devtools)
   process_artifacts_combined:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Process artifacts combined
   check_error_codes:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Search build artifacts for unminified errors
   check_release_dependencies:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Check release dependencies
   RELEASE_CHANNEL_stable_yarn_test_dom_fixtures:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Check fixtures DOM (stable)
   run_fixtures_flight_tests:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run fixtures Flight tests
   build_devtools_and_process_artifacts:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Build DevTools and process artifacts
   merge_devtools_artifacts:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Merge DevTools artifacts
   run_devtools_e2e_tests:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run DevTools e2e tests
   sizebot:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Run sizebot
