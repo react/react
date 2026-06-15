@@ -338,21 +338,38 @@ export function commitParentEnterViewTransitions(
       // Skip hidden subtrees.
     } else if (child.tag === ViewTransitionComponent) {
       const props: ViewTransitionProps = child.memoizedProps;
-      if (props.parentEnter !== undefined) {
-        const state: ViewTransitionState = child.stateNode;
-        const name = getViewTransitionName(props, state);
-        const className: ?string = getViewTransitionClassName(
-          props.default,
-          props.parentEnter,
-        );
-        if (className !== 'none') {
-          applyViewTransitionToHostInstances(
-            child,
-            name,
-            className,
-            null,
-            false,
+      const hasParentClass = props.parentEnter !== undefined;
+      const hasParentHandler = gesture
+        ? props.onGestureParentEnter != null
+        : props.onParentEnter != null;
+      if (hasParentClass || hasParentHandler) {
+        if (hasParentClass) {
+          const state: ViewTransitionState = child.stateNode;
+          const name = getViewTransitionName(props, state);
+          const className: ?string = getViewTransitionClassName(
+            props.default,
+            props.parentEnter,
           );
+          if (className !== 'none') {
+            applyViewTransitionToHostInstances(
+              child,
+              name,
+              className,
+              null,
+              false,
+            );
+            if (hasParentHandler) {
+              if (gesture) {
+                scheduleGestureTransitionEvent(
+                  child,
+                  props.onGestureParentEnter,
+                );
+              } else {
+                scheduleViewTransitionEvent(child, props.onParentEnter);
+              }
+            }
+          }
+        } else {
           if (gesture) {
             scheduleGestureTransitionEvent(child, props.onGestureParentEnter);
           } else {
@@ -378,21 +395,38 @@ export function commitParentExitViewTransitions(
       // Skip hidden subtrees.
     } else if (child.tag === ViewTransitionComponent) {
       const props: ViewTransitionProps = child.memoizedProps;
-      if (props.parentExit !== undefined) {
-        const state: ViewTransitionState = child.stateNode;
-        const name = getViewTransitionName(props, state);
-        const className: ?string = getViewTransitionClassName(
-          props.default,
-          props.parentExit,
-        );
-        if (className !== 'none') {
-          applyViewTransitionToHostInstances(
-            child,
-            name,
-            className,
-            null,
-            false,
+      const hasParentClass = props.parentExit !== undefined;
+      const hasParentHandler = gesture
+        ? props.onGestureParentExit != null
+        : props.onParentExit != null;
+      if (hasParentClass || hasParentHandler) {
+        if (hasParentClass) {
+          const state: ViewTransitionState = child.stateNode;
+          const name = getViewTransitionName(props, state);
+          const className: ?string = getViewTransitionClassName(
+            props.default,
+            props.parentExit,
           );
+          if (className !== 'none') {
+            applyViewTransitionToHostInstances(
+              child,
+              name,
+              className,
+              null,
+              false,
+            );
+            if (hasParentHandler) {
+              if (gesture) {
+                scheduleGestureTransitionEvent(
+                  child,
+                  props.onGestureParentExit,
+                );
+              } else {
+                scheduleViewTransitionEvent(child, props.onParentExit);
+              }
+            }
+          }
+        } else {
           if (gesture) {
             scheduleGestureTransitionEvent(child, props.onGestureParentExit);
           } else {
@@ -415,8 +449,17 @@ function restoreParentEnterOrExitViewTransitions(parent: Fiber): void {
       // Skip hidden subtrees.
     } else if (child.tag === ViewTransitionComponent) {
       const props: ViewTransitionProps = child.memoizedProps;
-      if (props.parentEnter !== undefined || props.parentExit !== undefined) {
+      const hasParentClass =
+        props.parentEnter !== undefined || props.parentExit !== undefined;
+      const hasParentHandler =
+        props.onParentEnter != null ||
+        props.onParentExit != null ||
+        props.onGestureParentEnter != null ||
+        props.onGestureParentExit != null;
+      if (hasParentClass) {
         restoreViewTransitionOnHostInstances(child.child, false);
+      }
+      if (hasParentClass || hasParentHandler) {
         restoreParentEnterOrExitViewTransitions(child);
       }
     } else if ((child.subtreeFlags & ViewTransitionStaticParent) !== NoFlags) {

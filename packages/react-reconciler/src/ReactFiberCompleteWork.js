@@ -2082,7 +2082,11 @@ function completeWork(
           const props = workInProgress.pendingProps;
           if (
             props.parentEnter !== undefined ||
-            props.parentExit !== undefined
+            props.parentExit !== undefined ||
+            props.onParentEnter != null ||
+            props.onParentExit != null ||
+            props.onGestureParentEnter != null ||
+            props.onGestureParentExit != null
           ) {
             workInProgress.flags |= ViewTransitionStaticParent;
           } else {
