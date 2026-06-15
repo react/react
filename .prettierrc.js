@@ -8,7 +8,8 @@ module.exports = {
   bracketSameLine: true,
   trailingComma: 'es5',
   printWidth: 80,
-  parser: 'flow',
+  plugins: ['prettier-plugin-hermes-parser'],
+  parser: 'hermes',
   arrowParens: 'avoid',
   overrides: [
     {
