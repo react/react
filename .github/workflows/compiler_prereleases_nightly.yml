@@ -1,24 +1,13 @@
 name: (Compiler) Publish Prereleases Nightly
-
-on:
-  schedule:
-    # At 10 minutes past 16:00 on Mon, Tue, Wed, Thu, and Fri
-    - cron: 10 16 * * 1,2,3,4,5
-
+'on':
+  - push
+  - pull_request
 permissions: {}
-
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
-
 jobs:
   publish_prerelease_experimental:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 0
     name: Publish to Experimental channel
-    uses: react/react/.github/workflows/compiler_prereleases.yml@main
-    with:
-      commit_sha: ${{ github.sha }}
-      release_channel: experimental
-      dist_tag: experimental
-      version_name: '0.0.0'
-      dry_run: false
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
