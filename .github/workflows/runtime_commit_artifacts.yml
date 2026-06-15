@@ -11,15 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
   process_artifacts:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
   commit_www_artifacts:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
   commit_fbsource_artifacts:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
