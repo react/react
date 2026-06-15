@@ -3743,6 +3743,59 @@ describe('ReactFlight', () => {
     expect(cyclic2.cycle).toBe(cyclic2);
   });
 
+  // @gate __DEV__
+  it('replays logs with large strings replaced by a placeholder', async () => {
+    // This string exceeds the threshold for debug string length. Reconstructing
+    // a multi-megabyte string on the client when replaying the log would block
+    // the main thread for too long, so we omit it and send a placeholder
+    // instead.
+    const largeString = 'x'.repeat(1000001);
+
+    function ServerComponent() {
+      console.log('large string:', largeString);
+      return null;
+    }
+
+    function App() {
+      return ReactServer.createElement(ServerComponent);
+    }
+
+    // These tests are specifically testing console.log.
+    // Assign to `mockConsoleLog` so we can still inspect it when `console.log`
+    // is overridden by the test modules. The original function will be restored
+    // after this test finishes by `jest.restoreAllMocks()`.
+    const mockConsoleLog = spyOnDevAndProd(console, 'log').mockImplementation(
+      () => {},
+    );
+
+    // Reset the modules so that we get a new overridden console on top of the
+    // one installed by expect. This ensures that we still emit console.error
+    // calls.
+    jest.resetModules();
+    jest.mock('react', () => require('react/react.react-server'));
+    ReactServer = require('react');
+    ReactNoopFlightServer = require('react-noop-renderer/flight-server');
+    const transport = ReactNoopFlightServer.render({
+      root: ReactServer.createElement(App),
+    });
+
+    // The server logged the actual string synchronously while rendering.
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    expect(mockConsoleLog.mock.calls[0][1]).toBe(largeString);
+    mockConsoleLog.mockClear();
+    mockConsoleLog.mockImplementation(() => {});
+
+    await ReactNoopFlightClient.read(transport);
+
+    // The replayed log received a placeholder instead of the actual string.
+    expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+    expect(mockConsoleLog.mock.calls[0][0]).toBe('large string:');
+    expect(mockConsoleLog.mock.calls[0][1]).toBe(
+      'This string of length 1000001 has been omitted by React to avoid ' +
+        'sending too much data from the server.',
+    );
+  });
+
   // @gate !__DEV__ || enableComponentPerformanceTrack
   it('uses the server component debug info as the element owner in DEV', async () => {
     function Container({children}) {

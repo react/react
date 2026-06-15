@@ -48,11 +48,13 @@ export async function withAsyncPerfMeasurements<TReturn>(
   onComplete?: number => void,
 ): Promise<TReturn> {
   const start = now();
+  // $FlowFixMe[constant-condition]
   if (__PERFORMANCE_PROFILE__) {
     mark(markName);
   }
   const result = await callback();
 
+  // $FlowFixMe[constant-condition]
   if (__PERFORMANCE_PROFILE__) {
     measure(markName);
   }
@@ -71,11 +73,13 @@ export function withSyncPerfMeasurements<TReturn>(
   onComplete?: number => void,
 ): TReturn {
   const start = now();
+  // $FlowFixMe[constant-condition]
   if (__PERFORMANCE_PROFILE__) {
     mark(markName);
   }
   const result = callback();
 
+  // $FlowFixMe[constant-condition]
   if (__PERFORMANCE_PROFILE__) {
     measure(markName);
   }
@@ -94,11 +98,13 @@ export function withCallbackPerfMeasurements<TReturn>(
   onComplete?: number => void,
 ): TReturn {
   const start = now();
+  // $FlowFixMe[constant-condition]
   if (__PERFORMANCE_PROFILE__) {
     mark(markName);
   }
 
   const done = () => {
+    // $FlowFixMe[constant-condition]
     if (__PERFORMANCE_PROFILE__) {
       measure(markName);
     }

@@ -1,0 +1,11 @@
+[package]
+name = "react_compiler_lowering"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+react_compiler_ast = { path = "../react_compiler_ast" }
+react_compiler_hir = { path = "../react_compiler_hir" }
+react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
+indexmap = "2"
+serde_json = "1"

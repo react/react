@@ -107,14 +107,14 @@ function accessResult<I, K, V>(
     thenable.then(
       value => {
         if (newResult.status === Pending) {
-          const resolvedResult: ResolvedResult<V> = (newResult: any);
+          const resolvedResult: ResolvedResult<V> = newResult as any;
           resolvedResult.status = Resolved;
           resolvedResult.value = value;
         }
       },
       error => {
         if (newResult.status === Pending) {
-          const rejectedResult: RejectedResult = (newResult: any);
+          const rejectedResult: RejectedResult = newResult as any;
           rejectedResult.status = Rejected;
           rejectedResult.value = error;
         }
@@ -128,7 +128,7 @@ function accessResult<I, K, V>(
     entriesForResource.set(key, newEntry);
     return newResult;
   } else {
-    return (lru.access(entry): any);
+    return lru.access(entry) as any;
   }
 }
 
@@ -147,7 +147,7 @@ export function unstable_createResource<I, K: string | number, V>(
   maybeHashInput?: I => K,
 ): Resource<I, V> {
   const hashInput: I => K =
-    maybeHashInput !== undefined ? maybeHashInput : (identityHashFn: any);
+    maybeHashInput !== undefined ? maybeHashInput : (identityHashFn as any);
 
   const resource = {
     read(input: I): V {
@@ -171,7 +171,7 @@ export function unstable_createResource<I, K: string | number, V>(
         }
         default:
           // Should be unreachable
-          return (undefined: any);
+          return undefined as any;
       }
     },
 

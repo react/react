@@ -27,4 +27,4 @@ import typeof * as FeatureFlagsType from './DevToolsFeatureFlags.default';
 import typeof * as ExportsType from './DevToolsFeatureFlags.core-oss';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

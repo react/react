@@ -84,6 +84,7 @@ export const logEvent: LogFunction =
 export const registerEventLogger: (logFunction: LogFunction) => () => void =
   enableLogger === true
     ? function registerEventLogger(logFunction: LogFunction): () => void {
+        // $FlowFixMe[constant-condition]
         if (enableLogger) {
           logFunctions.push(logFunction);
           return function unregisterEventLogger() {

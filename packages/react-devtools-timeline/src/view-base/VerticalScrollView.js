@@ -249,9 +249,9 @@ export class VerticalScrollView extends View {
     if (
       this._viewState.viewToMutableViewStateMap.has(this._mutableViewStateKey)
     ) {
-      this._scrollState = ((this._viewState.viewToMutableViewStateMap.get(
+      this._scrollState = this._viewState.viewToMutableViewStateMap.get(
         this._mutableViewStateKey,
-      ): any): ScrollState);
+      ) as any as ScrollState;
     } else {
       this._viewState.viewToMutableViewStateMap.set(
         this._mutableViewStateKey,

@@ -1,0 +1,18 @@
+[package]
+name = "react_compiler_napi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", features = ["napi4"] }
+napi-derive = "2"
+react_compiler = { path = "../../../crates/react_compiler" }
+react_compiler_ast = { path = "../../../crates/react_compiler_ast" }
+serde = "1"
+serde_json = { version = "1", features = ["unbounded_depth"] }
+
+[build-dependencies]
+napi-build = "2"

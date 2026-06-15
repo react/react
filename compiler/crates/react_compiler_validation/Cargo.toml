@@ -1,0 +1,9 @@
+[package]
+name = "react_compiler_validation"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+indexmap = "2"
+react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
+react_compiler_hir = { path = "../react_compiler_hir" }

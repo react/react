@@ -51,6 +51,7 @@ let savedComponentFilters: Array<ComponentFilter> =
   getDefaultComponentFilters();
 
 function debug(methodName: string, ...args: Array<mixed>) {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `%c[core/backend] %c${methodName}`,
@@ -98,7 +99,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
     useHttps = false,
     port = 8097,
     websocket,
-    resolveRNStyle = (null: $FlowFixMe),
+    resolveRNStyle = null as $FlowFixMe,
     retryConnectionDelay = 2000,
     isAppActive = () => true,
     onSettingsUpdated,
@@ -154,12 +155,14 @@ export function connectToDevTools(options: ?ConnectOptions) {
       },
       send(event: string, payload: any, transferable?: Array<any>) {
         if (ws.readyState === ws.OPEN) {
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug('wall.send()', event, payload);
           }
 
           ws.send(JSON.stringify({event, payload}));
         } else {
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'wall.send()',
@@ -186,7 +189,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
     );
 
     // TODO (npm-packages) Warn if "isBackendStorageAPISupported"
-    // $FlowFixMe[incompatible-call] found when upgrading Flow
+    // $FlowFixMe[incompatible-type] found when upgrading Flow
     const agent = new Agent(bridge, isProfiling, onReloadAndProfile);
     if (typeof onReloadAndProfileFlagsReset === 'function') {
       onReloadAndProfileFlagsReset();
@@ -210,10 +213,11 @@ export function connectToDevTools(options: ?ConnectOptions) {
     // Setup React Native style editor if the environment supports it.
     if (resolveRNStyle != null || hook.resolveRNStyle != null) {
       setupNativeStyleEditor(
-        // $FlowFixMe[incompatible-call] found when upgrading Flow
+        // $FlowFixMe[incompatible-type] found when upgrading Flow
         bridge,
         agent,
-        ((resolveRNStyle || hook.resolveRNStyle: any): ResolveNativeStyle),
+        // $FlowFixMe[constant-condition]
+        (resolveRNStyle || hook.resolveRNStyle) as any as ResolveNativeStyle,
         nativeStyleEditorValidAttributes ||
           hook.nativeStyleEditorValidAttributes ||
           null,
@@ -237,41 +241,34 @@ export function connectToDevTools(options: ?ConnectOptions) {
       };
 
       if (!hook.hasOwnProperty('resolveRNStyle')) {
-        Object.defineProperty(
-          hook,
-          'resolveRNStyle',
-          ({
-            enumerable: false,
-            get() {
-              return lazyResolveRNStyle;
-            },
-            set(value: $FlowFixMe) {
-              lazyResolveRNStyle = value;
-              initAfterTick();
-            },
-          }: Object),
-        );
+        Object.defineProperty(hook, 'resolveRNStyle', {
+          enumerable: false,
+          get() {
+            return lazyResolveRNStyle;
+          },
+          set(value: $FlowFixMe) {
+            lazyResolveRNStyle = value;
+            initAfterTick();
+          },
+        } as Object);
       }
       if (!hook.hasOwnProperty('nativeStyleEditorValidAttributes')) {
-        Object.defineProperty(
-          hook,
-          'nativeStyleEditorValidAttributes',
-          ({
-            enumerable: false,
-            get() {
-              return lazyNativeStyleEditorValidAttributes;
-            },
-            set(value: $FlowFixMe) {
-              lazyNativeStyleEditorValidAttributes = value;
-              initAfterTick();
-            },
-          }: Object),
-        );
+        Object.defineProperty(hook, 'nativeStyleEditorValidAttributes', {
+          enumerable: false,
+          get() {
+            return lazyNativeStyleEditorValidAttributes;
+          },
+          set(value: $FlowFixMe) {
+            lazyNativeStyleEditorValidAttributes = value;
+            initAfterTick();
+          },
+        } as Object);
       }
     }
   };
 
   function handleClose() {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('WebSocket.onclose');
     }
@@ -284,6 +281,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
   }
 
   function handleFailed() {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('WebSocket.onerror');
     }
@@ -296,6 +294,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
     try {
       if (typeof event.data === 'string') {
         data = JSON.parse(event.data);
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug('WebSocket.onmessage', data);
         }
@@ -304,7 +303,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
       }
     } catch (e) {
       console.error(
-        '[React DevTools] Failed to parse JSON: ' + (event.data: any),
+        '[React DevTools] Failed to parse JSON: ' + (event.data as any),
       );
       return;
     }

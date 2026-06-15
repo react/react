@@ -123,7 +123,7 @@ if (__DEV__) {
     hierarchy.unshift(instance);
     const owner = instance._debugOwner;
     if (owner != null && typeof owner.tag === 'number') {
-      traverseOwnerTreeUp(hierarchy, (owner: any));
+      traverseOwnerTreeUp(hierarchy, owner as any);
     } else {
       // TODO: Traverse Server Components owners.
     }

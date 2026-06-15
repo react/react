@@ -26,7 +26,7 @@ import type {StyleAndLayout as StyleAndLayoutFrontend} from './types';
 type Context = StyleAndLayoutFrontend | null;
 
 const NativeStyleContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 NativeStyleContext.displayName = 'NativeStyleContext';
 
