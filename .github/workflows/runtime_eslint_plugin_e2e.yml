@@ -3,9 +3,6 @@ name: (Runtime) ESLint Plugin E2E
   - push
   - pull_request
 permissions: {}
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
 jobs:
@@ -13,4 +10,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: ESLint v${{ matrix.eslint_major }}
