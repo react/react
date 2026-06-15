@@ -7,12 +7,10 @@ env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-defaults:
-  run:
-    working-directory: compiler
 jobs:
   publish_prerelease:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Publish prelease (${{ inputs.release_channel }}) ${{ inputs.commit_sha }} @${{ inputs.dist_tag }}
