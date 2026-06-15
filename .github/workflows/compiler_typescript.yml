@@ -3,33 +3,31 @@ name: (Compiler) TypeScript
   - push
   - pull_request
 permissions: {}
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
-defaults:
-  run:
-    working-directory: compiler
 jobs:
   discover_yarn_workspaces:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Discover yarn workspaces
   lint:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Lint babel-plugin-react-compiler
   jest:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Jest babel-plugin-react-compiler
   test:
     runs-on: ubuntu-latest
     steps:
       - run: exit 0
+        working-directory: /tmp
     name: Test ${{ matrix.workspace_name }}
