@@ -567,6 +567,7 @@ module.exports = {
     $Shape: 'readonly',
     CallSite: 'readonly',
     ConsoleTask: 'readonly', // TOOD: Figure out what the official name of this will be.
+    Readonly: 'readonly',
     ReturnType: 'readonly',
     AggregateError: 'readonly',
     AnimationFrameID: 'readonly',

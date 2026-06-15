@@ -3826,8 +3826,8 @@ function enqueueRenderPhaseUpdate<S, A>(
   // This is a render phase update. Stash it in a lazily-created map of
   // queue -> linked list of updates. After this render pass, we'll restart
   // and apply the stashed updates on top of the work-in-progress hook.
-  didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate =
-    true;
+  didScheduleRenderPhaseUpdateDuringThisPass =
+    didScheduleRenderPhaseUpdate = true;
   const pending = queue.pending;
   if (pending === null) {
     // This is the first update. Create a circular list.

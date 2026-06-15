@@ -1194,17 +1194,13 @@ function handleRenderFunctionError(error: any): void {
   throw wrapperError;
 }
 
-export function inspectHooks<Props>(
+// Shared implementation. Requires an explicit dispatcher and never references
+// ReactSharedInternals, so importing it does not pull React into the bundle.
+function inspectHooksImpl<Props>(
   renderFunction: Props => React$Node,
   props: Props,
-  currentDispatcher: ?CurrentDispatcherRef,
+  currentDispatcher: CurrentDispatcherRef,
 ): HooksTree {
-  // DevTools will pass the current renderer's injected dispatcher.
-  // Other apps might compile debug hooks as part of their app though.
-  if (currentDispatcher == null) {
-    currentDispatcher = ReactSharedInternals;
-  }
-
   const previousDispatcher = currentDispatcher.H;
   currentDispatcher.H = DispatcherProxy;
 
@@ -1227,6 +1223,31 @@ export function inspectHooks<Props>(
       ? ([] as Array<ParsedStackFrame>)
       : ErrorStackParser.parse(ancestorStackError);
   return buildTree(rootStack, readHookLog);
+}
+
+// DevTools will pass the current renderer's injected dispatcher. Other apps
+// might compile debug hooks as part of their app though, so default to the
+// running React's shared internals when no dispatcher is provided.
+export function inspectHooks<Props>(
+  renderFunction: Props => React$Node,
+  props: Props,
+  currentDispatcher: ?CurrentDispatcherRef,
+): HooksTree {
+  return inspectHooksImpl(
+    renderFunction,
+    props,
+    currentDispatcher ?? ReactSharedInternals,
+  );
+}
+
+// Like inspectHooks but requires an explicit dispatcher and never references
+// ReactSharedInternals, so importing it does not pull React into the bundle.
+export function inspectHooksWithoutDefaultDispatcher<Props>(
+  renderFunction: Props => React$Node,
+  props: Props,
+  currentDispatcher: CurrentDispatcherRef,
+): HooksTree {
+  return inspectHooksImpl(renderFunction, props, currentDispatcher);
 }
 
 function setupContexts(contextMap: Map<ReactContext<any>, any>, fiber: Fiber) {
@@ -1295,16 +1316,13 @@ function resolveDefaultProps(Component: any, baseProps: any) {
   return baseProps;
 }
 
-export function inspectHooksOfFiber(
+// Shared implementation. Requires an explicit dispatcher and never references
+// ReactSharedInternals (it delegates to inspectHooksImpl), so importing it does
+// not pull React into the bundle.
+function inspectHooksOfFiberImpl(
   fiber: Fiber,
-  currentDispatcher: ?CurrentDispatcherRef,
+  currentDispatcher: CurrentDispatcherRef,
 ): HooksTree {
-  // DevTools will pass the current renderer's injected dispatcher.
-  // Other apps might compile debug hooks as part of their app though.
-  if (currentDispatcher == null) {
-    currentDispatcher = ReactSharedInternals;
-  }
-
   if (
     fiber.tag !== FunctionComponent &&
     fiber.tag !== SimpleMemoComponent &&
@@ -1381,7 +1399,7 @@ export function inspectHooksOfFiber(
       );
     }
 
-    return inspectHooks(type, props, currentDispatcher);
+    return inspectHooksImpl(type, props, currentDispatcher);
   } finally {
     currentFiber = null;
     currentHook = null;
@@ -1391,4 +1409,28 @@ export function inspectHooksOfFiber(
 
     restoreContexts(contextMap);
   }
+}
+
+// DevTools will pass the current renderer's injected dispatcher. Other apps
+// might compile debug hooks as part of their app though, so default to the
+// running React's shared internals when no dispatcher is provided.
+export function inspectHooksOfFiber(
+  fiber: Fiber,
+  currentDispatcher: ?CurrentDispatcherRef,
+): HooksTree {
+  return inspectHooksOfFiberImpl(
+    fiber,
+    currentDispatcher ?? ReactSharedInternals,
+  );
+}
+
+// Like inspectHooksOfFiber but requires an explicit dispatcher and never
+// references ReactSharedInternals. Callers that always have the renderer's
+// injected dispatcher (e.g. react-devtools-facade) can use this to avoid
+// pulling React into their bundle.
+export function inspectHooksOfFiberWithoutDefaultDispatcher(
+  fiber: Fiber,
+  currentDispatcher: CurrentDispatcherRef,
+): HooksTree {
+  return inspectHooksOfFiberImpl(fiber, currentDispatcher);
 }
