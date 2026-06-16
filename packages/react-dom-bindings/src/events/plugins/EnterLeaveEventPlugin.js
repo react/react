@@ -139,35 +139,53 @@ function extractEvents(
   const fromNode = from == null ? win : getNodeFromInstance(from);
   const toNode = to == null ? win : getNodeFromInstance(to);
 
-  const leave: KnownReactSyntheticEvent = new SyntheticEventCtor(
-    leaveEventType,
-    eventTypePrefix + 'leave',
-    from,
-    nativeEvent,
-    nativeEventTarget,
-  );
-  leave.target = fromNode;
-  leave.relatedTarget = toNode;
-
-  let enter: KnownReactSyntheticEvent | null = null;
+  // Create the synthetic events lazily: they are only needed when a matching
+  // listener exists on the from/to path.
+  // accumulateEnterLeaveTwoPhaseListeners checks that before invoking these
+  // factories. mouseout/mouseover fire on every boundary crossing, so most
+  // dispatches have no listener and would otherwise allocate (and immediately
+  // discard) these events.
+  const createLeaveEvent = (): KnownReactSyntheticEvent => {
+    const leave: KnownReactSyntheticEvent = new SyntheticEventCtor(
+      leaveEventType,
+      eventTypePrefix + 'leave',
+      from,
+      nativeEvent,
+      nativeEventTarget,
+    );
+    leave.target = fromNode;
+    leave.relatedTarget = toNode;
+    return leave;
+  };
 
   // We should only process this nativeEvent if we are processing
   // the first ancestor. Next time, we will ignore the event.
   const nativeTargetInst = getClosestInstanceFromNode(nativeEventTarget as any);
-  if (nativeTargetInst === targetInst) {
-    const enterEvent: KnownReactSyntheticEvent = new SyntheticEventCtor(
-      enterEventType,
-      eventTypePrefix + 'enter',
-      to,
-      nativeEvent,
-      nativeEventTarget,
-    );
-    enterEvent.target = toNode;
-    enterEvent.relatedTarget = fromNode;
-    enter = enterEvent;
-  }
+  const createEnterEvent: null | (() => KnownReactSyntheticEvent) =
+    nativeTargetInst === targetInst
+      ? (): KnownReactSyntheticEvent => {
+          const enter: KnownReactSyntheticEvent = new SyntheticEventCtor(
+            enterEventType,
+            eventTypePrefix + 'enter',
+            to,
+            nativeEvent,
+            nativeEventTarget,
+          );
+          enter.target = toNode;
+          enter.relatedTarget = fromNode;
+          return enter;
+        }
+      : null;
 
-  accumulateEnterLeaveTwoPhaseListeners(dispatchQueue, leave, enter, from, to);
+  accumulateEnterLeaveTwoPhaseListeners(
+    dispatchQueue,
+    leaveEventType,
+    createLeaveEvent,
+    enterEventType,
+    createEnterEvent,
+    from,
+    to,
+  );
 }
 
 export {registerEvents, extractEvents};
