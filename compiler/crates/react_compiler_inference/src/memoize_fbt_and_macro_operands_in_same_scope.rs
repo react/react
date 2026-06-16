@@ -134,7 +134,9 @@ fn populate_macro_tags(
                     value: PrimitiveValue::String(s),
                     ..
                 } => {
-                    if let Some(macro_def) = macro_kinds.get(s.as_str()) {
+                    if let Some(macro_def) =
+                        s.as_str().and_then(|utf8| macro_kinds.get(utf8))
+                    {
                         // We don't distinguish between tag names and strings, so record
                         // all `fbt` string literals in case they are used as a jsx tag.
                         macro_tags.insert(lvalue_id, macro_def.clone());

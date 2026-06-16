@@ -2055,6 +2055,155 @@ describe('ReactFlightDOMNode', () => {
           'ssr-abort',
       );
     });
+
+    // @gate __DEV__
+    it('filters parsed debug info when the Flight stream errors', async () => {
+      let resolveInitialData;
+      const laterDataResolvers = [];
+
+      async function getInitialData() {
+        return new Promise(resolve => {
+          resolveInitialData = resolve;
+        });
+      }
+
+      async function loadInitialData() {
+        return await getInitialData();
+      }
+
+      async function loadLaterData() {
+        for (let i = 0; i < 40; i++) {
+          await new Promise(resolve => {
+            laterDataResolvers[i] = resolve;
+          });
+        }
+      }
+
+      async function Dynamic() {
+        await loadInitialData();
+        await loadLaterData();
+        return ReactServer.createElement('p', null, 'Done');
+      }
+
+      function App() {
+        return ReactServer.createElement(
+          'html',
+          null,
+          ReactServer.createElement(
+            'body',
+            null,
+            ReactServer.createElement(Dynamic),
+          ),
+        );
+      }
+
+      let staticEndTime = -1;
+      const chunks = [];
+
+      await new Promise(resolve => {
+        setTimeout(() => {
+          const flightStream = ReactServerDOMServer.renderToPipeableStream(
+            ReactServer.createElement(App),
+            webpackMap,
+            {
+              filterStackFrame,
+            },
+          );
+
+          const passThrough = new Stream.PassThrough(streamOptions);
+          flightStream.pipe(passThrough);
+          passThrough.on('data', chunk => {
+            chunks.push(chunk);
+          });
+          passThrough.on('end', resolve);
+        });
+
+        setTimeout(() => {
+          staticEndTime = performance.now() + performance.timeOrigin;
+          resolveInitialData();
+
+          let index = 0;
+          function resolveNext() {
+            setTimeout(() => {
+              laterDataResolvers[index++]();
+              if (index < 40) {
+                resolveNext();
+              }
+            });
+          }
+          setTimeout(resolveNext);
+        });
+      });
+
+      const contentStream = new Stream.Readable({
+        ...streamOptions,
+        read() {},
+      });
+      const response = ReactServerDOMClient.createFromNodeStream(
+        contentStream,
+        {
+          moduleMap: null,
+          moduleLoading: null,
+          serverModuleMap: null,
+        },
+        {
+          endTime: staticEndTime,
+        },
+      );
+      // The final write contains the completed model. The preceding writes
+      // contain the debug rows produced while rendering it.
+      for (let i = 0; i < chunks.length - 1; i++) {
+        contentStream.push(chunks[i]);
+      }
+
+      const decoded = await response;
+
+      function ClientRoot() {
+        return decoded;
+      }
+
+      const flightError = new Error('Flight stream errored');
+      const fizzAbortController = new AbortController();
+      let caughtError;
+      let ownerStack;
+      const {prelude} = await new Promise(resolve => {
+        let result;
+
+        setTimeout(() => {
+          result = ReactDOMFizzStatic.prerenderToNodeStream(
+            React.createElement(ClientRoot),
+            {
+              signal: fizzAbortController.signal,
+              onError(error) {
+                caughtError = error;
+                ownerStack = React.captureOwnerStack
+                  ? React.captureOwnerStack()
+                  : null;
+              },
+            },
+          );
+        });
+
+        setTimeout(() => {
+          contentStream.emit('error', flightError);
+          contentStream.push(null);
+          fizzAbortController.abort(new Error('Fizz aborted'));
+          resolve(result);
+        });
+      });
+
+      expect(await readResult(prelude)).toBe('');
+      expect(caughtError).toBe(flightError);
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in loadInitialData (at **)\n' + '    in Dynamic (at **)\n'
+              : '',
+          ) +
+          '    in App (at **)',
+      );
+    });
   });
 
   it('warns with a tailored message if eval is not available in dev', async () => {

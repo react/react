@@ -279,7 +279,12 @@ pub fn validate_restricted_imports(
 
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import) = stmt {
-            if restricted.contains(import.source.value.as_str()) {
+            if import
+                .source
+                .value
+                .as_str()
+                .is_some_and(|v| restricted.contains(v))
+            {
                 let mut detail = CompilerErrorDetail::new(
                     ErrorCategory::Todo,
                     "Bailing out due to blocklisted import",
@@ -328,7 +333,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
         .filter_map(|(idx, stmt)| {
             if let Statement::ImportDeclaration(import) = stmt {
                 if is_non_namespaced_import(import) {
-                    return Some((import.source.value.clone(), idx));
+                    return Some((import.source.value.to_marker_string(), idx));
                 }
             }
             None
@@ -363,7 +368,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
                 specifiers: import_specifiers,
                 source: StringLiteral {
                     base: BaseNode::typed("StringLiteral"),
-                    value: module_name.clone(),
+                    value: module_name.clone().into(),
                 },
                 import_kind: None,
                 assertions: None,
@@ -420,7 +425,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
                         })),
                         arguments: vec![Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: module_name.clone(),
+                            value: module_name.clone().into(),
                         })],
                         type_parameters: None,
                         type_arguments: None,

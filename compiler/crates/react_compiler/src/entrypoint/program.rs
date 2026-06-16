@@ -1651,10 +1651,10 @@ fn has_memo_cache_function_import(program: &Program, module_name: &str) -> bool 
                 for specifier in &import.specifiers {
                     if let ImportSpecifier::ImportSpecifier(data) = specifier {
                         let imported_name = match &data.imported {
-                            ModuleExportName::Identifier(id) => &id.name,
-                            ModuleExportName::StringLiteral(s) => &s.value,
+                            ModuleExportName::Identifier(id) => Some(id.name.as_str()),
+                            ModuleExportName::StringLiteral(s) => s.value.as_str(),
                         };
-                        if imported_name == "c" {
+                        if imported_name == Some("c") {
                             return true;
                         }
                     }

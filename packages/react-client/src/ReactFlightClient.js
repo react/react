@@ -361,7 +361,7 @@ type Response = {
   _debugRootStack?: null | Error, // DEV-only
   _debugRootTask?: null | ConsoleTask, // DEV-only
   _debugStartTime: number, // DEV-only
-  _debugEndTime?: number, // DEV-only
+  _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
   _debugFindSourceMapURL?: void | FindSourceMapURLCallback, // DEV-only
   _debugChannel?: void | DebugChannel, // DEV-only
@@ -499,7 +499,6 @@ function filterDebugInfo(
   response: Response,
   value: {_debugInfo: ReactDebugInfo, ...},
 ) {
-  // $FlowFixMe[invalid-compare]
   if (response._debugEndTime === null) {
     // No end time was defined, so we keep all debug info entries.
     return;
@@ -521,6 +520,29 @@ function filterDebugInfo(
     debugInfo.push(info);
   }
   value._debugInfo = debugInfo;
+}
+
+function pruneDebugInfoAfterError(
+  response: Response,
+  chunk: ErroredChunk<any>,
+): void {
+  if (response._debugEndTime === null) {
+    return;
+  }
+
+  const relativeEndTime =
+    response._debugEndTime -
+    // $FlowFixMe[prop-missing]
+    performance.timeOrigin;
+  const debugInfo = chunk._debugInfo;
+  for (let i = 0; i < debugInfo.length; i++) {
+    const info = debugInfo[i];
+    if (typeof info.time === 'number' && info.time > relativeEndTime) {
+      // This array may already be attached to the Lazy suspended in Fizz.
+      debugInfo.length = i;
+      return;
+    }
+  }
 }
 
 function moveDebugInfoFromChunkToInnerValue<T>(
@@ -764,6 +786,9 @@ function triggerErrorOnChunk<T>(
   const erroredChunk: ErroredChunk<T> = chunk as any;
   erroredChunk.status = ERRORED;
   erroredChunk.reason = error;
+  if (__DEV__) {
+    pruneDebugInfoAfterError(response, erroredChunk);
+  }
   if (listeners !== null) {
     rejectChunk(response, listeners, error);
   }
@@ -2762,7 +2787,7 @@ function ResponseInstance(
       // and is not considered I/O required to load the stream.
       setTimeout(markIOStarted.bind(this), 0);
     }
-    this._debugEndTime = debugEndTime == null ? null : debugEndTime;
+    this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
     this._debugFindSourceMapURL = findSourceMapURL;
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
