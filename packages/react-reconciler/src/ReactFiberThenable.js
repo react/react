@@ -46,6 +46,36 @@ function getThenablesFromState(state: ThenableState): Array<Thenable<any>> {
   }
 }
 
+function warnAboutUncachedPromise(thenableState: ThenableState): void {
+  if (__DEV__) {
+    const thenableStateDev: ThenableStateDev = thenableState as any;
+    if (!thenableStateDev.didWarnAboutUncachedPromise) {
+      // We should only warn the first time an uncached thenable is discovered
+      // per component, because if there are multiple, the subsequent ones are
+      // likely derived from the first.
+      //
+      // We track this on the thenableState instead of deduping using the
+      // component name like we usually do, because in the case of a
+      // promise-as-React-node, the owner component is likely different from the
+      // parent that's currently being reconciled. We'd have to track the owner
+      // using state, which we're trying to move away from. Though since this is
+      // dev-only, maybe that'd be OK.
+      //
+      // However, another benefit of doing it this way is we might eventually
+      // have a thenableState per memo/Forget boundary instead of per component,
+      // so this would allow us to have more granular warnings.
+      thenableStateDev.didWarnAboutUncachedPromise = true;
+
+      // TODO: This warning should link to a corresponding docs page.
+      console.error(
+        'A component was suspended by an uncached promise. Creating ' +
+          'promises inside a Client Component or hook is not yet ' +
+          'supported, except via a Suspense-compatible library or framework.',
+      );
+    }
+  }
+}
+
 // An error that is thrown (e.g. by `use`) to trigger Suspense. If we
 // detect this is caught by userspace, we'll log a warning in development.
 export const SuspenseException: mixed = new Error(
@@ -123,32 +153,7 @@ export function trackUsedThenable<T>(
       // they represent the same value, because components are idempotent.
 
       if (__DEV__) {
-        const thenableStateDev: ThenableStateDev = thenableState as any;
-        if (!thenableStateDev.didWarnAboutUncachedPromise) {
-          // We should only warn the first time an uncached thenable is
-          // discovered per component, because if there are multiple, the
-          // subsequent ones are likely derived from the first.
-          //
-          // We track this on the thenableState instead of deduping using the
-          // component name like we usually do, because in the case of a
-          // promise-as-React-node, the owner component is likely different from
-          // the parent that's currently being reconciled. We'd have to track
-          // the owner using state, which we're trying to move away from. Though
-          // since this is dev-only, maybe that'd be OK.
-          //
-          // However, another benefit of doing it this way is we might
-          // eventually have a thenableState per memo/Forget boundary instead
-          // of per component, so this would allow us to have more
-          // granular warnings.
-          thenableStateDev.didWarnAboutUncachedPromise = true;
-
-          // TODO: This warning should link to a corresponding docs page.
-          console.error(
-            'A component was suspended by an uncached promise. Creating ' +
-              'promises inside a Client Component or hook is not yet ' +
-              'supported, except via a Suspense-compatible library or framework.',
-          );
-        }
+        warnAboutUncachedPromise(thenableState);
       }
 
       // Avoid an unhandled rejection errors for the Promises that we'll
@@ -234,17 +239,8 @@ export function trackUsedThenable<T>(
         const root = getWorkInProgressRoot();
         if (root !== null && root.shellSuspendCounter > 100) {
           if (__DEV__) {
-            const thenableStateDev: ThenableStateDev = thenableState as any;
-            if (
-              fromUseHook === true &&
-              !thenableStateDev.didWarnAboutUncachedPromise
-            ) {
-              thenableStateDev.didWarnAboutUncachedPromise = true;
-              console.error(
-                'A component was suspended by an uncached promise. Creating ' +
-                  'promises inside a Client Component or hook is not yet ' +
-                  'supported, except via a Suspense-compatible library or framework.',
-              );
+            if (fromUseHook === true) {
+              warnAboutUncachedPromise(thenableState);
             }
           }
           // This root has suspended repeatedly in the shell without making any
