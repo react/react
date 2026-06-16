@@ -80,7 +80,53 @@ pub fn format_primitive(prim: &crate::PrimitiveValue) -> String {
         crate::PrimitiveValue::Undefined => "undefined".to_string(),
         crate::PrimitiveValue::Boolean(b) => format!("{}", b),
         crate::PrimitiveValue::Number(n) => crate::format_js_number(n.value()),
-        crate::PrimitiveValue::String(s) => format_js_string(s),
+        crate::PrimitiveValue::String(s) => match s.as_str() {
+            Some(utf8) => format_js_string(utf8),
+            // Ill-formed strings: escape the well-formed segments exactly like
+            // format_js_string and render each unpaired surrogate as \uXXXX,
+            // matching what TS's JSON.stringify-based printer emits.
+            None => {
+                let mut result = String::new();
+                result.push('"');
+                let mut units = s.code_units().into_iter().peekable();
+                while let Some(unit) = units.next() {
+                    let is_lead = (0xD800..=0xDBFF).contains(&unit);
+                    let is_trail = (0xDC00..=0xDFFF).contains(&unit);
+                    if is_lead {
+                        if let Some(&next) = units.peek() {
+                            if (0xDC00..=0xDFFF).contains(&next) {
+                                units.next();
+                                let cp = 0x10000
+                                    + ((unit as u32 - 0xD800) << 10)
+                                    + (next as u32 - 0xDC00);
+                                result.push(char::from_u32(cp).expect("valid supplementary"));
+                                continue;
+                            }
+                        }
+                    }
+                    if is_lead || is_trail {
+                        result.push_str(&format!("\\u{unit:04x}"));
+                        continue;
+                    }
+                    let c = char::from_u32(unit as u32).expect("BMP non-surrogate is a char");
+                    match c {
+                        '"' => result.push_str("\\\""),
+                        '\\' => result.push_str("\\\\"),
+                        '\n' => result.push_str("\\n"),
+                        '\r' => result.push_str("\\r"),
+                        '\t' => result.push_str("\\t"),
+                        '\u{0008}' => result.push_str("\\b"),
+                        '\u{000c}' => result.push_str("\\f"),
+                        c if (c as u32) <= 0x1F => {
+                            result.push_str(&format!("\\u{:04x}", c as u32));
+                        }
+                        c => result.push(c),
+                    }
+                }
+                result.push('"');
+                result
+            }
+        },
     }
 }
 
