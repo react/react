@@ -287,6 +287,84 @@ describe('ReactUse', () => {
     expect(root).toMatchRenderedOutput('ABC');
   });
 
+  it('warns for an uncached use() promise that resolves in a later task', async () => {
+    spyOnDev(console, 'error').mockImplementation(() => {});
+
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+      render() {
+        if (this.state.error) {
+          return <Text text={this.state.error.message} />;
+        }
+        return this.props.children;
+      }
+    }
+
+    function Async() {
+      return <Text text={use(getAsyncText('Async'))} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(
+        <ErrorBoundary>
+          <Async />
+        </ErrorBoundary>,
+      );
+    });
+    assertLog(['Async text requested [Async]', 'Async text requested [Async]']);
+
+    let finalLog;
+    // Keep resolving each uncached request until the existing shell ping-loop
+    // guard trips. This is the path that used to throw without first logging
+    // the uncached-promise warning.
+    for (let i = 0; i < 100; i++) {
+      await act(() => {
+        resolveTextRequests('Async');
+      });
+      const log = Scheduler.unstable_clearLog();
+      if (
+        log.some(entry =>
+          entry.startsWith('An unknown Component is an async Client Component.'),
+        )
+      ) {
+        finalLog = log;
+        break;
+      }
+      expect(log).toEqual([
+        'Async text requested [Async]',
+        'Async text requested [Async]',
+      ]);
+    }
+    expect(finalLog).toContain(
+      'An unknown Component is an async Client Component. ' +
+        'Only Server Components can be async at the moment. ' +
+        'This error is often caused by accidentally adding ' +
+        "`'use client'` to a module that was originally written for " +
+        'the server.',
+    );
+    expect(root).toMatchRenderedOutput(
+      'An unknown Component is an async Client Component. ' +
+        'Only Server Components can be async at the moment. ' +
+        'This error is often caused by accidentally adding ' +
+        "`'use client'` to a module that was originally written for " +
+        'the server.',
+    );
+
+    if (__DEV__) {
+      const loggedMessages = console.error.mock.calls.map(call => call[0]);
+      expect(loggedMessages).toContain(
+        'A component was suspended by an uncached promise. Creating ' +
+          'promises inside a Client Component or hook is not yet ' +
+          'supported, except via a Suspense-compatible library or framework.',
+      );
+      console.error.mockRestore();
+    }
+  });
+
   it('using a rejected promise will throw', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
