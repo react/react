@@ -6289,7 +6289,7 @@ fn lower_jsx_element_name(
             let place = lower_value_to_temporary(
                 builder,
                 InstructionValue::Primitive {
-                    value: PrimitiveValue::String(tag),
+                    value: PrimitiveValue::String(tag.into()),
                     loc: loc.clone(),
                 },
             )?;
@@ -6518,8 +6518,10 @@ fn lower_object_property_key(
 ) -> Result<Option<ObjectPropertyKey>, CompilerError> {
     use react_compiler_ast::expressions::Expression;
     match key {
+        // Property keys stay String-typed; the marker wire form preserves the
+        // pre-JsString behavior for pathological surrogate keys end to end.
         Expression::StringLiteral(lit) => Ok(Some(ObjectPropertyKey::String {
-            name: lit.value.clone(),
+            name: lit.value.to_marker_string(),
         })),
         Expression::Identifier(ident) if !computed => Ok(Some(ObjectPropertyKey::Identifier {
             name: ident.name.clone(),
