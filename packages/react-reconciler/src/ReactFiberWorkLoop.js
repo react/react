@@ -1925,7 +1925,7 @@ export function flushSyncFromReconciler<R>(fn: (() => R) | void): R | void {
 }
 
 // If called outside of a render or commit will flush all sync work on all roots
-// Returns whether the the call was during a render or not
+// Returns whether the call was during a render or not
 export function flushSyncWork(): boolean {
   if ((executionContext & (RenderContext | CommitContext)) === NoContext) {
     flushSyncWorkOnAllRoots();
