@@ -108,6 +108,7 @@ export function trackUsedThenable<T>(
   thenableState: ThenableState,
   thenable: Thenable<T>,
   index: number,
+  fromUseHook?: boolean,
 ): T {
   if (__DEV__ && ReactSharedInternals.actQueue !== null) {
     ReactSharedInternals.didUsePromise = true;
@@ -232,6 +233,20 @@ export function trackUsedThenable<T>(
         // Detect infinite ping loops caused by uncached promises.
         const root = getWorkInProgressRoot();
         if (root !== null && root.shellSuspendCounter > 100) {
+          if (__DEV__) {
+            const thenableStateDev: ThenableStateDev = thenableState as any;
+            if (
+              fromUseHook === true &&
+              !thenableStateDev.didWarnAboutUncachedPromise
+            ) {
+              thenableStateDev.didWarnAboutUncachedPromise = true;
+              console.error(
+                'A component was suspended by an uncached promise. Creating ' +
+                  'promises inside a Client Component or hook is not yet ' +
+                  'supported, except via a Suspense-compatible library or framework.',
+              );
+            }
+          }
           // This root has suspended repeatedly in the shell without making any
           // progress (i.e. committing something). This is highly suggestive of
           // an infinite ping loop, often caused by an accidental Async Client
