@@ -293,6 +293,26 @@ function extractEvents(
   eventSystemFlags: EventSystemFlags,
   targetContainer: null | EventTarget,
 ) {
+  switch (domEventName) {
+    // These are the only events this plugin responds to. Keep this list in
+    // sync with the events registered in `registerEvents` above.
+    case 'change':
+    case 'click':
+    case 'focusin':
+    case 'focusout':
+    case 'input':
+    case 'keydown':
+    case 'keyup':
+    case 'selectionchange':
+      break;
+    default:
+      // Bail out before the `getNodeFromInstance` lookup and the
+      // `nodeName.toLowerCase()` checks below. Those run for every dispatched
+      // event (including high-frequency ones like `mousemove`/`pointermove`)
+      // and are discarded for events this plugin doesn't handle.
+      return;
+  }
+
   const targetNode = targetInst ? getNodeFromInstance(targetInst) : window;
 
   let getTargetInstFunc, handleEventFunc;
