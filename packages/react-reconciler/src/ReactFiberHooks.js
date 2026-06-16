@@ -1107,6 +1107,7 @@ function useThenable<T>(thenable: Thenable<T>): T {
     thenable,
     index,
     __DEV__ ? currentlyRenderingFiber : null,
+    true,
   );
 
   // When something suspends with `use`, we replay the component with the
