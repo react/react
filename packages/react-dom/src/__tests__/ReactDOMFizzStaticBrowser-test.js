@@ -1165,9 +1165,9 @@ describe('ReactDOMFizzStaticBrowser', () => {
 
     // Highest segment id React actually emitted into the shell.
     let maxShellId = -1;
-    for (const m of shellHTML.matchAll(/id="[BS]:([0-9a-f]+)"/g)) {
+    Array.from(shellHTML.matchAll(/id="[BS]:([0-9a-f]+)"/g)).forEach(m => {
       maxShellId = Math.max(maxShellId, parseInt(m[1], 16));
-    }
+    });
     // The shell must contain at least one outlined boundary for this test to be
     // meaningful.
     expect(maxShellId).toBeGreaterThanOrEqual(0);
@@ -1188,15 +1188,15 @@ describe('ReactDOMFizzStaticBrowser', () => {
 
     const seen = new Set();
     const dupes = new Set();
-    for (const m of (shellHTML + resumeHTML).matchAll(
-      /id="([BS]:[0-9a-f]+)"/g,
-    )) {
+    Array.from(
+      (shellHTML + resumeHTML).matchAll(/id="([BS]:[0-9a-f]+)"/g),
+    ).forEach(m => {
       const id = m[1];
       if (seen.has(id)) {
         dupes.add(id);
       }
       seen.add(id);
-    }
+    });
     expect(Array.from(dupes)).toEqual([]);
   });
 
