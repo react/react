@@ -24,3 +24,16 @@ test('ReactVersion matches package.json', () => {
     expect(React.version).toBe(packageJSON.version);
   }
 });
+
+// Added to verify build stability by ensuring standard core React hooks and APIs are properly exported
+test('React object has expected core exports', () => {
+  if (gate(flags => flags.build)) {
+    const React = require('react');
+
+    expect(typeof React.useState).toBe('function');
+    expect(typeof React.useEffect).toBe('function');
+    expect(typeof React.useTransition).toBe('function');
+    expect(typeof React.Component).toBe('function');
+    expect(typeof React.createElement).toBe('function');
+  }
+});
