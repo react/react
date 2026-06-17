@@ -1105,32 +1105,35 @@ describe('ReactDOMFizzStaticBrowser', () => {
     );
   });
 
-  it('resumes segment ids past boundaries that were outlined into the shell', async () => {
-    // Regression test: getPostponedState snapshots request.nextSegmentId before
-    // the pull-driven prelude flush. Flushing the shell outlines large completed
-    // boundaries, advancing nextSegmentId past that snapshot. If the snapshot
-    // isn't finalized post-flush, the resume seeds from the stale value and
-    // re-allocates segment ids the shell already emitted, so the concatenated
-    // shell+resume document carries duplicate B:/S: ids that cross-wire $RC.
+  it('reveals a resumed boundary even when the shell outlined a completed boundary', async () => {
+    // Regression test for a segment-id collision between the prerendered shell
+    // and the resume. The prelude flush outlines a large *completed* boundary
+    // into the shell, advancing request.nextSegmentId past the value
+    // getPostponedState snapshotted before the flush. If that snapshot isn't
+    // finalized after the flush, the resume re-allocates ids the shell already
+    // used; in the served document $RC (getElementById, first match) then
+    // reveals the wrong element and the resumed boundary stays on its fallback.
+    // Asserts on the rendered output rather than the segment ids.
     let prerendering = true;
-    const bigText = 'x'.repeat(800); // > 500 bytes => eligible for outlining
+    const shellText = 'a'.repeat(800); // > 500 bytes => eligible for outlining
+    const resumeText = 'b'.repeat(800);
 
     // Completes during the prerender; large enough that the prelude flush
-    // outlines it into the shell (consuming an id >= the snapshot).
+    // outlines it into the shell.
     function ShellBoundary() {
-      return <div>{bigText}</div>;
+      return <div>{shellText}</div>;
     }
 
     // Suspends during the prerender so its boundary becomes a hole the resume
-    // fills. On resume it renders a nested large boundary that is itself
-    // outlined, so the resume allocates fresh segment ids from the seed.
+    // fills. On resume it renders a nested large boundary that itself outlines,
+    // so the resume allocates fresh segment ids from the postponed seed.
     function Hole() {
       if (prerendering) {
         return React.use(theInfinitePromise);
       }
       return (
         <Suspense fallback="LoadingC">
-          <div>{bigText}</div>
+          <div>{resumeText}</div>
         </Suspense>
       );
     }
@@ -1163,19 +1166,6 @@ describe('ReactDOMFizzStaticBrowser', () => {
 
     const shellHTML = await readContent(prerendered.prelude);
 
-    // Highest segment id React actually emitted into the shell.
-    let maxShellId = -1;
-    Array.from(shellHTML.matchAll(/id="[BS]:([0-9a-f]+)"/g)).forEach(m => {
-      maxShellId = Math.max(maxShellId, parseInt(m[1], 16));
-    });
-    // The shell must contain at least one outlined boundary for this test to be
-    // meaningful.
-    expect(maxShellId).toBeGreaterThanOrEqual(0);
-
-    // The fix: the resume must start strictly above every id the shell emitted.
-    expect(prerendered.postponed.nextSegmentId).toBeGreaterThan(maxShellId);
-
-    // End-to-end: the stitched shell+resume document must have no duplicate ids.
     prerendering = false;
     const resumed = await serverAct(() =>
       ReactDOMFizzServer.resume(
@@ -1186,18 +1176,22 @@ describe('ReactDOMFizzStaticBrowser', () => {
     );
     const resumeHTML = await readContent(resumed);
 
-    const seen = new Set();
-    const dupes = new Set();
-    Array.from(
-      (shellHTML + resumeHTML).matchAll(/id="([BS]:[0-9a-f]+)"/g),
-    ).forEach(m => {
-      const id = m[1];
-      if (seen.has(id)) {
-        dupes.add(id);
-      }
-      seen.add(id);
-    });
-    expect(Array.from(dupes)).toEqual([]);
+    // Run the shell and the resume as one served document so the completion
+    // instructions ($RC) execute against both together, the way a browser does.
+    const temp = document.createElement('div');
+    temp.innerHTML = shellHTML + resumeHTML;
+    await insertNodesAndExecuteScripts(temp, container, null);
+    jest.runAllTimers();
+
+    // Both boundaries reveal their own content. Without the fix the resumed
+    // boundary reuses the shell's ids, so its $RC resolves to the shell's
+    // element and it stays on its "LoadingC" fallback.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div>{shellText}</div>
+        <div>{resumeText}</div>
+      </div>,
+    );
   });
 
   it('can omit a preamble with an empty shell if no preamble is ready when prerendering finishes', async () => {
