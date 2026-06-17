@@ -103,19 +103,19 @@ export function trackUsedThenable<T>(
         // happen. Flight lazily parses JSON when the value is actually awaited.
         thenable.then(noop, noop);
       } else {
-        const pendingThenable: PendingThenable<T> = (thenable: any);
+        const pendingThenable: PendingThenable<T> = thenable as any;
         pendingThenable.status = 'pending';
         pendingThenable.then(
           fulfilledValue => {
             if (thenable.status === 'pending') {
-              const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+              const fulfilledThenable: FulfilledThenable<T> = thenable as any;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = fulfilledValue;
             }
           },
           (error: mixed) => {
             if (thenable.status === 'pending') {
-              const rejectedThenable: RejectedThenable<T> = (thenable: any);
+              const rejectedThenable: RejectedThenable<T> = thenable as any;
               rejectedThenable.status = 'rejected';
               rejectedThenable.reason = error;
             }
@@ -124,13 +124,13 @@ export function trackUsedThenable<T>(
       }
 
       // Check one more time in case the thenable resolved synchronously
-      switch ((thenable: Thenable<T>).status) {
+      switch ((thenable as Thenable<T>).status) {
         case 'fulfilled': {
-          const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+          const fulfilledThenable: FulfilledThenable<T> = thenable as any;
           return fulfilledThenable.value;
         }
         case 'rejected': {
-          const rejectedThenable: RejectedThenable<T> = (thenable: any);
+          const rejectedThenable: RejectedThenable<T> = thenable as any;
           throw rejectedThenable.reason;
         }
       }
@@ -160,7 +160,7 @@ export function readPreviousThenable<T>(
     return undefined;
   } else {
     // We assume this has been resolved already.
-    return (previous: any).value;
+    return (previous as any).value;
   }
 }
 
@@ -277,10 +277,10 @@ export function ensureSuspendableThenableStateDEV(
     switch (lastThenable.status) {
       case 'fulfilled': {
         const previousThenableValue = lastThenable.value;
-        // $FlowIgnore[method-unbinding] We rebind .then immediately.
+        // $FlowFixMe[method-unbinding] We rebind .then immediately.
         const previousThenableThen = lastThenable.then.bind(lastThenable);
         delete lastThenable.value;
-        delete (lastThenable: any).status;
+        delete (lastThenable as any).status;
         // We'll call .then again if we resuspend. Since we potentially corrupted
         // the internal state of unknown classes, we need to diffuse the potential
         // crash by replacing the .then method with a noop.
@@ -295,10 +295,10 @@ export function ensureSuspendableThenableStateDEV(
       }
       case 'rejected': {
         const previousThenableReason = lastThenable.reason;
-        // $FlowIgnore[method-unbinding] We rebind .then immediately.
+        // $FlowFixMe[method-unbinding] We rebind .then immediately.
         const previousThenableThen = lastThenable.then.bind(lastThenable);
         delete lastThenable.reason;
-        delete (lastThenable: any).status;
+        delete (lastThenable as any).status;
         // We'll call .then again if we resuspend. Since we potentially corrupted
         // the internal state of unknown classes, we need to diffuse the potential
         // crash by replacing the .then method with a noop.

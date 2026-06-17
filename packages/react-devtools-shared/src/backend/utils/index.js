@@ -61,7 +61,7 @@ export function copyWithDelete(
   const updated = isArray(obj) ? obj.slice() : {...obj};
   if (index + 1 === path.length) {
     if (isArray(updated)) {
-      updated.splice(((key: any): number), 1);
+      updated.splice(key as any as number, 1);
     } else {
       delete updated[key];
     }
@@ -87,7 +87,7 @@ export function copyWithRename(
     // $FlowFixMe[incompatible-use] number or string is fine here
     updated[newKey] = updated[oldKey];
     if (isArray(updated)) {
-      updated.splice(((oldKey: any): number), 1);
+      updated.splice(oldKey as any as number, 1);
     } else {
       delete updated[oldKey];
     }
@@ -195,7 +195,7 @@ export function formatConsoleArgumentsToSingleString(
     if (args.length) {
       const REGEXP = /(%?)(%([jds]))/g;
 
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       formatted = formatted.replace(REGEXP, (match, escaped, ptn, flag) => {
         let arg = args.shift();
         switch (flag) {

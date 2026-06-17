@@ -1,0 +1,7 @@
+[package]
+name = "react_compiler_utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+indexmap = "2"

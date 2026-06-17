@@ -135,11 +135,11 @@ export function createRoot(
   return createRootImpl(
     container,
     assign(
-      ({
+      {
         onUncaughtError: wwwOnUncaughtError,
         onCaughtError: wwwOnCaughtError,
         onDefaultTransitionIndicator: noopOnDefaultTransitionIndicator,
-      }: any),
+      } as any,
       options,
     ),
   );
@@ -154,11 +154,11 @@ export function hydrateRoot(
     container,
     initialChildren,
     assign(
-      ({
+      {
         onUncaughtError: wwwOnUncaughtError,
         onCaughtError: wwwOnCaughtError,
         onDefaultTransitionIndicator: noopOnDefaultTransitionIndicator,
-      }: any),
+      } as any,
       options,
     ),
   );
@@ -255,7 +255,7 @@ function legacyCreateRootFromDOMContainer(
       !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
         ? container.parentNode
         : container;
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     listenToAllSupportedEvents(rootContainerElement);
 
     flushSyncWork();
@@ -292,7 +292,7 @@ function legacyCreateRootFromDOMContainer(
       !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
         ? container.parentNode
         : container;
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     listenToAllSupportedEvents(rootContainerElement);
 
     // Initial mount should not be batched.
@@ -376,8 +376,8 @@ export function findDOMNode(
   if (componentOrElement == null) {
     return null;
   }
-  if ((componentOrElement: any).nodeType === ELEMENT_NODE) {
-    return (componentOrElement: any);
+  if ((componentOrElement as any).nodeType === ELEMENT_NODE) {
+    return componentOrElement as any;
   }
   if (__DEV__) {
     return findHostInstanceWithWarning(componentOrElement, 'findDOMNode');
@@ -425,6 +425,7 @@ export function render(
   }
   return legacyRenderSubtreeIntoContainer(
     null,
+    // $FlowFixMe[incompatible-type]
     element,
     container,
     false,

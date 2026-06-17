@@ -205,6 +205,7 @@ function markUpdate(workInProgress: Fiber) {
  * it received an update that requires a clone of the tree above.
  */
 function markCloned(workInProgress: Fiber) {
+  // $FlowFixMe[constant-condition]
   if (supportsPersistence) {
     workInProgress.flags |= Cloned;
   }
@@ -245,6 +246,7 @@ function appendAllChildren(
   needsVisibilityToggle: boolean,
   isHidden: boolean,
 ) {
+  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // We only have the top Fiber that was created but we need recurse down its
     // children to find all the terminal nodes.
@@ -254,6 +256,7 @@ function appendAllChildren(
         appendInitialChild(parent, node.stateNode);
       } else if (
         node.tag === HostPortal ||
+        // $FlowFixMe[constant-condition]
         (supportsSingletons ? node.tag === HostSingleton : false)
       ) {
         // If we have a portal child, then we don't want to traverse
@@ -280,6 +283,7 @@ function appendAllChildren(
       node.sibling.return = node.return;
       node = node.sibling;
     }
+    // $FlowFixMe[constant-condition]
   } else if (supportsPersistence) {
     // We only have the top Fiber that was created but we need recurse down its
     // children to find all the terminal nodes.
@@ -357,6 +361,7 @@ function appendAllChildrenToContainer(
   // about their presence, we track and return if they were added to the
   // child set.
   let hasOffscreenComponentChild = false;
+  // $FlowFixMe[constant-condition]
   if (supportsPersistence) {
     // We only have the top Fiber that was created but we need recurse down its
     // children to find all the terminal nodes.
@@ -406,7 +411,7 @@ function appendAllChildrenToContainer(
         node = node.child;
         continue;
       }
-      node = (node: Fiber);
+      node = node as Fiber;
       if (node === workInProgress) {
         return hasOffscreenComponentChild;
       }
@@ -428,6 +433,7 @@ function appendAllChildrenToContainer(
 }
 
 function updateHostContainer(current: null | Fiber, workInProgress: Fiber) {
+  // $FlowFixMe[constant-condition]
   if (supportsPersistence) {
     if (doesRequireClone(current, workInProgress)) {
       const portalOrRoot: {
@@ -459,6 +465,7 @@ function updateHostComponent(
   newProps: Props,
   renderLanes: Lanes,
 ) {
+  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // If we have an alternate, that means this is an update and we need to
     // schedule a side-effect to do the updates.
@@ -470,6 +477,7 @@ function updateHostComponent(
     }
 
     markUpdate(workInProgress);
+    // $FlowFixMe[constant-condition]
   } else if (supportsPersistence) {
     const currentInstance = current.stateNode;
     const oldProps = current.memoizedProps;
@@ -667,11 +675,13 @@ function updateHostText(
   oldText: string,
   newText: string,
 ) {
+  // $FlowFixMe[constant-condition]
   if (supportsMutation) {
     // If the text differs, mark it as an update. All the work in done in commitWork.
     if (oldText !== newText) {
       markUpdate(workInProgress);
     }
+    // $FlowFixMe[constant-condition]
   } else if (supportsPersistence) {
     if (oldText !== newText) {
       // If the text content differs, we'll create a new text instance for it.
@@ -792,7 +802,7 @@ function bubbleProperties(completedWork: Fiber) {
       // In profiling mode, resetChildExpirationTime is also used to reset
       // profiler durations.
       let actualDuration = completedWork.actualDuration;
-      let treeBaseDuration = ((completedWork.selfBaseDuration: any): number);
+      let treeBaseDuration = completedWork.selfBaseDuration as any as number;
 
       let child = completedWork.child;
       while (child !== null) {
@@ -847,7 +857,7 @@ function bubbleProperties(completedWork: Fiber) {
     if (enableProfilerTimer && (completedWork.mode & ProfileMode) !== NoMode) {
       // In profiling mode, resetChildExpirationTime is also used to reset
       // profiler durations.
-      let treeBaseDuration = ((completedWork.selfBaseDuration: any): number);
+      let treeBaseDuration = completedWork.selfBaseDuration as any as number;
 
       let child = completedWork.child;
       while (child !== null) {
@@ -922,6 +932,7 @@ function completeDehydratedActivityBoundary(
       bubbleProperties(workInProgress);
       if (enableProfilerTimer) {
         if ((workInProgress.mode & ProfileMode) !== NoMode) {
+          // $FlowFixMe[invalid-compare]
           const isTimedOutSuspense = nextState !== null;
           if (isTimedOutSuspense) {
             // Don't count time spent in a timed out Suspense subtree as part of the base duration.
@@ -929,7 +940,7 @@ function completeDehydratedActivityBoundary(
             if (primaryChildFragment !== null) {
               // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
               workInProgress.treeBaseDuration -=
-                ((primaryChildFragment.treeBaseDuration: any): number);
+                primaryChildFragment.treeBaseDuration as any as number;
             }
           }
         }
@@ -960,7 +971,7 @@ function completeDehydratedActivityBoundary(
             if (primaryChildFragment !== null) {
               // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
               workInProgress.treeBaseDuration -=
-                ((primaryChildFragment.treeBaseDuration: any): number);
+                primaryChildFragment.treeBaseDuration as any as number;
             }
           }
         }
@@ -1004,6 +1015,7 @@ function completeDehydratedSuspenseBoundary(
       bubbleProperties(workInProgress);
       if (enableProfilerTimer) {
         if ((workInProgress.mode & ProfileMode) !== NoMode) {
+          // $FlowFixMe[invalid-compare]
           const isTimedOutSuspense = nextState !== null;
           if (isTimedOutSuspense) {
             // Don't count time spent in a timed out Suspense subtree as part of the base duration.
@@ -1011,7 +1023,7 @@ function completeDehydratedSuspenseBoundary(
             if (primaryChildFragment !== null) {
               // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
               workInProgress.treeBaseDuration -=
-                ((primaryChildFragment.treeBaseDuration: any): number);
+                primaryChildFragment.treeBaseDuration as any as number;
             }
           }
         }
@@ -1042,7 +1054,7 @@ function completeDehydratedSuspenseBoundary(
             if (primaryChildFragment !== null) {
               // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
               workInProgress.treeBaseDuration -=
-                ((primaryChildFragment.treeBaseDuration: any): number);
+                primaryChildFragment.treeBaseDuration as any as number;
             }
           }
         }
@@ -1103,7 +1115,7 @@ function completeWork(
       return null;
     }
     case HostRoot: {
-      const fiberRoot = (workInProgress.stateNode: FiberRoot);
+      const fiberRoot = workInProgress.stateNode as FiberRoot;
 
       if (enableTransitionTracing) {
         const transitions = getWorkInProgressTransitions();
@@ -1184,6 +1196,7 @@ function completeWork(
       return null;
     }
     case HostHoistable: {
+      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // The branching here is more complicated than you might expect because
         // a HostHoistable sometimes corresponds to a Resource and sometimes
@@ -1253,6 +1266,7 @@ function completeWork(
             const oldProps = current.memoizedProps;
             // This is an Instance
             // We may have props to update on the Hoistable instance.
+            // $FlowFixMe[constant-condition]
             if (supportsMutation) {
               if (oldProps !== newProps) {
                 markUpdate(workInProgress);
@@ -1284,11 +1298,13 @@ function completeWork(
       // Fall through
     }
     case HostSingleton: {
+      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         popHostContext(workInProgress);
         const rootContainerInstance = getRootHostContainer();
         const type = workInProgress.type;
         if (current !== null && workInProgress.stateNode != null) {
+          // $FlowFixMe[constant-condition]
           if (supportsMutation) {
             const oldProps = current.memoizedProps;
             if (oldProps !== newProps) {
@@ -1582,10 +1598,10 @@ function completeWork(
       const nextDidTimeout = nextState !== null;
       const prevDidTimeout =
         current !== null &&
-        (current.memoizedState: null | SuspenseState) !== null;
+        (current.memoizedState as null | SuspenseState) !== null;
 
       if (nextDidTimeout) {
-        const offscreenFiber: Fiber = (workInProgress.child: any);
+        const offscreenFiber: Fiber = workInProgress.child as any;
         let previousCache: Cache | null = null;
         if (
           offscreenFiber.alternate !== null &&
@@ -1611,7 +1627,7 @@ function completeWork(
       // a passive effect, which is when we process the transitions
       if (nextDidTimeout !== prevDidTimeout) {
         if (enableTransitionTracing) {
-          const offscreenFiber: Fiber = (workInProgress.child: any);
+          const offscreenFiber: Fiber = workInProgress.child as any;
           offscreenFiber.flags |= Passive;
         }
 
@@ -1627,12 +1643,12 @@ function completeWork(
         // phase will handle scheduling the effect. It's only when the fallback
         // is active that we have to do anything special.
         if (nextDidTimeout) {
-          const offscreenFiber: Fiber = (workInProgress.child: any);
+          const offscreenFiber: Fiber = workInProgress.child as any;
           offscreenFiber.flags |= Visibility;
         }
       }
 
-      const retryQueue: RetryQueue | null = (workInProgress.updateQueue: any);
+      const retryQueue: RetryQueue | null = workInProgress.updateQueue as any;
       scheduleRetryEffect(workInProgress, retryQueue);
 
       if (
@@ -1653,7 +1669,7 @@ function completeWork(
             if (primaryChildFragment !== null) {
               // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
               workInProgress.treeBaseDuration -=
-                ((primaryChildFragment.treeBaseDuration: any): number);
+                primaryChildFragment.treeBaseDuration as any as number;
             }
           }
         }
@@ -1743,7 +1759,7 @@ function completeWork(
                 // doesn't matter since that means that the other boundaries that
                 // we did find already has their listeners attached.
                 const retryQueue: RetryQueue | null =
-                  (suspended.updateQueue: any);
+                  suspended.updateQueue as any;
                 workInProgress.updateQueue = retryQueue;
                 scheduleRetryEffect(workInProgress, retryQueue);
 
@@ -1807,7 +1823,7 @@ function completeWork(
 
             // Ensure we transfer the update queue to the parent so that it doesn't
             // get lost if this row ends up dropped during a second pass.
-            const retryQueue: RetryQueue | null = (suspended.updateQueue: any);
+            const retryQueue: RetryQueue | null = suspended.updateQueue as any;
             workInProgress.updateQueue = retryQueue;
             scheduleRetryEffect(workInProgress, retryQueue);
 
@@ -1981,7 +1997,7 @@ function completeWork(
         // Don't bubble properties for hidden children unless we're rendering
         // at offscreen priority.
         if (
-          includesSomeLane(renderLanes, (OffscreenLane: Lane)) &&
+          includesSomeLane(renderLanes, OffscreenLane as Lane) &&
           // Also don't bubble if the tree suspended
           (workInProgress.flags & DidCapture) === NoLanes
         ) {
@@ -2000,7 +2016,7 @@ function completeWork(
       }
 
       const offscreenQueue: OffscreenQueue | null =
-        (workInProgress.updateQueue: any);
+        workInProgress.updateQueue as any;
       if (offscreenQueue !== null) {
         const retryQueue = offscreenQueue.retryQueue;
         scheduleRetryEffect(workInProgress, retryQueue);

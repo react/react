@@ -114,6 +114,7 @@ export function preload(href: string, options: PreloadOptions) {
     typeof href === 'string' &&
     // We check existence because we cannot enforce this function is actually called with the stated type
     typeof options === 'object' &&
+    // $FlowFixMe[invalid-compare]
     options !== null &&
     typeof options.as === 'string'
   ) {

@@ -86,7 +86,7 @@ export default function ProfilingImportExportButtons(): React.Node {
       // TODO (profiling) Handle fileReader errors.
       const fileReader = new FileReader();
       fileReader.addEventListener('load', () => {
-        const raw = ((fileReader.result: any): string);
+        const raw = fileReader.result as any as string;
         const json = JSON.parse(raw);
 
         if (!isArray(json) && hasOwnProperty.call(json, 'version')) {
@@ -95,7 +95,7 @@ export default function ProfilingImportExportButtons(): React.Node {
           setFile(null);
 
           try {
-            const profilingDataExport = ((json: any): ProfilingDataExport);
+            const profilingDataExport = json as any as ProfilingDataExport;
             profilerStore.profilingData =
               prepareProfilingDataFrontendFromExport(profilingDataExport);
           } catch (error) {

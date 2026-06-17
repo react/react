@@ -41,7 +41,7 @@ export type Context = {
 };
 
 const TimelineContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 TimelineContext.displayName = 'TimelineContext';
 

@@ -32,7 +32,7 @@ export default function SnapshotSelector(_: Props): React.Node {
   } = useContext(ProfilerContext);
 
   const {profilerStore} = useContext(StoreContext);
-  const {commitData} = profilerStore.getDataForRoot(((rootID: any): number));
+  const {commitData} = profilerStore.getDataForRoot(rootID as any as number);
 
   const totalDurations: Array<number> = [];
   const commitTimes: Array<number> = [];

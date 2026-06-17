@@ -3,7 +3,7 @@
 
 ```javascript
 import {useState} from 'react';
-import {bar} from './bar';
+const bar = () => ({data: null});
 
 export const useFoot = () => {
   const [, setState] = useState(null);
