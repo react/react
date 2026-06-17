@@ -31,7 +31,7 @@ To use the latest build from CI, run the following commands starting from the ro
 ```sh
 cd scripts/release
 yarn install
-./download-experimental-build.js
+./download-experimental-build.js --commit $(git rev-parse origin/main)
 ```
 ### Build steps
 Once the above packages have been built or downloaded, you can build the extension by running:
