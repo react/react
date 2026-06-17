@@ -3405,7 +3405,7 @@ function pushImg(
           nonce: props.nonce,
           type: props.type,
           fetchPriority: props.fetchPriority,
-          referrerPolicy: props.refererPolicy,
+          referrerPolicy: props.referrerPolicy,
         })),
         // We always consume the header length since once we find one header that doesn't fit
         // we assume all the rest won't as well. This is to avoid getting into a situation
