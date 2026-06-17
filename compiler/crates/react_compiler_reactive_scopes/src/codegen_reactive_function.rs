@@ -181,6 +181,17 @@ pub struct OutlinedFunction {
 }
 
 /// Top-level entry point: generates code for a reactive function.
+/// Computes the Fast Refresh source hash used to bust the memo cache when the
+/// source file changes. Matches the TS compiler's
+/// `createHmac('sha256', code).digest('hex')`: an HMAC-SHA256 keyed by the
+/// source code, hashing empty data.
+fn source_file_hash(code: &str) -> String {
+    hmac_sha256::HMAC::mac(b"", code.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 pub fn codegen_function(
     func: &ReactiveFunction,
     env: &mut Environment,
@@ -194,15 +205,7 @@ pub fn codegen_function(
     let fast_refresh_state: Option<(u32, String)> =
         if cx.env.config.enable_reset_cache_on_source_file_changes == Some(true) {
             if let Some(ref code) = cx.env.code {
-                use hmac::Hmac;
-                use hmac::Mac;
-                use sha2::Sha256;
-                type HmacSha256 = Hmac<Sha256>;
-                // Match TS: createHmac('sha256', code).digest('hex')
-                // Node's createHmac uses the code as the HMAC key and hashes empty data.
-                let mac = HmacSha256::new_from_slice(code.as_bytes())
-                    .expect("HMAC can take key of any size");
-                let hash = format!("{:x}", mac.finalize().into_bytes());
+                let hash = source_file_hash(code);
                 let cache_index = cx.alloc_cache_index(); // Reserve slot 0 for the hash check
                 Some((cache_index, hash))
             } else {
@@ -382,7 +385,9 @@ pub fn codegen_function(
                                                     arguments: vec![Expression::StringLiteral(
                                                         StringLiteral {
                                                             base: BaseNode::typed("StringLiteral"),
-                                                            value: MEMO_CACHE_SENTINEL.to_string().into(),
+                                                            value: MEMO_CACHE_SENTINEL
+                                                                .to_string()
+                                                                .into(),
                                                         },
                                                     )],
                                                     type_parameters: None,
@@ -4238,6 +4243,27 @@ mod tests {
     use serde_json::json;
 
     use super::{UnsupportedOriginalNode, codegen_unsupported_original_node};
+
+    /// The Fast Refresh source hash must match Node's
+    /// `createHmac('sha256', code).digest('hex')` byte-for-byte, or hot-reload
+    /// cache invalidation would diverge from the TS compiler. Reference values
+    /// were computed with Node's `crypto` module.
+    #[test]
+    fn source_file_hash_matches_node_create_hmac() {
+        use super::source_file_hash;
+        assert_eq!(
+            source_file_hash("hello world"),
+            "0de8bee5d7f9c5d209f8c6fabed0ea84cb3fca1244e8ed38079a61b599a84c47"
+        );
+        assert_eq!(
+            source_file_hash(""),
+            "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
+        );
+        assert_eq!(
+            source_file_hash("function App(){}"),
+            "d637acb4985c789d6622c70197db2b62dda282f16f3276aa810b598d6e6cab7b"
+        );
+    }
 
     /// A modeled statement tag parses typed and is emitted directly.
     #[test]

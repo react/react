@@ -9,5 +9,4 @@ react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
 react_compiler_hir = { path = "../react_compiler_hir" }
 indexmap = "2"
 serde_json = "1"
-sha2 = "0.10"
-hmac = "0.12"
+hmac-sha256 = "1"
