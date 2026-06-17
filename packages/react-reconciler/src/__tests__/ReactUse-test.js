@@ -288,7 +288,10 @@ describe('ReactUse', () => {
   });
 
   it('warns for an uncached use() promise that resolves in a later task', async () => {
-    spyOnDev(console, 'error').mockImplementation(() => {});
+    const uncachedPromiseErrorMessage =
+      'A component was suspended by an uncached promise. Creating ' +
+      'promises inside a Client Component or hook is not yet ' +
+      'supported, except via a Suspense-compatible library or framework.';
 
     class ErrorBoundary extends React.Component {
       state = {error: null};
@@ -319,18 +322,14 @@ describe('ReactUse', () => {
 
     let finalLog;
     // Keep resolving each uncached request until the existing shell ping-loop
-    // guard trips. This is the path that used to throw without first logging
-    // the uncached-promise warning.
+    // guard trips. This is the path that used to misdiagnose the uncached
+    // use() promise as an async Client Component.
     for (let i = 0; i < 100; i++) {
       await act(() => {
         resolveTextRequests('Async');
       });
       const log = Scheduler.unstable_clearLog();
-      if (
-        log.some(entry =>
-          entry.startsWith('An unknown Component is an async Client Component.'),
-        )
-      ) {
+      if (log.includes(uncachedPromiseErrorMessage)) {
         finalLog = log;
         break;
       }
@@ -339,30 +338,12 @@ describe('ReactUse', () => {
         'Async text requested [Async]',
       ]);
     }
-    expect(finalLog).toContain(
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
-    );
-    expect(root).toMatchRenderedOutput(
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
-    );
-
-    if (__DEV__) {
-      const loggedMessages = console.error.mock.calls.map(call => call[0]);
-      expect(loggedMessages).toContain(
-        'A component was suspended by an uncached promise. Creating ' +
-          'promises inside a Client Component or hook is not yet ' +
-          'supported, except via a Suspense-compatible library or framework.',
-      );
-      console.error.mockRestore();
-    }
+    expect(finalLog).toContain(uncachedPromiseErrorMessage);
+    assertConsoleErrorDev([
+      uncachedPromiseErrorMessage + '\n' + '    in Async (at **)',
+      uncachedPromiseErrorMessage + '\n' + '    in Async (at **)',
+    ]);
+    expect(root).toMatchRenderedOutput(uncachedPromiseErrorMessage);
   });
 
   it('using a rejected promise will throw', async () => {
