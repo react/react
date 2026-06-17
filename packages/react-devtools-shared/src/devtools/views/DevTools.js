@@ -117,19 +117,19 @@ export type Props = {
 };
 
 const componentsTab = {
-  id: ('components': TabID),
+  id: 'components' as TabID,
   icon: 'components',
   label: 'Components',
   title: 'React Components',
 };
 const profilerTab = {
-  id: ('profiler': TabID),
+  id: 'profiler' as TabID,
   icon: 'profiler',
   label: 'Profiler',
   title: 'React Profiler',
 };
 const suspenseTab = {
-  id: ('suspense': TabID),
+  id: 'suspense' as TabID,
   icon: 'suspense',
   label: 'Suspense',
   title: 'React Suspense',

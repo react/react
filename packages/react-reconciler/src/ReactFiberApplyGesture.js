@@ -437,6 +437,7 @@ function recursivelyInsertNewFiber(
       break;
     }
     case HostHoistable: {
+      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // TODO: Hoistables should get optimistically inserted and then removed.
         recursivelyInsertNew(
@@ -450,6 +451,7 @@ function recursivelyInsertNewFiber(
       // Fall through
     }
     case HostSingleton: {
+      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         recursivelyInsertNew(
           finishedWork,
@@ -502,6 +504,7 @@ function recursivelyInsertNewFiber(
     }
     case HostText: {
       const textInstance: TextInstance = finishedWork.stateNode;
+      // $FlowFixMe[invalid-compare]
       if (textInstance === null) {
         throw new Error(
           'This should have a text node initialized. This error is likely ' +
@@ -643,6 +646,7 @@ function recursivelyInsertClonesFromExistingTree(
       }
       case HostText: {
         const textInstance: TextInstance = child.stateNode;
+        // $FlowFixMe[invalid-compare]
         if (textInstance === null) {
           throw new Error(
             'This should have a text node initialized. This error is likely ' +
@@ -808,6 +812,7 @@ function insertDestinationClonesOfFiber(
   // to reconciliation, because those can be set on all fiber types.
   switch (finishedWork.tag) {
     case HostHoistable: {
+      // $FlowFixMe[constant-condition]
       if (supportsResources) {
         // TODO: Hoistables should get optimistically inserted and then removed.
         recursivelyInsertClones(
@@ -821,6 +826,7 @@ function insertDestinationClonesOfFiber(
       // Fall through
     }
     case HostSingleton: {
+      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         recursivelyInsertClones(
           finishedWork,
@@ -916,6 +922,7 @@ function insertDestinationClonesOfFiber(
     }
     case HostText: {
       const textInstance: TextInstance = finishedWork.stateNode;
+      // $FlowFixMe[invalid-compare]
       if (textInstance === null) {
         throw new Error(
           'This should have a text node initialized. This error is likely ' +
@@ -960,6 +967,7 @@ function insertDestinationClonesOfFiber(
           parentViewTransition,
           nextPhase,
         );
+        // $FlowFixMe[invalid-compare]
       } else if (current !== null && current.memoizedState === null) {
         // Was previously mounted as visible but is now hidden.
         trackEnterViewTransitions(current);
@@ -1244,9 +1252,9 @@ export function applyDepartureTransitions(
     if (cancelableChildren !== null) {
       for (let i = 0; i < cancelableChildren.length; i += 3) {
         cancelViewTransitionName(
-          ((cancelableChildren[i]: any): Instance),
-          ((cancelableChildren[i + 1]: any): string),
-          ((cancelableChildren[i + 2]: any): Props),
+          cancelableChildren[i] as any as Instance,
+          cancelableChildren[i + 1] as any as string,
+          cancelableChildren[i + 2] as any as Props,
         );
       }
     }
@@ -1307,6 +1315,7 @@ function restoreViewTransitionsOnFiber(finishedWork: Fiber) {
         const isHidden = newState !== null;
         if (!isHidden) {
           restoreEnterOrExitViewTransitions(finishedWork);
+          // $FlowFixMe[invalid-compare]
         } else if (current !== null && current.memoizedState === null) {
           // Was previously mounted as visible but is now hidden.
           restoreEnterOrExitViewTransitions(current);

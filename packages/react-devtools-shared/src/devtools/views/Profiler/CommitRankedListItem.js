@@ -79,6 +79,6 @@ function CommitRankedListItem({data, index, style}: Props) {
   );
 }
 
-export default (memo(CommitRankedListItem, areEqual): component(
+export default memo(CommitRankedListItem, areEqual) as component(
   ...props: Props
-));
+);

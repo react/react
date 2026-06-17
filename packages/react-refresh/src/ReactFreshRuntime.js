@@ -463,7 +463,7 @@ export function injectIntoGlobalHook(globalObject: any): void {
         typeof injected.setRefreshHandler === 'function'
       ) {
         // This version supports React Refresh.
-        helpersByRendererID.set(id, ((injected: any): RendererHelpers));
+        helpersByRendererID.set(id, injected as any as RendererHelpers);
       }
       return id;
     };
@@ -477,7 +477,7 @@ export function injectIntoGlobalHook(globalObject: any): void {
         typeof injected.setRefreshHandler === 'function'
       ) {
         // This version supports React Refresh.
-        helpersByRendererID.set(id, ((injected: any): RendererHelpers));
+        helpersByRendererID.set(id, injected as any as RendererHelpers);
       }
     });
 

@@ -151,6 +151,7 @@ function render(
     // TODO (bvaughn): If we decide to keep the wrapper component,
     // We could create a wrapper for containerTag as well to reduce special casing.
     root = createContainer(
+      // $FlowFixMe[incompatible-type]
       rootInstance,
       concurrentRoot ? ConcurrentRoot : LegacyRoot,
       null,
@@ -166,6 +167,7 @@ function render(
 
     roots.set(containerTag, root);
   }
+  // $FlowFixMe[incompatible-type]
   updateContainer(element, root, null, callback);
 
   return getPublicRootInstance(root);

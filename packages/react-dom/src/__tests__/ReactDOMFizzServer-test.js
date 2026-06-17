@@ -3603,6 +3603,88 @@ describe('ReactDOMFizzServer', () => {
     expect(errors).toEqual(['abort reason', 'abort reason', 'abort reason']);
   });
 
+  it('uses a rejection reason from a lazy component before the abort finishes', async () => {
+    let reject;
+    const Lazy = React.lazy(
+      () =>
+        new Promise((resolve, rejectPromise) => {
+          reject = rejectPromise;
+        }),
+    );
+    const haltedPromise = new Promise(() => {});
+    function HaltedWait() {
+      use(haltedPromise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <>
+          <Suspense fallback="Loading lazy">
+            <Lazy />
+          </Suspense>
+          <Suspense fallback="Loading halted">
+            <HaltedWait />
+          </Suspense>
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+      reject(new Error('rejected during abort'));
+    });
+
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
+  });
+
+  it('does not report a rejection reason after abort has finished', async () => {
+    let reject;
+    const promise = new Promise((resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    function Wait() {
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <Suspense fallback="Loading">
+          <Wait />
+        </Suspense>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    await act(() => {
+      reject(new Error('rejected after abort'));
+    });
+
+    expect(errors).toEqual(['abort reason']);
+  });
+
   it('warns in dev if you access digest from errorInfo in onRecoverableError', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -3849,6 +3931,35 @@ describe('ReactDOMFizzServer', () => {
 `
         .replaceAll('\n', '')
         .trim(),
+    });
+  });
+
+  it('preserves referrerPolicy for image preload headers', async () => {
+    let headers = null;
+    function onHeaders(x) {
+      headers = x;
+    }
+
+    function App() {
+      return (
+        <html>
+          <body>
+            <img
+              src="image-with-referrer-policy"
+              fetchPriority="high"
+              referrerPolicy="no-referrer"
+            />
+          </body>
+        </html>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App />, {onHeaders});
+    });
+
+    expect(headers).toEqual({
+      Link: `<image-with-referrer-policy>; rel=preload; as="image"; fetchpriority="high"; referrerpolicy="no-referrer"`,
     });
   });
 

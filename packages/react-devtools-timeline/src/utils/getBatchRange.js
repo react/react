@@ -26,7 +26,7 @@ function unmemoizedGetBatchRange(
     throw Error(`Could not find measures with batch UID "${batchUID}"`);
   }
 
-  const lastMeasure = ((measures[measures.length - 1]: any): ReactMeasure);
+  const lastMeasure = measures[measures.length - 1] as any as ReactMeasure;
   const stopTime = lastMeasure.timestamp + lastMeasure.duration;
 
   if (stopTime < minStartTime) {

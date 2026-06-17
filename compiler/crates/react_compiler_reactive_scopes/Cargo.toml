@@ -1,0 +1,13 @@
+[package]
+name = "react_compiler_reactive_scopes"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+react_compiler_ast = { path = "../react_compiler_ast" }
+react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
+react_compiler_hir = { path = "../react_compiler_hir" }
+indexmap = "2"
+serde_json = "1"
+sha2 = "0.10"
+hmac = "0.12"

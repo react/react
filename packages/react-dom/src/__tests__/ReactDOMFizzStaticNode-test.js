@@ -464,7 +464,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });
 
-  it('currently uses the abort reason when an abort listener synchronously rejects pending work', async () => {
+  it('uses a rejection reason when an abort listener rejects pending work before the abort finishes', async () => {
     let reject;
     const rejectedPromise = new Promise((resolve, rejectPromise) => {
       reject = rejectPromise;
@@ -505,10 +505,11 @@ describe('ReactDOMFizzStaticNode', () => {
     });
     controller.abort(new Error('abort reason'));
 
+    await Promise.resolve();
     await jest.runAllTimers();
     await resultPromise;
 
-    expect(errors).toEqual(['abort reason', 'abort reason']);
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
   });
 
   describe('with real timers', () => {

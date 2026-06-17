@@ -488,7 +488,7 @@ jobs:
             ./build2.tgz
           if-no-files-found: error
       - uses: actions/attest-build-provenance@v2
-        # We don't verify builds generated from pull requests not originating from facebook/react.
+        # We don't verify builds generated from pull requests not originating from react/react.
         # However, if the PR lands, the run on release branches will generate the attestation which can then
         # be used to download a build via scripts/release/download-experimental-build.js.
         #
