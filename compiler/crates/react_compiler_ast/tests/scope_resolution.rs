@@ -429,106 +429,12 @@ fn visit_stmt(stmt: &mut Statement, si: &ScopeInfo) {
         Statement::ImportDeclaration(d) => visit_import_decl(d, si),
         Statement::ExportNamedDeclaration(d) => visit_export_named(d, si),
         Statement::ExportDefaultDeclaration(d) => visit_export_default(d, si),
-        Statement::TSTypeAliasDeclaration(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.type_annotation, si);
-            visit_json_opt(&mut d.type_parameters, si);
-        }
-        Statement::TSInterfaceDeclaration(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.body, si);
-            visit_json_opt(&mut d.type_parameters, si);
-            if let Some(ext) = &mut d.extends {
-                visit_json_vec(ext, si);
-            }
-        }
+        // Type-only TS/Flow declarations are no longer modeled as typed
+        // `Statement` variants; they deserialize to `Statement::Unknown` and
+        // are renamed via the raw-node path below.
         Statement::TSEnumDeclaration(d) => {
             rename_id(&mut d.id, si);
             visit_json_vec(&mut d.members, si);
-        }
-        Statement::TSModuleDeclaration(d) => {
-            visit_raw(&mut d.id, si);
-            visit_raw(&mut d.body, si);
-        }
-        Statement::TSDeclareFunction(d) => {
-            if let Some(id) = &mut d.id {
-                rename_id(id, si);
-            }
-            visit_json_vec(&mut d.params, si);
-            visit_json_opt(&mut d.return_type, si);
-            visit_json_opt(&mut d.type_parameters, si);
-        }
-        Statement::TypeAlias(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.right, si);
-            visit_json_opt(&mut d.type_parameters, si);
-        }
-        Statement::OpaqueType(d) => {
-            rename_id(&mut d.id, si);
-            if let Some(st) = &mut d.supertype {
-                visit_raw(st, si);
-            }
-            visit_raw(&mut d.impltype, si);
-            visit_json_opt(&mut d.type_parameters, si);
-        }
-        Statement::InterfaceDeclaration(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.body, si);
-            visit_json_opt(&mut d.type_parameters, si);
-            if let Some(ext) = &mut d.extends {
-                visit_json_vec(ext, si);
-            }
-        }
-        Statement::DeclareVariable(d) => rename_id(&mut d.id, si),
-        Statement::DeclareFunction(d) => {
-            rename_id(&mut d.id, si);
-            if let Some(pred) = &mut d.predicate {
-                visit_raw(pred, si);
-            }
-        }
-        Statement::DeclareClass(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.body, si);
-            visit_json_opt(&mut d.type_parameters, si);
-            if let Some(ext) = &mut d.extends {
-                visit_json_vec(ext, si);
-            }
-        }
-        Statement::DeclareModule(d) => {
-            visit_raw(&mut d.id, si);
-            visit_raw(&mut d.body, si);
-        }
-        Statement::DeclareModuleExports(d) => visit_raw(&mut d.type_annotation, si),
-        Statement::DeclareExportDeclaration(d) => {
-            if let Some(decl) = &mut d.declaration {
-                visit_raw(decl, si);
-            }
-            if let Some(specs) = &mut d.specifiers {
-                visit_json_vec(specs, si);
-            }
-        }
-        Statement::DeclareInterface(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.body, si);
-            visit_json_opt(&mut d.type_parameters, si);
-            if let Some(ext) = &mut d.extends {
-                visit_json_vec(ext, si);
-            }
-        }
-        Statement::DeclareTypeAlias(d) => {
-            rename_id(&mut d.id, si);
-            visit_raw(&mut d.right, si);
-            visit_json_opt(&mut d.type_parameters, si);
-        }
-        Statement::DeclareOpaqueType(d) => {
-            rename_id(&mut d.id, si);
-            if let Some(st) = &mut d.supertype {
-                visit_raw(st, si);
-            }
-            if let Some(impl_) = &mut d.impltype {
-                visit_raw(impl_, si);
-            }
-            visit_json_opt(&mut d.type_parameters, si);
         }
         Statement::EnumDeclaration(d) => {
             rename_id(&mut d.id, si);
@@ -542,8 +448,7 @@ fn visit_stmt(stmt: &mut Statement, si: &ScopeInfo) {
         | Statement::ContinueStatement(_)
         | Statement::EmptyStatement(_)
         | Statement::DebuggerStatement(_)
-        | Statement::ExportAllDeclaration(_)
-        | Statement::DeclareExportAllDeclaration(_) => {}
+        | Statement::ExportAllDeclaration(_) => {}
     }
 }
 

@@ -45,27 +45,16 @@ pub enum Statement {
     ExportNamedDeclaration(crate::declarations::ExportNamedDeclaration),
     ExportDefaultDeclaration(crate::declarations::ExportDefaultDeclaration),
     ExportAllDeclaration(crate::declarations::ExportAllDeclaration),
-    // TypeScript declarations
-    TSTypeAliasDeclaration(crate::declarations::TSTypeAliasDeclaration),
-    TSInterfaceDeclaration(crate::declarations::TSInterfaceDeclaration),
+    // TypeScript/Flow enum declarations. Kept as typed variants because the
+    // bailout path serializes them back out via `original_node`.
     TSEnumDeclaration(crate::declarations::TSEnumDeclaration),
-    TSModuleDeclaration(crate::declarations::TSModuleDeclaration),
-    TSDeclareFunction(crate::declarations::TSDeclareFunction),
-    // Flow declarations
-    TypeAlias(crate::declarations::TypeAlias),
-    OpaqueType(crate::declarations::OpaqueType),
-    InterfaceDeclaration(crate::declarations::InterfaceDeclaration),
-    DeclareVariable(crate::declarations::DeclareVariable),
-    DeclareFunction(crate::declarations::DeclareFunction),
-    DeclareClass(crate::declarations::DeclareClass),
-    DeclareModule(crate::declarations::DeclareModule),
-    DeclareModuleExports(crate::declarations::DeclareModuleExports),
-    DeclareExportDeclaration(crate::declarations::DeclareExportDeclaration),
-    DeclareExportAllDeclaration(crate::declarations::DeclareExportAllDeclaration),
-    DeclareInterface(crate::declarations::DeclareInterface),
-    DeclareTypeAlias(crate::declarations::DeclareTypeAlias),
-    DeclareOpaqueType(crate::declarations::DeclareOpaqueType),
     EnumDeclaration(crate::declarations::EnumDeclaration),
+    // NOTE: TS/Flow *type-only* declarations (TSTypeAliasDeclaration,
+    // TypeAlias, Declare*, etc.) are intentionally NOT modeled as typed
+    // variants. The compiler never inspects their structure — it skips them in
+    // function bodies and preserves them verbatim at module level — so they
+    // deserialize to `Unknown` below, which keeps their serde/clone code out of
+    // the binary. [`is_type_only_statement_tag`] lists those tags.
     /// Catch-all for statement `type`s the typed AST does not model, e.g. the
     /// TypeScript module-interop statements `import x = require(...)`,
     /// `export = x`, and `export as namespace X`. Carries the complete raw
@@ -250,25 +239,37 @@ known_statements! {
     ExportNamedDeclaration => crate::declarations::ExportNamedDeclaration,
     ExportDefaultDeclaration => crate::declarations::ExportDefaultDeclaration,
     ExportAllDeclaration => crate::declarations::ExportAllDeclaration,
-    TSTypeAliasDeclaration => crate::declarations::TSTypeAliasDeclaration,
-    TSInterfaceDeclaration => crate::declarations::TSInterfaceDeclaration,
     TSEnumDeclaration => crate::declarations::TSEnumDeclaration,
-    TSModuleDeclaration => crate::declarations::TSModuleDeclaration,
-    TSDeclareFunction => crate::declarations::TSDeclareFunction,
-    TypeAlias => crate::declarations::TypeAlias,
-    OpaqueType => crate::declarations::OpaqueType,
-    InterfaceDeclaration => crate::declarations::InterfaceDeclaration,
-    DeclareVariable => crate::declarations::DeclareVariable,
-    DeclareFunction => crate::declarations::DeclareFunction,
-    DeclareClass => crate::declarations::DeclareClass,
-    DeclareModule => crate::declarations::DeclareModule,
-    DeclareModuleExports => crate::declarations::DeclareModuleExports,
-    DeclareExportDeclaration => crate::declarations::DeclareExportDeclaration,
-    DeclareExportAllDeclaration => crate::declarations::DeclareExportAllDeclaration,
-    DeclareInterface => crate::declarations::DeclareInterface,
-    DeclareTypeAlias => crate::declarations::DeclareTypeAlias,
-    DeclareOpaqueType => crate::declarations::DeclareOpaqueType,
     EnumDeclaration => crate::declarations::EnumDeclaration,
+}
+
+/// Whether `node_type` is a TS/Flow *type-only* declaration tag — a statement
+/// the compiler does not model with a typed variant because it carries no
+/// runtime semantics. These deserialize to [`Statement::Unknown`]; lowering
+/// skips them in function bodies (matching the TS reference) and the module
+/// level preserves them verbatim. Keeping them as a tag list rather than typed
+/// `Statement` variants keeps their serde/clone code out of the binary.
+pub fn is_type_only_statement_tag(node_type: &str) -> bool {
+    const TYPE_ONLY_STATEMENT_TYPES: &[&str] = &[
+        "TSTypeAliasDeclaration",
+        "TSInterfaceDeclaration",
+        "TSModuleDeclaration",
+        "TSDeclareFunction",
+        "TypeAlias",
+        "OpaqueType",
+        "InterfaceDeclaration",
+        "DeclareVariable",
+        "DeclareFunction",
+        "DeclareClass",
+        "DeclareModule",
+        "DeclareModuleExports",
+        "DeclareExportDeclaration",
+        "DeclareExportAllDeclaration",
+        "DeclareInterface",
+        "DeclareTypeAlias",
+        "DeclareOpaqueType",
+    ];
+    TYPE_ONLY_STATEMENT_TYPES.contains(&node_type)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

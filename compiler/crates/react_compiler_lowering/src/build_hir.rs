@@ -2399,24 +2399,7 @@ fn statement_start(stmt: &react_compiler_ast::statements::Statement) -> Option<u
         Statement::ExportNamedDeclaration(s) => s.base.start,
         Statement::ExportDefaultDeclaration(s) => s.base.start,
         Statement::ExportAllDeclaration(s) => s.base.start,
-        Statement::TSTypeAliasDeclaration(s) => s.base.start,
-        Statement::TSInterfaceDeclaration(s) => s.base.start,
         Statement::TSEnumDeclaration(s) => s.base.start,
-        Statement::TSModuleDeclaration(s) => s.base.start,
-        Statement::TSDeclareFunction(s) => s.base.start,
-        Statement::TypeAlias(s) => s.base.start,
-        Statement::OpaqueType(s) => s.base.start,
-        Statement::InterfaceDeclaration(s) => s.base.start,
-        Statement::DeclareVariable(s) => s.base.start,
-        Statement::DeclareFunction(s) => s.base.start,
-        Statement::DeclareClass(s) => s.base.start,
-        Statement::DeclareModule(s) => s.base.start,
-        Statement::DeclareModuleExports(s) => s.base.start,
-        Statement::DeclareExportDeclaration(s) => s.base.start,
-        Statement::DeclareExportAllDeclaration(s) => s.base.start,
-        Statement::DeclareInterface(s) => s.base.start,
-        Statement::DeclareTypeAlias(s) => s.base.start,
-        Statement::DeclareOpaqueType(s) => s.base.start,
         Statement::EnumDeclaration(s) => s.base.start,
         Statement::Unknown(s) => s.base().start,
     }
@@ -2450,24 +2433,7 @@ fn statement_end(stmt: &react_compiler_ast::statements::Statement) -> Option<u32
         Statement::ExportNamedDeclaration(s) => s.base.end,
         Statement::ExportDefaultDeclaration(s) => s.base.end,
         Statement::ExportAllDeclaration(s) => s.base.end,
-        Statement::TSTypeAliasDeclaration(s) => s.base.end,
-        Statement::TSInterfaceDeclaration(s) => s.base.end,
         Statement::TSEnumDeclaration(s) => s.base.end,
-        Statement::TSModuleDeclaration(s) => s.base.end,
-        Statement::TSDeclareFunction(s) => s.base.end,
-        Statement::TypeAlias(s) => s.base.end,
-        Statement::OpaqueType(s) => s.base.end,
-        Statement::InterfaceDeclaration(s) => s.base.end,
-        Statement::DeclareVariable(s) => s.base.end,
-        Statement::DeclareFunction(s) => s.base.end,
-        Statement::DeclareClass(s) => s.base.end,
-        Statement::DeclareModule(s) => s.base.end,
-        Statement::DeclareModuleExports(s) => s.base.end,
-        Statement::DeclareExportDeclaration(s) => s.base.end,
-        Statement::DeclareExportAllDeclaration(s) => s.base.end,
-        Statement::DeclareInterface(s) => s.base.end,
-        Statement::DeclareTypeAlias(s) => s.base.end,
-        Statement::DeclareOpaqueType(s) => s.base.end,
         Statement::EnumDeclaration(s) => s.base.end,
         Statement::Unknown(s) => s.base().end,
     }
@@ -2502,24 +2468,7 @@ fn statement_loc(stmt: &react_compiler_ast::statements::Statement) -> Option<Sou
         Statement::ExportNamedDeclaration(s) => s.base.loc.clone(),
         Statement::ExportDefaultDeclaration(s) => s.base.loc.clone(),
         Statement::ExportAllDeclaration(s) => s.base.loc.clone(),
-        Statement::TSTypeAliasDeclaration(s) => s.base.loc.clone(),
-        Statement::TSInterfaceDeclaration(s) => s.base.loc.clone(),
         Statement::TSEnumDeclaration(s) => s.base.loc.clone(),
-        Statement::TSModuleDeclaration(s) => s.base.loc.clone(),
-        Statement::TSDeclareFunction(s) => s.base.loc.clone(),
-        Statement::TypeAlias(s) => s.base.loc.clone(),
-        Statement::OpaqueType(s) => s.base.loc.clone(),
-        Statement::InterfaceDeclaration(s) => s.base.loc.clone(),
-        Statement::DeclareVariable(s) => s.base.loc.clone(),
-        Statement::DeclareFunction(s) => s.base.loc.clone(),
-        Statement::DeclareClass(s) => s.base.loc.clone(),
-        Statement::DeclareModule(s) => s.base.loc.clone(),
-        Statement::DeclareModuleExports(s) => s.base.loc.clone(),
-        Statement::DeclareExportDeclaration(s) => s.base.loc.clone(),
-        Statement::DeclareExportAllDeclaration(s) => s.base.loc.clone(),
-        Statement::DeclareInterface(s) => s.base.loc.clone(),
-        Statement::DeclareTypeAlias(s) => s.base.loc.clone(),
-        Statement::DeclareOpaqueType(s) => s.base.loc.clone(),
         Statement::EnumDeclaration(s) => s.base.loc.clone(),
         Statement::Unknown(s) => s.base().loc.clone(),
     };
@@ -4195,31 +4144,22 @@ fn lower_statement(
                 },
             )?;
         }
-        // TypeScript/Flow type declarations are type-only, skip them
-        Statement::TSTypeAliasDeclaration(_)
-        | Statement::TSInterfaceDeclaration(_)
-        | Statement::TSModuleDeclaration(_)
-        | Statement::TSDeclareFunction(_)
-        | Statement::TypeAlias(_)
-        | Statement::OpaqueType(_)
-        | Statement::InterfaceDeclaration(_)
-        | Statement::DeclareVariable(_)
-        | Statement::DeclareFunction(_)
-        | Statement::DeclareClass(_)
-        | Statement::DeclareModule(_)
-        | Statement::DeclareModuleExports(_)
-        | Statement::DeclareExportDeclaration(_)
-        | Statement::DeclareExportAllDeclaration(_)
-        | Statement::DeclareInterface(_)
-        | Statement::DeclareTypeAlias(_)
-        | Statement::DeclareOpaqueType(_) => {}
-        // The TS reference can only reach its equivalent default case via
-        // assertExhaustive (Babel's closed Statement type), so it crashes;
-        // here unmodeled syntax is reachable by construction and degrades
-        // like the other unsupported-statement arms instead.
+        // TS/Flow type-only declarations (TSTypeAliasDeclaration, Declare*,
+        // etc.) and any other statement `type` the typed AST does not model
+        // both deserialize to `Unknown`. Type-only declarations carry no
+        // runtime semantics, so skip them silently — matching the TS reference,
+        // which never lowers them, and the previous typed type-only arms which
+        // were no-ops. Any other unmodeled statement degrades to an
+        // UnsupportedNode with a recorded error, as before. (The TS reference's
+        // closed `Statement` type reaches its default case only via
+        // assertExhaustive and crashes; here unmodeled syntax is reachable by
+        // construction and degrades instead.)
         Statement::Unknown(unknown) => {
-            let loc = convert_opt_loc(&unknown.base().loc);
             let node_type = unknown.node_type().to_string();
+            if react_compiler_ast::statements::is_type_only_statement_tag(&node_type) {
+                return Ok(());
+            }
+            let loc = convert_opt_loc(&unknown.base().loc);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::UnsupportedSyntax,
                 reason: format!("Unsupported statement kind '{node_type}'"),
