@@ -196,11 +196,14 @@ function onError({code, message}: $FlowFixMe) {
         <div class="box-header">
           Unknown error
         </div>
-        <div class="box-content">
-          ${message}
-        </div>
+        <div class="box-content"></div>
       </div>
     `;
+    // Use textContent to avoid XSS from error message strings.
+    const contentNode = node.querySelector('.box-content');
+    if (contentNode !== null) {
+      contentNode.textContent = message;
+    }
   }
 }
 
