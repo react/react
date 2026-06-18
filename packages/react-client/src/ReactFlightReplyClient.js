@@ -778,7 +778,7 @@ export function processReply(
             objectName(value),
             describeObjectForErrorMessage(parent, key),
           );
-        } else if (!isSimpleObject(value)) {
+        } else if (proto !== null && !isSimpleObject(value)) {
           console.error(
             'Only plain objects can be passed to Server Functions from the Client. ' +
               'Classes or other objects with methods are not supported.%s',

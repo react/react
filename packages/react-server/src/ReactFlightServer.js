@@ -4019,7 +4019,7 @@ function renderModelDestructive(
             describeObjectForErrorMessage(parent, parentPropertyName),
           );
         });
-      } else if (!isSimpleObject(value)) {
+      } else if (proto !== null && !isSimpleObject(value)) {
         callWithDebugContextInDEV(request, task, () => {
           console.error(
             'Only plain objects can be passed to Client Components from Server Components. ' +

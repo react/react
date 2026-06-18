@@ -30,9 +30,6 @@ export const jsxPropsParents: WeakMap<any, any> = new WeakMap();
 export const jsxChildrenParents: WeakMap<any, any> = new WeakMap();
 
 function isObjectPrototype(object: any): boolean {
-  if (object === null) {
-    return true;
-  }
   if (!object) {
     return false;
   }
