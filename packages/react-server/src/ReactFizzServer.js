@@ -6164,6 +6164,9 @@ function flushCompletedQueues(
       // the resume allocates segment ids strictly above the shell's and can't
       // emit duplicate B:/S: ids. nextSegmentId only increases, so later flush
       // passes refine this monotonically.
+      // TODO: Could be too late if the postponed state was already serialized
+      // by API consumers. Accessing postponed state before the prelude has flushed
+      // should be forbidden in the API.
       postponedState.nextSegmentId = request.nextSegmentId;
     }
     if (
@@ -6446,14 +6449,13 @@ export function getPostponedState(request: Request): null | PostponedState {
   // True only when we postponed with a real shell (as opposed to postponing the
   // root itself). Only in that case does the prelude flush outline completed
   // boundaries and advance nextSegmentId past the value we capture here.
-  let hasFlushableShell = false;
-  if (
-    request.completedRootSegment !== null &&
-    // The Root postponed
-    (request.completedRootSegment.status === POSTPONED ||
-      // Or the Preamble was not available
-      request.completedPreambleSegments === null)
-  ) {
+  const hasFlushableShell =
+    request.completedRootSegment === null ||
+    // The Root did not postpone
+    (request.completedRootSegment.status !== POSTPONED &&
+      // the Preamble was available
+      request.completedPreambleSegments !== null);
+  if (!hasFlushableShell) {
     nextSegmentId = 0;
     // We need to ensure that on resume we retry the root. We use a number
     // type for the replaySlots to signify this (see resumeRequest).
@@ -6466,7 +6468,6 @@ export function getPostponedState(request: Request): null | PostponedState {
     nextSegmentId = request.nextSegmentId;
     replaySlots = trackedPostpones.rootSlots;
     completeResumableState(request.resumableState);
-    hasFlushableShell = true;
   }
   const postponedState: PostponedState = {
     nextSegmentId,
