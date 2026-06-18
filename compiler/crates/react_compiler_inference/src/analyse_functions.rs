@@ -15,7 +15,7 @@
 use indexmap::IndexMap;
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
     AliasingEffect, BlockId, Effect, EvaluationOrder, FunctionId, HIR, HirFunction, IdentifierId,
@@ -138,7 +138,7 @@ where
 
     // Phase 2: Populate the Effect of each context variable to use in inferring
     // the outer function. Corresponds to TS Phase 2 in lowerWithMutationAliasing.
-    let mut captured_or_mutated: HashSet<IdentifierId> = HashSet::new();
+    let mut captured_or_mutated: FxHashSet<IdentifierId> = FxHashSet::default();
     for effect in &function_effects {
         match effect {
             AliasingEffect::Assign { from, .. }
@@ -208,7 +208,7 @@ fn placeholder_function() -> HirFunction {
         context: Vec::new(),
         body: HIR {
             entry: BlockId(0),
-            blocks: IndexMap::new(),
+            blocks: IndexMap::default(),
         },
         instructions: Vec::new(),
         generator: false,

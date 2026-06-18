@@ -10,7 +10,7 @@
 //! and not called dynamically. Also validates that hooks are not
 //! called inside function expressions.
 
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use indexmap::IndexMap;
 use react_compiler_diagnostics::{
@@ -51,7 +51,7 @@ fn join_kinds(a: Kind, b: Kind) -> Kind {
 
 fn get_kind_for_place(
     place: &Place,
-    value_kinds: &HashMap<IdentifierId, Kind>,
+    value_kinds: &FxHashMap<IdentifierId, Kind>,
     identifiers: &[Identifier],
 ) -> Kind {
     let known_kind = value_kinds.get(&place.identifier).copied();
@@ -86,8 +86,8 @@ fn get_hook_kind_for_id<'a>(
 
 fn visit_place(
     place: &Place,
-    value_kinds: &HashMap<IdentifierId, Kind>,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    value_kinds: &FxHashMap<IdentifierId, Kind>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let kind = value_kinds.get(&place.identifier).copied();
@@ -99,8 +99,8 @@ fn visit_place(
 
 fn record_conditional_hook_error(
     place: &Place,
-    value_kinds: &mut HashMap<IdentifierId, Kind>,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    value_kinds: &mut FxHashMap<IdentifierId, Kind>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     value_kinds.insert(place.identifier, Kind::Error);
@@ -133,7 +133,7 @@ fn record_conditional_hook_error(
 
 fn record_invalid_hook_usage_error(
     place: &Place,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let reason = "Hooks may not be referenced as normal values, they must be called. See https://react.dev/reference/rules/react-calls-components-and-hooks#never-pass-around-hooks-as-regular-values".to_string();
@@ -164,7 +164,7 @@ fn record_invalid_hook_usage_error(
 
 fn record_dynamic_hook_usage_error(
     place: &Place,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let reason = "Hooks must be the same function on every render, but this value may change over time to a different function. See https://react.dev/reference/rules/react-calls-components-and-hooks#dont-dynamically-use-hooks".to_string();
@@ -199,8 +199,9 @@ pub fn validate_hooks_usage(
     env: &mut Environment,
 ) -> Result<(), react_compiler_diagnostics::CompilerDiagnostic> {
     let unconditional_blocks = compute_unconditional_blocks(func, env.next_block_id().0)?;
-    let mut errors_by_loc: IndexMap<SourceLocation, CompilerErrorDetail> = IndexMap::new();
-    let mut value_kinds: HashMap<IdentifierId, Kind> = HashMap::new();
+    let mut errors_by_loc: IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher> =
+        IndexMap::default();
+    let mut value_kinds: FxHashMap<IdentifierId, Kind> = FxHashMap::default();
 
     // Process params
     for param in &func.params {
@@ -512,8 +513,8 @@ fn hook_kind_display(kind: &HookKind) -> &'static str {
 /// Uses the canonical `each_instruction_value_operand` from visitors.
 fn visit_all_operands(
     value: &InstructionValue,
-    value_kinds: &HashMap<IdentifierId, Kind>,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    value_kinds: &FxHashMap<IdentifierId, Kind>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let operands = visitors::each_instruction_value_operand(value, &*env);

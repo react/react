@@ -9,7 +9,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/PruneTemporaryLValues.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
     DeclarationId, EvaluationOrder, Place, ReactiveFunction, ReactiveInstruction,
@@ -34,7 +34,7 @@ pub fn prune_unused_lvalues(func: &mut ReactiveFunction, env: &Environment) {
     // When we see an unnamed lvalue on an instruction, we add its DeclarationId.
     // When we see a place reference (operand), we remove its DeclarationId.
     let visitor = Visitor { env };
-    let mut lvalues: HashSet<DeclarationId> = HashSet::new();
+    let mut lvalues: FxHashSet<DeclarationId> = FxHashSet::default();
     visitors::visit_reactive_function(func, &visitor, &mut lvalues);
 
     // Phase 2: Null out lvalues whose DeclarationId remains in the map.
@@ -48,7 +48,7 @@ pub fn prune_unused_lvalues(func: &mut ReactiveFunction, env: &Environment) {
 /// TS: `type LValues = Map<DeclarationId, ReactiveInstruction>`
 /// In Rust, we only need the set of DeclarationIds (not the instruction refs)
 /// because we apply changes in a separate pass.
-type LValues = HashSet<DeclarationId>;
+type LValues = FxHashSet<DeclarationId>;
 
 /// TS: `class Visitor extends ReactiveFunctionVisitor<LValues>`
 struct Visitor<'a> {
@@ -87,7 +87,7 @@ impl ReactiveFunctionVisitor for Visitor<'_> {
 fn null_unused_lvalues(
     block: &mut Vec<ReactiveStatement>,
     env: &Environment,
-    unused: &HashSet<DeclarationId>,
+    unused: &FxHashSet<DeclarationId>,
 ) {
     for stmt in block.iter_mut() {
         match stmt {
@@ -110,7 +110,7 @@ fn null_unused_lvalues(
 fn null_unused_in_instruction(
     instr: &mut ReactiveInstruction,
     env: &Environment,
-    unused: &HashSet<DeclarationId>,
+    unused: &FxHashSet<DeclarationId>,
 ) {
     if let Some(lv) = &instr.lvalue {
         let ident = &env.identifiers[lv.identifier.0 as usize];
@@ -124,7 +124,7 @@ fn null_unused_in_instruction(
 fn null_unused_in_value(
     value: &mut ReactiveValue,
     env: &Environment,
-    unused: &HashSet<DeclarationId>,
+    unused: &FxHashSet<DeclarationId>,
 ) {
     match value {
         ReactiveValue::SequenceExpression {
@@ -161,7 +161,7 @@ fn null_unused_in_value(
 fn null_unused_in_terminal(
     terminal: &mut react_compiler_hir::ReactiveTerminal,
     env: &Environment,
-    unused: &HashSet<DeclarationId>,
+    unused: &FxHashSet<DeclarationId>,
 ) {
     use react_compiler_hir::ReactiveTerminal;
     match terminal {

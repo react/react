@@ -11,7 +11,7 @@
 //!
 //! Conditional on `env.config.enable_function_outlining`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
@@ -25,7 +25,7 @@ use react_compiler_ssa::enter_ssa::placeholder_function;
 pub fn outline_functions(
     func: &mut HirFunction,
     env: &mut Environment,
-    fbt_operands: &HashSet<IdentifierId>,
+    fbt_operands: &FxHashSet<IdentifierId>,
 ) {
     // Collect per-instruction actions to maintain depth-first name allocation order.
     // Each entry: (instr index, function_id to recurse into, should_outline)

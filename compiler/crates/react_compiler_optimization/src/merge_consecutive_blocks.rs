@@ -13,7 +13,7 @@
 //!
 //! Analogous to TS `HIR/MergeConsecutiveBlocks.ts`.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
@@ -53,7 +53,7 @@ pub fn merge_consecutive_blocks(func: &mut HirFunction, functions: &mut [HirFunc
     }
 
     // Build fallthrough set
-    let mut fallthrough_blocks: HashSet<BlockId> = HashSet::new();
+    let mut fallthrough_blocks: FxHashSet<BlockId> = FxHashSet::default();
     for block in func.body.blocks.values() {
         if let Some(ft) = visitors::terminal_fallthrough(&block.terminal) {
             fallthrough_blocks.insert(ft);
@@ -186,13 +186,13 @@ pub fn merge_consecutive_blocks(func: &mut HirFunction, functions: &mut [HirFunc
 
 /// Tracks which blocks have been merged and into which target.
 struct MergedBlocks {
-    map: HashMap<BlockId, BlockId>,
+    map: FxHashMap<BlockId, BlockId>,
 }
 
 impl MergedBlocks {
     fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: FxHashMap::default(),
         }
     }
 
