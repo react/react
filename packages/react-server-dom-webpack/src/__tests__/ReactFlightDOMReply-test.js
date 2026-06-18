@@ -273,6 +273,40 @@ describe('ReactFlightDOMReply', () => {
     expect(s2).toEqual(s);
   });
 
+  it('can pass a null-prototype object as a reply', async () => {
+    const obj = Object.create(null);
+    const nested = Object.create(null);
+    const shared = Object.create(null);
+    nested.answer = 42;
+    shared.label = 'shared';
+    obj.greet = 'world';
+    obj.constructor = 'safe';
+    Object.defineProperty(obj, '__proto__', {
+      value: 'proto value',
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    obj.nested = nested;
+    obj.first = shared;
+    obj.second = shared;
+
+    const body = await ReactServerDOMClient.encodeReply(obj);
+    const obj2 = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+
+    expect(Object.getPrototypeOf(obj2)).toBe(null);
+    expect(Object.getPrototypeOf(obj2.nested)).toBe(null);
+    expect(Object.getPrototypeOf(obj2.first)).toBe(null);
+    expect(obj2.first).toBe(obj2.second);
+    expect(Object.prototype.hasOwnProperty.call(obj2, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(obj2, '__proto__').value).toBe(
+      'proto value',
+    );
+    expect(obj2.constructor).toBe('safe');
+    expect(obj2.greet).toBe('world');
+    expect(obj2.nested.answer).toBe(42);
+  });
+
   it('does not hang indefinitely when calling decodeReply with FormData', async () => {
     let error;
     try {

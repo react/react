@@ -3234,6 +3234,17 @@ function serializeSet(request: Request, set: Set<ReactClientValue>): string {
   return '$W' + id.toString(16);
 }
 
+function serializeNullPrototypeObject(request: Request, object: any): string {
+  const entries: Array<[string, ReactClientValue]> = [];
+  for (const key in object) {
+    if (hasOwnProperty.call(object, key)) {
+      entries.push([key, object[key]]);
+    }
+  }
+  const id = outlineModel(request, entries);
+  return '$p' + id.toString(16);
+}
+
 function serializeDebugMap(
   request: Request,
   counter: {objectLimit: number},
@@ -3280,6 +3291,27 @@ function serializeDebugSet(
   }
   const id = outlineDebugModel(request, counter, entries);
   return '$W' + id.toString(16);
+}
+
+function serializeDebugNullPrototypeObject(
+  request: Request,
+  counter: {objectLimit: number},
+  object: any,
+): string {
+  const entries: Array<[string, ReactClientValue]> = [];
+  for (const key in object) {
+    if (hasOwnProperty.call(object, key)) {
+      const entry: [string, ReactClientValue] = [key, object[key]];
+      doNotLimit.add(entry);
+      if (typeof entry[1] === 'object' && entry[1] !== null) {
+        doNotLimit.add(entry[1]);
+      }
+      entries.push(entry);
+    }
+  }
+  counter.objectLimit++;
+  const id = outlineDebugModel(request, counter, entries);
+  return '$p' + id.toString(16);
 }
 
 function serializeIterator(
@@ -3974,13 +4006,28 @@ function renderModelDestructive(
 
     // Verify that this is a simple plain object.
     const proto = getPrototypeOf(value);
-    if (
-      proto !== ObjectPrototype &&
-      (proto === null || getPrototypeOf(proto) !== null)
-    ) {
+    if (proto === null) {
+      if (__DEV__) {
+        if (Object.getOwnPropertySymbols) {
+          const symbols = Object.getOwnPropertySymbols(value);
+          if (symbols.length > 0) {
+            callWithDebugContextInDEV(request, task, () => {
+              console.error(
+                'Only plain objects can be passed to Client Components from Server Components. ' +
+                  'Objects with symbol properties like %s are not supported.%s',
+                symbols[0].description,
+                describeObjectForErrorMessage(parent, parentPropertyName),
+              );
+            });
+          }
+        }
+      }
+      return serializeNullPrototypeObject(request, value);
+    }
+    if (proto !== ObjectPrototype && getPrototypeOf(proto) !== null) {
       throw new Error(
         'Only plain objects, and a few built-ins, can be passed to Client Components ' +
-          'from Server Components. Classes or null prototypes are not supported.' +
+          'from Server Components. Classes are not supported.' +
           describeObjectForErrorMessage(parent, parentPropertyName),
       );
     }
@@ -5204,7 +5251,10 @@ function renderDebugModel(
     }
 
     const proto = getPrototypeOf(value);
-    if (proto !== ObjectPrototype && proto !== null) {
+    if (proto === null) {
+      return serializeDebugNullPrototypeObject(request, counter, value);
+    }
+    if (proto !== ObjectPrototype) {
       const object: Object = value;
       const instanceDescription: Object = Object.create(null);
       for (const propName in object) {
