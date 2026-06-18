@@ -1026,6 +1026,12 @@ impl<'a> HirBuilder<'a> {
                         },
                     })
                 } else if !self.is_scope_within_compiled_function(binding.scope) {
+                    // The binding lives between module scope and the compiled
+                    // function (e.g. a local of an enclosing factory function).
+                    // It lowers like a module-level binding, but record it so
+                    // outline_functions doesn't hoist references to it out of
+                    // the enclosing function's scope.
+                    self.env.non_module_scope_names.insert(name.to_string());
                     Ok(VariableBinding::ModuleLocal {
                         name: name.to_string(),
                     })
