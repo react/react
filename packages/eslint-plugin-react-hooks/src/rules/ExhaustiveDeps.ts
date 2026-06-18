@@ -1677,10 +1677,36 @@ function collectRecommendations({
         duplicateDependencies.add(key);
       }
     } else {
+      // Check if this declared dep is made redundant by a broader
+      // missing dependency. For example, 'local.id' is unnecessary
+      // if 'local' is being added as a missing dependency AND the
+      // code only uses 'local' directly (not any sub-properties).
+      // However, if the code uses sub-properties like 'props.isEditMode'
+      // alongside a missing 'props', we keep declared sub-property deps
+      // because they document the user's intent.
+      let isCoveredByMissing = false;
+      missingDependencies.forEach(missingKey => {
+        if (key === missingKey || key.startsWith(missingKey + '.')) {
+          // Only remove if the code doesn't use any sub-properties
+          // of the missing dep. If it does, the user likely listed
+          // sub-property deps intentionally.
+          let hasSubPropertyUsage = false;
+          dependencies.forEach((_, depKey) => {
+            if (depKey !== missingKey && depKey.startsWith(missingKey + '.')) {
+              hasSubPropertyUsage = true;
+            }
+          });
+          if (!hasSubPropertyUsage) {
+            isCoveredByMissing = true;
+          }
+        }
+      });
+
       if (
         isEffect &&
         !key.endsWith('.current') &&
-        !externalDependencies.has(key)
+        !externalDependencies.has(key) &&
+        !isCoveredByMissing
       ) {
         // Effects are allowed extra "unnecessary" deps.
         // Such as resetting scroll when ID changes.
