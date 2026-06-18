@@ -1205,9 +1205,6 @@ function createNullPrototypeObject(
   const object: any = Object.create(null);
   for (let i = 0; i < model.length; i++) {
     const entry = model[i];
-    if (!isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') {
-      throw new Error('Invalid null prototype object entry.');
-    }
     object[entry[0]] = entry[1];
   }
   return object;

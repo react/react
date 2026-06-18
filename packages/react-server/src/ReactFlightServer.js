@@ -3235,12 +3235,7 @@ function serializeSet(request: Request, set: Set<ReactClientValue>): string {
 }
 
 function serializeNullPrototypeObject(request: Request, object: any): string {
-  const entries: Array<[string, ReactClientValue]> = [];
-  for (const key in object) {
-    if (hasOwnProperty.call(object, key)) {
-      entries.push([key, object[key]]);
-    }
-  }
+  const entries: Array<[string, ReactClientValue]> = Object.entries(object);
   const id = outlineModel(request, entries);
   return '$p' + id.toString(16);
 }
@@ -3298,15 +3293,12 @@ function serializeDebugNullPrototypeObject(
   counter: {objectLimit: number},
   object: any,
 ): string {
-  const entries: Array<[string, ReactClientValue]> = [];
-  for (const key in object) {
-    if (hasOwnProperty.call(object, key)) {
-      const entry: [string, ReactClientValue] = [key, object[key]];
-      doNotLimit.add(entry);
-      if (typeof entry[1] === 'object' && entry[1] !== null) {
-        doNotLimit.add(entry[1]);
-      }
-      entries.push(entry);
+  const entries: Array<[string, ReactClientValue]> = Object.entries(object);
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    doNotLimit.add(entry);
+    if (typeof entry[1] === 'object' && entry[1] !== null) {
+      doNotLimit.add(entry[1]);
     }
   }
   counter.objectLimit++;
@@ -4006,25 +3998,11 @@ function renderModelDestructive(
 
     // Verify that this is a simple plain object.
     const proto = getPrototypeOf(value);
-    if (proto === null) {
-      if (__DEV__) {
-        if (Object.getOwnPropertySymbols) {
-          const symbols = Object.getOwnPropertySymbols(value);
-          if (symbols.length > 0) {
-            callWithDebugContextInDEV(request, task, () => {
-              console.error(
-                'Only plain objects can be passed to Client Components from Server Components. ' +
-                  'Objects with symbol properties like %s are not supported.%s',
-                symbols[0].description,
-                describeObjectForErrorMessage(parent, parentPropertyName),
-              );
-            });
-          }
-        }
-      }
-      return serializeNullPrototypeObject(request, value);
-    }
-    if (proto !== ObjectPrototype && getPrototypeOf(proto) !== null) {
+    if (
+      proto !== ObjectPrototype &&
+      proto !== null &&
+      getPrototypeOf(proto) !== null
+    ) {
       throw new Error(
         'Only plain objects, and a few built-ins, can be passed to Client Components ' +
           'from Server Components. Classes are not supported.' +
@@ -4062,6 +4040,10 @@ function renderModelDestructive(
           });
         }
       }
+    }
+
+    if (proto === null) {
+      return serializeNullPrototypeObject(request, value);
     }
 
     // $FlowFixMe[incompatible-type]

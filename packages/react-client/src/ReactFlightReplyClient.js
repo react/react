@@ -34,7 +34,6 @@ import {
 
 import {writeTemporaryReference} from './ReactFlightTemporaryReferences';
 
-import hasOwnProperty from 'shared/hasOwnProperty';
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
 
@@ -229,12 +228,7 @@ export function processReply(
 
   function serializeNullPrototypeObject(object: any): string {
     const objectId = nextPartId++;
-    const entries: Array<[string, ReactServerValue]> = [];
-    for (const key in object) {
-      if (hasOwnProperty.call(object, key)) {
-        entries.push([key, object[key]]);
-      }
-    }
+    const entries: Array<[string, ReactServerValue]> = Object.entries(object);
     const partJSON = serializeModel(entries, objectId);
     if (formData === null) {
       formData = new FormData();
@@ -755,23 +749,11 @@ export function processReply(
 
       // Verify that this is a simple plain object.
       const proto = getPrototypeOf(value);
-      if (proto === null) {
-        if (__DEV__) {
-          if (Object.getOwnPropertySymbols) {
-            const symbols = Object.getOwnPropertySymbols(value);
-            if (symbols.length > 0) {
-              console.error(
-                'Only plain objects can be passed to Server Functions from the Client. ' +
-                  'Objects with symbol properties like %s are not supported.%s',
-                symbols[0].description,
-                describeObjectForErrorMessage(parent, key),
-              );
-            }
-          }
-        }
-        return serializeNullPrototypeObject(value);
-      }
-      if (proto !== ObjectPrototype && getPrototypeOf(proto) !== null) {
+      if (
+        proto !== ObjectPrototype &&
+        proto !== null &&
+        getPrototypeOf(proto) !== null
+      ) {
         if (temporaryReferences === undefined) {
           throw new Error(
             'Only plain objects, and a few built-ins, can be passed to Server Functions. ' +
@@ -813,6 +795,10 @@ export function processReply(
             );
           }
         }
+      }
+
+      if (proto === null) {
+        return serializeNullPrototypeObject(value);
       }
 
       // $FlowFixMe[incompatible-return]
