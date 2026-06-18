@@ -511,15 +511,18 @@ function filterDebugInfo(
     response._debugEndTime -
     // $FlowFixMe[prop-missing]
     performance.timeOrigin;
-  const debugInfo = [];
-  for (let i = 0; i < value._debugInfo.length; i++) {
-    const info = value._debugInfo[i];
+  const debugInfo = value._debugInfo;
+  for (let i = 0; i < debugInfo.length; i++) {
+    const info = debugInfo[i];
     if (typeof info.time === 'number' && info.time > relativeEndTime) {
-      break;
+      // This array may already be aliased onto the Lazy wrapper
+      // (createLazyChunkWrapper) and wrapper promises, so truncate it in place
+      // instead of reassigning, otherwise those holders keep the unfiltered
+      // entries (and Fizz reports the wrong await for a halted component).
+      debugInfo.length = i;
+      return;
     }
-    debugInfo.push(info);
   }
-  value._debugInfo = debugInfo;
 }
 
 function pruneDebugInfoAfterError(
