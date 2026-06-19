@@ -10,6 +10,7 @@ cd buildview
 npm install
 npm run dev      # start dev server
 npm run build    # production build
+npm run check    # headless flow checks + render smoke (no browser needed)
 ```
 
 ## Architecture
@@ -21,7 +22,24 @@ npm run build    # production build
 - **`src/lib/useDb.js`** — `useDbVersion()` hook: subscribes a component to the
   store so it re-renders on writes. Components read data via `db.*` in render.
 
+## Screens (section 5)
+
+`src/screens/` — Login, ForemanProjectList, ForemanProjectView,
+ForemanRoomView, ForemanPendingRequests, ForemanDashboard, WorkerHome
+(join + my tasks), TaskDetail (shared task + issue view). Navigation is a
+plain back-button stack in `App.jsx` (no router library).
+
+## Verification
+
+- `scripts/flows.mjs` — drives the real seam + domain modules in Node with a
+  localStorage polyfill, running Flows A–E top to bottom with reloads in
+  between to prove persistence and the permission rule.
+- `scripts/render-smoke.mjs` — bundles and server-renders every screen with
+  seeded data to catch component runtime crashes; also checks the UI access
+  guard.
+
 ## Status
 
-Step 1 complete: project scaffolded + data-access module in place. Remaining
-steps (login, Flow A–E) build on top of the seam.
+Logic phase complete (build order steps 1–9). All 5 flows run end to end and
+survive reloads; permission rule holds; dashboard numbers match the data; no
+styling added. Stopped before design, as specified.
