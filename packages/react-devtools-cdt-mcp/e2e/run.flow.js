@@ -14,6 +14,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 
 // eslint-disable-next-line no-undef
@@ -220,9 +221,67 @@ function spawnLogged(
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   appendLog(options.logFile, formatCommand(command, args));
+  child.on('error', error => {
+    appendLog(
+      options.logFile,
+      `Failed to spawn ${command}: ${
+        error.stack || error.message || String(error)
+      }\n`
+    );
+  });
   child.stdout.on('data', chunk => appendLog(options.logFile, chunk));
   child.stderr.on('data', chunk => appendLog(options.logFile, chunk));
   return child;
+}
+
+function waitForExit(child: ChildProcess, timeout: number): Promise<void> {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      if (child.exitCode == null) {
+        child.kill('SIGKILL');
+      }
+      finish();
+    }, timeout);
+
+    if (child.exitCode != null) {
+      finish();
+      return;
+    }
+    child.once('exit', finish);
+    child.once('error', finish);
+  });
+}
+
+async function removePathWithRetries(
+  targetPath: string,
+  logFile: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.rmSync(targetPath, {force: true, recursive: true});
+      return;
+    } catch (error) {
+      if (attempt === 4) {
+        appendLog(
+          logFile,
+          `Failed to remove ${targetPath}: ${
+            error.stack || error.message || String(error)
+          }\n`
+        );
+        return;
+      }
+      await sleep(250);
+    }
+  }
 }
 
 function runCommand(
@@ -273,6 +332,40 @@ function runCommand(
       }
     });
   });
+}
+
+function startDebuggableChrome(
+  chromeExecutablePath: string,
+  remoteDebuggingPort: number,
+  logFile: string
+): {profileDir: string, process: ChildProcess} {
+  const profileDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'react-devtools-cdt-mcp-chrome-')
+  );
+  appendLog(logFile, `chromeUserDataDir=${profileDir}\n`);
+
+  const args = [
+    '--headless=new',
+    `--remote-debugging-port=${remoteDebuggingPort}`,
+    '--remote-debugging-address=127.0.0.1',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    'about:blank',
+  ];
+
+  if (process.platform === 'linux') {
+    args.splice(1, 0, '--no-sandbox', '--disable-setuid-sandbox');
+  }
+
+  return {
+    profileDir,
+    process: spawnLogged(chromeExecutablePath, args, {
+      cwd: PACKAGE_DIR,
+      env: process.env,
+      logFile,
+    }),
+  };
 }
 
 function getChromeDevToolsBin(): string {
@@ -1078,6 +1171,8 @@ async function main(): Promise<void> {
   const appUrl = `http://127.0.0.1:${port}/`;
 
   let fixture: ?ChildProcess;
+  let debuggableChrome: ?ChildProcess;
+  let debuggableChromeProfile: ?string;
   const runChrome = (args: Array<string>): Promise<CommandResult> =>
     runCommand(
       process.execPath,
@@ -1117,14 +1212,25 @@ async function main(): Promise<void> {
     const startArgs = [
       'start',
       '--categoryExperimentalThirdParty=true',
-      '--headless=true',
-      '--isolated=true',
       '--usageStatistics=false',
       '--logFile',
       chromeLog,
     ];
-    if (process.env.CHROME_EXECUTABLE_PATH) {
-      startArgs.push('--executablePath', process.env.CHROME_EXECUTABLE_PATH);
+    const chromeExecutablePath = process.env.CHROME_EXECUTABLE_PATH;
+    if (chromeExecutablePath != null) {
+      const remoteDebuggingPort = await getFreePort();
+      const launchedChrome = startDebuggableChrome(
+        chromeExecutablePath,
+        remoteDebuggingPort,
+        chromeLog
+      );
+      debuggableChrome = launchedChrome.process;
+      debuggableChromeProfile = launchedChrome.profileDir;
+      const browserUrl = `http://127.0.0.1:${remoteDebuggingPort}`;
+      await waitForHttp(`${browserUrl}/json/version`, 30000);
+      startArgs.push('--browserUrl', browserUrl);
+    } else {
+      startArgs.push('--headless=true', '--isolated=true');
     }
     log('Starting chrome-devtools daemon...');
     await chrome.run(startArgs);
@@ -1136,6 +1242,17 @@ async function main(): Promise<void> {
       await chrome.run(['stop']);
     } catch (error) {
       appendLog(cliLog, `Failed to stop chrome-devtools: ${error.stack}\n`);
+    }
+    if (debuggableChrome) {
+      try {
+        debuggableChrome.kill('SIGTERM');
+        await waitForExit(debuggableChrome, 5000);
+      } catch (error) {
+        appendLog(chromeLog, `Failed to stop Chrome: ${error.stack}\n`);
+      }
+    }
+    if (debuggableChromeProfile) {
+      await removePathWithRetries(debuggableChromeProfile, chromeLog);
     }
     if (fixture && fixture.pid) {
       try {
