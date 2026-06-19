@@ -182,6 +182,43 @@ const run = async () => {
       painterVisible[0].id === painterTask.id
   );
 
+  // ===========================================================================
+  // FLOW C — worker does a task
+  // ===========================================================================
+  console.log('\nFlow C: worker does a task');
+  // Worker may edit status of an assigned task...
+  const w = m.getUser(worker.id);
+  check(
+    'worker may edit status of assigned task',
+    m.canEditTaskStatus(w, m.getTask(painterTask.id))
+  );
+  // ...but NOT a task they are only trade-matched to without assignment.
+  check(
+    'worker may NOT edit status of non-assigned task',
+    !m.canEditTaskStatus(w, m.getTask(elecTask.id))
+  );
+
+  m.setTaskStatus(painterTask.id, m.TASK_STATUS.IN_PROGRESS);
+  m.addPhoto({
+    taskId: painterTask.id,
+    uploadedByUserId: worker.id,
+    imageData: 'data:image/png;base64,FAKE',
+    caption: 'Ceiling done',
+  });
+  m.setTaskStatus(painterTask.id, m.TASK_STATUS.DONE);
+
+  m = await reload();
+  check(
+    'status change persisted to done',
+    m.getTask(painterTask.id).status === m.TASK_STATUS.DONE
+  );
+  check('photo persisted on task', m.getPhotos(painterTask.id).length === 1);
+  check(
+    'foreman can view the task + photo',
+    m.canViewTask(m.getUser(foreman.id), m.getTask(painterTask.id)) &&
+      m.getPhotos(painterTask.id)[0].caption === 'Ceiling done'
+  );
+
   console.log(
     failures === 0
       ? '\nALL CHECKS PASSED'

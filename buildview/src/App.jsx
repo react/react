@@ -7,6 +7,7 @@ import ForemanProjectView from './screens/ForemanProjectView.jsx';
 import ForemanRoomView from './screens/ForemanRoomView.jsx';
 import ForemanPendingRequests from './screens/ForemanPendingRequests.jsx';
 import WorkerHome from './screens/WorkerHome.jsx';
+import TaskDetail from './screens/TaskDetail.jsx';
 
 // -----------------------------------------------------------------------------
 // App shell + dumb stack navigation (a back button + plain screen switching,
@@ -68,6 +69,9 @@ function Screen({current, nav}) {
   if (screen === 'room') return <ForemanRoomView nav={nav} params={params} />;
   if (screen === 'requests')
     return <ForemanPendingRequests nav={nav} params={params} />;
+
+  // Shared
+  if (screen === 'task') return <TaskDetail nav={nav} params={params} />;
 
   return <p>Unknown screen: {screen}</p>;
 }
