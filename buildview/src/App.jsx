@@ -2,6 +2,9 @@ import React, {useState} from 'react';
 import {useSession} from './lib/session.js';
 import {ROLES} from './domain/constants.js';
 import Login from './screens/Login.jsx';
+import ForemanProjectList from './screens/ForemanProjectList.jsx';
+import ForemanProjectView from './screens/ForemanProjectView.jsx';
+import ForemanRoomView from './screens/ForemanRoomView.jsx';
 
 // -----------------------------------------------------------------------------
 // App shell + dumb stack navigation (a back button + plain screen switching,
@@ -48,19 +51,25 @@ export default function App() {
 
 function Screen({current, nav}) {
   const {user} = nav;
+  const {screen, params} = current;
 
-  // Step 3 placeholder home. Replaced by real screens in steps 4–8.
-  if (current.screen === 'home') {
+  // Home depends on role.
+  if (screen === 'home') {
+    if (user.role === ROLES.FOREMAN) {
+      return <ForemanProjectList nav={nav} />;
+    }
+    // Worker home is built in steps 5–6.
     return (
       <div>
         <h1>Home</h1>
-        <p>
-          You are logged in as a <strong>{user.role}</strong>. Role-specific
-          screens are built in the next steps.
-        </p>
+        <p>Worker screens are built in the next steps.</p>
       </div>
     );
   }
 
-  return <p>Unknown screen: {current.screen}</p>;
+  // Foreman screens
+  if (screen === 'project') return <ForemanProjectView nav={nav} params={params} />;
+  if (screen === 'room') return <ForemanRoomView nav={nav} params={params} />;
+
+  return <p>Unknown screen: {screen}</p>;
 }
