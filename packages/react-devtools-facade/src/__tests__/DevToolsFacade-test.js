@@ -1634,6 +1634,138 @@ describe('react-devtools-facade', () => {
     });
   });
 
+  describe('getComponentByHostInstance', () => {
+    let getComponentTree;
+    let getComponentByUid;
+    let getComponentByHostInstance;
+
+    beforeEach(() => {
+      const tools = createTools(facade);
+      getComponentTree = tools.getComponentTree;
+      getComponentByUid = tools.getComponentByUid;
+      getComponentByHostInstance = tools.getComponentByHostInstance;
+    });
+
+    it('returns the host component for a DOM host element', () => {
+      function Child({label}) {
+        return <span className="leaf">{label}</span>;
+      }
+      function App() {
+        return (
+          <div>
+            <Child label="leaf" />
+          </div>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const span = container.querySelector('span.leaf');
+      const host = getComponentTree().find(n => n.name === 'span');
+      const result = getComponentByHostInstance(span);
+
+      expect(result).toEqual(getComponentByUid(host.uid));
+      expect(result).toMatchObject({
+        uid: host.uid,
+        type: 'host',
+        name: 'span',
+        props: {className: 'leaf'},
+      });
+    });
+
+    it('returns the host component rather than the tree owner', () => {
+      function Wrapper({children}) {
+        return <section className="wrap">{children}</section>;
+      }
+      function App() {
+        return (
+          <Wrapper>
+            <button className="action">Run</button>
+          </Wrapper>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const button = container.querySelector('button.action');
+      const tree = getComponentTree();
+      const host = tree.find(n => n.name === 'button');
+      const wrapper = tree.find(n => n.name === 'Wrapper');
+      const app = tree.find(n => n.name === 'App');
+      const result = getComponentByHostInstance(button);
+
+      expect(result.uid).toBe(host.uid);
+      expect(result.uid).not.toBe(wrapper.uid);
+      expect(result.uid).not.toBe(app.uid);
+      expect(result).toMatchObject({
+        type: 'host',
+        name: 'button',
+        props: {className: 'action'},
+      });
+    });
+
+    it('keeps uids stable across re-renders via alternate fibers', () => {
+      function Counter({count}) {
+        return <div className="counter">{'Count: ' + count}</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+
+      const div = container.querySelector('div.counter');
+      const first = getComponentByHostInstance(div);
+
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+
+      const second = getComponentByHostInstance(div);
+      expect(second.uid).toBe(first.uid);
+      expect(second.name).toBe('div');
+      expect(second.type).toBe('host');
+      expect(second.props.className).toBe('counter');
+    });
+
+    it('does not walk platform parent pointers for unmanaged nested nodes', () => {
+      function App() {
+        return <div className="host" />;
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const host = container.querySelector('div.host');
+      const unmanagedChild = document.createElement('i');
+      host.appendChild(unmanagedChild);
+
+      expect(getComponentByHostInstance(unmanagedChild)).toEqual({
+        error: 'Host instance is not managed by React',
+      });
+    });
+
+    it('returns an error when no roots are mounted', () => {
+      expect(getComponentByHostInstance({})).toEqual({
+        error: 'No mounted React roots found',
+      });
+    });
+
+    it('returns an error for null or undefined references', () => {
+      expect(getComponentByHostInstance(null)).toEqual({
+        error: 'Host instance is required',
+      });
+      expect(getComponentByHostInstance(undefined)).toEqual({
+        error: 'Host instance is required',
+      });
+    });
+  });
+
   describe('profiler', () => {
     let startProfiling;
     let stopProfiling;

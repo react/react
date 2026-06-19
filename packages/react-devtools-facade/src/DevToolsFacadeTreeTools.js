@@ -85,6 +85,7 @@ export type TreeTools = {
     uid: string,
     includeHooks?: boolean,
   ) => NodeInfo | ToolError,
+  getComponentByHostInstance: (hostInstance: mixed) => NodeInfo | ToolError,
   findComponents: (
     name: string,
     rootUid?: string,
@@ -377,6 +378,108 @@ export function createTreeTools(
     };
   }
 
+  function getHostInstanceForFiber(
+    internals: RendererInternals,
+    fiber: Fiber,
+  ): mixed {
+    const {HostComponent, HostText, HostSingleton, HostHoistable} =
+      internals.ReactTypeOfWork;
+
+    if (
+      fiber.tag === HostComponent ||
+      fiber.tag === HostText ||
+      fiber.tag === HostSingleton
+    ) {
+      return fiber.stateNode;
+    }
+
+    if (fiber.tag === HostHoistable) {
+      const resource = fiber.memoizedState;
+      if (
+        resource != null &&
+        typeof resource === 'object' &&
+        (resource as any).instance != null
+      ) {
+        return (resource as any).instance;
+      }
+    }
+
+    return null;
+  }
+
+  function findByHostInstance(
+    internals: RendererInternals,
+    root: Fiber,
+    hostInstance: mixed,
+  ): Fiber | null {
+    let current: Fiber | null = root;
+    while (current !== null) {
+      if (getHostInstanceForFiber(internals, current) === hostInstance) {
+        return current;
+      }
+
+      if (current.child !== null) {
+        current = current.child;
+        continue;
+      }
+
+      while (current !== null && current !== root && current.sibling === null) {
+        current = current.return;
+      }
+      if (current === null || current === root) {
+        return null;
+      }
+      current = current.sibling;
+    }
+    return null;
+  }
+
+  function buildNodeInfo(
+    fiber: Fiber,
+    internals: RendererInternals,
+    includeHooks?: boolean = false,
+  ): NodeInfo | ToolError {
+    const info: NodeInfo = {
+      uid: getUid(fiber),
+      type: getTypeTagForFiber(internals, fiber),
+      name: getDisplayName(internals, fiber),
+    };
+    if (fiber.key != null) {
+      info.key = String(fiber.key);
+    }
+    const props = normalizeProps(fiber.memoizedProps);
+    if (props != null) {
+      info.props = props;
+    }
+    if (includeHooks) {
+      // Hooks are only inspectable for function components, forwardRef, and
+      // simple-memo components. inspectHooksOfFiberWithoutDefaultDispatcher
+      // re-renders the component (using the renderer's injected dispatcher,
+      // never React's shared internals), so guard by tag and tolerate failures
+      // (e.g. a component that throws).
+      const {FunctionComponent, SimpleMemoComponent, ForwardRef} =
+        internals.ReactTypeOfWork;
+      if (
+        fiber.tag === FunctionComponent ||
+        fiber.tag === SimpleMemoComponent ||
+        fiber.tag === ForwardRef
+      ) {
+        try {
+          const hooksTree = inspectHooksOfFiberWithoutDefaultDispatcher(
+            fiber,
+            getDispatcherRef(internals),
+          );
+          info.hooks = normalizeHooks(hooksTree);
+        } catch (error) {
+          return {
+            error: new Error('Failed to inspect hooks.', {cause: error}),
+          };
+        }
+      }
+    }
+    return info;
+  }
+
   /**
    * Returns a snapshot of the component tree as an array of nodes. Each node
    * includes: uid, type, name, key, firstChild, nextSibling (the last two
@@ -436,46 +539,49 @@ export function createTreeTools(
     if (result.error != null) {
       return {error: result.error};
     }
-    const {fiber, internals} = result;
-    const info: NodeInfo = {
-      uid: getUid(fiber),
-      type: getTypeTagForFiber(internals, fiber),
-      name: getDisplayName(internals, fiber),
-    };
-    if (fiber.key != null) {
-      info.key = String(fiber.key);
+    return buildNodeInfo(result.fiber, result.internals, includeHooks);
+  }
+
+  /**
+   * Returns detailed info about the React host component for a host instance
+   * reference. The reference is opaque: for react-dom it may be a DOM
+   * Element/Text, but the facade only compares it by identity with host fiber
+   * state. It does not read platform-specific fields or walk host parents.
+   *
+   * @param hostInstance - A renderer host instance reference.
+   */
+  function getComponentByHostInstance(
+    hostInstance: mixed,
+  ): NodeInfo | ToolError {
+    if (hostInstance == null) {
+      return {error: 'Host instance is required'};
     }
-    const props = normalizeProps(fiber.memoizedProps);
-    if (props != null) {
-      info.props = props;
-    }
-    if (includeHooks) {
-      // Hooks are only inspectable for function components, forwardRef, and
-      // simple-memo components. inspectHooksOfFiberWithoutDefaultDispatcher
-      // re-renders the component (using the renderer's injected dispatcher,
-      // never React's shared internals), so guard by tag and tolerate failures
-      // (e.g. a component that throws).
-      const {FunctionComponent, SimpleMemoComponent, ForwardRef} =
-        internals.ReactTypeOfWork;
-      if (
-        fiber.tag === FunctionComponent ||
-        fiber.tag === SimpleMemoComponent ||
-        fiber.tag === ForwardRef
-      ) {
-        try {
-          const hooksTree = inspectHooksOfFiberWithoutDefaultDispatcher(
-            fiber,
-            getDispatcherRef(internals),
-          );
-          info.hooks = normalizeHooks(hooksTree);
-        } catch (error) {
-          return {
-            error: new Error('Failed to inspect hooks.', {cause: error}),
-          };
+
+    let sawRoot = false;
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const [rendererID, roots] of fiberRoots) {
+      const internals = rendererInternals.get(rendererID);
+      if (internals == null) {
+        return {error: 'Missing internals for renderer ' + rendererID};
+      }
+      // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+      for (const root of roots) {
+        sawRoot = true;
+        const hostFiber = findByHostInstance(
+          internals,
+          root.current,
+          hostInstance,
+        );
+        if (hostFiber !== null) {
+          return buildNodeInfo(hostFiber, internals);
         }
       }
     }
-    return info;
+
+    if (!sawRoot) {
+      return {error: 'No mounted React roots found'};
+    }
+    return {error: 'Host instance is not managed by React'};
   }
 
   function collectMatches(
@@ -677,6 +783,7 @@ export function createTreeTools(
   return {
     getComponentTree,
     getComponentByUid,
+    getComponentByHostInstance,
     findComponents,
     getComponentSource,
     getOwnerStackTrace,
