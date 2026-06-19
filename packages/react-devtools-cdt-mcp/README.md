@@ -89,13 +89,24 @@ Raw owner stack trace — the chain of JSX creation locations up to the root.
 - **Input:** `uid` (string, required).
 - **Output:** `{stack: string}` (DEV-only; empty in production).
 
+### `react_get_parent_stack`
+
+Rendered parent list — where a component is mounted in the rendered component
+tree.
+
+- **Input:** `uid` (string, required).
+- **Output:** an array of `{uid, name, type}`, ordered from immediate parent to
+  root (empty for the root). This can include host DOM components and the root.
+
 ### `react_get_owner_stack`
 
-Structured owner list — which components rendered this one.
+Structured owner list — which components created/rendered this element through
+JSX.
 
 - **Input:** `uid` (string, required).
 - **Output:** an array of `{uid, name, type}`, ordered from immediate owner to
-  root ancestor (empty for a root component). DEV-only.
+  root owner (empty for a root component). DEV-only. Owners are not structural
+  parents; use `react_get_parent_stack` for mounted tree ancestry.
 
 ### `react_start_profiling`
 
