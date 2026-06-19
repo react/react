@@ -10,6 +10,7 @@
 const TOOL_NAMES = [
   'react_get_component_tree',
   'react_get_component_by_uid',
+  'react_get_component_by_dom_element',
   'react_find_components',
   'react_get_component_source',
   'react_get_owner_stack_trace',
@@ -121,6 +122,17 @@ describe('react-devtools-cdt-mcp', () => {
         includeHooks: {type: 'boolean', description: expect.any(String)},
       },
       required: ['uid'],
+    });
+    expect(getTool('react_get_component_by_dom_element').inputSchema).toEqual({
+      type: 'object',
+      properties: {
+        element: {
+          type: 'object',
+          'x-mcp-type': 'HTMLElement',
+          description: expect.any(String),
+        },
+      },
+      required: ['element'],
     });
     expect(getTool('react_find_components').inputSchema).toEqual({
       type: 'object',
@@ -306,6 +318,56 @@ describe('react-devtools-cdt-mcp', () => {
       name: 'Counter',
       props: {title: 'hi'},
     });
+  });
+
+  it('react_get_component_by_dom_element returns the DOM element component', () => {
+    function Wrapper({children}) {
+      return <section className="wrap">{children}</section>;
+    }
+    function App() {
+      return (
+        <Wrapper>
+          <button className="action">Run</button>
+        </Wrapper>
+      );
+    }
+
+    act(() => {
+      ReactDOMClient.createRoot(container).render(<App />);
+    });
+
+    const button = container.querySelector('button.action');
+    const tree = getTool('react_get_component_tree').execute({}).nodes;
+    const host = tree.find(n => n.name === 'button');
+    const wrapper = tree.find(n => n.name === 'Wrapper');
+    const result = getTool('react_get_component_by_dom_element').execute({
+      element: button,
+    });
+
+    expect(result.uid).toBe(host.uid);
+    expect(result.uid).not.toBe(wrapper.uid);
+    expect(result).toMatchObject({
+      type: 'host',
+      name: 'button',
+      props: {className: 'action'},
+    });
+  });
+
+  it('react_get_component_by_dom_element returns DOM-oriented errors', () => {
+    expect(getTool('react_get_component_by_dom_element').execute({})).toEqual({
+      error: 'DOM element is required',
+    });
+
+    act(() => {
+      ReactDOMClient.createRoot(container).render(<div className="host" />);
+    });
+
+    const unmanaged = document.createElement('span');
+    expect(
+      getTool('react_get_component_by_dom_element').execute({
+        element: unmanaged,
+      }),
+    ).toEqual({error: 'DOM element is not managed by React'});
   });
 
   it('returns tool errors as a raw payload', () => {

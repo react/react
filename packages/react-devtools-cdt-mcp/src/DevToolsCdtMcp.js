@@ -46,6 +46,24 @@ function normalizeToolResult(result: mixed): mixed {
   return result;
 }
 
+function getComponentForDomElement(tools: Tools, element: mixed): mixed {
+  const result = tools.getComponentByHostInstance(element);
+  if (
+    result != null &&
+    typeof result === 'object' &&
+    typeof (result as any).error === 'string'
+  ) {
+    const error = (result as any).error;
+    if (error === 'Host instance is required') {
+      return {error: 'DOM element is required'};
+    }
+    if (error === 'Host instance is not managed by React') {
+      return {error: 'DOM element is not managed by React'};
+    }
+  }
+  return result;
+}
+
 const TOOL_DEFINITIONS: Array<ToolDefinition> = [
   {
     name: 'react_get_component_tree',
@@ -96,6 +114,27 @@ const TOOL_DEFINITIONS: Array<ToolDefinition> = [
     },
     call: (tools, args) =>
       tools.getComponentByUid(args.uid, args.includeHooks === true),
+  },
+  {
+    name: 'react_get_component_by_dom_element',
+    description:
+      'Detailed info for one React DOM component by DOM element reference: ' +
+      '{uid, type, name, key?, props?, hooks?}. The element is an opaque ' +
+      'page-side reference, such as the currently selected Chrome DevTools ' +
+      'element.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        element: {
+          type: 'object',
+          'x-mcp-type': 'HTMLElement',
+          description:
+            'DOM element reference from the Chrome DevTools MCP page snapshot.',
+        },
+      },
+      required: ['element'],
+    },
+    call: (tools, args) => getComponentForDomElement(tools, args.element),
   },
   {
     name: 'react_find_components',

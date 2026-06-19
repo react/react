@@ -55,6 +55,15 @@ Detailed info for a single component.
   is true, `hooks` (function, forwardRef, and memo components) is an array of
   `{id, name, value, subHooks}`.
 
+### `react_get_component_by_dom_element`
+
+Detailed info for the React DOM component corresponding to a DOM element.
+
+- **Input:** `element` (object, required). This is an opaque page-side DOM
+  element reference. Chrome DevTools MCP clients pass this as
+  `{uid: string}`, using an element uid from the page snapshot.
+- **Output:** `{uid, type, name, key?, props?, hooks?}`.
+
 ### `react_find_components`
 
 Find components by case-insensitive name substring.
