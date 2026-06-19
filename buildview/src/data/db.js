@@ -43,8 +43,26 @@ function emptyState() {
 // functions (or point them at your API). Nothing else needs to change.
 // ---------------------------------------------------------------------------
 const STORAGE_KEY = 'buildview:v1';
+const SESSION_KEY = 'buildview:session:v1';
 
 const backend = {
+  loadSession() {
+    try {
+      return localStorage.getItem(SESSION_KEY) || null;
+    } catch (err) {
+      return null;
+    }
+  },
+
+  saveSession(userId) {
+    try {
+      if (userId) localStorage.setItem(SESSION_KEY, userId);
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (err) {
+      console.error('BuildView: failed to write session.', err);
+    }
+  },
+
   load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -196,6 +214,24 @@ export const db = {
   remove,
   subscribe,
   getVersion: () => version,
+
+  // session (the fake "logged in" user id for the prototype). Still routed
+  // through the seam so no component touches storage directly.
+  session: {
+    getCurrentUserId() {
+      return backend.loadSession();
+    },
+    setCurrentUserId(userId) {
+      backend.saveSession(userId);
+      version += 1;
+      notify();
+    },
+    clear() {
+      backend.saveSession(null);
+      version += 1;
+      notify();
+    },
+  },
 
   // per-entity (section 2 data model)
   users: entity('users'),
