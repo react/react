@@ -20,6 +20,11 @@ import type {
 
 import {getInternalReactConstants} from 'react-devtools-shared/src/backend/fiber/shared/DevToolsFiberInternalReactConstants';
 
+// Re-export the tools assembler so the full building-block API is available
+// from the package entry point (index.js re-exports this module).
+export {createTools} from './DevToolsFacadeTools';
+export type {Tools} from './DevToolsFacadeTools';
+
 // Per-renderer internal constants, initialized at inject() time. Building
 // blocks read these to translate fibers into human-readable output.
 export type RendererInternals = {
@@ -55,33 +60,162 @@ export type Facade = {
   profilingState: ProfilingState,
 };
 
-/**
- * Install the React DevTools facade: install `__REACT_DEVTOOLS_GLOBAL_HOOK__`
- * on `target` (defaults to globalThis) and return a Facade handle.
- *
- * This installs ONLY `__REACT_DEVTOOLS_GLOBAL_HOOK__` — the global React looks
- * for at initialization time. It does not install any tool globals: the
- * returned Facade is passed to building blocks such as `createTools(facade)`,
- * and the integrator decides whether to expose the resulting tools on globals.
- *
- * Must run BEFORE React initializes so the hook captures the first commit.
- */
-export function installFacade(target?: any = globalThis): Facade {
-  // Guard against double-install (e.g. bundled twice or mixed with full DevTools).
-  if (target.hasOwnProperty('__REACT_DEVTOOLS_GLOBAL_HOOK__')) {
-    throw new Error(
-      'React DevTools global hook is already installed. ' +
-        'react-devtools-facade should not be used with any other React DevTools package.',
+// Initialize per-renderer internal constants for a renderer registered with the
+// hook. Shared by the installed hook's inject() and the attach path.
+function initializeRendererInternals(
+  rendererInternals: Map<number, RendererInternals>,
+  id: number,
+  renderer: any,
+): void {
+  const version = renderer.reconcilerVersion || renderer.version;
+  if (version == null) {
+    console.error(
+      'react-devtools-facade: Renderer %s has no version, internals not initialized.',
+      id,
     );
+    return;
+  }
+  const {getDisplayNameForFiber, ReactTypeOfWork, ReactPriorityLevels} =
+    getInternalReactConstants(version);
+  rendererInternals.set(id, {
+    getDisplayNameForFiber,
+    ReactTypeOfWork,
+    ReactPriorityLevels,
+    currentDispatcherRef: renderer.currentDispatcherRef,
+  });
+}
+
+// Record a commit: keep fiberRoots in sync (add new roots, drop unmounted ones)
+// and drive a profiling session when one is active. Shared by the installed
+// hook's onCommitFiberRoot and the attach path's wrapper.
+function recordCommitFiberRoot(
+  fiberRoots: Map<number, Set<FiberRoot>>,
+  profilingState: ProfilingState,
+  rendererID: number,
+  root: any,
+  schedulerPriority?: number,
+): void {
+  let mountedRoots = fiberRoots.get(rendererID);
+  if (mountedRoots == null) {
+    mountedRoots = new Set();
+    fiberRoots.set(rendererID, mountedRoots);
+  }
+  const current = root.current;
+  const isKnownRoot = mountedRoots.has(root);
+  const isUnmounting =
+    current.memoizedState == null || current.memoizedState.element == null;
+  if (!isKnownRoot && !isUnmounting) {
+    mountedRoots.add(root);
+  } else if (isKnownRoot && isUnmounting) {
+    mountedRoots.delete(root);
   }
 
-  // Fiber root tracking — the only runtime state the hook maintains.
-  // onCommitFiberRoot adds/removes entries so that unmounted roots are
-  // garbage-collected. Building blocks walk from these roots on demand.
+  if (profilingState.isActive && profilingState.onCommit != null) {
+    profilingState.onCommit(rendererID, root, schedulerPriority);
+  }
+}
+
+// Attach to a DevTools hook that is already installed on the page — for example
+// the React DevTools browser extension. Rather than replacing it (React would
+// ignore a second hook), read the renderers and fiber roots it is already
+// tracking, then wrap inject / onCommitFiberRoot / onPostCommitFiberRoot so
+// future renderers, commits, and passive passes also feed the facade's state.
+// The existing hook's own bookkeeping is preserved — we always call through to
+// it first.
+function attachToExistingHook(
+  hook: any,
+  fiberRoots: Map<number, Set<FiberRoot>>,
+  rendererInternals: Map<number, RendererInternals>,
+  profilingState: ProfilingState,
+): void {
+  // Back-fill renderers and roots registered before we attached (React may have
+  // initialized first).
+  if (hook.renderers instanceof Map) {
+    hook.renderers.forEach((renderer: any, id: number) => {
+      if (!rendererInternals.has(id)) {
+        initializeRendererInternals(rendererInternals, id, renderer);
+      }
+      if (typeof hook.getFiberRoots === 'function') {
+        let roots = fiberRoots.get(id);
+        if (roots == null) {
+          roots = new Set();
+          fiberRoots.set(id, roots);
+        }
+        // Alias to a const so the non-null refinement survives into the closure.
+        const mountedRoots = roots;
+        hook.getFiberRoots(id).forEach((root: FiberRoot) => {
+          mountedRoots.add(root);
+        });
+      }
+    });
+  }
+
+  const originalInject = hook.inject;
+  hook.inject = function inject(renderer: any, ...rest: Array<mixed>): number {
+    const id = originalInject.call(hook, renderer, ...rest);
+    if (typeof id === 'number') {
+      initializeRendererInternals(rendererInternals, id, renderer);
+    }
+    return id;
+  };
+
+  const originalOnCommitFiberRoot = hook.onCommitFiberRoot;
+  hook.onCommitFiberRoot = function onCommitFiberRoot(
+    rendererID: number,
+    root: any,
+    schedulerPriority?: number,
+    ...rest: Array<mixed>
+  ) {
+    if (typeof originalOnCommitFiberRoot === 'function') {
+      originalOnCommitFiberRoot.call(
+        hook,
+        rendererID,
+        root,
+        schedulerPriority,
+        ...rest,
+      );
+    }
+    recordCommitFiberRoot(
+      fiberRoots,
+      profilingState,
+      rendererID,
+      root,
+      schedulerPriority,
+    );
+  };
+
+  const originalOnPostCommitFiberRoot = hook.onPostCommitFiberRoot;
+  hook.onPostCommitFiberRoot = function onPostCommitFiberRoot(
+    rendererID: number,
+    root: any,
+    ...rest: Array<mixed>
+  ) {
+    if (typeof originalOnPostCommitFiberRoot === 'function') {
+      originalOnPostCommitFiberRoot.call(hook, rendererID, root, ...rest);
+    }
+    if (profilingState.isActive && profilingState.onPostCommit != null) {
+      profilingState.onPostCommit(root);
+    }
+  };
+}
+
+/**
+ * Install the React DevTools facade and return a Facade handle.
+ *
+ * If `__REACT_DEVTOOLS_GLOBAL_HOOK__` is not yet present, this installs the
+ * facade's own minimal hook (the global React looks for at init). If a hook is
+ * already installed — e.g. the user has the React DevTools browser extension —
+ * the facade attaches to that hook instead of installing a second one.
+ *
+ * Either way the returned Facade exposes the same `{hook, fiberRoots,
+ * rendererInternals, profilingState}` that building blocks such as
+ * `createTools(facade)` read from. Install before React initializes so the first
+ * commit is captured; when attaching, roots committed before attach are
+ * back-filled from the existing hook.
+ */
+export function installFacade(target?: any = globalThis): Facade {
   const fiberRoots: Map<number, Set<FiberRoot>> = new Map();
-
   const rendererInternals: Map<number, RendererInternals> = new Map();
-
   const profilingState: ProfilingState = {
     isActive: false,
     currentTraceName: null,
@@ -89,6 +223,19 @@ export function installFacade(target?: any = globalThis): Facade {
     onCommit: null,
     onPostCommit: null,
   };
+
+  // A hook is already installed (e.g. the React DevTools extension). Attach to
+  // it rather than replacing it.
+  const existingHook = target.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  if (existingHook != null) {
+    attachToExistingHook(
+      existingHook,
+      fiberRoots,
+      rendererInternals,
+      profilingState,
+    );
+    return {hook: existingHook, fiberRoots, rendererInternals, profilingState};
+  }
 
   let registeredRenderersCount = 0;
 
@@ -111,23 +258,7 @@ export function installFacade(target?: any = globalThis): Facade {
     inject(renderer: any): number {
       const id = registeredRenderersCount++;
       hook.renderers.set(id, renderer);
-      // Initialize internal constants for this renderer's React version.
-      const version = renderer.reconcilerVersion || renderer.version;
-      if (version == null) {
-        console.error(
-          'react-devtools-facade: Renderer %s has no version, internals not initialized.',
-          id,
-        );
-      } else {
-        const {getDisplayNameForFiber, ReactTypeOfWork, ReactPriorityLevels} =
-          getInternalReactConstants(version);
-        rendererInternals.set(id, {
-          getDisplayNameForFiber,
-          ReactTypeOfWork,
-          ReactPriorityLevels,
-          currentDispatcherRef: renderer.currentDispatcherRef,
-        });
-      }
+      initializeRendererInternals(rendererInternals, id, renderer);
       return id;
     },
     on() {},
@@ -143,23 +274,13 @@ export function installFacade(target?: any = globalThis): Facade {
       root: any,
       schedulerPriority?: number,
     ) {
-      // Hot path — called on every React commit. Keep minimal: just
-      // add or remove the root so building blocks can find it later.
-      const mountedRoots = hook.getFiberRoots(rendererID);
-      const current = root.current;
-      const isKnownRoot = mountedRoots.has(root);
-      const isUnmounting =
-        current.memoizedState == null || current.memoizedState.element == null;
-      if (!isKnownRoot && !isUnmounting) {
-        mountedRoots.add(root);
-      } else if (isKnownRoot && isUnmounting) {
-        mountedRoots.delete(root);
-      }
-
-      // Profiling: record commit durations when a session is active.
-      if (profilingState.isActive && profilingState.onCommit != null) {
-        profilingState.onCommit(rendererID, root, schedulerPriority);
-      }
+      recordCommitFiberRoot(
+        fiberRoots,
+        profilingState,
+        rendererID,
+        root,
+        schedulerPriority,
+      );
     },
     onCommitFiberUnmount() {},
     onPostCommitFiberRoot(rendererID: number, root: any) {
