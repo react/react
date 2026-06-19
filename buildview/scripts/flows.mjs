@@ -111,6 +111,77 @@ const run = async () => {
     m.getAllTasksForProject(project.id).length === 2
   );
 
+  // ===========================================================================
+  // FLOW B — worker joins + access
+  // ===========================================================================
+  console.log('\nFlow B: worker join + access');
+  const worker = m.createUser({
+    name: 'Eli Electrician',
+    role: m.ROLES.WORKER,
+    trade: m.TRADES.ELECTRICIAN,
+  });
+
+  // An extra kitchen task of a DIFFERENT trade, to test the OR-assigned rule.
+  const painterTask = m.createTask({
+    roomId: kitchen.id,
+    title: 'Paint kitchen ceiling',
+    instructions: 'Two coats',
+    trade: m.TRADES.PAINTER,
+    createdByUserId: foreman.id,
+  });
+
+  m.requestMembership({userId: worker.id, projectId: project.id});
+
+  // Before approval: pending => sees nothing.
+  m = await reload();
+  check(
+    'pending worker sees no tasks',
+    m.getVisibleTasksForWorker(m.getUser(worker.id), project.id).length === 0
+  );
+
+  // Foreman grants access to the kitchen room only.
+  const membership = m
+    .getMembershipsForProject(project.id)
+    .find(x => x.userId === worker.id);
+  m.grantMembership(membership.id, [kitchen.id]);
+
+  // Assign the painter task to the electrician worker (trade mismatch but
+  // assigned => must be visible).
+  m.setTaskAssignees(painterTask.id, [worker.id]);
+
+  m = await reload();
+  const visible = m.getVisibleTasksForWorker(m.getUser(worker.id), project.id);
+  const visibleIds = new Set(visible.map(t => t.id));
+  check('granted worker sees trade-matched task', visibleIds.has(elecTask.id));
+  check('granted worker sees assigned task', visibleIds.has(painterTask.id));
+  check(
+    'worker does NOT see task in non-granted room',
+    !visibleIds.has(plumbTask.id)
+  );
+  check('worker visible count is exactly 2', visible.length === 2);
+
+  // A second worker (painter) granted the same room sees only trade matches.
+  const painter = m.createUser({
+    name: 'Pat Painter',
+    role: m.ROLES.WORKER,
+    trade: m.TRADES.PAINTER,
+  });
+  m.requestMembership({userId: painter.id, projectId: project.id});
+  const pMembership = m
+    .getMembershipsForProject(project.id)
+    .find(x => x.userId === painter.id);
+  m.grantMembership(pMembership.id, [kitchen.id]);
+  m = await reload();
+  const painterVisible = m.getVisibleTasksForWorker(
+    m.getUser(painter.id),
+    project.id
+  );
+  check(
+    'painter sees only their trade task (not electrician task)',
+    painterVisible.length === 1 &&
+      painterVisible[0].id === painterTask.id
+  );
+
   console.log(
     failures === 0
       ? '\nALL CHECKS PASSED'

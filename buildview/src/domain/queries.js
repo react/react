@@ -95,6 +95,22 @@ export function getUserName(userId) {
   return u ? u.name : '(unknown)';
 }
 
+// Readable path label for a room: "Building A / Floor 3 / Apt 12, kitchen".
+export function getRoomLabel(roomId) {
+  const room = db.rooms.get(roomId);
+  if (!room) return '(unknown room)';
+  const floor = db.floors.get(room.floorId);
+  const building = floor ? db.buildings.get(floor.buildingId) : null;
+  return [building && building.name, floor && floor.name, room.name]
+    .filter(Boolean)
+    .join(' / ');
+}
+
+// All memberships for a project (any access level).
+export function getMembershipsForProject(projectId) {
+  return db.memberships.list(m => m.projectId === projectId);
+}
+
 // ---- dashboard aggregates (Flow E) -------------------------------------------
 // Numbers are derived straight from the data so they always match.
 export function getDashboard(projectId) {
