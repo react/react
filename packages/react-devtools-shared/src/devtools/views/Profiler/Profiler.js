@@ -15,6 +15,7 @@ import TabBar from '../TabBar';
 import ClearProfilingDataButton from './ClearProfilingDataButton';
 import CommitFlamegraph from './CommitFlamegraph';
 import CommitRanked from './CommitRanked';
+import MemoryProfiler from './MemoryProfiler';
 import RootSelector from './RootSelector';
 import {Timeline} from 'react-devtools-timeline/src/Timeline';
 import SidebarEventInfo from './SidebarEventInfo';
@@ -110,7 +111,11 @@ function Profiler(_: {}) {
   }, []);
 
   let view = null;
-  if (didRecordCommits || selectedTabID === 'timeline') {
+  if (
+    didRecordCommits ||
+    selectedTabID === 'timeline' ||
+    selectedTabID === 'memory'
+  ) {
     switch (selectedTabID) {
       case 'flame-chart':
         view = <CommitFlamegraph />;
@@ -120,6 +125,9 @@ function Profiler(_: {}) {
         break;
       case 'timeline':
         view = <Timeline />;
+        break;
+      case 'memory':
+        view = <MemoryProfiler />;
         break;
       default:
         break;
@@ -229,6 +237,12 @@ const tabs = [
     icon: 'ranked-chart',
     label: 'Ranked',
     title: 'Ranked chart',
+  },
+  {
+    id: 'memory',
+    icon: 'profiler',
+    label: 'Memory',
+    title: 'Memory profiling',
   },
 ];
 

@@ -10,11 +10,17 @@
 import EventEmitter from '../events';
 import {prepareProfilingDataFrontendFromBackendAndStore} from './views/Profiler/utils';
 import ProfilingCache from './ProfilingCache';
+import MemoryProfilingCache from './MemoryProfilingCache';
 import Store from './store';
 import {logEvent} from 'react-devtools-shared/src/Logger';
 
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
-import type {ProfilingDataBackend} from 'react-devtools-shared/src/backend/types';
+import type {
+  ProfilingDataBackend,
+  MemoryProfilingData,
+  MemorySnapshot,
+  LeakDetectionResult,
+} from 'react-devtools-shared/src/backend/types';
 import type {
   CommitDataFrontend,
   ProfilingDataForRootFrontend,
@@ -26,11 +32,18 @@ export default class ProfilerStore extends EventEmitter<{
   isProcessingData: [],
   isProfiling: [],
   profilingData: [],
+  memoryProfilingData: [],
+  memorySnapshot: [],
+  memoryLeakDetected: [],
+  isMemoryProfiling: [],
 }> {
   _bridge: FrontendBridge;
 
   // Suspense cache for lazily calculating derived profiling data.
   _cache: ProfilingCache;
+
+  // Cache for memory profiling data
+  _memoryCache: MemoryProfilingCache;
 
   // Temporary store of profiling data from the backend renderer(s).
   // This data will be converted to the ProfilingDataFrontend format after being collected from all renderers.
@@ -84,6 +97,12 @@ export default class ProfilerStore extends EventEmitter<{
 
   _store: Store;
 
+  // Memory profiling state
+  _memoryProfilingData: MemoryProfilingData | null = null;
+  _isMemoryProfiling: boolean = false;
+  _memoryLeakWarnings: Array<LeakDetectionResult> = [];
+  _latestMemorySnapshot: MemorySnapshot | null = null;
+
   constructor(
     bridge: FrontendBridge,
     store: Store,
@@ -101,11 +120,19 @@ export default class ProfilerStore extends EventEmitter<{
     bridge.addListener('profilingStatus', this.onProfilingStatus);
     bridge.addListener('shutdown', this.onBridgeShutdown);
 
+    // Memory profiling event listeners
+    bridge.addListener('memoryProfilingData', this.onMemoryProfilingData);
+    bridge.addListener('memorySnapshot', this.onMemorySnapshot);
+    bridge.addListener('memoryLeakDetected', this.onMemoryLeakDetected);
+    bridge.addListener('memoryProfilingStatus', this.onMemoryProfilingStatus);
+
     // It's possible that profiling has already started (e.g. "reload and start profiling")
     // so the frontend needs to ask the backend for its status after mounting.
     bridge.send('getProfilingStatus');
+    bridge.send('getMemoryProfilingStatus');
 
     this._cache = new ProfilingCache(this);
+    this._memoryCache = new MemoryProfilingCache(this);
   }
 
   getCommitData(rootID: number, commitIndex: number): CommitDataFrontend {
@@ -154,6 +181,10 @@ export default class ProfilerStore extends EventEmitter<{
     return this._cache;
   }
 
+  get memoryProfilingCache(): MemoryProfilingCache {
+    return this._memoryCache;
+  }
+
   get profilingData(): ProfilingDataFrontend | null {
     return this._dataFrontend;
   }
@@ -173,6 +204,23 @@ export default class ProfilerStore extends EventEmitter<{
     this._cache.invalidate();
 
     this.emit('profilingData');
+  }
+
+  // Memory profiling getters and setters
+  get memoryProfilingData(): MemoryProfilingData | null {
+    return this._memoryProfilingData;
+  }
+
+  get isMemoryProfiling(): boolean {
+    return this._isMemoryProfiling;
+  }
+
+  get memoryLeakWarnings(): Array<LeakDetectionResult> {
+    return this._memoryLeakWarnings;
+  }
+
+  get latestMemorySnapshot(): MemorySnapshot | null {
+    return this._latestMemorySnapshot;
   }
 
   clear(): void {
@@ -218,6 +266,38 @@ export default class ProfilerStore extends EventEmitter<{
     // Wait for onProfilingStatus() to confirm the status has changed, this will update _isBackendProfiling.
     // This ensures the frontend and backend are in sync wrt which commits were profiled.
     // We do this to avoid mismatches on e.g. CommitTreeBuilder that would cause errors.
+  }
+
+  startMemoryProfiling(settings?: {
+    snapshotInterval?: number,
+    leakThreshold?: number,
+  }): void {
+    this._memoryProfilingData = null;
+    this._memoryLeakWarnings = [];
+    this._latestMemorySnapshot = null;
+
+    this._bridge.send('startMemoryProfiling', {
+      recordChangeDescriptions: this._store.recordChangeDescriptions,
+      recordTimeline: this._store.supportsTimeline,
+      enableMemoryProfiling: true,
+      memorySnapshotInterval: settings?.snapshotInterval || 1000,
+      memoryLeakThreshold: settings?.leakThreshold || 1024 * 100,
+    });
+
+    this._isMemoryProfiling = true;
+    this.emit('isMemoryProfiling');
+  }
+
+  stopMemoryProfiling(): void {
+    this._bridge.send('stopMemoryProfiling');
+
+    this._isMemoryProfiling = false;
+    this.emit('isMemoryProfiling');
+  }
+
+  clearMemoryLeakWarnings(): void {
+    this._memoryLeakWarnings = [];
+    this.emit('memoryLeakDetected');
   }
 
   _takeProfilingSnapshotRecursive: (
@@ -305,6 +385,21 @@ export default class ProfilerStore extends EventEmitter<{
     this._bridge.removeListener('profilingData', this.onBridgeProfilingData);
     this._bridge.removeListener('profilingStatus', this.onProfilingStatus);
     this._bridge.removeListener('shutdown', this.onBridgeShutdown);
+
+    // Remove memory profiling listeners
+    this._bridge.removeListener(
+      'memoryProfilingData',
+      this.onMemoryProfilingData,
+    );
+    this._bridge.removeListener('memorySnapshot', this.onMemorySnapshot);
+    this._bridge.removeListener(
+      'memoryLeakDetected',
+      this.onMemoryLeakDetected,
+    );
+    this._bridge.removeListener(
+      'memoryProfilingStatus',
+      this.onMemoryProfilingStatus,
+    );
   };
 
   onProfilingStatus: (isProfiling: boolean) => void = isProfiling => {
@@ -376,6 +471,43 @@ export default class ProfilerStore extends EventEmitter<{
       });
 
       this.emit('isProcessingData');
+    }
+  };
+
+  // Memory profiling event handlers
+  onMemoryProfilingData: (data: MemoryProfilingData) => void = data => {
+    this._memoryProfilingData = data;
+
+    // Store leak warnings
+    if (data.leaks && data.leaks.leaks.length > 0) {
+      this._memoryLeakWarnings.push(data.leaks);
+    }
+
+    // Invalidate cache since data changed
+    this._memoryCache.invalidate();
+
+    this.emit('memoryProfilingData');
+  };
+
+  onMemorySnapshot: (snapshot: MemorySnapshot) => void = snapshot => {
+    this._latestMemorySnapshot = snapshot;
+    this.emit('memorySnapshot');
+  };
+
+  onMemoryLeakDetected: (result: LeakDetectionResult) => void = result => {
+    this._memoryLeakWarnings.push(result);
+    this.emit('memoryLeakDetected');
+  };
+
+  onMemoryProfilingStatus: (isProfiling: boolean) => void = isProfiling => {
+    if (this._isMemoryProfiling !== isProfiling) {
+      this._isMemoryProfiling = isProfiling;
+      this.emit('isMemoryProfiling');
+    }
+
+    // Clear data when stopping
+    if (!isProfiling) {
+      // Data will be sent via onMemoryProfilingData
     }
   };
 }
