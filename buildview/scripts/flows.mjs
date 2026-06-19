@@ -219,6 +219,73 @@ const run = async () => {
       m.getPhotos(painterTask.id)[0].caption === 'Ceiling done'
   );
 
+  // ===========================================================================
+  // FLOW D — issue handling
+  // ===========================================================================
+  console.log('\nFlow D: issues');
+  // Permission shape: foreman any task; worker only assigned tasks.
+  check(
+    'foreman may raise issue on any task',
+    m.canRaiseIssue(m.getUser(foreman.id), m.getTask(elecTask.id))
+  );
+  check(
+    'worker may raise issue on assigned task',
+    m.canRaiseIssue(m.getUser(worker.id), m.getTask(painterTask.id))
+  );
+  check(
+    'worker may NOT raise issue on non-assigned task',
+    !m.canRaiseIssue(m.getUser(worker.id), m.getTask(elecTask.id))
+  );
+  check('worker may NOT resolve issues', !m.canResolveIssue(m.getUser(worker.id)));
+  check('foreman may resolve issues', m.canResolveIssue(m.getUser(foreman.id)));
+
+  // Worker raises an issue on the task they completed.
+  const issue = m.raiseIssue({
+    taskId: painterTask.id,
+    raisedByUserId: worker.id,
+    description: 'Paint smudge near window',
+    responsibleUserId: worker.id,
+  });
+
+  m = await reload();
+  let dash = m.getDashboard(project.id);
+  check('open issue shows in dashboard', dash.openIssueCount === 1);
+  check(
+    'task with open issue is flagged',
+    dash.flaggedTasks.some(t => t.id === painterTask.id)
+  );
+
+  // Foreman resolves it.
+  m.resolveIssue(issue.id);
+  m = await reload();
+  dash = m.getDashboard(project.id);
+  check('resolved issue leaves open count', dash.openIssueCount === 0);
+  check('no flagged tasks after resolve', dash.flaggedTasks.length === 0);
+  check('resolved issue counted as resolved', dash.resolvedIssueCount === 1);
+
+  // ===========================================================================
+  // FLOW E — foreman dashboard numbers match the data
+  // ===========================================================================
+  console.log('\nFlow E: dashboard');
+  dash = m.getDashboard(project.id);
+  const allTasks = m.getAllTasksForProject(project.id);
+  check('dashboard total matches task count', dash.totalTasks === allTasks.length);
+  const sumByStatus =
+    dash.byStatus[m.TASK_STATUS.TODO] +
+    dash.byStatus[m.TASK_STATUS.IN_PROGRESS] +
+    dash.byStatus[m.TASK_STATUS.DONE];
+  check('status buckets sum to total', sumByStatus === dash.totalTasks);
+  check(
+    'done count matches data',
+    dash.byStatus[m.TASK_STATUS.DONE] ===
+      allTasks.filter(t => t.status === m.TASK_STATUS.DONE).length
+  );
+  check(
+    'todo count matches data',
+    dash.byStatus[m.TASK_STATUS.TODO] ===
+      allTasks.filter(t => t.status === m.TASK_STATUS.TODO).length
+  );
+
   console.log(
     failures === 0
       ? '\nALL CHECKS PASSED'
