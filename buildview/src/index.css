@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+/* -----------------------------------------------------------------------------
+   BuildView design tokens — "industrial / construction" direction.
+   High-contrast, safety-amber accent, chunky touch targets for gloved hands
+   on a phone. Defining these in @theme generates matching utilities
+   (e.g. bg-brand, text-steel, border-hazard).
+----------------------------------------------------------------------------- */
+@theme {
+  --color-brand: #f59e0b; /* safety amber */
+  --color-brand-dark: #b45309; /* pressed/hover */
+  --color-brand-fg: #1c1917; /* text on amber */
+  --color-steel: #1e293b; /* dark slate — chrome/header */
+  --color-steel-light: #334155;
+  --color-hazard: #dc2626; /* issues / danger */
+  --color-go: #16a34a; /* done / success */
+  --color-progress: #2563eb; /* in progress */
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-100 text-zinc-900 antialiased;
+    font-family: var(--font-sans);
+  }
+  /* Sensible default tap target sizing for interactive elements on site. */
+  button {
+    @apply cursor-pointer;
+  }
+}

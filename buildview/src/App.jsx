@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {useSession} from './lib/session.js';
 import {ROLES} from './domain/constants.js';
+import {Button} from './components/ui.jsx';
 import Login from './screens/Login.jsx';
 import ForemanProjectList from './screens/ForemanProjectList.jsx';
 import ForemanProjectView from './screens/ForemanProjectView.jsx';
@@ -38,17 +39,43 @@ export default function App() {
   };
 
   return (
-    <div>
-      <div>
-        <span>
-          Logged in as <strong>{user.name}</strong> ({user.role}
-          {user.role === ROLES.WORKER ? `, ${user.trade}` : ''}){' '}
-        </span>
-        {stack.length > 1 && <button onClick={nav.back}>Back</button>}{' '}
-        <button onClick={nav.logout}>Log out</button>
-      </div>
-      <hr />
-      <Screen current={current} nav={nav} />
+    <div className="min-h-screen bg-zinc-100">
+      <header className="sticky top-0 z-10 border-b-4 border-brand bg-steel text-white">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+          <div className="flex items-center gap-2">
+            {stack.length > 1 && (
+              <Button
+                variant="ghost"
+                className="text-white hover:bg-steel-light"
+                onClick={nav.back}>
+                ← Back
+              </Button>
+            )}
+            <span className="text-lg font-black tracking-tight">
+              BUILD<span className="text-brand">VIEW</span>
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="hidden text-right text-sm leading-tight sm:block">
+              <span className="font-semibold">{user.name}</span>
+              <br />
+              <span className="text-zinc-300">
+                {user.role}
+                {user.role === ROLES.WORKER ? ` · ${user.trade}` : ''}
+              </span>
+            </span>
+            <Button
+              variant="ghost"
+              className="text-white hover:bg-steel-light"
+              onClick={nav.logout}>
+              Log out
+            </Button>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-3xl px-4 py-5">
+        <Screen current={current} nav={nav} />
+      </main>
     </div>
   );
 }

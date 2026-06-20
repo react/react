@@ -1,8 +1,9 @@
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-// Plain Vite + React setup. No styling tooling on purpose: this is the
-// logic-only phase.
+// Vite + React + Tailwind. Tailwind drives the design phase (industrial theme);
+// the app logic and the data seam are unchanged.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
 });

@@ -35,6 +35,17 @@ import {
   ISSUE_STATUS,
   ACCESS_LEVEL,
 } from '../domain/constants.js';
+import {
+  Button,
+  Card,
+  SectionTitle,
+  StatusBadge,
+  IssueBadge,
+  Field,
+  TextInput,
+  TextArea,
+  Select,
+} from '../components/ui.jsx';
 
 // Screen 9 + 10: Task detail (shared). Instructions, status, photos, issues.
 // Every action is gated by the section-3 permission checks.
@@ -43,70 +54,142 @@ export default function TaskDetail({nav, params}) {
   const user = nav.user;
   const task = getTask(params.taskId);
 
-  if (!task) return <p>Task not found.</p>;
+  if (!task) {
+    return (
+      <Card className="p-6 text-center text-zinc-600">Task not found.</Card>
+    );
+  }
   // Hard permission guard: a worker can never open a task outside their access.
   if (!canViewTask(user, task)) {
-    return <p>You do not have access to this task.</p>;
+    return (
+      <Card className="border-l-4 border-hazard p-6">
+        <p className="font-semibold text-hazard">
+          You do not have access to this task.
+        </p>
+      </Card>
+    );
   }
 
   const photos = getPhotos(task.id);
   const issues = getIssues(task.id);
+  const openIssues = issues.filter(i => i.status === ISSUE_STATUS.OPEN);
   const mayEditStatus = canEditTaskStatus(user, task);
   const mayUpload = canUploadPhoto(user, task);
   const mayRaise = canRaiseIssue(user, task);
   const mayResolve = canResolveIssue(user);
 
   return (
-    <div>
-      <h1>{task.title}</h1>
-      <p>Room: {getRoomLabel(task.roomId)}</p>
-      <p>Trade: {task.trade}</p>
-      <p>Instructions: {task.instructions || '(none)'}</p>
-      <p>Assigned: {assignedNames(task)}</p>
-
-      <h2>Status</h2>
-      <p>Current: {TASK_STATUS_LABEL[task.status]}</p>
-      {mayEditStatus ? (
-        <div>
-          {TASK_STATUS_LIST.map(s => (
-            <button
-              key={s}
-              disabled={s === task.status}
-              onClick={() => setTaskStatus(task.id, s)}>
-              Set {TASK_STATUS_LABEL[s]}
-            </button>
-          ))}
+    <div className="space-y-5">
+      {/* Task header */}
+      <Card className="overflow-hidden">
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 bg-zinc-50 p-4">
+          <div>
+            <h1 className="text-xl font-black tracking-tight text-steel">
+              {task.title}
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              {getRoomLabel(task.roomId)}
+            </p>
+          </div>
+          <StatusBadge status={task.status} />
         </div>
-      ) : (
-        <p>
-          <em>You can't change this task's status.</em>
-        </p>
-      )}
-
-      <h2>Photos ({photos.length})</h2>
-      {photos.length === 0 ? (
-        <p>No photos yet.</p>
-      ) : (
-        <ul>
-          {photos.map(p => (
-            <li key={p.id}>
-              <div>
-                {p.caption || '(no caption)'} — by {getUserName(p.uploadedByUserId)}
-              </div>
-              {p.imageData && (
-                <img src={p.imageData} alt={p.caption || 'photo'} width="160" />
+        <dl className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+          <Meta label="Trade">
+            <span className="inline-block rounded bg-steel px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+              {task.trade}
+            </span>
+          </Meta>
+          <Meta label="Assigned to">{assignedNames(task)}</Meta>
+          <div className="sm:col-span-2">
+            <Meta label="Instructions">
+              {task.instructions || (
+                <span className="text-zinc-400">(none)</span>
               )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {mayUpload && <PhotoForm taskId={task.id} userId={user.id} />}
+            </Meta>
+          </div>
+        </dl>
+      </Card>
 
-      <h2>Issues ({issues.length})</h2>
-      <IssueList issues={issues} mayResolve={mayResolve} />
-      {mayRaise && (
-        <RaiseIssueForm task={task} userId={user.id} />
-      )}
+      {/* Status */}
+      <section>
+        <SectionTitle>Status</SectionTitle>
+        <Card className="p-4">
+          {mayEditStatus ? (
+            <div className="flex flex-wrap gap-2">
+              {TASK_STATUS_LIST.map(s => (
+                <Button
+                  key={s}
+                  variant={s === task.status ? 'primary' : 'secondary'}
+                  disabled={s === task.status}
+                  onClick={() => setTaskStatus(task.id, s)}>
+                  {TASK_STATUS_LABEL[s]}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500 italic">
+              You can&apos;t change this task&apos;s status.
+            </p>
+          )}
+        </Card>
+      </section>
+
+      {/* Photos */}
+      <section>
+        <SectionTitle count={photos.length}>Photos</SectionTitle>
+        <Card className="space-y-4 p-4">
+          {photos.length === 0 ? (
+            <p className="text-sm text-zinc-500">No photos yet.</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {photos.map(p => (
+                <li
+                  key={p.id}
+                  className="overflow-hidden rounded-md border border-zinc-200">
+                  {p.imageData && (
+                    <img
+                      src={p.imageData}
+                      alt={p.caption || 'photo'}
+                      className="aspect-square w-full object-cover"
+                    />
+                  )}
+                  <div className="p-2 text-xs">
+                    <div className="font-medium text-zinc-800">
+                      {p.caption || (
+                        <span className="text-zinc-400">(no caption)</span>
+                      )}
+                    </div>
+                    <div className="text-zinc-500">
+                      {getUserName(p.uploadedByUserId)}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {mayUpload && <PhotoForm taskId={task.id} userId={user.id} />}
+        </Card>
+      </section>
+
+      {/* Issues */}
+      <section>
+        <SectionTitle count={openIssues.length}>Open issues</SectionTitle>
+        <Card className="space-y-4 p-4">
+          <IssueList issues={issues} mayResolve={mayResolve} />
+          {mayRaise && <RaiseIssueForm task={task} userId={user.id} />}
+        </Card>
+      </section>
+    </div>
+  );
+}
+
+function Meta({label, children}) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-sm text-zinc-800">{children}</dd>
     </div>
   );
 }
@@ -147,49 +230,67 @@ function PhotoForm({taskId, userId}) {
   }
 
   return (
-    <form onSubmit={submit}>
-      <div>
-        <label>
-          Photo:{' '}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={e => setFile(e.target.files[0] || null)}
-          />
-        </label>
-      </div>
-      <div>
-        <label>
-          Caption:{' '}
-          <input value={caption} onChange={e => setCaption(e.target.value)} />
-        </label>
-      </div>
-      <button type="submit" disabled={busy || !file}>
+    <form
+      onSubmit={submit}
+      className="space-y-3 border-t border-dashed border-zinc-300 pt-4">
+      <Field label="Add a photo">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={e => setFile(e.target.files[0] || null)}
+          className="block w-full text-sm file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-steel file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-steel-light"
+        />
+      </Field>
+      <Field label="Caption">
+        <TextInput
+          value={caption}
+          onChange={e => setCaption(e.target.value)}
+          placeholder="Optional"
+        />
+      </Field>
+      <Button type="submit" disabled={busy || !file}>
         {busy ? 'Uploading…' : 'Upload photo'}
-      </button>
-      {error && <p>{error}</p>}
+      </Button>
+      {error && <p className="text-sm font-medium text-hazard">{error}</p>}
     </form>
   );
 }
 
 function IssueList({issues, mayResolve}) {
-  if (issues.length === 0) return <p>No issues.</p>;
+  if (issues.length === 0) {
+    return <p className="text-sm text-zinc-500">No issues raised.</p>;
+  }
   return (
-    <ul>
+    <ul className="space-y-3">
       {issues.map(i => (
-        <li key={i.id}>
-          <div>
-            [{i.status}] {i.description}
+        <li
+          key={i.id}
+          className={`rounded-md border-l-4 p-3 ${
+            i.status === ISSUE_STATUS.OPEN
+              ? 'border-hazard bg-red-50'
+              : 'border-zinc-300 bg-zinc-50'
+          }`}>
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-medium text-zinc-800">{i.description}</p>
+            <IssueBadge status={i.status} />
           </div>
-          <div>
-            Raised by {getUserName(i.raisedByUserId)} — responsible:{' '}
+          <p className="mt-1 text-xs text-zinc-500">
+            Raised by {getUserName(i.raisedByUserId)} · responsible:{' '}
             {i.responsibleUserId ? getUserName(i.responsibleUserId) : '(none)'}
-          </div>
+          </p>
           {i.imageData && (
-            <img src={i.imageData} alt="issue" width="160" />
+            <img
+              src={i.imageData}
+              alt="issue"
+              className="mt-2 w-40 rounded-md border border-zinc-200"
+            />
           )}
           {mayResolve && i.status === ISSUE_STATUS.OPEN && (
-            <button onClick={() => resolveIssue(i.id)}>Resolve</button>
+            <div className="mt-2">
+              <Button variant="secondary" onClick={() => resolveIssue(i.id)}>
+                Mark resolved
+              </Button>
+            </div>
           )}
         </li>
       ))}
@@ -249,49 +350,44 @@ function RaiseIssueForm({task, userId}) {
   }
 
   return (
-    <form onSubmit={submit}>
-      <h3>Raise an issue</h3>
-      <div>
-        <label>
-          Description:{' '}
-          <textarea
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-          />
-        </label>
-      </div>
-      <div>
-        <label>
-          Responsible:{' '}
-          <select
-            value={responsibleUserId}
-            onChange={e => setResponsibleUserId(e.target.value)}>
-            <option value="">(unassigned)</option>
-            {candidateIds.map(id => {
-              const u = getUser(id);
-              return (
-                <option key={id} value={id}>
-                  {u ? u.name : id}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-      </div>
-      <div>
-        <label>
-          Optional photo:{' '}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={e => setFile(e.target.files[0] || null)}
-          />
-        </label>
-      </div>
-      <button type="submit" disabled={busy}>
+    <form
+      onSubmit={submit}
+      className="space-y-3 border-t border-dashed border-zinc-300 pt-4">
+      <h3 className="font-bold text-steel">Raise an issue</h3>
+      <Field label="Description">
+        <TextArea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="Describe the problem"
+        />
+      </Field>
+      <Field label="Responsible">
+        <Select
+          value={responsibleUserId}
+          onChange={e => setResponsibleUserId(e.target.value)}>
+          <option value="">(unassigned)</option>
+          {candidateIds.map(id => {
+            const u = getUser(id);
+            return (
+              <option key={id} value={id}>
+                {u ? u.name : id}
+              </option>
+            );
+          })}
+        </Select>
+      </Field>
+      <Field label="Photo (optional)">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={e => setFile(e.target.files[0] || null)}
+          className="block w-full text-sm file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-steel file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-steel-light"
+        />
+      </Field>
+      <Button type="submit" variant="danger" disabled={busy}>
         {busy ? 'Saving…' : 'Raise issue'}
-      </button>
-      {error && <p>{error}</p>}
+      </Button>
+      {error && <p className="text-sm font-medium text-hazard">{error}</p>}
     </form>
   );
 }

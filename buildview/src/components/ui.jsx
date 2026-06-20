@@ -1,0 +1,107 @@
+import React from 'react';
+import {
+  TASK_STATUS,
+  TASK_STATUS_LABEL,
+  ISSUE_STATUS,
+} from '../domain/constants.js';
+
+// -----------------------------------------------------------------------------
+// Shared UI primitives — "industrial / construction" design system.
+// Chunky touch targets (min 44px), high contrast, safety-amber accent.
+// These are presentational only; they hold no logic and touch no data.
+// -----------------------------------------------------------------------------
+
+const BUTTON_VARIANTS = {
+  primary:
+    'bg-brand text-brand-fg hover:bg-brand-dark hover:text-white font-semibold',
+  secondary:
+    'bg-white text-steel border-2 border-steel hover:bg-steel hover:text-white font-semibold',
+  danger: 'bg-hazard text-white hover:bg-red-700 font-semibold',
+  ghost: 'bg-transparent text-steel hover:bg-zinc-200 font-medium',
+};
+
+export function Button({variant = 'primary', className = '', ...props}) {
+  return (
+    <button
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${BUTTON_VARIANTS[variant]} ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Card({className = '', children}) {
+  return (
+    <div
+      className={`rounded-lg border border-zinc-300 bg-white shadow-sm ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+// Section heading with the signature amber rule on the left.
+export function SectionTitle({children, count}) {
+  return (
+    <h2 className="mb-3 flex items-center gap-2 border-l-4 border-brand pl-3 text-lg font-bold tracking-tight text-steel uppercase">
+      {children}
+      {count !== undefined && (
+        <span className="rounded bg-zinc-200 px-2 py-0.5 text-sm font-semibold text-zinc-600">
+          {count}
+        </span>
+      )}
+    </h2>
+  );
+}
+
+const TASK_STATUS_STYLE = {
+  [TASK_STATUS.TODO]: 'bg-zinc-200 text-zinc-700',
+  [TASK_STATUS.IN_PROGRESS]: 'bg-progress text-white',
+  [TASK_STATUS.DONE]: 'bg-go text-white',
+};
+
+export function StatusBadge({status}) {
+  return (
+    <span
+      className={`inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${TASK_STATUS_STYLE[status] || 'bg-zinc-200 text-zinc-700'}`}>
+      {TASK_STATUS_LABEL[status] || status}
+    </span>
+  );
+}
+
+export function IssueBadge({status}) {
+  const open = status === ISSUE_STATUS.OPEN;
+  return (
+    <span
+      className={`inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${
+        open ? 'bg-hazard text-white' : 'bg-zinc-200 text-zinc-600'
+      }`}>
+      {open ? 'Open' : 'Resolved'}
+    </span>
+  );
+}
+
+// Labeled field wrapper for forms.
+export function Field({label, children}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-semibold text-steel">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const CONTROL =
+  'w-full min-h-11 rounded-md border-2 border-zinc-300 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none';
+
+export function TextInput(props) {
+  return <input className={CONTROL} {...props} />;
+}
+
+export function TextArea(props) {
+  return <textarea className={`${CONTROL} min-h-24`} {...props} />;
+}
+
+export function Select({className = '', ...props}) {
+  return <select className={`${CONTROL} ${className}`} {...props} />;
+}
