@@ -32,8 +32,11 @@ plain back-button stack in `App.jsx` (no router library).
 ## Verification
 
 - `scripts/flows.mjs` — drives the real seam + domain modules in Node with a
-  localStorage polyfill, running Flows A–E top to bottom with reloads in
-  between to prove persistence and the permission rule.
+  localStorage polyfill, running Flows A–E top to bottom. Each "reload" truly
+  discards the in-memory cache and rebuilds it from storage, so persistence is
+  genuinely exercised. Also covers edge cases: unknown/duplicate invites,
+  unique invite codes, granted-with-no-rooms, room revocation, cross-project
+  isolation, and storage-write failure rollback (StorageError).
 - `scripts/render-smoke.mjs` — bundles and server-renders every screen with
   seeded data to catch component runtime crashes; also checks the UI access
   guard.

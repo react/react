@@ -1,6 +1,10 @@
 import React, {useState} from 'react';
 import {useDbVersion} from '../lib/useDb.js';
-import {readFileAsDataURL} from '../lib/file.js';
+import {
+  readFileAsDataURL,
+  imageTooLarge,
+  MAX_IMAGE_BYTES,
+} from '../lib/file.js';
 import {
   setTaskStatus,
   addPhoto,
@@ -116,17 +120,30 @@ function PhotoForm({taskId, userId}) {
   const [caption, setCaption] = useState('');
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   async function submit(e) {
     e.preventDefault();
     if (!file) return;
+    if (imageTooLarge(file)) {
+      setError(
+        `Image is too large (max ${MAX_IMAGE_BYTES / (1024 * 1024)} MB).`
+      );
+      return;
+    }
     setBusy(true);
-    const imageData = await readFileAsDataURL(file);
-    addPhoto({taskId, uploadedByUserId: userId, imageData, caption});
-    setCaption('');
-    setFile(null);
-    setBusy(false);
-    e.target.reset();
+    setError('');
+    try {
+      const imageData = await readFileAsDataURL(file);
+      addPhoto({taskId, uploadedByUserId: userId, imageData, caption});
+      setCaption('');
+      setFile(null);
+      e.target.reset();
+    } catch (err) {
+      setError(err.message || 'Could not save the photo.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -150,6 +167,7 @@ function PhotoForm({taskId, userId}) {
       <button type="submit" disabled={busy || !file}>
         {busy ? 'Uploading…' : 'Upload photo'}
       </button>
+      {error && <p>{error}</p>}
     </form>
   );
 }
@@ -184,6 +202,7 @@ function RaiseIssueForm({task, userId}) {
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   // Responsible person options: members of the task's project + the foreman.
   const projectId = getProjectIdForTask(task.id);
@@ -202,19 +221,31 @@ function RaiseIssueForm({task, userId}) {
   async function submit(e) {
     e.preventDefault();
     if (!description.trim()) return;
+    if (imageTooLarge(file)) {
+      setError(
+        `Image is too large (max ${MAX_IMAGE_BYTES / (1024 * 1024)} MB).`
+      );
+      return;
+    }
     setBusy(true);
-    const imageData = file ? await readFileAsDataURL(file) : null;
-    raiseIssue({
-      taskId: task.id,
-      raisedByUserId: userId,
-      description: description.trim(),
-      imageData,
-      responsibleUserId: responsibleUserId || null,
-    });
-    setDescription('');
-    setResponsibleUserId('');
-    setFile(null);
-    setBusy(false);
+    setError('');
+    try {
+      const imageData = file ? await readFileAsDataURL(file) : null;
+      raiseIssue({
+        taskId: task.id,
+        raisedByUserId: userId,
+        description: description.trim(),
+        imageData,
+        responsibleUserId: responsibleUserId || null,
+      });
+      setDescription('');
+      setResponsibleUserId('');
+      setFile(null);
+    } catch (err) {
+      setError(err.message || 'Could not save the issue.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -260,6 +291,7 @@ function RaiseIssueForm({task, userId}) {
       <button type="submit" disabled={busy}>
         {busy ? 'Saving…' : 'Raise issue'}
       </button>
+      {error && <p>{error}</p>}
     </form>
   );
 }

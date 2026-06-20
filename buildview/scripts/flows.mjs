@@ -32,20 +32,32 @@ function check(label, cond) {
   }
 }
 
-// Re-import the modules with a fresh module registry but the SAME backing
-// store, simulating a page reload (in-memory cache is rebuilt from storage).
+// Import the real modules once. The domain modules import db.js internally,
+// so they all share the single db instance (the storage seam) — exactly as the
+// app does.
+let modules;
 async function loadModules() {
-  const bust = '?t=' + Math.random();
-  const db = (await import('../src/data/db.js' + bust)).db;
-  const entities = await import('../src/domain/entities.js' + bust);
-  const queries = await import('../src/domain/queries.js' + bust);
-  const permissions = await import('../src/domain/permissions.js' + bust);
-  const constants = await import('../src/domain/constants.js' + bust);
-  return {db, ...entities, ...queries, ...permissions, ...constants};
+  const dbmod = await import('../src/data/db.js');
+  const entities = await import('../src/domain/entities.js');
+  const queries = await import('../src/domain/queries.js');
+  const permissions = await import('../src/domain/permissions.js');
+  const constants = await import('../src/domain/constants.js');
+  modules = {
+    db: dbmod.db,
+    StorageError: dbmod.StorageError,
+    ...entities,
+    ...queries,
+    ...permissions,
+    ...constants,
+  };
+  return modules;
 }
 
+// Simulate a real page reload: drop the in-memory cache and rebuild it from
+// the persisted store, then keep using the same module instances.
 function reload() {
-  return loadModules();
+  modules.db.__reloadFromStorage();
+  return modules;
 }
 
 const run = async () => {
@@ -284,6 +296,115 @@ const run = async () => {
     'todo count matches data',
     dash.byStatus[m.TASK_STATUS.TODO] ===
       allTasks.filter(t => t.status === m.TASK_STATUS.TODO).length
+  );
+
+  // ===========================================================================
+  // EDGE CASES — hardening
+  // ===========================================================================
+  console.log('\nEdge cases');
+
+  // Wrong / unknown invite code finds nothing.
+  check(
+    'unknown invite code returns null',
+    m.findProjectByInviteCode('BV-NOPE9') === null
+  );
+  // Invite code lookup is case/space-insensitive.
+  check(
+    'invite code lookup is case-insensitive',
+    !!m.findProjectByInviteCode('  ' + project.inviteCode.toLowerCase() + '  ')
+  );
+
+  // A second project gets a different invite code.
+  const project2 = m.createProject({
+    name: 'Second',
+    address: '',
+    createdByUserId: foreman.id,
+  });
+  check(
+    'invite codes are unique across projects',
+    project2.inviteCode !== project.inviteCode
+  );
+
+  // Duplicate join request does not create a second membership.
+  const before = m.getMembershipsForProject(project.id).length;
+  m.requestMembership({userId: worker.id, projectId: project.id});
+  check(
+    'duplicate join request is a no-op',
+    m.getMembershipsForProject(project.id).length === before
+  );
+
+  // Granting with NO rooms => worker sees nothing even though "granted".
+  const lonelyWorker = m.createUser({
+    name: 'No Rooms',
+    role: m.ROLES.WORKER,
+    trade: m.TRADES.ELECTRICIAN,
+  });
+  m.requestMembership({userId: lonelyWorker.id, projectId: project.id});
+  const lonelyM = m
+    .getMembershipsForProject(project.id)
+    .find(x => x.userId === lonelyWorker.id);
+  m.grantMembership(lonelyM.id, []); // granted, but no visible rooms
+  m = await reload();
+  check(
+    'granted-but-no-rooms worker sees nothing',
+    m.getVisibleTasksForWorker(m.getUser(lonelyWorker.id), project.id).length === 0
+  );
+
+  // Editing visible rooms to remove a room hides its tasks again.
+  const wMembership = m
+    .getMembershipsForProject(project.id)
+    .find(x => x.userId === worker.id);
+  m.setVisibleRooms(wMembership.id, []); // revoke kitchen
+  m = await reload();
+  check(
+    'removing visible room hides its tasks',
+    m.getVisibleTasksForWorker(m.getUser(worker.id), project.id).length === 0
+  );
+  // And a worker can no longer edit a task that left their visible rooms.
+  check(
+    'worker cannot edit task after room revoked',
+    !m.canEditTaskStatus(m.getUser(worker.id), m.getTask(painterTask.id))
+  );
+
+  // Cross-project isolation: foreman of project2 cannot view a task in project.
+  const foreman2 = m.createUser({
+    name: 'Other Foreman',
+    role: m.ROLES.FOREMAN,
+    trade: m.TRADES.NONE,
+  });
+  check(
+    'foreman cannot view task in a project they do not own',
+    !m.canViewTask(m.getUser(foreman2.id), m.getTask(elecTask.id))
+  );
+
+  // Storage write failure rolls back the cache and throws StorageError.
+  const taskCountBefore = m.getAllTasksForProject(project.id).length;
+  const originalSetItem = globalThis.localStorage.setItem;
+  globalThis.localStorage.setItem = () => {
+    throw new Error('QuotaExceededError (simulated)');
+  };
+  let threw = false;
+  try {
+    m.createTask({
+      roomId: kitchen.id,
+      title: 'Should fail',
+      instructions: '',
+      trade: m.TRADES.GENERAL,
+      createdByUserId: foreman.id,
+    });
+  } catch (err) {
+    threw = err instanceof m.StorageError;
+  }
+  globalThis.localStorage.setItem = originalSetItem;
+  check('failed write throws StorageError', threw);
+  check(
+    'failed write does not leave a phantom record in cache',
+    m.getAllTasksForProject(project.id).length === taskCountBefore
+  );
+  m = await reload();
+  check(
+    'failed write persisted nothing',
+    m.getAllTasksForProject(project.id).length === taskCountBefore
   );
 
   console.log(

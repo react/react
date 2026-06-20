@@ -80,11 +80,23 @@ const backend = {
   save(state) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      return true;
     } catch (err) {
+      // Most likely the localStorage quota (e.g. too many/large base64 photos).
       console.error('BuildView: failed to write storage.', err);
+      return false;
     }
   },
 };
+
+// Thrown by a write that could not be persisted (e.g. storage quota exceeded).
+// Callers that write large data (photos) catch this to tell the user.
+export class StorageError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'StorageError';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // In-memory cache. Loaded once, kept in sync with the backend on every write.
@@ -97,10 +109,16 @@ let state = backend.load();
 // instead of diffing freshly-cloned arrays on every render.
 let version = 0;
 
+// Persist the cache. Returns true on success. On failure the caller is
+// responsible for rolling the in-memory cache back so it stays consistent
+// with what's actually stored.
 function persist() {
-  backend.save(state);
-  version += 1;
-  notify();
+  const ok = backend.save(state);
+  if (ok) {
+    version += 1;
+    notify();
+  }
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,29 +179,46 @@ function get(name, id) {
 function create(name, data) {
   assertCollection(name);
   const row = {id: uid(), createdAt: now(), ...data};
-  state[name] = [...state[name], row];
-  persist();
+  const prev = state[name];
+  state[name] = [...prev, row];
+  if (!persist()) {
+    state[name] = prev; // keep cache consistent with storage
+    throw new StorageError('Could not save — local storage may be full.');
+  }
   return clone(row);
 }
 
 function update(name, id, patch) {
   assertCollection(name);
+  const prev = state[name];
   let updated = null;
-  state[name] = state[name].map(r => {
+  state[name] = prev.map(r => {
     if (r.id !== id) return r;
     // Never let callers overwrite id/createdAt.
     updated = {...r, ...patch, id: r.id, createdAt: r.createdAt};
     return updated;
   });
-  if (updated) persist();
+  if (!updated) {
+    state[name] = prev;
+    return null;
+  }
+  if (!persist()) {
+    state[name] = prev;
+    throw new StorageError('Could not save — local storage may be full.');
+  }
   return clone(updated);
 }
 
 function remove(name, id) {
   assertCollection(name);
-  const before = state[name].length;
-  state[name] = state[name].filter(r => r.id !== id);
-  if (state[name].length !== before) persist();
+  const before = state[name];
+  const after = before.filter(r => r.id !== id);
+  if (after.length === before.length) return; // nothing removed
+  state[name] = after;
+  if (!persist()) {
+    state[name] = before;
+    throw new StorageError('Could not save — local storage may be full.');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +285,15 @@ export const db = {
   },
   reset() {
     state = emptyState();
+    backend.saveSession(null); // also log out, so no dangling current user
     persist();
+  },
+  // Test-only hook: discard the in-memory cache and rebuild it from storage,
+  // simulating a real page reload. Not used by the app.
+  __reloadFromStorage() {
+    state = backend.load();
+    version += 1;
+    notify();
   },
 };
 

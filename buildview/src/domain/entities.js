@@ -20,6 +20,18 @@ export function generateInviteCode() {
   return 'BV-' + code;
 }
 
+// Generate an invite code guaranteed not to collide with an existing project.
+function generateUniqueInviteCode() {
+  const taken = new Set(
+    db.projects.list().map(p => p.inviteCode.toUpperCase())
+  );
+  let code = generateInviteCode();
+  // With ~33M combinations a collision is astronomically unlikely, but the
+  // join flow keys on this code, so we make absolutely sure it's unique.
+  while (taken.has(code.toUpperCase())) code = generateInviteCode();
+  return code;
+}
+
 // ---- User --------------------------------------------------------------------
 export function createUser({name, role, trade}) {
   return db.users.create({
@@ -35,7 +47,7 @@ export function createProject({name, address, createdByUserId}) {
   const project = db.projects.create({
     name,
     address: address || '',
-    inviteCode: generateInviteCode(),
+    inviteCode: generateUniqueInviteCode(),
     createdByUserId,
   });
   // The foreman belongs to the project they created.
