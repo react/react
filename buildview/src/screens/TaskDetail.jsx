@@ -45,6 +45,7 @@ import {
   TextInput,
   TextArea,
   Select,
+  FileInput,
 } from '../components/ui.jsx';
 
 // Screen 9 + 10: Task detail (shared). Instructions, status, photos, issues.
@@ -116,15 +117,19 @@ export default function TaskDetail({nav, params}) {
         <Card className="p-4">
           {mayEditStatus ? (
             <div className="flex flex-wrap gap-2">
-              {TASK_STATUS_LIST.map(s => (
-                <Button
-                  key={s}
-                  variant={s === task.status ? 'primary' : 'secondary'}
-                  disabled={s === task.status}
-                  onClick={() => setTaskStatus(task.id, s)}>
-                  {TASK_STATUS_LABEL[s]}
-                </Button>
-              ))}
+              {TASK_STATUS_LIST.map(s => {
+                const active = s === task.status;
+                return (
+                  <Button
+                    key={s}
+                    variant={active ? 'primary' : 'secondary'}
+                    aria-pressed={active}
+                    onClick={() => setTaskStatus(task.id, s)}>
+                    {active ? '✓ ' : ''}
+                    {TASK_STATUS_LABEL[s]}
+                  </Button>
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm text-zinc-500 italic">
@@ -176,11 +181,26 @@ export default function TaskDetail({nav, params}) {
         <SectionTitle count={openIssues.length}>Open issues</SectionTitle>
         <Card className="space-y-4 p-4">
           <IssueList issues={issues} mayResolve={mayResolve} />
-          {mayRaise && <RaiseIssueForm task={task} userId={user.id} />}
+          {mayRaise && <RaiseIssuePanel task={task} userId={user.id} />}
         </Card>
       </section>
     </div>
   );
+}
+
+// Keeps the issue form tucked away until needed, reducing task-detail density.
+function RaiseIssuePanel({task, userId}) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <div className="border-t border-dashed border-zinc-300 pt-4">
+        <Button variant="danger" onClick={() => setOpen(true)}>
+          + Raise an issue
+        </Button>
+      </div>
+    );
+  }
+  return <RaiseIssueForm task={task} userId={userId} onDone={() => setOpen(false)} />;
 }
 
 function Meta({label, children}) {
@@ -234,11 +254,9 @@ function PhotoForm({taskId, userId}) {
       onSubmit={submit}
       className="space-y-3 border-t border-dashed border-zinc-300 pt-4">
       <Field label="Add a photo">
-        <input
-          type="file"
+        <FileInput
           accept="image/*"
           onChange={e => setFile(e.target.files[0] || null)}
-          className="block w-full text-sm file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-steel file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-steel-light"
         />
       </Field>
       <Field label="Caption">
@@ -298,7 +316,7 @@ function IssueList({issues, mayResolve}) {
   );
 }
 
-function RaiseIssueForm({task, userId}) {
+function RaiseIssueForm({task, userId, onDone}) {
   const [description, setDescription] = useState('');
   const [responsibleUserId, setResponsibleUserId] = useState('');
   const [file, setFile] = useState(null);
@@ -342,6 +360,7 @@ function RaiseIssueForm({task, userId}) {
       setDescription('');
       setResponsibleUserId('');
       setFile(null);
+      if (onDone) onDone();
     } catch (err) {
       setError(err.message || 'Could not save the issue.');
     } finally {
@@ -377,16 +396,21 @@ function RaiseIssueForm({task, userId}) {
         </Select>
       </Field>
       <Field label="Photo (optional)">
-        <input
-          type="file"
+        <FileInput
           accept="image/*"
           onChange={e => setFile(e.target.files[0] || null)}
-          className="block w-full text-sm file:mr-3 file:min-h-11 file:rounded-md file:border-0 file:bg-steel file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-steel-light"
         />
       </Field>
-      <Button type="submit" variant="danger" disabled={busy}>
-        {busy ? 'Saving…' : 'Raise issue'}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="submit" variant="danger" disabled={busy}>
+          {busy ? 'Saving…' : 'Raise issue'}
+        </Button>
+        {onDone && (
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        )}
+      </div>
       {error && <p className="text-sm font-medium text-hazard">{error}</p>}
     </form>
   );

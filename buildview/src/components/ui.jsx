@@ -126,3 +126,29 @@ export function TextArea(props) {
 export function Select({className = '', ...props}) {
   return <select className={`${CONTROL} ${className}`} {...props} />;
 }
+
+// Styled file picker — the native button is themed to match the system.
+export function FileInput(props) {
+  return (
+    <input
+      type="file"
+      className="block w-full text-sm text-zinc-500 file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-md file:border-0 file:bg-steel file:px-4 file:py-2 file:font-semibold file:text-white hover:file:bg-steel-light"
+      {...props}
+    />
+  );
+}
+
+// Initials avatar — keeps the logged-in user visible even on small screens.
+export function Avatar({name}) {
+  const initials = (name || '?')
+    .split(' ')
+    .map(p => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-fg">
+      {initials}
+    </span>
+  );
+}

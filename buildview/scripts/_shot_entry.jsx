@@ -31,7 +31,7 @@ import ForemanPendingRequests from '../src/screens/ForemanPendingRequests.jsx';
 import ForemanDashboard from '../src/screens/ForemanDashboard.jsx';
 import WorkerHome from '../src/screens/WorkerHome.jsx';
 import TaskDetail from '../src/screens/TaskDetail.jsx';
-import {Button, Card} from '../src/components/ui.jsx';
+import {Button, Card, Avatar} from '../src/components/ui.jsx';
 
 db.reset();
 
@@ -91,6 +91,7 @@ const Shell = ({who, children}) => (
               {who.role === ROLES.WORKER ? ` · ${who.trade}` : ''}
             </span>
           </span>
+          <Avatar name={who.name} />
           <Button variant="ghost" className="text-white hover:bg-steel-light">
             Log out
           </Button>

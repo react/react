@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {useSession} from './lib/session.js';
 import {ROLES} from './domain/constants.js';
-import {Button, Card} from './components/ui.jsx';
+import {Button, Card, Avatar} from './components/ui.jsx';
 import Login from './screens/Login.jsx';
 import ForemanProjectList from './screens/ForemanProjectList.jsx';
 import ForemanProjectView from './screens/ForemanProjectView.jsx';
@@ -64,6 +64,7 @@ export default function App() {
                 {user.role === ROLES.WORKER ? ` · ${user.trade}` : ''}
               </span>
             </span>
+            <Avatar name={user.name} />
             <Button
               variant="ghost"
               className="text-white hover:bg-steel-light"
@@ -76,6 +77,9 @@ export default function App() {
       <main className="mx-auto max-w-3xl px-4 py-5">
         <Screen current={current} nav={nav} />
       </main>
+      <footer className="mx-auto max-w-3xl px-4 py-6 text-center text-xs text-zinc-400">
+        BuildView · construction site tracker
+      </footer>
     </div>
   );
 }
