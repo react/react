@@ -4,15 +4,13 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
 use std::collections::HashMap;
 
 use crate::environment::Environment;
 use crate::{
     ArrayElement, ArrayPatternElement, BasicBlock, BlockId, HirFunction, IdentifierId, Instruction,
-    InstructionKind, InstructionValue, JsxAttribute, JsxTag,
-    ManualMemoDependencyRoot, ObjectPropertyKey, ObjectPropertyOrSpread, Pattern, Place,
-    PlaceOrSpread, ScopeId, Terminal,
+    InstructionKind, InstructionValue, JsxAttribute, JsxTag, ManualMemoDependencyRoot,
+    ObjectPropertyKey, ObjectPropertyOrSpread, Pattern, Place, PlaceOrSpread, ScopeId, Terminal,
 };
 
 // =============================================================================
@@ -168,10 +166,7 @@ pub fn each_instruction_operand_with_functions(
 
 /// Yields operand places from an InstructionValue.
 /// Equivalent to TS `eachInstructionValueOperand`.
-pub fn each_instruction_value_operand(
-    value: &InstructionValue,
-    env: &Environment,
-) -> Vec<Place> {
+pub fn each_instruction_value_operand(value: &InstructionValue, env: &Environment) -> Vec<Place> {
     each_instruction_value_operand_with_functions(value, &env.functions)
 }
 
@@ -205,8 +200,7 @@ pub fn each_instruction_value_operand_with_functions(
         InstructionValue::DeclareContext { .. } | InstructionValue::DeclareLocal { .. } => {
             // no operands
         }
-        InstructionValue::LoadLocal { place, .. }
-        | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
             result.push(place.clone());
         }
         InstructionValue::StoreLocal { value: val, .. } => {
@@ -231,9 +225,7 @@ pub fn each_instruction_value_operand_with_functions(
             result.push(object.clone());
         }
         InstructionValue::PropertyStore {
-            object,
-            value: val,
-            ..
+            object, value: val, ..
         } => {
             result.push(object.clone());
             result.push(val.clone());
@@ -631,9 +623,7 @@ pub fn map_instruction_value_operands(
     f: &mut impl FnMut(Place) -> Place,
 ) {
     match value {
-        InstructionValue::BinaryExpression {
-            left, right, ..
-        } => {
+        InstructionValue::BinaryExpression { left, right, .. } => {
             *left = f(left.clone());
             *right = f(right.clone());
         }
@@ -644,9 +634,7 @@ pub fn map_instruction_value_operands(
             *object = f(object.clone());
         }
         InstructionValue::PropertyStore {
-            object,
-            value: val,
-            ..
+            object, value: val, ..
         } => {
             *object = f(object.clone());
             *val = f(val.clone());
@@ -676,8 +664,7 @@ pub fn map_instruction_value_operands(
         InstructionValue::DeclareContext { .. } | InstructionValue::DeclareLocal { .. } => {
             // no operands
         }
-        InstructionValue::LoadLocal { place, .. }
-        | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
             *place = f(place.clone());
         }
         InstructionValue::StoreLocal { value: val, .. } => {
@@ -906,9 +893,7 @@ pub fn map_terminal_successors(terminal: &mut Terminal, f: &mut impl FnMut(Block
             *fallthrough = f(*fallthrough);
         }
         Terminal::Switch {
-            cases,
-            fallthrough,
-            ..
+            cases, fallthrough, ..
         } => {
             for case in cases.iter_mut() {
                 case.block = f(case.block);
@@ -994,17 +979,13 @@ pub fn map_terminal_successors(terminal: &mut Terminal, f: &mut impl FnMut(Block
             *fallthrough = f(*fallthrough);
         }
         Terminal::Label {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             *block = f(*block);
             *fallthrough = f(*fallthrough);
         }
         Terminal::Sequence {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             *block = f(*block);
             *fallthrough = f(*fallthrough);
@@ -1030,14 +1011,10 @@ pub fn map_terminal_successors(terminal: &mut Terminal, f: &mut impl FnMut(Block
             *fallthrough = f(*fallthrough);
         }
         Terminal::Scope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         }
         | Terminal::PrunedScope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             *block = f(*block);
             *fallthrough = f(*fallthrough);
@@ -1125,9 +1102,7 @@ pub fn each_terminal_all_successors(terminal: &Terminal) -> Vec<BlockId> {
             result.push(*fallthrough);
         }
         Terminal::Switch {
-            cases,
-            fallthrough,
-            ..
+            cases, fallthrough, ..
         } => {
             for case in cases {
                 result.push(case.block);
@@ -1206,14 +1181,10 @@ pub fn each_terminal_all_successors(terminal: &Terminal) -> Vec<BlockId> {
             result.push(*fallthrough);
         }
         Terminal::Label {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         }
         | Terminal::Sequence {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             result.push(*block);
             result.push(*fallthrough);
@@ -1239,14 +1210,10 @@ pub fn each_terminal_all_successors(terminal: &Terminal) -> Vec<BlockId> {
             result.push(*fallthrough);
         }
         Terminal::Scope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         }
         | Terminal::PrunedScope {
-            block,
-            fallthrough,
-            ..
+            block, fallthrough, ..
         } => {
             result.push(*block);
             result.push(*fallthrough);
@@ -1454,7 +1421,10 @@ pub fn each_instruction_operand_ids(instr: &Instruction, env: &Environment) -> V
 
 /// Collect all operand IdentifierIds from an instruction value.
 /// Convenience wrapper around `each_instruction_value_operand` that maps to ids.
-pub fn each_instruction_value_operand_ids(value: &InstructionValue, env: &Environment) -> Vec<IdentifierId> {
+pub fn each_instruction_value_operand_ids(
+    value: &InstructionValue,
+    env: &Environment,
+) -> Vec<IdentifierId> {
     each_instruction_value_operand(value, env)
         .into_iter()
         .map(|p| p.identifier)
@@ -1513,9 +1483,7 @@ pub fn for_each_instruction_value_operand_mut(
             f(object);
         }
         InstructionValue::PropertyStore {
-            object,
-            value: val,
-            ..
+            object, value: val, ..
         } => {
             f(object);
             f(val);
@@ -1540,8 +1508,7 @@ pub fn for_each_instruction_value_operand_mut(
             f(val);
         }
         InstructionValue::DeclareContext { .. } | InstructionValue::DeclareLocal { .. } => {}
-        InstructionValue::LoadLocal { place, .. }
-        | InstructionValue::LoadContext { place, .. } => {
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
             f(place);
         }
         InstructionValue::StoreLocal { value: val, .. } => {
@@ -1627,8 +1594,7 @@ pub fn for_each_instruction_value_operand_mut(
                 f(child);
             }
         }
-        InstructionValue::FunctionExpression { .. }
-        | InstructionValue::ObjectMethod { .. } => {
+        InstructionValue::FunctionExpression { .. } | InstructionValue::ObjectMethod { .. } => {
             // Context places require env access — callers handle separately.
         }
         InstructionValue::TaggedTemplateExpression { tag, .. } => {

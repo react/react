@@ -50,7 +50,8 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
                 InstructionValue::Destructure { value, lvalue, .. } => {
-                    if inlined_state.contains_key(&env.identifiers[value.identifier.0 as usize].id) {
+                    if inlined_state.contains_key(&env.identifiers[value.identifier.0 as usize].id)
+                    {
                         if let react_compiler_hir::Pattern::Array(arr) = &lvalue.pattern {
                             if !arr.items.is_empty() {
                                 if let ArrayPatternElement::Place(_) = &arr.items[0] {
@@ -61,9 +62,7 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                         }
                     }
                 }
-                InstructionValue::MethodCall {
-                    property, args, ..
-                }
+                InstructionValue::MethodCall { property, args, .. }
                 | InstructionValue::CallExpression {
                     callee: property,
                     args,
@@ -75,14 +74,11 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                     match hook_kind {
                         Some(HookKind::UseReducer) => {
                             if args.len() == 2 {
-                                if let (
-                                    PlaceOrSpread::Place(_),
-                                    PlaceOrSpread::Place(arg),
-                                ) = (&args[0], &args[1])
+                                if let (PlaceOrSpread::Place(_), PlaceOrSpread::Place(arg)) =
+                                    (&args[0], &args[1])
                                 {
-                                    let lvalue_id = env.identifiers
-                                        [instr.lvalue.identifier.0 as usize]
-                                        .id;
+                                    let lvalue_id =
+                                        env.identifiers[instr.lvalue.identifier.0 as usize].id;
                                     inlined_state.insert(
                                         lvalue_id,
                                         InlinedStateReplacement::LoadLocal {
@@ -98,9 +94,8 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                                     PlaceOrSpread::Place(initializer),
                                 ) = (&args[0], &args[1], &args[2])
                                 {
-                                    let lvalue_id = env.identifiers
-                                        [instr.lvalue.identifier.0 as usize]
-                                        .id;
+                                    let lvalue_id =
+                                        env.identifiers[instr.lvalue.identifier.0 as usize].id;
                                     let call_loc = instr.value.loc().copied();
                                     inlined_state.insert(
                                         lvalue_id,
@@ -116,16 +111,17 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                         Some(HookKind::UseState) => {
                             if args.len() == 1 {
                                 if let PlaceOrSpread::Place(arg) = &args[0] {
-                                    let arg_type = &env.types
-                                        [env.identifiers[arg.identifier.0 as usize].type_.0
-                                            as usize];
+                                    let arg_type = &env.types[env.identifiers
+                                        [arg.identifier.0 as usize]
+                                        .type_
+                                        .0
+                                        as usize];
                                     if react_compiler_hir::is_primitive_type(arg_type)
                                         || react_compiler_hir::is_plain_object_type(arg_type)
                                         || react_compiler_hir::is_array_type(arg_type)
                                     {
-                                        let lvalue_id = env.identifiers
-                                            [instr.lvalue.identifier.0 as usize]
-                                            .id;
+                                        let lvalue_id =
+                                            env.identifiers[instr.lvalue.identifier.0 as usize].id;
                                         inlined_state.insert(
                                             lvalue_id,
                                             InlinedStateReplacement::LoadLocal {
@@ -145,8 +141,7 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
 
             // Any use of useState/useReducer return besides destructuring prevents inlining
             if !inlined_state.is_empty() {
-                let operands =
-                    each_instruction_value_operand(&instr.value, env);
+                let operands = each_instruction_value_operand(&instr.value, env);
                 for operand in &operands {
                     let id = env.identifiers[operand.identifier.0 as usize].id;
                     inlined_state.remove(&id);
@@ -192,19 +187,15 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                         if !builtin.name.contains('-') {
                             let tag_name = builtin.name.clone();
                             // Retain only props that are not known event handlers and not "ref"
-                            if let InstructionValue::JsxExpression { props, .. } =
-                                &mut instr.value
+                            if let InstructionValue::JsxExpression { props, .. } = &mut instr.value
                             {
                                 props.retain(|prop| match prop {
-                                    react_compiler_hir::JsxAttribute::SpreadAttribute { .. } => {
-                                        true
-                                    }
+                                    react_compiler_hir::JsxAttribute::SpreadAttribute {
+                                        ..
+                                    } => true,
                                     react_compiler_hir::JsxAttribute::Attribute {
                                         name, ..
-                                    } => {
-                                        !is_known_event_handler(&tag_name, name)
-                                            && name != "ref"
-                                    }
+                                    } => !is_known_event_handler(&tag_name, name) && name != "ref",
                                 });
                             }
                         }
@@ -235,7 +226,10 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                     }
                 }
                 InstructionValue::MethodCall {
-                    property, args, loc, ..
+                    property,
+                    args,
+                    loc,
+                    ..
                 }
                 | InstructionValue::CallExpression {
                     callee: property,
@@ -269,8 +263,7 @@ pub fn optimize_for_ssr(func: &mut HirFunction, env: &Environment) {
                             };
                         }
                         Some(HookKind::UseReducer | HookKind::UseState) => {
-                            let lvalue_id =
-                                env.identifiers[instr.lvalue.identifier.0 as usize].id;
+                            let lvalue_id = env.identifiers[instr.lvalue.identifier.0 as usize].id;
                             if let Some(replacement) = inlined_state.get(&lvalue_id) {
                                 instr.value = match replacement {
                                     InlinedStateReplacement::LoadLocal { place, loc } => {

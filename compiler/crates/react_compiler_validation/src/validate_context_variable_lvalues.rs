@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
 };
-use react_compiler_hir::{
-    FunctionId, HirFunction, Identifier, IdentifierId, InstructionValue,
-    Place,
-};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors::{each_instruction_value_lvalue, each_pattern_operand};
+use react_compiler_hir::{
+    FunctionId, HirFunction, Identifier, IdentifierId, InstructionValue, Place,
+};
 
 /// Variable reference kind: local, context, or destructure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,7 +36,12 @@ pub fn validate_context_variable_lvalues(
     func: &HirFunction,
     env: &mut Environment,
 ) -> Result<(), CompilerDiagnostic> {
-    validate_context_variable_lvalues_with_errors(func, &env.functions, &env.identifiers, &mut env.errors)
+    validate_context_variable_lvalues_with_errors(
+        func,
+        &env.functions,
+        &env.identifiers,
+        &mut env.errors,
+    )
 }
 
 /// Like [`validate_context_variable_lvalues`], but writes diagnostics into the
@@ -50,7 +54,13 @@ pub fn validate_context_variable_lvalues_with_errors(
     errors: &mut CompilerError,
 ) -> Result<(), CompilerDiagnostic> {
     let mut identifier_kinds: IdentifierKinds = HashMap::new();
-    validate_context_variable_lvalues_impl(func, &mut identifier_kinds, functions, identifiers, errors)
+    validate_context_variable_lvalues_impl(
+        func,
+        &mut identifier_kinds,
+        functions,
+        identifiers,
+        errors,
+    )
 }
 
 fn validate_context_variable_lvalues_impl(
@@ -70,25 +80,61 @@ fn validate_context_variable_lvalues_impl(
             match value {
                 InstructionValue::DeclareContext { lvalue, .. }
                 | InstructionValue::StoreContext { lvalue, .. } => {
-                    visit(identifier_kinds, &lvalue.place, VarRefKind::Context, identifiers, errors)?;
+                    visit(
+                        identifier_kinds,
+                        &lvalue.place,
+                        VarRefKind::Context,
+                        identifiers,
+                        errors,
+                    )?;
                 }
                 InstructionValue::LoadContext { place, .. } => {
-                    visit(identifier_kinds, place, VarRefKind::Context, identifiers, errors)?;
+                    visit(
+                        identifier_kinds,
+                        place,
+                        VarRefKind::Context,
+                        identifiers,
+                        errors,
+                    )?;
                 }
                 InstructionValue::StoreLocal { lvalue, .. }
                 | InstructionValue::DeclareLocal { lvalue, .. } => {
-                    visit(identifier_kinds, &lvalue.place, VarRefKind::Local, identifiers, errors)?;
+                    visit(
+                        identifier_kinds,
+                        &lvalue.place,
+                        VarRefKind::Local,
+                        identifiers,
+                        errors,
+                    )?;
                 }
                 InstructionValue::LoadLocal { place, .. } => {
-                    visit(identifier_kinds, place, VarRefKind::Local, identifiers, errors)?;
+                    visit(
+                        identifier_kinds,
+                        place,
+                        VarRefKind::Local,
+                        identifiers,
+                        errors,
+                    )?;
                 }
                 InstructionValue::PostfixUpdate { lvalue, .. }
                 | InstructionValue::PrefixUpdate { lvalue, .. } => {
-                    visit(identifier_kinds, lvalue, VarRefKind::Local, identifiers, errors)?;
+                    visit(
+                        identifier_kinds,
+                        lvalue,
+                        VarRefKind::Local,
+                        identifiers,
+                        errors,
+                    )?;
                 }
                 InstructionValue::Destructure { lvalue, .. } => {
                     for place in each_pattern_operand(&lvalue.pattern) {
-                        visit(identifier_kinds, &place, VarRefKind::Destructure, identifiers, errors)?;
+                        visit(
+                            identifier_kinds,
+                            &place,
+                            VarRefKind::Destructure,
+                            identifiers,
+                            errors,
+                        )?;
                     }
                 }
                 InstructionValue::FunctionExpression { lowered_func, .. }
@@ -103,11 +149,13 @@ fn validate_context_variable_lvalues_impl(
                                 "ValidateContextVariableLValues: unhandled instruction variant",
                                 None,
                             )
-                            .with_detail(CompilerDiagnosticDetail::Error {
-                                loc: value.loc().copied(),
-                                message: None,
-                                identifier_name: None,
-                            }),
+                            .with_detail(
+                                CompilerDiagnosticDetail::Error {
+                                    loc: value.loc().copied(),
+                                    message: None,
+                                    identifier_name: None,
+                                },
+                            ),
                         );
                     }
                 }
@@ -118,7 +166,13 @@ fn validate_context_variable_lvalues_impl(
     // Process inner functions after the block loop to avoid borrow conflicts
     for func_id in inner_function_ids {
         let inner_func = &functions[func_id.0 as usize];
-        validate_context_variable_lvalues_impl(inner_func, identifier_kinds, functions, identifiers, errors)?;
+        validate_context_variable_lvalues_impl(
+            inner_func,
+            identifier_kinds,
+            functions,
+            identifiers,
+            errors,
+        )?;
     }
 
     Ok(())

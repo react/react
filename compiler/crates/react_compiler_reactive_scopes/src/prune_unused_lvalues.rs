@@ -12,9 +12,8 @@
 use std::collections::HashSet;
 
 use react_compiler_hir::{
-    DeclarationId, EvaluationOrder, Place, ReactiveFunction, ReactiveInstruction, ReactiveValue,
-    ReactiveStatement,
-    environment::Environment,
+    DeclarationId, EvaluationOrder, Place, ReactiveFunction, ReactiveInstruction,
+    ReactiveStatement, ReactiveValue, environment::Environment,
 };
 
 use crate::visitors::{self, ReactiveFunctionVisitor};
@@ -230,9 +229,7 @@ fn null_unused_in_terminal(
         ReactiveTerminal::Label { block, .. } => {
             null_unused_lvalues(block, env, unused);
         }
-        ReactiveTerminal::Try {
-            block, handler, ..
-        } => {
+        ReactiveTerminal::Try { block, handler, .. } => {
             null_unused_lvalues(block, env, unused);
             null_unused_lvalues(handler, env, unused);
         }

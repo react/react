@@ -18,8 +18,7 @@ use std::collections::{HashMap, HashSet};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
-    HirFunction, IdentifierId, InstructionValue, JsxTag,
-    PrimitiveValue, PropertyLiteral, ScopeId,
+    HirFunction, IdentifierId, InstructionValue, JsxTag, PrimitiveValue, PropertyLiteral, ScopeId,
 };
 
 /// Whether a macro requires its arguments to be transitively inlined (e.g., fbt)
@@ -74,7 +73,10 @@ fn fbt_macro() -> MacroDefinition {
             p
         }),
     };
-    fbt.properties.as_mut().unwrap().insert("enum".to_string(), enum_macro);
+    fbt.properties
+        .as_mut()
+        .unwrap()
+        .insert("enum".to_string(), enum_macro);
     fbt
 }
 
@@ -132,7 +134,9 @@ fn populate_macro_tags(
                     value: PrimitiveValue::String(s),
                     ..
                 } => {
-                    if let Some(macro_def) = macro_kinds.get(s.as_str()) {
+                    if let Some(macro_def) =
+                        s.as_str().and_then(|utf8| macro_kinds.get(utf8))
+                    {
                         // We don't distinguish between tag names and strings, so record
                         // all `fbt` string literals in case they are used as a jsx tag.
                         macro_tags.insert(lvalue_id, macro_def.clone());
@@ -150,9 +154,8 @@ fn populate_macro_tags(
                     if let PropertyLiteral::String(prop_name) = property {
                         if let Some(macro_def) = macro_tags.get(&object.identifier).cloned() {
                             let property_macro = if let Some(ref props) = macro_def.properties {
-                                let prop_def = props
-                                    .get(prop_name.as_str())
-                                    .or_else(|| props.get("*"));
+                                let prop_def =
+                                    props.get(prop_name.as_str()).or_else(|| props.get("*"));
                                 match prop_def {
                                     Some(def) => def.clone(),
                                     None => macro_def.clone(),
@@ -240,16 +243,11 @@ fn merge_macro_arguments(
                     };
 
                     let macro_def = match tag {
-                        JsxTag::Place(place) => {
-                            macro_tags.get(&place.identifier).cloned()
-                        }
-                        JsxTag::Builtin(builtin) => {
-                            macro_kinds.get(builtin.name.as_str()).cloned()
-                        }
+                        JsxTag::Place(place) => macro_tags.get(&place.identifier).cloned(),
+                        JsxTag::Builtin(builtin) => macro_kinds.get(builtin.name.as_str()).cloned(),
                     };
 
-                    let macro_def = macro_def
-                        .or_else(|| macro_tags.get(&lvalue_id).cloned());
+                    let macro_def = macro_def.or_else(|| macro_tags.get(&lvalue_id).cloned());
 
                     if let Some(macro_def) = macro_def {
                         visit_operands(
@@ -378,4 +376,3 @@ fn visit_operands(
         macro_values.insert(operand_id);
     }
 }
-

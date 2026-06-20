@@ -151,7 +151,12 @@ impl AliasingState {
             node: into_id,
             kind: EdgeKind::Capture,
         });
-        self.nodes.get_mut(&into_id).unwrap().captures.entry(from_id).or_insert(index);
+        self.nodes
+            .get_mut(&into_id)
+            .unwrap()
+            .captures
+            .entry(from_id)
+            .or_insert(index);
     }
 
     fn assign(&mut self, index: usize, from: &Place, into: &Place) {
@@ -165,7 +170,12 @@ impl AliasingState {
             node: into_id,
             kind: EdgeKind::Alias,
         });
-        self.nodes.get_mut(&into_id).unwrap().aliases.entry(from_id).or_insert(index);
+        self.nodes
+            .get_mut(&into_id)
+            .unwrap()
+            .aliases
+            .entry(from_id)
+            .or_insert(index);
     }
 
     fn maybe_alias(&mut self, index: usize, from: &Place, into: &Place) {
@@ -179,7 +189,12 @@ impl AliasingState {
             node: into_id,
             kind: EdgeKind::MaybeAlias,
         });
-        self.nodes.get_mut(&into_id).unwrap().maybe_aliases.entry(from_id).or_insert(index);
+        self.nodes
+            .get_mut(&into_id)
+            .unwrap()
+            .maybe_aliases
+            .entry(from_id)
+            .or_insert(index);
     }
 
     fn render(&self, index: usize, start: IdentifierId, env: &mut Environment) {
@@ -275,9 +290,7 @@ impl AliasingState {
 
             if let Some(end_val) = end {
                 let ident = &mut env.identifiers[node.id.0 as usize];
-                ident.mutable_range.end = EvaluationOrder(
-                    ident.mutable_range.end.0.max(end_val.0),
-                );
+                ident.mutable_range.end = EvaluationOrder(ident.mutable_range.end.0.max(end_val.0));
             }
 
             if let NodeValue::Function { function_id } = &node.value {
@@ -576,10 +589,8 @@ pub fn infer_mutation_aliasing_ranges(
                     }
                     AliasingEffect::MutateTransitive { value }
                     | AliasingEffect::MutateTransitiveConditionally { value } => {
-                        let is_transitive_conditional = matches!(
-                            effect,
-                            AliasingEffect::MutateTransitiveConditionally { .. }
-                        );
+                        let is_transitive_conditional =
+                            matches!(effect, AliasingEffect::MutateTransitiveConditionally { .. });
                         mutations.push(PendingMutation {
                             index: index,
                             id: instr_eval_order,
@@ -785,7 +796,10 @@ pub fn infer_mutation_aliasing_ranges(
 
                 (
                     phi.place.identifier,
-                    phi.operands.values().map(|o| o.identifier).collect::<Vec<_>>(),
+                    phi.operands
+                        .values()
+                        .map(|o| o.identifier)
+                        .collect::<Vec<_>>(),
                     is_mutated_after_creation,
                     first_instr_id,
                 )
@@ -813,8 +827,7 @@ pub fn infer_mutation_aliasing_ranges(
             if *is_mutated_after_creation {
                 let ident = &mut env.identifiers[phi_id.0 as usize];
                 if ident.mutable_range.start == EvaluationOrder(0) {
-                    ident.mutable_range.start =
-                        EvaluationOrder(first_instr_id.0.saturating_sub(1));
+                    ident.mutable_range.start = EvaluationOrder(first_instr_id.0.saturating_sub(1));
                 }
             }
         }
@@ -835,37 +848,42 @@ pub fn infer_mutation_aliasing_ranges(
                     ident.mutable_range.start = eval_order;
                 }
                 if ident.mutable_range.end == EvaluationOrder(0) {
-                    ident.mutable_range.end = EvaluationOrder(
-                        (eval_order.0 + 1).max(ident.mutable_range.end.0),
-                    );
+                    ident.mutable_range.end =
+                        EvaluationOrder((eval_order.0 + 1).max(ident.mutable_range.end.0));
                 }
             }
             func.instructions[instr_id.0 as usize].lvalue.effect = Effect::ConditionallyMutate;
 
             // Also handle value-level lvalues (DeclareLocal, StoreLocal, etc.)
-            let value_lvalue_ids: Vec<IdentifierId> = each_instruction_value_lvalue(&func.instructions[instr_id.0 as usize].value)
-                .into_iter()
-                .map(|p| p.identifier)
-                .collect();
+            let value_lvalue_ids: Vec<IdentifierId> =
+                each_instruction_value_lvalue(&func.instructions[instr_id.0 as usize].value)
+                    .into_iter()
+                    .map(|p| p.identifier)
+                    .collect();
             for vlid in &value_lvalue_ids {
                 let ident = &mut env.identifiers[vlid.0 as usize];
                 if ident.mutable_range.start == EvaluationOrder(0) {
                     ident.mutable_range.start = eval_order;
                 }
                 if ident.mutable_range.end == EvaluationOrder(0) {
-                    ident.mutable_range.end = EvaluationOrder(
-                        (eval_order.0 + 1).max(ident.mutable_range.end.0),
-                    );
+                    ident.mutable_range.end =
+                        EvaluationOrder((eval_order.0 + 1).max(ident.mutable_range.end.0));
                 }
             }
-            for_each_instruction_value_lvalue_mut(&mut func.instructions[instr_id.0 as usize].value, &mut |place| {
-                place.effect = Effect::ConditionallyMutate;
-            });
+            for_each_instruction_value_lvalue_mut(
+                &mut func.instructions[instr_id.0 as usize].value,
+                &mut |place| {
+                    place.effect = Effect::ConditionallyMutate;
+                },
+            );
 
             // Set operand effects to Read
-            for_each_instruction_value_operand_mut(&mut func.instructions[instr_id.0 as usize].value, &mut |place| {
-                place.effect = Effect::Read;
-            });
+            for_each_instruction_value_operand_mut(
+                &mut func.instructions[instr_id.0 as usize].value,
+                &mut |place| {
+                    place.effect = Effect::Read;
+                },
+            );
 
             let instr = &func.instructions[instr_id.0 as usize];
             if instr.effects.is_none() {
@@ -883,14 +901,12 @@ pub fn infer_mutation_aliasing_ranges(
                     | AliasingEffect::Capture { from, into }
                     | AliasingEffect::CreateFrom { from, into }
                     | AliasingEffect::MaybeAlias { from, into } => {
-                        let is_mutated_or_reassigned = env.identifiers
-                            [into.identifier.0 as usize]
+                        let is_mutated_or_reassigned = env.identifiers[into.identifier.0 as usize]
                             .mutable_range
                             .end
                             > eval_order;
                         if is_mutated_or_reassigned {
-                            operand_effects
-                                .insert(from.identifier, Effect::Capture);
+                            operand_effects.insert(from.identifier, Effect::Capture);
                             operand_effects.insert(into.identifier, Effect::Store);
                         } else {
                             operand_effects.insert(from.identifier, Effect::Read);
@@ -913,8 +929,7 @@ pub fn infer_mutation_aliasing_ranges(
                     AliasingEffect::MutateTransitive { value, .. }
                     | AliasingEffect::MutateConditionally { value }
                     | AliasingEffect::MutateTransitiveConditionally { value } => {
-                        operand_effects
-                            .insert(value.identifier, Effect::ConditionallyMutate);
+                        operand_effects.insert(value.identifier, Effect::ConditionallyMutate);
                     }
                     AliasingEffect::Freeze { value, .. } => {
                         operand_effects.insert(value.identifier, Effect::Freeze);
@@ -952,8 +967,9 @@ pub fn infer_mutation_aliasing_ranges(
                     if ident.mutable_range.end > eval_order
                         && ident.mutable_range.start == EvaluationOrder(0)
                     {
-                        env.identifiers[place.identifier.0 as usize].mutable_range.start =
-                            eval_order;
+                        env.identifiers[place.identifier.0 as usize]
+                            .mutable_range
+                            .start = eval_order;
                     }
                     // Apply effect
                     if let Some(&effect) = operand_effects.get(&place.identifier) {
@@ -1076,9 +1092,7 @@ pub fn infer_mutation_aliasing_ranges(
 
         for j in 0..tracked.len() {
             let from = &tracked[j];
-            if from.identifier == into.identifier
-                || from.identifier == returns_identifier_id
-            {
+            if from.identifier == into.identifier || from.identifier == returns_identifier_id {
                 continue;
             }
 
@@ -1167,4 +1181,3 @@ fn collect_param_effects(
         }
     }
 }
-

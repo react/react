@@ -1350,7 +1350,7 @@ fn build_object_shape(shapes: &mut ShapeRegistry) {
     mixed_props.insert(
         "*".to_string(),
         Type::Object {
-        shape_id: Some(BUILT_IN_MIXED_READONLY_ID.to_string()),
+            shape_id: Some(BUILT_IN_MIXED_READONLY_ID.to_string()),
         },
     );
     shapes.insert(
@@ -1370,7 +1370,7 @@ fn build_ref_shapes(shapes: &mut ShapeRegistry) {
         vec![(
             "current".to_string(),
             Type::Object {
-            shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
+                shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
             },
         )],
     );
@@ -1381,7 +1381,7 @@ fn build_ref_shapes(shapes: &mut ShapeRegistry) {
         vec![(
             "*".to_string(),
             Type::Object {
-            shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
+                shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
             },
         )],
     );
@@ -2141,9 +2141,9 @@ fn build_typed_globals(
 
     // Math
     let math_fns: Vec<(String, Type)> = ["max", "min", "trunc", "ceil", "floor", "pow"]
-    .iter()
-    .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
-    .collect();
+        .iter()
+        .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
+        .collect();
     let mut math_props = math_fns;
     math_props.push(("PI".to_string(), Type::Primitive));
     // Math.random is impure
@@ -2209,9 +2209,9 @@ fn build_typed_globals(
 
     // console
     let console_methods: Vec<(String, Type)> = ["error", "info", "log", "table", "trace", "warn"]
-            .iter()
-            .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
-            .collect();
+        .iter()
+        .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
+        .collect();
     let console_global = add_object(shapes, Some("console"), console_methods);
     typed_globals.push(("console".to_string(), console_global.clone()));
     globals.insert("console".to_string(), console_global);

@@ -13,11 +13,11 @@ use std::collections::{HashMap, HashSet};
 use indexmap::IndexMap;
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
-    BasicBlock, BlockId, BlockKind, EvaluationOrder, HirFunction, HIR, IdentifierId, Instruction,
-    InstructionId, InstructionKind, InstructionValue, JsxAttribute, JsxTag,
-    NonLocalBinding, ObjectProperty, ObjectPropertyKey, ObjectPropertyOrSpread,
-    ObjectPropertyType, ObjectPattern, ParamPattern, Pattern, Place, ReactFunctionType,
-    Terminal, ReturnVariant, IdentifierName, LValuePattern, FunctionId,
+    BasicBlock, BlockId, BlockKind, EvaluationOrder, FunctionId, HIR, HirFunction, IdentifierId,
+    IdentifierName, Instruction, InstructionId, InstructionKind, InstructionValue, JsxAttribute,
+    JsxTag, LValuePattern, NonLocalBinding, ObjectPattern, ObjectProperty, ObjectPropertyKey,
+    ObjectPropertyOrSpread, ObjectPropertyType, ParamPattern, Pattern, Place, ReactFunctionType,
+    ReturnVariant, Terminal,
 };
 
 /// Outline JSX expressions in inner functions into separate outlined components.
@@ -34,9 +34,9 @@ pub fn outline_jsx(func: &mut HirFunction, env: &mut Environment) {
 
 /// Data about a JSX instruction for outlining
 struct JsxInstrInfo {
-    instr_idx: usize,        // index into func.instructions
+    instr_idx: usize, // index into func.instructions
     #[allow(dead_code)]
-    instr_id: InstructionId,  // the InstructionId
+    instr_id: InstructionId, // the InstructionId
     lvalue_id: IdentifierId,
     eval_order: EvaluationOrder,
 }
@@ -72,8 +72,13 @@ fn outline_jsx_impl(
 
         // First pass: collect all instruction info without borrowing func mutably
         enum InstrAction {
-            LoadGlobal { lvalue_id: IdentifierId, instr_idx: usize },
-            FunctionExpr { func_id: FunctionId },
+            LoadGlobal {
+                lvalue_id: IdentifierId,
+                instr_idx: usize,
+            },
+            FunctionExpr {
+                func_id: FunctionId,
+            },
             JsxExpr {
                 lvalue_id: IdentifierId,
                 instr_idx: usize,
@@ -91,13 +96,19 @@ fn outline_jsx_impl(
 
             match &instr.value {
                 InstructionValue::LoadGlobal { .. } => {
-                    actions.push(InstrAction::LoadGlobal { lvalue_id, instr_idx: iid.0 as usize });
+                    actions.push(InstrAction::LoadGlobal {
+                        lvalue_id,
+                        instr_idx: iid.0 as usize,
+                    });
                 }
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
-                    actions.push(InstrAction::FunctionExpr { func_id: lowered_func.func });
+                    actions.push(InstrAction::FunctionExpr {
+                        func_id: lowered_func.func,
+                    });
                 }
                 InstructionValue::JsxExpression { children, .. } => {
-                    let child_ids = children.as_ref()
+                    let child_ids = children
+                        .as_ref()
                         .map(|kids| kids.iter().map(|c| c.identifier).collect())
                         .unwrap_or_default();
                     actions.push(InstrAction::JsxExpr {
@@ -116,7 +127,10 @@ fn outline_jsx_impl(
         // Second pass: process actions
         for action in actions {
             match action {
-                InstrAction::LoadGlobal { lvalue_id, instr_idx } => {
+                InstrAction::LoadGlobal {
+                    lvalue_id,
+                    instr_idx,
+                } => {
                     globals.insert(lvalue_id, instr_idx);
                 }
                 InstrAction::FunctionExpr { func_id } => {
@@ -127,7 +141,12 @@ fn outline_jsx_impl(
                     outline_jsx_impl(&mut inner_func, env, outlined_fns);
                     env.functions[func_id.0 as usize] = inner_func;
                 }
-                InstrAction::JsxExpr { lvalue_id, instr_idx, eval_order, child_ids } => {
+                InstrAction::JsxExpr {
+                    lvalue_id,
+                    instr_idx,
+                    eval_order,
+                    child_ids,
+                } => {
                     if !children_ids.contains(&lvalue_id) {
                         process_and_outline_jsx(
                             func,
@@ -265,7 +284,10 @@ fn collect_props(
 
     for info in jsx_group {
         let instr = &func.instructions[info.instr_idx];
-        if let InstructionValue::JsxExpression { props, children, .. } = &instr.value {
+        if let InstructionValue::JsxExpression {
+            props, children, ..
+        } = &instr.value
+        {
             for attr in props {
                 match attr {
                     JsxAttribute::SpreadAttribute { .. } => return None,

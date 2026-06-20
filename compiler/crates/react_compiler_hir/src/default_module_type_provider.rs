@@ -9,11 +9,11 @@
 
 use indexmap::IndexMap;
 
-use crate::type_config::{
-    FunctionTypeConfig, HookTypeConfig, ObjectTypeConfig, TypeConfig, TypeReferenceConfig,
-    BuiltInTypeRef, ValueKind,
-};
 use crate::Effect;
+use crate::type_config::{
+    BuiltInTypeRef, FunctionTypeConfig, HookTypeConfig, ObjectTypeConfig, TypeConfig,
+    TypeReferenceConfig, ValueKind,
+};
 
 /// Returns type configuration for known third-party modules that are
 /// incompatible with memoization. Ported from TS `defaultModuleTypeProvider`.

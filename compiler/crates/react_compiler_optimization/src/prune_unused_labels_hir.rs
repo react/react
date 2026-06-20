@@ -48,7 +48,10 @@ pub fn prune_unused_labels_hir(func: &mut HirFunction) {
     let mut rewrites: HashMap<BlockId, BlockId> = HashMap::new();
 
     for (original_label_id, next_id, fallthrough_id) in &merged {
-        let label_id = rewrites.get(original_label_id).copied().unwrap_or(*original_label_id);
+        let label_id = rewrites
+            .get(original_label_id)
+            .copied()
+            .unwrap_or(*original_label_id);
 
         // Validate: no phis in next or fallthrough
         let next_phis_empty = func.body.blocks[next_id].phis.is_empty();

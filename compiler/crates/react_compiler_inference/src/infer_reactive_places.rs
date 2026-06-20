@@ -75,12 +75,8 @@ pub fn infer_reactive_places(
     loop {
         for block_id in &block_ids {
             let block = func.body.blocks.get(block_id).unwrap();
-            let has_reactive_control = is_reactive_controlled_block(
-                block.id,
-                func,
-                &post_dominators,
-                &mut reactive_map,
-            );
+            let has_reactive_control =
+                is_reactive_controlled_block(block.id, func, &post_dominators, &mut reactive_map);
 
             // Process phi nodes
             let block = func.body.blocks.get(block_id).unwrap();
@@ -186,9 +182,8 @@ pub fn infer_reactive_places(
                             | Effect::ConditionallyMutate
                             | Effect::ConditionallyMutateIterator
                             | Effect::Mutate => {
-                                let op_range = &env.identifiers
-                                    [op_place.identifier.0 as usize]
-                                    .mutable_range;
+                                let op_range =
+                                    &env.identifiers[op_place.identifier.0 as usize].mutable_range;
                                 if op_range.contains(instr.id) {
                                     reactive_map.mark_reactive(op_place.identifier);
                                 }
@@ -199,10 +194,7 @@ pub fn infer_reactive_places(
                             Effect::Unknown => {
                                 return Err(CompilerDiagnostic::new(
                                     ErrorCategory::Invariant,
-                                    &format!(
-                                        "Unexpected unknown effect at {:?}",
-                                        op_place.loc
-                                    ),
+                                    &format!("Unexpected unknown effect at {:?}", op_place.loc),
                                     None,
                                 ));
                             }
@@ -291,11 +283,7 @@ impl StableSidemap {
         }
     }
 
-    fn handle_instruction(
-        &mut self,
-        instr: &react_compiler_hir::Instruction,
-        env: &Environment,
-    ) {
+    fn handle_instruction(&mut self, instr: &react_compiler_hir::Instruction, env: &Environment) {
         let lvalue_id = instr.lvalue.identifier;
         let value = &instr.value;
 
@@ -314,8 +302,8 @@ impl StableSidemap {
                 }
             }
             InstructionValue::MethodCall { property, .. } => {
-                let property_ty = &env.types
-                    [env.identifiers[property.identifier.0 as usize].type_.0 as usize];
+                let property_ty =
+                    &env.types[env.identifiers[property.identifier.0 as usize].type_.0 as usize];
                 if evaluates_to_stable_type_or_container(env, property_ty) {
                     let lvalue_ty =
                         &env.types[env.identifiers[lvalue_id.0 as usize].type_.0 as usize];
@@ -346,8 +334,7 @@ impl StableSidemap {
                         .map(|p| p.identifier)
                         .collect();
                     for lid in lvalue_ids {
-                        let lid_ty =
-                            &env.types[env.identifiers[lid.0 as usize].type_.0 as usize];
+                        let lid_ty = &env.types[env.identifiers[lid.0 as usize].type_.0 as usize];
                         if is_stable_type_container(lid_ty) {
                             self.map.insert(lid, false);
                         } else if is_stable_type(lid_ty) {
@@ -442,9 +429,7 @@ fn is_stable_type(ty: &Type) -> bool {
                     | "BuiltInSetOptimistic"
             )
         }
-        Type::Object {
-            shape_id: Some(id),
-        } => {
+        Type::Object { shape_id: Some(id) } => {
             matches!(id.as_str(), "BuiltInUseRefId")
         }
         _ => false,
@@ -453,9 +438,7 @@ fn is_stable_type(ty: &Type) -> bool {
 
 fn is_stable_type_container(ty: &Type) -> bool {
     match ty {
-        Type::Object {
-            shape_id: Some(id),
-        } => {
+        Type::Object { shape_id: Some(id) } => {
             matches!(
                 id.as_str(),
                 "BuiltInUseState"
@@ -585,8 +568,7 @@ fn apply_reactive_flags_replay(
             }
 
             for (op_idx, (_pred, operand)) in phi.operands.iter_mut().enumerate() {
-                if let Some(&is_reactive) =
-                    phi_operand_reactive.get(&(*block_id, phi_idx, op_idx))
+                if let Some(&is_reactive) = phi_operand_reactive.get(&(*block_id, phi_idx, op_idx))
                 {
                     if is_reactive {
                         operand.reactive = true;
@@ -618,9 +600,12 @@ fn apply_reactive_flags_replay(
             // Check hooks/use
             match &instr.value {
                 InstructionValue::CallExpression { callee, .. } => {
-                    let callee_ty = &env.types
-                        [env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
-                    if get_hook_kind_for_type(env, callee_ty).ok().flatten().is_some()
+                    let callee_ty =
+                        &env.types[env.identifiers[callee.identifier.0 as usize].type_.0 as usize];
+                    if get_hook_kind_for_type(env, callee_ty)
+                        .ok()
+                        .flatten()
+                        .is_some()
                         || is_use_operator_type(callee_ty)
                     {
                         has_reactive_input = true;
@@ -679,16 +664,13 @@ fn apply_reactive_flags_replay(
                         }
                     }
                     InstructionValue::Destructure { lvalue, .. } => {
-                        visitors::for_each_pattern_operand_mut(
-                            &mut lvalue.pattern,
-                            &mut |place| {
-                                if !stable_sidemap.is_stable(place.identifier)
-                                    && reactive_ids.contains(&place.identifier)
-                                {
-                                    place.reactive = true;
-                                }
-                            },
-                        );
+                        visitors::for_each_pattern_operand_mut(&mut lvalue.pattern, &mut |place| {
+                            if !stable_sidemap.is_stable(place.identifier)
+                                && reactive_ids.contains(&place.identifier)
+                            {
+                                place.reactive = true;
+                            }
+                        });
                     }
                     InstructionValue::PrefixUpdate { lvalue, .. }
                     | InstructionValue::PostfixUpdate { lvalue, .. } => {

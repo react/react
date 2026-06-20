@@ -110,9 +110,9 @@ pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment)
         let scope_range = env.scopes[scope_id.0 as usize].range.clone();
         let root_range = env.scopes[root_id.0 as usize].range.clone();
 
-        let entry = range_updates.entry(root_id).or_insert_with(|| {
-            (root_range.start, root_range.end)
-        });
+        let entry = range_updates
+            .entry(root_id)
+            .or_insert_with(|| (root_range.start, root_range.end));
         entry.0 = EvaluationOrder(cmp::min(entry.0.0, scope_range.start.0));
         entry.1 = EvaluationOrder(cmp::max(entry.1.0, scope_range.end.0));
     });

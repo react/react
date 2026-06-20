@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use indexmap::IndexMap;
 use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::*;
 use react_compiler_hir::visitors;
+use react_compiler_hir::*;
 
 // =============================================================================
 // SSABuilder
@@ -57,7 +57,9 @@ impl SSABuilder {
     }
 
     fn state_mut(&mut self) -> &mut State {
-        let current = self.current.expect("we need to be in a block to access state!");
+        let current = self
+            .current
+            .expect("we need to be in a block to access state!");
         self.states
             .get_mut(&current)
             .expect("state not found for current block")
@@ -76,7 +78,11 @@ impl SSABuilder {
         new_id
     }
 
-    fn define_place(&mut self, old_place: &Place, env: &mut Environment) -> Result<Place, CompilerDiagnostic> {
+    fn define_place(
+        &mut self,
+        old_place: &Place,
+        env: &mut Environment,
+    ) -> Result<Place, CompilerDiagnostic> {
         let old_id = old_place.identifier;
 
         if self.unknown.contains(&old_id) {
@@ -89,7 +95,8 @@ impl SSABuilder {
                 ErrorCategory::Todo,
                 "[hoisting] EnterSSA: Expected identifier to be defined before being used",
                 Some(format!("Identifier {} is undefined", name)),
-            ).with_detail(CompilerDiagnosticDetail::Error {
+            )
+            .with_detail(CompilerDiagnosticDetail::Error {
                 loc: old_place.loc,
                 message: None,
                 identifier_name: None,
@@ -112,7 +119,11 @@ impl SSABuilder {
     }
 
     #[allow(dead_code)]
-    fn define_context(&mut self, old_place: &Place, env: &mut Environment) -> Result<Place, CompilerDiagnostic> {
+    fn define_context(
+        &mut self,
+        old_place: &Place,
+        env: &mut Environment,
+    ) -> Result<Place, CompilerDiagnostic> {
         let old_id = old_place.identifier;
         let new_place = self.define_place(old_place, env)?;
         self.context.insert(old_id);
@@ -154,11 +165,7 @@ impl SSABuilder {
             }
         }
 
-        let preds = self
-            .block_preds
-            .get(&block_id)
-            .cloned()
-            .unwrap_or_default();
+        let preds = self.block_preds.get(&block_id).cloned().unwrap_or_default();
 
         if preds.is_empty() {
             self.unknown.insert(old_place.identifier);
@@ -217,11 +224,7 @@ impl SSABuilder {
         new_place: &Place,
         env: &mut Environment,
     ) {
-        let preds = self
-            .block_preds
-            .get(&block_id)
-            .cloned()
-            .unwrap_or_default();
+        let preds = self.block_preds.get(&block_id).cloned().unwrap_or_default();
 
         let mut pred_defs: IndexMap<BlockId, Place> = IndexMap::new();
         for pred_block_id in &preds {
@@ -242,10 +245,7 @@ impl SSABuilder {
             operands: pred_defs,
         };
 
-        self.pending_phis
-            .entry(block_id)
-            .or_default()
-            .push(phi);
+        self.pending_phis.entry(block_id).or_default().push(phi);
     }
 
     fn fix_incomplete_phis(&mut self, block_id: BlockId, env: &mut Environment) {
@@ -277,10 +277,7 @@ impl SSABuilder {
 // Public entry point
 // =============================================================================
 
-pub fn enter_ssa(
-    func: &mut HirFunction,
-    env: &mut Environment,
-) -> Result<(), CompilerDiagnostic> {
+pub fn enter_ssa(func: &mut HirFunction, env: &mut Environment) -> Result<(), CompilerDiagnostic> {
     let mut builder = SSABuilder::new(&func.body.blocks);
     let root_entry = func.body.entry;
     enter_ssa_impl(func, &mut builder, env, root_entry)?;
@@ -291,11 +288,7 @@ pub fn enter_ssa(
     Ok(())
 }
 
-fn apply_pending_phis(
-    func: &mut HirFunction,
-    env: &mut Environment,
-    builder: &mut SSABuilder,
-) {
+fn apply_pending_phis(func: &mut HirFunction, env: &mut Environment, builder: &mut SSABuilder) {
     for (block_id, block) in func.body.blocks.iter_mut() {
         if let Some(phis) = builder.pending_phis.remove(block_id) {
             block.phis.extend(phis);
@@ -442,7 +435,9 @@ fn enter_ssa_impl(
                 let mut new_inner_params = Vec::with_capacity(inner_params.len());
                 for param in inner_params {
                     new_inner_params.push(match param {
-                        ParamPattern::Place(p) => ParamPattern::Place(builder.define_place(&p, env)?),
+                        ParamPattern::Place(p) => {
+                            ParamPattern::Place(builder.define_place(&p, env)?)
+                        }
                         ParamPattern::Spread(s) => ParamPattern::Spread(SpreadPattern {
                             place: builder.define_place(&s.place, env)?,
                         }),
@@ -451,10 +446,8 @@ fn enter_ssa_impl(
                 env.functions[fid.0 as usize].params = new_inner_params;
 
                 // Take the inner function out of the arena to process it
-                let mut inner_func = std::mem::replace(
-                    &mut env.functions[fid.0 as usize],
-                    placeholder_function(),
-                );
+                let mut inner_func =
+                    std::mem::replace(&mut env.functions[fid.0 as usize], placeholder_function());
 
                 enter_ssa_impl(&mut inner_func, builder, env, root_entry)?;
 

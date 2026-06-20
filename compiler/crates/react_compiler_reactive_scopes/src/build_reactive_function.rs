@@ -9,19 +9,28 @@
 
 use std::collections::HashSet;
 
-use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation};
+use react_compiler_diagnostics::{
+    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
+};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
     BasicBlock, BlockId, EvaluationOrder, GotoVariant, HirFunction, InstructionValue, Place,
-    ReactiveBlock, ReactiveFunction, ReactiveInstruction, ReactiveLabel, ReactiveStatement,
-    ReactiveTerminal, ReactiveTerminalStatement, ReactiveTerminalTargetKind, ReactiveScopeBlock,
-    PrunedReactiveScopeBlock, ReactiveSwitchCase, ReactiveValue, Terminal,
+    PrunedReactiveScopeBlock, ReactiveBlock, ReactiveFunction, ReactiveInstruction, ReactiveLabel,
+    ReactiveScopeBlock, ReactiveStatement, ReactiveSwitchCase, ReactiveTerminal,
+    ReactiveTerminalStatement, ReactiveTerminalTargetKind, ReactiveValue, Terminal,
 };
 
 /// Convert the HIR CFG into a tree-structured ReactiveFunction.
-pub fn build_reactive_function(hir: &HirFunction, env: &Environment) -> Result<ReactiveFunction, CompilerDiagnostic> {
+pub fn build_reactive_function(
+    hir: &HirFunction,
+    env: &Environment,
+) -> Result<ReactiveFunction, CompilerDiagnostic> {
     let mut ctx = Context::new(hir);
-    let mut driver = Driver { cx: &mut ctx, hir, env };
+    let mut driver = Driver {
+        cx: &mut ctx,
+        hir,
+        env,
+    };
 
     let entry_block_id = hir.body.entry;
     let mut body = Vec::new();
@@ -147,11 +156,13 @@ impl<'a> Context<'a> {
             "if" => ControlFlowTarget::If { block, id },
             "switch" => ControlFlowTarget::Switch { block, id },
             "case" => ControlFlowTarget::Case { block, id },
-            _ => return Err(CompilerDiagnostic::new(
-                ErrorCategory::Invariant,
-                format!("Unknown target type: {}", target_type),
-                None,
-            )),
+            _ => {
+                return Err(CompilerDiagnostic::new(
+                    ErrorCategory::Invariant,
+                    format!("Unknown target type: {}", target_type),
+                    None,
+                ));
+            }
         };
         self.control_flow_stack.push(target);
         Ok(id)
@@ -170,7 +181,10 @@ impl<'a> Context<'a> {
         if self.scheduled.contains(&continue_block) {
             return Err(CompilerDiagnostic::new(
                 ErrorCategory::Invariant,
-                format!("Continue block is already scheduled: bb{}", continue_block.0),
+                format!(
+                    "Continue block is already scheduled: bb{}",
+                    continue_block.0
+                ),
                 None,
             ));
         }
@@ -270,10 +284,7 @@ impl<'a> Context<'a> {
         ))
     }
 
-    fn get_continue_target(
-        &self,
-        block: BlockId,
-    ) -> Option<(BlockId, ReactiveTerminalTargetKind)> {
+    fn get_continue_target(&self, block: BlockId) -> Option<(BlockId, ReactiveTerminalTargetKind)> {
         let mut has_preceding_loop = false;
         for i in (0..self.control_flow_stack.len()).rev() {
             let target = &self.control_flow_stack[i];
@@ -318,771 +329,770 @@ impl<'a, 'b> Driver<'a, 'b> {
         Ok(block_value)
     }
 
-    fn visit_block(&mut self, mut block_id: BlockId, block_value: &mut ReactiveBlock) -> Result<(), CompilerDiagnostic> {
+    fn visit_block(
+        &mut self,
+        mut block_id: BlockId,
+        block_value: &mut ReactiveBlock,
+    ) -> Result<(), CompilerDiagnostic> {
         // Use a loop to avoid deep recursion for fallthrough chains.
         // Each terminal that would tail-call visit_block(fallthrough, block_value)
         // instead sets next_block and continues the loop.
         loop {
-        // Extract data from block before any mutable operations
-        let block = &self.hir.body.blocks[&block_id];
-        let block_id_val = block.id;
-        let instructions: Vec<_> = block.instructions.clone();
-        let terminal = block.terminal.clone();
-
-        if !self.cx.emitted.insert(block_id_val) {
-            return Err(CompilerDiagnostic::new(
-                ErrorCategory::Invariant,
-                format!("Block bb{} was already emitted", block_id_val.0),
-                None,
-            ));
-        }
-
-        // Emit instructions
-        for instr_id in &instructions {
-            let instr = &self.hir.instructions[instr_id.0 as usize];
-            block_value.push(ReactiveStatement::Instruction(ReactiveInstruction {
-                id: instr.id,
-                lvalue: Some(instr.lvalue.clone()),
-                value: ReactiveValue::Instruction(instr.value.clone()),
-                effects: instr.effects.clone(),
-                loc: instr.loc,
-            }));
-        }
-
-        // Process terminal
-        let mut schedule_ids: Vec<u32> = Vec::new();
-        let mut next_block: Option<BlockId> = None;
-
-        match &terminal {
-            Terminal::If {
-                test,
-                consequent,
-                alternate,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                // TS: reachable(fallthrough) && !isScheduled(fallthrough)
-                let fallthrough_id = if self.cx.reachable(*fallthrough)
-                    && !self.cx.is_scheduled(*fallthrough)
-                {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                // TS: alternate !== fallthrough ? alternate : null
-                let alternate_id = if *alternate != *fallthrough {
-                    Some(*alternate)
-                } else {
-                    None
-                };
-
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "if")?);
-                }
-
-                let consequent_block = if self.cx.is_scheduled(*consequent) {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        format!("Unexpected 'if' where consequent is already scheduled (bb{})", consequent.0),
-                        None,
-                    ));
-                } else {
-                    self.traverse_block(*consequent)?
-                };
-
-                let alternate_block = if let Some(alt) = alternate_id {
-                    if self.cx.is_scheduled(alt) {
-                        return Err(CompilerDiagnostic::new(
-                            ErrorCategory::Invariant,
-                            format!("Unexpected 'if' where the alternate is already scheduled (bb{})", alt.0),
-                            None,
-                        ));
-                    } else {
-                        Some(self.traverse_block(alt)?)
-                    }
-                } else {
-                    None
-                };
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::If {
-                        test: test.clone(),
-                        consequent: consequent_block,
-                        alternate: alternate_block,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::Switch {
-                test,
-                cases,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                // TS: reachable(fallthrough) && !isScheduled(fallthrough)
-                let fallthrough_id = if self.cx.reachable(*fallthrough)
-                    && !self.cx.is_scheduled(*fallthrough)
-                {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "switch")?);
-                }
-
-                // TS processes cases in reverse order, then reverses the result.
-                // This ensures that later cases are scheduled when earlier cases
-                // are traversed, matching fallthrough semantics.
-                let mut reactive_cases = Vec::new();
-                for case in cases.iter().rev() {
-                    let case_block_id = case.block;
-
-                    if self.cx.is_scheduled(case_block_id) {
-                        // TS: asserts case.block === fallthrough, then skips (return)
-                        if case_block_id != *fallthrough {
-                            return Err(CompilerDiagnostic::new(
-                                ErrorCategory::Invariant,
-                                "Unexpected 'switch' where a case is already scheduled and block is not the fallthrough".to_string(),
-                                None,
-                            ));
-                        }
-                        continue;
-                    }
-
-                    let consequent = self.traverse_block(case_block_id)?;
-                    let case_schedule_id = self.cx.schedule(case_block_id, "case")?;
-                    schedule_ids.push(case_schedule_id);
-
-                    reactive_cases.push(ReactiveSwitchCase {
-                        test: case.test.clone(),
-                        block: Some(consequent),
-                    });
-                }
-                reactive_cases.reverse();
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::Switch {
-                        test: test.clone(),
-                        cases: reactive_cases,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::DoWhile {
-                loop_block,
-                test,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                let loop_id = if !self.cx.is_scheduled(*loop_block)
-                    && *loop_block != *fallthrough
-                {
-                    Some(*loop_block)
-                } else {
-                    None
-                };
-
-                schedule_ids.push(self.cx.schedule_loop(
-                    *fallthrough,
-                    *test,
-                    Some(*loop_block),
-                )?);
-
-                let loop_body = if let Some(lid) = loop_id {
-                    self.traverse_block(lid)?
-                } else {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'do-while' where the loop is already scheduled",
-                        None,
-                    ));
-                };
-                let test_result = self.visit_value_block(*test, *loc, None)?;
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::DoWhile {
-                        loop_block: loop_body,
-                        test: test_result.value,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::While {
-                test,
-                loop_block,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                // TS: reachable(fallthrough) && !isScheduled(fallthrough)
-                let fallthrough_id = if self.cx.reachable(*fallthrough)
-                    && !self.cx.is_scheduled(*fallthrough)
-                {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                let loop_id = if !self.cx.is_scheduled(*loop_block)
-                    && *loop_block != *fallthrough
-                {
-                    Some(*loop_block)
-                } else {
-                    None
-                };
-
-                schedule_ids.push(self.cx.schedule_loop(
-                    *fallthrough,
-                    *test,
-                    Some(*loop_block),
-                )?);
-
-                let test_result = self.visit_value_block(*test, *loc, None)?;
-
-                let loop_body = if let Some(lid) = loop_id {
-                    self.traverse_block(lid)?
-                } else {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'while' where the loop is already scheduled",
-                        None,
-                    ));
-                };
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::While {
-                        test: test_result.value,
-                        loop_block: loop_body,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::For {
-                init,
-                test,
-                update,
-                loop_block,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                let loop_id = if !self.cx.is_scheduled(*loop_block)
-                    && *loop_block != *fallthrough
-                {
-                    Some(*loop_block)
-                } else {
-                    None
-                };
-
-                let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-
-                // Continue block is update (if present) or test
-                let continue_block = update.unwrap_or(*test);
-                schedule_ids.push(self.cx.schedule_loop(
-                    *fallthrough,
-                    continue_block,
-                    Some(*loop_block),
-                )?);
-
-                let init_result = self.visit_value_block(*init, *loc, None)?;
-                let init_value = self.value_block_result_to_sequence(init_result, *loc);
-
-                let test_result = self.visit_value_block(*test, *loc, None)?;
-
-                let update_result = match update {
-                    Some(u) => Some(self.visit_value_block(*u, *loc, None)?),
-                    None => None,
-                };
-
-                let loop_body = if let Some(lid) = loop_id {
-                    self.traverse_block(lid)?
-                } else {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'for' where the loop is already scheduled",
-                        None,
-                    ));
-                };
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::For {
-                        init: init_value,
-                        test: test_result.value,
-                        update: update_result.map(|r| r.value),
-                        loop_block: loop_body,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::ForOf {
-                init,
-                test,
-                loop_block,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                let loop_id = if !self.cx.is_scheduled(*loop_block)
-                    && *loop_block != *fallthrough
-                {
-                    Some(*loop_block)
-                } else {
-                    None
-                };
-
-                let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-
-                // TS: scheduleLoop(fallthrough, init, loop)
-                schedule_ids.push(self.cx.schedule_loop(
-                    *fallthrough,
-                    *init,
-                    Some(*loop_block),
-                )?);
-
-                let init_result = self.visit_value_block(*init, *loc, None)?;
-                let init_value = self.value_block_result_to_sequence(init_result, *loc);
-
-                let test_result = self.visit_value_block(*test, *loc, None)?;
-                let test_value = self.value_block_result_to_sequence(test_result, *loc);
-
-                let loop_body = if let Some(lid) = loop_id {
-                    self.traverse_block(lid)?
-                } else {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'for-of' where the loop is already scheduled",
-                        None,
-                    ));
-                };
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::ForOf {
-                        init: init_value,
-                        test: test_value,
-                        loop_block: loop_body,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::ForIn {
-                init,
-                loop_block,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                let loop_id = if !self.cx.is_scheduled(*loop_block)
-                    && *loop_block != *fallthrough
-                {
-                    Some(*loop_block)
-                } else {
-                    None
-                };
-
-                let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-
-                schedule_ids.push(self.cx.schedule_loop(
-                    *fallthrough,
-                    *init,
-                    Some(*loop_block),
-                )?);
-
-                let init_result = self.visit_value_block(*init, *loc, None)?;
-                let init_value = self.value_block_result_to_sequence(init_result, *loc);
-
-                let loop_body = if let Some(lid) = loop_id {
-                    self.traverse_block(lid)?
-                } else {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'for-in' where the loop is already scheduled",
-                        None,
-                    ));
-                };
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::ForIn {
-                        init: init_value,
-                        loop_block: loop_body,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::Label {
-                block: label_block,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                // TS: reachable(fallthrough) && !isScheduled(fallthrough)
-                let fallthrough_id = if self.cx.reachable(*fallthrough)
-                    && !self.cx.is_scheduled(*fallthrough)
-                {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "if")?);
-                }
-
-                if self.cx.is_scheduled(*label_block) {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'label' where the block is already scheduled".to_string(),
-                        None,
-                    ));
-                }
-                let label_body = self.traverse_block(*label_block)?;
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::Label {
-                        block: label_body,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::Sequence { .. }
-            | Terminal::Optional { .. }
-            | Terminal::Ternary { .. }
-            | Terminal::Logical { .. } => {
-                let fallthrough = match &terminal {
-                    Terminal::Sequence { fallthrough, .. }
-                    | Terminal::Optional { fallthrough, .. }
-                    | Terminal::Ternary { fallthrough, .. }
-                    | Terminal::Logical { fallthrough, .. } => *fallthrough,
-                    _ => unreachable!(),
-                };
-                let fallthrough_id = if !self.cx.is_scheduled(fallthrough) {
-                    Some(fallthrough)
-                } else {
-                    None
-                };
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "if")?);
-                }
-
-                let result = self.visit_value_block_terminal(&terminal)?;
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Instruction(ReactiveInstruction {
-                    id: result.id,
-                    lvalue: Some(result.place),
-                    value: result.value,
-                    effects: None,
-                    loc: *terminal_loc(&terminal),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::Goto {
-                block: goto_block,
-                variant,
-                id,
-                loc,
-            } => {
-                match variant {
-                    GotoVariant::Break => {
-                        if let Some(stmt) = self.visit_break(*goto_block, *id, *loc)? {
-                            block_value.push(stmt);
-                        }
-                    }
-                    GotoVariant::Continue => {
-                        let stmt = self.visit_continue(*goto_block, *id, *loc)?;
-                        block_value.push(stmt);
-                    }
-                    GotoVariant::Try => {
-                        // noop
-                    }
-                }
-            }
-
-            Terminal::MaybeThrow {
-                continuation, ..
-            } => {
-                if !self.cx.is_scheduled(*continuation) {
-                    next_block = Some(*continuation);
-                }
-            }
-
-            Terminal::Try {
-                block: try_block,
-                handler_binding,
-                handler,
-                fallthrough,
-                id,
-                loc,
-            } => {
-                let fallthrough_id = if self.cx.reachable(*fallthrough)
-                    && !self.cx.is_scheduled(*fallthrough)
-                {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "if")?);
-                }
-                self.cx.schedule_catch_handler(*handler);
-
-                let try_body = self.traverse_block(*try_block)?;
-                let handler_body = self.traverse_block(*handler)?;
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::Try {
-                        block: try_body,
-                        handler_binding: handler_binding.clone(),
-                        handler: handler_body,
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: fallthrough_id.map(|ft| ReactiveLabel {
-                        id: ft,
-                        implicit: false,
-                    }),
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::Scope {
-                fallthrough,
-                block: scope_block,
-                scope,
-                ..
-            } => {
-                let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "if")?);
-                    self.cx.scope_fallthroughs.insert(ft);
-                }
-
-                if self.cx.is_scheduled(*scope_block) {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'scope' where the block is already scheduled".to_string(),
-                        None,
-                    ));
-                }
-                let scope_body = self.traverse_block(*scope_block)?;
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::Scope(ReactiveScopeBlock {
-                    scope: *scope,
-                    instructions: scope_body,
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::PrunedScope {
-                fallthrough,
-                block: scope_block,
-                scope,
-                ..
-            } => {
-                let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
-                    Some(*fallthrough)
-                } else {
-                    None
-                };
-                if let Some(ft) = fallthrough_id {
-                    schedule_ids.push(self.cx.schedule(ft, "if")?);
-                    self.cx.scope_fallthroughs.insert(ft);
-                }
-
-                if self.cx.is_scheduled(*scope_block) {
-                    return Err(CompilerDiagnostic::new(
-                        ErrorCategory::Invariant,
-                        "Unexpected 'scope' where the block is already scheduled".to_string(),
-                        None,
-                    ));
-                }
-                let scope_body = self.traverse_block(*scope_block)?;
-
-                self.cx.unschedule_all(&schedule_ids)?;
-                block_value.push(ReactiveStatement::PrunedScope(PrunedReactiveScopeBlock {
-                    scope: *scope,
-                    instructions: scope_body,
-                }));
-
-                next_block = fallthrough_id;
-            }
-
-            Terminal::Return { value, id, loc, .. } => {
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::Return {
-                        value: value.clone(),
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: None,
-                }));
-            }
-
-            Terminal::Throw { value, id, loc } => {
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::Throw {
-                        value: value.clone(),
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: None,
-                }));
-            }
-
-            Terminal::Unreachable { .. } => {
-                // noop
-            }
-
-            Terminal::Unsupported { .. } => {
+            // Extract data from block before any mutable operations
+            let block = &self.hir.body.blocks[&block_id];
+            let block_id_val = block.id;
+            let instructions: Vec<_> = block.instructions.clone();
+            let terminal = block.terminal.clone();
+
+            if !self.cx.emitted.insert(block_id_val) {
                 return Err(CompilerDiagnostic::new(
                     ErrorCategory::Invariant,
-                    "Unexpected unsupported terminal",
+                    format!("Block bb{} was already emitted", block_id_val.0),
                     None,
                 ));
             }
 
-            Terminal::Branch {
-                test,
-                consequent,
-                alternate,
-                id,
-                loc,
-                ..
-            } => {
-                let consequent_block = if self.cx.is_scheduled(*consequent) {
-                    if let Some(stmt) = self.visit_break(*consequent, *id, *loc)? {
-                        vec![stmt]
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    self.traverse_block(*consequent)?
-                };
+            // Emit instructions
+            for instr_id in &instructions {
+                let instr = &self.hir.instructions[instr_id.0 as usize];
+                block_value.push(ReactiveStatement::Instruction(ReactiveInstruction {
+                    id: instr.id,
+                    lvalue: Some(instr.lvalue.clone()),
+                    value: ReactiveValue::Instruction(instr.value.clone()),
+                    effects: instr.effects.clone(),
+                    loc: instr.loc,
+                }));
+            }
 
-                if self.cx.is_scheduled(*alternate) {
+            // Process terminal
+            let mut schedule_ids: Vec<u32> = Vec::new();
+            let mut next_block: Option<BlockId> = None;
+
+            match &terminal {
+                Terminal::If {
+                    test,
+                    consequent,
+                    alternate,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    // TS: reachable(fallthrough) && !isScheduled(fallthrough)
+                    let fallthrough_id =
+                        if self.cx.reachable(*fallthrough) && !self.cx.is_scheduled(*fallthrough) {
+                            Some(*fallthrough)
+                        } else {
+                            None
+                        };
+                    // TS: alternate !== fallthrough ? alternate : null
+                    let alternate_id = if *alternate != *fallthrough {
+                        Some(*alternate)
+                    } else {
+                        None
+                    };
+
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "if")?);
+                    }
+
+                    let consequent_block = if self.cx.is_scheduled(*consequent) {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            format!(
+                                "Unexpected 'if' where consequent is already scheduled (bb{})",
+                                consequent.0
+                            ),
+                            None,
+                        ));
+                    } else {
+                        self.traverse_block(*consequent)?
+                    };
+
+                    let alternate_block = if let Some(alt) = alternate_id {
+                        if self.cx.is_scheduled(alt) {
+                            return Err(CompilerDiagnostic::new(
+                                ErrorCategory::Invariant,
+                                format!(
+                                    "Unexpected 'if' where the alternate is already scheduled (bb{})",
+                                    alt.0
+                                ),
+                                None,
+                            ));
+                        } else {
+                            Some(self.traverse_block(alt)?)
+                        }
+                    } else {
+                        None
+                    };
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::If {
+                            test: test.clone(),
+                            consequent: consequent_block,
+                            alternate: alternate_block,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::Switch {
+                    test,
+                    cases,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    // TS: reachable(fallthrough) && !isScheduled(fallthrough)
+                    let fallthrough_id =
+                        if self.cx.reachable(*fallthrough) && !self.cx.is_scheduled(*fallthrough) {
+                            Some(*fallthrough)
+                        } else {
+                            None
+                        };
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "switch")?);
+                    }
+
+                    // TS processes cases in reverse order, then reverses the result.
+                    // This ensures that later cases are scheduled when earlier cases
+                    // are traversed, matching fallthrough semantics.
+                    let mut reactive_cases = Vec::new();
+                    for case in cases.iter().rev() {
+                        let case_block_id = case.block;
+
+                        if self.cx.is_scheduled(case_block_id) {
+                            // TS: asserts case.block === fallthrough, then skips (return)
+                            if case_block_id != *fallthrough {
+                                return Err(CompilerDiagnostic::new(
+                                ErrorCategory::Invariant,
+                                "Unexpected 'switch' where a case is already scheduled and block is not the fallthrough".to_string(),
+                                None,
+                            ));
+                            }
+                            continue;
+                        }
+
+                        let consequent = self.traverse_block(case_block_id)?;
+                        let case_schedule_id = self.cx.schedule(case_block_id, "case")?;
+                        schedule_ids.push(case_schedule_id);
+
+                        reactive_cases.push(ReactiveSwitchCase {
+                            test: case.test.clone(),
+                            block: Some(consequent),
+                        });
+                    }
+                    reactive_cases.reverse();
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::Switch {
+                            test: test.clone(),
+                            cases: reactive_cases,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::DoWhile {
+                    loop_block,
+                    test,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
+                        Some(*fallthrough)
+                    } else {
+                        None
+                    };
+                    let loop_id =
+                        if !self.cx.is_scheduled(*loop_block) && *loop_block != *fallthrough {
+                            Some(*loop_block)
+                        } else {
+                            None
+                        };
+
+                    schedule_ids.push(self.cx.schedule_loop(
+                        *fallthrough,
+                        *test,
+                        Some(*loop_block),
+                    )?);
+
+                    let loop_body = if let Some(lid) = loop_id {
+                        self.traverse_block(lid)?
+                    } else {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'do-while' where the loop is already scheduled",
+                            None,
+                        ));
+                    };
+                    let test_result = self.visit_value_block(*test, *loc, None)?;
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::DoWhile {
+                            loop_block: loop_body,
+                            test: test_result.value,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::While {
+                    test,
+                    loop_block,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    // TS: reachable(fallthrough) && !isScheduled(fallthrough)
+                    let fallthrough_id =
+                        if self.cx.reachable(*fallthrough) && !self.cx.is_scheduled(*fallthrough) {
+                            Some(*fallthrough)
+                        } else {
+                            None
+                        };
+                    let loop_id =
+                        if !self.cx.is_scheduled(*loop_block) && *loop_block != *fallthrough {
+                            Some(*loop_block)
+                        } else {
+                            None
+                        };
+
+                    schedule_ids.push(self.cx.schedule_loop(
+                        *fallthrough,
+                        *test,
+                        Some(*loop_block),
+                    )?);
+
+                    let test_result = self.visit_value_block(*test, *loc, None)?;
+
+                    let loop_body = if let Some(lid) = loop_id {
+                        self.traverse_block(lid)?
+                    } else {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'while' where the loop is already scheduled",
+                            None,
+                        ));
+                    };
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::While {
+                            test: test_result.value,
+                            loop_block: loop_body,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::For {
+                    init,
+                    test,
+                    update,
+                    loop_block,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    let loop_id =
+                        if !self.cx.is_scheduled(*loop_block) && *loop_block != *fallthrough {
+                            Some(*loop_block)
+                        } else {
+                            None
+                        };
+
+                    let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
+                        Some(*fallthrough)
+                    } else {
+                        None
+                    };
+
+                    // Continue block is update (if present) or test
+                    let continue_block = update.unwrap_or(*test);
+                    schedule_ids.push(self.cx.schedule_loop(
+                        *fallthrough,
+                        continue_block,
+                        Some(*loop_block),
+                    )?);
+
+                    let init_result = self.visit_value_block(*init, *loc, None)?;
+                    let init_value = self.value_block_result_to_sequence(init_result, *loc);
+
+                    let test_result = self.visit_value_block(*test, *loc, None)?;
+
+                    let update_result = match update {
+                        Some(u) => Some(self.visit_value_block(*u, *loc, None)?),
+                        None => None,
+                    };
+
+                    let loop_body = if let Some(lid) = loop_id {
+                        self.traverse_block(lid)?
+                    } else {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'for' where the loop is already scheduled",
+                            None,
+                        ));
+                    };
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::For {
+                            init: init_value,
+                            test: test_result.value,
+                            update: update_result.map(|r| r.value),
+                            loop_block: loop_body,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::ForOf {
+                    init,
+                    test,
+                    loop_block,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    let loop_id =
+                        if !self.cx.is_scheduled(*loop_block) && *loop_block != *fallthrough {
+                            Some(*loop_block)
+                        } else {
+                            None
+                        };
+
+                    let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
+                        Some(*fallthrough)
+                    } else {
+                        None
+                    };
+
+                    // TS: scheduleLoop(fallthrough, init, loop)
+                    schedule_ids.push(self.cx.schedule_loop(
+                        *fallthrough,
+                        *init,
+                        Some(*loop_block),
+                    )?);
+
+                    let init_result = self.visit_value_block(*init, *loc, None)?;
+                    let init_value = self.value_block_result_to_sequence(init_result, *loc);
+
+                    let test_result = self.visit_value_block(*test, *loc, None)?;
+                    let test_value = self.value_block_result_to_sequence(test_result, *loc);
+
+                    let loop_body = if let Some(lid) = loop_id {
+                        self.traverse_block(lid)?
+                    } else {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'for-of' where the loop is already scheduled",
+                            None,
+                        ));
+                    };
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::ForOf {
+                            init: init_value,
+                            test: test_value,
+                            loop_block: loop_body,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::ForIn {
+                    init,
+                    loop_block,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    let loop_id =
+                        if !self.cx.is_scheduled(*loop_block) && *loop_block != *fallthrough {
+                            Some(*loop_block)
+                        } else {
+                            None
+                        };
+
+                    let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
+                        Some(*fallthrough)
+                    } else {
+                        None
+                    };
+
+                    schedule_ids.push(self.cx.schedule_loop(
+                        *fallthrough,
+                        *init,
+                        Some(*loop_block),
+                    )?);
+
+                    let init_result = self.visit_value_block(*init, *loc, None)?;
+                    let init_value = self.value_block_result_to_sequence(init_result, *loc);
+
+                    let loop_body = if let Some(lid) = loop_id {
+                        self.traverse_block(lid)?
+                    } else {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'for-in' where the loop is already scheduled",
+                            None,
+                        ));
+                    };
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::ForIn {
+                            init: init_value,
+                            loop_block: loop_body,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::Label {
+                    block: label_block,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    // TS: reachable(fallthrough) && !isScheduled(fallthrough)
+                    let fallthrough_id =
+                        if self.cx.reachable(*fallthrough) && !self.cx.is_scheduled(*fallthrough) {
+                            Some(*fallthrough)
+                        } else {
+                            None
+                        };
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "if")?);
+                    }
+
+                    if self.cx.is_scheduled(*label_block) {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'label' where the block is already scheduled".to_string(),
+                            None,
+                        ));
+                    }
+                    let label_body = self.traverse_block(*label_block)?;
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::Label {
+                            block: label_body,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::Sequence { .. }
+                | Terminal::Optional { .. }
+                | Terminal::Ternary { .. }
+                | Terminal::Logical { .. } => {
+                    let fallthrough = match &terminal {
+                        Terminal::Sequence { fallthrough, .. }
+                        | Terminal::Optional { fallthrough, .. }
+                        | Terminal::Ternary { fallthrough, .. }
+                        | Terminal::Logical { fallthrough, .. } => *fallthrough,
+                        _ => unreachable!(),
+                    };
+                    let fallthrough_id = if !self.cx.is_scheduled(fallthrough) {
+                        Some(fallthrough)
+                    } else {
+                        None
+                    };
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "if")?);
+                    }
+
+                    let result = self.visit_value_block_terminal(&terminal)?;
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Instruction(ReactiveInstruction {
+                        id: result.id,
+                        lvalue: Some(result.place),
+                        value: result.value,
+                        effects: None,
+                        loc: *terminal_loc(&terminal),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::Goto {
+                    block: goto_block,
+                    variant,
+                    id,
+                    loc,
+                } => {
+                    match variant {
+                        GotoVariant::Break => {
+                            if let Some(stmt) = self.visit_break(*goto_block, *id, *loc)? {
+                                block_value.push(stmt);
+                            }
+                        }
+                        GotoVariant::Continue => {
+                            let stmt = self.visit_continue(*goto_block, *id, *loc)?;
+                            block_value.push(stmt);
+                        }
+                        GotoVariant::Try => {
+                            // noop
+                        }
+                    }
+                }
+
+                Terminal::MaybeThrow { continuation, .. } => {
+                    if !self.cx.is_scheduled(*continuation) {
+                        next_block = Some(*continuation);
+                    }
+                }
+
+                Terminal::Try {
+                    block: try_block,
+                    handler_binding,
+                    handler,
+                    fallthrough,
+                    id,
+                    loc,
+                } => {
+                    let fallthrough_id =
+                        if self.cx.reachable(*fallthrough) && !self.cx.is_scheduled(*fallthrough) {
+                            Some(*fallthrough)
+                        } else {
+                            None
+                        };
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "if")?);
+                    }
+                    self.cx.schedule_catch_handler(*handler);
+
+                    let try_body = self.traverse_block(*try_block)?;
+                    let handler_body = self.traverse_block(*handler)?;
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::Try {
+                            block: try_body,
+                            handler_binding: handler_binding.clone(),
+                            handler: handler_body,
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: fallthrough_id.map(|ft| ReactiveLabel {
+                            id: ft,
+                            implicit: false,
+                        }),
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::Scope {
+                    fallthrough,
+                    block: scope_block,
+                    scope,
+                    ..
+                } => {
+                    let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
+                        Some(*fallthrough)
+                    } else {
+                        None
+                    };
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "if")?);
+                        self.cx.scope_fallthroughs.insert(ft);
+                    }
+
+                    if self.cx.is_scheduled(*scope_block) {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'scope' where the block is already scheduled".to_string(),
+                            None,
+                        ));
+                    }
+                    let scope_body = self.traverse_block(*scope_block)?;
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::Scope(ReactiveScopeBlock {
+                        scope: *scope,
+                        instructions: scope_body,
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::PrunedScope {
+                    fallthrough,
+                    block: scope_block,
+                    scope,
+                    ..
+                } => {
+                    let fallthrough_id = if !self.cx.is_scheduled(*fallthrough) {
+                        Some(*fallthrough)
+                    } else {
+                        None
+                    };
+                    if let Some(ft) = fallthrough_id {
+                        schedule_ids.push(self.cx.schedule(ft, "if")?);
+                        self.cx.scope_fallthroughs.insert(ft);
+                    }
+
+                    if self.cx.is_scheduled(*scope_block) {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'scope' where the block is already scheduled".to_string(),
+                            None,
+                        ));
+                    }
+                    let scope_body = self.traverse_block(*scope_block)?;
+
+                    self.cx.unschedule_all(&schedule_ids)?;
+                    block_value.push(ReactiveStatement::PrunedScope(PrunedReactiveScopeBlock {
+                        scope: *scope,
+                        instructions: scope_body,
+                    }));
+
+                    next_block = fallthrough_id;
+                }
+
+                Terminal::Return { value, id, loc, .. } => {
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::Return {
+                            value: value.clone(),
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: None,
+                    }));
+                }
+
+                Terminal::Throw { value, id, loc } => {
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::Throw {
+                            value: value.clone(),
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: None,
+                    }));
+                }
+
+                Terminal::Unreachable { .. } => {
+                    // noop
+                }
+
+                Terminal::Unsupported { .. } => {
                     return Err(CompilerDiagnostic::new(
                         ErrorCategory::Invariant,
-                        "Unexpected 'branch' where the alternate is already scheduled".to_string(),
+                        "Unexpected unsupported terminal",
                         None,
                     ));
                 }
-                let alternate_block = self.traverse_block(*alternate)?;
 
-                block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-                    terminal: ReactiveTerminal::If {
-                        test: test.clone(),
-                        consequent: consequent_block,
-                        alternate: Some(alternate_block),
-                        id: *id,
-                        loc: *loc,
-                    },
-                    label: None,
-                }));
+                Terminal::Branch {
+                    test,
+                    consequent,
+                    alternate,
+                    id,
+                    loc,
+                    ..
+                } => {
+                    let consequent_block = if self.cx.is_scheduled(*consequent) {
+                        if let Some(stmt) = self.visit_break(*consequent, *id, *loc)? {
+                            vec![stmt]
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        self.traverse_block(*consequent)?
+                    };
+
+                    if self.cx.is_scheduled(*alternate) {
+                        return Err(CompilerDiagnostic::new(
+                            ErrorCategory::Invariant,
+                            "Unexpected 'branch' where the alternate is already scheduled"
+                                .to_string(),
+                            None,
+                        ));
+                    }
+                    let alternate_block = self.traverse_block(*alternate)?;
+
+                    block_value.push(ReactiveStatement::Terminal(ReactiveTerminalStatement {
+                        terminal: ReactiveTerminal::If {
+                            test: test.clone(),
+                            consequent: consequent_block,
+                            alternate: Some(alternate_block),
+                            id: *id,
+                            loc: *loc,
+                        },
+                        label: None,
+                    }));
+                }
             }
-        }
-        match next_block {
-            Some(nb) => block_id = nb,
-            None => return Ok(()),
-        }
+            match next_block {
+                Some(nb) => block_id = nb,
+                None => return Ok(()),
+            }
         } // end loop
     }
 
@@ -1117,9 +1127,7 @@ impl<'a, 'b> Driver<'a, 'b> {
 
         match &terminal {
             Terminal::Branch {
-                test,
-                id: term_id,
-                ..
+                test, id: term_id, ..
             } => {
                 if instructions.is_empty() {
                     Ok(ValueBlockResult {
@@ -1141,7 +1149,8 @@ impl<'a, 'b> Driver<'a, 'b> {
                         ErrorCategory::Invariant,
                         "Unexpected empty block with `goto` terminal",
                         Some(format!("Block bb{} is empty", block_id.0)),
-                    ).with_detail(CompilerDiagnosticDetail::Error {
+                    )
+                    .with_detail(CompilerDiagnosticDetail::Error {
                         loc,
                         message: Some("Unexpected empty block with `goto` terminal".to_string()),
                         identifier_name: None,
@@ -1149,9 +1158,7 @@ impl<'a, 'b> Driver<'a, 'b> {
                 }
                 Ok(self.extract_value_block_result(&instructions, block_id_val, loc))
             }
-            Terminal::MaybeThrow {
-                continuation, ..
-            } => {
+            Terminal::MaybeThrow { continuation, .. } => {
                 let continuation_id = *continuation;
                 let continuation_block = self.cx.block(continuation_id);
                 let cont_instructions_empty = continuation_block.instructions.is_empty();
@@ -1161,11 +1168,7 @@ impl<'a, 'b> Driver<'a, 'b> {
                 if cont_instructions_empty && cont_is_goto {
                     Ok(self.extract_value_block_result(&instructions, cont_block_id, loc))
                 } else {
-                    let continuation = self.visit_value_block(
-                        continuation_id,
-                        loc,
-                        fallthrough,
-                    )?;
+                    let continuation = self.visit_value_block(continuation_id, loc, fallthrough)?;
                     Ok(self.wrap_with_sequence(&instructions, continuation, loc))
                 }
             }
@@ -1239,21 +1242,22 @@ impl<'a, 'b> Driver<'a, 'b> {
                 alternate: *alternate,
                 branch_loc: *branch_loc,
             }),
-            other => {
-                Err(CompilerDiagnostic::new(
-                    ErrorCategory::Invariant,
-                    format!(
-                        "Expected a branch terminal for {} test block, got {:?}",
-                        terminal_kind,
-                        std::mem::discriminant(other)
-                    ),
-                    None,
-                ))
-            }
+            other => Err(CompilerDiagnostic::new(
+                ErrorCategory::Invariant,
+                format!(
+                    "Expected a branch terminal for {} test block, got {:?}",
+                    terminal_kind,
+                    std::mem::discriminant(other)
+                ),
+                None,
+            )),
         }
     }
 
-    fn visit_value_block_terminal(&mut self, terminal: &Terminal) -> Result<ValueTerminalResult, CompilerDiagnostic> {
+    fn visit_value_block_terminal(
+        &mut self,
+        terminal: &Terminal,
+    ) -> Result<ValueTerminalResult, CompilerDiagnostic> {
         match terminal {
             Terminal::Sequence {
                 block,
@@ -1277,11 +1281,8 @@ impl<'a, 'b> Driver<'a, 'b> {
                 loc,
             } => {
                 let test_result = self.visit_test_block(*test, *loc, "optional")?;
-                let consequent = self.visit_value_block(
-                    test_result.consequent,
-                    *loc,
-                    Some(*fallthrough),
-                )?;
+                let consequent =
+                    self.visit_value_block(test_result.consequent, *loc, Some(*fallthrough))?;
                 let call = ReactiveValue::SequenceExpression {
                     instructions: vec![ReactiveInstruction {
                         id: test_result.test.id,
@@ -1314,11 +1315,8 @@ impl<'a, 'b> Driver<'a, 'b> {
                 loc,
             } => {
                 let test_result = self.visit_test_block(*test, *loc, "logical")?;
-                let left_final = self.visit_value_block(
-                    test_result.consequent,
-                    *loc,
-                    Some(*fallthrough),
-                )?;
+                let left_final =
+                    self.visit_value_block(test_result.consequent, *loc, Some(*fallthrough))?;
                 let left = ReactiveValue::SequenceExpression {
                     instructions: vec![ReactiveInstruction {
                         id: test_result.test.id,
@@ -1331,11 +1329,8 @@ impl<'a, 'b> Driver<'a, 'b> {
                     value: Box::new(left_final.value),
                     loc: *loc,
                 };
-                let right = self.visit_value_block(
-                    test_result.alternate,
-                    *loc,
-                    Some(*fallthrough),
-                )?;
+                let right =
+                    self.visit_value_block(test_result.alternate, *loc, Some(*fallthrough))?;
                 Ok(ValueTerminalResult {
                     place: left_final.place,
                     value: ReactiveValue::LogicalExpression {
@@ -1355,16 +1350,10 @@ impl<'a, 'b> Driver<'a, 'b> {
                 loc,
             } => {
                 let test_result = self.visit_test_block(*test, *loc, "ternary")?;
-                let consequent = self.visit_value_block(
-                    test_result.consequent,
-                    *loc,
-                    Some(*fallthrough),
-                )?;
-                let alternate = self.visit_value_block(
-                    test_result.alternate,
-                    *loc,
-                    Some(*fallthrough),
-                )?;
+                let consequent =
+                    self.visit_value_block(test_result.consequent, *loc, Some(*fallthrough))?;
+                let alternate =
+                    self.visit_value_block(test_result.alternate, *loc, Some(*fallthrough))?;
                 Ok(ValueTerminalResult {
                     place: consequent.place,
                     value: ReactiveValue::ConditionalExpression {
@@ -1377,27 +1366,21 @@ impl<'a, 'b> Driver<'a, 'b> {
                     id: *id,
                 })
             }
-            Terminal::MaybeThrow { .. } => {
-                Err(CompilerDiagnostic::new(
-                    ErrorCategory::Invariant,
-                    "Unexpected maybe-throw in visit_value_block_terminal",
-                    None,
-                ))
-            }
-            Terminal::Label { .. } => {
-                Err(CompilerDiagnostic::new(
-                    ErrorCategory::Todo,
-                    "Support labeled statements combined with value blocks is not yet implemented",
-                    None,
-                ))
-            }
-            _ => {
-                Err(CompilerDiagnostic::new(
-                    ErrorCategory::Invariant,
-                    "Unsupported terminal kind in value block",
-                    None,
-                ))
-            }
+            Terminal::MaybeThrow { .. } => Err(CompilerDiagnostic::new(
+                ErrorCategory::Invariant,
+                "Unexpected maybe-throw in visit_value_block_terminal",
+                None,
+            )),
+            Terminal::Label { .. } => Err(CompilerDiagnostic::new(
+                ErrorCategory::Todo,
+                "Support labeled statements combined with value blocks is not yet implemented",
+                None,
+            )),
+            _ => Err(CompilerDiagnostic::new(
+                ErrorCategory::Invariant,
+                "Unsupported terminal kind in value block",
+                None,
+            )),
         }
     }
 
@@ -1407,7 +1390,9 @@ impl<'a, 'b> Driver<'a, 'b> {
         block_id: BlockId,
         loc: Option<SourceLocation>,
     ) -> ValueBlockResult {
-        let last_id = instructions.last().expect("Expected non-empty instructions");
+        let last_id = instructions
+            .last()
+            .expect("Expected non-empty instructions");
         let last_instr = &self.hir.instructions[last_id.0 as usize];
 
         let remaining: Vec<ReactiveInstruction> = instructions[..instructions.len() - 1]
@@ -1427,7 +1412,11 @@ impl<'a, 'b> Driver<'a, 'b> {
         // If the last instruction is a StoreLocal to a temporary (unnamed identifier),
         // convert it to a LoadLocal of the value being stored, matching the TS behavior.
         let (value, place) = match &last_instr.value {
-            InstructionValue::StoreLocal { lvalue, value: store_value, .. } => {
+            InstructionValue::StoreLocal {
+                lvalue,
+                value: store_value,
+                ..
+            } => {
                 let ident = &self.env.identifiers[lvalue.place.identifier.0 as usize];
                 if ident.name.is_none() {
                     (
@@ -1589,15 +1578,17 @@ impl<'a, 'b> Driver<'a, 'b> {
             }
             return Ok(None);
         }
-        Ok(Some(ReactiveStatement::Terminal(ReactiveTerminalStatement {
-            terminal: ReactiveTerminal::Break {
-                target: target_block,
-                id,
-                target_kind,
-                loc,
+        Ok(Some(ReactiveStatement::Terminal(
+            ReactiveTerminalStatement {
+                terminal: ReactiveTerminal::Break {
+                    target: target_block,
+                    id,
+                    target_kind,
+                    loc,
+                },
+                label: None,
             },
-            label: None,
-        })))
+        )))
     }
 
     fn visit_continue(

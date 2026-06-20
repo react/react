@@ -15,9 +15,7 @@ use std::collections::HashMap;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
 };
-use react_compiler_hir::{
-    BlockId, HirFunction, Instruction, InstructionValue, Terminal,
-};
+use react_compiler_hir::{BlockId, HirFunction, Instruction, InstructionValue, Terminal};
 use react_compiler_lowering::{
     get_reverse_postordered_blocks, mark_instruction_ids, remove_dead_do_while_statements,
     remove_unnecessary_try_catch, remove_unreachable_for_updates,
@@ -84,7 +82,6 @@ pub fn prune_maybe_throws(
                 }
             }
         }
-
     }
     Ok(())
 }

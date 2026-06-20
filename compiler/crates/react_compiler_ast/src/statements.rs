@@ -1,10 +1,13 @@
+use serde::Deserialize;
+use serde::Deserializer;
+use serde::Serialize;
+use serde::Serializer;
 use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::common::BaseNode;
 use crate::common::RawNode;
-
-use crate::expressions::{Expression, Identifier};
+use crate::expressions::Expression;
+use crate::expressions::Identifier;
 use crate::patterns::PatternLike;
 
 fn is_false(v: &bool) -> bool {
@@ -119,10 +122,7 @@ impl UnknownStatement {
     /// Mutate the raw node, then refresh the cached [`BaseNode`] so `base()`
     /// and `node_type()` cannot drift from `raw`. Mutations that remove the
     /// string `type` field are rejected and rolled back.
-    pub fn with_raw_mut<R>(
-        &mut self,
-        f: impl FnOnce(&mut RawNode) -> R,
-    ) -> Result<R, String> {
+    pub fn with_raw_mut<R>(&mut self, f: impl FnOnce(&mut RawNode) -> R) -> Result<R, String> {
         let saved = self.raw.clone();
         let result = f(&mut self.raw);
         if self.raw.type_name().is_none() {

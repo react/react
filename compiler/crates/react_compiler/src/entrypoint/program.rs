@@ -235,9 +235,7 @@ fn find_directives_dynamic_gating<'a>(
 /// `^use memo if\(([^\)]*)\)$`: the condition may not contain `)` and the
 /// directive must end at the closing paren.
 fn parse_dynamic_gating_directive(value: &str) -> Option<&str> {
-    let condition = value
-        .strip_prefix("use memo if(")?
-        .strip_suffix(')')?;
+    let condition = value.strip_prefix("use memo if(")?.strip_suffix(')')?;
     if condition.contains(')') {
         return None;
     }
@@ -1653,10 +1651,10 @@ fn has_memo_cache_function_import(program: &Program, module_name: &str) -> bool 
                 for specifier in &import.specifiers {
                     if let ImportSpecifier::ImportSpecifier(data) = specifier {
                         let imported_name = match &data.imported {
-                            ModuleExportName::Identifier(id) => &id.name,
-                            ModuleExportName::StringLiteral(s) => &s.value,
+                            ModuleExportName::Identifier(id) => Some(id.name.as_str()),
+                            ModuleExportName::StringLiteral(s) => s.value.as_str(),
                         };
-                        if imported_name == "c" {
+                        if imported_name == Some("c") {
                             return true;
                         }
                     }
@@ -2198,11 +2196,12 @@ fn raw_node_references_identifier(value: &serde_json::Value, name: &str) -> bool
             {
                 return true;
             }
-            map.values().any(|v| raw_node_references_identifier(v, name))
+            map.values()
+                .any(|v| raw_node_references_identifier(v, name))
         }
-        serde_json::Value::Array(items) => {
-            items.iter().any(|v| raw_node_references_identifier(v, name))
-        }
+        serde_json::Value::Array(items) => items
+            .iter()
+            .any(|v| raw_node_references_identifier(v, name)),
         _ => false,
     }
 }

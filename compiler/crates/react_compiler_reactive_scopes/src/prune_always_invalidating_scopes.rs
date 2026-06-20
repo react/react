@@ -15,18 +15,19 @@ use std::collections::HashSet;
 
 use react_compiler_hir::{
     IdentifierId, InstructionValue, PrunedReactiveScopeBlock, ReactiveFunction,
-    ReactiveInstruction, ReactiveStatement, ReactiveValue, ReactiveScopeBlock,
+    ReactiveInstruction, ReactiveScopeBlock, ReactiveStatement, ReactiveValue,
     environment::Environment,
 };
 
-use crate::visitors::{
-    ReactiveFunctionTransform, Transformed, transform_reactive_function,
-};
+use crate::visitors::{ReactiveFunctionTransform, Transformed, transform_reactive_function};
 
 /// Prunes scopes that always invalidate because they depend on unmemoized
 /// always-invalidating values.
 /// TS: `pruneAlwaysInvalidatingScopes`
-pub fn prune_always_invalidating_scopes(func: &mut ReactiveFunction, env: &Environment) -> Result<(), react_compiler_diagnostics::CompilerError> {
+pub fn prune_always_invalidating_scopes(
+    func: &mut ReactiveFunction,
+    env: &Environment,
+) -> Result<(), react_compiler_diagnostics::CompilerError> {
     let mut transform = Transform {
         env,
         always_invalidating_values: HashSet::new(),
@@ -45,7 +46,9 @@ struct Transform<'a> {
 impl<'a> ReactiveFunctionTransform for Transform<'a> {
     type State = bool; // withinScope
 
-    fn env(&self) -> &Environment { self.env }
+    fn env(&self) -> &Environment {
+        self.env
+    }
 
     fn transform_instruction(
         &mut self,
@@ -75,13 +78,15 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
                 lvalue: store_lvalue,
                 ..
             }) => {
-                if self.always_invalidating_values.contains(&store_value.identifier) {
+                if self
+                    .always_invalidating_values
+                    .contains(&store_value.identifier)
+                {
                     self.always_invalidating_values
                         .insert(store_lvalue.place.identifier);
                 }
                 if self.unmemoized_values.contains(&store_value.identifier) {
-                    self.unmemoized_values
-                        .insert(store_lvalue.place.identifier);
+                    self.unmemoized_values.insert(store_lvalue.place.identifier);
                 }
             }
             ReactiveValue::Instruction(InstructionValue::LoadLocal { place, .. }) => {

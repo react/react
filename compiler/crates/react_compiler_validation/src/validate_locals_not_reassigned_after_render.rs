@@ -7,15 +7,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory,
-};
+use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{
-    Effect, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue,
-    Place, Type,
+use react_compiler_hir::visitors::{
+    each_instruction_lvalue_ids, each_instruction_value_operand, each_terminal_operand,
 };
-use react_compiler_hir::visitors::{each_instruction_lvalue_ids, each_instruction_value_operand, each_terminal_operand};
+use react_compiler_hir::{
+    Effect, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue, Place, Type,
+};
 
 /// Validates that local variables cannot be reassigned after render.
 /// This prevents a category of bugs in which a closure captures a
@@ -75,7 +74,6 @@ fn format_variable_name(place: &Place, identifiers: &[Identifier]) -> String {
         _ => "variable".to_string(),
     }
 }
-
 
 /// Recursively checks whether a function (or its dependencies) reassigns a
 /// context variable. Returns the reassigned place if found, or None.
@@ -148,14 +146,13 @@ fn get_context_reassignment(
                                             .to_string(),
                                     ),
                                 )
-                                .with_detail(CompilerDiagnosticDetail::Error {
-                                    loc: reassignment_place.loc,
-                                    message: Some(format!(
-                                        "Cannot reassign {}",
-                                        variable_name
-                                    )),
-                                    identifier_name: None,
-                                }),
+                                .with_detail(
+                                    CompilerDiagnosticDetail::Error {
+                                        loc: reassignment_place.loc,
+                                        message: Some(format!("Cannot reassign {}", variable_name)),
+                                        identifier_name: None,
+                                    },
+                                ),
                             );
                             // Return null (don't propagate further) — matches TS behavior
                             return None;
@@ -168,21 +165,16 @@ fn get_context_reassignment(
                 }
 
                 InstructionValue::StoreLocal { lvalue, value, .. } => {
-                    if let Some(reassignment_place) =
-                        reassigning_functions.get(&value.identifier)
-                    {
+                    if let Some(reassignment_place) = reassigning_functions.get(&value.identifier) {
                         let reassignment_place = reassignment_place.clone();
                         reassigning_functions
                             .insert(lvalue.place.identifier, reassignment_place.clone());
-                        reassigning_functions
-                            .insert(instr.lvalue.identifier, reassignment_place);
+                        reassigning_functions.insert(instr.lvalue.identifier, reassignment_place);
                     }
                 }
 
                 InstructionValue::LoadLocal { place, .. } => {
-                    if let Some(reassignment_place) =
-                        reassigning_functions.get(&place.identifier)
-                    {
+                    if let Some(reassignment_place) = reassigning_functions.get(&place.identifier) {
                         reassigning_functions
                             .insert(instr.lvalue.identifier, reassignment_place.clone());
                     }
@@ -209,14 +201,11 @@ fn get_context_reassignment(
                     }
 
                     // Propagate reassigning function info through StoreContext
-                    if let Some(reassignment_place) =
-                        reassigning_functions.get(&value.identifier)
-                    {
+                    if let Some(reassignment_place) = reassigning_functions.get(&value.identifier) {
                         let reassignment_place = reassignment_place.clone();
                         reassigning_functions
                             .insert(lvalue.place.identifier, reassignment_place.clone());
-                        reassigning_functions
-                            .insert(instr.lvalue.identifier, reassignment_place);
+                        reassigning_functions.insert(instr.lvalue.identifier, reassignment_place);
                     }
                 }
 
@@ -290,4 +279,3 @@ fn get_context_reassignment(
 
     None
 }
-

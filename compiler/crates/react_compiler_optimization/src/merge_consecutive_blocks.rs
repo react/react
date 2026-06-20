@@ -47,10 +47,7 @@ pub fn merge_consecutive_blocks(func: &mut HirFunction, functions: &mut [HirFunc
     for func_id in inner_func_ids {
         // Use std::mem::replace to temporarily take the inner function out,
         // process it, then put it back (standard borrow checker workaround)
-        let mut inner_func = std::mem::replace(
-            &mut functions[func_id],
-            placeholder_function(),
-        );
+        let mut inner_func = std::mem::replace(&mut functions[func_id], placeholder_function());
         merge_consecutive_blocks(&mut inner_func, functions);
         functions[func_id] = inner_func;
     }

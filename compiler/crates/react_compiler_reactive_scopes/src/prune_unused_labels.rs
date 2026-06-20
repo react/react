@@ -11,15 +11,17 @@
 use std::collections::HashSet;
 
 use react_compiler_hir::{
-    BlockId, ReactiveFunction, ReactiveStatement, ReactiveTerminal,
-    ReactiveTerminalStatement, ReactiveTerminalTargetKind,
-    environment::Environment,
+    BlockId, ReactiveFunction, ReactiveStatement, ReactiveTerminal, ReactiveTerminalStatement,
+    ReactiveTerminalTargetKind, environment::Environment,
 };
 
-use crate::visitors::{transform_reactive_function, ReactiveFunctionTransform, Transformed};
+use crate::visitors::{ReactiveFunctionTransform, Transformed, transform_reactive_function};
 
 /// Prune unused labels from a reactive function.
-pub fn prune_unused_labels(func: &mut ReactiveFunction, env: &Environment) -> Result<(), react_compiler_diagnostics::CompilerError> {
+pub fn prune_unused_labels(
+    func: &mut ReactiveFunction,
+    env: &Environment,
+) -> Result<(), react_compiler_diagnostics::CompilerError> {
     let mut transform = Transform { env };
     let mut labels: HashSet<BlockId> = HashSet::new();
     transform_reactive_function(func, &mut transform, &mut labels)
@@ -32,7 +34,9 @@ struct Transform<'a> {
 impl<'a> ReactiveFunctionTransform for Transform<'a> {
     type State = HashSet<BlockId>;
 
-    fn env(&self) -> &Environment { self.env }
+    fn env(&self) -> &Environment {
+        self.env
+    }
 
     fn transform_terminal(
         &mut self,

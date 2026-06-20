@@ -16,7 +16,6 @@ fn rewrite_place(place: &mut Place, rewrites: &HashMap<IdentifierId, IdentifierI
     }
 }
 
-
 // =============================================================================
 // Public entry point
 // =============================================================================
@@ -93,12 +92,8 @@ fn eliminate_redundant_phi_impl(
             });
 
             // Rewrite instructions
-            let instruction_ids: Vec<InstructionId> = ir
-                .blocks
-                .get(&block_id)
-                .unwrap()
-                .instructions
-                .clone();
+            let instruction_ids: Vec<InstructionId> =
+                ir.blocks.get(&block_id).unwrap().instructions.clone();
 
             for instr_id in &instruction_ids {
                 let instr_idx = instr_id.0 as usize;
@@ -111,9 +106,12 @@ fn eliminate_redundant_phi_impl(
                 });
 
                 // Rewrite operands using canonical visitor
-                visitors::for_each_instruction_value_operand_mut(&mut func.instructions[instr_idx].value, &mut |place| {
-                    rewrite_place(place, rewrites);
-                });
+                visitors::for_each_instruction_value_operand_mut(
+                    &mut func.instructions[instr_idx].value,
+                    &mut |place| {
+                        rewrite_place(place, rewrites);
+                    },
+                );
 
                 // Handle FunctionExpression/ObjectMethod context and recursion
                 let instr = &func.instructions[instr_idx];
@@ -127,8 +125,7 @@ fn eliminate_redundant_phi_impl(
 
                 if let Some(fid) = func_expr_id {
                     // Rewrite context places
-                    let context =
-                        &mut env.functions[fid.0 as usize].context;
+                    let context = &mut env.functions[fid.0 as usize].context;
                     for place in context.iter_mut() {
                         rewrite_place(place, rewrites);
                     }

@@ -19,10 +19,10 @@ use react_compiler_ast::expressions::{
     ObjectExpressionProperty,
 };
 use react_compiler_ast::patterns::PatternLike;
-use react_compiler_ast::statements::{ForInit, ForInOfLeft, Statement, VariableDeclaration};
+use react_compiler_ast::statements::{ForInOfLeft, ForInit, Statement, VariableDeclaration};
 use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory,
-    SourceLocation as DiagSourceLocation, Position as DiagPosition,
+    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, Position as DiagPosition,
+    SourceLocation as DiagSourceLocation,
 };
 use react_compiler_hir::environment::Environment;
 use react_compiler_lowering::FunctionNode;
@@ -54,7 +54,10 @@ pub fn validate_source_locations(
     // (JS Map preserves insertion order, which is AST traversal order = source order)
     let mut sorted_entries: Vec<&ImportantLocation> = important_original.values().collect();
     sorted_entries.sort_by(|a, b| {
-        a.loc.start.line.cmp(&b.loc.start.line)
+        a.loc
+            .start
+            .line
+            .cmp(&b.loc.start.line)
             .then(a.loc.start.column.cmp(&b.loc.start.column))
             // Outer nodes (larger spans) before inner nodes, matching depth-first traversal
             .then(b.loc.end.line.cmp(&a.loc.end.line))
@@ -85,12 +88,7 @@ pub fn validate_source_locations(
                     if has_valid_node_type {
                         report_missing_location(env, &entry.loc, node_type);
                     } else {
-                        report_wrong_node_type(
-                            env,
-                            &entry.loc,
-                            node_type,
-                            generated_node_types,
-                        );
+                        report_wrong_node_type(env, &entry.loc, node_type, generated_node_types);
                     }
                 }
             }
@@ -228,15 +226,12 @@ fn important_expression_type(expr: &Expression) -> Option<&'static str> {
 fn is_manual_memoization(expr: &Expression) -> bool {
     if let Expression::CallExpression(call) = expr {
         match call.callee.as_ref() {
-            Expression::Identifier(id) => {
-                id.name == "useMemo" || id.name == "useCallback"
-            }
+            Expression::Identifier(id) => id.name == "useMemo" || id.name == "useCallback",
             Expression::MemberExpression(mem) => {
                 if let (Expression::Identifier(obj), Expression::Identifier(prop)) =
                     (mem.object.as_ref(), &*mem.property)
                 {
-                    obj.name == "React"
-                        && (prop.name == "useMemo" || prop.name == "useCallback")
+                    obj.name == "React" && (prop.name == "useMemo" || prop.name == "useCallback")
                 } else {
                     false
                 }
@@ -679,8 +674,7 @@ fn collect_original_arrow_children(
     }
     match arrow.body.as_ref() {
         ArrowFunctionBody::BlockStatement(block) => {
-            let is_single_return =
-                block.body.len() == 1 && block.directives.is_empty();
+            let is_single_return = block.body.len() == 1 && block.directives.is_empty();
             collect_original_block(&block.body, is_single_return, locations);
         }
         ArrowFunctionBody::Expression(expr) => {
@@ -741,10 +735,7 @@ fn collect_original_pattern(
             collect_original_pattern(&r.argument, locations);
         }
         PatternLike::MemberExpression(m) => {
-            collect_original_expression(
-                &Expression::MemberExpression(m.clone()),
-                locations,
-            );
+            collect_original_expression(&Expression::MemberExpression(m.clone()), locations);
         }
         PatternLike::TSAsExpression(_)
         | PatternLike::TSSatisfiesExpression(_)
@@ -882,10 +873,7 @@ fn record_generated(
     }
 }
 
-fn collect_generated_statement(
-    stmt: &Statement,
-    locations: &mut HashMap<String, HashSet<String>>,
-) {
+fn collect_generated_statement(stmt: &Statement, locations: &mut HashMap<String, HashSet<String>>) {
     // Record this statement's location
     let type_name = statement_type_name(stmt);
     record_generated(type_name, statement_loc(stmt), locations);

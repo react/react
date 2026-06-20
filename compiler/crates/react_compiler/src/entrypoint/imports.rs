@@ -12,13 +12,17 @@ use react_compiler_ast::declarations::{
 };
 use react_compiler_ast::expressions::{CallExpression, Expression, Identifier};
 use react_compiler_ast::literals::StringLiteral;
-use react_compiler_ast::patterns::{ObjectPattern, ObjectPatternProp, ObjectPatternProperty, PatternLike};
+use react_compiler_ast::patterns::{
+    ObjectPattern, ObjectPatternProp, ObjectPatternProperty, PatternLike,
+};
 use react_compiler_ast::scope::ScopeInfo;
 use react_compiler_ast::statements::{
     Statement, VariableDeclaration, VariableDeclarationKind, VariableDeclarator,
 };
 use react_compiler_ast::{Program, SourceType};
-use react_compiler_diagnostics::{CompilerError, CompilerErrorDetail, ErrorCategory, Position, SourceLocation};
+use react_compiler_diagnostics::{
+    CompilerError, CompilerErrorDetail, ErrorCategory, Position, SourceLocation,
+};
 
 use super::compile_result::{DebugLogEntry, LoggerEvent, OrderedLogItem};
 use super::plugin_options::{CompilerTarget, PluginOptions};
@@ -238,7 +242,9 @@ impl ProgramContext {
 
     /// Log a compilation event.
     pub fn log_event(&mut self, event: LoggerEvent) {
-        self.ordered_log.push(OrderedLogItem::Event { event: event.clone() });
+        self.ordered_log.push(OrderedLogItem::Event {
+            event: event.clone(),
+        });
         self.events.push(event);
     }
 
@@ -273,15 +279,28 @@ pub fn validate_restricted_imports(
 
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import) = stmt {
-            if restricted.contains(import.source.value.as_str()) {
+            if import
+                .source
+                .value
+                .as_str()
+                .is_some_and(|v| restricted.contains(v))
+            {
                 let mut detail = CompilerErrorDetail::new(
                     ErrorCategory::Todo,
                     "Bailing out due to blocklisted import",
                 )
                 .with_description(format!("Import from module {}", import.source.value));
                 detail.loc = import.base.loc.as_ref().map(|loc| SourceLocation {
-                    start: Position { line: loc.start.line, column: loc.start.column, index: loc.start.index },
-                    end: Position { line: loc.end.line, column: loc.end.column, index: loc.end.index },
+                    start: Position {
+                        line: loc.start.line,
+                        column: loc.start.column,
+                        index: loc.start.index,
+                    },
+                    end: Position {
+                        line: loc.end.line,
+                        column: loc.end.column,
+                        index: loc.end.index,
+                    },
                 });
                 error.push_error_detail(detail);
             }
@@ -314,7 +333,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
         .filter_map(|(idx, stmt)| {
             if let Statement::ImportDeclaration(import) = stmt {
                 if is_non_namespaced_import(import) {
-                    return Some((import.source.value.clone(), idx));
+                    return Some((import.source.value.to_marker_string(), idx));
                 }
             }
             None
@@ -349,7 +368,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
                 specifiers: import_specifiers,
                 source: StringLiteral {
                     base: BaseNode::typed("StringLiteral"),
-                    value: module_name.clone(),
+                    value: module_name.clone().into(),
                 },
                 import_kind: None,
                 assertions: None,
@@ -406,7 +425,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
                         })),
                         arguments: vec![Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: module_name.clone(),
+                            value: module_name.clone().into(),
                         })],
                         type_parameters: None,
                         type_arguments: None,

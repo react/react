@@ -1,19 +1,19 @@
 use std::collections::{HashMap, HashSet};
 
 use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail, CompilerSuggestion,
-    CompilerSuggestionOperation, ErrorCategory, SourceLocation,
+    CompilerDiagnostic, CompilerDiagnosticDetail, CompilerSuggestion, CompilerSuggestionOperation,
+    ErrorCategory, SourceLocation,
 };
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::environment_config::ExhaustiveEffectDepsMode;
+use react_compiler_hir::visitors::{
+    each_instruction_value_lvalue, each_instruction_value_operand_with_functions,
+    each_terminal_operand,
+};
 use react_compiler_hir::{
     ArrayElement, BlockId, DependencyPathEntry, HirFunction, Identifier, IdentifierId,
     InstructionKind, InstructionValue, ManualMemoDependency, ManualMemoDependencyRoot,
     NonLocalBinding, ParamPattern, Place, PlaceOrSpread, PropertyLiteral, Terminal, Type,
-};
-use react_compiler_hir::visitors::{
-    each_instruction_value_lvalue, each_instruction_value_operand_with_functions,
-    each_terminal_operand,
 };
 
 /// Port of ValidateExhaustiveDependencies.ts
@@ -25,7 +25,10 @@ use react_compiler_hir::visitors::{
 /// Note: takes `&mut HirFunction` (deviating from the read-only validation convention)
 /// because it sets `has_invalid_deps` on StartMemoize instructions when validation
 /// errors are found, so that ValidatePreservedManualMemoization can skip those blocks.
-pub fn validate_exhaustive_dependencies(func: &mut HirFunction, env: &mut Environment) -> Result<(), CompilerDiagnostic> {
+pub fn validate_exhaustive_dependencies(
+    func: &mut HirFunction,
+    env: &mut Environment,
+) -> Result<(), CompilerDiagnostic> {
     let reactive = collect_reactive_identifiers(func, &env.functions);
     let validate_memo = env.config.validate_exhaustive_memoization_dependencies;
     let validate_effect = env.config.validate_exhaustive_effect_dependencies.clone();
@@ -74,7 +77,12 @@ pub fn validate_exhaustive_dependencies(func: &mut HirFunction, env: &mut Enviro
     // Set has_invalid_deps on StartMemoize instructions that had validation errors
     if !callbacks.invalid_memo_ids.is_empty() {
         for instr in func.instructions.iter_mut() {
-            if let InstructionValue::StartMemoize { manual_memo_id, has_invalid_deps, .. } = &mut instr.value {
+            if let InstructionValue::StartMemoize {
+                manual_memo_id,
+                has_invalid_deps,
+                ..
+            } = &mut instr.value
+            {
                 if callbacks.invalid_memo_ids.contains(manual_memo_id) {
                     *has_invalid_deps = true;
                 }
@@ -163,13 +171,7 @@ fn dep_to_key(dep: &InferredDependency) -> InferredDependencyKey {
 
 fn path_to_string(path: &[DependencyPathEntry]) -> String {
     path.iter()
-        .map(|p| {
-            format!(
-                "{}{}",
-                if p.optional { "?." } else { "." },
-                p.property
-            )
-        })
+        .map(|p| format!("{}{}", if p.optional { "?." } else { "." }, p.property))
         .collect::<Vec<_>>()
         .join("")
 }
@@ -207,9 +209,7 @@ fn is_stable_type(ty: &Type) -> bool {
                 | "BuiltInStartTransition"
                 | "BuiltInSetOptimistic"
         ),
-        Type::Object {
-            shape_id: Some(id),
-        } => matches!(id.as_str(), "BuiltInUseRefId"),
+        Type::Object { shape_id: Some(id) } => matches!(id.as_str(), "BuiltInUseRefId"),
         _ => false,
     }
 }
@@ -280,7 +280,10 @@ fn is_sub_path_ignoring_optionals(
 // Collect reactive identifiers
 // =============================================================================
 
-fn collect_reactive_identifiers(func: &HirFunction, functions: &[HirFunction]) -> HashSet<IdentifierId> {
+fn collect_reactive_identifiers(
+    func: &HirFunction,
+    functions: &[HirFunction],
+) -> HashSet<IdentifierId> {
     let mut reactive = HashSet::new();
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
@@ -345,9 +348,9 @@ fn find_optional_places(func: &HirFunction) -> HashMap<IdentifierId, bool> {
                         fallthrough,
                         ..
                     } => {
-                        let is_optional = queue.pop().expect(
-                            "Expected an optional value for each optional test condition",
-                        );
+                        let is_optional = queue
+                            .pop()
+                            .expect("Expected an optional value for each optional test condition");
                         if let Some(opt) = is_optional {
                             optionals.insert(test_place.identifier, opt);
                         }
@@ -355,8 +358,7 @@ fn find_optional_places(func: &HirFunction) -> HashMap<IdentifierId, bool> {
                             // Found the end of the optional chain
                             let consequent_block = &func.body.blocks[consequent];
                             if let Some(last_id) = consequent_block.instructions.last() {
-                                let last_instr =
-                                    &func.instructions[last_id.0 as usize];
+                                let last_instr = &func.instructions[last_id.0 as usize];
                                 if let InstructionValue::StoreLocal { value, .. } =
                                     &last_instr.value
                                 {
@@ -378,12 +380,18 @@ fn find_optional_places(func: &HirFunction) -> HashMap<IdentifierId, bool> {
                         queue.push(Some(*opt));
                         test_block_id = *inner_test;
                     }
-                    Terminal::Logical { test: inner_test, .. }
-                    | Terminal::Ternary { test: inner_test, .. } => {
+                    Terminal::Logical {
+                        test: inner_test, ..
+                    }
+                    | Terminal::Ternary {
+                        test: inner_test, ..
+                    } => {
                         queue.push(None);
                         test_block_id = *inner_test;
                     }
-                    Terminal::Sequence { block: seq_block, .. } => {
+                    Terminal::Sequence {
+                        block: seq_block, ..
+                    } => {
                         test_block_id = *seq_block;
                     }
                     Terminal::MaybeThrow { continuation, .. } => {
@@ -631,7 +639,9 @@ fn collect_dependencies(
                         }
                     }
                 }
-                InstructionValue::DeclareLocal { lvalue: decl_lv, .. } => {
+                InstructionValue::DeclareLocal {
+                    lvalue: decl_lv, ..
+                } => {
                     temporaries.insert(
                         decl_lv.place.identifier,
                         Temporary::Local {
@@ -679,7 +689,9 @@ fn collect_dependencies(
                         }
                     }
                 }
-                InstructionValue::DeclareContext { lvalue: decl_lv, .. } => {
+                InstructionValue::DeclareContext {
+                    lvalue: decl_lv, ..
+                } => {
                     temporaries.insert(
                         decl_lv.place.identifier,
                         Temporary::Local {
@@ -747,11 +759,9 @@ fn collect_dependencies(
                 } => {
                     // Number properties or ref.current: visit the object directly
                     let is_numeric = matches!(property, PropertyLiteral::Number(_));
-                    let is_ref_current = is_use_ref_type(get_identifier_type(
-                        object.identifier,
-                        identifiers,
-                        types,
-                    )) && *property == PropertyLiteral::String("current".to_string());
+                    let is_ref_current =
+                        is_use_ref_type(get_identifier_type(object.identifier, identifiers, types))
+                            && *property == PropertyLiteral::String("current".to_string());
 
                     if is_numeric || is_ref_current {
                         visit_candidate_dependency(
@@ -791,12 +801,8 @@ fn collect_dependencies(
                         }
                     }
                 }
-                InstructionValue::FunctionExpression {
-                    lowered_func, ..
-                }
-                | InstructionValue::ObjectMethod {
-                    lowered_func, ..
-                } => {
+                InstructionValue::FunctionExpression { lowered_func, .. }
+                | InstructionValue::ObjectMethod { lowered_func, .. } => {
                     let inner_func = &functions[lowered_func.func.0 as usize];
                     let function_deps = collect_dependencies(
                         inner_func,
@@ -938,8 +944,7 @@ fn collect_dependencies(
                 InstructionValue::CallExpression { callee, args, .. } => {
                     // Check if this is an effect hook call
                     if let Some(cb) = callbacks.as_mut() {
-                        let callee_ty =
-                            get_identifier_type(callee.identifier, identifiers, types);
+                        let callee_ty = get_identifier_type(callee.identifier, identifiers, types);
                         if is_effect_hook(callee_ty)
                             && !matches!(cb.validate_effect, ExhaustiveEffectDepsMode::Off)
                         {
@@ -1034,7 +1039,9 @@ fn collect_dependencies(
                     }
 
                     // Visit all operands except for MethodCall's property
-                    for operand in each_instruction_value_operand_with_functions(&instr.value, functions) {
+                    for operand in
+                        each_instruction_value_operand_with_functions(&instr.value, functions)
+                    {
                         visit_candidate_dependency(
                             &operand,
                             temporaries,
@@ -1052,8 +1059,7 @@ fn collect_dependencies(
                 } => {
                     // Check if this is an effect hook call
                     if let Some(cb) = callbacks.as_mut() {
-                        let prop_ty =
-                            get_identifier_type(property.identifier, identifiers, types);
+                        let prop_ty = get_identifier_type(property.identifier, identifiers, types);
                         if is_effect_hook(prop_ty)
                             && !matches!(cb.validate_effect, ExhaustiveEffectDepsMode::Off)
                         {
@@ -1171,7 +1177,9 @@ fn collect_dependencies(
                 }
                 _ => {
                     // Default: visit all operands
-                    for operand in each_instruction_value_operand_with_functions(&instr.value, functions) {
+                    for operand in
+                        each_instruction_value_operand_with_functions(&instr.value, functions)
+                    {
                         visit_candidate_dependency(
                             &operand,
                             temporaries,
@@ -1226,9 +1234,10 @@ fn validate_dependencies(
     // Sort dependencies by name and path
     inferred.sort_by(|a, b| {
         match (a, b) {
-            (InferredDependency::Global { binding: ab }, InferredDependency::Global { binding: bb }) => {
-                ab.name().cmp(bb.name())
-            }
+            (
+                InferredDependency::Global { binding: ab },
+                InferredDependency::Global { binding: bb },
+            ) => ab.name().cmp(bb.name()),
             (
                 InferredDependency::Local {
                     identifier: a_id,
@@ -1257,7 +1266,8 @@ fn validate_dependencies(
                                 if a_opt != b_opt {
                                     return a_opt.cmp(&b_opt);
                                 }
-                                let prop_cmp = ap.property.to_string().cmp(&bp.property.to_string());
+                                let prop_cmp =
+                                    ap.property.to_string().cmp(&bp.property.to_string());
                                 if prop_cmp != std::cmp::Ordering::Equal {
                                     return prop_cmp;
                                 }
@@ -1268,7 +1278,12 @@ fn validate_dependencies(
                     _ => std::cmp::Ordering::Equal,
                 }
             }
-            (InferredDependency::Global { binding: ab }, InferredDependency::Local { identifier: b_id, .. }) => {
+            (
+                InferredDependency::Global { binding: ab },
+                InferredDependency::Local {
+                    identifier: b_id, ..
+                },
+            ) => {
                 let a_name = ab.name();
                 let b_name = get_identifier_name(*b_id, identifiers);
                 match b_name.as_deref() {
@@ -1276,7 +1291,12 @@ fn validate_dependencies(
                     None => std::cmp::Ordering::Equal,
                 }
             }
-            (InferredDependency::Local { identifier: a_id, .. }, InferredDependency::Global { binding: bb }) => {
+            (
+                InferredDependency::Local {
+                    identifier: a_id, ..
+                },
+                InferredDependency::Global { binding: bb },
+            ) => {
                 let a_name = get_identifier_name(*a_id, identifiers);
                 let b_name = bb.name();
                 match a_name.as_deref() {
@@ -1382,8 +1402,7 @@ fn validate_dependencies(
                     }
                 }
 
-                if has_matching
-                    || is_optional_dependency(*identifier, reactive, identifiers, types)
+                if has_matching || is_optional_dependency(*identifier, reactive, identifiers, types)
                 {
                     continue;
                 }
@@ -1398,7 +1417,10 @@ fn validate_dependencies(
         if matched.contains(&i) {
             continue;
         }
-        if let ManualMemoDependencyRoot::NamedLocal { constant, value, .. } = &dep.root {
+        if let ManualMemoDependencyRoot::NamedLocal {
+            constant, value, ..
+        } = &dep.root
+        {
             if *constant {
                 let dep_ty = get_identifier_type(value.identifier, identifiers, types);
                 // Constant-folded primitives: skip
@@ -1469,7 +1491,10 @@ fn validate_dependencies(
     // Add detail items for missing deps
     for dep in &filtered_missing {
         if let InferredDependency::Local {
-            identifier, path: _, loc, ..
+            identifier,
+            path: _,
+            loc,
+            ..
         } = dep
         {
             let mut hint = String::new();
@@ -1517,8 +1542,7 @@ fn validate_dependencies(
 
                 if let Some(matching) = matching_inferred {
                     if let InferredDependency::Local { identifier, .. } = matching {
-                        let matching_ty =
-                            get_identifier_type(*identifier, identifiers, types);
+                        let matching_ty = get_identifier_type(*identifier, identifiers, types);
                         if is_effect_event_function_type(matching_ty) {
                             let dep_str = print_manual_memo_dependency(dep, identifiers);
                             diagnostic.details.push(CompilerDiagnosticDetail::Error {
@@ -1535,8 +1559,7 @@ fn validate_dependencies(
                             types,
                         ) {
                             let dep_str = print_manual_memo_dependency(dep, identifiers);
-                            let inferred_str =
-                                print_inferred_dependency(matching, identifiers);
+                            let inferred_str = print_inferred_dependency(matching, identifiers);
                             diagnostic.details.push(CompilerDiagnosticDetail::Error {
                                 loc: dep.loc.or(manual_memo_loc),
                                 message: Some(format!(
@@ -1594,13 +1617,7 @@ fn print_inferred_dependency(dep: &InferredDependency, identifiers: &[Identifier
                 .unwrap_or_else(|| "<unnamed>".to_string());
             let path_str: String = path
                 .iter()
-                .map(|p| {
-                    format!(
-                        "{}.{}",
-                        if p.optional { "?" } else { "" },
-                        p.property
-                    )
-                })
+                .map(|p| format!("{}.{}", if p.optional { "?" } else { "" }, p.property))
                 .collect();
             format!("{name}{path_str}")
         }
@@ -1618,13 +1635,7 @@ fn print_manual_memo_dependency(dep: &ManualMemoDependency, identifiers: &[Ident
     let path_str: String = dep
         .path
         .iter()
-        .map(|p| {
-            format!(
-                "{}.{}",
-                if p.optional { "?" } else { "" },
-                p.property
-            )
-        })
+        .map(|p| format!("{}.{}", if p.optional { "?" } else { "" }, p.property))
         .collect();
     format!("{name}{path_str}")
 }
@@ -1666,9 +1677,10 @@ fn is_optional_dependency_inferred(
 
 fn is_equal_temporary(a: &InferredDependency, b: &InferredDependency) -> bool {
     match (a, b) {
-        (InferredDependency::Global { binding: ab }, InferredDependency::Global { binding: bb }) => {
-            ab.name() == bb.name()
-        }
+        (
+            InferredDependency::Global { binding: ab },
+            InferredDependency::Global { binding: bb },
+        ) => ab.name() == bb.name(),
         (
             InferredDependency::Local {
                 identifier: a_id,
@@ -1709,10 +1721,8 @@ fn create_diagnostic(
 
     let (reason, description) = match category {
         ErrorCategory::MemoDependencies => {
-            let reason_parts: Vec<&str> = [missing_str, extra_str]
-                .iter()
-                .filter_map(|x| *x)
-                .collect();
+            let reason_parts: Vec<&str> =
+                [missing_str, extra_str].iter().filter_map(|x| *x).collect();
             let reason = format!("Found {} memoization dependencies", reason_parts.join("/"));
 
             let desc_parts: Vec<&str> = [
@@ -1734,10 +1744,8 @@ fn create_diagnostic(
             (reason, description)
         }
         ErrorCategory::EffectExhaustiveDependencies => {
-            let reason_parts: Vec<&str> = [missing_str, extra_str]
-                .iter()
-                .filter_map(|x| *x)
-                .collect();
+            let reason_parts: Vec<&str> =
+                [missing_str, extra_str].iter().filter_map(|x| *x).collect();
             let reason = format!("Found {} effect dependencies", reason_parts.join("/"));
 
             let desc_parts: Vec<&str> = [
@@ -1788,4 +1796,3 @@ fn each_instruction_lvalue_ids(
     }
     ids
 }
-

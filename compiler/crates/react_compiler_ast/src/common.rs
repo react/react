@@ -55,8 +55,7 @@ impl RawNode {
     /// RawNode text is valid JSON by construction, so failure here means a
     /// broken invariant, not bad input; fail loudly rather than degrade.
     pub fn parse_value(&self) -> serde_json::Value {
-        from_json_str_unbounded(self.0.get())
-            .expect("RawNode holds valid JSON by construction")
+        from_json_str_unbounded(self.0.get()).expect("RawNode holds valid JSON by construction")
     }
 
     /// The node's `"type"` field, without parsing the whole subtree into a Value.

@@ -14,15 +14,13 @@ use std::collections::HashMap;
 
 use indexmap::IndexSet;
 use react_compiler_hir::{
-    BlockId, ReactiveFunction,
-    ReactiveTerminal, ReactiveTerminalStatement,
-    ReactiveScopeBlock,
+    BlockId, ReactiveFunction, ReactiveScopeBlock, ReactiveTerminal, ReactiveTerminalStatement,
     environment::Environment,
 };
 
 use crate::visitors::{
-    ReactiveFunctionVisitor, visit_reactive_function,
-    ReactiveFunctionTransform, transform_reactive_function,
+    ReactiveFunctionTransform, ReactiveFunctionVisitor, transform_reactive_function,
+    visit_reactive_function,
 };
 
 /// Rewrites block IDs to sequential values.
@@ -56,13 +54,11 @@ struct CollectReferencedLabels<'a> {
 impl<'a> ReactiveFunctionVisitor for CollectReferencedLabels<'a> {
     type State = IndexSet<BlockId>;
 
-    fn env(&self) -> &Environment { self.env }
+    fn env(&self) -> &Environment {
+        self.env
+    }
 
-    fn visit_scope(
-        &self,
-        scope: &ReactiveScopeBlock,
-        state: &mut Self::State,
-    ) {
+    fn visit_scope(&self, scope: &ReactiveScopeBlock, state: &mut Self::State) {
         let scope_data = &self.env.scopes[scope.scope.0 as usize];
         if let Some(ref early_return) = scope_data.early_return_value {
             state.insert(early_return.label);
@@ -70,11 +66,7 @@ impl<'a> ReactiveFunctionVisitor for CollectReferencedLabels<'a> {
         self.traverse_scope(scope, state);
     }
 
-    fn visit_terminal(
-        &self,
-        stmt: &ReactiveTerminalStatement,
-        state: &mut Self::State,
-    ) {
+    fn visit_terminal(&self, stmt: &ReactiveTerminalStatement, state: &mut Self::State) {
         if let Some(ref label) = stmt.label {
             if !label.implicit {
                 state.insert(label.id);
@@ -101,7 +93,9 @@ struct RewriteBlockIds<'a> {
 impl<'a> ReactiveFunctionTransform for RewriteBlockIds<'a> {
     type State = HashMap<BlockId, BlockId>;
 
-    fn env(&self) -> &Environment { self.env }
+    fn env(&self) -> &Environment {
+        self.env
+    }
 
     fn visit_scope(
         &mut self,

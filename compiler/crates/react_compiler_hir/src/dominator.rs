@@ -31,7 +31,10 @@ impl PostDominator {
     /// Returns the immediate post-dominator of the given block, or None if
     /// the block post-dominates itself (i.e., it is the exit node).
     pub fn get(&self, id: BlockId) -> Option<BlockId> {
-        let dominator = self.nodes.get(&id).expect("Unknown node in post-dominator tree");
+        let dominator = self
+            .nodes
+            .get(&id)
+            .expect("Unknown node in post-dominator tree");
         if *dominator == id {
             None
         } else {
@@ -112,12 +115,15 @@ fn build_reverse_graph(
     let mut raw_nodes: HashMap<BlockId, Node> = HashMap::new();
 
     // Create exit node
-    raw_nodes.insert(exit_id, Node {
-        id: exit_id,
-        index: 0,
-        preds: HashSet::new(),
-        succs: HashSet::new(),
-    });
+    raw_nodes.insert(
+        exit_id,
+        Node {
+            id: exit_id,
+            index: 0,
+            preds: HashSet::new(),
+            succs: HashSet::new(),
+        },
+    );
 
     for (id, block) in &func.body.blocks {
         let successors = each_terminal_successor(&block.terminal);
@@ -132,12 +138,15 @@ fn build_reverse_graph(
             raw_nodes.get_mut(&exit_id).unwrap().succs.insert(*id);
         }
 
-        raw_nodes.insert(*id, Node {
-            id: *id,
-            index: 0,
-            preds: preds_set,
-            succs: succs_set,
-        });
+        raw_nodes.insert(
+            *id,
+            Node {
+                id: *id,
+                index: 0,
+                preds: preds_set,
+                succs: succs_set,
+            },
+        );
     }
 
     // DFS from exit to compute RPO
@@ -185,7 +194,9 @@ fn dfs_postorder(
 // Dominator fixpoint (Cooper/Harvey/Kennedy)
 // =============================================================================
 
-fn compute_immediate_dominators(graph: &Graph) -> Result<HashMap<BlockId, BlockId>, CompilerDiagnostic> {
+fn compute_immediate_dominators(
+    graph: &Graph,
+) -> Result<HashMap<BlockId, BlockId>, CompilerDiagnostic> {
     let mut doms: HashMap<BlockId, BlockId> = HashMap::new();
     doms.insert(graph.entry, graph.entry);
 
@@ -238,12 +249,7 @@ fn compute_immediate_dominators(graph: &Graph) -> Result<HashMap<BlockId, BlockI
     Ok(doms)
 }
 
-fn intersect(
-    a: BlockId,
-    b: BlockId,
-    graph: &Graph,
-    doms: &HashMap<BlockId, BlockId>,
-) -> BlockId {
+fn intersect(a: BlockId, b: BlockId, graph: &Graph, doms: &HashMap<BlockId, BlockId>) -> BlockId {
     let mut block1 = graph.get_node(a);
     let mut block2 = graph.get_node(b);
     while block1.id != block2.id {

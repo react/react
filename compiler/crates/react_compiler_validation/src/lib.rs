@@ -9,22 +9,24 @@ pub mod validate_no_jsx_in_try_statement;
 pub mod validate_no_ref_access_in_render;
 pub mod validate_no_set_state_in_effects;
 pub mod validate_no_set_state_in_render;
-pub mod validate_static_components;
 pub mod validate_preserved_manual_memoization;
+pub mod validate_static_components;
 pub mod validate_use_memo;
 
-pub use validate_context_variable_lvalues::{validate_context_variable_lvalues, validate_context_variable_lvalues_with_errors};
+pub use validate_context_variable_lvalues::{
+    validate_context_variable_lvalues, validate_context_variable_lvalues_with_errors,
+};
 pub use validate_exhaustive_dependencies::validate_exhaustive_dependencies;
 pub use validate_hooks_usage::validate_hooks_usage;
 pub use validate_locals_not_reassigned_after_render::validate_locals_not_reassigned_after_render;
 pub use validate_no_capitalized_calls::validate_no_capitalized_calls;
-pub use validate_no_derived_computations_in_effects::validate_no_derived_computations_in_effects_exp;
 pub use validate_no_derived_computations_in_effects::validate_no_derived_computations_in_effects;
+pub use validate_no_derived_computations_in_effects::validate_no_derived_computations_in_effects_exp;
 pub use validate_no_freezing_known_mutable_functions::validate_no_freezing_known_mutable_functions;
 pub use validate_no_jsx_in_try_statement::validate_no_jsx_in_try_statement;
 pub use validate_no_ref_access_in_render::validate_no_ref_access_in_render;
 pub use validate_no_set_state_in_effects::validate_no_set_state_in_effects;
 pub use validate_no_set_state_in_render::validate_no_set_state_in_render;
-pub use validate_static_components::validate_static_components;
 pub use validate_preserved_manual_memoization::validate_preserved_manual_memoization;
+pub use validate_static_components::validate_static_components;
 pub use validate_use_memo::validate_use_memo;

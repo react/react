@@ -265,7 +265,11 @@ impl Environment {
     /// Create a new MutableRange with a unique ID.
     /// Use this when creating a logically new range (not copying an existing one).
     /// To copy a range preserving its identity, use `.clone()` instead.
-    pub fn new_mutable_range(&mut self, start: EvaluationOrder, end: EvaluationOrder) -> MutableRange {
+    pub fn new_mutable_range(
+        &mut self,
+        start: EvaluationOrder,
+        end: EvaluationOrder,
+    ) -> MutableRange {
         let id = MutableRangeId(self.next_mutable_range_id_counter);
         self.next_mutable_range_id_counter += 1;
         MutableRange { id, start, end }

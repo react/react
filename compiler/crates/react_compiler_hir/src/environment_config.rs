@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::type_config::{TypeConfig, ValueKind};
 use crate::Effect;
+use crate::type_config::{TypeConfig, ValueKind};
 
 /// External function reference (source module + import name).
 /// Corresponds to TS `ExternalFunction`.
@@ -107,7 +107,6 @@ pub struct EnvironmentConfig {
     pub validate_exhaustive_effect_dependencies: ExhaustiveEffectDepsMode,
 
     // TODO: flowTypeProvider — requires JS function callback.
-
     #[serde(default = "default_true")]
     pub enable_optional_dependencies: bool,
     #[serde(default)]

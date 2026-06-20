@@ -21,8 +21,8 @@ use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
-    DeclarationId, EvaluationOrder, HirFunction, IdentifierId,
-    InstructionValue, Pattern, Position, SourceLocation,
+    DeclarationId, EvaluationOrder, HirFunction, IdentifierId, InstructionValue, Pattern, Position,
+    SourceLocation,
 };
 use react_compiler_utils::DisjointSet;
 
@@ -36,7 +36,10 @@ use react_compiler_utils::DisjointSet;
 /// variable. Variables that co-mutate are assigned to the same reactive scope.
 ///
 /// Corresponds to TS `inferReactiveScopeVariables(fn: HIRFunction): void`.
-pub fn infer_reactive_scope_variables(func: &mut HirFunction, env: &mut Environment) -> Result<(), CompilerDiagnostic> {
+pub fn infer_reactive_scope_variables(
+    func: &mut HirFunction,
+    env: &mut Environment,
+) -> Result<(), CompilerDiagnostic> {
     // Phase 1: find disjoint sets of co-mutating identifiers
     let mut scope_identifiers = find_disjoint_mutable_values(func, env);
 
@@ -45,7 +48,9 @@ pub fn infer_reactive_scope_variables(func: &mut HirFunction, env: &mut Environm
     let mut scopes: HashMap<IdentifierId, ScopeState> = HashMap::new();
 
     scope_identifiers.for_each(|identifier_id, group_id| {
-        let ident_range = env.identifiers[identifier_id.0 as usize].mutable_range.clone();
+        let ident_range = env.identifiers[identifier_id.0 as usize]
+            .mutable_range
+            .clone();
         let ident_loc = env.identifiers[identifier_id.0 as usize].loc;
 
         let state = scopes.entry(group_id).or_insert_with(|| {
@@ -67,8 +72,7 @@ pub fn infer_reactive_scope_variables(func: &mut HirFunction, env: &mut Environm
             if scope.range.start == EvaluationOrder(0) {
                 scope.range.start = ident_range.start;
             } else if ident_range.start != EvaluationOrder(0) {
-                scope.range.start =
-                    EvaluationOrder(scope.range.start.0.min(ident_range.start.0));
+                scope.range.start = EvaluationOrder(scope.range.start.0.min(ident_range.start.0));
             }
             scope.range.end = EvaluationOrder(scope.range.end.0.max(ident_range.end.0));
         }
@@ -105,7 +109,8 @@ pub fn infer_reactive_scope_variables(func: &mut HirFunction, env: &mut Environm
             let instr = &func.instructions[instr_id.0 as usize];
             max_instruction = EvaluationOrder(max_instruction.0.max(instr.id.0));
         }
-        max_instruction = EvaluationOrder(max_instruction.0.max(block.terminal.evaluation_order().0));
+        max_instruction =
+            EvaluationOrder(max_instruction.0.max(block.terminal.evaluation_order().0));
     }
 
     for (_group_id, state) in &scopes {
@@ -139,10 +144,7 @@ struct ScopeState {
 
 /// Merge two source locations, preferring non-None values.
 /// Corresponds to TS `mergeLocation`.
-fn merge_location(
-    l: Option<SourceLocation>,
-    r: Option<SourceLocation>,
-) -> Option<SourceLocation> {
+fn merge_location(l: Option<SourceLocation>, r: Option<SourceLocation>) -> Option<SourceLocation> {
     match (l, r) {
         (None, r) => r,
         (l, None) => l,
@@ -170,7 +172,6 @@ fn merge_location(
 // =============================================================================
 // is_mutable / in_range helpers
 // =============================================================================
-
 
 // =============================================================================
 // may_allocate
@@ -261,7 +262,10 @@ fn each_instruction_value_operand(
 /// Find disjoint sets of co-mutating identifier IDs.
 ///
 /// Corresponds to TS `findDisjointMutableValues(fn: HIRFunction): DisjointSet<Identifier>`.
-pub(crate) fn find_disjoint_mutable_values(func: &HirFunction, env: &Environment) -> DisjointSet<IdentifierId> {
+pub(crate) fn find_disjoint_mutable_values(
+    func: &HirFunction,
+    env: &Environment,
+) -> DisjointSet<IdentifierId> {
     let mut scope_identifiers = DisjointSet::<IdentifierId>::new();
     let mut declarations: HashMap<DeclarationId, IdentifierId> = HashMap::new();
 
@@ -280,9 +284,26 @@ pub(crate) fn find_disjoint_mutable_values(func: &HirFunction, env: &Environment
                 .map(|iid| func.instructions[iid.0 as usize].id)
                 .unwrap_or(block.terminal.evaluation_order());
 
-            if phi_range.start.0 + 1 != phi_range.end.0
-                && phi_range.end > first_instr_id
-            {
+            let is_phi_mutated_after_creation = phi_range.start.0 + 1 != phi_range.end.0
+                && phi_range.end > first_instr_id;
+            // A phi operand defined at or after the phi's block is a loop
+            // back-edge: the variable is reassigned within the loop (eg a
+            // counter `a++` or `a = a + 1`). The reassignment must count as
+            // the loop's scope reassigning the variable, so union the phi
+            // with its operands and declaration. Otherwise the variable's
+            // pre-loop value would become a dependency of the scope even
+            // though the scope changes the value as it executes, making the
+            // scope's dependencies unstable (the cached dependency would be
+            // the post-loop value, which can never match the pre-loop value
+            // compared at the top of the scope).
+            let is_loop_carried_reassignment = !is_phi_mutated_after_creation
+                && phi.operands.iter().any(|(_pred_id, operand)| {
+                    env.identifiers[operand.identifier.0 as usize]
+                        .mutable_range
+                        .start
+                        >= first_instr_id
+                });
+            if is_phi_mutated_after_creation || is_loop_carried_reassignment {
                 let mut operands = vec![phi_id];
                 if let Some(&decl_id) = declarations.get(&phi_decl_id) {
                     operands.push(decl_id);
@@ -327,17 +348,13 @@ pub(crate) fn find_disjoint_mutable_values(func: &HirFunction, env: &Environment
                     let decl_id = env.identifiers[place_id.0 as usize].declaration_id;
                     declarations.entry(decl_id).or_insert(place_id);
 
-                    let place_range =
-                        &env.identifiers[place_id.0 as usize].mutable_range;
+                    let place_range = &env.identifiers[place_id.0 as usize].mutable_range;
                     if place_range.end.0 > place_range.start.0 + 1 {
                         operands.push(place_id);
                     }
 
-                    let value_range =
-                        &env.identifiers[value.identifier.0 as usize].mutable_range;
-                    if value_range.contains(instr.id)
-                        && value_range.start.0 > 0
-                    {
+                    let value_range = &env.identifiers[value.identifier.0 as usize].mutable_range;
+                    if value_range.contains(instr.id) && value_range.start.0 > 0 {
                         operands.push(value.identifier);
                     }
                 }
@@ -347,28 +364,22 @@ pub(crate) fn find_disjoint_mutable_values(func: &HirFunction, env: &Environment
                         let decl_id = env.identifiers[place_id.0 as usize].declaration_id;
                         declarations.entry(decl_id).or_insert(*place_id);
 
-                        let place_range =
-                            &env.identifiers[place_id.0 as usize].mutable_range;
+                        let place_range = &env.identifiers[place_id.0 as usize].mutable_range;
                         if place_range.end.0 > place_range.start.0 + 1 {
                             operands.push(*place_id);
                         }
                     }
 
-                    let value_range =
-                        &env.identifiers[value.identifier.0 as usize].mutable_range;
-                    if value_range.contains(instr.id)
-                        && value_range.start.0 > 0
-                    {
+                    let value_range = &env.identifiers[value.identifier.0 as usize].mutable_range;
+                    if value_range.contains(instr.id) && value_range.start.0 > 0 {
                         operands.push(value.identifier);
                     }
                 }
                 InstructionValue::MethodCall { property, .. } => {
                     // For MethodCall: include all mutable operands plus the computed property
-                    let all_operands =
-                        each_instruction_value_operand(&instr.value, env);
+                    let all_operands = each_instruction_value_operand(&instr.value, env);
                     for op_id in &all_operands {
-                        let op_range =
-                            &env.identifiers[op_id.0 as usize].mutable_range;
+                        let op_range = &env.identifiers[op_id.0 as usize].mutable_range;
                         if op_range.contains(instr.id) && op_range.start.0 > 0 {
                             operands.push(*op_id);
                         }
@@ -378,11 +389,9 @@ pub(crate) fn find_disjoint_mutable_values(func: &HirFunction, env: &Environment
                 }
                 _ => {
                     // For all other instructions: include mutable operands
-                    let all_operands =
-                        each_instruction_value_operand(&instr.value, env);
+                    let all_operands = each_instruction_value_operand(&instr.value, env);
                     for op_id in &all_operands {
-                        let op_range =
-                            &env.identifiers[op_id.0 as usize].mutable_range;
+                        let op_range = &env.identifiers[op_id.0 as usize].mutable_range;
                         if op_range.contains(instr.id) && op_range.start.0 > 0 {
                             operands.push(*op_id);
                         }

@@ -99,25 +99,21 @@ fn collect_scope_info(func: &HirFunction, env: &Environment) -> ScopeInfo {
     let mut scope_ends_map: HashMap<EvaluationOrder, Vec<ScopeId>> = HashMap::new();
     let mut place_scopes: HashMap<IdentifierId, ScopeId> = HashMap::new();
 
-    let mut collect_place_scope =
-        |identifier_id: IdentifierId, env: &Environment| {
-            let scope_id = match env.identifiers[identifier_id.0 as usize].scope {
-                Some(s) => s,
-                None => return,
-            };
-            place_scopes.insert(identifier_id, scope_id);
-            let range = &env.scopes[scope_id.0 as usize].range;
-            if range.start != range.end {
-                scope_starts_map
-                    .entry(range.start)
-                    .or_default()
-                    .push(scope_id);
-                scope_ends_map
-                    .entry(range.end)
-                    .or_default()
-                    .push(scope_id);
-            }
+    let mut collect_place_scope = |identifier_id: IdentifierId, env: &Environment| {
+        let scope_id = match env.identifiers[identifier_id.0 as usize].scope {
+            Some(s) => s,
+            None => return,
         };
+        place_scopes.insert(identifier_id, scope_id);
+        let range = &env.scopes[scope_id.0 as usize].range;
+        if range.start != range.end {
+            scope_starts_map
+                .entry(range.start)
+                .or_default()
+                .push(scope_id);
+            scope_ends_map.entry(range.end).or_default().push(scope_id);
+        }
+    };
 
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
@@ -292,8 +288,7 @@ fn get_overlapping_reactive_scopes(
             // Visit operands
             let is_func_or_method = matches!(
                 &instr.value,
-                InstructionValue::FunctionExpression { .. }
-                    | InstructionValue::ObjectMethod { .. }
+                InstructionValue::FunctionExpression { .. } | InstructionValue::ObjectMethod { .. }
             );
             let operand_ids = each_instruction_operand_ids_with_types(instr, env);
             for (op_id, type_) in &operand_ids {
@@ -353,7 +348,8 @@ pub fn merge_overlapping_reactive_scopes_hir(func: &mut HirFunction, env: &mut E
     // When scope.range is updated, ALL identifiers referencing that range object
     // automatically see the new values. We use MutableRangeId to identify which
     // identifiers share the same logical range as a root scope.
-    let mut original_root_range_ids: HashMap<ScopeId, react_compiler_hir::MutableRangeId> = HashMap::new();
+    let mut original_root_range_ids: HashMap<ScopeId, react_compiler_hir::MutableRangeId> =
+        HashMap::new();
     for (_, root_id) in &scope_groups {
         if !original_root_range_ids.contains_key(root_id) {
             let range_id = env.scopes[root_id.0 as usize].range.id;
@@ -410,9 +406,9 @@ fn each_instruction_operand_ids_with_types(
     visitors::each_instruction_operand(instr, env)
         .into_iter()
         .map(|p| {
-            let type_ = env.types[env.identifiers[p.identifier.0 as usize].type_.0 as usize].clone();
+            let type_ =
+                env.types[env.identifiers[p.identifier.0 as usize].type_.0 as usize].clone();
             (p.identifier, type_)
         })
         .collect()
 }
-

@@ -133,8 +133,8 @@ fn collect_promotable_block(
                     state.pruned.insert(
                         identifier.declaration_id,
                         PrunedInfo {
-                        active_scopes: active_scopes.clone(),
-                        used_outside_scope: false,
+                            active_scopes: active_scopes.clone(),
+                            used_outside_scope: false,
                         },
                     );
                 }
@@ -1212,4 +1212,3 @@ fn promote_identifier(identifier_id: IdentifierId, state: &mut State, env: &mut 
     }
     state.promoted.insert(decl_id);
 }
-

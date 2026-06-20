@@ -10,9 +10,9 @@
 
 use std::collections::HashMap;
 
-use crate::type_config::{AliasingEffectConfig, AliasingSignatureConfig, ValueKind, ValueReason};
 use crate::Effect;
 use crate::Type;
+use crate::type_config::{AliasingEffectConfig, AliasingSignatureConfig, ValueKind, ValueReason};
 
 // =============================================================================
 // Shape ID constants (matching TS ObjectShape.ts)
@@ -240,11 +240,7 @@ pub fn add_function(
 
 /// Add a hook to a ShapeRegistry.
 /// Returns a `Type::Function` representing the added hook.
-pub fn add_hook(
-    registry: &mut ShapeRegistry,
-    sig: HookSignatureBuilder,
-    id: Option<&str>,
-) -> Type {
+pub fn add_hook(registry: &mut ShapeRegistry, sig: HookSignatureBuilder, id: Option<&str>) -> Type {
     let shape_id = id.map(|s| s.to_string()).unwrap_or_else(next_anon_id);
     let return_type = sig.return_type.clone();
     add_shape(

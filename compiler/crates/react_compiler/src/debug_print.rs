@@ -43,7 +43,8 @@ impl<'a> DebugPrinter<'a> {
         self.fmt.line(&format!("fn_type: {:?}", func.fn_type));
         self.fmt.line(&format!("generator: {}", func.generator));
         self.fmt.line(&format!("is_async: {}", func.is_async));
-        self.fmt.line(&format!("loc: {}", print::format_loc(&func.loc)));
+        self.fmt
+            .line(&format!("loc: {}", print::format_loc(&func.loc)));
 
         // params
         self.fmt.line("params:");
@@ -83,7 +84,8 @@ impl<'a> DebugPrinter<'a> {
                 self.fmt.line("aliasingEffects:");
                 self.fmt.indent();
                 for (i, eff) in effects.iter().enumerate() {
-                    self.fmt.line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
+                    self.fmt
+                        .line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
                 }
                 self.fmt.dedent();
             }
@@ -127,7 +129,8 @@ impl<'a> DebugPrinter<'a> {
         block: &BasicBlock,
         instructions: &[Instruction],
     ) {
-        self.fmt.line(&format!("bb{} ({}):", block_id.0, block.kind));
+        self.fmt
+            .line(&format!("bb{} ({}):", block_id.0, block.kind));
         self.fmt.indent();
 
         // preds
@@ -223,13 +226,15 @@ impl<'a> DebugPrinter<'a> {
                 self.fmt.line("effects:");
                 self.fmt.indent();
                 for (i, eff) in effects.iter().enumerate() {
-                    self.fmt.line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
+                    self.fmt
+                        .line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
                 }
                 self.fmt.dedent();
             }
             None => self.fmt.line("effects: null"),
         }
-        self.fmt.line(&format!("loc: {}", print::format_loc(&instr.loc)));
+        self.fmt
+            .line(&format!("loc: {}", print::format_loc(&instr.loc)));
         self.fmt.dedent();
         self.fmt.line("}");
     }
@@ -346,14 +351,16 @@ impl<'a> DebugPrinter<'a> {
                 self.fmt.line("Return {");
                 self.fmt.indent();
                 self.fmt.line(&format!("id: {}", id.0));
-                self.fmt.line(&format!("returnVariant: {:?}", return_variant));
+                self.fmt
+                    .line(&format!("returnVariant: {:?}", return_variant));
                 self.fmt.format_place_field("value", value);
                 match effects {
                     Some(e) => {
                         self.fmt.line("effects:");
                         self.fmt.indent();
                         for (i, eff) in e.iter().enumerate() {
-                            self.fmt.line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
+                            self.fmt
+                                .line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
                         }
                         self.fmt.dedent();
                     }
@@ -402,10 +409,8 @@ impl<'a> DebugPrinter<'a> {
                             self.fmt.line("}");
                         }
                         None => {
-                            self.fmt.line(&format!(
-                                "[{}] Default {{ block: bb{} }}",
-                                i, case.block.0
-                            ));
+                            self.fmt
+                                .line(&format!("[{}] Default {{ block: bb{} }}", i, case.block.0));
                         }
                     }
                 }
@@ -566,7 +571,8 @@ impl<'a> DebugPrinter<'a> {
                 self.fmt.line("MaybeThrow {");
                 self.fmt.indent();
                 self.fmt.line(&format!("id: {}", id.0));
-                self.fmt.line(&format!("continuation: bb{}", continuation.0));
+                self.fmt
+                    .line(&format!("continuation: bb{}", continuation.0));
                 self.fmt.line(&format!(
                     "handler: {}",
                     match handler {
@@ -579,7 +585,8 @@ impl<'a> DebugPrinter<'a> {
                         self.fmt.line("effects:");
                         self.fmt.indent();
                         for (i, eff) in e.iter().enumerate() {
-                            self.fmt.line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
+                            self.fmt
+                                .line(&format!("[{}] {}", i, self.fmt.format_effect(eff)));
                         }
                         self.fmt.dedent();
                     }
@@ -686,10 +693,7 @@ pub fn format_errors(error: &CompilerError) -> String {
 /// Format an HIR function into a reactive PrintFormatter.
 /// This bridges the two debug printers so inner functions in FunctionExpression/ObjectMethod
 /// can be printed within the reactive function output.
-pub fn format_hir_function_into(
-    reactive_fmt: &mut PrintFormatter,
-    func: &HirFunction,
-) {
+pub fn format_hir_function_into(reactive_fmt: &mut PrintFormatter, func: &HirFunction) {
     // Create a temporary DebugPrinter that shares the same environment
     let mut printer = DebugPrinter {
         fmt: PrintFormatter {

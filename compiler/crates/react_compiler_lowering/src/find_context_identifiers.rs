@@ -196,7 +196,11 @@ fn walk_lval_for_reassignment(
             // Interior mutability - not a variable reassignment
         }
         PatternLike::TSAsExpression(node) => {
-            record_unsupported_lval(visitor.env, "TSAsExpression", convert_opt_loc(&node.base.loc))?;
+            record_unsupported_lval(
+                visitor.env,
+                "TSAsExpression",
+                convert_opt_loc(&node.base.loc),
+            )?;
         }
         PatternLike::TSSatisfiesExpression(node) => {
             record_unsupported_lval(

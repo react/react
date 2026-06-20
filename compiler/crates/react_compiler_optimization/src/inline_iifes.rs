@@ -416,4 +416,3 @@ fn promote_temporary(env: &mut Environment, identifier_id: IdentifierId) {
     env.identifiers[identifier_id.0 as usize].name =
         Some(IdentifierName::Promoted(format!("#t{}", decl_id.0)));
 }
-

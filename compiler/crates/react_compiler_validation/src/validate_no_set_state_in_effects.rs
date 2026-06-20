@@ -20,10 +20,10 @@ use react_compiler_diagnostics::{
 use react_compiler_hir::dominator::{compute_post_dominator_tree, post_dominator_frontier};
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
-    is_ref_value_type, is_set_state_type, is_use_effect_event_type, is_use_effect_hook_type,
-    is_use_insertion_effect_hook_type, is_use_layout_effect_hook_type, is_use_ref_type,
-    BlockId, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue, PlaceOrSpread,
-    PropertyLiteral, SourceLocation, Terminal, Type, visitors,
+    BlockId, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue,
+    PlaceOrSpread, PropertyLiteral, SourceLocation, Terminal, Type, is_ref_value_type,
+    is_set_state_type, is_use_effect_event_type, is_use_effect_hook_type,
+    is_use_insertion_effect_hook_type, is_use_layout_effect_hook_type, is_use_ref_type, visitors,
 };
 
 pub fn validate_no_set_state_in_effects(
@@ -81,10 +81,9 @@ pub fn validate_no_set_state_in_effects(
                         }
                     }
                 }
-                InstructionValue::MethodCall {
-                    property, args, ..
-                } => {
-                    let prop_type = &types[identifiers[property.identifier.0 as usize].type_.0 as usize];
+                InstructionValue::MethodCall { property, args, .. } => {
+                    let prop_type =
+                        &types[identifiers[property.identifier.0 as usize].type_.0 as usize];
                     if is_use_effect_event_type(prop_type) {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
@@ -100,9 +99,7 @@ pub fn validate_no_set_state_in_effects(
                     {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
-                                if let Some(info) =
-                                    set_state_functions.get(&arg_place.identifier)
-                                {
+                                if let Some(info) = set_state_functions.get(&arg_place.identifier) {
                                     push_error(&mut errors, info, enable_verbose);
                                 }
                             }
@@ -110,7 +107,8 @@ pub fn validate_no_set_state_in_effects(
                     }
                 }
                 InstructionValue::CallExpression { callee, args, .. } => {
-                    let callee_type = &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
+                    let callee_type =
+                        &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
                     if is_use_effect_event_type(callee_type) {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
@@ -126,9 +124,7 @@ pub fn validate_no_set_state_in_effects(
                     {
                         if let Some(first_arg) = args.first() {
                             if let PlaceOrSpread::Place(arg_place) = first_arg {
-                                if let Some(info) =
-                                    set_state_functions.get(&arg_place.identifier)
-                                {
+                                if let Some(info) = set_state_functions.get(&arg_place.identifier) {
                                     push_error(&mut errors, info, enable_verbose);
                                 }
                             }
@@ -170,7 +166,11 @@ fn get_identifier_name_with_loc(
         let end_idx = loc.end.index? as usize;
         if start_idx < code.len() && end_idx <= code.len() && start_idx < end_idx {
             let slice = &code[start_idx..end_idx];
-            if !slice.is_empty() && slice.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') {
+            if !slice.is_empty()
+                && slice
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            {
                 return Some(slice.to_string());
             }
         }
@@ -321,23 +321,15 @@ fn create_ref_controlled_block_checker(
             let control_block = &func.body.blocks[frontier_block_id];
             match &control_block.terminal {
                 Terminal::If { test, .. } | Terminal::Branch { test, .. } => {
-                    if is_derived_from_ref(
-                        test.identifier,
-                        ref_derived_values,
-                        identifiers,
-                        types,
-                    ) {
+                    if is_derived_from_ref(test.identifier, ref_derived_values, identifiers, types)
+                    {
                         is_controlled = true;
                         break;
                     }
                 }
                 Terminal::Switch { test, cases, .. } => {
-                    if is_derived_from_ref(
-                        test.identifier,
-                        ref_derived_values,
-                        identifiers,
-                        types,
-                    ) {
+                    if is_derived_from_ref(test.identifier, ref_derived_values, identifiers, types)
+                    {
                         is_controlled = true;
                         break;
                     }
@@ -389,12 +381,7 @@ fn get_set_state_call(
         for (_block_id, block) in &func.body.blocks {
             for phi in &block.phis {
                 let is_phi_derived = phi.operands.values().any(|operand| {
-                    is_derived_from_ref(
-                        operand.identifier,
-                        &ref_derived_values,
-                        identifiers,
-                        types,
-                    )
+                    is_derived_from_ref(operand.identifier, &ref_derived_values, identifiers, types)
                 });
                 if is_phi_derived {
                     ref_derived_values.insert(phi.place.identifier);
@@ -449,7 +436,10 @@ fn get_set_state_call(
     };
 
     let is_ref_controlled_block = |block_id: BlockId| -> bool {
-        ref_controlled_blocks.get(&block_id).copied().unwrap_or(false)
+        ref_controlled_blocks
+            .get(&block_id)
+            .copied()
+            .unwrap_or(false)
     };
 
     // Reset and redo: second pass with control dominator info available
@@ -468,12 +458,7 @@ fn get_set_state_call(
                     continue;
                 }
                 let is_phi_derived = phi.operands.values().any(|operand| {
-                    is_derived_from_ref(
-                        operand.identifier,
-                        &ref_derived_values,
-                        identifiers,
-                        types,
-                    )
+                    is_derived_from_ref(operand.identifier, &ref_derived_values, identifiers, types)
                 });
                 if is_phi_derived {
                     ref_derived_values.insert(phi.place.identifier);
@@ -573,9 +558,15 @@ fn get_set_state_call(
                         // loc.identifierName behavior. Uses declaration_id to find
                         // the original named identifier when SSA creates unnamed copies.
                         let callee_name = get_identifier_name_with_loc(
-                            callee.identifier, identifiers, &callee.loc, source_code,
+                            callee.identifier,
+                            identifiers,
+                            &callee.loc,
+                            source_code,
                         );
-                        return Ok(Some(SetStateInfo { loc: callee.loc, identifier_name: callee_name }));
+                        return Ok(Some(SetStateInfo {
+                            loc: callee.loc,
+                            identifier_name: callee_name,
+                        }));
                     }
                 }
                 _ => {}

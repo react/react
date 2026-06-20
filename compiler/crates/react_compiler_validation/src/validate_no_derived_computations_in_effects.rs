@@ -16,15 +16,14 @@ use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, CompilerErrorDetail, ErrorCategory,
 };
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{
-    is_set_state_type, is_use_effect_hook_type, is_use_ref_type, is_use_state_type,
-    ArrayElement, BlockId, Effect, EvaluationOrder, FunctionId, HirFunction, Identifier,
-    IdentifierId, IdentifierName, InstructionValue, ParamPattern, PlaceOrSpread,
-    ReactFunctionType, ReturnVariant, SourceLocation, Type,
-};
 use react_compiler_hir::visitors::{
-    each_instruction_lvalue_ids,
-    each_instruction_operand as canonical_each_instruction_operand,
+    each_instruction_lvalue_ids, each_instruction_operand as canonical_each_instruction_operand,
+};
+use react_compiler_hir::{
+    ArrayElement, BlockId, Effect, EvaluationOrder, FunctionId, HirFunction, Identifier,
+    IdentifierId, IdentifierName, InstructionValue, ParamPattern, PlaceOrSpread, ReactFunctionType,
+    ReturnVariant, SourceLocation, Type, is_set_state_type, is_use_effect_hook_type,
+    is_use_ref_type, is_use_state_type,
 };
 
 /// Get the user-visible name for an identifier, matching Babel's
@@ -84,7 +83,11 @@ fn get_identifier_name_with_loc(
             }
             if let (Some(start), Some(end)) = (byte_start, byte_end) {
                 let slice = &code[start..end];
-                if !slice.is_empty() && slice.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') {
+                if !slice.is_empty()
+                    && slice
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+                {
                     return Some(slice.to_string());
                 }
             }
@@ -348,19 +351,23 @@ fn maybe_record_set_state_for_instr(
 
         let root = get_root_set_state(lvalue_id, set_state_loads, &mut HashSet::new());
         if let Some(root_id) = root {
-            set_state_usages
-                .entry(root_id)
-                .or_insert_with(|| {
-                    let mut set = HashSet::new();
-                    set.insert(LocKey::from_loc(&instr.lvalue.loc));
-                    set
-                });
+            set_state_usages.entry(root_id).or_insert_with(|| {
+                let mut set = HashSet::new();
+                set.insert(LocKey::from_loc(&instr.lvalue.loc));
+                set
+            });
         }
     }
 }
 
-fn is_mutable_at(env: &Environment, eval_order: EvaluationOrder, identifier_id: IdentifierId) -> bool {
-    env.identifiers[identifier_id.0 as usize].mutable_range.contains(eval_order)
+fn is_mutable_at(
+    env: &Environment,
+    eval_order: EvaluationOrder,
+    identifier_id: IdentifierId,
+) -> bool {
+    env.identifiers[identifier_id.0 as usize]
+        .mutable_range
+        .contains(eval_order)
 }
 
 pub fn validate_no_derived_computations_in_effects_exp(
@@ -473,7 +480,8 @@ fn record_phi_derivations(
         let mut source_ids: indexmap::IndexSet<IdentifierId> = indexmap::IndexSet::new();
 
         for (_block_id, operand) in &phi.operands {
-            if let Some(operand_metadata) = context.derivation_cache.cache.get(&operand.identifier) {
+            if let Some(operand_metadata) = context.derivation_cache.cache.get(&operand.identifier)
+            {
                 type_of_value = join_value(type_of_value, operand_metadata.type_of_value);
                 source_ids.insert(operand.identifier);
             }
@@ -525,22 +533,29 @@ fn record_instruction_derivations(
                 record_phi_derivations(block, context, env);
                 for &inner_instr_id in &block.instructions {
                     let inner_instr = &inner_func.instructions[inner_instr_id.0 as usize];
-                    record_instruction_derivations(inner_instr, context, is_first_pass, inner_func, env)?;
+                    record_instruction_derivations(
+                        inner_instr,
+                        context,
+                        is_first_pass,
+                        inner_func,
+                        env,
+                    )?;
                 }
             }
         }
         InstructionValue::CallExpression { callee, args, .. } => {
             let callee_type = &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
-            if is_use_effect_hook_type(callee_type)
-                && args.len() == 2
-            {
+            if is_use_effect_hook_type(callee_type) && args.len() == 2 {
                 if let (
                     react_compiler_hir::PlaceOrSpread::Place(arg0),
                     react_compiler_hir::PlaceOrSpread::Place(arg1),
                 ) = (&args[0], &args[1])
                 {
                     let effect_function = context.functions.get(&arg0.identifier).copied();
-                    let deps = context.candidate_dependencies.get(&arg1.identifier).cloned();
+                    let deps = context
+                        .candidate_dependencies
+                        .get(&arg1.identifier)
+                        .cloned();
                     if let (Some(effect_func_id), Some(dep_elements)) = (effect_function, deps) {
                         context.effects_cache.insert(
                             arg0.identifier,
@@ -569,16 +584,17 @@ fn record_instruction_derivations(
         }
         InstructionValue::MethodCall { property, args, .. } => {
             let prop_type = &types[identifiers[property.identifier.0 as usize].type_.0 as usize];
-            if is_use_effect_hook_type(prop_type)
-                && args.len() == 2
-            {
+            if is_use_effect_hook_type(prop_type) && args.len() == 2 {
                 if let (
                     react_compiler_hir::PlaceOrSpread::Place(arg0),
                     react_compiler_hir::PlaceOrSpread::Place(arg1),
                 ) = (&args[0], &args[1])
                 {
                     let effect_function = context.functions.get(&arg0.identifier).copied();
-                    let deps = context.candidate_dependencies.get(&arg1.identifier).cloned();
+                    let deps = context
+                        .candidate_dependencies
+                        .get(&arg1.identifier)
+                        .cloned();
                     if let (Some(effect_func_id), Some(dep_elements)) = (effect_function, deps) {
                         context.effects_cache.insert(
                             arg0.identifier,
@@ -616,7 +632,9 @@ fn record_instruction_derivations(
                     _ => None,
                 })
                 .collect();
-            context.candidate_dependencies.insert(lvalue_id, dep_elements);
+            context
+                .candidate_dependencies
+                .insert(lvalue_id, dep_elements);
         }
         _ => {}
     }
@@ -625,7 +643,8 @@ fn record_instruction_derivations(
     for (operand_id, operand_loc) in each_instruction_operand(instr, env) {
         // Track setState usages
         if context.set_state_loads.contains_key(&operand_id) {
-            let root = get_root_set_state(operand_id, &context.set_state_loads, &mut HashSet::new());
+            let root =
+                get_root_set_state(operand_id, &context.set_state_loads, &mut HashSet::new());
             if let Some(root_id) = root {
                 if let Some(usages) = context.set_state_usages.get_mut(&root_id) {
                     usages.insert(LocKey::from_loc(&operand_loc));
@@ -665,8 +684,7 @@ fn record_instruction_derivations(
         if operand.effect.is_mutable() {
             if is_mutable_at(env, instr.id, operand.id) {
                 if let Some(existing) = context.derivation_cache.cache.get_mut(&operand.id) {
-                    existing.type_of_value =
-                        join_value(type_of_value, existing.type_of_value);
+                    existing.type_of_value = join_value(type_of_value, existing.type_of_value);
                 } else {
                     let name = identifiers[operand.id.0 as usize].name.clone();
                     context.derivation_cache.add_derivation_entry(
@@ -798,7 +816,15 @@ fn render_tree(
     props_set: &mut indexmap::IndexSet<String>,
     state_set: &mut indexmap::IndexSet<String>,
 ) -> String {
-    let prefix = format!("{}{}", indent, if is_last { "\u{2514}\u{2500}\u{2500} " } else { "\u{251c}\u{2500}\u{2500} " });
+    let prefix = format!(
+        "{}{}",
+        indent,
+        if is_last {
+            "\u{2514}\u{2500}\u{2500} "
+        } else {
+            "\u{251c}\u{2500}\u{2500} "
+        }
+    );
     let child_indent = format!("{}{}", indent, if is_last { "    " } else { "\u{2502}   " });
 
     let mut result = format!("{}{}", prefix, node.name);
@@ -882,7 +908,11 @@ fn validate_effect(
 
     // Consider setStates in the effect's dependency array as being part of effectSetStateUsages
     for dep in dependencies {
-        let root = get_root_set_state(dep.identifier, &context.set_state_loads, &mut HashSet::new());
+        let root = get_root_set_state(
+            dep.identifier,
+            &context.set_state_loads,
+            &mut HashSet::new(),
+        );
         if let Some(root_id) = root {
             let mut set = HashSet::new();
             set.insert(LocKey::from_loc(&dep.loc));
@@ -915,7 +945,8 @@ fn validate_effect(
             let instr = &effect_function.instructions[instr_id.0 as usize];
 
             // Early return if any instruction derives from a ref
-            let lvalue_type = &types[identifiers[instr.lvalue.identifier.0 as usize].type_.0 as usize];
+            let lvalue_type =
+                &types[identifiers[instr.lvalue.identifier.0 as usize].type_.0 as usize];
             if is_use_ref_type(lvalue_type) {
                 return;
             }
@@ -948,9 +979,7 @@ fn validate_effect(
                 InstructionValue::CallExpression { callee, args, .. } => {
                     let callee_type =
                         &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
-                    if is_set_state_type(callee_type)
-                        && args.len() == 1
-                    {
+                    if is_set_state_type(callee_type) && args.len() == 1 {
                         if let react_compiler_hir::PlaceOrSpread::Place(arg0) = &args[0] {
                             let callee_metadata =
                                 context.derivation_cache.cache.get(&callee.identifier);
@@ -964,15 +993,17 @@ fn validate_effect(
                                 continue;
                             }
 
-                            let arg_metadata =
-                                context.derivation_cache.cache.get(&arg0.identifier);
+                            let arg_metadata = context.derivation_cache.cache.get(&arg0.identifier);
                             if let Some(am) = arg_metadata {
                                 // Get the user-visible identifier name, matching Babel's
                                 // loc.identifierName. Falls back to extracting from source code.
                                 let callee_ident_name = get_identifier_name_with_loc(
-                                    callee.identifier, identifiers, &callee.loc, env.code.as_deref(),
+                                    callee.identifier,
+                                    identifiers,
+                                    &callee.loc,
+                                    env.code.as_deref(),
                                 );
-                            effect_derived_set_state_calls.push(DerivedSetStateCall {
+                                effect_derived_set_state_calls.push(DerivedSetStateCall {
                                     callee_loc: callee.loc,
                                     callee_id: callee.identifier,
                                     callee_identifier_name: callee_ident_name,
@@ -1061,7 +1092,10 @@ fn validate_effect(
 
                 // Check cleanup function dependencies
                 let should_skip = if let Some(ref cleanup_deps) = cleanup_function_deps {
-                    derived.source_ids.iter().any(|dep| cleanup_deps.contains(dep))
+                    derived
+                        .source_ids
+                        .iter()
+                        .any(|dep| cleanup_deps.contains(dep))
                 } else {
                     false
                 };
@@ -1161,9 +1195,10 @@ pub fn validate_no_derived_computations_in_effects(
                             if let (PlaceOrSpread::Place(arg0), PlaceOrSpread::Place(arg1)) =
                                 (&args[0], &args[1])
                             {
-                                if let (Some(&func_id), Some(dep_elements)) =
-                                    (functions_map.get(&arg0.identifier), candidate_deps.get(&arg1.identifier))
-                                {
+                                if let (Some(&func_id), Some(dep_elements)) = (
+                                    functions_map.get(&arg0.identifier),
+                                    candidate_deps.get(&arg1.identifier),
+                                ) {
                                     if !dep_elements.is_empty() {
                                         let resolved: Vec<IdentifierId> = dep_elements
                                             .iter()
@@ -1181,9 +1216,10 @@ pub fn validate_no_derived_computations_in_effects(
                             if let (PlaceOrSpread::Place(arg0), PlaceOrSpread::Place(arg1)) =
                                 (&args[0], &args[1])
                             {
-                                if let (Some(&func_id), Some(dep_elements)) =
-                                    (functions_map.get(&arg0.identifier), candidate_deps.get(&arg1.identifier))
-                                {
+                                if let (Some(&func_id), Some(dep_elements)) = (
+                                    functions_map.get(&arg0.identifier),
+                                    candidate_deps.get(&arg1.identifier),
+                                ) {
                                     if !dep_elements.is_empty() {
                                         let resolved: Vec<IdentifierId> = dep_elements
                                             .iter()
@@ -1299,10 +1335,7 @@ fn validate_effect_non_exp(
                         }
                     }
                     if !aggregate.is_empty() {
-                        dep_values.insert(
-                            instr.lvalue.identifier,
-                            aggregate.into_iter().collect(),
-                        );
+                        dep_values.insert(instr.lvalue.identifier, aggregate.into_iter().collect());
                     }
 
                     if let InstructionValue::CallExpression { callee, args, .. } = &instr.value {
@@ -1380,7 +1413,9 @@ fn validate_effect_non_exp(
 /// for resolving function expression context captures.
 fn non_exp_value_operands(value: &InstructionValue) -> Vec<IdentifierId> {
     match value {
-        InstructionValue::ComputedLoad { object, property, .. } => {
+        InstructionValue::ComputedLoad {
+            object, property, ..
+        } => {
             vec![object.identifier, property.identifier]
         }
         InstructionValue::PropertyLoad { object, .. } => vec![object.identifier],

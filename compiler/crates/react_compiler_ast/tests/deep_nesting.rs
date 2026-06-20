@@ -17,9 +17,7 @@ fn statement_nested_beyond_default_recursion_limit_deserializes() {
     let depth = 400;
     let mut expr = r#"{"type":"Identifier","name":"x"}"#.to_string();
     for _ in 0..depth {
-        expr = format!(
-            r#"{{"type":"CallExpression","callee":{expr},"arguments":[]}}"#
-        );
+        expr = format!(r#"{{"type":"CallExpression","callee":{expr},"arguments":[]}}"#);
     }
     let json = format!(
         r#"{{"type":"File","program":{{"type":"Program","sourceType":"module","body":[{{"type":"ExpressionStatement","expression":{expr}}}],"directives":[]}}}}"#

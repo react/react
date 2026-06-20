@@ -11,11 +11,11 @@ use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
 };
 use react_compiler_hir::environment::Environment;
+use react_compiler_hir::visitors::{each_instruction_value_operand, each_terminal_operand};
 use react_compiler_hir::{
     AliasingEffect, Effect, HirFunction, Identifier, IdentifierId, IdentifierName,
     InstructionValue, Place, Type,
 };
-use react_compiler_hir::visitors::{each_instruction_value_operand, each_terminal_operand};
 
 /// Information about a known mutation effect: which identifier is mutated, and
 /// the source location of the mutation.
@@ -76,8 +76,7 @@ fn check_no_freezing_known_mutable_functions(
                         let mutation_info = mutation_info.clone();
                         context_mutation_effects
                             .insert(instr.lvalue.identifier, mutation_info.clone());
-                        context_mutation_effects
-                            .insert(lvalue.place.identifier, mutation_info);
+                        context_mutation_effects.insert(lvalue.place.identifier, mutation_info);
                     }
                 }
 
@@ -122,9 +121,7 @@ fn check_no_freezing_known_mutable_functions(
                                 }
 
                                 AliasingEffect::MutateConditionally { value, .. }
-                                | AliasingEffect::MutateTransitiveConditionally {
-                                    value, ..
-                                } => {
+                                | AliasingEffect::MutateTransitiveConditionally { value, .. } => {
                                     // Only propagate existing known mutations for conditional effects
                                     if let Some(known_mutation) =
                                         context_mutation_effects.get(&value.identifier)

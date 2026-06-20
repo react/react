@@ -1,7 +1,7 @@
+use react_compiler_ast::File;
 use react_compiler_ast::expressions::Identifier as AstIdentifier;
 use react_compiler_ast::patterns::PatternLike;
 use react_compiler_ast::statements::BlockStatement;
-use react_compiler_ast::File;
 use react_compiler_diagnostics::SourceLocation;
 use react_compiler_hir::ReactFunctionType;
 use serde::Serialize;
@@ -30,7 +30,12 @@ pub struct LoggerPosition {
 
 impl LoggerSourceLocation {
     /// Create from a diagnostics SourceLocation, adding index and filename.
-    pub fn from_loc(loc: &SourceLocation, filename: Option<&str>, start_index: Option<u32>, end_index: Option<u32>) -> Self {
+    pub fn from_loc(
+        loc: &SourceLocation,
+        filename: Option<&str>,
+        start_index: Option<u32>,
+        end_index: Option<u32>,
+    ) -> Self {
         Self {
             start: LoggerPosition {
                 line: loc.start.line,

@@ -845,7 +845,7 @@ pub enum PrimitiveValue {
     Undefined,
     Boolean(bool),
     Number(FloatValue),
-    String(String),
+    String(react_compiler_diagnostics::JsString),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1036,15 +1036,7 @@ impl IdentifierName {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Effect {
     #[serde(rename = "<unknown>")]
     Unknown,

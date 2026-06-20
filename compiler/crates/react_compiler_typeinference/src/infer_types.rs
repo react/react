@@ -13,17 +13,16 @@ use std::collections::HashMap;
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::{Environment, is_hook_name};
 use react_compiler_hir::object_shape::{
-    ShapeRegistry,
-    BUILT_IN_PROPS_ID, BUILT_IN_ARRAY_ID, BUILT_IN_FUNCTION_ID, BUILT_IN_JSX_ID,
-    BUILT_IN_OBJECT_ID, BUILT_IN_USE_REF_ID, BUILT_IN_REF_VALUE_ID, BUILT_IN_MIXED_READONLY_ID,
-    BUILT_IN_SET_STATE_ID,
+    BUILT_IN_ARRAY_ID, BUILT_IN_FUNCTION_ID, BUILT_IN_JSX_ID, BUILT_IN_MIXED_READONLY_ID,
+    BUILT_IN_OBJECT_ID, BUILT_IN_PROPS_ID, BUILT_IN_REF_VALUE_ID, BUILT_IN_SET_STATE_ID,
+    BUILT_IN_USE_REF_ID, ShapeRegistry,
 };
 use react_compiler_hir::{
     ArrayPatternElement, BinaryOperator, FunctionId, HirFunction, Identifier, IdentifierId,
-    IdentifierName, InstructionId, InstructionKind, InstructionValue, JsxAttribute, LoweredFunction,
-    ManualMemoDependencyRoot, NonLocalBinding, ObjectPropertyKey, ObjectPropertyOrSpread,
-    ParamPattern, Pattern, PropertyLiteral, PropertyNameKind, ReactFunctionType, SourceLocation,
-    Terminal, Type, TypeId,
+    IdentifierName, InstructionId, InstructionKind, InstructionValue, JsxAttribute,
+    LoweredFunction, ManualMemoDependencyRoot, NonLocalBinding, ObjectPropertyKey,
+    ObjectPropertyOrSpread, ParamPattern, Pattern, PropertyLiteral, PropertyNameKind,
+    ReactFunctionType, SourceLocation, Terminal, Type, TypeId,
 };
 use react_compiler_ssa::enter_ssa::placeholder_function;
 
@@ -31,7 +30,10 @@ use react_compiler_ssa::enter_ssa::placeholder_function;
 // Public API
 // =============================================================================
 
-pub fn infer_types(func: &mut HirFunction, env: &mut Environment) -> Result<(), CompilerDiagnostic> {
+pub fn infer_types(
+    func: &mut HirFunction,
+    env: &mut Environment,
+) -> Result<(), CompilerDiagnostic> {
     let enable_treat_ref_like_identifiers_as_refs =
         env.config.enable_treat_ref_like_identifiers_as_refs;
     let enable_treat_set_identifiers_as_state_setters =
@@ -99,7 +101,8 @@ fn pre_resolve_globals_recursive(
     // borrow conflicts (we need &env.functions to read, then &mut env for
     // get_global_declaration).
     let inner = &env.functions[func_id.0 as usize];
-    let mut load_globals: Vec<(InstructionId, NonLocalBinding, Option<SourceLocation>)> = Vec::new();
+    let mut load_globals: Vec<(InstructionId, NonLocalBinding, Option<SourceLocation>)> =
+        Vec::new();
     let mut child_func_ids: Vec<FunctionId> = Vec::new();
 
     for block in inner.body.blocks.values() {
@@ -173,7 +176,10 @@ fn resolve_property_type(
         _ => {
             // No shape, but if property name is hook-like, return hook type
             if let Some(hook_type) = custom_hook_type {
-                if let PropertyNameKind::Literal { value: PropertyLiteral::String(s) } = property_name {
+                if let PropertyNameKind::Literal {
+                    value: PropertyLiteral::String(s),
+                } = property_name
+                {
                     if is_hook_name(s) {
                         return Some(hook_type.clone());
                     }
@@ -187,7 +193,10 @@ fn resolve_property_type(
         None => {
             // Object/Function with no shapeId: TS getPropertyType falls through
             // to hook-name check, TS getFallthroughPropertyType returns null
-            if let PropertyNameKind::Literal { value: PropertyLiteral::String(s) } = property_name {
+            if let PropertyNameKind::Literal {
+                value: PropertyLiteral::String(s),
+            } = property_name
+            {
                 if is_hook_name(s) {
                     return custom_hook_type.cloned();
                 }
@@ -255,10 +264,7 @@ fn type_equals(a: &Type, b: &Type) -> bool {
         (Type::Primitive, Type::Primitive) => true,
         (Type::Poly, Type::Poly) => true,
         (Type::ObjectMethod, Type::ObjectMethod) => true,
-        (
-            Type::Object { shape_id: sa },
-            Type::Object { shape_id: sb },
-        ) => sa == sb,
+        (Type::Object { shape_id: sa }, Type::Object { shape_id: sb }) => sa == sb,
         (
             Type::Function {
                 return_type: ra, ..
@@ -271,11 +277,7 @@ fn type_equals(a: &Type, b: &Type) -> bool {
     }
 }
 
-fn set_name(
-    names: &mut HashMap<IdentifierId, String>,
-    id: IdentifierId,
-    source: &Identifier,
-) {
+fn set_name(names: &mut HashMap<IdentifierId, String>, id: IdentifierId, source: &Identifier) {
     if let Some(IdentifierName::Named(ref name)) = source.name {
         names.insert(id, name.clone());
     }
@@ -295,7 +297,11 @@ fn get_name(names: &HashMap<IdentifierId, String>, id: IdentifierId) -> String {
 /// `generate_for_function_id` with split borrows instead, because the
 /// take/replace pattern on `env.functions` requires separate `&mut` access
 /// to different fields.
-fn generate(func: &HirFunction, env: &mut Environment, unifier: &mut Unifier) -> Result<(), CompilerDiagnostic> {
+fn generate(
+    func: &HirFunction,
+    env: &mut Environment,
+    unifier: &mut Unifier,
+) -> Result<(), CompilerDiagnostic> {
     // Component params
     if func.fn_type == ReactFunctionType::Component {
         if let Some(first) = func.params.first() {
@@ -391,9 +397,19 @@ fn generate(func: &HirFunction, env: &mut Environment, unifier: &mut Unifier) ->
     // Unify return types
     let returns_type = get_type(func.returns.identifier, &env.identifiers);
     if return_types.len() > 1 {
-        unifier.unify(returns_type, Type::Phi { operands: return_types }, &env.shapes)?;
+        unifier.unify(
+            returns_type,
+            Type::Phi {
+                operands: return_types,
+            },
+            &env.shapes,
+        )?;
     } else if return_types.len() == 1 {
-        unifier.unify(returns_type, return_types.into_iter().next().unwrap(), &env.shapes)?;
+        unifier.unify(
+            returns_type,
+            return_types.into_iter().next().unwrap(),
+            &env.shapes,
+        )?;
     }
     Ok(())
 }
@@ -409,10 +425,7 @@ fn generate_for_function_id(
     unifier: &mut Unifier,
 ) -> Result<(), CompilerDiagnostic> {
     // Take the function out temporarily to avoid borrow conflicts
-    let inner = std::mem::replace(
-        &mut functions[func_id.0 as usize],
-        placeholder_function(),
-    );
+    let inner = std::mem::replace(&mut functions[func_id.0 as usize], placeholder_function());
 
     // Process params for component inner functions
     if inner.fn_type == ReactFunctionType::Component {
@@ -460,7 +473,18 @@ fn generate_for_function_id(
 
         for &instr_id in &block.instructions {
             let instr = &inner.instructions[instr_id.0 as usize];
-            generate_instruction_types(instr, instr_id, func_id.0, identifiers, types, functions, &mut inner_names, global_types, shapes, unifier)?;
+            generate_instruction_types(
+                instr,
+                instr_id,
+                func_id.0,
+                identifiers,
+                types,
+                functions,
+                &mut inner_names,
+                global_types,
+                shapes,
+                unifier,
+            )?;
         }
 
         if let Terminal::Return { ref value, .. } = block.terminal {
@@ -516,7 +540,11 @@ fn generate_instruction_types(
         }
 
         InstructionValue::LoadLocal { place, .. } => {
-            set_name(names, instr.lvalue.identifier, &identifiers[place.identifier.0 as usize]);
+            set_name(
+                names,
+                instr.lvalue.identifier,
+                &identifiers[place.identifier.0 as usize],
+            );
             let place_type = get_type(place.identifier, identifiers);
             unifier.unify(left, place_type, shapes)?;
         }
@@ -641,7 +669,9 @@ fn generate_instruction_types(
             )?;
         }
 
-        InstructionValue::PropertyLoad { object, property, .. } => {
+        InstructionValue::PropertyLoad {
+            object, property, ..
+        } => {
             let object_type = get_type(object.identifier, identifiers);
             let object_name = get_name(names, object.identifier);
             unifier.unify(
@@ -657,7 +687,9 @@ fn generate_instruction_types(
             )?;
         }
 
-        InstructionValue::ComputedLoad { object, property, .. } => {
+        InstructionValue::ComputedLoad {
+            object, property, ..
+        } => {
             let object_type = get_type(object.identifier, identifiers);
             let object_name = get_name(names, object.identifier);
             let prop_type = get_type(property.identifier, identifiers);
@@ -689,72 +721,70 @@ fn generate_instruction_types(
             unifier.unify(left, return_type, shapes)?;
         }
 
-        InstructionValue::Destructure { lvalue, value, .. } => {
-            match &lvalue.pattern {
-                Pattern::Array(array_pattern) => {
-                    for (i, item) in array_pattern.items.iter().enumerate() {
-                        match item {
-                            ArrayPatternElement::Place(place) => {
-                                let item_type = get_type(place.identifier, identifiers);
-                                let value_type = get_type(value.identifier, identifiers);
-                                let object_name = get_name(names, value.identifier);
-                                unifier.unify(
-                                    item_type,
-                                    Type::Property {
-                                        object_type: Box::new(value_type),
-                                        object_name,
-                                        property_name: PropertyNameKind::Literal {
-                                            value: PropertyLiteral::String(i.to_string()),
-                                        },
+        InstructionValue::Destructure { lvalue, value, .. } => match &lvalue.pattern {
+            Pattern::Array(array_pattern) => {
+                for (i, item) in array_pattern.items.iter().enumerate() {
+                    match item {
+                        ArrayPatternElement::Place(place) => {
+                            let item_type = get_type(place.identifier, identifiers);
+                            let value_type = get_type(value.identifier, identifiers);
+                            let object_name = get_name(names, value.identifier);
+                            unifier.unify(
+                                item_type,
+                                Type::Property {
+                                    object_type: Box::new(value_type),
+                                    object_name,
+                                    property_name: PropertyNameKind::Literal {
+                                        value: PropertyLiteral::String(i.to_string()),
                                     },
-                                    shapes,
-                                )?;
-                            }
-                            ArrayPatternElement::Spread(spread) => {
-                                let spread_type = get_type(spread.place.identifier, identifiers);
-                                unifier.unify(
-                                    spread_type,
-                                    Type::Object {
-                                        shape_id: Some(BUILT_IN_ARRAY_ID.to_string()),
-                                    },
-                                    shapes,
-                                )?;
-                            }
-                            ArrayPatternElement::Hole => {
-                                continue;
-                            }
+                                },
+                                shapes,
+                            )?;
                         }
-                    }
-                }
-                Pattern::Object(object_pattern) => {
-                    for prop in &object_pattern.properties {
-                        if let ObjectPropertyOrSpread::Property(obj_prop) = prop {
-                            match &obj_prop.key {
-                                ObjectPropertyKey::Identifier { name }
-                                | ObjectPropertyKey::String { name } => {
-                                    let prop_place_type =
-                                        get_type(obj_prop.place.identifier, identifiers);
-                                    let value_type = get_type(value.identifier, identifiers);
-                                    let object_name = get_name(names, value.identifier);
-                                    unifier.unify(
-                                        prop_place_type,
-                                        Type::Property {
-                                            object_type: Box::new(value_type),
-                                            object_name,
-                                            property_name: PropertyNameKind::Literal {
-                                                value: PropertyLiteral::String(name.clone()),
-                                            },
-                                        },
-                                        shapes,
-                                    )?;
-                                }
-                                _ => {}
-                            }
+                        ArrayPatternElement::Spread(spread) => {
+                            let spread_type = get_type(spread.place.identifier, identifiers);
+                            unifier.unify(
+                                spread_type,
+                                Type::Object {
+                                    shape_id: Some(BUILT_IN_ARRAY_ID.to_string()),
+                                },
+                                shapes,
+                            )?;
+                        }
+                        ArrayPatternElement::Hole => {
+                            continue;
                         }
                     }
                 }
             }
-        }
+            Pattern::Object(object_pattern) => {
+                for prop in &object_pattern.properties {
+                    if let ObjectPropertyOrSpread::Property(obj_prop) = prop {
+                        match &obj_prop.key {
+                            ObjectPropertyKey::Identifier { name }
+                            | ObjectPropertyKey::String { name } => {
+                                let prop_place_type =
+                                    get_type(obj_prop.place.identifier, identifiers);
+                                let value_type = get_type(value.identifier, identifiers);
+                                let object_name = get_name(names, value.identifier);
+                                unifier.unify(
+                                    prop_place_type,
+                                    Type::Property {
+                                        object_type: Box::new(value_type),
+                                        object_name,
+                                        property_name: PropertyNameKind::Literal {
+                                            value: PropertyLiteral::String(name.clone()),
+                                        },
+                                    },
+                                    shapes,
+                                )?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        },
 
         InstructionValue::TypeCastExpression { value, .. } => {
             let value_type = get_type(value.identifier, identifiers);
@@ -770,7 +800,15 @@ fn generate_instruction_types(
             ..
         } => {
             // Recurse into inner function first
-            generate_for_function_id(*func_id, identifiers, types, functions, global_types, shapes, unifier)?;
+            generate_for_function_id(
+                *func_id,
+                identifiers,
+                types,
+                functions,
+                global_types,
+                shapes,
+                unifier,
+            )?;
             // Get the inner function's return type
             let inner_func = &functions[func_id.0 as usize];
             let inner_return_type = get_type(inner_func.returns.identifier, identifiers);
@@ -793,7 +831,15 @@ fn generate_instruction_types(
             lowered_func: LoweredFunction { func: func_id },
             ..
         } => {
-            generate_for_function_id(*func_id, identifiers, types, functions, global_types, shapes, unifier)?;
+            generate_for_function_id(
+                *func_id,
+                identifiers,
+                types,
+                functions,
+                global_types,
+                shapes,
+                unifier,
+            )?;
             unifier.unify(left, Type::ObjectMethod, shapes)?;
         }
 
@@ -963,56 +1009,56 @@ fn apply_instruction_lvalues(
     unifier: &Unifier,
 ) {
     match value {
-        InstructionValue::StoreLocal { lvalue, .. } | InstructionValue::StoreContext { lvalue, .. } => {
+        InstructionValue::StoreLocal { lvalue, .. }
+        | InstructionValue::StoreContext { lvalue, .. } => {
             resolve_identifier(lvalue.place.identifier, identifiers, types, unifier);
         }
-        InstructionValue::DeclareLocal { lvalue, .. } | InstructionValue::DeclareContext { lvalue, .. } => {
+        InstructionValue::DeclareLocal { lvalue, .. }
+        | InstructionValue::DeclareContext { lvalue, .. } => {
             resolve_identifier(lvalue.place.identifier, identifiers, types, unifier);
         }
-        InstructionValue::Destructure { lvalue, .. } => {
-            match &lvalue.pattern {
-                Pattern::Array(array_pattern) => {
-                    for item in &array_pattern.items {
-                        match item {
-                            ArrayPatternElement::Place(place) => {
-                                resolve_identifier(place.identifier, identifiers, types, unifier);
-                            }
-                            ArrayPatternElement::Spread(spread) => {
-                                resolve_identifier(
-                                    spread.place.identifier,
-                                    identifiers,
-                                    types,
-                                    unifier,
-                                );
-                            }
-                            ArrayPatternElement::Hole => {}
+        InstructionValue::Destructure { lvalue, .. } => match &lvalue.pattern {
+            Pattern::Array(array_pattern) => {
+                for item in &array_pattern.items {
+                    match item {
+                        ArrayPatternElement::Place(place) => {
+                            resolve_identifier(place.identifier, identifiers, types, unifier);
                         }
+                        ArrayPatternElement::Spread(spread) => {
+                            resolve_identifier(
+                                spread.place.identifier,
+                                identifiers,
+                                types,
+                                unifier,
+                            );
+                        }
+                        ArrayPatternElement::Hole => {}
                     }
                 }
-                Pattern::Object(object_pattern) => {
-                    for prop in &object_pattern.properties {
-                        match prop {
-                            ObjectPropertyOrSpread::Property(obj_prop) => {
-                                resolve_identifier(
-                                    obj_prop.place.identifier,
-                                    identifiers,
-                                    types,
-                                    unifier,
-                                );
-                            }
-                            ObjectPropertyOrSpread::Spread(spread) => {
-                                resolve_identifier(
-                                    spread.place.identifier,
-                                    identifiers,
-                                    types,
-                                    unifier,
-                                );
-                            }
+            }
+            Pattern::Object(object_pattern) => {
+                for prop in &object_pattern.properties {
+                    match prop {
+                        ObjectPropertyOrSpread::Property(obj_prop) => {
+                            resolve_identifier(
+                                obj_prop.place.identifier,
+                                identifiers,
+                                types,
+                                unifier,
+                            );
+                        }
+                        ObjectPropertyOrSpread::Spread(spread) => {
+                            resolve_identifier(
+                                spread.place.identifier,
+                                identifiers,
+                                types,
+                                unifier,
+                            );
                         }
                     }
                 }
             }
-        }
+        },
         _ => {}
     }
 }
@@ -1102,14 +1148,18 @@ fn apply_instruction_operands(
         InstructionValue::PropertyLoad { object, .. } => {
             resolve_identifier(object.identifier, identifiers, types, unifier);
         }
-        InstructionValue::PropertyStore { object, value: val, .. } => {
+        InstructionValue::PropertyStore {
+            object, value: val, ..
+        } => {
             resolve_identifier(object.identifier, identifiers, types, unifier);
             resolve_identifier(val.identifier, identifiers, types, unifier);
         }
         InstructionValue::PropertyDelete { object, .. } => {
             resolve_identifier(object.identifier, identifiers, types, unifier);
         }
-        InstructionValue::ComputedLoad { object, property, .. } => {
+        InstructionValue::ComputedLoad {
+            object, property, ..
+        } => {
             resolve_identifier(object.identifier, identifiers, types, unifier);
             resolve_identifier(property.identifier, identifiers, types, unifier);
         }
@@ -1123,7 +1173,9 @@ fn apply_instruction_operands(
             resolve_identifier(property.identifier, identifiers, types, unifier);
             resolve_identifier(val.identifier, identifiers, types, unifier);
         }
-        InstructionValue::ComputedDelete { object, property, .. } => {
+        InstructionValue::ComputedDelete {
+            object, property, ..
+        } => {
             resolve_identifier(object.identifier, identifiers, types, unifier);
             resolve_identifier(property.identifier, identifiers, types, unifier);
         }
@@ -1156,7 +1208,10 @@ fn apply_instruction_operands(
             }
         }
         InstructionValue::JsxExpression {
-            tag, props, children, ..
+            tag,
+            props,
+            children,
+            ..
         } => {
             if let react_compiler_hir::JsxTag::Place(p) = tag {
                 resolve_identifier(p.identifier, identifiers, types, unifier);
@@ -1190,8 +1245,12 @@ fn apply_instruction_operands(
                 resolve_identifier(sub.identifier, identifiers, types, unifier);
             }
         }
-        InstructionValue::PrefixUpdate { value: val, lvalue, .. }
-        | InstructionValue::PostfixUpdate { value: val, lvalue, .. } => {
+        InstructionValue::PrefixUpdate {
+            value: val, lvalue, ..
+        }
+        | InstructionValue::PostfixUpdate {
+            value: val, lvalue, ..
+        } => {
             resolve_identifier(val.identifier, identifiers, types, unifier);
             resolve_identifier(lvalue.identifier, identifiers, types, unifier);
         }
@@ -1265,7 +1324,12 @@ impl Unifier {
         }
     }
 
-    fn unify(&mut self, t_a: Type, t_b: Type, shapes: &ShapeRegistry) -> Result<(), CompilerDiagnostic> {
+    fn unify(
+        &mut self,
+        t_a: Type,
+        t_b: Type,
+        shapes: &ShapeRegistry,
+    ) -> Result<(), CompilerDiagnostic> {
         self.unify_impl(t_a, t_b, shapes)
     }
 
@@ -1351,7 +1415,12 @@ impl Unifier {
         Ok(())
     }
 
-    fn bind_variable_to(&mut self, v: Type, ty: Type, shapes: &ShapeRegistry) -> Result<(), CompilerDiagnostic> {
+    fn bind_variable_to(
+        &mut self,
+        v: Type,
+        ty: Type,
+        shapes: &ShapeRegistry,
+    ) -> Result<(), CompilerDiagnostic> {
         let v_id = match &v {
             Type::TypeVar { id } => *id,
             _ => return Ok(()),

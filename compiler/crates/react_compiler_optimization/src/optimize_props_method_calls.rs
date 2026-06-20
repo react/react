@@ -14,7 +14,7 @@
 //! Analogous to TS `Optimization/OptimizePropsMethodCalls.ts`.
 
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{is_props_type, HirFunction, InstructionValue};
+use react_compiler_hir::{HirFunction, InstructionValue, is_props_type};
 
 pub fn optimize_props_method_calls(func: &mut HirFunction, env: &Environment) {
     for (_block_id, block) in &func.body.blocks {
@@ -33,10 +33,8 @@ pub fn optimize_props_method_calls(func: &mut HirFunction, env: &Environment) {
             if should_replace {
                 // Take the old value out, replacing with a temporary.
                 // The if-let is guaranteed to match since we checked above.
-                let old = std::mem::replace(
-                    &mut instr.value,
-                    InstructionValue::Debugger { loc: None },
-                );
+                let old =
+                    std::mem::replace(&mut instr.value, InstructionValue::Debugger { loc: None });
                 match old {
                     InstructionValue::MethodCall {
                         property,

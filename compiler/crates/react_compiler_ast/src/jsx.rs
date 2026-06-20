@@ -14,7 +14,11 @@ pub struct JSXElement {
     #[serde(rename = "closingElement")]
     pub closing_element: Option<JSXClosingElement>,
     pub children: Vec<JSXChild>,
-    #[serde(rename = "selfClosing", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "selfClosing",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub self_closing: Option<bool>,
 }
 
