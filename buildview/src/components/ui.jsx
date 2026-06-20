@@ -20,10 +20,11 @@ const BUTTON_VARIANTS = {
   ghost: 'bg-transparent text-steel hover:bg-zinc-200 font-medium',
 };
 
-export function Button({variant = 'primary', className = '', ...props}) {
+export function Button({variant = 'primary', type = 'button', className = '', ...props}) {
   return (
     <button
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${BUTTON_VARIANTS[variant]} ${className}`}
+      type={type}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40 ${BUTTON_VARIANTS[variant]} ${className}`}
       {...props}
     />
   );

@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {useSession} from './lib/session.js';
 import {ROLES} from './domain/constants.js';
-import {Button} from './components/ui.jsx';
+import {Button, Card} from './components/ui.jsx';
 import Login from './screens/Login.jsx';
 import ForemanProjectList from './screens/ForemanProjectList.jsx';
 import ForemanProjectView from './screens/ForemanProjectView.jsx';
@@ -103,5 +103,14 @@ function Screen({current, nav}) {
   // Shared
   if (screen === 'task') return <TaskDetail nav={nav} params={params} />;
 
-  return <p>Unknown screen: {screen}</p>;
+  return (
+    <Card className="p-6 text-center">
+      <p className="text-zinc-600">Unknown screen: {screen}</p>
+      <div className="mt-3">
+        <Button variant="secondary" onClick={() => nav.reset()}>
+          Back to home
+        </Button>
+      </div>
+    </Card>
+  );
 }
