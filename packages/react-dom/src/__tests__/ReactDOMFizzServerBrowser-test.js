@@ -132,6 +132,48 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
   });
 
+  it('removes the abort listener from a shared signal once the stream finishes', async () => {
+    // A long-lived / shared AbortSignal must not accumulate one 'abort'
+    // listener per request after each request reaches a terminal state.
+    // Regression test for facebook/react#36763.
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    let added = 0;
+    let removed = 0;
+    const realAdd = signal.addEventListener.bind(signal);
+    const realRemove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = function (type, ...rest) {
+      if (type === 'abort') {
+        added++;
+      }
+      return realAdd(type, ...rest);
+    };
+    signal.removeEventListener = function (type, ...rest) {
+      if (type === 'abort') {
+        removed++;
+      }
+      return realRemove(type, ...rest);
+    };
+
+    for (let i = 0; i < 3; i++) {
+      const stream = await serverAct(() =>
+        ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>, {
+          signal,
+        }),
+      );
+      // Read the stream to completion so the request reaches a terminal state.
+      await serverAct(() => readResult(stream));
+      await stream.allReady;
+    }
+
+    // The signal was never aborted, so every listener that was added must have
+    // been removed again (no leak).
+    expect(added).toBe(3);
+    expect(removed).toBe(3);
+    expect(signal.aborted).toBe(false);
+  });
+
   it('should reject the promise when an error is thrown at the root', async () => {
     const reportedErrors = [];
     let caughtError = null;
