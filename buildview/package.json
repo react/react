@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "flows": "node scripts/flows.mjs",
     "smoke": "node scripts/render-smoke.mjs",
-    "check": "node scripts/flows.mjs && node scripts/render-smoke.mjs"
+    "check": "node scripts/flows.mjs && node scripts/render-smoke.mjs",
+    "shots": "vite build && node scripts/shots.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",
     "@vitejs/plugin-react": "^4.3.1",
+    "puppeteer": "^25.1.0",
     "tailwindcss": "^4.3.1",
     "vite": "^5.4.2"
   }
