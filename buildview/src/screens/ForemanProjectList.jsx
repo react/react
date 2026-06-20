@@ -2,6 +2,15 @@ import React, {useState} from 'react';
 import {useDbVersion} from '../lib/useDb.js';
 import {createProject} from '../domain/entities.js';
 import {getProjectsForForeman} from '../domain/queries.js';
+import {
+  Button,
+  Card,
+  PageTitle,
+  SectionTitle,
+  InviteCode,
+  Field,
+  TextInput,
+} from '../components/ui.jsx';
 
 // Screen 2: Foreman project list. List projects (with invite code) + create.
 export default function ForemanProjectList({nav}) {
@@ -24,49 +33,66 @@ export default function ForemanProjectList({nav}) {
   }
 
   return (
-    <div>
-      <h1>Projects</h1>
+    <div className="space-y-5">
+      <PageTitle>Projects</PageTitle>
+
       {projects.length === 0 ? (
-        <p>No projects yet.</p>
+        <Card className="p-6 text-center text-sm text-zinc-500">
+          No projects yet. Create your first one below.
+        </Card>
       ) : (
-        <ul>
+        <ul className="space-y-3">
           {projects.map(p => (
-            <li key={p.id}>
-              <strong>{p.name}</strong> — {p.address || '(no address)'} — invite
-              code: <code>{p.inviteCode}</code>{' '}
-              <button onClick={() => nav.go('project', {projectId: p.id})}>
-                Open
-              </button>{' '}
-              <button onClick={() => nav.go('requests', {projectId: p.id})}>
-                Pending requests
-              </button>{' '}
-              <button onClick={() => nav.go('dashboard', {projectId: p.id})}>
-                Dashboard
-              </button>
-            </li>
+            <Card key={p.id} className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-lg font-bold text-steel">{p.name}</h3>
+                  <p className="text-sm text-zinc-500">
+                    {p.address || '(no address)'}
+                  </p>
+                </div>
+                <div className="text-right text-xs text-zinc-500">
+                  <div className="mb-1">Invite code</div>
+                  <InviteCode code={p.inviteCode} />
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button onClick={() => nav.go('project', {projectId: p.id})}>
+                  Open
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => nav.go('requests', {projectId: p.id})}>
+                  Requests
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => nav.go('dashboard', {projectId: p.id})}>
+                  Dashboard
+                </Button>
+              </div>
+            </Card>
           ))}
         </ul>
       )}
 
-      <h2>Create a project</h2>
-      <form onSubmit={handleCreate}>
-        <div>
-          <label>
-            Name:{' '}
-            <input value={name} onChange={e => setName(e.target.value)} />
-          </label>
-        </div>
-        <div>
-          <label>
-            Address:{' '}
-            <input
-              value={address}
-              onChange={e => setAddress(e.target.value)}
-            />
-          </label>
-        </div>
-        <button type="submit">Create project</button>
-      </form>
+      <section>
+        <SectionTitle>Create a project</SectionTitle>
+        <Card className="p-4">
+          <form onSubmit={handleCreate} className="space-y-3">
+            <Field label="Name">
+              <TextInput value={name} onChange={e => setName(e.target.value)} />
+            </Field>
+            <Field label="Address">
+              <TextInput
+                value={address}
+                onChange={e => setAddress(e.target.value)}
+              />
+            </Field>
+            <Button type="submit">Create project</Button>
+          </form>
+        </Card>
+      </section>
     </div>
   );
 }

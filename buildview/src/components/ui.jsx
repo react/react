@@ -29,6 +29,26 @@ export function Button({variant = 'primary', className = '', ...props}) {
   );
 }
 
+export function PageTitle({children, subtitle}) {
+  return (
+    <div className="mb-5">
+      <h1 className="text-2xl font-black tracking-tight text-steel">
+        {children}
+      </h1>
+      {subtitle && <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>}
+    </div>
+  );
+}
+
+// Invite code chip — monospace, easy to read aloud on site.
+export function InviteCode({code}) {
+  return (
+    <span className="inline-block rounded border border-brand-dark bg-amber-50 px-2 py-0.5 font-mono text-sm font-bold tracking-widest text-brand-dark">
+      {code}
+    </span>
+  );
+}
+
 export function Card({className = '', children}) {
   return (
     <div

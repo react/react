@@ -4,7 +4,16 @@ import {db} from '../data/db.js';
 import {requestMembership} from '../domain/entities.js';
 import {findProjectByInviteCode, getProject} from '../domain/queries.js';
 import {getVisibleTasksForWorker} from '../domain/permissions.js';
-import {ACCESS_LEVEL, TASK_STATUS_LABEL} from '../domain/constants.js';
+import {ACCESS_LEVEL} from '../domain/constants.js';
+import {
+  Button,
+  Card,
+  PageTitle,
+  SectionTitle,
+  StatusBadge,
+  Field,
+  TextInput,
+} from '../components/ui.jsx';
 
 // Screens 7 + 8: Worker join project (invite code) and "my tasks".
 // Enforces the section-3 rule: pending membership shows nothing.
@@ -14,12 +23,21 @@ export default function WorkerHome({nav}) {
   const memberships = db.memberships.list(m => m.userId === user.id);
 
   return (
-    <div>
-      <h1>My projects</h1>
-      <JoinForm userId={user.id} />
+    <div className="space-y-5">
+      <PageTitle>My work</PageTitle>
+
+      <section>
+        <SectionTitle>Join a project</SectionTitle>
+        <Card className="p-4">
+          <JoinForm userId={user.id} />
+        </Card>
+      </section>
 
       {memberships.length === 0 ? (
-        <p>You haven't requested to join any project yet.</p>
+        <Card className="p-6 text-center text-sm text-zinc-500">
+          You haven&apos;t requested to join any project yet. Enter an invite
+          code above.
+        </Card>
       ) : (
         memberships.map(m => (
           <MembershipBlock key={m.id} membership={m} user={user} nav={nav} />
@@ -46,13 +64,16 @@ function JoinForm({userId}) {
   }
 
   return (
-    <form onSubmit={submit}>
-      <label>
-        Join with invite code:{' '}
-        <input value={code} onChange={e => setCode(e.target.value)} />
-      </label>{' '}
-      <button type="submit">Request to join</button>
-      {message && <p>{message}</p>}
+    <form onSubmit={submit} className="space-y-3">
+      <Field label="Invite code">
+        <TextInput
+          value={code}
+          onChange={e => setCode(e.target.value)}
+          placeholder="e.g. BV-3F9K2"
+        />
+      </Field>
+      <Button type="submit">Request to join</Button>
+      {message && <p className="text-sm font-medium text-steel">{message}</p>}
     </form>
   );
 }
@@ -63,31 +84,43 @@ function MembershipBlock({membership, user, nav}) {
 
   // Pending => sees nothing (section 3). Granted => the filtered task list.
   const isGranted = membership.accessLevel === ACCESS_LEVEL.GRANTED;
-  const tasks = isGranted
-    ? getVisibleTasksForWorker(user, project.id)
-    : [];
+  const tasks = isGranted ? getVisibleTasksForWorker(user, project.id) : [];
 
   return (
-    <div>
-      <h2>{project.name}</h2>
-      <p>Access: {membership.accessLevel}</p>
+    <section>
+      <SectionTitle>{project.name}</SectionTitle>
       {!isGranted ? (
-        <p>Pending approval — you can't see any tasks yet.</p>
+        <Card className="border-l-4 border-brand p-4">
+          <p className="text-sm font-medium text-zinc-700">
+            Pending approval — you can&apos;t see any tasks yet.
+          </p>
+        </Card>
       ) : tasks.length === 0 ? (
-        <p>No tasks visible to you in this project yet.</p>
+        <Card className="p-4 text-sm text-zinc-500">
+          No tasks visible to you in this project yet.
+        </Card>
       ) : (
-        <ul>
+        <ul className="space-y-3">
           {tasks.map(t => (
-            <li key={t.id}>
-              <strong>{t.title}</strong> — trade: {t.trade} — status:{' '}
-              {TASK_STATUS_LABEL[t.status]}{' '}
-              <button onClick={() => nav.go('task', {taskId: t.id})}>
-                Open task
-              </button>
-            </li>
+            <Card key={t.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-steel">{t.title}</h3>
+                  <p className="mt-0.5 text-xs tracking-wide text-zinc-500 uppercase">
+                    {t.trade}
+                  </p>
+                </div>
+                <StatusBadge status={t.status} />
+              </div>
+              <div className="mt-3">
+                <Button onClick={() => nav.go('task', {taskId: t.id})}>
+                  Open task
+                </Button>
+              </div>
+            </Card>
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }
