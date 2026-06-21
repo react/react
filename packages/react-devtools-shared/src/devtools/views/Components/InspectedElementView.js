@@ -21,7 +21,10 @@ import InspectedElementSuspendedBy from './InspectedElementSuspendedBy';
 import NativeStyleEditor from './NativeStyleEditor';
 import {enableStyleXFeatures} from 'react-devtools-feature-flags';
 import InspectedElementSourcePanel from './InspectedElementSourcePanel';
-import StackTraceView from './StackTraceView';
+import StackTraceView, {
+  IgnoredCallSitesToggle,
+  useIgnoredCallSites,
+} from './StackTraceView';
 import OwnerView from './OwnerView';
 import Skeleton from './Skeleton';
 import {
@@ -69,6 +72,7 @@ export default function InspectedElementView({
 
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
+  const ignoredCallSites = useIgnoredCallSites();
 
   const rendererLabel =
     rendererPackageName !== null && rendererVersion !== null
@@ -189,7 +193,19 @@ export default function InspectedElementView({
                   <Skeleton height={16} width="40%" />
                 </div>
               }>
-              {showStack ? <StackTraceView stack={stack} /> : null}
+              {ignoredCallSites.hasIgnoredCallSites && (
+                <IgnoredCallSitesToggle
+                  showIgnoredCallSites={ignoredCallSites.showIgnoredCallSites}
+                  onClick={ignoredCallSites.toggle}
+                />
+              )}
+              {showStack ? (
+                <StackTraceView
+                  stack={stack}
+                  environmentName={null}
+                  ignoredCallSites={ignoredCallSites}
+                />
+              ) : null}
               {showOwnersList &&
                 owners?.map(owner => (
                   <Fragment key={owner.id}>
@@ -205,7 +221,11 @@ export default function InspectedElementView({
                       type={owner.type}
                     />
                     {owner.stack != null && owner.stack.length > 0 ? (
-                      <StackTraceView stack={owner.stack} />
+                      <StackTraceView
+                        stack={owner.stack}
+                        environmentName={null}
+                        ignoredCallSites={ignoredCallSites}
+                      />
                     ) : null}
                   </Fragment>
                 ))}
