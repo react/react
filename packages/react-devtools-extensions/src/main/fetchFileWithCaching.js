@@ -75,8 +75,6 @@ const fetchFromNetworkCache = (url, resolve, reject) => {
           fetchFromPage(url, resolve, reject);
         }
       }
-
-      return;
     }
 
     debugLog(
