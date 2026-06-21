@@ -192,6 +192,10 @@ export function preloadModule(href: string, options?: ?PreloadModuleOptions) {
             typeof options.integrity === 'string'
               ? options.integrity
               : undefined,
+          fetchPriority:
+            typeof options.fetchPriority === 'string'
+              ? options.fetchPriority
+              : undefined,
         });
     } else {
       ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
@@ -321,6 +325,10 @@ export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
                 : undefined,
             nonce:
               typeof options.nonce === 'string' ? options.nonce : undefined,
+            fetchPriority:
+              typeof options.fetchPriority === 'string'
+                ? options.fetchPriority
+                : undefined,
           });
       }
     } else if (options == null) {
