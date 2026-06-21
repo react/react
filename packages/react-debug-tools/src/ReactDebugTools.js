@@ -7,6 +7,16 @@
  * @flow
  */
 
-import {inspectHooks, inspectHooksOfFiber} from './ReactDebugHooks';
+import {
+  inspectHooks,
+  inspectHooksWithoutDefaultDispatcher,
+  inspectHooksOfFiber,
+  inspectHooksOfFiberWithoutDefaultDispatcher,
+} from './ReactDebugHooks';
 
-export {inspectHooks, inspectHooksOfFiber};
+export {
+  inspectHooks,
+  inspectHooksWithoutDefaultDispatcher,
+  inspectHooksOfFiber,
+  inspectHooksOfFiberWithoutDefaultDispatcher,
+};

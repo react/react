@@ -264,7 +264,7 @@ fn apply_early_return_to_scope(
                 loc: None, // GeneratedSource
             }),
             value: ReactiveValue::Instruction(InstructionValue::Primitive {
-                value: PrimitiveValue::String(EARLY_RETURN_SENTINEL.to_string()),
+                value: PrimitiveValue::String(EARLY_RETURN_SENTINEL.into()),
                 loc,
             }),
             effects: None,

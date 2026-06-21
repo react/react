@@ -845,7 +845,7 @@ pub enum PrimitiveValue {
     Undefined,
     Boolean(bool),
     Number(FloatValue),
-    String(String),
+    String(react_compiler_diagnostics::JsString),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
