@@ -8,6 +8,9 @@ import ForemanProjectView from './screens/ForemanProjectView.jsx';
 import ForemanRoomView from './screens/ForemanRoomView.jsx';
 import ForemanPendingRequests from './screens/ForemanPendingRequests.jsx';
 import ForemanDashboard from './screens/ForemanDashboard.jsx';
+import ForemanControl from './screens/ForemanControl.jsx';
+import FloorPlan from './screens/FloorPlan.jsx';
+import ProjectReport from './screens/ProjectReport.jsx';
 import WorkerHome from './screens/WorkerHome.jsx';
 import TaskDetail from './screens/TaskDetail.jsx';
 
@@ -103,6 +106,10 @@ function Screen({current, nav}) {
     return <ForemanPendingRequests nav={nav} params={params} />;
   if (screen === 'dashboard')
     return <ForemanDashboard nav={nav} params={params} />;
+  if (screen === 'control')
+    return <ForemanControl nav={nav} params={params} />;
+  if (screen === 'floor') return <FloorPlan nav={nav} params={params} />;
+  if (screen === 'report') return <ProjectReport nav={nav} params={params} />;
 
   // Shared
   if (screen === 'task') return <TaskDetail nav={nav} params={params} />;

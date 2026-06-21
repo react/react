@@ -42,6 +42,8 @@ async function loadModules() {
   const queries = await import('../src/domain/queries.js');
   const permissions = await import('../src/domain/permissions.js');
   const constants = await import('../src/domain/constants.js');
+  const status = await import('../src/domain/status.js');
+  const demo = await import('../src/demo/seed.js');
   modules = {
     db: dbmod.db,
     StorageError: dbmod.StorageError,
@@ -49,6 +51,8 @@ async function loadModules() {
     ...queries,
     ...permissions,
     ...constants,
+    ...status,
+    ...demo,
   };
   return modules;
 }
@@ -406,6 +410,99 @@ const run = async () => {
     'failed write persisted nothing',
     m.getAllTasksForProject(project.id).length === taskCountBefore
   );
+
+  // ===========================================================================
+  // DEMO PHASE — seed data, room status, job-card flow, report/control numbers
+  // ===========================================================================
+  console.log('\nDemo phase');
+
+  // 1) Demo data loads correctly.
+  const seeded = m.loadDemoData(); // resets + seeds
+  m = await reload();
+  const dProject = seeded.projectId;
+  check('demo: one project', m.db.projects.list().length === 1);
+  check('demo: one building', m.db.buildings.list().length === 1);
+  check('demo: one floor', m.db.floors.list().length === 1);
+  check('demo: four rooms', m.getAllRoomsForProject(dProject).length === 4);
+  check('demo: six tasks', m.getAllTasksForProject(dProject).length === 6);
+  const dTasks = m.getAllTasksForProject(dProject);
+  check(
+    'demo: has a completed task',
+    dTasks.some(t => t.status === m.TASK_STATUS.DONE)
+  );
+  check(
+    'demo: has an in-progress task',
+    dTasks.some(t => t.status === m.TASK_STATUS.IN_PROGRESS)
+  );
+  check('demo: has an open issue', m.getOpenIssuesForProject(dProject).length >= 1);
+  check(
+    'demo: three workers granted access',
+    m.getMembershipsForProject(dProject).filter(
+      x => x.accessLevel === m.ACCESS_LEVEL.GRANTED
+    ).length === 3
+  );
+  check(
+    'demo: one pending request',
+    m.getMembershipsForProject(dProject).filter(
+      x => x.accessLevel === m.ACCESS_LEVEL.PENDING
+    ).length === 1
+  );
+
+  // 2) Room status derivation.
+  const roomByName = name =>
+    m.getAllRoomsForProject(dProject).find(r => r.name === name);
+  check(
+    'room status: Kitchen = in progress',
+    m.getRoomStatus(roomByName('Kitchen').id) === m.ROOM_STATUS.IN_PROGRESS
+  );
+  check(
+    'room status: Bathroom = done',
+    m.getRoomStatus(roomByName('Bathroom').id) === m.ROOM_STATUS.DONE
+  );
+  check(
+    'room status: Living Room = todo',
+    m.getRoomStatus(roomByName('Living Room').id) === m.ROOM_STATUS.TODO
+  );
+  check(
+    'room status: Bedroom = blocked (open issue)',
+    m.getRoomStatus(roomByName('Bedroom').id) === m.ROOM_STATUS.BLOCKED
+  );
+
+  // 3) Worker job-card flow (Eli the electrician).
+  const eli = m.db.users.list(u => u.name === 'Eli Electrician')[0];
+  const eliTasks = m.getAllVisibleTasksForWorker(m.getUser(eli.id));
+  check('job-card: Eli sees exactly his 2 accessible tasks', eliTasks.length === 2);
+  const eliNext = eliTasks
+    .filter(t => t.assignedWorkerIds.includes(eli.id) && t.status !== m.TASK_STATUS.DONE)
+    .sort((a, b) => (a.status === m.TASK_STATUS.IN_PROGRESS ? -1 : 1))[0];
+  check('job-card: next task is the in-progress one', eliNext.status === m.TASK_STATUS.IN_PROGRESS);
+  check('job-card: Eli may act on his next task', m.canEditTaskStatus(m.getUser(eli.id), eliNext));
+  m.setTaskStatus(eliNext.id, m.TASK_STATUS.DONE); // Mark done
+  m = await reload();
+  check('job-card: mark done persisted', m.getTask(eliNext.id).status === m.TASK_STATUS.DONE);
+
+  // 4) Permissions still hold under demo data.
+  const walt = m.db.users.list(u => u.name === 'Walt Worker')[0];
+  check(
+    'permissions: pending worker sees nothing',
+    m.getAllVisibleTasksForWorker(m.getUser(walt.id)).length === 0
+  );
+  const bedroomTask = dTasks.find(t => t.roomId === roomByName('Bedroom').id);
+  check(
+    'permissions: Eli cannot see a task in a non-granted room',
+    !m.getAllVisibleTasksForWorker(m.getUser(eli.id)).some(t => t.id === bedroomTask.id)
+  );
+
+  // 5) Report / dashboard numbers match the data.
+  const prog = m.getProjectProgress(dProject);
+  const ddash = m.getDashboard(dProject);
+  check('report: progress total matches task count', prog.total === m.getAllTasksForProject(dProject).length);
+  check('report: done count matches dashboard', prog.done === ddash.byStatus[m.TASK_STATUS.DONE]);
+  check(
+    'report: percent equals round(done/total)',
+    prog.percent === Math.round((prog.done / prog.total) * 100)
+  );
+  check('report: open issue count matches dashboard', m.getOpenIssuesForProject(dProject).length === ddash.openIssueCount);
 
   console.log(
     failures === 0

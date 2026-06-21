@@ -89,7 +89,14 @@ function FloorItem({floor, nav}) {
   const rooms = getRooms(floor.id);
   return (
     <div className="rounded-md border border-zinc-200 bg-white p-3">
-      <h4 className="font-semibold text-zinc-700">{floor.name}</h4>
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="font-semibold text-zinc-700">{floor.name}</h4>
+        <Button
+          variant="secondary"
+          onClick={() => nav.go('floor', {floorId: floor.id})}>
+          Plan view
+        </Button>
+      </div>
       <div className="mt-2 space-y-1.5 border-l-2 border-zinc-200 pl-3">
         {rooms.length === 0 ? (
           <p className="text-sm text-zinc-500">No rooms yet.</p>

@@ -181,7 +181,13 @@ export default function TaskDetail({nav, params}) {
         <SectionTitle count={openIssues.length}>Open issues</SectionTitle>
         <Card className="space-y-4 p-4">
           <IssueList issues={issues} mayResolve={mayResolve} />
-          {mayRaise && <RaiseIssuePanel task={task} userId={user.id} />}
+          {mayRaise && (
+            <RaiseIssuePanel
+              task={task}
+              userId={user.id}
+              defaultOpen={params.focus === 'issue'}
+            />
+          )}
         </Card>
       </section>
     </div>
@@ -189,8 +195,8 @@ export default function TaskDetail({nav, params}) {
 }
 
 // Keeps the issue form tucked away until needed, reducing task-detail density.
-function RaiseIssuePanel({task, userId}) {
-  const [open, setOpen] = useState(false);
+function RaiseIssuePanel({task, userId, defaultOpen = false}) {
+  const [open, setOpen] = useState(defaultOpen);
   if (!open) {
     return (
       <div className="border-t border-dashed border-zinc-300 pt-4">

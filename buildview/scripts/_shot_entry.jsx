@@ -1,75 +1,45 @@
 // Per-screen SSR for screenshots: exposes globalThis.__SCREENS as an array of
-// {slug, label, html}. Each entry is a full screen rendered with the real
-// components, wrapped in the real app shell where appropriate.
-// Bundled and screenshotted by shots.mjs. No product logic here.
+// {slug, label, html}, each rendered with the real components on the real demo
+// data, wrapped in the real app shell where appropriate. No product logic here.
 import React from 'react';
 import {renderToString} from 'react-dom/server';
 
 import {db} from '../src/data/db.js';
-import {ROLES, TRADES} from '../src/domain/constants.js';
+import {ROLES} from '../src/domain/constants.js';
+import {loadDemoData} from '../src/demo/seed.js';
 import {
-  createUser,
-  createProject,
-  createBuilding,
-  createFloor,
-  createRoom,
-  createTask,
-  requestMembership,
-  grantMembership,
-  setTaskAssignees,
-  setTaskStatus,
-  addPhoto,
-  raiseIssue,
-} from '../src/domain/entities.js';
-import {getMembershipsForProject} from '../src/domain/queries.js';
+  getProject,
+  getBuildings,
+  getFloors,
+  getAllRoomsForProject,
+  getTasks,
+} from '../src/domain/queries.js';
 
 import Login from '../src/screens/Login.jsx';
 import ForemanProjectList from '../src/screens/ForemanProjectList.jsx';
 import ForemanProjectView from '../src/screens/ForemanProjectView.jsx';
+import FloorPlan from '../src/screens/FloorPlan.jsx';
 import ForemanRoomView from '../src/screens/ForemanRoomView.jsx';
 import ForemanPendingRequests from '../src/screens/ForemanPendingRequests.jsx';
+import ForemanControl from '../src/screens/ForemanControl.jsx';
 import ForemanDashboard from '../src/screens/ForemanDashboard.jsx';
+import ProjectReport from '../src/screens/ProjectReport.jsx';
 import WorkerHome from '../src/screens/WorkerHome.jsx';
 import TaskDetail from '../src/screens/TaskDetail.jsx';
-import {Button, Card, Avatar} from '../src/components/ui.jsx';
+import {Button, Avatar} from '../src/components/ui.jsx';
 
-db.reset();
-
-const swatch =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-
-const foreman = createUser({name: 'Fran Foreman', role: ROLES.FOREMAN, trade: TRADES.NONE});
-const project = createProject({name: 'Riverside Tower', address: '1 River Rd', createdByUserId: foreman.id});
-const b = createBuilding({projectId: project.id, name: 'Building A'});
-const fl = createFloor({buildingId: b.id, name: 'Floor 3'});
-const room = createRoom({floorId: fl.id, name: 'Apartment 12, kitchen'});
-createRoom({floorId: fl.id, name: 'Apartment 12, bathroom'});
-const task = createTask({
-  roomId: room.id,
-  title: 'Install gypsum partition',
-  instructions: 'Install 12.5mm gypsum board partition along marked line. Tape and finish joints to level 4.',
-  trade: TRADES.DRYWALL,
-  createdByUserId: foreman.id,
-});
-createTask({roomId: room.id, title: 'Wire kitchen sockets', instructions: 'Six double sockets', trade: TRADES.ELECTRICIAN, createdByUserId: foreman.id});
-
-const worker = createUser({name: 'Dan Drywall', role: ROLES.WORKER, trade: TRADES.DRYWALL});
-requestMembership({userId: worker.id, projectId: project.id});
-const mem = getMembershipsForProject(project.id).find(x => x.userId === worker.id);
-grantMembership(mem.id, [room.id]);
-setTaskAssignees(task.id, [worker.id]);
-setTaskStatus(task.id, 'in_progress');
-addPhoto({taskId: task.id, uploadedByUserId: worker.id, imageData: swatch, caption: 'Framing complete'});
-raiseIssue({taskId: task.id, raisedByUserId: foreman.id, description: 'Gap at ceiling track exceeds 10mm — needs shimming.', responsibleUserId: worker.id});
-
-const pendingWorker = createUser({name: 'Pat Plumber', role: ROLES.WORKER, trade: TRADES.PLUMBER});
-requestMembership({userId: pendingWorker.id, projectId: project.id});
+const {foremanId, projectId} = loadDemoData();
+const foreman = db.users.get(foremanId);
+const eli = db.users.list(u => u.name === 'Eli Electrician')[0];
+const project = getProject(projectId);
+const floor = getFloors(getBuildings(projectId)[0].id)[0];
+const kitchen = getAllRoomsForProject(projectId).find(r => r.name === 'Kitchen');
+const kitchenTask = getTasks(kitchen.id)[0];
 
 const navFor = u => ({user: u, go() {}, back() {}, reset() {}, logout() {}});
 const fNav = navFor(foreman);
-const wNav = navFor(worker);
+const wNav = navFor(eli);
 
-// Real app-shell chrome (mirrors App.jsx) so screens show in context.
 const Shell = ({who, children}) => (
   <div className="min-h-screen bg-zinc-100">
     <header className="border-b-4 border-brand bg-steel text-white">
@@ -102,32 +72,23 @@ const Shell = ({who, children}) => (
   </div>
 );
 
-// The real unknown-screen fallback markup (mirrors App.jsx Screen default).
-const Fallback = (
-  <Card className="p-6 text-center">
-    <p className="text-zinc-600">Unknown screen: mystery</p>
-    <div className="mt-3">
-      <Button variant="secondary">Back to home</Button>
-    </div>
-  </Card>
-);
-
 const defs = [
-  ['01-login', 'Login / user picker', <Login onLogin={() => {}} />, null],
+  ['01-login', 'Login + demo loader', <Login onLogin={() => {}} />, null],
   ['02-foreman-project-list', 'Foreman — Project list', <ForemanProjectList nav={fNav} />, foreman],
-  ['03-foreman-project-view', 'Foreman — Project view', <ForemanProjectView nav={fNav} params={{projectId: project.id}} />, foreman],
-  ['04-foreman-room-view', 'Foreman — Room view', <ForemanRoomView nav={fNav} params={{roomId: room.id}} />, foreman],
-  ['05-pending-requests', 'Foreman — Pending requests', <ForemanPendingRequests nav={fNav} params={{projectId: project.id}} />, foreman],
-  ['06-foreman-dashboard', 'Foreman — Dashboard', <ForemanDashboard nav={fNav} params={{projectId: project.id}} />, foreman],
-  ['07-worker-home', 'Worker — Home / my tasks', <WorkerHome nav={wNav} />, worker],
-  ['08-task-detail-worker', 'Task detail (worker)', <TaskDetail nav={wNav} params={{taskId: task.id}} />, worker],
-  ['09-task-detail-foreman', 'Task detail (foreman)', <TaskDetail nav={fNav} params={{taskId: task.id}} />, foreman],
-  ['10-unknown-fallback', 'Unknown-screen fallback', Fallback, foreman],
+  ['03-foreman-control', 'Foreman — Site control', <ForemanControl nav={fNav} params={{projectId}} />, foreman],
+  ['04-floor-plan', 'Plan-first floor view', <FloorPlan nav={fNav} params={{floorId: floor.id}} />, foreman],
+  ['05-project-view', 'Foreman — Structure', <ForemanProjectView nav={fNav} params={{projectId}} />, foreman],
+  ['06-room-view', 'Foreman — Room view', <ForemanRoomView nav={fNav} params={{roomId: kitchen.id}} />, foreman],
+  ['07-pending-requests', 'Foreman — Requests', <ForemanPendingRequests nav={fNav} params={{projectId}} />, foreman],
+  ['08-dashboard', 'Foreman — Dashboard', <ForemanDashboard nav={fNav} params={{projectId}} />, foreman],
+  ['09-report', 'Project report / investor view', <ProjectReport nav={fNav} params={{projectId}} />, foreman],
+  ['10-worker-jobcard', 'Worker — Job card', <WorkerHome nav={wNav} />, eli],
+  ['11-task-detail-worker', 'Task detail (worker)', <TaskDetail nav={wNav} params={{taskId: kitchenTask.id}} />, eli],
+  ['12-task-detail-foreman', 'Task detail (foreman)', <TaskDetail nav={fNav} params={{taskId: kitchenTask.id}} />, foreman],
 ];
 
 globalThis.__SCREENS = defs.map(([slug, label, el, who]) => ({
   slug,
   label,
-  // Login renders its own full-page chrome; everything else uses the shell.
   html: renderToString(who ? <Shell who={who}>{el}</Shell> : el),
 }));

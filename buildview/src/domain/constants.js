@@ -56,6 +56,21 @@ export const ISSUE_STATUS = {
   RESOLVED: 'resolved',
 };
 
+// Derived room status (computed from a room's tasks + issues, never stored).
+export const ROOM_STATUS = {
+  TODO: 'todo',
+  IN_PROGRESS: 'in_progress',
+  BLOCKED: 'blocked',
+  DONE: 'done',
+};
+
+export const ROOM_STATUS_LABEL = {
+  [ROOM_STATUS.TODO]: 'To do',
+  [ROOM_STATUS.IN_PROGRESS]: 'In progress',
+  [ROOM_STATUS.BLOCKED]: 'Blocked',
+  [ROOM_STATUS.DONE]: 'Done',
+};
+
 export const ACCESS_LEVEL = {
   PENDING: 'pending',
   GRANTED: 'granted',

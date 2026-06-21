@@ -57,8 +57,13 @@ export default function ForemanProjectList({nav}) {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button onClick={() => nav.go('project', {projectId: p.id})}>
-                  Open
+                <Button onClick={() => nav.go('control', {projectId: p.id})}>
+                  Site control
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => nav.go('project', {projectId: p.id})}>
+                  Structure
                 </Button>
                 <Button
                   variant="secondary"
@@ -67,8 +72,8 @@ export default function ForemanProjectList({nav}) {
                 </Button>
                 <Button
                   variant="secondary"
-                  onClick={() => nav.go('dashboard', {projectId: p.id})}>
-                  Dashboard
+                  onClick={() => nav.go('report', {projectId: p.id})}>
+                  Report
                 </Button>
               </div>
             </Card>

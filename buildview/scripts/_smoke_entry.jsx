@@ -25,6 +25,9 @@ import ForemanProjectView from '../src/screens/ForemanProjectView.jsx';
 import ForemanRoomView from '../src/screens/ForemanRoomView.jsx';
 import ForemanPendingRequests from '../src/screens/ForemanPendingRequests.jsx';
 import ForemanDashboard from '../src/screens/ForemanDashboard.jsx';
+import ForemanControl from '../src/screens/ForemanControl.jsx';
+import FloorPlan from '../src/screens/FloorPlan.jsx';
+import ProjectReport from '../src/screens/ProjectReport.jsx';
 import WorkerHome from '../src/screens/WorkerHome.jsx';
 import TaskDetail from '../src/screens/TaskDetail.jsx';
 
@@ -61,6 +64,9 @@ const cases = [
   ['ForemanRoomView', <ForemanRoomView nav={fNav} params={{roomId: room.id}} />],
   ['ForemanPendingRequests', <ForemanPendingRequests nav={fNav} params={{projectId: project.id}} />],
   ['ForemanDashboard', <ForemanDashboard nav={fNav} params={{projectId: project.id}} />],
+  ['ForemanControl', <ForemanControl nav={fNav} params={{projectId: project.id}} />],
+  ['FloorPlan', <FloorPlan nav={fNav} params={{floorId: fl.id}} />],
+  ['ProjectReport', <ProjectReport nav={fNav} params={{projectId: project.id}} />],
   ['WorkerHome', <WorkerHome nav={wNav} />],
   ['TaskDetail(worker)', <TaskDetail nav={wNav} params={{taskId: task.id}} />],
   ['TaskDetail(foreman)', <TaskDetail nav={fNav} params={{taskId: task.id}} />],

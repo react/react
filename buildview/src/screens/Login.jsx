@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {db} from '../data/db.js';
 import {useDbVersion} from '../lib/useDb.js';
 import {createUser} from '../domain/entities.js';
+import {loadDemoData} from '../demo/seed.js';
 import {
   ROLES,
   ROLE_LIST,
@@ -49,6 +50,25 @@ export default function Login({onLogin}) {
       </header>
 
       <main className="mx-auto max-w-md space-y-5 px-4 py-6">
+        <section>
+          <SectionTitle>Demo</SectionTitle>
+          <Card className="space-y-3 p-4">
+            <p className="text-sm text-zinc-600">
+              Load a ready-made demo site (foreman, workers, rooms, tasks,
+              photos and an open issue) and jump straight in as the foreman.
+              This replaces any existing data.
+            </p>
+            <Button
+              className="w-full"
+              onClick={() => {
+                const {foremanId} = loadDemoData();
+                onLogin(foremanId);
+              }}>
+              Load demo site &amp; enter as foreman
+            </Button>
+          </Card>
+        </section>
+
         <section>
           <SectionTitle>Pick a user</SectionTitle>
           <Card className="p-4">
