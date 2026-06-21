@@ -31,6 +31,14 @@ export default function FloorPlan({nav, params}) {
         Floor plan
       </PageTitle>
 
+      <Card className="overflow-hidden">
+        <img
+          src="/demo-assets/floor-plans/demo-apartment.svg"
+          alt="Floor plan"
+          className="w-full bg-white"
+        />
+      </Card>
+
       <Legend />
 
       <SectionTitle count={rooms.length}>Rooms</SectionTitle>
@@ -56,6 +64,19 @@ export default function FloorPlan({nav, params}) {
           })}
         </div>
       )}
+
+      <SectionTitle>Reference drawings</SectionTitle>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          ['/demo-assets/drawings/habs-residence-floorplan.jpg', 'Measured drawing (HABS)'],
+          ['/demo-assets/floor-plans/sample-floorplan.jpg', 'Sample floor plan'],
+        ].map(([src, label]) => (
+          <Card key={src} className="overflow-hidden">
+            <img src={src} alt={label} className="aspect-video w-full bg-white object-contain" />
+            <div className="p-2 text-xs font-medium text-zinc-600">{label}</div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

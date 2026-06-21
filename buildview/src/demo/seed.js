@@ -25,9 +25,14 @@ import {
   grantMembership,
 } from '../domain/entities.js';
 
-// A tiny inline image so demo photos render without any assets.
-const DEMO_PHOTO =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+// Real, clearly-licensed demo assets (served from buildview/public/demo-assets,
+// credited in ASSETS_CREDITS.md). Stored as image URLs in imageData, which the
+// screens render directly as <img src>.
+const ASSET = {
+  workers: '/demo-assets/site-photos/workers-on-site-mekis.jpg',
+  site: '/demo-assets/site-photos/construction-site-ahsmann.jpg',
+  defect: '/demo-assets/issue-photos/sample-defect.svg',
+};
 
 export function loadDemoData() {
   // Start clean so "load demo" is repeatable and predictable.
@@ -89,15 +94,16 @@ export function loadDemoData() {
   setTaskStatus(bPaint.id, TASK_STATUS.DONE);
 
   // Completion photos on the done work (for the report's recent photos).
-  addPhoto({taskId: bPlumb.id, uploadedByUserId: pat.id, imageData: DEMO_PHOTO, caption: 'Basin connected'});
-  addPhoto({taskId: bPaint.id, uploadedByUserId: paula.id, imageData: DEMO_PHOTO, caption: 'Second coat done'});
-  addPhoto({taskId: kWire.id, uploadedByUserId: eli.id, imageData: DEMO_PHOTO, caption: 'First-fix in progress'});
+  addPhoto({taskId: bPlumb.id, uploadedByUserId: pat.id, imageData: ASSET.site, caption: 'Basin connected'});
+  addPhoto({taskId: bPaint.id, uploadedByUserId: paula.id, imageData: ASSET.workers, caption: 'Second coat done'});
+  addPhoto({taskId: kWire.id, uploadedByUserId: eli.id, imageData: ASSET.site, caption: 'First-fix in progress'});
 
-  // At least one open issue -> blocks the bedroom.
+  // At least one open issue -> blocks the bedroom (with evidence photo).
   raiseIssue({
     taskId: bedRad.id,
     raisedByUserId: foreman.id,
     description: 'Radiator feed pipe is 15mm short — needs an extension before fitting.',
+    imageData: ASSET.defect,
     responsibleUserId: pat.id,
   });
 
