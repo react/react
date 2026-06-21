@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 620" font-family="system-ui, sans-serif">
+  <!-- BuildView demo apartment plan — created by BuildView, free to use. -->
+  <rect width="800" height="620" fill="#f4f4f5"/>
+  <text x="32" y="44" font-size="26" font-weight="800" fill="#1e293b">BuildView Demo Site — Tower A · Floor 3</text>
+
+  <!-- outer wall -->
+  <rect x="40" y="70" width="720" height="500" fill="#ffffff" stroke="#1e293b" stroke-width="8"/>
+  <!-- internal walls (cross) -->
+  <line x1="400" y1="70" x2="400" y2="570" stroke="#1e293b" stroke-width="6"/>
+  <line x1="40" y1="320" x2="760" y2="320" stroke="#1e293b" stroke-width="6"/>
+
+  <!-- door openings (gaps shown as white notches) -->
+  <rect x="370" y="200" width="60" height="6" fill="#ffffff"/>
+  <rect x="370" y="430" width="60" height="6" fill="#ffffff"/>
+  <rect x="200" y="317" width="60" height="12" fill="#ffffff"/>
+  <rect x="540" y="317" width="60" height="12" fill="#ffffff"/>
+
+  <!-- windows (ticks on outer wall) -->
+  <line x1="150" y1="70" x2="250" y2="70" stroke="#94a3b8" stroke-width="8"/>
+  <line x1="540" y1="70" x2="640" y2="70" stroke="#94a3b8" stroke-width="8"/>
+  <line x1="150" y1="570" x2="250" y2="570" stroke="#94a3b8" stroke-width="8"/>
+  <line x1="540" y1="570" x2="640" y2="570" stroke="#94a3b8" stroke-width="8"/>
+
+  <!-- room labels -->
+  <text x="220" y="200" font-size="24" font-weight="700" fill="#334155" text-anchor="middle">Kitchen</text>
+  <text x="580" y="200" font-size="24" font-weight="700" fill="#334155" text-anchor="middle">Bathroom</text>
+  <text x="220" y="450" font-size="24" font-weight="700" fill="#334155" text-anchor="middle">Living Room</text>
+  <text x="580" y="450" font-size="24" font-weight="700" fill="#334155" text-anchor="middle">Bedroom</text>
+
+  <text x="32" y="605" font-size="13" fill="#94a3b8">Schematic demo plan — not to scale. © BuildView, free to use.</text>
+</svg>

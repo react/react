@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" font-family="system-ui, sans-serif">
+  <!-- BuildView generated issue-evidence placeholder — free to use. -->
+  <rect width="800" height="600" fill="#e7e5e4"/>
+  <rect x="0" y="0" width="800" height="64" fill="#dc2626"/>
+  <text x="24" y="42" font-size="28" font-weight="800" fill="#ffffff">ISSUE EVIDENCE</text>
+  <!-- a stylised "defect" marker on a wall -->
+  <rect x="120" y="160" width="560" height="320" fill="#fafaf9" stroke="#a8a29e" stroke-width="6"/>
+  <path d="M180 440 L360 230 L520 380 L600 300" fill="none" stroke="#dc2626" stroke-width="10" stroke-dasharray="4 14" stroke-linecap="round"/>
+  <circle cx="430" cy="330" r="46" fill="none" stroke="#dc2626" stroke-width="8"/>
+  <text x="400" y="540" font-size="18" fill="#78716c" text-anchor="middle">Sample defect photo placeholder (replace with a real site photo)</text>
+</svg>

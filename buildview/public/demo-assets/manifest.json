@@ -1,0 +1,64 @@
+{
+  "note": "Machine-readable index of BuildView demo assets. Paths are relative to /demo-assets (served from buildview/public). License details in ASSETS_CREDITS.md.",
+  "floorPlans": [
+    {
+      "id": "demo-apartment-plan",
+      "title": "Demo apartment plan (Tower A · Floor 3)",
+      "path": "/demo-assets/floor-plans/demo-apartment.svg",
+      "type": "image/svg+xml",
+      "license": "BuildView — free to use",
+      "safe": "yes"
+    },
+    {
+      "id": "sample-floorplan",
+      "title": "Sample residential floor plan",
+      "path": "/demo-assets/floor-plans/sample-floorplan.jpg",
+      "type": "image/jpeg",
+      "license": "Public Domain",
+      "attribution": "Boereck, via Wikimedia Commons",
+      "safe": "yes"
+    }
+  ],
+  "drawings": [
+    {
+      "id": "habs-residence-floorplan",
+      "title": "HABS measured floor-plan sheet",
+      "path": "/demo-assets/drawings/habs-residence-floorplan.jpg",
+      "type": "image/jpeg",
+      "license": "Public Domain (US Government / HABS)",
+      "attribution": "Historic American Buildings Survey, US National Park Service",
+      "safe": "yes"
+    }
+  ],
+  "sitePhotos": [
+    {
+      "id": "workers-on-site",
+      "title": "Construction workers on site",
+      "path": "/demo-assets/site-photos/workers-on-site-mekis.jpg",
+      "type": "image/jpeg",
+      "license": "CC BY 4.0",
+      "attribution": "Daniel Mekis, via Wikimedia Commons",
+      "safe": "yes"
+    },
+    {
+      "id": "construction-site",
+      "title": "Construction site (progress)",
+      "path": "/demo-assets/site-photos/construction-site-ahsmann.jpg",
+      "type": "image/jpeg",
+      "license": "CC BY-SA 3.0",
+      "attribution": "Mark Ahsmann, via Wikimedia Commons",
+      "safe": "yes"
+    }
+  ],
+  "issuePhotos": [
+    {
+      "id": "sample-defect",
+      "title": "Sample defect (placeholder)",
+      "path": "/demo-assets/issue-photos/sample-defect.svg",
+      "type": "image/svg+xml",
+      "license": "BuildView — free to use",
+      "safe": "yes"
+    }
+  ],
+  "bim": []
+}
