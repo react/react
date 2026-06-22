@@ -1152,6 +1152,43 @@ describe('TreeListContext', () => {
       `);
     });
 
+    it('should do nothing when jumping to a result with no search matches', () => {
+      const Foo = () => null;
+      const Bar = () => null;
+      const Baz = () => null;
+
+      utils.act(() =>
+        render(
+          <React.Fragment>
+            <Foo />
+            <Baz />
+            <Bar />
+            <Baz />
+          </React.Fragment>,
+        ),
+      );
+
+      let renderer;
+      utils.act(() => (renderer = TestRenderer.create(<Contexts />)));
+
+      utils.act(() => dispatch({type: 'SET_SEARCH_TEXT', payload: 'nomatch'}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state.searchResults).toHaveLength(0);
+      expect(state.searchIndex).toBe(null);
+
+      utils.act(() => dispatch({type: 'GO_TO_SEARCH_RESULT', payload: 0}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state.searchIndex).toBe(null);
+      expect(state.inspectedElementID).toBe(null);
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+             <Bar>
+             <Baz>
+      `);
+    });
+
     it('should advance past the selected result when retyping the same search', () => {
       const Foo = () => null;
       const Bar = () => null;

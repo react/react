@@ -7,11 +7,17 @@
  * @flow
  */
 
+import typeof {
+  SyntheticEvent,
+  SyntheticKeyboardEvent,
+} from 'react-dom-bindings/src/events/SyntheticEvent';
+
 import * as React from 'react';
 import {useEffect, useRef, useState} from 'react';
 import Button from './Button';
 import ButtonIcon from './ButtonIcon';
 import Icon from './Icon';
+import AutoSizeInput from './Components/NativeStyleEditor/AutoSizeInput';
 
 import styles from './SearchInput.css';
 
@@ -45,22 +51,23 @@ export default function SearchInput({
   const indexValue =
     indexDraft !== null ? indexDraft : String(currentResultNumber);
 
-  // $FlowFixMe[missing-local-annot]
-  const handleIndexFocus = ({currentTarget}) => currentTarget.select();
-  // $FlowFixMe[missing-local-annot]
-  const handleIndexChange = ({currentTarget}) => {
-    const raw = currentTarget.value;
-    setIndexDraft(raw);
+  const handleIndexChange = (event: SyntheticEvent) => {
+    // Only digits are meaningful here; strip anything else as it's typed.
+    const raw = event.currentTarget.value.replace(/[^0-9]/g, '');
 
-    const parsed = parseInt(raw, 10);
-    if (!isNaN(parsed) && searchResultsCount > 0) {
-      const clamped = Math.max(1, Math.min(parsed, searchResultsCount));
-      goToResult(clamped - 1);
+    if (raw === '' || searchResultsCount === 0) {
+      setIndexDraft(raw);
+      return;
     }
+
+    // Clamp into [1, searchResultsCount] so the field never displays an
+    // out-of-range value, then live-preview by scrolling to that result.
+    const clamped = Math.max(1, Math.min(parseInt(raw, 10), searchResultsCount));
+    setIndexDraft(String(clamped));
+    goToResult(clamped - 1);
   };
   const handleIndexBlur = () => setIndexDraft(null);
-  // $FlowFixMe[missing-local-annot]
-  const handleIndexKeyDown = event => {
+  const handleIndexKeyDown = (event: SyntheticKeyboardEvent) => {
     if (event.key === 'Enter' || event.key === 'Escape') {
       event.preventDefault();
       event.currentTarget.blur();
@@ -132,22 +139,20 @@ export default function SearchInput({
           <span
             className={styles.IndexLabel}
             data-testname={testName ? `${testName}-ResultsCount` : undefined}>
-            <input
+            <AutoSizeInput
               className={styles.IndexInput}
-              data-testname={
+              testName={
                 testName ? `${testName}-ResultIndexInput` : undefined
               }
               type="text"
               inputMode="numeric"
+              pattern="[0-9]*"
+              aria-label="Go to search result number"
+              title="Go to search result number"
               disabled={searchResultsCount === 0}
               onBlur={handleIndexBlur}
               onChange={handleIndexChange}
-              onFocus={handleIndexFocus}
               onKeyDown={handleIndexKeyDown}
-              style={{
-                width: `calc(${String(searchResultsCount).length}ch + 2px)`,
-              }}
-              title="Go to search result number"
               value={indexValue}
             />
             {' | '}
