@@ -590,5 +590,6 @@
   "602": "Invalid null prototype object initializer.",
   "603": "Already initialized null prototype object.",
   "604": "Only plain objects, and a few built-ins, can be passed to Client Components from Server Components. Classes are not supported.%s",
-  "605": "Only plain objects, and a few built-ins, can be passed to Server Functions. Classes are not supported.%s"
+  "605": "Only plain objects, and a few built-ins, can be passed to Server Functions. Classes are not supported.%s",
+  "606": "A component was suspended by an uncached promise. Creating promises inside a Client Component or hook is not yet supported, except via a Suspense-compatible library or framework."
 }
