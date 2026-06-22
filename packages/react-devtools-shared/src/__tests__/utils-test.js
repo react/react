@@ -501,5 +501,13 @@ function f() { }
         formatConsoleArguments('This is the %s template', undefined),
       ).toEqual(['This is the undefined template']);
     });
+
+    it('keeps a trailing percent sign', () => {
+      expect(formatConsoleArguments('Progress 100%', 'extra')).toEqual([
+        'Progress 100%',
+        'extra',
+      ]);
+      expect(formatConsoleArguments('%s 100%', 'done')).toEqual(['done 100%']);
+    });
   });
 });
