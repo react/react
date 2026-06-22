@@ -160,6 +160,10 @@ function serializeSetID(id: number): string {
   return '$W' + id.toString(16);
 }
 
+function serializeNullPrototypeObjectID(id: number): string {
+  return '$p' + id.toString(16);
+}
+
 function serializeBlobID(id: number): string {
   return '$B' + id.toString(16);
 }
@@ -220,6 +224,17 @@ export function processReply(
     }
     formData.append(formFieldPrefix + blobId, blob);
     return '$' + tag + blobId.toString(16);
+  }
+
+  function serializeNullPrototypeObject(object: any): string {
+    const objectId = nextPartId++;
+    const entries: Array<[string, ReactServerValue]> = Object.entries(object);
+    const partJSON = serializeModel(entries, objectId);
+    if (formData === null) {
+      formData = new FormData();
+    }
+    formData.append(formFieldPrefix + objectId, partJSON);
+    return serializeNullPrototypeObjectID(objectId);
   }
 
   function serializeBinaryReader(reader: any): string {
@@ -736,12 +751,13 @@ export function processReply(
       const proto = getPrototypeOf(value);
       if (
         proto !== ObjectPrototype &&
-        (proto === null || getPrototypeOf(proto) !== null)
+        proto !== null &&
+        getPrototypeOf(proto) !== null
       ) {
         if (temporaryReferences === undefined) {
           throw new Error(
             'Only plain objects, and a few built-ins, can be passed to Server Functions. ' +
-              'Classes or null prototypes are not supported.' +
+              'Classes are not supported.' +
               (__DEV__ ? describeObjectForErrorMessage(parent, key) : ''),
           );
         }
@@ -762,7 +778,7 @@ export function processReply(
             objectName(value),
             describeObjectForErrorMessage(parent, key),
           );
-        } else if (!isSimpleObject(value)) {
+        } else if (proto !== null && !isSimpleObject(value)) {
           console.error(
             'Only plain objects can be passed to Server Functions from the Client. ' +
               'Classes or other objects with methods are not supported.%s',
@@ -779,6 +795,10 @@ export function processReply(
             );
           }
         }
+      }
+
+      if (proto === null) {
+        return serializeNullPrototypeObject(value);
       }
 
       // $FlowFixMe[incompatible-return]

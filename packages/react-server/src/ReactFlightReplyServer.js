@@ -864,7 +864,8 @@ function fulfillReference(
         typeof value === 'object' &&
         value !== null &&
         (getPrototypeOf(value) === ObjectPrototype ||
-          getPrototypeOf(value) === ArrayPrototype) &&
+          getPrototypeOf(value) === ArrayPrototype ||
+          getPrototypeOf(value) === null) &&
         hasOwnProperty.call(value, name)
       ) {
         value = value[name];
@@ -1072,7 +1073,8 @@ function getOutlinedModel<T>(
           // $FlowFixMe[invalid-compare] This check is still needed at runtime.
           value !== null &&
           (getPrototypeOf(value) === ObjectPrototype ||
-            getPrototypeOf(value) === ArrayPrototype) &&
+            getPrototypeOf(value) === ArrayPrototype ||
+            getPrototypeOf(value) === null) &&
           hasOwnProperty.call(value, name)
         ) {
           value = value[name];
@@ -1186,6 +1188,26 @@ function createSet(response: Response, model: Array<any>): Set<any> {
   (model as any).$$consumed = true;
   const set = new Set(model);
   return set;
+}
+
+function createNullPrototypeObject(
+  response: Response,
+  model: Array<[string, any]>,
+): {[key: string]: any} {
+  if (!isArray(model)) {
+    throw new Error('Invalid null prototype object initializer.');
+  }
+  if ((model as any).$$consumed === true) {
+    throw new Error('Already initialized null prototype object.');
+  }
+  // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
+  (model as any).$$consumed = true;
+  const object: any = Object.create(null);
+  for (let i = 0; i < model.length; i++) {
+    const entry = model[i];
+    object[entry[0]] = entry[1];
+  }
+  return object;
 }
 
 function extractIterator(response: Response, model: Array<any>): Iterator<any> {
@@ -1641,6 +1663,18 @@ function parseModelString(
         // Set
         const ref = value.slice(2);
         return getOutlinedModel(response, ref, obj, key, null, createSet);
+      }
+      case 'p': {
+        // Object with a null prototype
+        const ref = value.slice(2);
+        return getOutlinedModel(
+          response,
+          ref,
+          obj,
+          key,
+          null,
+          createNullPrototypeObject,
+        );
       }
       case 'K': {
         // FormData
