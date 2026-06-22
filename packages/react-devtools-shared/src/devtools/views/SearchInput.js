@@ -62,7 +62,10 @@ export default function SearchInput({
 
     // Clamp into [1, searchResultsCount] so the field never displays an
     // out-of-range value, then live-preview by scrolling to that result.
-    const clamped = Math.max(1, Math.min(parseInt(raw, 10), searchResultsCount));
+    const clamped = Math.max(
+      1,
+      Math.min(parseInt(raw, 10), searchResultsCount),
+    );
     setIndexDraft(String(clamped));
     goToResult(clamped - 1);
   };
@@ -141,9 +144,7 @@ export default function SearchInput({
             data-testname={testName ? `${testName}-ResultsCount` : undefined}>
             <AutoSizeInput
               className={styles.IndexInput}
-              testName={
-                testName ? `${testName}-ResultIndexInput` : undefined
-              }
+              testName={testName ? `${testName}-ResultIndexInput` : undefined}
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
