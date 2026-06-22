@@ -551,10 +551,14 @@ if (typeof localSetImmediate === 'function') {
   channel.port1.onmessage = performWorkUntilDeadline;
   // In environments where MessagePort supports unref (e.g. Node.js with
   // worker_threads), call it so the port does not keep the process alive.
+  // $FlowFixMe[prop-missing] unref is Node-specific, not in the DOM MessagePort type
   if (typeof channel.port1.unref === 'function') {
+    // $FlowFixMe[incompatible-use]
     channel.port1.unref();
   }
+  // $FlowFixMe[prop-missing] unref is Node-specific, not in the DOM MessagePort type
   if (typeof port.unref === 'function') {
+    // $FlowFixMe[incompatible-use]
     port.unref();
   }
   schedulePerformWorkUntilDeadline = () => {

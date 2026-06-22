@@ -1433,18 +1433,25 @@ export default class Store extends EventEmitter<{
           if (this._idToElement.has(id)) {
             // Skip duplicate operations instead of throwing
             if (__DEBUG__) {
-                console.warn(
-                  `Skipping add operation for node "${id}" - already exists in Store.`
-                );
-              }
+              console.warn(
+                `Skipping add operation for node "${id}" - already exists in Store.`,
+              );
+            }
             // Skip to end of this operation based on element type
             if (type === ElementTypeRoot) {
-                i++; i++; i++; i++;
-              } else {
-                i++; i++; i++; i++; i++;
-              }
-              break;
+              i++;
+              i++;
+              i++;
+              i++;
+            } else {
+              i++;
+              i++;
+              i++;
+              i++;
+              i++;
             }
+            break;
+          }
 
           if (type === ElementTypeRoot) {
             // $FlowFixMe[constant-condition]
