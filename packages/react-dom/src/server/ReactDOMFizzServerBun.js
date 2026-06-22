@@ -68,9 +68,26 @@ function renderToReadableStream(
   return new Promise((resolve, reject) => {
     let onFatalError;
     let onAllReady;
+    // See facebook/react#36763. Remove the AbortSignal listener (registered
+    // below, if any) once the request reaches a terminal state, so that a
+    // long-lived or shared signal doesn't accumulate listeners for requests
+    // that have already finished.
+    let removeAbortListener: null | (() => void) = null;
+    const cleanupAbortListener = () => {
+      if (removeAbortListener !== null) {
+        removeAbortListener();
+        removeAbortListener = null;
+      }
+    };
     const allReady = new Promise<void>((res, rej) => {
-      onAllReady = res;
-      onFatalError = rej;
+      onAllReady = () => {
+        cleanupAbortListener();
+        res();
+      };
+      onFatalError = (error: mixed) => {
+        cleanupAbortListener();
+        rej(error);
+      };
     });
 
     function onShellReady() {
@@ -144,9 +161,12 @@ function renderToReadableStream(
       } else {
         const listener = () => {
           abort(request, (signal as any).reason);
-          signal.removeEventListener('abort', listener);
+          cleanupAbortListener();
         };
         signal.addEventListener('abort', listener);
+        removeAbortListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
