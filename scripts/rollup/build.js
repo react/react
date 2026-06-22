@@ -185,6 +185,7 @@ let getRollupInteropValue = id => {
     'art/modes/svg',
     'JSResourceReferenceImpl',
     'error-stack-parser',
+    'lru-cache',
     'neo-async',
     'webpack/lib/dependencies/ModuleDependency',
     'webpack/lib/dependencies/NullDependency',
@@ -371,6 +372,7 @@ function getPlugins(
     const isProfiling = isProfilingBundleType(bundleType);
 
     const needsMinifiedByClosure =
+      bundle.skipClosureCompiler !== true &&
       bundleType !== ESM_PROD &&
       bundleType !== ESM_DEV &&
       // TODO(@poteto) figure out ICE in closure compiler for eslint-plugin-react-hooks (ts)

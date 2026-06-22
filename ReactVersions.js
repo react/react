@@ -53,7 +53,7 @@ const stablePackages = {
 // These packages do not exist in the @canary or @latest channel, only
 // @experimental. We don't use semver, just the commit sha, so this is just a
 // list of package names instead of a map.
-const experimentalPackages = ['react-markup'];
+const experimentalPackages = ['react-devtools-cdt-mcp', 'react-markup'];
 
 module.exports = {
   ReactVersion,

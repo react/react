@@ -445,6 +445,33 @@ const bundles = [
     externals: ['react'],
   },
 
+  /******* React DevTools CDT MCP *******/
+  {
+    bundleTypes: __EXPERIMENTAL__ ? [NODE_DEV, NODE_PROD] : [],
+    moduleType: ISOMORPHIC,
+    entry: 'react-devtools-cdt-mcp/src/index.js',
+    name: 'react-devtools-cdt-mcp',
+    global: 'ReactDevToolsCdtMcp',
+    minifyWithProdErrorCodes: false,
+    skipClosureCompiler: true,
+    wrapWithModuleBoundaries: false,
+    babel(options) {
+      // DevTools helper packages are browser-targeted and use modern
+      // block-scoped patterns that Babel's ES5 transform cannot always lower
+      // without injecting closures. This package is loaded by modern Chromium
+      // environments through chrome-devtools-mcp, so keep those constructs.
+      options.plugins = options.plugins.filter(plugin => {
+        const pluginName = Array.isArray(plugin) ? plugin[0] : plugin;
+        return (
+          pluginName !== '@babel/plugin-transform-block-scoping' &&
+          pluginName !== '@babel/plugin-transform-for-of'
+        );
+      });
+      return options;
+    },
+    externals: [],
+  },
+
   /******* React Server DOM Webpack Server *******/
   {
     bundleTypes: [NODE_DEV, NODE_PROD],

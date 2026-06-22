@@ -9,13 +9,22 @@
     "url": "https://github.com/facebook/react.git",
     "directory": "packages/react-devtools-cdt-mcp"
   },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "error-stack-parser": "^2.1.4",
+    "lru-cache": "^5.1.1"
+  },
   "files": [
-    "dist",
-    "index.js"
+    "LICENSE",
+    "README.md",
+    "index.js",
+    "cjs/",
+    "dist/"
   ],
   "scripts": {
     "build": "cross-env NODE_ENV=production rollup -c rollup.config.cjs",
-    "prepublish": "yarn run build",
     "start": "cross-env NODE_ENV=development rollup -c rollup.config.cjs --watch",
     "test:e2e": "node e2e/run.js",
     "test:e2e:ci": "cross-env E2E_CI=true node e2e/run.js"
