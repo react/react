@@ -83,10 +83,30 @@ export function addObjectToProperties(
 }
 
 function readReactElementTypeof(value: Object): mixed {
-  // Prevents dotting into $$typeof in opaque origin windows.
-  return '$$typeof' in value && hasOwnProperty.call(value, '$$typeof')
-    ? value.$$typeof
-    : undefined;
+  // Prevents dotting into $$typeof in opaque origin windows. Reading any
+  // property of a cross-origin Window throws a SecurityError, and that includes
+  // the `in` operator below (it triggers the [[HasProperty]] internal method),
+  // so the whole access has to be guarded — otherwise the DEV-only perf logger
+  // would throw out of the commit phase and corrupt the fiber tree.
+  try {
+    return '$$typeof' in value && hasOwnProperty.call(value, '$$typeof')
+      ? value.$$typeof
+      : undefined;
+  } catch (x) {
+    return undefined;
+  }
+}
+
+function safeHas(key: string, object: Object): boolean {
+  // `key in object` triggers the [[HasProperty]] internal method, which throws
+  // a SecurityError for a cross-origin Window — including for an enumerable
+  // child-frame index that is present on one side of a diff but not the other.
+  // An unreadable key is treated as absent so the DEV-only logger never throws.
+  try {
+    return key in object;
+  } catch (x) {
+    return false;
+  }
 }
 
 export function addValueToProperties(
@@ -322,7 +342,7 @@ export function addObjectDiffToProperties(
       break;
     }
 
-    if (!(key in next)) {
+    if (!safeHas(key, next)) {
       properties.push([REMOVED + '\xa0\xa0'.repeat(indent) + key, '\u2026']);
       isDeeplyEqual = false;
     }
@@ -342,7 +362,7 @@ export function addObjectDiffToProperties(
       break;
     }
 
-    if (key in prev) {
+    if (safeHas(key, prev)) {
       const prevValue = prev[key];
       const nextValue = next[key];
       if (prevValue !== nextValue) {
