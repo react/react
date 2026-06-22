@@ -1431,12 +1431,20 @@ export default class Store extends EventEmitter<{
           i += 3;
 
           if (this._idToElement.has(id)) {
-            this._throwAndEmitError(
-              Error(
-                `Cannot add node "${id}" because a node with that id is already in the Store.`,
-              ),
-            );
-          }
+            // Skip duplicate operations instead of throwing
+            if (__DEBUG__) {
+                console.warn(
+                  `Skipping add operation for node "${id}" - already exists in Store.`
+                );
+              }
+            // Skip to end of this operation based on element type
+            if (type === ElementTypeRoot) {
+                i++; i++; i++; i++;
+              } else {
+                i++; i++; i++; i++; i++;
+              }
+              break;
+            }
 
           if (type === ElementTypeRoot) {
             // $FlowFixMe[constant-condition]

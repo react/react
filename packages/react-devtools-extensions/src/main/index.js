@@ -459,6 +459,11 @@ function performInTabNavigationCleanup() {
     profilingData = store.profilerStore.profilingData;
   }
 
+  // Shutdown bridge FIRST to stop receiving operations
+  if (bridge !== null) {
+    bridge.shutdown();
+  }
+
   // If panels were already created, and we have already mounted React root to display
   // tabs (Components or Profiler), we should unmount root first and render them again
   if (
@@ -471,11 +476,6 @@ function performInTabNavigationCleanup() {
     // We can revisit this in the future as a small optimization.
     // This should also emit bridge.shutdown, but only if this root was mounted
     flushSync(() => root.unmount());
-  } else {
-    // In case Browser DevTools were opened, but user never pressed on extension panels
-    // They were never mounted and there is nothing to unmount, but we need to emit shutdown event
-    // because bridge was already created
-    bridge?.shutdown();
   }
 
   // Do not nullify componentsPanelPortal and profilerPanelPortal on purpose,
@@ -631,7 +631,7 @@ let port: ExtensionRuntimePort = null as $FlowFixMe;
 // `Cannot add node "1" because a node with that id is already in the Store.`
 const debouncedMountReactDevToolsCallback = debounce(
   mountReactDevToolsWhenReactHasLoaded,
-  500,
+  750,
 );
 
 // Clean up everything, but start mounting React DevTools panels if user stays at this page
