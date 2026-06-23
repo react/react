@@ -596,11 +596,25 @@ export function parseElementDisplayNameFromBackend(
       break;
   }
 
+  let compiledWithForget = false;
+  if (hocDisplayNames !== null) {
+    const forgetIndex = hocDisplayNames.indexOf('Forget');
+    if (forgetIndex >= 0) {
+      compiledWithForget = true;
+      hocDisplayNames = hocDisplayNames.filter(
+        hocDisplayName => hocDisplayName !== 'Forget',
+      );
+      if (hocDisplayNames.length === 0) {
+        hocDisplayNames = null;
+      }
+    }
+  }
+
   return {
     // $FlowFixMe[incompatible-type]
     formattedDisplayName: displayName,
     hocDisplayNames,
-    compiledWithForget: false,
+    compiledWithForget,
   };
 }
 

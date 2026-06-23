@@ -11,7 +11,9 @@ import {
   getDisplayName,
   getDisplayNameForReactElement,
   isPlainObject,
+  parseElementDisplayNameFromBackend,
 } from 'react-devtools-shared/src/utils';
+import {ElementTypeMemo} from 'react-devtools-shared/src/frontend/types';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
 import {
   formatConsoleArguments,
@@ -79,6 +81,21 @@ describe('utils', () => {
         ['div', null],
         ['App', null],
       ]);
+    });
+  });
+
+  describe('parseElementDisplayNameFromBackend', () => {
+    it('should identify Forget inside HOC wrappers', () => {
+      expect(
+        parseElementDisplayNameFromBackend(
+          'Memo(Forget(Example))',
+          ElementTypeMemo,
+        ),
+      ).toEqual({
+        formattedDisplayName: 'Example',
+        hocDisplayNames: ['Memo'],
+        compiledWithForget: true,
+      });
     });
   });
 
