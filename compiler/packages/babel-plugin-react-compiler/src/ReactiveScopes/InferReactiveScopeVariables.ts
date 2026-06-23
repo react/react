@@ -6,7 +6,7 @@
  */
 
 import {CompilerError, SourceLocation} from '..';
-import {Environment} from '../HIR';
+import {Environment, getHookKind, isUseOperator} from '../HIR';
 import {
   DeclarationId,
   GeneratedSource,
@@ -281,6 +281,52 @@ export function findDisjointMutableValues(
     }
   }
 
+  /*
+   * Hook and `use()` calls are barriers for reactive scopes: a scope can never
+   * span such a call, because that would make the call conditional on the
+   * scope's cache (see FlattenScopesWithHooksOrUse). Collect the instruction ids
+   * of all hook/use calls so that we never union a value defined *before* a hook
+   * call into the same scope as values that mutate together *after* it. Without
+   * this, a value created before a hook whose mutable range happens to extend
+   * past the hook (e.g. because it is later captured by a function and another
+   * call) drags those later values into a scope that straddles the hook. That
+   * merged scope is then pruned wholesale, needlessly de-memoizing every value
+   * in it. Splitting at the barrier instead leaves the cross-hook value as a
+   * scope *dependency* of the later scopes, preserving their memoization.
+   */
+  const hookCallIds: Array<InstructionId> = [];
+  for (const [, block] of fn.body.blocks) {
+    for (const instr of block.instructions) {
+      const value = instr.value;
+      if (value.kind === 'CallExpression' || value.kind === 'MethodCall') {
+        const callee =
+          value.kind === 'CallExpression' ? value.callee : value.property;
+        if (
+          getHookKind(fn.env, callee.identifier) != null ||
+          isUseOperator(callee.identifier)
+        ) {
+          hookCallIds.push(instr.id);
+        }
+      }
+    }
+  }
+  /*
+   * Returns the id of the nearest hook/use call strictly before `id`, or 0 if
+   * none. Operands whose mutable range starts at or before this barrier cannot
+   * share a scope with an instruction at `id` without spanning the hook.
+   */
+  function hookBarrierBefore(id: InstructionId): InstructionId {
+    let barrier = makeInstructionId(0);
+    for (const hookId of hookCallIds) {
+      if (hookId < id) {
+        barrier = hookId;
+      } else {
+        break;
+      }
+    }
+    return barrier;
+  }
+
   for (const [_, block] of fn.body.blocks) {
     /*
      * If a phi is mutated after creation, then we need to alias all of its operands such that they
@@ -407,7 +453,24 @@ export function findDisjointMutableValues(
         }
       }
       if (operands.length !== 0) {
-        scopeIdentifiers.union(operands);
+        /*
+         * Drop operands that were defined before a hook/use call preceding this
+         * instruction: unioning them here would create a scope spanning the
+         * hook. The instruction's own lvalue (defined at `instr.id`) is always
+         * retained, so the post-hook values still scope together.
+         */
+        const barrier = hookCallIds.length
+          ? hookBarrierBefore(instr.id)
+          : makeInstructionId(0);
+        const unionOperands =
+          barrier === 0
+            ? operands
+            : operands.filter(
+                identifier => identifier.mutableRange.start > barrier,
+              );
+        if (unionOperands.length !== 0) {
+          scopeIdentifiers.union(unionOperands);
+        }
       }
     }
   }
