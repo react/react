@@ -20,6 +20,7 @@ import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/wit
 import StackTraceView from './StackTraceView';
 import OwnerView from './OwnerView';
 import {meta} from '../../../hydration';
+import Skeleton from './Skeleton';
 import useInferredName from '../useInferredName';
 
 import {getClassNameForEnvironment} from '../SuspenseTab/SuspenseEnvironmentColors.js';
@@ -203,102 +204,109 @@ function SuspendedByRow({
       </Button>
       {isOpen && (
         <div className={styles.CollapsableContent}>
-          {showIOStack && (
-            <StackTraceView
-              stack={ioInfo.stack}
-              environmentName={
-                ioOwner !== null && ioOwner.env === ioInfo.env
-                  ? null
-                  : ioInfo.env
-              }
-            />
-          )}
-          {ioOwner !== null &&
-          ioOwner.id !== inspectedElement.id &&
-          (showIOStack ||
-            !showAwaitStack ||
-            asyncOwner === null ||
-            ioOwner.id !== asyncOwner.id) ? (
-            <OwnerView
-              key={ioOwner.id}
-              displayName={ioOwner.displayName || 'Anonymous'}
-              environmentName={
-                ioOwner.env === inspectedElement.env &&
-                ioOwner.env === ioInfo.env
-                  ? null
-                  : ioOwner.env
-              }
-              hocDisplayNames={ioOwner.hocDisplayNames}
-              compiledWithForget={ioOwner.compiledWithForget}
-              id={ioOwner.id}
-              isInStore={store.containsElement(ioOwner.id)}
-              type={ioOwner.type}
-            />
-          ) : null}
-          {showAwaitStack ? (
-            <>
-              <div className={styles.SmallHeader}>awaited at:</div>
-              {asyncInfo.stack !== null && asyncInfo.stack.length > 0 && (
-                <StackTraceView
-                  stack={asyncInfo.stack}
-                  environmentName={
-                    asyncOwner !== null && asyncOwner.env === asyncInfo.env
-                      ? null
-                      : asyncInfo.env
-                  }
-                />
-              )}
-              {asyncOwner !== null && asyncOwner.id !== inspectedElement.id ? (
-                <OwnerView
-                  key={asyncOwner.id}
-                  displayName={asyncOwner.displayName || 'Anonymous'}
-                  environmentName={
-                    asyncOwner.env === inspectedElement.env &&
-                    asyncOwner.env === asyncInfo.env
-                      ? null
-                      : asyncOwner.env
-                  }
-                  hocDisplayNames={asyncOwner.hocDisplayNames}
-                  compiledWithForget={asyncOwner.compiledWithForget}
-                  id={asyncOwner.id}
-                  isInStore={store.containsElement(asyncOwner.id)}
-                  type={asyncOwner.type}
-                />
-              ) : null}
-            </>
-          ) : null}
-          <div className={styles.PreviewContainer}>
-            <KeyValue
-              alphaSort={true}
-              bridge={bridge}
-              canDeletePaths={false}
-              canEditValues={false}
-              canRenamePaths={false}
-              depth={1}
-              element={element}
-              hidden={false}
-              inspectedElement={inspectedElement}
-              name={
-                isFulfilled
-                  ? 'awaited value'
-                  : isRejected
-                    ? 'rejected with'
-                    : 'pending value'
-              }
-              path={
-                isFulfilled
-                  ? [index, 'awaited', 'value', 'value']
-                  : isRejected
-                    ? [index, 'awaited', 'value', 'reason']
-                    : [index, 'awaited', 'value']
-              }
-              pathRoot="suspendedBy"
-              store={store}
-              value={
-                isFulfilled ? value.value : isRejected ? value.reason : value
-              }
-            />
-          </div>
+          <React.Suspense
+            fallback={
+              <div className={styles.SuspendedBySkeleton}>
+                <Skeleton height={16} width="40%" />
+              </div>
+            }>
+            {showIOStack && (
+              <StackTraceView
+                stack={ioInfo.stack}
+                environmentName={
+                  ioOwner !== null && ioOwner.env === ioInfo.env
+                    ? null
+                    : ioInfo.env
+                }
+              />
+            )}
+            {ioOwner !== null &&
+            ioOwner.id !== inspectedElement.id &&
+            (showIOStack ||
+              !showAwaitStack ||
+              asyncOwner === null ||
+              ioOwner.id !== asyncOwner.id) ? (
+              <OwnerView
+                key={ioOwner.id}
+                displayName={ioOwner.displayName || 'Anonymous'}
+                environmentName={
+                  ioOwner.env === inspectedElement.env &&
+                  ioOwner.env === ioInfo.env
+                    ? null
+                    : ioOwner.env
+                }
+                hocDisplayNames={ioOwner.hocDisplayNames}
+                compiledWithForget={ioOwner.compiledWithForget}
+                id={ioOwner.id}
+                isInStore={store.containsElement(ioOwner.id)}
+                type={ioOwner.type}
+              />
+            ) : null}
+            {showAwaitStack ? (
+              <>
+                <div className={styles.SmallHeader}>awaited at:</div>
+                {asyncInfo.stack !== null && asyncInfo.stack.length > 0 && (
+                  <StackTraceView
+                    stack={asyncInfo.stack}
+                    environmentName={
+                      asyncOwner !== null && asyncOwner.env === asyncInfo.env
+                        ? null
+                        : asyncInfo.env
+                    }
+                  />
+                )}
+                {asyncOwner !== null && asyncOwner.id !== inspectedElement.id ? (
+                  <OwnerView
+                    key={asyncOwner.id}
+                    displayName={asyncOwner.displayName || 'Anonymous'}
+                    environmentName={
+                      asyncOwner.env === inspectedElement.env &&
+                      asyncOwner.env === asyncInfo.env
+                        ? null
+                        : asyncOwner.env
+                    }
+                    hocDisplayNames={asyncOwner.hocDisplayNames}
+                    compiledWithForget={asyncOwner.compiledWithForget}
+                    id={asyncOwner.id}
+                    isInStore={store.containsElement(asyncOwner.id)}
+                    type={asyncOwner.type}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            <div className={styles.PreviewContainer}>
+              <KeyValue
+                alphaSort={true}
+                bridge={bridge}
+                canDeletePaths={false}
+                canEditValues={false}
+                canRenamePaths={false}
+                depth={1}
+                element={element}
+                hidden={false}
+                inspectedElement={inspectedElement}
+                name={
+                  isFulfilled
+                    ? 'awaited value'
+                    : isRejected
+                      ? 'rejected with'
+                      : 'pending value'
+                }
+                path={
+                  isFulfilled
+                    ? [index, 'awaited', 'value', 'value']
+                    : isRejected
+                      ? [index, 'awaited', 'value', 'reason']
+                      : [index, 'awaited', 'value']
+                }
+                pathRoot="suspendedBy"
+                store={store}
+                value={
+                  isFulfilled ? value.value : isRejected ? value.reason : value
+                }
+              />
+            </div>
+          </React.Suspense>
         </div>
       )}
     </div>
