@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {Fragment, useContext} from 'react';
+import {Fragment, useContext, useState, use} from 'react';
 import {BridgeContext, StoreContext} from '../context';
 import InspectedElementBadges from './InspectedElementBadges';
 import InspectedElementContextTree from './InspectedElementContextTree';
@@ -19,15 +19,17 @@ import InspectedElementStateTree from './InspectedElementStateTree';
 import InspectedElementStyleXPlugin from './InspectedElementStyleXPlugin';
 import InspectedElementSuspendedBy from './InspectedElementSuspendedBy';
 import NativeStyleEditor from './NativeStyleEditor';
+import FetchFileWithCachingContext from './FetchFileWithCachingContext';
 import {enableStyleXFeatures} from 'react-devtools-feature-flags';
 import InspectedElementSourcePanel from './InspectedElementSourcePanel';
-import StackTraceView from './StackTraceView';
+import StackTraceView, {IgnoreListToggleButton} from './StackTraceView';
 import OwnerView from './OwnerView';
 import Skeleton from './Skeleton';
 import {
   ElementTypeSuspense,
   ElementTypeActivity,
 } from 'react-devtools-shared/src/frontend/types';
+import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
 
 import styles from './InspectedElementView.css';
 
@@ -38,6 +40,52 @@ import type {
 import type {HookNames} from 'react-devtools-shared/src/frontend/types';
 import type {ToggleParseHookNames} from './InspectedElementContext';
 import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
+
+type StackTraceGroupProps = {
+  children: (showIgnoreList: boolean) => React.Node,
+  componentStack: InspectedElement['stack'],
+};
+
+function StackTraceGroup({
+  children,
+  componentStack,
+}: StackTraceGroupProps): React.Node {
+  const [showIgnoreList, setShowIgnoreList] = useState(false);
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const hasIgnoredFrames =
+    componentStack !== null &&
+    componentStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  return (
+    <>
+      {children(showIgnoreList)}
+      {hasIgnoredFrames && (
+        <IgnoreListToggleButton
+          onClick={() => setShowIgnoreList(prev => !prev)}
+          showIgnoreList={showIgnoreList}
+        />
+      )}
+    </>
+  );
+}
 
 type Props = {
   element: Element,
@@ -189,33 +237,48 @@ export default function InspectedElementView({
                   <Skeleton height={16} width="40%" />
                 </div>
               }>
-              {showStack ? <StackTraceView stack={stack} /> : null}
-              {showOwnersList &&
-                owners?.map(owner => (
-                  <Fragment key={owner.id}>
-                    <OwnerView
-                      displayName={owner.displayName || 'Anonymous'}
-                      hocDisplayNames={owner.hocDisplayNames}
-                      environmentName={
-                        inspectedElement.env === owner.env ? null : owner.env
-                      }
-                      compiledWithForget={owner.compiledWithForget}
-                      id={owner.id}
-                      isInStore={store.containsElement(owner.id)}
-                      type={owner.type}
-                    />
-                    {owner.stack != null && owner.stack.length > 0 ? (
-                      <StackTraceView stack={owner.stack} />
+              <StackTraceGroup componentStack={stack}>
+                {(showIgnoreList: boolean) => (
+                  <>
+                    {showStack ? (
+                      <StackTraceView
+                        stack={stack}
+                        showIgnoreList={showIgnoreList}
+                      />
                     ) : null}
-                  </Fragment>
-                ))}
+                    {showOwnersList &&
+                      owners?.map(owner => (
+                        <Fragment key={owner.id}>
+                          <OwnerView
+                            displayName={owner.displayName || 'Anonymous'}
+                            hocDisplayNames={owner.hocDisplayNames}
+                            environmentName={
+                              inspectedElement.env === owner.env
+                                ? null
+                                : owner.env
+                            }
+                            compiledWithForget={owner.compiledWithForget}
+                            id={owner.id}
+                            isInStore={store.containsElement(owner.id)}
+                            type={owner.type}
+                          />
+                          {owner.stack != null && owner.stack.length > 0 ? (
+                            <StackTraceView stack={owner.stack} />
+                          ) : null}
+                        </Fragment>
+                      ))}
 
-              {rootType !== null && (
-                <div className={styles.OwnersMetaField}>{rootType}</div>
-              )}
-              {rendererLabel !== null && (
-                <div className={styles.OwnersMetaField}>{rendererLabel}</div>
-              )}
+                    {rootType !== null && (
+                      <div className={styles.OwnersMetaField}>{rootType}</div>
+                    )}
+                    {rendererLabel !== null && (
+                      <div className={styles.OwnersMetaField}>
+                        {rendererLabel}
+                      </div>
+                    )}
+                  </>
+                )}
+              </StackTraceGroup>
             </React.Suspense>
           </div>
         )}

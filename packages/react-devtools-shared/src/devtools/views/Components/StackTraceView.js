@@ -111,7 +111,6 @@ export function IgnoreListToggleButton({
   return (
     <div className={styles.IgnoreListToggleContainer}>
       <Button
-        aria-expanded={showIgnoreList}
         className={styles.IgnoreListToggleButton}
         onClick={onClick}
         title={label}>
@@ -124,13 +123,17 @@ export function IgnoreListToggleButton({
 type Props = {
   stack: ReactStackTrace,
   environmentName: null | string,
+  // TODO: Un-optional when removing showIgnoreListLocal
+  showIgnoreList?: boolean,
 };
 
 export default function StackTraceView({
   stack,
   environmentName,
+  showIgnoreList,
 }: Props): React.Node {
-  const [showIgnoreList, setShowIgnoreList] = useState(false);
+  // TODO: Remove this local state and use the prop directly.
+  const [showIgnoreListLocal, setShowIgnoreListLocal] = useState(false);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
 
   const hasIgnoredFrames = stack.some(callSite => {
@@ -164,15 +167,17 @@ export default function StackTraceView({
             // non-ignored row.
             index === stack.length - 1 ? environmentName : null
           }
-          showIgnoreList={showIgnoreList}
+          showIgnoreList={
+            showIgnoreList === undefined ? showIgnoreListLocal : showIgnoreList
+          }
         />
       ))}
       {/* TODO: Ideally this UI should be higher than a single Stack Trace so that there's not
         multiple buttons in a single inspection taking up space. */}
-      {hasIgnoredFrames && (
+      {showIgnoreList === undefined && hasIgnoredFrames && (
         <IgnoreListToggleButton
-          onClick={() => setShowIgnoreList(prev => !prev)}
-          showIgnoreList={showIgnoreList}
+          onClick={() => setShowIgnoreListLocal(prev => !prev)}
+          showIgnoreList={showIgnoreListLocal}
         />
       )}
     </div>
