@@ -8,8 +8,9 @@
  */
 
 import * as React from 'react';
-import {use, useContext} from 'react';
+import {use, useContext, useState} from 'react';
 
+import Button from '../Button';
 import useOpenResource from '../useOpenResource';
 
 import ElementBadges from './ElementBadges';
@@ -94,6 +95,32 @@ export function CallSiteView({
   );
 }
 
+type IgnoreListToggleButtonProps = {
+  onClick: () => void,
+  showIgnoreList: boolean,
+};
+
+export function IgnoreListToggleButton({
+  onClick,
+  showIgnoreList,
+}: IgnoreListToggleButtonProps): React.Node {
+  const label = showIgnoreList
+    ? 'Hide ignore-listed frames'
+    : 'Show ignore-listed frames';
+
+  return (
+    <div className={styles.IgnoreListToggleContainer}>
+      <Button
+        aria-expanded={showIgnoreList}
+        className={styles.IgnoreListToggleButton}
+        onClick={onClick}
+        title={label}>
+        {label}
+      </Button>
+    </div>
+  );
+}
+
 type Props = {
   stack: ReactStackTrace,
   environmentName: null | string,
@@ -103,6 +130,8 @@ export default function StackTraceView({
   stack,
   environmentName,
 }: Props): React.Node {
+  const [showIgnoreList, setShowIgnoreList] = useState(false);
+
   return (
     <div className={styles.StackTraceView}>
       {stack.map((callSite, index) => (
@@ -117,6 +146,10 @@ export default function StackTraceView({
           }
         />
       ))}
+      <IgnoreListToggleButton
+        onClick={() => setShowIgnoreList(prev => !prev)}
+        showIgnoreList={showIgnoreList}
+      />
     </div>
   );
 }

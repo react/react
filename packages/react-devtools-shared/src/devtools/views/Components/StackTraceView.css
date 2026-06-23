@@ -33,3 +33,13 @@
   margin-left: 0.25rem;
 }
 
+.IgnoreListToggleContainer {
+  padding-left: 1rem;
+}
+
+.IgnoreListToggleButton {
+  background: none;
+  color: var(--color-link);
+  font: inherit;
+  text-decoration: underline;
+}
