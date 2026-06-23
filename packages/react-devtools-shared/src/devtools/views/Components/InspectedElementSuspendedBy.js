@@ -102,11 +102,13 @@ function formatBytes(bytes: number) {
 type StackTraceGroupProps = {
   children: (showIgnoreList: boolean) => React.Node,
   ioStack: null | ReactStackTrace,
+  asyncInfoStack: null | ReactStackTrace,
 };
 
 function StackTraceGroup({
   children,
   ioStack,
+  asyncInfoStack,
 }: StackTraceGroupProps): React.Node {
   const [showIgnoreList, setShowIgnoreList] = useState(false);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
@@ -132,7 +134,29 @@ function StackTraceGroup({
       return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
     });
 
-  const hasIgnoredFrames = ioStackHasIgnoredFrames;
+  const asyncInfoStackHasIgnoredFrames =
+    asyncInfoStack !== null &&
+    asyncInfoStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const hasIgnoredFrames =
+    ioStackHasIgnoredFrames || asyncInfoStackHasIgnoredFrames;
 
   return (
     <>
@@ -262,7 +286,9 @@ function SuspendedByRow({
                 <Skeleton height={16} width="40%" />
               </div>
             }>
-            <StackTraceGroup ioStack={showIOStack ? ioInfo.stack : null}>
+            <StackTraceGroup
+              ioStack={showIOStack ? ioInfo.stack : null}
+              asyncInfoStack={showAwaitStack ? asyncInfo.stack : null}>
               {(showIgnoreList: boolean) => (
                 <>
                   {showIOStack && (
@@ -311,6 +337,7 @@ function SuspendedByRow({
                                 ? null
                                 : asyncInfo.env
                             }
+                            showIgnoreList={showIgnoreList}
                           />
                         )}
                       {asyncOwner !== null &&
