@@ -1181,6 +1181,10 @@ function pushViewTransitionAttributes(
 }
 
 const styleNameCache: Map<string, PrecomputedChunk> = new Map();
+// Keep this cache bounded for long-running server processes. Style property
+// names are normally a small fixed set, so clearing on pathological growth
+// preserves the fast path without retaining unbounded user-generated keys.
+const MAX_STYLE_NAME_CACHE_SIZE = 1024;
 function processStyleName(styleName: string): PrecomputedChunk {
   const chunk = styleNameCache.get(styleName);
   if (chunk !== undefined) {
@@ -1189,6 +1193,9 @@ function processStyleName(styleName: string): PrecomputedChunk {
   const result = stringToPrecomputedChunk(
     escapeTextForBrowser(hyphenateStyleName(styleName)),
   );
+  if (styleNameCache.size >= MAX_STYLE_NAME_CACHE_SIZE) {
+    styleNameCache.clear();
+  }
   styleNameCache.set(styleName, result);
   return result;
 }
