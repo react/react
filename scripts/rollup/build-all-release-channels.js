@@ -383,7 +383,10 @@ function processExperimental(buildDir, version) {
       pathName !== 'facebook-www' &&
       pathName !== 'sizes-experimental'
     ) {
-      spawnSync('rm', ['-rm', buildDir + '/' + pathName]);
+      fs.rmSync(path.join(buildDir, pathName), {
+        recursive: true,
+        force: true,
+      });
     }
   }
 }
