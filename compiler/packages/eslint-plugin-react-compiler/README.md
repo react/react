@@ -1,63 +1,68 @@
-# eslint-plugin-react-compiler
+# `eslint-plugin-react-compiler`
 
 ESLint plugin surfacing problematic React code found by the React compiler.
 
-## Installation
+## Status
 
-You'll first need to install [ESLint](https://eslint.org/):
-
-```sh
-npm i eslint --save-dev
-```
-
-Next, install `eslint-plugin-react-compiler`:
-
-```sh
-npm install eslint-plugin-react-compiler --save-dev
-```
+The React Compiler lint rules are now distributed through
+[`eslint-plugin-react-hooks`](../../../packages/eslint-plugin-react-hooks).
+Install and configure `eslint-plugin-react-hooks` instead of the standalone
+`eslint-plugin-react-compiler` package.
 
 ## Usage
 
-### Flat config
+### Flat Config
 
-Edit your eslint 8+ config (for example `eslint.config.mjs`) with the recommended configuration:
+Use the recommended config from `eslint-plugin-react-hooks`:
 
-```diff
-+ import reactCompiler from "eslint-plugin-react-compiler"
-import react from "eslint-plugin-react"
+```js
+// eslint.config.js
+import reactHooks from 'eslint-plugin-react-hooks';
+import {defineConfig} from 'eslint/config';
 
-export default [
-    // Your existing config
-    { ...pluginReact.configs.flat.recommended, settings: { react: { version: "detect" } } },
-+   reactCompiler.configs.recommended    
-]
+export default defineConfig([
+  reactHooks.configs.flat.recommended,
+]);
+```
+
+If you want to try bleeding edge experimental compiler rules, use
+`recommended-latest`.
+
+```js
+// eslint.config.js
+import reactHooks from 'eslint-plugin-react-hooks';
+import {defineConfig} from 'eslint/config';
+
+export default defineConfig([
+  reactHooks.configs.flat['recommended-latest'],
+]);
 ```
 
 ### Legacy config (`.eslintrc`)
 
-Add `react-compiler` to the plugins section of your configuration file. You can omit the `eslint-plugin-` prefix:
+If you are still using ESLint below 9.0.0, extend the recommended
+`eslint-plugin-react-hooks` preset:
 
-```json
+```js
 {
-    "plugins": [
-        "react-compiler"
-    ]
+  "extends": ["plugin:react-hooks/recommended"]
 }
 ```
 
+Specific React Compiler rules are exposed under the `react-hooks` plugin name.
+For example:
 
-Then configure the rules you want to use under the rules section.
-
-```json
+```js
 {
-    "rules": {
-        "react-compiler/react-compiler": "error"
-    }
+  "rules": {
+    "react-hooks/static-components": "error",
+    "react-hooks/refs": "error"
+  }
 }
 ```
 
 ## Rules
 
-<!-- begin auto-generated rules list -->
-TODO: Run eslint-doc-generator to generate the rules list.
-<!-- end auto-generated rules list -->
+See the
+[`eslint-plugin-react-hooks` README](../../../packages/eslint-plugin-react-hooks)
+for the current list of React Compiler rules.
