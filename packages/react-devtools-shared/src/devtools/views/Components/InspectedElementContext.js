@@ -180,7 +180,15 @@ export function InspectedElementContextController({
     const purgeCachedMetadata = purgeCachedMetadataRef.current;
     if (typeof purgeCachedMetadata === 'function') {
       // When Fast Refresh updates a component, any cached AST metadata may be invalid.
-      const fastRefreshScheduled = () => {
+      const fastRefreshScheduled = (rendererID: number | null | void) => {
+        if (
+          rendererID != null &&
+          element !== null &&
+          element.rendererID !== rendererID
+        ) {
+          return;
+        }
+
         startTransition(() => {
           clearHookNamesCache();
           purgeCachedMetadata();
@@ -191,7 +199,7 @@ export function InspectedElementContextController({
       return () =>
         bridge.removeListener('fastRefreshScheduled', fastRefreshScheduled);
     }
-  }, [bridge]);
+  }, [bridge, element]);
 
   // Reset path now that we've asked the backend to hydrate it.
   // The backend is stateful, so we don't need to remember this path the next time we inspect.

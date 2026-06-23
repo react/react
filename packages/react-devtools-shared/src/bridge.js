@@ -201,7 +201,7 @@ export type BackendEvents = {
   backendVersion: [string],
   bridgeProtocol: [BridgeProtocol],
   extensionBackendInitialized: [],
-  fastRefreshScheduled: [],
+  fastRefreshScheduled: [number | null | void],
   getSavedPreferences: [],
   inspectedElement: [InspectedElementPayload],
   inspectedScreen: [InspectedElementPayload],
