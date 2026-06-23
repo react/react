@@ -131,6 +131,38 @@ export default function StackTraceView({
   environmentName,
   showIgnoreList,
 }: Props): React.Node {
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  let lastMeaningfulFrameIndex = -1;
+  // Reverse loop to find the last non-ignored, non-built-in index
+  for (let index = stack.length - 1; index >= 0; index--) {
+    const callSite = stack[index];
+    const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+    // symbolicated output is cached
+    const symbolicatedCallSite: null | SourceMappedLocation =
+      fetchFileWithCaching !== null
+        ? use(
+            symbolicateSourceWithCache(
+              fetchFileWithCaching,
+              virtualURL,
+              virtualLine,
+              virtualColumn,
+            ),
+          )
+        : null;
+    const [, url] =
+      symbolicatedCallSite !== null ? symbolicatedCallSite.location : callSite;
+    const ignored =
+      symbolicatedCallSite !== null ? symbolicatedCallSite.ignored : false;
+    // This looks like a fake anonymous through eval.
+    const isBuiltIn = url === '' || url.startsWith('<anonymous>');
+
+    if (!ignored && !isBuiltIn) {
+      lastMeaningfulFrameIndex = index;
+      break;
+    }
+  }
 
   return (
     <div className={styles.StackTraceView}>
@@ -139,10 +171,8 @@ export default function StackTraceView({
           key={index}
           callSite={callSite}
           environmentName={
-            // Badge last row
-            // TODO: If we start ignore listing the last row, we should badge the last
-            // non-ignored row.
-            index === stack.length - 1 ? environmentName : null
+            // Badge last meaningful frame (non-ignored, non-built-in)
+            index === lastMeaningfulFrameIndex ? environmentName : null
           }
           showIgnoreList={showIgnoreList}
         />
