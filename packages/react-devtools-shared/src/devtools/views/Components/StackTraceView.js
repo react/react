@@ -30,11 +30,13 @@ import formatLocationForDisplay from './formatLocationForDisplay';
 type CallSiteViewProps = {
   callSite: ReactCallSite,
   environmentName: null | string,
+  showIgnoreList: boolean,
 };
 
 export function CallSiteView({
   callSite,
   environmentName,
+  showIgnoreList,
 }: CallSiteViewProps): React.Node {
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
 
@@ -70,7 +72,8 @@ export function CallSiteView({
     <div
       className={
         ignored
-          ? styles.IgnoredCallSite
+          ? styles.IgnoredCallSite +
+            (showIgnoreList ? ' ' + styles.CallSite : '')
           : isBuiltIn
             ? styles.BuiltInCallSite
             : styles.CallSite
@@ -144,6 +147,7 @@ export default function StackTraceView({
             // non-ignored row.
             index === stack.length - 1 ? environmentName : null
           }
+          showIgnoreList={showIgnoreList}
         />
       ))}
       <IgnoreListToggleButton

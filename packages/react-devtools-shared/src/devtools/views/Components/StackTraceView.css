@@ -8,8 +8,16 @@
   white-space-collapse: preserve;
 }
 
+.IgnoredCallSite {
+  opacity: 0.5;
+}
+
 .IgnoredCallSite, .BuiltInCallSite {
   display: none;
+}
+
+.IgnoredCallSite.CallSite {
+  display: flex;
 }
 
 .CallSite + .BuiltInCallSite {
