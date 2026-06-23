@@ -13,7 +13,8 @@
 //! - `src/HIR/DeriveMinimalDependenciesHIR.ts`
 
 use indexmap::IndexMap;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use std::collections::BTreeSet;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors::{ScopeBlockInfo, ScopeBlockTraversal};
@@ -44,7 +45,7 @@ pub fn propagate_scope_dependencies_hir(func: &mut HirFunction, env: &mut Enviro
         let (working, registry) =
             collect_hoistable_and_propagate(func, env, &temporaries, &hoistable_objects);
         // Convert to scope-keyed map with full dependency paths
-        let mut keyed: HashMap<ScopeId, Vec<ReactiveScopeDependency>> = HashMap::new();
+        let mut keyed: FxHashMap<ScopeId, Vec<ReactiveScopeDependency>> = FxHashMap::default();
         for (_block_id, block) in &func.body.blocks {
             if let Terminal::Scope {
                 scope,
@@ -128,17 +129,17 @@ fn are_equal_paths(a: &[DependencyPathEntry], b: &[DependencyPathEntry]) -> bool
 fn find_temporaries_used_outside_declaring_scope(
     func: &HirFunction,
     env: &Environment,
-) -> HashSet<DeclarationId> {
-    let mut declarations: HashMap<DeclarationId, ScopeId> = HashMap::new();
-    let mut pruned_scopes: HashSet<ScopeId> = HashSet::new();
+) -> FxHashSet<DeclarationId> {
+    let mut declarations: FxHashMap<DeclarationId, ScopeId> = FxHashMap::default();
+    let mut pruned_scopes: FxHashSet<ScopeId> = FxHashSet::default();
     let mut traversal = ScopeBlockTraversal::new();
-    let mut used_outside_declaring_scope: HashSet<DeclarationId> = HashSet::new();
+    let mut used_outside_declaring_scope: FxHashSet<DeclarationId> = FxHashSet::default();
 
     let handle_place = |place_id: IdentifierId,
-                        declarations: &HashMap<DeclarationId, ScopeId>,
+                        declarations: &FxHashMap<DeclarationId, ScopeId>,
                         traversal: &ScopeBlockTraversal,
-                        pruned_scopes: &HashSet<ScopeId>,
-                        used_outside: &mut HashSet<DeclarationId>,
+                        pruned_scopes: &FxHashSet<ScopeId>,
+                        used_outside: &mut FxHashSet<DeclarationId>,
                         env: &Environment| {
         let decl_id = env.identifiers[place_id.0 as usize].declaration_id;
         if let Some(&declaring_scope) = declarations.get(&decl_id) {
@@ -227,9 +228,9 @@ fn find_temporaries_used_outside_declaring_scope(
 fn collect_temporaries_sidemap(
     func: &HirFunction,
     env: &Environment,
-    used_outside_declaring_scope: &HashSet<DeclarationId>,
-) -> HashMap<IdentifierId, ReactiveScopeDependency> {
-    let mut temporaries = HashMap::new();
+    used_outside_declaring_scope: &FxHashSet<DeclarationId>,
+) -> FxHashMap<IdentifierId, ReactiveScopeDependency> {
+    let mut temporaries = FxHashMap::default();
     collect_temporaries_sidemap_impl(
         func,
         env,
@@ -269,8 +270,8 @@ fn convert_hoisted_lvalue_kind(kind: InstructionKind) -> Option<InstructionKind>
 fn collect_temporaries_sidemap_impl(
     func: &HirFunction,
     env: &Environment,
-    used_outside_declaring_scope: &HashSet<DeclarationId>,
-    temporaries: &mut HashMap<IdentifierId, ReactiveScopeDependency>,
+    used_outside_declaring_scope: &FxHashSet<DeclarationId>,
+    temporaries: &mut FxHashMap<IdentifierId, ReactiveScopeDependency>,
     inner_fn_context: Option<EvaluationOrder>,
 ) {
     for (_block_id, block) in &func.body.blocks {
@@ -369,7 +370,7 @@ fn get_property(
     property_name: &PropertyLiteral,
     optional: bool,
     loc: Option<react_compiler_hir::SourceLocation>,
-    temporaries: &HashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
     _env: &Environment,
 ) -> ReactiveScopeDependency {
     let resolved = temporaries.get(&object.identifier);
@@ -405,9 +406,9 @@ fn get_property(
 // =============================================================================
 
 struct OptionalChainSidemap {
-    temporaries_read_in_optional: HashMap<IdentifierId, ReactiveScopeDependency>,
-    processed_instrs_in_optional: HashSet<ProcessedInstr>,
-    hoistable_objects: HashMap<BlockId, ReactiveScopeDependency>,
+    temporaries_read_in_optional: FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    processed_instrs_in_optional: FxHashSet<ProcessedInstr>,
+    hoistable_objects: FxHashMap<BlockId, ReactiveScopeDependency>,
 }
 
 /// We track processed instructions/terminals by their lvalue IdentifierId + block id.
@@ -423,10 +424,10 @@ enum ProcessedInstr {
 
 fn collect_optional_chain_sidemap(func: &HirFunction, env: &Environment) -> OptionalChainSidemap {
     let mut ctx = OptionalTraversalContext {
-        seen_optionals: HashSet::new(),
-        processed_instrs_in_optional: HashSet::new(),
-        temporaries_read_in_optional: HashMap::new(),
-        hoistable_objects: HashMap::new(),
+        seen_optionals: FxHashSet::default(),
+        processed_instrs_in_optional: FxHashSet::default(),
+        temporaries_read_in_optional: FxHashMap::default(),
+        hoistable_objects: FxHashMap::default(),
     };
 
     traverse_function_optional(func, env, &mut ctx);
@@ -439,10 +440,10 @@ fn collect_optional_chain_sidemap(func: &HirFunction, env: &Environment) -> Opti
 }
 
 struct OptionalTraversalContext {
-    seen_optionals: HashSet<BlockId>,
-    processed_instrs_in_optional: HashSet<ProcessedInstr>,
-    temporaries_read_in_optional: HashMap<IdentifierId, ReactiveScopeDependency>,
-    hoistable_objects: HashMap<BlockId, ReactiveScopeDependency>,
+    seen_optionals: FxHashSet<BlockId>,
+    processed_instrs_in_optional: FxHashSet<ProcessedInstr>,
+    temporaries_read_in_optional: FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    hoistable_objects: FxHashMap<BlockId, ReactiveScopeDependency>,
 }
 
 fn traverse_function_optional(
@@ -785,8 +786,8 @@ fn traverse_optional_block(
 
 #[derive(Debug, Clone)]
 struct PropertyPathNode {
-    properties: HashMap<PropertyLiteral, usize>, // index into registry
-    optional_properties: HashMap<PropertyLiteral, usize>, // index into registry
+    properties: FxHashMap<PropertyLiteral, usize>, // index into registry
+    optional_properties: FxHashMap<PropertyLiteral, usize>, // index into registry
     #[allow(dead_code)]
     parent: Option<usize>,
     full_path: ReactiveScopeDependency,
@@ -797,14 +798,14 @@ struct PropertyPathNode {
 
 struct PropertyPathRegistry {
     nodes: Vec<PropertyPathNode>,
-    roots: HashMap<IdentifierId, usize>,
+    roots: FxHashMap<IdentifierId, usize>,
 }
 
 impl PropertyPathRegistry {
     fn new() -> Self {
         Self {
             nodes: Vec::new(),
-            roots: HashMap::new(),
+            roots: FxHashMap::default(),
         }
     }
 
@@ -819,8 +820,8 @@ impl PropertyPathRegistry {
         }
         let idx = self.nodes.len();
         self.nodes.push(PropertyPathNode {
-            properties: HashMap::new(),
-            optional_properties: HashMap::new(),
+            properties: FxHashMap::default(),
+            optional_properties: FxHashMap::default(),
             parent: None,
             full_path: ReactiveScopeDependency {
                 identifier: identifier_id,
@@ -858,8 +859,8 @@ impl PropertyPathRegistry {
         let mut new_path = parent_full_path.path.clone();
         new_path.push(entry.clone());
         self.nodes.push(PropertyPathNode {
-            properties: HashMap::new(),
-            optional_properties: HashMap::new(),
+            properties: FxHashMap::default(),
+            optional_properties: FxHashMap::default(),
             parent: Some(parent_idx),
             full_path: ReactiveScopeDependency {
                 identifier: parent_full_path.identifier,
@@ -962,11 +963,11 @@ struct BlockInfo {
 fn collect_hoistable_property_loads(
     func: &HirFunction,
     env: &Environment,
-    temporaries: &HashMap<IdentifierId, ReactiveScopeDependency>,
-    hoistable_from_optionals: &HashMap<BlockId, ReactiveScopeDependency>,
-) -> HashMap<BlockId, BlockInfo> {
+    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    hoistable_from_optionals: &FxHashMap<BlockId, ReactiveScopeDependency>,
+) -> FxHashMap<BlockId, BlockInfo> {
     let mut registry = PropertyPathRegistry::new();
-    let known_immutable_identifiers: HashSet<IdentifierId> = if func.fn_type
+    let known_immutable_identifiers: FxHashSet<IdentifierId> = if func.fn_type
         == ReactFunctionType::Component
         || func.fn_type == ReactFunctionType::Hook
     {
@@ -978,7 +979,7 @@ fn collect_hoistable_property_loads(
             })
             .collect()
     } else {
-        HashSet::new()
+        FxHashSet::default()
     };
 
     let assumed_invoked_fns = get_assumed_invoked_functions(func, env);
@@ -994,11 +995,11 @@ fn collect_hoistable_property_loads(
 }
 
 struct CollectHoistableContext<'a> {
-    temporaries: &'a HashMap<IdentifierId, ReactiveScopeDependency>,
-    known_immutable_identifiers: &'a HashSet<IdentifierId>,
-    hoistable_from_optionals: &'a HashMap<BlockId, ReactiveScopeDependency>,
-    nested_fn_immutable_context: Option<&'a HashSet<IdentifierId>>,
-    assumed_invoked_fns: &'a HashSet<FunctionId>,
+    temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    known_immutable_identifiers: &'a FxHashSet<IdentifierId>,
+    hoistable_from_optionals: &'a FxHashMap<BlockId, ReactiveScopeDependency>,
+    nested_fn_immutable_context: Option<&'a FxHashSet<IdentifierId>>,
+    assumed_invoked_fns: &'a FxHashSet<FunctionId>,
 }
 
 fn is_immutable_at_instr(
@@ -1027,7 +1028,7 @@ fn in_range(id: EvaluationOrder, range: &MutableRange) -> bool {
 
 fn get_maybe_non_null_in_instruction(
     value: &InstructionValue,
-    temporaries: &HashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
 ) -> Option<ReactiveScopeDependency> {
     match value {
         InstructionValue::PropertyLoad { object, .. } => Some(
@@ -1057,10 +1058,10 @@ fn collect_hoistable_property_loads_impl(
     env: &Environment,
     ctx: &CollectHoistableContext,
     registry: &mut PropertyPathRegistry,
-) -> HashMap<BlockId, BlockInfo> {
+) -> FxHashMap<BlockId, BlockInfo> {
     let nodes = collect_non_nulls_in_blocks(func, env, ctx, registry);
     let working = propagate_non_null(func, &nodes, registry);
-    // Return the propagated results, converting HashSet<usize> back to BlockInfo
+    // Return the propagated results, converting FxHashSet<usize> back to BlockInfo
     working
         .into_iter()
         .map(|(k, v)| {
@@ -1078,17 +1079,18 @@ fn collect_hoistable_property_loads_impl(
 /// Returns the set of LoweredFunction FunctionIds that are assumed to be invoked.
 /// The `temporaries` map is shared across recursive calls (matching TS behavior where
 /// the same Map is passed to recursive invocations for inner functions).
-fn get_assumed_invoked_functions(func: &HirFunction, env: &Environment) -> HashSet<FunctionId> {
-    let mut temporaries: HashMap<IdentifierId, (FunctionId, HashSet<FunctionId>)> = HashMap::new();
+fn get_assumed_invoked_functions(func: &HirFunction, env: &Environment) -> FxHashSet<FunctionId> {
+    let mut temporaries: FxHashMap<IdentifierId, (FunctionId, FxHashSet<FunctionId>)> =
+        FxHashMap::default();
     get_assumed_invoked_functions_impl(func, env, &mut temporaries)
 }
 
 fn get_assumed_invoked_functions_impl(
     func: &HirFunction,
     env: &Environment,
-    temporaries: &mut HashMap<IdentifierId, (FunctionId, HashSet<FunctionId>)>,
-) -> HashSet<FunctionId> {
-    let mut hoistable: HashSet<FunctionId> = HashSet::new();
+    temporaries: &mut FxHashMap<IdentifierId, (FunctionId, FxHashSet<FunctionId>)>,
+) -> FxHashSet<FunctionId> {
+    let mut hoistable: FxHashSet<FunctionId> = FxHashSet::default();
 
     // Step 1: Collect identifier to function expression mappings
     for (_block_id, block) in &func.body.blocks {
@@ -1096,8 +1098,10 @@ fn get_assumed_invoked_functions_impl(
             let instr = &func.instructions[instr_id.0 as usize];
             match &instr.value {
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
-                    temporaries
-                        .insert(instr.lvalue.identifier, (lowered_func.func, HashSet::new()));
+                    temporaries.insert(
+                        instr.lvalue.identifier,
+                        (lowered_func.func, FxHashSet::default()),
+                    );
                 }
                 InstructionValue::StoreLocal {
                     value: val, lvalue, ..
@@ -1221,7 +1225,7 @@ fn collect_non_nulls_in_blocks(
     env: &Environment,
     ctx: &CollectHoistableContext,
     registry: &mut PropertyPathRegistry,
-) -> HashMap<BlockId, BlockInfo> {
+) -> FxHashMap<BlockId, BlockInfo> {
     // Known non-null identifiers (e.g. component props)
     let mut known_non_null: BTreeSet<usize> = BTreeSet::new();
     if func.fn_type == ReactFunctionType::Component && !func.params.is_empty() {
@@ -1231,7 +1235,7 @@ fn collect_non_nulls_in_blocks(
         }
     }
 
-    let mut nodes: HashMap<BlockId, BlockInfo> = HashMap::new();
+    let mut nodes: FxHashMap<BlockId, BlockInfo> = FxHashMap::default();
 
     for (block_id, block) in &func.body.blocks {
         let mut assumed = known_non_null.clone();
@@ -1290,7 +1294,7 @@ fn collect_non_nulls_in_blocks(
                 if ctx.assumed_invoked_fns.contains(&lowered_func.func) {
                     let inner_func = &env.functions[lowered_func.func.0 as usize];
                     // Build nested fn immutable context
-                    let nested_fn_immutable_context: HashSet<IdentifierId> =
+                    let nested_fn_immutable_context: FxHashSet<IdentifierId> =
                         if ctx.nested_fn_immutable_context.is_some() {
                             // Already in a nested fn context, use existing
                             ctx.nested_fn_immutable_context.unwrap().clone()
@@ -1307,7 +1311,7 @@ fn collect_non_nulls_in_blocks(
                     let inner_assumed = get_assumed_invoked_functions(inner_func, env);
                     let inner_ctx = CollectHoistableContext {
                         temporaries: ctx.temporaries,
-                        known_immutable_identifiers: &HashSet::new(),
+                        known_immutable_identifiers: &FxHashSet::default(),
                         hoistable_from_optionals: ctx.hoistable_from_optionals,
                         nested_fn_immutable_context: Some(&nested_fn_immutable_context),
                         assumed_invoked_fns: &inner_assumed,
@@ -1347,13 +1351,13 @@ fn collect_non_nulls_in_blocks(
 /// and should be filtered out, allowing non-null info to propagate through non-cyclic paths.
 fn propagate_non_null(
     func: &HirFunction,
-    nodes: &HashMap<BlockId, BlockInfo>,
+    nodes: &FxHashMap<BlockId, BlockInfo>,
     registry: &mut PropertyPathRegistry,
-) -> HashMap<BlockId, BTreeSet<usize>> {
+) -> FxHashMap<BlockId, BTreeSet<usize>> {
     // Build successor map. Use BTreeSet to iterate successors in sorted BlockId
     // order, matching the TS Set<BlockId> insertion order (blocks are created in
     // ascending BlockId order).
-    let mut block_successors: HashMap<BlockId, BTreeSet<BlockId>> = HashMap::new();
+    let mut block_successors: FxHashMap<BlockId, BTreeSet<BlockId>> = FxHashMap::default();
     for (block_id, block) in &func.body.blocks {
         for pred in &block.preds {
             block_successors.entry(*pred).or_default().insert(*block_id);
@@ -1361,7 +1365,7 @@ fn propagate_non_null(
     }
 
     // Clone nodes into mutable working set
-    let mut working: HashMap<BlockId, BTreeSet<usize>> = nodes
+    let mut working: FxHashMap<BlockId, BTreeSet<usize>> = nodes
         .iter()
         .map(|(k, v)| (*k, v.assumed_non_null_objects.clone()))
         .collect();
@@ -1374,7 +1378,7 @@ fn propagate_non_null(
         let mut changed = false;
 
         // Forward pass (using predecessors)
-        let mut traversal_state: HashMap<BlockId, TraversalState> = HashMap::new();
+        let mut traversal_state: FxHashMap<BlockId, TraversalState> = FxHashMap::default();
         for &block_id in &block_ids {
             let block_changed = recursively_propagate_non_null(
                 block_id,
@@ -1426,10 +1430,10 @@ enum PropagationDirection {
 fn recursively_propagate_non_null(
     node_id: BlockId,
     direction: PropagationDirection,
-    traversal_state: &mut HashMap<BlockId, TraversalState>,
-    working: &mut HashMap<BlockId, BTreeSet<usize>>,
+    traversal_state: &mut FxHashMap<BlockId, TraversalState>,
+    working: &mut FxHashMap<BlockId, BTreeSet<usize>>,
     func: &HirFunction,
-    block_successors: &HashMap<BlockId, BTreeSet<BlockId>>,
+    block_successors: &FxHashMap<BlockId, BTreeSet<BlockId>>,
     registry: &mut PropertyPathRegistry,
 ) -> bool {
     // Avoid re-visiting computed or currently active nodes
@@ -1500,12 +1504,12 @@ fn recursively_propagate_non_null(
 fn collect_hoistable_and_propagate(
     func: &HirFunction,
     env: &Environment,
-    temporaries: &HashMap<IdentifierId, ReactiveScopeDependency>,
-    hoistable_from_optionals: &HashMap<BlockId, ReactiveScopeDependency>,
-) -> (HashMap<BlockId, BTreeSet<usize>>, PropertyPathRegistry) {
+    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    hoistable_from_optionals: &FxHashMap<BlockId, ReactiveScopeDependency>,
+) -> (FxHashMap<BlockId, BTreeSet<usize>>, PropertyPathRegistry) {
     let mut registry = PropertyPathRegistry::new();
     let assumed_invoked_fns = get_assumed_invoked_functions(func, env);
-    let known_immutable_identifiers: HashSet<IdentifierId> = if func.fn_type
+    let known_immutable_identifiers: FxHashSet<IdentifierId> = if func.fn_type
         == ReactFunctionType::Component
         || func.fn_type == ReactFunctionType::Hook
     {
@@ -1517,7 +1521,7 @@ fn collect_hoistable_and_propagate(
             })
             .collect()
     } else {
-        HashSet::new()
+        FxHashSet::default()
     };
 
     let ctx = CollectHoistableContext {
@@ -1538,9 +1542,9 @@ fn collect_hoistable_and_propagate(
 #[allow(dead_code)]
 fn key_by_scope_id(
     func: &HirFunction,
-    block_keyed: &HashMap<BlockId, BlockInfo>,
-) -> HashMap<ScopeId, BlockInfo> {
-    let mut keyed: HashMap<ScopeId, BlockInfo> = HashMap::new();
+    block_keyed: &FxHashMap<BlockId, BlockInfo>,
+) -> FxHashMap<ScopeId, BlockInfo> {
+    let mut keyed: FxHashMap<ScopeId, BlockInfo> = FxHashMap::default();
     for (_block_id, block) in &func.body.blocks {
         if let Terminal::Scope {
             scope,
@@ -1600,7 +1604,7 @@ enum HoistableAccessType {
 }
 
 struct HoistableNode {
-    properties: HashMap<PropertyLiteral, Box<HoistableNodeEntry>>,
+    properties: FxHashMap<PropertyLiteral, Box<HoistableNodeEntry>>,
     access_type: HoistableAccessType,
 }
 
@@ -1609,7 +1613,7 @@ struct HoistableNodeEntry {
 }
 
 struct DependencyNode {
-    properties: IndexMap<PropertyLiteral, Box<DependencyNodeEntry>>,
+    properties: IndexMap<PropertyLiteral, Box<DependencyNodeEntry>, FxBuildHasher>,
     access_type: PropertyAccessType,
     loc: Option<react_compiler_hir::SourceLocation>,
 }
@@ -1619,8 +1623,8 @@ struct DependencyNodeEntry {
 }
 
 struct ReactiveScopeDependencyTreeHIR {
-    hoistable_roots: HashMap<IdentifierId, (HoistableNode, bool)>, // node + reactive
-    dep_roots: IndexMap<IdentifierId, (DependencyNode, bool)>, // node + reactive (preserves insertion order like JS Map)
+    hoistable_roots: FxHashMap<IdentifierId, (HoistableNode, bool)>, // node + reactive
+    dep_roots: IndexMap<IdentifierId, (DependencyNode, bool), FxBuildHasher>, // node + reactive (preserves insertion order like JS Map)
 }
 
 impl ReactiveScopeDependencyTreeHIR {
@@ -1628,7 +1632,8 @@ impl ReactiveScopeDependencyTreeHIR {
         hoistable_objects: impl Iterator<Item = &'a ReactiveScopeDependency>,
         _env: &Environment,
     ) -> Self {
-        let mut hoistable_roots: HashMap<IdentifierId, (HoistableNode, bool)> = HashMap::new();
+        let mut hoistable_roots: FxHashMap<IdentifierId, (HoistableNode, bool)> =
+            FxHashMap::default();
 
         // Sort hoistable objects so that entries with optional first path come
         // before non-optional ones. This matches the TS behavior where
@@ -1651,7 +1656,7 @@ impl ReactiveScopeDependencyTreeHIR {
                 };
                 (
                     HoistableNode {
-                        properties: HashMap::new(),
+                        properties: FxHashMap::default(),
                         access_type,
                     },
                     dep.reactive,
@@ -1671,7 +1676,7 @@ impl ReactiveScopeDependencyTreeHIR {
                     .or_insert_with(|| {
                         Box::new(HoistableNodeEntry {
                             node: HoistableNode {
-                                properties: HashMap::new(),
+                                properties: FxHashMap::default(),
                                 access_type,
                             },
                         })
@@ -1682,7 +1687,7 @@ impl ReactiveScopeDependencyTreeHIR {
 
         Self {
             hoistable_roots,
-            dep_roots: IndexMap::new(),
+            dep_roots: IndexMap::default(),
         }
     }
 
@@ -1690,7 +1695,7 @@ impl ReactiveScopeDependencyTreeHIR {
         let root = self.dep_roots.entry(dep.identifier).or_insert_with(|| {
             (
                 DependencyNode {
-                    properties: IndexMap::new(),
+                    properties: IndexMap::default(),
                     access_type: PropertyAccessType::UnconditionalAccess,
                     loc: dep.loc,
                 },
@@ -1735,7 +1740,7 @@ impl ReactiveScopeDependencyTreeHIR {
                 .or_insert_with(|| {
                     Box::new(DependencyNodeEntry {
                         node: DependencyNode {
-                            properties: IndexMap::new(),
+                            properties: IndexMap::default(),
                             access_type,
                             loc: entry.loc,
                         },
@@ -1809,30 +1814,30 @@ struct Decl {
 
 /// Context for dependency collection.
 struct DependencyCollectionContext<'a> {
-    declarations: HashMap<DeclarationId, Decl>,
-    reassignments: HashMap<IdentifierId, Decl>,
+    declarations: FxHashMap<DeclarationId, Decl>,
+    reassignments: FxHashMap<IdentifierId, Decl>,
     scope_stack: Vec<ScopeId>,
     dep_stack: Vec<Vec<ReactiveScopeDependency>>,
-    deps: IndexMap<ScopeId, Vec<ReactiveScopeDependency>>,
-    temporaries: &'a HashMap<IdentifierId, ReactiveScopeDependency>,
+    deps: IndexMap<ScopeId, Vec<ReactiveScopeDependency>, FxBuildHasher>,
+    temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
     #[allow(dead_code)]
-    temporaries_used_outside_scope: &'a HashSet<DeclarationId>,
-    processed_instrs_in_optional: &'a HashSet<ProcessedInstr>,
+    temporaries_used_outside_scope: &'a FxHashSet<DeclarationId>,
+    processed_instrs_in_optional: &'a FxHashSet<ProcessedInstr>,
     inner_fn_context: Option<EvaluationOrder>,
 }
 
 impl<'a> DependencyCollectionContext<'a> {
     fn new(
-        temporaries_used_outside_scope: &'a HashSet<DeclarationId>,
-        temporaries: &'a HashMap<IdentifierId, ReactiveScopeDependency>,
-        processed_instrs_in_optional: &'a HashSet<ProcessedInstr>,
+        temporaries_used_outside_scope: &'a FxHashSet<DeclarationId>,
+        temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
+        processed_instrs_in_optional: &'a FxHashSet<ProcessedInstr>,
     ) -> Self {
         Self {
-            declarations: HashMap::new(),
-            reassignments: HashMap::new(),
+            declarations: FxHashMap::default(),
+            reassignments: FxHashMap::default(),
             scope_stack: Vec::new(),
             dep_stack: Vec::new(),
-            deps: IndexMap::new(),
+            deps: IndexMap::default(),
             temporaries,
             temporaries_used_outside_scope,
             processed_instrs_in_optional,
@@ -2222,10 +2227,10 @@ fn handle_instruction(
 fn collect_dependencies(
     func: &HirFunction,
     env: &mut Environment,
-    used_outside_declaring_scope: &HashSet<DeclarationId>,
-    temporaries: &HashMap<IdentifierId, ReactiveScopeDependency>,
-    processed_instrs_in_optional: &HashSet<ProcessedInstr>,
-) -> IndexMap<ScopeId, Vec<ReactiveScopeDependency>> {
+    used_outside_declaring_scope: &FxHashSet<DeclarationId>,
+    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    processed_instrs_in_optional: &FxHashSet<ProcessedInstr>,
+) -> IndexMap<ScopeId, Vec<ReactiveScopeDependency>, FxBuildHasher> {
     let mut ctx = DependencyCollectionContext::new(
         used_outside_declaring_scope,
         temporaries,

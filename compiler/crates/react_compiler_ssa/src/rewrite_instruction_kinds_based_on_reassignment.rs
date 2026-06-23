@@ -15,7 +15,7 @@
 //! may be converted to a `const` if the reassignment is not used and was removed
 //! by dead code elimination.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory, SourceLocation,
@@ -115,7 +115,7 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
     //
     // Track: for each DeclarationId, the location of its first declaration,
     // and whether it needs to be changed to Let (because of reassignment).
-    let mut declarations: HashMap<DeclarationId, DeclarationLoc> = HashMap::new();
+    let mut declarations: FxHashMap<DeclarationId, DeclarationLoc> = FxHashMap::default();
     // Track which (block_index, instr_local_index) should have their lvalue.kind set to Reassign
     let mut reassign_locs: Vec<(usize, usize)> = Vec::new();
     // Track which declaration locations need to be set to Let

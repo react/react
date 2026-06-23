@@ -9,6 +9,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "unbounded_depth"] }
 serde-transcode = "1"
 indexmap = { version = "2", features = ["serde"] }
+rustc-hash = "2"
 
 [dev-dependencies]
 walkdir = "2"

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
@@ -270,16 +270,16 @@ fn join_ref_access_types_many(types: &[RefAccessType]) -> RefAccessType {
 
 struct Env {
     changed: bool,
-    data: HashMap<IdentifierId, RefAccessType>,
-    temporaries: HashMap<IdentifierId, Place>,
+    data: FxHashMap<IdentifierId, RefAccessType>,
+    temporaries: FxHashMap<IdentifierId, Place>,
 }
 
 impl Env {
     fn new() -> Self {
         Self {
             changed: false,
-            data: HashMap::new(),
-            temporaries: HashMap::new(),
+            data: FxHashMap::default(),
+            temporaries: FxHashMap::default(),
         }
     }
 
@@ -626,7 +626,7 @@ fn validate_no_ref_access_in_render_impl(
     }
 
     // Collect identifiers that are interpolated as JSX children
-    let mut interpolated_as_jsx: HashSet<IdentifierId> = HashSet::new();
+    let mut interpolated_as_jsx: FxHashSet<IdentifierId> = FxHashSet::default();
     for (_, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
@@ -890,7 +890,8 @@ fn validate_no_ref_access_in_render_impl(
                                      * use the effects to determine what validation to apply.
                                      * Track visited id:kind pairs to avoid duplicate errors.
                                      */
-                                    let mut visited_effects: HashSet<String> = HashSet::new();
+                                    let mut visited_effects: FxHashSet<String> =
+                                        FxHashSet::default();
                                     for effect in effects {
                                         let (place, validation) = match effect {
                                             AliasingEffect::Freeze { value, .. } => {

@@ -287,6 +287,7 @@ dependencies = [
  "react_compiler_ssa",
  "react_compiler_typeinference",
  "react_compiler_validation",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]
@@ -297,6 +298,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
+ "rustc-hash",
  "serde",
  "serde-transcode",
  "serde_json",
@@ -308,6 +310,7 @@ dependencies = [
 name = "react_compiler_diagnostics"
 version = "0.1.0"
 dependencies = [
+ "rustc-hash",
  "serde",
 ]
 
@@ -317,6 +320,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]
@@ -332,6 +336,7 @@ dependencies = [
  "react_compiler_optimization",
  "react_compiler_ssa",
  "react_compiler_utils",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -342,6 +347,7 @@ dependencies = [
  "react_compiler_ast",
  "react_compiler_diagnostics",
  "react_compiler_hir",
+ "rustc-hash",
  "serde_json",
 ]
 
@@ -367,6 +373,7 @@ dependencies = [
  "react_compiler_hir",
  "react_compiler_lowering",
  "react_compiler_ssa",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -378,6 +385,7 @@ dependencies = [
  "react_compiler_ast",
  "react_compiler_diagnostics",
  "react_compiler_hir",
+ "rustc-hash",
  "serde_json",
 ]
 
@@ -388,6 +396,7 @@ dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
  "react_compiler_hir",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -397,6 +406,7 @@ dependencies = [
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "react_compiler_ssa",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -404,6 +414,7 @@ name = "react_compiler_utils"
 version = "0.1.0"
 dependencies = [
  "indexmap",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -413,6 +424,7 @@ dependencies = [
  "indexmap",
  "react_compiler_diagnostics",
  "react_compiler_hir",
+ "rustc-hash",
 ]
 
 [[package]]
