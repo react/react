@@ -44,8 +44,10 @@ function render(
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
+    __DEV__ && options ? options.keepDebugAlive : false,
   );
   const stream = new ReadableStream(
     {
@@ -214,8 +216,10 @@ function prerender(
       options ? options.onError : undefined,
       options ? options.identifierPrefix : undefined,
       options ? options.temporaryReferences : undefined,
+      options ? options.startTime : undefined,
       __DEV__ && options ? options.environmentName : undefined,
       __DEV__ && options ? options.filterStackFrame : undefined,
+      __DEV__ && options ? options.keepDebugAlive : false,
     );
     startWork(request);
   });
