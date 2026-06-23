@@ -8,7 +8,7 @@
 //! Corresponds to `src/ReactiveScopes/PruneNonReactiveDependencies.ts`
 //! and `src/ReactiveScopes/CollectReactiveIdentifiers.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
     EvaluationOrder, IdentifierId, InstructionValue, Place, PrunedReactiveScopeBlock,
@@ -28,9 +28,9 @@ use crate::visitors::{self, ReactiveFunctionTransform, ReactiveFunctionVisitor};
 pub fn collect_reactive_identifiers(
     func: &ReactiveFunction,
     env: &Environment,
-) -> HashSet<IdentifierId> {
+) -> FxHashSet<IdentifierId> {
     let visitor = CollectVisitor { env };
-    let mut state = HashSet::new();
+    let mut state = FxHashSet::default();
     crate::visitors::visit_reactive_function(func, &visitor, &mut state);
     state
 }
@@ -40,7 +40,7 @@ struct CollectVisitor<'a> {
 }
 
 impl<'a> ReactiveFunctionVisitor for CollectVisitor<'a> {
-    type State = HashSet<IdentifierId>;
+    type State = FxHashSet<IdentifierId>;
 
     fn env(&self) -> &Environment {
         self.env
@@ -74,7 +74,7 @@ impl<'a> ReactiveFunctionVisitor for CollectVisitor<'a> {
 /// TS: `isStableRefType`
 fn is_stable_ref_type(
     ty: &react_compiler_hir::Type,
-    reactive_identifiers: &HashSet<IdentifierId>,
+    reactive_identifiers: &FxHashSet<IdentifierId>,
     id: IdentifierId,
 ) -> bool {
     is_use_ref_type(ty) && !reactive_identifiers.contains(&id)
@@ -133,7 +133,7 @@ struct PruneVisitor<'a> {
 }
 
 impl<'a> ReactiveFunctionTransform for PruneVisitor<'a> {
-    type State = HashSet<IdentifierId>;
+    type State = FxHashSet<IdentifierId>;
 
     fn env(&self) -> &Environment {
         self.env

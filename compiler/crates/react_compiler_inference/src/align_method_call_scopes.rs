@@ -9,7 +9,7 @@
 //!
 //! Ported from TypeScript `src/ReactiveScopes/AlignMethodCallScopes.ts`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{EvaluationOrder, HirFunction, IdentifierId, InstructionValue, ScopeId};
@@ -25,7 +25,7 @@ use react_compiler_utils::DisjointSet;
 /// Corresponds to TS `alignMethodCallScopes(fn: HIRFunction): void`.
 pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     // Maps an identifier to the scope it should be assigned to (or None to remove scope)
-    let mut scope_mapping: HashMap<IdentifierId, Option<ScopeId>> = HashMap::new();
+    let mut scope_mapping: FxHashMap<IdentifierId, Option<ScopeId>> = FxHashMap::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
 
     // Phase 1: Walk instructions and collect scope relationships
@@ -74,9 +74,10 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     }
 
     // Phase 2: Merge scope ranges for unioned scopes.
-    // Use a HashMap to accumulate min/max across all scopes mapping to the same root,
+    // Use a FxHashMap to accumulate min/max across all scopes mapping to the same root,
     // matching TS behavior where root.range is updated in-place during iteration.
-    let mut range_updates: HashMap<ScopeId, (EvaluationOrder, EvaluationOrder)> = HashMap::new();
+    let mut range_updates: FxHashMap<ScopeId, (EvaluationOrder, EvaluationOrder)> =
+        FxHashMap::default();
 
     merged_scopes.for_each(|scope_id, root_id| {
         if scope_id == root_id {
@@ -93,7 +94,7 @@ pub fn align_method_call_scopes(func: &mut HirFunction, env: &mut Environment) {
     });
 
     // Save original scope range IDs before updating
-    let original_range_ids: HashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
+    let original_range_ids: FxHashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
         .keys()
         .map(|&root_id| {
             let range_id = env.scopes[root_id.0 as usize].range.id;
