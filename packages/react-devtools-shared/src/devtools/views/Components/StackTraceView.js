@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {use, useContext, useState} from 'react';
+import {use, useContext} from 'react';
 
 import Button from '../Button';
 import useOpenResource from '../useOpenResource';
@@ -123,8 +123,7 @@ export function IgnoreListToggleButton({
 type Props = {
   stack: ReactStackTrace,
   environmentName: null | string,
-  // TODO: Un-optional when removing showIgnoreListLocal
-  showIgnoreList?: boolean,
+  showIgnoreList: boolean,
 };
 
 export default function StackTraceView({
@@ -132,28 +131,6 @@ export default function StackTraceView({
   environmentName,
   showIgnoreList,
 }: Props): React.Node {
-  // TODO: Remove this local state and use the prop directly.
-  const [showIgnoreListLocal, setShowIgnoreListLocal] = useState(false);
-  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
-
-  const hasIgnoredFrames = stack.some(callSite => {
-    const [, virtualURL, virtualLine, virtualColumn] = callSite;
-
-    // symbolicated output is cached
-    const symbolicatedCallSite: null | SourceMappedLocation =
-      fetchFileWithCaching !== null
-        ? use(
-            symbolicateSourceWithCache(
-              fetchFileWithCaching,
-              virtualURL,
-              virtualLine,
-              virtualColumn,
-            ),
-          )
-        : null;
-
-    return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
-  });
 
   return (
     <div className={styles.StackTraceView}>
@@ -167,19 +144,9 @@ export default function StackTraceView({
             // non-ignored row.
             index === stack.length - 1 ? environmentName : null
           }
-          showIgnoreList={
-            showIgnoreList === undefined ? showIgnoreListLocal : showIgnoreList
-          }
+          showIgnoreList={showIgnoreList}
         />
       ))}
-      {/* TODO: Ideally this UI should be higher than a single Stack Trace so that there's not
-        multiple buttons in a single inspection taking up space. */}
-      {showIgnoreList === undefined && hasIgnoredFrames && (
-        <IgnoreListToggleButton
-          onClick={() => setShowIgnoreListLocal(prev => !prev)}
-          showIgnoreList={showIgnoreListLocal}
-        />
-      )}
     </div>
   );
 }
