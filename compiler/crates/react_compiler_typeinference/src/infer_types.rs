@@ -8,7 +8,7 @@
 //! Generates type equations from the HIR, unifies them, and applies the
 //! resolved types back to identifiers. Analogous to TS `InferTypes.ts`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::{Environment, is_hook_name};
@@ -79,7 +79,7 @@ fn pre_resolve_globals(
     func: &HirFunction,
     function_key: u32,
     env: &mut Environment,
-    global_types: &mut HashMap<(u32, InstructionId), Type>,
+    global_types: &mut FxHashMap<(u32, InstructionId), Type>,
 ) {
     for &instr_id in func.body.blocks.values().flat_map(|b| &b.instructions) {
         let instr = &func.instructions[instr_id.0 as usize];
@@ -95,7 +95,7 @@ fn pre_resolve_globals(
 fn pre_resolve_globals_recursive(
     func_id: FunctionId,
     env: &mut Environment,
-    global_types: &mut HashMap<(u32, InstructionId), Type>,
+    global_types: &mut FxHashMap<(u32, InstructionId), Type>,
 ) {
     // Collect LoadGlobal bindings and child function IDs in one pass to avoid
     // borrow conflicts (we need &env.functions to read, then &mut env for
@@ -277,13 +277,13 @@ fn type_equals(a: &Type, b: &Type) -> bool {
     }
 }
 
-fn set_name(names: &mut HashMap<IdentifierId, String>, id: IdentifierId, source: &Identifier) {
+fn set_name(names: &mut FxHashMap<IdentifierId, String>, id: IdentifierId, source: &Identifier) {
     if let Some(IdentifierName::Named(ref name)) = source.name {
         names.insert(id, name.clone());
     }
 }
 
-fn get_name(names: &HashMap<IdentifierId, String>, id: IdentifierId) -> String {
+fn get_name(names: &FxHashMap<IdentifierId, String>, id: IdentifierId) -> String {
     names.get(&id).cloned().unwrap_or_default()
 }
 
@@ -335,7 +335,7 @@ fn generate(
     // &mut env, but generate_instruction_types takes split borrows on env fields.
     // The key is (function_key, InstructionId) where function_key is u32::MAX
     // for the outer function and FunctionId.0 for inner functions.
-    let mut global_types: HashMap<(u32, InstructionId), Type> = HashMap::new();
+    let mut global_types: FxHashMap<(u32, InstructionId), Type> = FxHashMap::default();
     pre_resolve_globals(func, u32::MAX, env, &mut global_types);
     // Also pre-resolve inner functions recursively
     for &instr_id in func.body.blocks.values().flat_map(|b| &b.instructions) {
@@ -355,7 +355,7 @@ fn generate(
         }
     }
 
-    let mut names: HashMap<IdentifierId, String> = HashMap::new();
+    let mut names: FxHashMap<IdentifierId, String> = FxHashMap::default();
     let mut return_types: Vec<Type> = Vec::new();
 
     for (_block_id, block) in &func.body.blocks {
@@ -420,7 +420,7 @@ fn generate_for_function_id(
     identifiers: &[Identifier],
     types: &mut Vec<Type>,
     functions: &mut Vec<HirFunction>,
-    global_types: &HashMap<(u32, InstructionId), Type>,
+    global_types: &FxHashMap<(u32, InstructionId), Type>,
     shapes: &ShapeRegistry,
     unifier: &mut Unifier,
 ) -> Result<(), CompilerDiagnostic> {
@@ -457,7 +457,7 @@ fn generate_for_function_id(
 
     // TS creates a fresh `names` Map per recursive `generate` call, so inner
     // functions don't inherit or pollute the outer function's name mappings.
-    let mut inner_names: HashMap<IdentifierId, String> = HashMap::new();
+    let mut inner_names: FxHashMap<IdentifierId, String> = FxHashMap::default();
     let mut inner_return_types: Vec<Type> = Vec::new();
 
     for (_block_id, block) in &inner.body.blocks {
@@ -521,8 +521,8 @@ fn generate_instruction_types(
     identifiers: &[Identifier],
     types: &mut Vec<Type>,
     functions: &mut Vec<HirFunction>,
-    names: &mut HashMap<IdentifierId, String>,
-    global_types: &HashMap<(u32, InstructionId), Type>,
+    names: &mut FxHashMap<IdentifierId, String>,
+    global_types: &FxHashMap<(u32, InstructionId), Type>,
     shapes: &ShapeRegistry,
     unifier: &mut Unifier,
 ) -> Result<(), CompilerDiagnostic> {
@@ -1304,7 +1304,7 @@ fn apply_instruction_operands(
 // =============================================================================
 
 struct Unifier {
-    substitutions: HashMap<TypeId, Type>,
+    substitutions: FxHashMap<TypeId, Type>,
     enable_treat_ref_like_identifiers_as_refs: bool,
     enable_treat_set_identifiers_as_state_setters: bool,
     custom_hook_type: Option<Type>,
@@ -1317,7 +1317,7 @@ impl Unifier {
         enable_treat_set_identifiers_as_state_setters: bool,
     ) -> Self {
         Unifier {
-            substitutions: HashMap::new(),
+            substitutions: FxHashMap::default(),
             enable_treat_ref_like_identifiers_as_refs,
             enable_treat_set_identifiers_as_state_setters,
             custom_hook_type,

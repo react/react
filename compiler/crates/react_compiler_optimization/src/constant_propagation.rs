@@ -24,7 +24,7 @@
 //!
 //! Analogous to TS `Optimization/ConstantPropagation.ts`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::JsString;
 use react_compiler_hir::environment::Environment;
@@ -68,16 +68,16 @@ impl Constant {
     }
 }
 
-/// Map of known constant values. Uses HashMap (not IndexMap) since iteration
+/// Map of known constant values. Uses FxHashMap (not IndexMap) since iteration
 /// order does not affect correctness — this map is only used for lookups.
-type Constants = HashMap<IdentifierId, Constant>;
+type Constants = FxHashMap<IdentifierId, Constant>;
 
 // =============================================================================
 // Public entry point
 // =============================================================================
 
 pub fn constant_propagation(func: &mut HirFunction, env: &mut Environment) {
-    let mut constants: Constants = HashMap::new();
+    let mut constants: Constants = FxHashMap::default();
     constant_propagation_impl(func, env, &mut constants);
 }
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
@@ -27,7 +27,7 @@ impl std::fmt::Display for VarRefKind {
     }
 }
 
-type IdentifierKinds = HashMap<IdentifierId, (Place, VarRefKind)>;
+type IdentifierKinds = FxHashMap<IdentifierId, (Place, VarRefKind)>;
 
 /// Validates that context variable lvalues are used consistently.
 ///
@@ -53,7 +53,7 @@ pub fn validate_context_variable_lvalues_with_errors(
     identifiers: &[Identifier],
     errors: &mut CompilerError,
 ) -> Result<(), CompilerDiagnostic> {
-    let mut identifier_kinds: IdentifierKinds = HashMap::new();
+    let mut identifier_kinds: IdentifierKinds = FxHashMap::default();
     validate_context_variable_lvalues_impl(
         func,
         &mut identifier_kinds,
