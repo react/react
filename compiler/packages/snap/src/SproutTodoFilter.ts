@@ -304,6 +304,7 @@ const skipFilter = new Set([
   'optional-method-call',
   'optional-receiver-method-call',
   'optional-receiver-optional-method',
+  'preserve-memo-deps-mixed-optional-nonoptional-property-chain',
   'primitive-alias-mutate',
   'primitive-as-dep',
   'property-assignment',

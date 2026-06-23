@@ -1728,6 +1728,12 @@ impl ReactiveScopeDependencyTreeHIR {
                 next_hoistable =
                     hoistable_ptr.and_then(|h| h.properties.get(&entry.property).map(|e| &e.node));
                 access_type = PropertyAccessType::UnconditionalAccess;
+            } else if is_optional_access(dep_cursor.access_type) {
+                // Non-optional reads after an optional segment are still part of the
+                // same optional chain, e.g. `a?.b.c`.
+                next_hoistable =
+                    hoistable_ptr.and_then(|h| h.properties.get(&entry.property).map(|e| &e.node));
+                access_type = PropertyAccessType::UnconditionalAccess;
             } else {
                 // Break: truncate dependency
                 break;

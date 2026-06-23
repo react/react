@@ -172,6 +172,16 @@ export class ReactiveScopeDependencyTreeHIR {
           PropertyAccessType.UnconditionalAccess,
           entry.loc,
         );
+      } else if (isOptional(depCursor.accessType)) {
+        // Non-optional reads after an optional segment are still part of the
+        // same optional chain, e.g. `a?.b.c`.
+        nextHoistableCursor = hoistableCursor?.properties.get(entry.property);
+        nextDepCursor = makeOrMergeProperty(
+          depCursor,
+          entry.property,
+          PropertyAccessType.UnconditionalAccess,
+          entry.loc,
+        );
       } else {
         /**
          * Break to truncate the dependency on its first non-optional entry that PropertyLoads are not hoistable from
