@@ -75,6 +75,7 @@ import {
 import {textEncoder} from 'react-server/src/ReactServerStreamConfigNode';
 
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
+import type {FileHandle} from 'react-server/src/ReactFlightReplyServer';
 
 export {createTemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 
@@ -106,7 +107,7 @@ function startReadingFromDebugChannelReadable(
       }
       stringBuffer += chunk;
     } else {
-      const buffer: Uint8Array = (chunk: any);
+      const buffer: Uint8Array = chunk as any;
       stringBuffer += readPartialStringChunk(stringDecoder, buffer);
       lastWasPartial = true;
     }
@@ -133,19 +134,19 @@ function startReadingFromDebugChannelReadable(
     // $FlowFixMe[method-unbinding]
     typeof stream.binaryType === 'string'
   ) {
-    const ws: WebSocket = (stream: any);
+    const ws: WebSocket = stream as any;
     ws.binaryType = 'arraybuffer';
     ws.addEventListener('message', event => {
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       onData(event.data);
     });
     ws.addEventListener('error', event => {
-      // $FlowFixMe
+      // $FlowFixMe[prop-missing]
       onError(event.error);
     });
     ws.addEventListener('close', onClose);
   } else {
-    const readable: Readable = (stream: any);
+    const readable: Readable = stream as any;
     readable.on('data', onData);
     readable.on('error', onError);
     readable.on('end', onClose);
@@ -178,16 +179,16 @@ export function renderToPipeableStream(
     // $FlowFixMe[method-unbinding]
     (typeof debugChannel.read === 'function' ||
       typeof debugChannel.readyState === 'number')
-      ? (debugChannel: any)
+      ? (debugChannel as any)
       : undefined;
   const debugChannelWritable: void | Writable =
     __DEV__ && debugChannel !== undefined
       ? // $FlowFixMe[method-unbinding]
         typeof debugChannel.write === 'function'
-        ? (debugChannel: any)
+        ? (debugChannel as any)
         : // $FlowFixMe[method-unbinding]
           typeof debugChannel.send === 'function'
-          ? createFakeWritableFromWebSocket((debugChannel: any))
+          ? createFakeWritableFromWebSocket(debugChannel as any)
           : undefined
       : undefined;
   const request = createRequest(
@@ -242,9 +243,9 @@ export function renderToPipeableStream(
 }
 
 function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
-      webSocket.send((chunk: any));
+      webSocket.send(chunk as any);
       return true;
     },
     end() {
@@ -260,7 +261,7 @@ function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
         webSocket.close(1011);
       }
     },
-  }: any);
+  } as any;
 }
 
 function createFakeWritableFromReadableStreamController(
@@ -268,7 +269,7 @@ function createFakeWritableFromReadableStreamController(
 ): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       if (typeof chunk === 'string') {
         chunk = textEncoder.encode(chunk);
@@ -289,7 +290,7 @@ function createFakeWritableFromReadableStreamController(
         controller.close();
       }
     },
-  }: any);
+  } as any;
 }
 
 function startReadingFromDebugChannelReadableStream(
@@ -307,7 +308,7 @@ function startReadingFromDebugChannelReadableStream(
     value: ?any,
     ...
   }): void | Promise<void> {
-    const buffer: Uint8Array = (value: any);
+    const buffer: Uint8Array = value as any;
     stringBuffer += done
       ? readFinalStringChunk(stringDecoder, new Uint8Array(0))
       : readPartialStringChunk(stringDecoder, buffer);
@@ -362,10 +363,10 @@ export function renderToReadableStream(
   if (options && options.signal) {
     const signal = options.signal;
     if (signal.aborted) {
-      abort(request, (signal: any).reason);
+      abort(request, (signal as any).reason);
     } else {
       const listener = () => {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
         signal.removeEventListener('abort', listener);
       };
       signal.addEventListener('abort', listener);
@@ -385,6 +386,7 @@ export function renderToReadableStream(
         },
       },
       // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+      // $FlowFixMe[incompatible-type]
       {highWaterMark: 0},
     );
     debugStream.pipeTo(debugChannelWritable);
@@ -409,6 +411,7 @@ export function renderToReadableStream(
       },
     },
     // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+    // $FlowFixMe[incompatible-type]
     {highWaterMark: 0},
   );
   return stream;
@@ -417,7 +420,7 @@ export function renderToReadableStream(
 function createFakeWritableFromNodeReadable(readable: any): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       return readable.push(chunk);
     },
@@ -427,7 +430,7 @@ function createFakeWritableFromNodeReadable(readable: any): Writable {
     destroy(error) {
       readable.destroy(error);
     },
-  }: any);
+  } as any;
 }
 
 type PrerenderOptions = {
@@ -476,11 +479,11 @@ export function prerenderToNodeStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        const reason = (signal: any).reason;
+        const reason = (signal as any).reason;
         abort(request, reason);
       } else {
         const listener = () => {
-          const reason = (signal: any).reason;
+          const reason = (signal as any).reason;
           abort(request, reason);
           signal.removeEventListener('abort', listener);
         };
@@ -519,6 +522,7 @@ export function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
       resolve({prelude: stream});
@@ -539,11 +543,11 @@ export function prerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        const reason = (signal: any).reason;
+        const reason = (signal as any).reason;
         abort(request, reason);
       } else {
         const listener = () => {
-          const reason = (signal: any).reason;
+          const reason = (signal as any).reason;
           abort(request, reason);
           signal.removeEventListener('abort', listener);
         };
@@ -560,6 +564,17 @@ export function registerServerActions(manifest: ServerManifest) {
   serverManifest = manifest;
 }
 
+type PendingFile = {
+  name: string,
+  file: FileHandle,
+  complete: boolean,
+  // Lazily allocated when a text field arrives after this file's 'file'
+  // event but before its (deferred) 'end' event. Stored as flat
+  // [name1, value1, name2, value2, ...] pairs.
+  queuedFields: null | Array<string>,
+  next: null | PendingFile,
+};
+
 export function decodeReplyFromBusboy<T>(
   busboyStream: Busboy,
   options?: {
@@ -574,14 +589,55 @@ export function decodeReplyFromBusboy<T>(
     undefined,
     options ? options.arraySizeLimit : undefined,
   );
-  let pendingFiles = 0;
-  const queuedFields: Array<string> = [];
+
+  // Linked list of pending files in arrival (payload) order. Text fields that
+  // arrive while a file is in flight are queued on the tail file's
+  // `queuedFields` so they can be resolved together when that file completes.
+  // Fields that arrive while the list is empty bypass it and resolve
+  // immediately. This makes the backing FormData's insertion order match the
+  // payload's entry order.
+  let head: null | PendingFile = null;
+  let tail: null | PendingFile = null;
+  let bodyFinished = false;
+  let closed = false;
+
+  function flush() {
+    while (head !== null) {
+      const current = head;
+      if (!current.complete) {
+        // This file is still streaming. Hold later files and fields until it
+        // completes so the backing FormData reflects payload order.
+        return;
+      }
+      try {
+        resolveFileComplete(response, current.name, current.file);
+        const queuedFields = current.queuedFields;
+        if (queuedFields !== null) {
+          for (let i = 0; i < queuedFields.length; i += 2) {
+            resolveField(response, queuedFields[i], queuedFields[i + 1]);
+          }
+        }
+      } catch (error) {
+        busboyStream.destroy(error);
+        return;
+      }
+      head = current.next;
+    }
+    tail = null;
+    if (bodyFinished && !closed) {
+      closed = true;
+      close(response);
+    }
+  }
+
   busboyStream.on('field', (name, value) => {
-    if (pendingFiles > 0) {
-      // Because the 'end' event fires two microtasks after the next 'field'
-      // we would resolve files and fields out of order. To handle this properly
-      // we queue any fields we receive until the previous file is done.
-      queuedFields.push(name, value);
+    if (tail !== null) {
+      // A file is in flight; queue the field on the tail (most recent) pending
+      // file so it resolves after that file, preserving payload order.
+      if (tail.queuedFields === null) {
+        tail.queuedFields = [];
+      }
+      tail.queuedFields.push(name, value);
     } else {
       try {
         resolveField(response, name, value);
@@ -601,34 +657,51 @@ export function decodeReplyFromBusboy<T>(
       );
       return;
     }
-    pendingFiles++;
     const file = resolveFileInfo(response, name, filename, mimeType);
+    const pendingFile: PendingFile = {
+      name,
+      file,
+      complete: false,
+      queuedFields: null,
+      next: null,
+    };
+    if (tail === null) {
+      head = pendingFile;
+    } else {
+      tail.next = pendingFile;
+    }
+    tail = pendingFile;
     value.on('data', chunk => {
-      resolveFileChunk(response, file, chunk);
-    });
-    value.on('end', () => {
       try {
-        resolveFileComplete(response, name, file);
-        pendingFiles--;
-        if (pendingFiles === 0) {
-          // Release any queued fields
-          for (let i = 0; i < queuedFields.length; i += 2) {
-            resolveField(response, queuedFields[i], queuedFields[i + 1]);
-          }
-          queuedFields.length = 0;
-        }
+        resolveFileChunk(response, file, chunk);
       } catch (error) {
         busboyStream.destroy(error);
       }
     });
+    value.on('error', error => {
+      busboyStream.destroy(error);
+    });
+    value.on('end', () => {
+      pendingFile.complete = true;
+      flush();
+    });
   });
   busboyStream.on('finish', () => {
-    close(response);
+    bodyFinished = true;
+    flush();
+    if (!closed) {
+      // Invariant: busboy delays 'finish' until every file's 'end' event has
+      // fired, so the flush above should always close the response.
+      reportGlobalError(
+        response,
+        new Error('Reply finished with incomplete file part.'),
+      );
+    }
   });
   busboyStream.on('error', err => {
     reportGlobalError(
       response,
-      // $FlowFixMe[incompatible-call] types Error and mixed are incompatible
+      // $FlowFixMe[incompatible-type] types Error and mixed are incompatible
       err,
     );
   });
@@ -696,9 +769,9 @@ export function decodeReplyFromAsyncIterable<T>(
   }
   function error(reason: Error) {
     reportGlobalError(response, reason);
-    if (typeof (iterator: any).throw === 'function') {
+    if (typeof (iterator as any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
+      // $FlowFixMe[prop-missing] should be able to pass mixed
       iterator.throw(reason).then(error, error);
     }
   }

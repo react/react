@@ -167,7 +167,7 @@ function accumulateDirectDispatches(events: ?(Array<Object> | Object)) {
 type PropagationPhases = 'bubbled' | 'captured';
 
 const ReactNativeBridgeEventPlugin: LegacyPluginModule<AnyNativeEvent> = {
-  eventTypes: ({}: EventTypes),
+  eventTypes: {} as EventTypes,
 
   extractEvents: function (
     topLevelType: TopLevelType,

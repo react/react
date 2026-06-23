@@ -42,7 +42,6 @@ type __RNTopLevelEventType = any;
 // from 'react-reconciler/src/ReactCapturedValue'
 type __CapturedError = any;
 
-type DeepDifferOptions = {+unsafelyIgnoreFunctions?: boolean};
 type RawEventEmitterEvent = $ReadOnly<{
   eventName: string,
   // We expect, but do not/cannot require, that nativeEvent is an object
@@ -56,99 +55,9 @@ declare opaque type __PublicTextInstance;
 declare opaque type __PublicRootInstance;
 
 declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface' {
-  declare export function deepDiffer(
-    one: any,
-    two: any,
-    maxDepth?: number,
-    options?: DeepDifferOptions,
-  ): boolean;
-  declare export function deepDiffer(
-    one: any,
-    two: any,
-    options: DeepDifferOptions,
-  ): boolean;
   declare export function deepFreezeAndThrowOnMutationInDev<T>(obj: T): T;
-  declare export function flattenStyle(style: any): any;
-  declare export const RCTEventEmitter: {
-    register: (eventEmitter: mixed) => void,
-    ...
-  };
-  declare export const TextInputState: {
-    blurTextInput: (object: any) => void,
-    focusTextInput: (object: any) => void,
-    ...
-  };
   declare export const ReactFiberErrorDialog: {
     showErrorDialog: (error: __CapturedError) => boolean,
-    ...
-  };
-  declare export const Platform: {OS: string, ...};
-  declare export const UIManager: {
-    customBubblingEventTypes: Object,
-    customDirectEventTypes: Object,
-    createView: (
-      reactTag: number,
-      viewName: string,
-      rootTag: number,
-      props: ?Object,
-    ) => void,
-    dispatchViewManagerCommand: (
-      reactTag: number,
-      command: string,
-      args: Array<any>,
-    ) => void,
-    manageChildren: (
-      containerTag: number,
-      moveFromIndices: Array<number>,
-      moveToIndices: Array<number>,
-      addChildReactTags: Array<number>,
-      addAtIndices: Array<number>,
-      removeAtIndices: Array<number>,
-    ) => void,
-    measure: (hostComponent: mixed, callback: Function) => void,
-    measureInWindow: (nativeTag: ?number, callback: Function) => void,
-    measureLayout: (
-      nativeTag: mixed,
-      nativeNode: number,
-      onFail: Function,
-      onSuccess: Function,
-    ) => void,
-    removeRootView: (containerTag: number) => void,
-    removeSubviewsFromContainerWithID: (containerId: number) => void,
-    replaceExistingNonRootView: () => void,
-    setChildren: (containerTag: number, reactTags: Array<number>) => void,
-    updateView: (reactTag: number, viewName: string, props: ?Object) => void,
-    __takeSnapshot: (
-      view?: 'window' | Element | number,
-      options?: {
-        width?: number,
-        height?: number,
-        format?: 'png' | 'jpeg',
-        quality?: number,
-        ...
-      },
-    ) => Promise<any>,
-    setJSResponder: (reactTag: number, blockNativeResponder: boolean) => void,
-    clearJSResponder: () => void,
-    findSubviewIn: (
-      reactTag: ?number,
-      point: Array<number>,
-      callback: (
-        nativeViewTag: number,
-        left: number,
-        top: number,
-        width: number,
-        height: number,
-      ) => void,
-    ) => void,
-    ...
-  };
-  declare export const legacySendAccessibilityEvent: (
-    reactTag: number,
-    eventTypeName: string,
-  ) => void;
-  declare export const BatchedBridge: {
-    registerCallableModule: (name: string, module: Object) => void,
     ...
   };
   declare export const ReactNativeViewConfigRegistry: {
@@ -171,18 +80,6 @@ declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface'
     __MeasureInWindowOnSuccessCallback;
   declare export type MeasureLayoutOnSuccessCallback =
     __MeasureLayoutOnSuccessCallback;
-  declare export interface LegacyPublicInstance {
-    blur(): void;
-    focus(): void;
-    measure(callback: __MeasureOnSuccessCallback): void;
-    measureInWindow(callback: __MeasureInWindowOnSuccessCallback): void;
-    measureLayout(
-      relativeToNativeNode: number | LegacyPublicInstance,
-      onSuccess: __MeasureLayoutOnSuccessCallback,
-      onFail?: () => void,
-    ): void;
-    setNativeProps(nativeProps: {...}): void;
-  }
   declare export function getNodeFromPublicInstance(
     publicInstance: PublicInstance,
   ): Object;
@@ -204,6 +101,11 @@ declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface'
   declare export function getInternalInstanceHandleFromPublicInstance(
     publicInstance: PublicInstance,
   ): ?Object;
+  declare export function dispatchNativeEvent(
+    target: EventTarget,
+    type: string,
+    eventData: {[string]: mixed},
+  ): void;
   declare export function createAttributePayload(
     props: Object,
     validAttributes: __AttributeConfiguration,
@@ -227,6 +129,11 @@ declare module 'react-native' {
 
 // eslint-disable-next-line no-unused-vars
 declare const RN$enableMicrotasksInReact: boolean;
+
+// eslint-disable-next-line no-unused-vars
+declare const RN$isNativeEventTargetEventDispatchingEnabled:
+  | (() => boolean)
+  | void;
 
 // This is needed for a short term solution.
 // See https://github.com/facebook/react/pull/15490 for more info
@@ -306,9 +213,12 @@ declare const nativeFabricUIManager: {
     name: string,
     className: ?string,
   ) => void,
+  createViewTransitionInstance: (name: string, tag: number) => void,
   startViewTransition: (mutationCallback: () => void) => {
     finished: Promise<void>,
     ready: Promise<void>,
   },
+  startViewTransitionReadyFinished: () => void,
+  suspendOnActiveViewTransition: () => void,
   ...
 };

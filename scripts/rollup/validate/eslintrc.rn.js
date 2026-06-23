@@ -48,6 +48,7 @@ module.exports = {
     nativeFabricUIManager: 'readonly',
     // RN flag to enable microtasks
     RN$enableMicrotasksInReact: 'readonly',
+    RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
     // Trusted Types
     trustedTypes: 'readonly',
     // RN supports this

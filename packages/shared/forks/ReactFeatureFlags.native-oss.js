@@ -31,6 +31,7 @@ export const enableCreateEventHandleAPI: boolean = false;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;
+export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 export const enableLegacyCache: boolean = false;
 export const enableLegacyFBSupport: boolean = false;
 export const enableLegacyHidden: boolean = false;
@@ -85,5 +86,13 @@ export const enableProfilerNestedUpdatePhase: boolean = __PROFILE__;
 export const enableUpdaterTracking: boolean = __PROFILE__;
 export const enableParallelTransitions: boolean = false;
 
+export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
+export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;
+export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
+  | 'off'
+  | 'all'
+  | 'extra-only'
+  | 'missing-only' = 'off';
+
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

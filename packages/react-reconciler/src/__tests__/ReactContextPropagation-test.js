@@ -1037,4 +1037,80 @@ describe('ReactLazyContextPropagation', () => {
     assertLog(['Result']);
     expect(root).toMatchRenderedOutput('Result');
   });
+
+  // @gate enableLegacyCache
+  it('context change propagates to Suspense fallback (memo boundary)', async () => {
+    // When a context change occurs above a Suspense boundary that is currently
+    // showing its fallback, the fallback's context consumers should re-render
+    // with the updated value — even if there's a memo boundary between the
+    // provider and the Suspense boundary that prevents the fallback element
+    // references from changing.
+    const root = ReactNoop.createRoot();
+    const Context = React.createContext('A');
+
+    let setContext;
+    function App() {
+      const [value, _setValue] = useState('A');
+      setContext = _setValue;
+      return (
+        <Context.Provider value={value}>
+          <MemoizedWrapper />
+          <Text text={value} />
+        </Context.Provider>
+      );
+    }
+
+    const MemoizedWrapper = React.memo(function MemoizedWrapper() {
+      return (
+        <Suspense fallback={<FallbackConsumer />}>
+          <AsyncChild />
+        </Suspense>
+      );
+    });
+
+    function FallbackConsumer() {
+      const value = useContext(Context);
+      return <Text text={'Fallback: ' + value} />;
+    }
+
+    function AsyncChild() {
+      readText('async');
+      return <Text text="Content" />;
+    }
+
+    // Initial render — primary content suspends, fallback is shown
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog([
+      'Suspend! [async]',
+      'Fallback: A',
+      'A',
+      // pre-warming
+      'Suspend! [async]',
+    ]);
+    expect(root).toMatchRenderedOutput('Fallback: AA');
+
+    // Update context while still suspended. The fallback consumer should
+    // re-render with the new value.
+    await act(() => {
+      setContext('B');
+    });
+    assertLog([
+      // The Suspense boundary retries the primary children first
+      'Suspend! [async]',
+      'Fallback: B',
+      'B',
+      // pre-warming
+      'Suspend! [async]',
+    ]);
+    expect(root).toMatchRenderedOutput('Fallback: BB');
+
+    // Unsuspend. The primary content should render with the latest context.
+    await act(async () => {
+      await resolveText('async');
+    });
+    assertLog(['Content']);
+    expect(root).toMatchRenderedOutput('ContentB');
+  });
 });

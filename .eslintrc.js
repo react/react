@@ -331,10 +331,12 @@ module.exports = {
         'packages/react-server-dom-turbopack/**/*.js',
         'packages/react-server-dom-parcel/**/*.js',
         'packages/react-server-dom-fb/**/*.js',
+        'packages/react-flight-server-fb/**/*.js',
         'packages/react-server-dom-unbundled/**/*.js',
         'packages/react-test-renderer/**/*.js',
         'packages/react-debug-tools/**/*.js',
         'packages/react-devtools-extensions/**/*.js',
+        'packages/react-devtools-facade/**/*.js',
         'packages/react-devtools-timeline/**/*.js',
         'packages/react-native-renderer/**/*.js',
         'packages/eslint-plugin-react-hooks/**/*.js',
@@ -463,6 +465,7 @@ module.exports = {
       globals: {
         nativeFabricUIManager: 'readonly',
         RN$enableMicrotasksInReact: 'readonly',
+        RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
       },
     },
     {
@@ -565,7 +568,9 @@ module.exports = {
     $Shape: 'readonly',
     CallSite: 'readonly',
     ConsoleTask: 'readonly', // TOOD: Figure out what the official name of this will be.
+    Readonly: 'readonly',
     ReturnType: 'readonly',
+    AggregateError: 'readonly',
     AnimationFrameID: 'readonly',
     WeakRef: 'readonly',
     // For Flow type annotation. Only `BigInt` is valid at runtime.
@@ -579,6 +584,8 @@ module.exports = {
     CopyInspectedElementPath: 'readonly',
     DOMHighResTimeStamp: 'readonly',
     EventListener: 'readonly',
+    // Flow type
+    FormDataEntryValue: 'readonly',
     Iterable: 'readonly',
     AsyncIterable: 'readonly',
     $AsyncIterable: 'readonly',

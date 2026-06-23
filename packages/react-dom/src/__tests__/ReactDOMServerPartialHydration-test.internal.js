@@ -20,6 +20,7 @@ let Scheduler;
 let Suspense;
 let SuspenseList;
 let useSyncExternalStore;
+let use;
 let act;
 let IdleEventPriority;
 let waitForAll;
@@ -116,6 +117,7 @@ describe('ReactDOMServerPartialHydration', () => {
     Activity = React.Activity;
     Suspense = React.Suspense;
     useSyncExternalStore = React.useSyncExternalStore;
+    use = React.use;
     if (gate(flags => flags.enableSuspenseList)) {
       SuspenseList = React.unstable_SuspenseList;
     }
@@ -254,6 +256,77 @@ describe('ReactDOMServerPartialHydration', () => {
     await waitForAll([]);
     // Hydration should not change anything.
     expect(container.textContent).toBe('HelloHello');
+  });
+
+  it('replays effects when a suspended boundary hydrates in StrictMode', async () => {
+    const log = [];
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function EffectfulChild() {
+      React.useLayoutEffect(() => {
+        log.push('layout mount');
+        return () => log.push('layout unmount');
+      }, []);
+      React.useEffect(() => {
+        log.push('effect mount');
+        return () => log.push('effect unmount');
+      }, []);
+      return 'Hello';
+    }
+
+    function Child() {
+      if (suspend) {
+        use(promise);
+      }
+      return <EffectfulChild />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback="Loading...">
+          <Child />
+        </Suspense>
+      );
+    }
+
+    const element = (
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(element);
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('Hello');
+
+    suspend = true;
+    ReactDOMClient.hydrateRoot(container, element);
+    await waitForAll([]);
+    expect(log).toEqual([]);
+    expect(container.textContent).toBe('Hello');
+
+    suspend = false;
+    resolve();
+    await promise;
+    await waitForAll([]);
+
+    expect(container.textContent).toBe('Hello');
+    if (__DEV__) {
+      expect(log).toEqual([
+        'layout mount',
+        'effect mount',
+        'layout unmount',
+        'effect unmount',
+        'layout mount',
+        'effect mount',
+      ]);
+    } else {
+      expect(log).toEqual(['layout mount', 'effect mount']);
+    }
   });
 
   it('falls back to client rendering boundary on mismatch', async () => {

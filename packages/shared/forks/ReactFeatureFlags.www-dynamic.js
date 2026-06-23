@@ -27,8 +27,10 @@ export const transitionLaneExpirationMs = 5000;
 export const enableSchedulingProfiler: boolean = __VARIANT__;
 
 export const enableInfiniteRenderLoopDetection: boolean = __VARIANT__;
+export const enableInfiniteRenderLoopDetectionForceThrow: boolean = __VARIANT__;
 
 export const enableFastAddPropertiesInDiffing: boolean = __VARIANT__;
+export const enableSuspenseyImages: boolean = __VARIANT__;
 export const enableViewTransition: boolean = __VARIANT__;
 export const enableScrollEndPolyfill: boolean = __VARIANT__;
 export const enableFragmentRefs: boolean = __VARIANT__;

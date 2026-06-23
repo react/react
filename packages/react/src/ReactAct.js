@@ -23,7 +23,6 @@ let didWarnNoAwaitAct = false;
 
 function aggregateErrors(errors: Array<mixed>): mixed {
   if (errors.length > 1 && typeof AggregateError === 'function') {
-    // eslint-disable-next-line no-undef
     return new AggregateError(errors);
   }
   return errors[0];
@@ -103,6 +102,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
     }
 
     if (
+      // $FlowFixMe[invalid-compare]
       result !== null &&
       typeof result === 'object' &&
       // $FlowFixMe[method-unbinding]
@@ -114,7 +114,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       // If `act` were implemented as an async function, this whole block could
       // be a single `await` call. That's really the only difference between
       // this branch and the next one.
-      const thenable = ((result: any): Thenable<T>);
+      const thenable = result as any as Thenable<T>;
 
       // Warn if the an `act` call with an async scope is not awaited. In a
       // future release, consider making this an error.
@@ -178,7 +178,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         },
       };
     } else {
-      const returnValue: T = (result: any);
+      const returnValue: T = result as any;
       // The callback is not an async function. Exit the current
       // scope immediately.
       popActScope(prevActQueue, prevActScopeDepth);

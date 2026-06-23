@@ -140,6 +140,7 @@ function applyViewTransitionToHostInstancesRecursive(
   collectMeasurements: null | Array<InstanceMeasurement>,
   stopAtNestedViewTransitions: boolean,
 ): boolean {
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     if (enableViewTransitionForPersistenceMode) {
       while (child !== null) {
@@ -241,6 +242,7 @@ function restoreViewTransitionOnHostInstances(
   child: null | Fiber,
   stopAtNestedViewTransitions: boolean,
 ): void {
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -688,6 +690,7 @@ function measureViewTransitionHostInstancesRecursive(
   previousMeasurements: null | Array<InstanceMeasurement>,
   stopAtNestedViewTransitions: boolean,
 ): boolean {
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     if (enableViewTransitionForPersistenceMode) {
       while (child !== null) {

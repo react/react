@@ -2678,6 +2678,16 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
+    it('should warn about incorrect casing on the credentialless property (ssr)', () => {
+      ReactDOMServer.renderToString(
+        React.createElement('iframe', {Credentialless: true}),
+      );
+      assertConsoleErrorDev([
+        'Invalid DOM property `Credentialless`. Did you mean `credentialless`?\n' +
+          '    in iframe (at **)',
+      ]);
+    });
+
     it('should warn about incorrect casing on event handlers (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('input', {type: 'text', oninput: '1'}),

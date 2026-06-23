@@ -16,9 +16,13 @@ import type {
   GestureTimeline,
 } from './ReactFiberConfigFabric';
 
+import {allocateTag} from './ReactFiberConfigFabric';
+
 const {
   applyViewTransitionName: fabricApplyViewTransitionName,
+  createViewTransitionInstance: fabricCreateViewTransitionInstance,
   startViewTransition: fabricStartViewTransition,
+  startViewTransitionReadyFinished: fabricStartViewTransitionReadyFinished,
 } = nativeFabricUIManager;
 
 export type InstanceMeasurement = {
@@ -90,7 +94,7 @@ export function cloneRootViewTransitionContainer(
   if (__DEV__) {
     console.warn('cloneRootViewTransitionContainer is not implemented');
   }
-  // $FlowFixMe[incompatible-return] Return empty stub
+  // $FlowFixMe[incompatible-type] Return empty stub
   return null;
 }
 
@@ -196,10 +200,12 @@ export function addViewTransitionFinishedListener(
 export function createViewTransitionInstance(
   name: string,
 ): ViewTransitionInstance {
+  const tag = allocateTag();
+  fabricCreateViewTransitionInstance(name, tag);
   return {
     name,
-    old: new (ViewTransitionPseudoElement: any)('old', name),
-    new: new (ViewTransitionPseudoElement: any)('new', name),
+    old: new (ViewTransitionPseudoElement as any)('old', name),
+    new: new (ViewTransitionPseudoElement as any)('new', name),
   };
 }
 
@@ -251,6 +257,7 @@ export function startViewTransition(
 
   transition.ready.then(() => {
     spawnedWorkCallback();
+    fabricStartViewTransitionReadyFinished();
   });
 
   transition.finished.finally(() => {

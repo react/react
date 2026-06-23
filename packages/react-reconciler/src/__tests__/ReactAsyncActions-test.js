@@ -1700,7 +1700,7 @@ describe('ReactAsyncActions', () => {
     'regression: updates in an action passed to React.startTransition are batched ' +
       'even if there were no updates before the first await',
     async () => {
-      // Regression for a bug that occured in an older, too-clever-by-half
+      // Regression for a bug that occurred in an older, too-clever-by-half
       // implementation of the isomorphic startTransition API. Now, the
       // isomorphic startTransition is literally the composition of every
       // reconciler instance's startTransition, so the behavior is less likely

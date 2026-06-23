@@ -230,4 +230,127 @@ describe('Activity StrictMode', () => {
       'Child mount',
     ]);
   });
+
+  // @gate __DEV__
+  it('should double invoke effects on newly inserted children while Activity becomes visible', async () => {
+    function Parent({children}) {
+      log.push('Parent rendered');
+      React.useEffect(() => {
+        log.push('Parent mount');
+        return () => {
+          log.push('Parent unmount');
+        };
+      });
+
+      return <div>{children}</div>;
+    }
+
+    function Child({name}) {
+      log.push(`Child ${name} rendered`);
+      React.useEffect(() => {
+        log.push(`Child ${name} mount`);
+        return () => {
+          log.push(`Child ${name} unmount`);
+        };
+      });
+
+      return null;
+    }
+
+    await act(() => {
+      ReactNoop.render(
+        <React.StrictMode>
+          <Activity mode="hidden">
+            <Parent />
+          </Activity>
+        </React.StrictMode>,
+      );
+    });
+
+    expect(log).toEqual(['Parent rendered', 'Parent rendered']);
+
+    log.length = 0;
+    await act(() => {
+      ReactNoop.render(
+        <React.StrictMode>
+          <Activity mode="visible">
+            <Parent>
+              <Child name="one" />
+            </Parent>
+          </Activity>
+        </React.StrictMode>,
+      );
+    });
+
+    expect(log).toEqual([
+      'Parent rendered',
+      'Parent rendered',
+      'Child one rendered',
+      'Child one rendered',
+      'Child one mount',
+      'Parent mount',
+      // StrictMode double invocation
+      'Parent unmount',
+      'Child one unmount',
+      'Child one mount',
+      'Parent mount',
+    ]);
+
+    log.length = 0;
+    await act(() => {
+      ReactNoop.render(
+        <React.StrictMode>
+          <Activity mode="visible">
+            <Parent>
+              <Child name="one" />
+            </Parent>
+          </Activity>
+        </React.StrictMode>,
+      );
+    });
+
+    expect(log).toEqual([
+      'Parent rendered',
+      'Parent rendered',
+      'Child one rendered',
+      'Child one rendered',
+      // single Effect invocation. No double invocation on update.
+      'Child one unmount',
+      'Parent unmount',
+      'Child one mount',
+      'Parent mount',
+    ]);
+
+    log.length = 0;
+    await act(() => {
+      ReactNoop.render(
+        <React.StrictMode>
+          <Activity mode="visible">
+            <Parent>
+              <Child name="one" />
+              <Child name="two" />
+            </Parent>
+          </Activity>
+        </React.StrictMode>,
+      );
+    });
+
+    expect(log).toEqual([
+      'Parent rendered',
+      'Parent rendered',
+      'Child one rendered',
+      'Child one rendered',
+      'Child two rendered',
+      'Child two rendered',
+      // single Effect invocation for existing Components.
+      'Child one unmount',
+      'Parent unmount',
+      'Child one mount',
+      'Child two mount',
+      'Parent mount',
+      // Double Effect invocation for new Component "two"
+      'Child two unmount',
+      'Child two mount',
+    ]);
+  });
 });

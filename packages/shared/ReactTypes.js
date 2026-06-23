@@ -244,6 +244,7 @@ export type ReactErrorInfoDev = {
   +env: string,
   +owner?: null | string,
   cause?: JSONValue,
+  errors?: JSONValue,
 };
 
 export type ReactErrorInfo = ReactErrorInfoProd | ReactErrorInfoDev;

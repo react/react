@@ -3268,6 +3268,21 @@ function isReorderableExpression(
           )
       );
     }
+    case 'NewExpression': {
+      const newExpr = expr as NodePath<t.NewExpression>;
+      const callee = newExpr.get('callee');
+      return (
+        callee.isExpression() &&
+        isReorderableExpression(builder, callee, allowLocalIdentifiers) &&
+        newExpr
+          .get('arguments')
+          .every(
+            arg =>
+              arg.isExpression() &&
+              isReorderableExpression(builder, arg, allowLocalIdentifiers),
+          )
+      );
+    }
     default: {
       return false;
     }

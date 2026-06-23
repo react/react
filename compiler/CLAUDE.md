@@ -76,7 +76,7 @@ yarn snap minimize --update <path>
 
 ## Version Control
 
-This repository uses Sapling (`sl`) for version control. Sapling is similar to Mercurial: there is not staging area, but new/deleted files must be explicitlyu added/removed.
+This repository uses Sapling (`sl`) for version control. Sapling is similar to Mercurial: there is not staging area, but new/deleted files must be explicitly added/removed.
 
 ```bash
 # Check status
@@ -235,6 +235,21 @@ Feature flags are configured in `src/HIR/Environment.ts`, for example `enableJsx
 ```
 
 Would enable the `enableJsxOutlining` feature and disable the `enableNameAnonymousFunctions` feature.
+
+## Rust Port (Active)
+
+Work is tracked in `compiler/docs/rust-port/` with numbered plan docs.
+Rust crates live in `compiler/crates/`.
+
+### Before implementing from a plan:
+- Run `git log --oneline --grep="<plan-name>"` to see what's already done
+- Read the plan doc's Remaining Work / Status section
+- Only implement what's actually remaining
+
+### After implementing:
+- Update the plan doc's status
+- Run `/compiler-verify`
+- Ensure `compiler/scripts/test-babel-ast.sh` passes
 
 ## Debugging Tips
 

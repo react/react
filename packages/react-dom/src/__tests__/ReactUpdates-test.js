@@ -1793,7 +1793,14 @@ describe('ReactUpdates', () => {
   });
 
   it("warns about potential infinite loop if there's a synchronous render phase update on another component", async () => {
-    if (!__DEV__ || gate(flags => !flags.enableInfiniteRenderLoopDetection)) {
+    if (
+      !__DEV__ ||
+      gate(
+        flags =>
+          !flags.enableInfiniteRenderLoopDetection ||
+          flags.enableInfiniteRenderLoopDetectionForceThrow,
+      )
+    ) {
       return;
     }
     let setState;
@@ -1831,7 +1838,14 @@ describe('ReactUpdates', () => {
   });
 
   it("warns about potential infinite loop if there's an async render phase update on another component", async () => {
-    if (!__DEV__ || gate(flags => !flags.enableInfiniteRenderLoopDetection)) {
+    if (
+      !__DEV__ ||
+      gate(
+        flags =>
+          !flags.enableInfiniteRenderLoopDetection ||
+          flags.enableInfiniteRenderLoopDetectionForceThrow,
+      )
+    ) {
       return;
     }
     let setState;
@@ -2004,6 +2018,249 @@ describe('ReactUpdates', () => {
         'React limits the number of nested updates to prevent infinite loops.' +
         '\n    in NonTerminating (at **)',
     ]);
+  });
+
+  it('warns instead of throwing when infinite Suspense ping loop is detected via enableInfiniteRenderLoopDetection during commit phase', async () => {
+    if (
+      !__DEV__ ||
+      gate(
+        flags =>
+          !flags.enableInfiniteRenderLoopDetection ||
+          flags.enableInfiniteRenderLoopDetectionForceThrow,
+      )
+    ) {
+      return;
+    }
+
+    // When a Suspense child throws a thenable, React registers two listeners:
+    // 1. ping (attachPingListener, render) → pingSuspendedRoot → markRootPinged
+    // 2. retry (attachSuspenseRetryListeners, commit) → resolveRetryWakeable
+    //
+    // The ping path calls throwIfInfiniteUpdateLoopDetected(true) via
+    // markRootPinged WITHOUT a prior getRootForUpdatedFiber(false) check.
+    // When this fires during CommitContext (not RenderContext),
+    // the isFromInfiniteRenderLoopDetectionInstrumentation=true parameter
+    // ensures we warn instead of throw.
+    //
+    // Without the fix (passing false), the condition
+    //   false || (executionContext & RenderContext && ...)
+    // evaluates to false in CommitContext, causing a throw.
+    let currentResolve = null;
+    let shouldStop = false;
+
+    function App() {
+      const [, setState] = React.useState(0);
+
+      React.useLayoutEffect(() => {
+        if (shouldStop) {
+          return;
+        }
+        // Resolve the suspended thenable during commit phase (CommitContext).
+        // The ping callback (registered first during render) fires first,
+        // triggering markRootPinged → throwIfInfiniteUpdateLoopDetected(true).
+        if (currentResolve !== null) {
+          const resolve = currentResolve;
+          currentResolve = null;
+          resolve();
+        }
+        // Schedule a sync update to ensure nestedUpdateKind is
+        // NESTED_UPDATE_SYNC_LANE at commitRootImpl epilogue.
+        setState(n => n + 1);
+      });
+
+      return (
+        <React.Suspense fallback="loading">
+          <SuspendingChild />
+        </React.Suspense>
+      );
+    }
+
+    function SuspendingChild() {
+      if (shouldStop) {
+        return null;
+      }
+      // Each render throws a new thenable. React calls .then() on it twice
+      // (ping during render, retry during commit). We collect all callbacks
+      // so resolve() fires them in registration order: ping first.
+      const callbacks = [];
+      const thenable = {
+        then(onFulfilled) {
+          callbacks.push(onFulfilled);
+          currentResolve = () => {
+            for (let i = 0; i < callbacks.length; i++) {
+              callbacks[i]();
+            }
+          };
+        },
+      };
+
+      throw thenable;
+    }
+
+    const container = document.createElement('div');
+    const errors = [];
+    const root = ReactDOMClient.createRoot(container, {
+      onUncaughtError: error => {
+        errors.push(error.message);
+      },
+    });
+
+    const originalConsoleError = console.error;
+    console.error = e => {
+      if (
+        typeof e === 'string' &&
+        e.startsWith(
+          'Maximum update depth exceeded. This could be an infinite loop.',
+        )
+      ) {
+        // Stop the loop after the first warning so act() can finish.
+        shouldStop = true;
+      }
+    };
+
+    try {
+      await act(() => {
+        root.render(<App />);
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    // With the fix (throwIfInfiniteUpdateLoopDetected(true) in markRootPinged):
+    // the loop is discovered via enableInfiniteRenderLoopDetection instrumentation
+    // and produces a warning.
+    // Without the fix (throwIfInfiniteUpdateLoopDetected(false)):
+    // the same check throws because executionContext is CommitContext, not
+    // RenderContext.
+    expect(shouldStop).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  // @gate enableInfiniteRenderLoopDetection && enableInfiniteRenderLoopDetectionForceThrow
+  it('throws when sync render-phase update loop is detected with force-throw enabled', async () => {
+    // Render-phase setState on another component's hook produces a sync
+    // recursive update. With ForceThrow enabled this should throw via
+    // throwForcedInfiniteRenderLoopError instead of only warning in DEV.
+    let setState;
+    let shouldStop = false;
+    function App() {
+      const [, _setState] = React.useState(0);
+      setState = _setState;
+      return <Child />;
+    }
+
+    function Child() {
+      if (shouldStop) {
+        return null;
+      }
+      setState(n => n + 1);
+      return null;
+    }
+
+    const container = document.createElement('div');
+    const errors = [];
+    const captureError = error => {
+      errors.push(error.message);
+      // Stop scheduling new updates so the test (and the gate-off variant
+      // where the legacy error path is recoverable) can terminate cleanly
+      // without tripping the babel infinite-loop guard.
+      shouldStop = true;
+    };
+    const root = ReactDOMClient.createRoot(container, {
+      onUncaughtError: captureError,
+      onRecoverableError: captureError,
+      onCaughtError: captureError,
+    });
+
+    // The render-phase setState path also produces a dev-only "Cannot update
+    // a component while rendering a different component" console.error on
+    // every recursion. Swallow those so the test framework doesn't require
+    // us to assert each one.
+    const originalConsoleError = console.error;
+    console.error = msg => {
+      if (
+        typeof msg === 'string' &&
+        msg.startsWith('Cannot update a component')
+      ) {
+        return;
+      }
+      originalConsoleError(msg);
+    };
+    try {
+      await act(() => {
+        root.render(<App />);
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    expect(errors[0]).toContain(
+      'Maximum update depth exceeded. This could be an infinite loop.',
+    );
+  });
+
+  // @gate enableInfiniteRenderLoopDetection && enableInfiniteRenderLoopDetectionForceThrow
+  it('throws when phase-spawn update loop is detected with force-throw enabled', async () => {
+    // Wrapping the initial render in startTransition makes the render-phase
+    // setState inherit a non-sync transition lane. After commit, the next
+    // render is non-sync, so the loop detector classifies the recursion as
+    // NESTED_UPDATE_PHASE_SPAWN (rather than SYNC_LANE). With ForceThrow
+    // enabled, this branch should throw via throwForcedInfiniteRenderLoopError
+    // instead of only warning in DEV.
+    let setState;
+    let shouldStop = false;
+    // Hard cap on Child renders. Without enableInfiniteRenderLoopDetection,
+    // the PHASE_SPAWN branch is gated off entirely, so no throw fires and
+    // the loop would otherwise run until the babel infinite-loop guard.
+    let renderCount = 0;
+    const RENDER_CAP = 100;
+    function App() {
+      const [, _setState] = React.useState(0);
+      setState = _setState;
+      return <Child />;
+    }
+
+    function Child() {
+      if (shouldStop || renderCount >= RENDER_CAP) {
+        return null;
+      }
+      renderCount++;
+      setState(n => n + 1);
+      return null;
+    }
+
+    const container = document.createElement('div');
+    const errors = [];
+    const root = ReactDOMClient.createRoot(container, {
+      onUncaughtError: error => {
+        errors.push(error.message);
+        shouldStop = true;
+      },
+    });
+
+    const originalConsoleError = console.error;
+    console.error = msg => {
+      if (
+        typeof msg === 'string' &&
+        msg.startsWith('Cannot update a component')
+      ) {
+        return;
+      }
+      originalConsoleError(msg);
+    };
+    try {
+      await act(() => {
+        React.startTransition(() => root.render(<App />));
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    expect(errors[0]).toContain(
+      'Maximum update depth exceeded. This could be an infinite loop.',
+    );
   });
 
   it('prevents infinite update loop triggered by too many updates in ref callbacks', async () => {

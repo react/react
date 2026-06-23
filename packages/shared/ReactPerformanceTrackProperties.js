@@ -166,7 +166,7 @@ export function addValueToProperties(
         const objectToString = Object.prototype.toString.call(value);
         let objectName = objectToString.slice(8, objectToString.length - 1);
         if (objectName === 'Array') {
-          const array: Array<any> = (value: any);
+          const array: Array<any> = value as any;
           const didTruncate = array.length > OBJECT_WIDTH_LIMIT;
           const kind = getArrayKind(array);
           if (kind === PRIMITIVE_ARRAY || kind === EMPTY_ARRAY) {
@@ -275,7 +275,11 @@ export function addValueToProperties(
       if (value === OMITTED_PROP_ERROR) {
         desc = '\u2026'; // ellipsis
       } else {
-        desc = JSON.stringify(value);
+        desc = JSON.stringify(
+          value.length >= 1024
+            ? value.slice(0, 1023) + '\u2026' // ellipsis
+            : value,
+        );
       }
       break;
     case 'undefined':

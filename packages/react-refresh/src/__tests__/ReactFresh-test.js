@@ -2326,6 +2326,98 @@ describe('ReactFresh', () => {
     expect(finalEl.style.color).toBe('orange');
   }
 
+  it('double invokes effects after a forced remount in StrictMode', async () => {
+    if (__DEV__) {
+      const log = [];
+
+      const createAppV1 = () => {
+        function Hello() {
+          React.useEffect(() => {
+            log.push('mount v1');
+            return () => log.push('unmount v1');
+          }, []);
+          return <p style={{color: 'blue'}}>Hello</p>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshSig$(Hello, '1');
+
+        return Hello;
+      };
+
+      const App = createAppV1();
+
+      await act(() => {
+        root.render(
+          <React.StrictMode>
+            <App />
+          </React.StrictMode>,
+        );
+      });
+
+      expect(log).toEqual(['mount v1', 'unmount v1', 'mount v1']);
+      log.length = 0;
+
+      await patch(() => {
+        function Hello() {
+          React.useEffect(() => {
+            log.push('mount v2');
+            return () => log.push('unmount v2');
+          }, []);
+          return <p style={{color: 'red'}}>Hello</p>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshSig$(Hello, '2');
+        return null;
+      });
+
+      expect(container.firstChild.style.color).toBe('red');
+      expect(log).toEqual(['unmount v1', 'mount v2', 'unmount v2', 'mount v2']);
+    }
+  });
+
+  it('double invokes an effect added during Fast Refresh remount in StrictMode', async () => {
+    if (__DEV__) {
+      const log = [];
+
+      const createAppV1 = () => {
+        function Hello() {
+          return <p style={{color: 'blue'}}>Hello</p>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshSig$(Hello, '1');
+        return Hello;
+      };
+
+      const App = createAppV1();
+
+      await act(() => {
+        root.render(
+          <React.StrictMode>
+            <App />
+          </React.StrictMode>,
+        );
+      });
+
+      expect(log).toEqual([]);
+
+      await patch(() => {
+        function Hello() {
+          React.useEffect(() => {
+            log.push('mount v2');
+            return () => log.push('unmount v2');
+          }, []);
+          return <p style={{color: 'red'}}>Hello</p>;
+        }
+        $RefreshReg$(Hello, 'Hello');
+        $RefreshSig$(Hello, '2');
+        return null;
+      });
+
+      expect(container.firstChild.style.color).toBe('red');
+      expect(log).toEqual(['mount v2', 'unmount v2', 'mount v2']);
+    }
+  });
+
   it('resets hooks with dependencies on hot reload', async () => {
     if (__DEV__) {
       let useEffectWithEmptyArrayCalls = 0;

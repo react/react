@@ -1,5 +1,3 @@
-import type { PluginOptions } from 
-'babel-plugin-react-compiler/dist';
-({
+{
   //compilationMode: "all"
-} satisfies PluginOptions);
+}

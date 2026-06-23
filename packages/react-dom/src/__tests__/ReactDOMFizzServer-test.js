@@ -3562,6 +3562,129 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('reports abort errors for every suspended task when aborting fatals the shell', async () => {
+    const promise = new Promise(() => {});
+    const rendered = [];
+    function Suspend({label}) {
+      rendered.push(label);
+      use(promise);
+      return null;
+    }
+
+    function App() {
+      return (
+        <>
+          <Suspense fallback="Loading...">
+            <Suspend label="boundary" />
+          </Suspense>
+          <Suspend label="root one" />
+          <Suspend label="root two" />
+        </>
+      );
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      abort = renderToPipeableStream(<App />, {
+        onError(error) {
+          errors.push(error.message);
+        },
+        onShellError() {},
+      }).abort;
+    });
+
+    expect(rendered).toEqual(['boundary', 'root one', 'root two']);
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason', 'abort reason']);
+  });
+
+  it('uses a rejection reason from a lazy component before the abort finishes', async () => {
+    let reject;
+    const Lazy = React.lazy(
+      () =>
+        new Promise((resolve, rejectPromise) => {
+          reject = rejectPromise;
+        }),
+    );
+    const haltedPromise = new Promise(() => {});
+    function HaltedWait() {
+      use(haltedPromise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <>
+          <Suspense fallback="Loading lazy">
+            <Lazy />
+          </Suspense>
+          <Suspense fallback="Loading halted">
+            <HaltedWait />
+          </Suspense>
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+      reject(new Error('rejected during abort'));
+    });
+
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
+  });
+
+  it('does not report a rejection reason after abort has finished', async () => {
+    let reject;
+    const promise = new Promise((resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    function Wait() {
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <Suspense fallback="Loading">
+          <Wait />
+        </Suspense>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    await act(() => {
+      reject(new Error('rejected after abort'));
+    });
+
+    expect(errors).toEqual(['abort reason']);
+  });
+
   it('warns in dev if you access digest from errorInfo in onRecoverableError', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -3803,11 +3926,40 @@ describe('ReactDOMFizzServer', () => {
 
     expect(headers).toEqual({
       Link: `
-<non-responsive-preload>; rel=preload; as="image"; fetchpriority="high", 
-<non-responsive-img>; rel=preload; as="image"; fetchpriority="high"
+<non-responsive-preload>; rel=preload; as="image"; fetchpriority="high",
+ <non-responsive-img>; rel=preload; as="image"; fetchpriority="high"
 `
         .replaceAll('\n', '')
         .trim(),
+    });
+  });
+
+  it('preserves referrerPolicy for image preload headers', async () => {
+    let headers = null;
+    function onHeaders(x) {
+      headers = x;
+    }
+
+    function App() {
+      return (
+        <html>
+          <body>
+            <img
+              src="image-with-referrer-policy"
+              fetchPriority="high"
+              referrerPolicy="no-referrer"
+            />
+          </body>
+        </html>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App />, {onHeaders});
+    });
+
+    expect(headers).toEqual({
+      Link: `<image-with-referrer-policy>; rel=preload; as="image"; fetchpriority="high"; referrerpolicy="no-referrer"`,
     });
   });
 
@@ -4003,10 +4155,46 @@ describe('ReactDOMFizzServer', () => {
     await act(() => pipe(testWritable));
     expect(didRender).toBe(false);
     expect(didFatal).toBe(didFatal);
-    expect(errors).toEqual([
-      'boom',
-      'The destination stream errored while writing data.',
-    ]);
+    expect(errors).toEqual(['boom']);
+  });
+
+  it('does not report aborts after fatally erroring', async () => {
+    const promise = new Promise(() => {});
+    function AsyncComp() {
+      React.use(promise);
+      return 'Async';
+    }
+
+    function ErrorComp() {
+      throw new Error('boom');
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      abort = renderToPipeableStream(
+        <div>
+          <Suspense fallback="loading...">
+            <AsyncComp />
+          </Suspense>
+          <ErrorComp />
+        </div>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      ).abort;
+    });
+
+    expect(errors).toEqual(['boom']);
+
+    await act(() => {
+      abort(new Error('too late'));
+    });
+
+    expect(errors).toEqual(['boom']);
   });
 
   describe('error escaping', () => {
@@ -6289,6 +6477,100 @@ describe('ReactDOMFizzServer', () => {
     expect(getVisibleChildren(container)).toEqual('Hi');
   });
 
+  // Regression: finishedTask aborting remaining fallback tasks from a
+  // completed boundary could reenter itself via abortTaskSoft and fire
+  // onAllReady twice (the inner call drained allPendingTasks to 0 and
+  // called completeAll, then the outer call re-observed the same 0).
+  it('only fires onAllReady once when a boundary with an instrumented sync-resolving thenable completes', async () => {
+    // Mirrors Flight-client chunk behavior: the status-probe .then() in
+    // trackUsedThenable stays pending, but the ping-attaching .then() in
+    // renderNode's catch resolves synchronously. This reorders the work
+    // queue so the fallback task is still in fallbackAbortableTasks when
+    // the content task completes.
+    function createDeferredSyncThenable(value) {
+      let thenCallCount = 0;
+      return {
+        status: 'pending',
+        value: undefined,
+        then(resolve) {
+          thenCallCount++;
+          if (thenCallCount > 1) {
+            this.status = 'fulfilled';
+            this.value = value;
+            resolve(value);
+          }
+        },
+      };
+    }
+
+    const thenable = createDeferredSyncThenable('hello');
+    function AsyncContent() {
+      return <Text text={use(thenable)} />;
+    }
+
+    let allReadyCount = 0;
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <Suspense fallback={<Text text="Loading..." />}>
+          <AsyncContent />
+        </Suspense>,
+        {
+          onAllReady() {
+            allReadyCount++;
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(allReadyCount).toBe(1);
+    expect(getVisibleChildren(container)).toEqual('hello');
+  });
+
+  // Same bug, hit without any sync-thenable trickery: if the fallback
+  // also suspends, its spawned sub-task lives in fallbackAbortableTasks
+  // and can still be there when the content task completes first.
+  it('only fires onAllReady once when both content and fallback suspend on real promises', async () => {
+    let resolveContent;
+    const contentPromise = new Promise(r => (resolveContent = r));
+    // The fallback promise never resolves — the fallback-sub-task gets
+    // soft-aborted when the content completes, so we never need it.
+    const fallbackPromise = new Promise(() => {});
+
+    function AsyncContent() {
+      return <Text text={use(contentPromise)} />;
+    }
+    function AsyncFallback() {
+      return <Text text={use(fallbackPromise)} />;
+    }
+
+    let allReadyCount = 0;
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <Suspense fallback={<AsyncFallback />}>
+          <AsyncContent />
+        </Suspense>,
+        {
+          onAllReady() {
+            allReadyCount++;
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    // Resolving content alone is enough: the fallback-sub-task is still
+    // in fallbackAbortableTasks when the content task completes, and
+    // abortTaskSoft on it reenters finishedTask.
+    await act(async () => {
+      resolveContent('hello');
+      await contentPromise;
+    });
+
+    expect(allReadyCount).toBe(1);
+    expect(getVisibleChildren(container)).toEqual('hello');
+  });
+
   it('promise as node', async () => {
     const promise = Promise.resolve('Hi');
     await act(async () => {
@@ -6890,6 +7172,107 @@ describe('ReactDOMFizzServer', () => {
         </div>
       </div>,
     );
+  });
+
+  it('reports an in-flight root task after another root task fatals while aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      return 'child';
+    }
+
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(new Error('abort reason'));
+      return <Child />;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <ComponentThatAborts />
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason']);
+  });
+
+  it('reports a root task before rendering a suspended child returned after aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      use(promise);
+      return null;
+    }
+
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(new Error('abort reason'));
+      return <Child />;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <ComponentThatAborts />
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason']);
+  });
+
+  it('reports a root task that suspends directly after aborting during render', async () => {
+    const promise = new Promise(() => {});
+    const abortRef = {current: null};
+    function ComponentThatAbortsAndSuspends() {
+      abortRef.current(new Error('abort reason'));
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <ComponentThatAbortsAndSuspends />,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason']);
   });
 
   it('can abort during render in a lazy initializer for a component', async () => {
@@ -8196,11 +8579,11 @@ describe('ReactDOMFizzServer', () => {
     }
 
     expect(thrownError).toBe('boom');
-    // TODO there should actually be three errors. One for the pending Suspense, one for the fallback task, and one for the task
-    // that does the abort itself. At the moment abort will flush queues and if there is no pending tasks will close the request before
-    // the task which initiated the abort can even be processed. This is a bug but not one that I am fixing with the current change
-    // so I am asserting the current behavior
     expect(errors).toEqual([
+      {
+        error: 'boom',
+        componentStack: componentStack(['Abort', 'body', 'html', 'App']),
+      },
       {
         error: 'boom',
         componentStack: componentStack([
@@ -8219,9 +8602,6 @@ describe('ReactDOMFizzServer', () => {
           'html',
           'App',
         ]),
-        // }, {
-        //   error: 'boom',
-        //   componentStack: componentStack(['Abort', 'body', 'html', 'App'])
       },
     ]);
 
@@ -9241,7 +9621,7 @@ describe('ReactDOMFizzServer', () => {
 
   it('should always flush the boundaries contributing the preamble regardless of their size', async () => {
     const longDescription =
-      `I need to make this segment somewhat large because it needs to be large enought to be outlined during the initial flush. Setting the progressive chunk size to near zero isn't enough because there is a fixed minimum size that we use to avoid doing the size tracking altogether and this needs to be larger than that at least.
+      `I need to make this segment somewhat large because it needs to be large enough to be outlined during the initial flush. Setting the progressive chunk size to near zero isn't enough because there is a fixed minimum size that we use to avoid doing the size tracking altogether and this needs to be larger than that at least.
 
 Unfortunately that previous paragraph wasn't quite long enough so I'll continue with some more prose and maybe throw on some repeated additional strings at the end for good measure.
 
@@ -9277,7 +9657,7 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
 
   it('should track byte size of shells that may contribute to the preamble when determining if the blocking render exceeds the max size', async () => {
     const longDescription =
-      `I need to make this segment somewhat large because it needs to be large enought to be outlined during the initial flush. Setting the progressive chunk size to near zero isn't enough because there is a fixed minimum size that we use to avoid doing the size tracking altogether and this needs to be larger than that at least.
+      `I need to make this segment somewhat large because it needs to be large enough to be outlined during the initial flush. Setting the progressive chunk size to near zero isn't enough because there is a fixed minimum size that we use to avoid doing the size tracking altogether and this needs to be larger than that at least.
 
 Unfortunately that previous paragraph wasn't quite long enough so I'll continue with some more prose and maybe throw on some repeated additional strings at the end for good measure.
 

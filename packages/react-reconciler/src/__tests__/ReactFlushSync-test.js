@@ -337,7 +337,6 @@ describe('ReactFlushSync', () => {
     expect(getVisibleChildren(container3)).toEqual('aww');
 
     // Because there were multiple errors, React threw an AggregateError.
-    // eslint-disable-next-line no-undef
     expect(error).toBeInstanceOf(AggregateError);
     expect(error.errors.length).toBe(2);
     expect(error.errors[0]).toBe(aahh);
