@@ -44,16 +44,18 @@ import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSo
 type StackTraceGroupProps = {
   children: (showIgnoreList: boolean) => React.Node,
   componentStack: InspectedElement['stack'],
+  owners: InspectedElement['owners'],
 };
 
 function StackTraceGroup({
   children,
   componentStack,
+  owners,
 }: StackTraceGroupProps): React.Node {
   const [showIgnoreList, setShowIgnoreList] = useState(false);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
 
-  const hasIgnoredFrames =
+  const componentStackHasIgnoredFrames =
     componentStack !== null &&
     componentStack.some(callSite => {
       const [, virtualURL, virtualLine, virtualColumn] = callSite;
@@ -73,6 +75,35 @@ function StackTraceGroup({
 
       return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
     });
+
+  const ownerStacksHaveIgnoredFrames =
+    owners !== null &&
+    owners.some(owner => {
+      return (
+        owner.stack !== null &&
+        owner.stack.some(callSite => {
+          const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+          // symbolicated output is cached
+          const symbolicatedCallSite: null | SourceMappedLocation =
+            fetchFileWithCaching !== null
+              ? use(
+                  symbolicateSourceWithCache(
+                    fetchFileWithCaching,
+                    virtualURL,
+                    virtualLine,
+                    virtualColumn,
+                  ),
+                )
+              : null;
+
+          return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+        })
+      );
+    });
+
+  const hasIgnoredFrames =
+    componentStackHasIgnoredFrames || ownerStacksHaveIgnoredFrames;
 
   return (
     <>
@@ -237,7 +268,7 @@ export default function InspectedElementView({
                   <Skeleton height={16} width="40%" />
                 </div>
               }>
-              <StackTraceGroup componentStack={stack}>
+              <StackTraceGroup componentStack={stack} owners={owners}>
                 {(showIgnoreList: boolean) => (
                   <>
                     {showStack ? (
@@ -263,7 +294,10 @@ export default function InspectedElementView({
                             type={owner.type}
                           />
                           {owner.stack != null && owner.stack.length > 0 ? (
-                            <StackTraceView stack={owner.stack} />
+                            <StackTraceView
+                              stack={owner.stack}
+                              showIgnoreList={showIgnoreList}
+                            />
                           ) : null}
                         </Fragment>
                       ))}
