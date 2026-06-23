@@ -57,13 +57,18 @@ export default function SearchInput({
 
   // Auto-focus search input
   useEffect(() => {
+    const isMac =
+      typeof navigator !== 'undefined' &&
+      navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
     if (inputRef.current === null) {
       return () => {};
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      const {key, metaKey} = event;
-      if (key === 'f' && metaKey) {
+      const {key} = event;
+      const correctModifier = isMac ? event.metaKey : event.ctrlKey;
+      if (key === 'f' && correctModifier) {
         const inputElement = inputRef.current;
         if (inputElement !== null) {
           inputElement.focus();
