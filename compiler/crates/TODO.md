@@ -67,13 +67,6 @@ Each line names the failure mode and a sketch of where to look.
 	output; the fix is either an SWC codegen flag for quote style or a
 	post-emit pass. Low impact, high effort.
 
-- `lone-surrogate-string-values.js` — TS preserves lone surrogates
-	(`\uD83E`); SWC emits `\uFFFD` because `Wtf8Atom::to_string_lossy()` in
-	`react_compiler_swc/src/convert_ast.rs::wtf8_to_string` replaces invalid
-	UTF-8 sequences. Real WTF-8 handling work that touches every call site
-	using that helper. Probably needs to detect lone surrogates and emit
-	`\uXXXX` escapes before they hit `String`.
-
 - `many-scopes-no-stack-overflow.js` — TS memoizes the function
 	(`const $ = _c(401);` with 401 memo slots); SWC pipeline bails out and
 	returns the uncompiled source. The fixture exists to test that the

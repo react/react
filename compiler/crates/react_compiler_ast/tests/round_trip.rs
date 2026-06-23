@@ -72,10 +72,7 @@ fn round_trip_all_fixtures() {
     let mut total = 0;
     let mut passed = 0;
 
-    // Fixtures with known issues that can't be fixed in the AST crate:
-    // - lone-surrogate-string-values: contains lone Unicode surrogates (\uD800)
-    //   that serde_json rejects during deserialization.
-    let known_failures: &[&str] = &["lone-surrogate-string-values"];
+    let known_failures: &[&str] = &[];
 
     for entry in walkdir::WalkDir::new(&json_dir)
         .into_iter()

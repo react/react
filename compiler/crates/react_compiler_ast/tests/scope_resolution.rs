@@ -1019,7 +1019,6 @@ fn scope_resolution_rename() {
     let mut skipped = 0;
 
     let known_failures: &[&str] = &[
-        "lone-surrogate-string-values",
         "component-in-object-method-body.flow",
         "error.todo-hoist-type-alias-before-declaration",
         "error.todo-round2_severity_diff",
