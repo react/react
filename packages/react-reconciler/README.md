@@ -198,33 +198,53 @@ Set this to true to indicate that your renderer supports `scheduleMicrotask`. We
 
 Optional. You can proxy this to `queueMicrotask` or its equivalent in your environment.
 
-#### `isPrimaryRenderer`
+#### `setCurrentUpdatePriority(newPriority)`, `getCurrentUpdatePriority()`, and `resolveUpdatePriority()`
 
-This is a property (not a function) that should be set to `true` if your renderer is the main one on the page. For example, if you're writing a renderer for the Terminal, it makes sense to set it to `true`, but if your renderer is used *on top of* React DOM or some other existing renderer, set it to `false`.
+These methods let React ask your renderer which event priority should be used
+for the current update.
 
-#### `getCurrentEventPriority`
-
-To implement this method, you'll need some constants available on the special `react-reconciler/constants` entry point:
+You'll need some constants available on the special
+`react-reconciler/constants` entry point:
 
 ```js
 import {
+  NoEventPriority,
   DiscreteEventPriority,
   ContinuousEventPriority,
   DefaultEventPriority,
 } from 'react-reconciler/constants';
 
+let currentUpdatePriority = NoEventPriority;
+
 const HostConfig = {
   // ...
-  getCurrentEventPriority() {
-    return DefaultEventPriority;
+  setCurrentUpdatePriority(newPriority) {
+    currentUpdatePriority = newPriority;
+  },
+  getCurrentUpdatePriority() {
+    return currentUpdatePriority;
+  },
+  resolveUpdatePriority() {
+    if (currentUpdatePriority !== NoEventPriority) {
+      return currentUpdatePriority;
+    }
+
+    const currentEvent = getCurrentHostEvent();
+    switch (currentEvent && currentEvent.type) {
+      case 'click':
+      case 'keydown':
+        return DiscreteEventPriority;
+      case 'mousemove':
+        return ContinuousEventPriority;
+      default:
+        return DefaultEventPriority;
+    }
   },
   // ...
 }
-
-const MyRenderer = Reconciler(HostConfig);
 ```
 
-The constant you return depends on which event, if any, is being handled right now. (In the browser, you can check this using `window.event && window.event.type`).
+The priority you return depends on which event, if any, is being handled right now.
 
 * **Discrete events:** If the active event is _directly caused by the user_ (such as mouse and keyboard events) and _each event in a sequence is intentional_ (e.g. `click`), return `DiscreteEventPriority`. This tells React that they should interrupt any background work and cannot be batched across time.
 
@@ -232,7 +252,57 @@ The constant you return depends on which event, if any, is being handled right n
 
 * **Other events / No active event:** In all other cases, return `DefaultEventPriority`. This tells React that this event is considered background work, and interactive events will be prioritized over it.
 
-You can consult the `getCurrentEventPriority()` implementation in `ReactFiberConfigDOM.js` for a reference implementation.
+You can consult the `resolveUpdatePriority()` implementation in `ReactFiberConfigDOM.js` for a reference implementation.
+
+#### `trackSchedulerEvent()`, `resolveEventType()`, and `resolveEventTimeStamp()`
+
+These methods provide metadata about the host event that scheduled the current
+work. They are used for scheduler profiling and debugging.
+
+`trackSchedulerEvent()` is called when React is about to schedule work. You can
+store the current host event so that later calls can tell whether a different
+event is currently active.
+
+`resolveEventType()` should return the current host event type, or `null` if
+there is no meaningful event type to report.
+
+`resolveEventTimeStamp()` should return the current host event timestamp, or
+`-1.1` if there is no meaningful timestamp to report.
+
+If your renderer has no host event system, these can be noops that return
+`null` and `-1.1`.
+
+#### `shouldAttemptEagerTransition()`
+
+Return `true` when React should try to render a transition synchronously for the
+current host event. React DOM uses this for browser history `popstate` events.
+Most custom renderers can return `false`.
+
+#### `requestPostPaintCallback(callback)`
+
+Schedule `callback(time)` to run after the next paint, where `time` is a
+timestamp from your host environment. In a browser-like environment, you can
+approximate this with two nested `requestAnimationFrame` calls. If your renderer
+does not support post-paint callbacks, this method can be a noop.
+
+#### `NotPendingTransition` and `HostTransitionContext`
+
+These values describe the default transition status used by host transition
+features such as form actions. Renderers that do not provide host transition
+status can usually use `null` for `NotPendingTransition` and a React context
+whose current values are initialized to that value. See the existing React DOM,
+React Native, or test renderer host configs for examples.
+
+#### `resetFormInstance(formInstance)`
+
+This method is called when React needs to reset a host form after a successful
+form action. For DOM-like renderers, this usually calls the form's native
+`reset()` method. If your renderer does not have form instances, this can be a
+noop.
+
+#### `isPrimaryRenderer`
+
+This is a property (not a function) that should be set to `true` if your renderer is the main one on the page. For example, if you're writing a renderer for the Terminal, it makes sense to set it to `true`, but if your renderer is used *on top of* React DOM or some other existing renderer, set it to `false`.
 
 ### Mutation Methods
 
