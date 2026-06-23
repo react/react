@@ -63,9 +63,6 @@ export function CallSiteView({
     symbolicatedCallSite !== null ? symbolicatedCallSite.location : callSite;
   const ignored =
     symbolicatedCallSite !== null ? symbolicatedCallSite.ignored : false;
-  // TODO: Make an option to be able to toggle the display of ignore listed rows.
-  // Ideally this UI should be higher than a single Stack Trace so that there's not
-  // multiple buttons in a single inspection taking up space.
 
   const isBuiltIn = url === '' || url.startsWith('<anonymous>'); // This looks like a fake anonymous through eval.
   return (
@@ -134,6 +131,26 @@ export default function StackTraceView({
   environmentName,
 }: Props): React.Node {
   const [showIgnoreList, setShowIgnoreList] = useState(false);
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const hasIgnoredFrames = stack.some(callSite => {
+    const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+    // symbolicated output is cached
+    const symbolicatedCallSite: null | SourceMappedLocation =
+      fetchFileWithCaching !== null
+        ? use(
+            symbolicateSourceWithCache(
+              fetchFileWithCaching,
+              virtualURL,
+              virtualLine,
+              virtualColumn,
+            ),
+          )
+        : null;
+
+    return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+  });
 
   return (
     <div className={styles.StackTraceView}>
@@ -150,10 +167,14 @@ export default function StackTraceView({
           showIgnoreList={showIgnoreList}
         />
       ))}
-      <IgnoreListToggleButton
-        onClick={() => setShowIgnoreList(prev => !prev)}
-        showIgnoreList={showIgnoreList}
-      />
+      {/* TODO: Ideally this UI should be higher than a single Stack Trace so that there's not
+        multiple buttons in a single inspection taking up space. */}
+      {hasIgnoredFrames && (
+        <IgnoreListToggleButton
+          onClick={() => setShowIgnoreList(prev => !prev)}
+          showIgnoreList={showIgnoreList}
+        />
+      )}
     </div>
   );
 }
