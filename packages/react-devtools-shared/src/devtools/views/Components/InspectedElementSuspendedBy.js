@@ -17,10 +17,7 @@ import {serializeDataForCopy, pluralize} from '../utils';
 import Store from '../../store';
 import styles from './InspectedElementSharedStyles.css';
 import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
-import StackTraceView, {
-  IgnoredCallSitesToggle,
-  useIgnoredCallSites,
-} from './StackTraceView';
+import StackTraceView from './StackTraceView';
 import OwnerView from './OwnerView';
 import {meta} from '../../../hydration';
 import useInferredName from '../useInferredName';
@@ -110,7 +107,6 @@ function SuspendedByRow({
 }: RowProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [openIsPending, startOpenTransition] = useTransition();
-  const ignoredCallSites = useIgnoredCallSites();
   const ioInfo = asyncInfo.awaited;
   const name = useInferredName(asyncInfo);
   const description = ioInfo.description;
@@ -207,12 +203,6 @@ function SuspendedByRow({
       </Button>
       {isOpen && (
         <div className={styles.CollapsableContent}>
-          {ignoredCallSites.hasIgnoredCallSites && (
-            <IgnoredCallSitesToggle
-              showIgnoredCallSites={ignoredCallSites.showIgnoredCallSites}
-              onClick={ignoredCallSites.toggle}
-            />
-          )}
           {showIOStack && (
             <StackTraceView
               stack={ioInfo.stack}
@@ -221,7 +211,6 @@ function SuspendedByRow({
                   ? null
                   : ioInfo.env
               }
-              ignoredCallSites={ignoredCallSites}
             />
           )}
           {ioOwner !== null &&
@@ -257,7 +246,6 @@ function SuspendedByRow({
                       ? null
                       : asyncInfo.env
                   }
-                  ignoredCallSites={ignoredCallSites}
                 />
               )}
               {asyncOwner !== null && asyncOwner.id !== inspectedElement.id ? (
