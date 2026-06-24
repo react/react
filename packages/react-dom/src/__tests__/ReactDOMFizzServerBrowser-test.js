@@ -621,4 +621,46 @@ describe('ReactDOMFizzServerBrowser', () => {
     // The listener should have been removed when the fatal error occurred
     expect(removeListenerCallCount).toBeGreaterThanOrEqual(1);
   });
+
+  it('should not accumulate AbortSignal listeners across multiple renders sharing the same signal', async () => {
+    const controller = new AbortController();
+    const {signal} = controller;
+
+    // Track the net listener count (addEventListener +1, removeEventListener -1)
+    let netListenerCount = 0;
+    const originalAddEventListener = signal.addEventListener.bind(signal);
+    const originalRemoveEventListener = signal.removeEventListener.bind(signal);
+    signal.addEventListener = (type, listener, ...args) => {
+      if (type === 'abort') {
+        netListenerCount++;
+      }
+      return originalAddEventListener(type, listener, ...args);
+    };
+    signal.removeEventListener = (type, listener, ...args) => {
+      if (type === 'abort') {
+        netListenerCount--;
+      }
+      return originalRemoveEventListener(type, listener, ...args);
+    };
+
+    // First render with the shared signal
+    const stream1 = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<div>render one</div>, {
+        signal,
+      }),
+    );
+    await serverAct(() => stream1.allReady);
+    // After first render completes, the listener should have been removed
+    expect(netListenerCount).toBe(0);
+
+    // Second render with the same signal
+    const stream2 = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<div>render two</div>, {
+        signal,
+      }),
+    );
+    await serverAct(() => stream2.allReady);
+    // After second render completes, still no lingering listeners
+    expect(netListenerCount).toBe(0);
+  });
 });
