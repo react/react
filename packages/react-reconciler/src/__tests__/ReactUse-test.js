@@ -254,6 +254,86 @@ describe('ReactUse', () => {
     expect(root).toMatchRenderedOutput('ABC');
   });
 
+  it('does not show a fallback when a sync render uses an immediately resolving promise', async () => {
+    const promise = Promise.resolve('Async');
+
+    function Async() {
+      return <Text text={use(promise)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Async />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog(['Async']);
+    expect(root).toMatchRenderedOutput('Async');
+  });
+
+  it('commits a fallback when a sync render promise is still pending after a microtask', async () => {
+    let resolve;
+    const promise = new Promise(r => {
+      resolve = r;
+    });
+
+    function Async() {
+      return <Text text={use(promise)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Async />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog(['Loading...']);
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    await act(async () => {
+      resolve('Async');
+    });
+    assertLog(['Async']);
+    expect(root).toMatchRenderedOutput('Async');
+  });
+
+  it('commits a fallback when flushSync uses an immediately resolving promise', async () => {
+    const promise = Promise.resolve('Async');
+
+    function Async() {
+      return <Text text={use(promise)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <Async />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    ReactNoop.flushSync(() => {
+      root.render(<App />);
+    });
+    assertLog(['Loading...']);
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    await waitForAll(['Async']);
+  });
+
   it("using a promise that's not cached between attempts", async () => {
     function Async() {
       const text =
