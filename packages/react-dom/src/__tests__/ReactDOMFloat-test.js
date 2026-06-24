@@ -6532,6 +6532,34 @@ body {
       );
     });
 
+    it('preloads multiple non-script modules with the same as type', async () => {
+      function App() {
+        ReactDOM.preloadModule('serviceworker one', {as: 'serviceworker'});
+        ReactDOM.preloadModule('serviceworker two', {as: 'serviceworker'});
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App />).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link
+            rel="modulepreload"
+            href="serviceworker one"
+            as="serviceworker"
+          />
+          <link
+            rel="modulepreload"
+            href="serviceworker two"
+            as="serviceworker"
+          />
+          <div>hello</div>
+        </div>,
+      );
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preloadModule();

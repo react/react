@@ -16,6 +16,8 @@ import BabelPluginReactCompiler, {
   ErrorCategory,
   parseConfigPragmaForTests,
   ValueKind,
+  type CompilerDiagnosticDetail,
+  type CompilerErrorDetailOptions,
   type Hook,
   PluginOptions,
   CompilerPipelineValue,
@@ -31,6 +33,46 @@ import type {
   CompilerTransformOutput,
   PrintedCompilerPipelineValue,
 } from '../components/Editor/Output';
+
+type LoggedCompileErrorDetail = Extract<
+  LoggerEvent,
+  {kind: 'CompileError'}
+>['detail'];
+
+/**
+ * logEvent() emits error details as plain objects (normalized for parity with
+ * the Rust compiler's logger output), not class instances. Rehydrate them into
+ * CompilerDiagnostic / CompilerErrorDetail so downstream consumers (error
+ * printing, Monaco diagnostics) can call methods like printErrorMessage().
+ */
+function rehydrateLoggedDetail(
+  detail: LoggedCompileErrorDetail,
+): CompilerErrorDetail | CompilerDiagnostic {
+  const category = detail.category as ErrorCategory;
+  const suggestions =
+    (detail.suggestions as CompilerErrorDetailOptions['suggestions']) ?? null;
+  if (detail.details != null) {
+    return new CompilerDiagnostic({
+      category,
+      reason: detail.reason,
+      description: detail.description,
+      suggestions,
+      details: detail.details.map((d): CompilerDiagnosticDetail => {
+        if (d.kind === 'hint') {
+          return {kind: 'hint', message: d.message ?? ''};
+        }
+        return {kind: 'error', loc: d.loc, message: d.message};
+      }),
+    });
+  }
+  return new CompilerErrorDetail({
+    category,
+    reason: detail.reason,
+    description: detail.description,
+    loc: detail.loc ?? null,
+    suggestions,
+  });
+}
 
 function parseInput(
   input: string,
@@ -264,7 +306,7 @@ export function compile(
           debugLogIRs: logIR,
           logEvent: (_filename: string | null, event: LoggerEvent): void => {
             if (event.kind === 'CompileError') {
-              otherErrors.push(event.detail);
+              otherErrors.push(rehydrateLoggedDetail(event.detail));
             }
           },
         },

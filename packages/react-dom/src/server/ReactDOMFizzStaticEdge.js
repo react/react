@@ -84,6 +84,7 @@ function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -130,10 +131,10 @@ function prerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -170,6 +171,7 @@ function resumeAndPrerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -193,10 +195,10 @@ function resumeAndPrerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

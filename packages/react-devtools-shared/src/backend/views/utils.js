@@ -104,6 +104,7 @@ export function getNestedBoundingClientRect(
     }
 
     // $FlowFixMe[incompatible-variance]
+    // $FlowFixMe[incompatible-type]
     return mergeRectOffsets(rects);
   } else {
     // $FlowFixMe[incompatible-variance]

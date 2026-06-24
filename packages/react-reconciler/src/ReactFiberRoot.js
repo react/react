@@ -186,7 +186,7 @@ export function createFiberRoot(
   transitionCallbacks: null | TransitionTracingCallbacks,
 ): FiberRoot {
   // $FlowFixMe[invalid-constructor] Flow no longer supports calling new on functions
-  const root: FiberRoot = (new FiberRootNode(
+  const root: FiberRoot = new FiberRootNode(
     containerInfo,
     tag,
     hydrate,
@@ -196,7 +196,7 @@ export function createFiberRoot(
     onRecoverableError,
     onDefaultTransitionIndicator,
     formState,
-  ): any);
+  ) as any;
   if (enableSuspenseCallback) {
     root.hydrationCallbacks = hydrationCallbacks;
   }

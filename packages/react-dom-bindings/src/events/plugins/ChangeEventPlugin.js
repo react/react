@@ -54,7 +54,7 @@ function createAndAccumulateChangeEvent(
   target: null | EventTarget,
 ) {
   // Flag this event loop as needing state restore.
-  enqueueStateRestore(((target: any): Node));
+  enqueueStateRestore(target as any as Node);
   const listeners = accumulateTwoPhaseListeners(inst, 'onChange');
   if (listeners.length > 0) {
     const event: ReactSyntheticEvent = new SyntheticEvent(
@@ -80,7 +80,7 @@ function shouldUseChangeEvent(elem: Instance | TextInstance) {
   const nodeName = elem.nodeName && elem.nodeName.toLowerCase();
   return (
     nodeName === 'select' ||
-    (nodeName === 'input' && (elem: any).type === 'file')
+    (nodeName === 'input' && (elem as any).type === 'file')
   );
 }
 
@@ -113,7 +113,7 @@ function runEventInBatch(dispatchQueue: DispatchQueue) {
 
 function getInstIfValueChanged(targetInst: Object) {
   const targetNode = getNodeFromInstance(targetInst);
-  if (updateValueIfChanged(((targetNode: any): HTMLInputElement))) {
+  if (updateValueIfChanged(targetNode as any as HTMLInputElement)) {
     return targetInst;
   }
 }
@@ -150,7 +150,7 @@ function startWatchingForValueChange(
 ) {
   activeElement = target;
   activeElementInst = targetInst;
-  (activeElement: any).attachEvent('onpropertychange', handlePropertyChange);
+  (activeElement as any).attachEvent('onpropertychange', handlePropertyChange);
 }
 
 /**
@@ -161,7 +161,7 @@ function stopWatchingForValueChange() {
   if (!activeElement) {
     return;
   }
-  (activeElement: any).detachEvent('onpropertychange', handlePropertyChange);
+  (activeElement as any).detachEvent('onpropertychange', handlePropertyChange);
   activeElement = null;
   activeElementInst = null;
 }
@@ -269,7 +269,7 @@ function handleControlledInputBlur(node: HTMLInputElement, props: any) {
     const isControlled = props.value != null;
     if (isControlled) {
       // If controlled, assign the value attribute to the current value on blur
-      setDefaultValue((node: any), 'number', (node: any).value);
+      setDefaultValue(node as any, 'number', (node as any).value);
     }
   }
 }
@@ -298,7 +298,7 @@ function extractEvents(
   let getTargetInstFunc, handleEventFunc;
   if (shouldUseChangeEvent(targetNode)) {
     getTargetInstFunc = getTargetInstForChangeEvent;
-  } else if (isTextInputElement(((targetNode: any): HTMLElement))) {
+  } else if (isTextInputElement(targetNode as any as HTMLElement)) {
     if (isInputEventSupported) {
       getTargetInstFunc = getTargetInstForInputOrChangeEvent;
     } else {
@@ -337,7 +337,7 @@ function extractEvents(
     // between controlled and uncontrolled, so it doesn't matter and the previous
     // code was also broken for changes.
     const props = targetInst.memoizedProps;
-    handleControlledInputBlur(((targetNode: any): HTMLInputElement), props);
+    handleControlledInputBlur(targetNode as any as HTMLInputElement, props);
   }
 }
 

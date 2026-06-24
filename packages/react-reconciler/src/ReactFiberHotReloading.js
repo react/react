@@ -107,7 +107,7 @@ export function resolveForwardRefForHotReloading(type: any): any {
             render: currentRender,
           };
           if (type.displayName !== undefined) {
-            (syntheticType: any).displayName = type.displayName;
+            (syntheticType as any).displayName = type.displayName;
           }
           return syntheticType;
         }

@@ -7,9 +7,8 @@
 
 import type {SourceLocation as BabelSourceLocation} from '@babel/types';
 import {
-  CompilerDiagnosticOptions,
-  CompilerErrorDetailOptions,
   CompilerSuggestionOperation,
+  type CompileErrorDetail,
 } from 'babel-plugin-react-compiler/src';
 import type {Linter, Rule} from 'eslint';
 import runReactCompiler, {RunCacheEntry} from '../shared/RunReactCompiler';
@@ -24,12 +23,40 @@ function assertExhaustive(_: never, errorMsg: string): never {
   throw new Error(errorMsg);
 }
 
+/**
+ * Get the primary source location from a CompileErrorDetail.
+ * Handles both the new format (details array) and legacy format (flat loc).
+ */
+function primaryLocation(
+  detail: CompileErrorDetail,
+): BabelSourceLocation | null {
+  if (detail.details != null) {
+    const firstError = detail.details.find(d => d.kind === 'error');
+    if (firstError != null) {
+      return firstError.loc ?? null;
+    }
+  }
+  return detail.loc ?? null;
+}
+
+/**
+ * Format an error message from a CompileErrorDetail, matching the old
+ * CompilerErrorDetail.printErrorMessage() / CompilerDiagnostic.printErrorMessage() behavior.
+ */
+function printErrorMessage(detail: CompileErrorDetail): string {
+  const buffer = [`[ReactCompilerError] ${detail.reason}`];
+  if (detail.description != null) {
+    buffer.push(`\n\n${detail.description}.`);
+  }
+  return buffer.join('');
+}
+
 function makeSuggestions(
-  detail: CompilerErrorDetailOptions | CompilerDiagnosticOptions,
+  detail: CompileErrorDetail,
 ): Array<Rule.SuggestionReportDescriptor> {
   const suggest: Array<Rule.SuggestionReportDescriptor> = [];
   if (Array.isArray(detail.suggestions)) {
-    for (const suggestion of detail.suggestions) {
+    for (const suggestion of detail.suggestions as Array<any>) {
       switch (suggestion.op) {
         case CompilerSuggestionOperation.InsertBefore:
           suggest.push({
@@ -116,8 +143,8 @@ function makeRule(rule: LintRule): Rule.RuleModule {
       if (event.kind === 'CompileError') {
         const detail = event.detail;
         if (detail.category === rule.category) {
-          const loc = detail.primaryLocation();
-          if (loc == null || typeof loc === 'symbol') {
+          const loc = primaryLocation(detail);
+          if (loc == null) {
             continue;
           }
           if (
@@ -134,11 +161,9 @@ function makeRule(rule: LintRule): Rule.RuleModule {
            * we should deduplicate them with a "reported" set
            */
           context.report({
-            message: detail.printErrorMessage(result.sourceCode, {
-              eslint: true,
-            }),
+            message: printErrorMessage(detail),
             loc,
-            suggest: makeSuggestions(detail.options),
+            suggest: makeSuggestions(detail),
           });
         }
       }

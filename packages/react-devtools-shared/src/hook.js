@@ -433,7 +433,7 @@ export function installHook(
       const startStackFrame = openModuleRangesStack.pop();
       const stopStackFrame = getTopStackFrameString(error);
       if (stopStackFrame !== null) {
-        // $FlowFixMe[incompatible-call]
+        // $FlowFixMe[incompatible-type]
         moduleRanges.push([startStackFrame, stopStackFrame]);
       }
     }
@@ -493,7 +493,7 @@ export function installHook(
               // The backend is what implements a message queue, so it's the only one that injects onErrorOrWarning.
               if (onErrorOrWarning != null) {
                 onErrorOrWarning(
-                  ((method: any): 'error' | 'warn'),
+                  method as any as 'error' | 'warn',
                   args.slice(),
                 );
               }
@@ -699,19 +699,15 @@ export function installHook(
       });
   }
 
-  Object.defineProperty(
-    target,
-    '__REACT_DEVTOOLS_GLOBAL_HOOK__',
-    ({
-      // This property needs to be configurable for the test environment,
-      // else we won't be able to delete and recreate it between tests.
-      configurable: __DEV__,
-      enumerable: false,
-      get() {
-        return hook;
-      },
-    }: Object),
-  );
+  Object.defineProperty(target, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {
+    // This property needs to be configurable for the test environment,
+    // else we won't be able to delete and recreate it between tests.
+    configurable: __DEV__,
+    enumerable: false,
+    get() {
+      return hook;
+    },
+  } as Object);
 
   return hook;
 }

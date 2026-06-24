@@ -122,7 +122,7 @@ export class SuspenseEventsView extends View {
 
     baseY += depth * ROW_WITH_BORDER_HEIGHT;
 
-    let fillStyle = ((null: any): string);
+    let fillStyle = null as any as string;
     if (warning !== null) {
       fillStyle = showHoverHighlight
         ? COLORS.WARNING_BACKGROUND_HOVER

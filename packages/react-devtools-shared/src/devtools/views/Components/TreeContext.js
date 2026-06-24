@@ -149,12 +149,12 @@ type Action =
 export type DispatcherContext = (action: Action) => void;
 
 const TreeStateContext: ReactContext<StateContext> =
-  createContext<StateContext>(((null: any): StateContext));
+  createContext<StateContext>(null as any as StateContext);
 TreeStateContext.displayName = 'TreeStateContext';
 
 // TODO: `dispatch` is an Action and should be named accordingly.
 const TreeDispatcherContext: ReactContext<DispatcherContext> =
-  createContext<DispatcherContext>(((null: any): DispatcherContext));
+  createContext<DispatcherContext>(null as any as DispatcherContext);
 TreeDispatcherContext.displayName = 'TreeDispatcherContext';
 
 type State = {
@@ -237,7 +237,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
       case 'SELECT_ELEMENT_AT_INDEX':
         ownerSubtreeLeafElementID = null;
 
-        inspectedElementIndex = (action: ACTION_SELECT_ELEMENT_AT_INDEX)
+        inspectedElementIndex = (action as ACTION_SELECT_ELEMENT_AT_INDEX)
           .payload;
         break;
       case 'SELECT_ELEMENT_BY_ID':
@@ -247,7 +247,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
         // It might also cause problems if the specified element was inside of a (not yet expanded) subtree.
         lookupIDForIndex = false;
 
-        inspectedElementID = (action: ACTION_SELECT_ELEMENT_BY_ID).payload;
+        inspectedElementID = (action as ACTION_SELECT_ELEMENT_BY_ID).payload;
         inspectedElementIndex =
           inspectedElementID === null
             ? null
@@ -270,7 +270,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
 
         if (inspectedElementIndex !== null) {
           const selectedElement = store.getElementAtIndex(
-            ((inspectedElementIndex: any): number),
+            inspectedElementIndex as any as number,
           );
           if (selectedElement !== null && selectedElement.parentID !== 0) {
             const parent = store.getElementByID(selectedElement.parentID);
@@ -319,7 +319,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
           }
 
           const selectedElement = store.getElementAtIndex(
-            ((inspectedElementIndex: any): number),
+            inspectedElementIndex as any as number,
           );
           if (selectedElement !== null && selectedElement.ownerID !== 0) {
             const ownerIndex = store.getIndexOfElementID(
@@ -336,7 +336,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
 
         if (inspectedElementIndex !== null) {
           const selectedElement = store.getElementAtIndex(
-            ((inspectedElementIndex: any): number),
+            inspectedElementIndex as any as number,
           );
           if (selectedElement !== null && selectedElement.parentID !== 0) {
             const parentIndex = store.getIndexOfElementID(
@@ -362,7 +362,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
 
         if (inspectedElementIndex !== null) {
           const selectedElement = store.getElementAtIndex(
-            ((inspectedElementIndex: any): number),
+            inspectedElementIndex as any as number,
           );
           if (selectedElement !== null && selectedElement.parentID !== 0) {
             const parent = store.getElementByID(selectedElement.parentID);
@@ -470,7 +470,7 @@ function reduceTreeState(store: Store, state: State, action: Action): State {
       inspectedElementID = null;
     } else {
       inspectedElementID = store.getElementIDAtIndex(
-        ((inspectedElementIndex: any): number),
+        inspectedElementIndex as any as number,
       );
     }
   }
@@ -520,15 +520,16 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
         if (numPrevSearchResults > 0) {
           didRequestSearch = true;
           searchIndex =
-            ((searchIndex: any): number) > 0
-              ? ((searchIndex: any): number) - 1
+            (searchIndex as any as number) > 0
+              ? (searchIndex as any as number) - 1
               : numPrevSearchResults - 1;
         }
         break;
       case 'HANDLE_STORE_MUTATION':
         if (searchText !== '') {
-          const [addedElementIDs, removedElementIDs] =
-            (action: ACTION_HANDLE_STORE_MUTATION).payload;
+          const [addedElementIDs, removedElementIDs] = (
+            action as ACTION_HANDLE_STORE_MUTATION
+          ).payload;
 
           removedElementIDs.forEach((parentID, id) => {
             // Prune this item from the search results.
@@ -541,33 +542,36 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
               // If the results are now empty, also deselect things.
               if (searchResults.length === 0) {
                 searchIndex = null;
-              } else if (((searchIndex: any): number) >= searchResults.length) {
+              } else if (
+                (searchIndex as any as number) >= searchResults.length
+              ) {
                 searchIndex = searchResults.length - 1;
               }
             }
           });
 
           addedElementIDs.forEach(id => {
-            const element = ((store.getElementByID(id): any): Element);
+            const element = store.getElementByID(id) as any as Element;
 
             // It's possible that multiple tree operations will fire before this action has run.
             // So it's important to check for elements that may have been added and then removed.
+            // $FlowFixMe[invalid-compare]
             if (element !== null) {
               const {displayName} = element;
 
               // Add this item to the search results if it matches.
               const regExp = createRegExp(searchText);
               if (displayName !== null && regExp.test(displayName)) {
-                const newElementIndex = ((store.getIndexOfElementID(
+                const newElementIndex = store.getIndexOfElementID(
                   id,
-                ): any): number);
+                ) as any as number;
 
                 let foundMatch = false;
                 for (let index = 0; index < searchResults.length; index++) {
                   const resultID = searchResults[index];
                   if (
                     newElementIndex <
-                    ((store.getIndexOfElementID(resultID): any): number)
+                    (store.getIndexOfElementID(resultID) as any as number)
                   ) {
                     foundMatch = true;
                     searchResults = searchResults
@@ -590,7 +594,7 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
       case 'SET_SEARCH_TEXT':
         searchIndex = null;
         searchResults = [];
-        searchText = (action: ACTION_SET_SEARCH_TEXT).payload;
+        searchText = (action as ACTION_SET_SEARCH_TEXT).payload;
 
         if (searchText !== '') {
           const regExp = createRegExp(searchText);
@@ -610,7 +614,7 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
               }
             } else {
               searchIndex = Math.min(
-                ((prevSearchIndex: any): number),
+                prevSearchIndex as any as number,
                 searchResults.length - 1,
               );
             }
@@ -624,6 +628,7 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
   }
 
   if (searchText !== prevSearchText) {
+    // $FlowFixMe[incompatible-type]
     const newSearchIndex = searchResults.indexOf(inspectedElementID);
     if (newSearchIndex === -1) {
       // Only move the selection if the new query
@@ -636,9 +641,9 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
     }
   }
   if (didRequestSearch && searchIndex !== null) {
-    inspectedElementID = ((searchResults[searchIndex]: any): number);
+    inspectedElementID = searchResults[searchIndex] as any as number;
     inspectedElementIndex = store.getIndexOfElementID(
-      ((inspectedElementID: any): number),
+      inspectedElementID as any as number,
     );
   }
 
@@ -704,13 +709,13 @@ function reduceOwnersState(store: Store, state: State, action: Action): State {
       break;
     case 'SELECT_ELEMENT_AT_INDEX':
       if (ownerFlatTree !== null) {
-        inspectedElementIndex = (action: ACTION_SELECT_ELEMENT_AT_INDEX)
+        inspectedElementIndex = (action as ACTION_SELECT_ELEMENT_AT_INDEX)
           .payload;
       }
       break;
     case 'SELECT_ELEMENT_BY_ID':
       if (ownerFlatTree !== null) {
-        const payload = (action: ACTION_SELECT_ELEMENT_BY_ID).payload;
+        const payload = (action as ACTION_SELECT_ELEMENT_BY_ID).payload;
         if (payload === null) {
           inspectedElementIndex = null;
         } else {
@@ -721,6 +726,7 @@ function reduceOwnersState(store: Store, state: State, action: Action): State {
           // If the selected element is outside of the current owners list,
           // exit the list and select the element in the main tree.
           // This supports features like toggling Suspense.
+          // $FlowFixMe[invalid-compare]
           if (inspectedElementIndex !== null && inspectedElementIndex < 0) {
             ownerID = null;
             ownerFlatTree = null;
@@ -749,7 +755,7 @@ function reduceOwnersState(store: Store, state: State, action: Action): State {
       // If the Store doesn't have any owners metadata, don't drill into an empty stack.
       // This is a confusing user experience.
       if (store.hasOwnerMetadata) {
-        ownerID = (action: ACTION_SELECT_OWNER).payload;
+        ownerID = (action as ACTION_SELECT_OWNER).payload;
         ownerFlatTree = store.getOwnersListForElement(ownerID);
 
         // Always force reset selection to be the top of the new owner tree.

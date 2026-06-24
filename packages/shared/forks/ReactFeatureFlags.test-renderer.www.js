@@ -60,7 +60,6 @@ export const enableReactTestRendererWarning: boolean = false;
 export const disableLegacyMode: boolean = true;
 
 export const enableObjectFiber: boolean = false;
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
 export const enableEffectEventMutationPhase: boolean = false;
 
 export const enableYieldingBeforePassive: boolean = false;
@@ -96,4 +95,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

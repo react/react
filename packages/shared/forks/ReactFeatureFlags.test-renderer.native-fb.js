@@ -41,7 +41,6 @@ export const enableSchedulingProfiler = __PROFILE__;
 export const enableComponentPerformanceTrack = false;
 export const enablePerformanceIssueReporting = false;
 export const enableScopeAPI = false;
-export const enableEagerAlternateStateNodeCleanup = true;
 export const enableEffectEventMutationPhase = false;
 export const enableSuspenseAvoidThisFallback = false;
 export const enableSuspenseCallback = false;
@@ -81,4 +80,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;
