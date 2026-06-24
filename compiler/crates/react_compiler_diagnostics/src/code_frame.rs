@@ -158,8 +158,8 @@ pub fn code_frame_columns(
     let number_max_width = format!("{}", end).len();
 
     // Build a lookup map for marker lines
-    let mut marker_map: std::collections::HashMap<usize, MarkerEntry> =
-        std::collections::HashMap::new();
+    let mut marker_map: rustc_hash::FxHashMap<usize, MarkerEntry> =
+        rustc_hash::FxHashMap::default();
     let line_diff = end_line as usize - start_line as usize;
     for (line_number, entry) in marker_lines_raw {
         // Resolve placeholder lengths using actual source lines

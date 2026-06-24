@@ -8,7 +8,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/PruneHoistedContexts.ts`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{CompilerError, CompilerErrorDetail, ErrorCategory};
 use react_compiler_hir::{
@@ -33,7 +33,7 @@ pub fn prune_hoisted_contexts(
     let mut transform = Transform { env };
     let mut state = VisitorState {
         active_scopes: Vec::new(),
-        uninitialized: HashMap::new(),
+        uninitialized: FxHashMap::default(),
     };
     transform_reactive_function(func, &mut transform, &mut state)
 }
@@ -49,8 +49,8 @@ enum UninitializedKind {
 }
 
 struct VisitorState {
-    active_scopes: Vec<std::collections::HashSet<IdentifierId>>,
-    uninitialized: HashMap<IdentifierId, UninitializedKind>,
+    active_scopes: Vec<rustc_hash::FxHashSet<IdentifierId>>,
+    uninitialized: FxHashMap<IdentifierId, UninitializedKind>,
 }
 
 impl VisitorState {
@@ -81,7 +81,7 @@ impl<'a> ReactiveFunctionTransform for Transform<'a> {
         state: &mut VisitorState,
     ) -> Result<(), CompilerError> {
         let scope_data = &self.env.scopes[scope.scope.0 as usize];
-        let decl_ids: std::collections::HashSet<IdentifierId> =
+        let decl_ids: rustc_hash::FxHashSet<IdentifierId> =
             scope_data.declarations.iter().map(|(id, _)| *id).collect();
 
         // Add declared but not initialized variables

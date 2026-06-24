@@ -14,7 +14,7 @@
 //! 4. Mutation with reactive operands
 //! 5. Conditional assignment based on reactive control flow
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::dominator::post_dominator_frontier;
@@ -69,7 +69,7 @@ pub fn infer_reactive_places(
     // is already reactive, the TS `continue`s and skips operand processing.
     // We track which phi operand Places should be marked reactive.
     // Key: (block_id, phi_idx, operand_idx), Value: should be reactive
-    let mut phi_operand_reactive: HashMap<(BlockId, usize, usize), bool> = HashMap::new();
+    let mut phi_operand_reactive: FxHashMap<(BlockId, usize, usize), bool> = FxHashMap::default();
 
     // Fixpoint iteration — compute reactive set
     loop {
@@ -235,7 +235,7 @@ pub fn infer_reactive_places(
 
 struct ReactivityMap<'a> {
     has_changes: bool,
-    reactive: HashSet<IdentifierId>,
+    reactive: FxHashSet<IdentifierId>,
     aliased_identifiers: &'a mut DisjointSet<IdentifierId>,
 }
 
@@ -243,7 +243,7 @@ impl<'a> ReactivityMap<'a> {
     fn new(aliased_identifiers: &'a mut DisjointSet<IdentifierId>) -> Self {
         ReactivityMap {
             has_changes: false,
-            reactive: HashSet::new(),
+            reactive: FxHashSet::default(),
             aliased_identifiers,
         }
     }
@@ -273,13 +273,13 @@ impl<'a> ReactivityMap<'a> {
 // =============================================================================
 
 struct StableSidemap {
-    map: HashMap<IdentifierId, bool>,
+    map: FxHashMap<IdentifierId, bool>,
 }
 
 impl StableSidemap {
     fn new() -> Self {
         StableSidemap {
-            map: HashMap::new(),
+            map: FxHashMap::default(),
         }
     }
 
@@ -538,7 +538,7 @@ fn apply_reactive_flags_replay(
     env: &mut Environment,
     reactive_map: &mut ReactivityMap,
     stable_sidemap: &mut StableSidemap,
-    phi_operand_reactive: &HashMap<(BlockId, usize, usize), bool>,
+    phi_operand_reactive: &FxHashMap<(BlockId, usize, usize), bool>,
 ) {
     let reactive_ids = build_reactive_id_set(reactive_map);
 
@@ -697,8 +697,8 @@ fn apply_reactive_flags_replay(
     apply_reactive_flags_to_inner_functions(func, env, &reactive_ids);
 }
 
-fn build_reactive_id_set(reactive_map: &mut ReactivityMap) -> HashSet<IdentifierId> {
-    let mut result = HashSet::new();
+fn build_reactive_id_set(reactive_map: &mut ReactivityMap) -> FxHashSet<IdentifierId> {
+    let mut result = FxHashSet::default();
     for &id in &reactive_map.reactive {
         result.insert(id);
     }
@@ -714,7 +714,7 @@ fn build_reactive_id_set(reactive_map: &mut ReactivityMap) -> HashSet<Identifier
 fn apply_reactive_flags_to_inner_functions(
     func: &HirFunction,
     env: &mut Environment,
-    reactive_ids: &HashSet<IdentifierId>,
+    reactive_ids: &FxHashSet<IdentifierId>,
 ) {
     for (_block_id, block) in &func.body.blocks {
         for instr_id in &block.instructions {
@@ -733,7 +733,7 @@ fn apply_reactive_flags_to_inner_functions(
 fn apply_reactive_flags_to_inner_func(
     func_id: FunctionId,
     env: &mut Environment,
-    reactive_ids: &HashSet<IdentifierId>,
+    reactive_ids: &FxHashSet<IdentifierId>,
 ) {
     // Collect nested function IDs first to avoid borrow issues
     let nested_func_ids: Vec<FunctionId> = {

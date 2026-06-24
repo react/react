@@ -2085,6 +2085,55 @@ describe('ReactFlight', () => {
     ]);
   });
 
+  it('should serialize an own __proto__ property nested among siblings without disturbing them', async () => {
+    // `__proto__` here is a real own enumerable data property (not the
+    // prototype). It sits between sibling keys and holds an object value, which
+    // is the case most likely to regress if the serializer used a plain
+    // `obj.__proto__ = value` assignment: that would hit the prototype setter,
+    // dropping the key and mutating the holder's prototype instead.
+    const value = {a: 1};
+    Object.defineProperty(value, '__proto__', {
+      value: {nested: true},
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    value.b = 2;
+
+    const transport = ReactNoopFlightServer.render(value);
+    assertConsoleErrorDev([
+      'Expected not to serialize an object with own property `__proto__`. ' +
+        'When parsed this property will be omitted.\n' +
+        '  {a: 1, __proto__: {nested: true}, b: 2}\n' +
+        '                    ^^^^^^^^^^^^^^',
+    ]);
+
+    const decoder = new TextDecoder();
+    const payload = transport
+      .map(chunk => (typeof chunk === 'string' ? chunk : decoder.decode(chunk)))
+      .join('');
+    // The legacy key is serialized as ordinary data, in source order, with its
+    // object value intact and without clobbering its sibling properties.
+    expect(payload).toContain('"a":1,"__proto__":{"nested":true},"b":2');
+
+    const model = await ReactNoopFlightClient.read(transport);
+    assertConsoleErrorDev([
+      'Expected not to serialize an object with own property `__proto__`. ' +
+        'When parsed this property will be omitted.\n' +
+        '  {a: 1, __proto__: {nested: true}, b: 2}\n' +
+        '                    ^^^^^^^^^^^^^^\n' +
+        '    in  (at **)',
+    ]);
+    // On the client the legacy key is omitted, but its siblings survive intact
+    // and the holder's prototype is untouched.
+    expect(Object.prototype.hasOwnProperty.call(model, '__proto__')).toBe(
+      false,
+    );
+    expect(Object.getPrototypeOf(model)).toBe(Object.prototype);
+    expect(model.a).toBe(1);
+    expect(model.b).toBe(2);
+  });
+
   it('should NOT warn in DEV for key getters', () => {
     const transport = ReactNoopFlightServer.render(<div key="a" />);
     ReactNoopFlightClient.read(transport);
