@@ -2822,7 +2822,18 @@ function resolveModel(
       // Call with the server component as the currently rendering component
       // for context.
       callWithDebugContextInDEV(request, task, () => {
-        if (objectName(originalValue) !== 'Object') {
+        if (ArrayBuffer.isView(originalValue)) {
+          // Binary data such as a Node.js Buffer carries a toJSON method, so it
+          // is serialized through that method rather than as binary. A plain
+          // Uint8Array or ArrayBuffer has no toJSON and is serialized as
+          // binary.
+          console.error(
+            'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+              'serialized through toJSON instead of as binary. Pass a ' +
+              'Uint8Array or ArrayBuffer to send binary data.%s',
+            describeObjectForErrorMessage(parent, parentPropertyName),
+          );
+        } else if (objectName(originalValue) !== 'Object') {
           const jsxParentType = jsxChildrenParents.get(parent);
           if (typeof jsxParentType === 'string') {
             console.error(

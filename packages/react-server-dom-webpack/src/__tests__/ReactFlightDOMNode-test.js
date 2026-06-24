@@ -2405,8 +2405,9 @@ describe('ReactFlightDOMNode', () => {
       ReactServerDOMServer.renderToPipeableStream({font: buffer}),
     );
     assertConsoleErrorDev([
-      'Only plain objects can be passed to Client Components from Server Components. ' +
-        'Uint8Array objects are not supported.\n' +
+      'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+        'serialized through toJSON instead of as binary. Pass a ' +
+        'Uint8Array or ArrayBuffer to send binary data.\n' +
         '  {font: Uint8Array}\n' +
         '         ^^^^^^^^^^',
     ]);
