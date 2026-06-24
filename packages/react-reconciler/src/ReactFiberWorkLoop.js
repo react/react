@@ -2598,6 +2598,32 @@ export function renderHasNotSuspendedYet(): boolean {
   return workInProgressRootExitStatus === RootInProgress;
 }
 
+function replayOrUnwindSuspendedUnitOfWork(
+  root: FiberRoot,
+  unitOfWork: Fiber,
+  thrownValue: mixed,
+): boolean {
+  const thenable: Thenable<mixed> = thrownValue as any;
+  if (isThenableResolved(thenable)) {
+    // The data resolved. Try rendering the component again.
+    workInProgressSuspendedReason = NotSuspended;
+    workInProgressThrownValue = null;
+    replaySuspendedUnitOfWork(unitOfWork);
+    return false;
+  } else {
+    // Otherwise, unwind then continue with the normal work loop.
+    workInProgressSuspendedReason = NotSuspended;
+    workInProgressThrownValue = null;
+    throwAndUnwindWorkLoop(
+      root,
+      unitOfWork,
+      thrownValue,
+      SuspendedAndReadyToContinue,
+    );
+    return true;
+  }
+}
+
 // TODO: Over time, this function and renderRootConcurrent have become more
 // and more similar. Not sure it makes sense to maintain forked paths. Consider
 // unifying them again.
@@ -2690,6 +2716,34 @@ function renderRootSync(
               // work loop.
               exitStatus = RootInProgress;
               break outer;
+            }
+            break;
+          }
+          case SuspendedAndReadyToContinue: {
+            // Snapshot the Suspense handler before replaying or unwinding
+            // because unwinding can pop the handler stack.
+            const suspenseHandler = getSuspenseHandler();
+            const didUnwind = replayOrUnwindSuspendedUnitOfWork(
+              root,
+              unitOfWork,
+              thrownValue,
+            );
+            if (didUnwind) {
+              // No Suspense handler means there was no boundary to capture
+              // this suspend, so this suspended in the shell.
+              if (suspenseHandler === null) {
+                didSuspendInShell = true;
+              }
+              if (
+                shouldYieldForPrerendering &&
+                workInProgressRootIsPrerendering
+              ) {
+                // We've switched into prerendering mode. Yield to the main
+                // thread so we can continue prerendering using the concurrent
+                // work loop.
+                exitStatus = RootInProgress;
+                break outer;
+              }
             }
             break;
           }
@@ -2868,23 +2922,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
             break outer;
           }
           case SuspendedAndReadyToContinue: {
-            const thenable: Thenable<mixed> = thrownValue as any;
-            if (isThenableResolved(thenable)) {
-              // The data resolved. Try rendering the component again.
-              workInProgressSuspendedReason = NotSuspended;
-              workInProgressThrownValue = null;
-              replaySuspendedUnitOfWork(unitOfWork);
-            } else {
-              // Otherwise, unwind then continue with the normal work loop.
-              workInProgressSuspendedReason = NotSuspended;
-              workInProgressThrownValue = null;
-              throwAndUnwindWorkLoop(
-                root,
-                unitOfWork,
-                thrownValue,
-                SuspendedAndReadyToContinue,
-              );
-            }
+            replayOrUnwindSuspendedUnitOfWork(root, unitOfWork, thrownValue);
             break;
           }
           case SuspendedOnInstanceAndReadyToContinue: {
