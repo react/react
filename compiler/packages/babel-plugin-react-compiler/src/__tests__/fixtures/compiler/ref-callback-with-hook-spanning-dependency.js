@@ -3,7 +3,7 @@
 import {useIdentity, makeObject_Primitives, identity} from 'shared-runtime';
 
 /**
- * Regression test for https://github.com/facebook/react/issues/36807
+ * Regression test for https://github.com/facebook/react/issues/36800
  *
  * `isChromatic` is a (conservatively mutable) value created *before* a hook
  * call (`useIdentity`). It is read by the `ref` callback and also captured by
