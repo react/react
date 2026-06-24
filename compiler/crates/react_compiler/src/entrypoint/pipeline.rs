@@ -112,15 +112,17 @@ pub fn compile_fn(
     }
     context.timing.stop();
 
-    context.timing.start("DropManualMemoization");
-    react_compiler_optimization::drop_manual_memoization(&mut hir, &mut env)?;
-    context.timing.stop();
-
-    if context.debug_enabled {
-        context.timing.start("debug_print:DropManualMemoization");
-        let debug_drop_memo = debug_print::debug_hir(&hir, &env);
-        context.log_debug(DebugLogEntry::new("DropManualMemoization", debug_drop_memo));
+    if !env.config.enable_preserve_existing_manual_use_memo {
+        context.timing.start("DropManualMemoization");
+        react_compiler_optimization::drop_manual_memoization(&mut hir, &mut env)?;
         context.timing.stop();
+
+        if context.debug_enabled {
+            context.timing.start("debug_print:DropManualMemoization");
+            let debug_drop_memo = debug_print::debug_hir(&hir, &env);
+            context.log_debug(DebugLogEntry::new("DropManualMemoization", debug_drop_memo));
+            context.timing.stop();
+        }
     }
 
     context
@@ -1648,7 +1650,9 @@ fn run_pipeline_passes(
 ) -> Result<CodegenFunction, CompilerError> {
     react_compiler_optimization::prune_maybe_throws(hir, &mut env.functions)?;
 
-    react_compiler_optimization::drop_manual_memoization(hir, env)?;
+    if !env.config.enable_preserve_existing_manual_use_memo {
+        react_compiler_optimization::drop_manual_memoization(hir, env)?;
+    }
 
     react_compiler_optimization::inline_immediately_invoked_function_expressions(hir, env);
 
