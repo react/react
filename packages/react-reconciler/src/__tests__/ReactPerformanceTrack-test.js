@@ -629,4 +629,44 @@ describe('ReactPerformanceTracks', () => {
       ],
     ]);
   });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
+  it('does not crash on prop objects whose getters throw', async () => {
+    function makeThrowingProp() {
+      const o = {};
+      Object.defineProperty(o, 'boom', {
+        enumerable: true,
+        get() {
+          throw new Error('do not read');
+        },
+      });
+      return o;
+    }
+
+    const App = function App({data}) {
+      Scheduler.unstable_advanceTime(10);
+      React.useEffect(() => {}, [data]);
+    };
+
+    Scheduler.unstable_advanceTime(1);
+    await act(() => {
+      ReactNoop.render(<App data={makeThrowingProp()} />);
+    });
+    performanceMeasureCalls.length = 0;
+
+    Scheduler.unstable_advanceTime(10);
+    await act(() => {
+      // New prop object so the diff path walks both sides and reads `boom`.
+      ReactNoop.render(<App data={makeThrowingProp()} />);
+    });
+
+    // Should not throw. The throwing getter degrades to the omitted-value
+    // ellipsis instead of propagating out of the commit phase.
+    expect(performanceMeasureCalls).toHaveLength(1);
+    const [, options] = performanceMeasureCalls[0];
+    const props = options.detail.devtools.properties;
+    expect(props).not.toBeNull();
+    // The diff records the change but does not throw.
+    expect(props.some(([k]) => k.includes('data'))).toBe(true);
+  });
 });
