@@ -2394,4 +2394,30 @@ describe('ReactFlightDOMNode', () => {
     // the next 1024-byte window.
     expect(result.payload).toEqual(binaryData);
   });
+
+  // A Node.js Buffer carries a `toJSON` method, so Flight serializes it through
+  // that method instead of as binary, and warns. It is therefore deserialized
+  // as a plain `{type: 'Buffer', data: [...]}` object rather than a
+  // Buffer/Uint8Array.
+  it('serializes a Node Buffer through its toJSON and warns', async () => {
+    const buffer = Buffer.from([1, 2, 3, 4]);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({font: buffer}),
+    );
+    assertConsoleErrorDev([
+      'Only plain objects can be passed to Client Components from Server Components. ' +
+        'Uint8Array objects are not supported.\n' +
+        '  {font: Uint8Array}\n' +
+        '         ^^^^^^^^^^',
+    ]);
+    const readable = new Stream.PassThrough(streamOptions);
+    const promise = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await promise;
+    expect(Buffer.isBuffer(result.font)).toBe(false);
+    expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
+  });
 });
