@@ -6560,6 +6560,35 @@ body {
       );
     });
 
+    it('forwards fetchPriority to the modulepreload link', async () => {
+      function App({ssr}) {
+        const prefix = ssr ? 'ssr ' : 'browser ';
+        ReactDOM.preloadModule(prefix + 'low', {fetchPriority: 'low'});
+        ReactDOM.preloadModule(prefix + 'high', {fetchPriority: 'high'});
+        ReactDOM.preloadModule(prefix + 'auto', {fetchPriority: 'auto'});
+        return <div>hello</div>;
+      }
+      await act(() => {
+        renderToPipeableStream(<App ssr={true} />).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link rel="modulepreload" href="ssr low" fetchpriority="low" />
+          <link rel="modulepreload" href="ssr high" fetchpriority="high" />
+          <link rel="modulepreload" href="ssr auto" fetchpriority="auto" />
+          <div>hello</div>
+        </div>,
+      );
+
+      ReactDOMClient.hydrateRoot(container, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual([
+        <link rel="modulepreload" href="browser low" fetchpriority="low" />,
+        <link rel="modulepreload" href="browser high" fetchpriority="high" />,
+        <link rel="modulepreload" href="browser auto" fetchpriority="auto" />,
+      ]);
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preloadModule();

@@ -28,6 +28,7 @@ export type PreloadModuleOptions = {
   crossOrigin?: string,
   integrity?: string,
   nonce?: string,
+  fetchPriority?: FetchPriorityEnum,
 };
 export type PreinitOptions = {
   as: string,
@@ -63,6 +64,7 @@ export type PreloadModuleImplOptions = {
   crossOrigin?: ?CrossOriginEnum,
   integrity?: ?string,
   nonce?: ?string,
+  fetchPriority?: ?string,
 };
 export type PreinitStyleOptions = {
   crossOrigin?: ?CrossOriginEnum,
