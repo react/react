@@ -171,20 +171,31 @@ export function ensureScheduleIsScheduled(): void {
 export function flushSyncWorkOnAllRoots() {
   // This is allowed to be called synchronously, but the caller should check
   // the execution context first.
-  flushSyncWorkAcrossRoots_impl(NoLanes, false);
+  flushSyncWorkAcrossRoots_impl(
+    NoLanes,
+    false,
+    // Keep explicit sync flushes on the immediate unwind path.
+    false,
+  );
 }
 
 export function flushSyncWorkOnLegacyRootsOnly() {
   // This is allowed to be called synchronously, but the caller should check
   // the execution context first.
   if (!disableLegacyMode) {
-    flushSyncWorkAcrossRoots_impl(NoLanes, true);
+    flushSyncWorkAcrossRoots_impl(
+      NoLanes,
+      true,
+      // Keep explicit sync flushes on the immediate unwind path.
+      false,
+    );
   }
 }
 
 function flushSyncWorkAcrossRoots_impl(
   syncTransitionLanes: Lanes | Lane,
   onlyLegacy: boolean,
+  shouldPauseForSyncThenableReplay: boolean,
 ) {
   if (isFlushingWork) {
     // Prevent reentrancy.
@@ -213,7 +224,17 @@ function flushSyncWorkAcrossRoots_impl(
           if (nextLanes !== NoLanes) {
             // This root has pending sync work. Flush it now.
             didPerformSomeWork = true;
-            performSyncWorkOnRoot(root, nextLanes);
+            const didPauseForSyncThenableReplay = performSyncWorkOnRoot(
+              root,
+              nextLanes,
+              shouldPauseForSyncThenableReplay,
+            );
+            if (didPauseForSyncThenableReplay) {
+              // Exit the current sync flush so React can replay suspended work
+              // if the thenable settles, or unwind otherwise.
+              isFlushingWork = false;
+              return;
+            }
           }
         } else {
           const workInProgressRoot = getWorkInProgressRoot();
@@ -236,7 +257,17 @@ function flushSyncWorkAcrossRoots_impl(
           ) {
             // This root has pending sync work. Flush it now.
             didPerformSomeWork = true;
-            performSyncWorkOnRoot(root, nextLanes);
+            const didPauseForSyncThenableReplay = performSyncWorkOnRoot(
+              root,
+              nextLanes,
+              shouldPauseForSyncThenableReplay,
+            );
+            if (didPauseForSyncThenableReplay) {
+              // Exit the current sync flush so React can replay suspended work
+              // if the thenable settles, or unwind otherwise.
+              isFlushingWork = false;
+              return;
+            }
           }
         }
       }
@@ -337,7 +368,13 @@ function processRootScheduleInMicrotask() {
   // interrupt that sequence. Instead, we'll flush any remaining work when it
   // completes.
   if (!hasPendingCommitEffects()) {
-    flushSyncWorkAcrossRoots_impl(syncTransitionLanes, false);
+    flushSyncWorkAcrossRoots_impl(
+      syncTransitionLanes,
+      false,
+      // Let scheduled sync work pause before unwinding, so React can replay
+      // suspended work if the thenable settles, or unwind otherwise.
+      true,
+    );
   }
 
   if (currentEventTransitionLane !== NoLane) {
@@ -587,7 +624,23 @@ function performWorkOnRootViaSchedulerTask(
   // bug we're still investigating. Once the bug in Scheduler is fixed,
   // we can remove this, since we track expiration ourselves.
   const forceSync = !disableSchedulerTimeoutInWorkLoop && didTimeout;
-  performWorkOnRoot(root, lanes, forceSync);
+  const didPauseForSyncThenableReplay = performWorkOnRoot(
+    root,
+    lanes,
+    forceSync,
+    // Forced sync work should stay on the immediate unwind path. Otherwise,
+    // pause before unwinding so React can replay suspended work if the
+    // thenable settles, or unwind otherwise.
+    !forceSync,
+  );
+  if (didPauseForSyncThenableReplay) {
+    // Stop this Scheduler task. performWorkOnRoot already scheduled the root,
+    // so React can replay suspended work if the thenable settles, or unwind
+    // otherwise.
+    root.callbackNode = null;
+    root.callbackPriority = NoLane;
+    return null;
+  }
 
   // The work loop yielded, but there may or may not be work left at the current
   // priority. Need to determine whether we need to schedule a continuation.
@@ -605,20 +658,29 @@ function performWorkOnRootViaSchedulerTask(
   return null;
 }
 
-function performSyncWorkOnRoot(root: FiberRoot, lanes: Lanes) {
+function performSyncWorkOnRoot(
+  root: FiberRoot,
+  lanes: Lanes,
+  shouldPauseForSyncThenableReplay: boolean,
+): boolean {
   // This is the entry point for synchronous tasks that don't go
   // through Scheduler.
   const didFlushPassiveEffects = flushPendingEffects();
   if (didFlushPassiveEffects) {
     // If passive effects were flushed, exit to the outer work loop in the root
     // scheduler, so we can recompute the priority.
-    return null;
+    return false;
   }
   if (enableProfilerTimer && enableProfilerNestedUpdatePhase) {
     syncNestedUpdateFlag();
   }
   const forceSync = true;
-  performWorkOnRoot(root, lanes, forceSync);
+  return performWorkOnRoot(
+    root,
+    lanes,
+    forceSync,
+    shouldPauseForSyncThenableReplay,
+  );
 }
 
 const fakeActCallbackNode = {};
