@@ -43,6 +43,10 @@ describe('memo', () => {
   }
 
   async function fakeImport(result) {
+    // Sync render may replay suspended work for an immediately settled thenable
+    // before showing a Suspense fallback. Resolve in a later macrotask so this
+    // fixture still tests the Suspense fallback path.
+    await new Promise(resolve => setTimeout(resolve, 0));
     return {default: result};
   }
 
