@@ -59,6 +59,18 @@ function insertAdditionalFunctionDeclaration(
       'Expected React Compiler optimized function declarations to have the same number of parameters as source',
     loc: fnPath.node.loc ?? GeneratedSource,
   });
+  const firstReferenceStatementPath =
+    findFirstTopLevelReferenceStatementBeforeDeclaration(
+      fnPath,
+      originalFnName.name,
+    );
+  const declarationStatementPath = fnPath.getStatementParent();
+  CompilerError.invariant(declarationStatementPath != null, {
+    reason: 'Expected function declaration to have a statement parent',
+    loc: fnPath.node.loc ?? GeneratedSource,
+  });
+  const gatingInsertionTargetPath =
+    firstReferenceStatementPath ?? declarationStatementPath;
 
   const gatingCondition = t.identifier(
     programContext.newUid(`${gatingFunctionIdentifierName}_result`),
@@ -114,7 +126,7 @@ function insertAdditionalFunctionDeclaration(
       ]),
     ),
   );
-  fnPath.insertBefore(
+  gatingInsertionTargetPath.insertBefore(
     t.variableDeclaration('const', [
       t.variableDeclarator(
         gatingCondition,
@@ -124,6 +136,74 @@ function insertAdditionalFunctionDeclaration(
   );
   fnPath.insertBefore(compiled);
 }
+
+function findFirstTopLevelReferenceStatementBeforeDeclaration(
+  fnPath: NodePath<t.FunctionDeclaration>,
+  name: string,
+): NodePath<t.Statement> | null {
+  const declarationStatementPath = fnPath.getStatementParent();
+  if (
+    declarationStatementPath == null ||
+    !declarationStatementPath.parentPath.isProgram()
+  ) {
+    return null;
+  }
+
+  for (const stmtPath of declarationStatementPath.parentPath.get('body')) {
+    if (stmtPath.node === declarationStatementPath.node) {
+      break;
+    }
+    if (
+      stmtPath.isStatement() &&
+      statementReferencesIdentifierAtTopLevel(stmtPath, name)
+    ) {
+      return stmtPath;
+    }
+  }
+
+  return null;
+}
+
+function statementReferencesIdentifierAtTopLevel(
+  stmtPath: NodePath<t.Statement>,
+  name: string,
+): boolean {
+  if (stmtPath.isFunctionDeclaration()) {
+    return false;
+  }
+
+  let found = false;
+  stmtPath.traverse({
+    TypeAnnotation(path) {
+      path.skip();
+    },
+    TSTypeAnnotation(path) {
+      path.skip();
+    },
+    TypeAlias(path) {
+      path.skip();
+    },
+    TSTypeAliasDeclaration(path) {
+      path.skip();
+    },
+    Function(path) {
+      path.skip();
+    },
+    Identifier(path) {
+      if (
+        path.node.name === name &&
+        path.scope.getFunctionParent() == null &&
+        path.isReferencedIdentifier()
+      ) {
+        found = true;
+        path.stop();
+      }
+    },
+  });
+
+  return found;
+}
+
 export function insertGatedFunctionDeclaration(
   fnPath: NodePath<
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
