@@ -404,6 +404,7 @@ import {
   flushSyncWorkOnAllRoots,
   flushSyncWorkOnLegacyRootsOnly,
   requestTransitionLane,
+  didCurrentEventScheduleTransition,
 } from './ReactFiberRootScheduler';
 import {getMaskedContext, getUnmaskedContext} from './ReactFiberLegacyContext';
 import {logUncaughtError} from './ReactFiberErrorLogger';
@@ -1414,7 +1415,22 @@ function finishConcurrentRender(
       throw new Error('Root did not complete. This is a bug in React.');
     }
     case RootSuspendedWithDelay: {
-      if (!includesOnlyTransitions(lanes) && !includesOnlyRetries(lanes)) {
+      if (
+        !includesOnlyTransitions(lanes) &&
+        !includesOnlyRetries(lanes) &&
+        // A transition flushed synchronously during a popstate event carries a
+        // synthetic SyncLane that marks the priority of the batch (see
+        // getNextLanesToFlushSync). That extra lane makes the work look like a
+        // non-transition update, which would commit the Suspense fallback. When
+        // the only non-transition lane is that synthetic SyncLane, fall through
+        // instead and delay, so the update is re-rendered concurrently and the
+        // previous UI stays visible (#35966).
+        !(
+          didCurrentEventScheduleTransition() &&
+          includesTransitionLane(lanes) &&
+          includesOnlyTransitions(lanes & ~SyncLane)
+        )
+      ) {
         // Commit the placeholder.
         break;
       }
