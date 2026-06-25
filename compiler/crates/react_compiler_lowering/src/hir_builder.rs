@@ -126,6 +126,13 @@ pub struct WipBlock {
     pub kind: BlockKind,
 }
 
+/// Opaque handle to a block suspended while another block is current.
+///
+/// This can only be created by [`HirBuilder::suspend_current`], preventing
+/// callers from accidentally restoring an arbitrary `WipBlock`.
+#[must_use = "a suspended block must be restored"]
+pub(crate) struct SuspendedBlock(WipBlock);
+
 fn new_block(id: BlockId, kind: BlockKind) -> WipBlock {
     WipBlock {
         id,
@@ -461,6 +468,25 @@ impl<'a> HirBuilder<'a> {
                 phis: Vec::new(),
             },
         );
+    }
+
+    /// Make a reserved block current and suspend the block that was current.
+    ///
+    /// This is the non-closure form of `enter_reserved`. It is useful for
+    /// iterative lowering algorithms which need to suspend work on one block
+    /// while an explicit work stack populates another one.
+    pub(crate) fn suspend_current(&mut self, block: WipBlock) -> SuspendedBlock {
+        SuspendedBlock(std::mem::replace(&mut self.current, block))
+    }
+
+    /// Complete the current block and restore a previously suspended block.
+    pub(crate) fn complete_current_and_restore(
+        &mut self,
+        suspended: SuspendedBlock,
+        terminal: Terminal,
+    ) {
+        let completed = std::mem::replace(&mut self.current, suspended.0);
+        self.complete(completed, terminal);
     }
 
     /// Sets the given wip block as current, executes the closure to populate

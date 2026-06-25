@@ -322,6 +322,204 @@ fn lower_expression_to_temporary(
     Ok(lower_value_to_temporary(builder, value)?)
 }
 
+struct LogicalLoweringFrame<'a> {
+    continuation_block: crate::hir_builder::WipBlock,
+    consequent_block: BlockId,
+    alternate_block: BlockId,
+    place: Place,
+    left_place: Place,
+    operator: LogicalOperator,
+    loc: Option<SourceLocation>,
+    left: &'a react_compiler_ast::expressions::Expression,
+}
+
+enum LogicalLoweringTask<'a> {
+    FinishRight {
+        frame: LogicalLoweringFrame<'a>,
+        test_block: crate::hir_builder::WipBlock,
+        suspended_block: crate::hir_builder::SuspendedBlock,
+    },
+    FinishLeft(LogicalLoweringFrame<'a>),
+}
+
+/// Lower an entire tree of logical expressions without using the Rust call
+/// stack for its shape.
+fn lower_logical_expression(
+    builder: &mut HirBuilder,
+    root: &react_compiler_ast::expressions::LogicalExpression,
+) -> Result<InstructionValue, CompilerError> {
+    use react_compiler_ast::expressions::Expression;
+
+    enum Next<'a> {
+        Logical(&'a react_compiler_ast::expressions::LogicalExpression),
+        Expression(&'a Expression),
+    }
+
+    let mut tasks = Vec::<LogicalLoweringTask<'_>>::new();
+    let mut next = Next::Logical(root);
+
+    'lower: loop {
+        let mut value = loop {
+            match next {
+                Next::Expression(Expression::LogicalExpression(logical))
+                | Next::Logical(logical) => {
+                    let loc = convert_opt_loc(&logical.base.loc);
+                    let continuation_block = builder.reserve(builder.current_block_kind());
+                    let continuation_id = continuation_block.id;
+                    let test_block = builder.reserve(BlockKind::Value);
+                    let place = build_temporary_place(builder, loc.clone());
+                    let left_place = build_temporary_place(builder, expression_loc(&logical.left));
+
+                    let consequent_block =
+                        builder.try_enter(BlockKind::Value, |builder, _block_id| {
+                            lower_value_to_temporary(
+                                builder,
+                                InstructionValue::StoreLocal {
+                                    lvalue: LValue {
+                                        kind: InstructionKind::Const,
+                                        place: place.clone(),
+                                    },
+                                    value: left_place.clone(),
+                                    type_annotation: None,
+                                    loc: left_place.loc.clone(),
+                                },
+                            )?;
+                            Ok(Terminal::Goto {
+                                block: continuation_id,
+                                variant: GotoVariant::Break,
+                                id: EvaluationOrder(0),
+                                loc: left_place.loc.clone(),
+                            })
+                        })?;
+
+                    let alternate = builder.reserve(BlockKind::Value);
+                    let alternate_block = alternate.id;
+                    let suspended_block = builder.suspend_current(alternate);
+                    let operator = match logical.operator {
+                        react_compiler_ast::operators::LogicalOperator::And => LogicalOperator::And,
+                        react_compiler_ast::operators::LogicalOperator::Or => LogicalOperator::Or,
+                        react_compiler_ast::operators::LogicalOperator::NullishCoalescing => {
+                            LogicalOperator::NullishCoalescing
+                        }
+                    };
+                    tasks.push(LogicalLoweringTask::FinishRight {
+                        frame: LogicalLoweringFrame {
+                            continuation_block,
+                            consequent_block,
+                            alternate_block,
+                            place,
+                            left_place,
+                            operator,
+                            loc,
+                            left: &logical.left,
+                        },
+                        test_block,
+                        suspended_block,
+                    });
+                    next = Next::Expression(&logical.right);
+                    continue;
+                }
+                // These wrappers do not emit HIR, so traverse through them here to
+                // keep parenthesized right-nested logical trees iterative as well.
+                Next::Expression(Expression::ParenthesizedExpression(paren)) => {
+                    next = Next::Expression(&paren.expression);
+                    continue;
+                }
+                Next::Expression(Expression::TSNonNullExpression(ts)) => {
+                    next = Next::Expression(&ts.expression);
+                    continue;
+                }
+                Next::Expression(Expression::TSInstantiationExpression(ts)) => {
+                    next = Next::Expression(&ts.expression);
+                    continue;
+                }
+                Next::Expression(expression) => {
+                    break lower_expression_to_temporary(builder, expression)?;
+                }
+            }
+        };
+
+        loop {
+            let Some(task) = tasks.pop() else {
+                return Ok(InstructionValue::LoadLocal {
+                    loc: value.loc.clone(),
+                    place: value,
+                });
+            };
+            match task {
+                LogicalLoweringTask::FinishRight {
+                    frame,
+                    test_block,
+                    suspended_block,
+                } => {
+                    let right = value;
+                    let right_loc = right.loc.clone();
+                    lower_value_to_temporary(
+                        builder,
+                        InstructionValue::StoreLocal {
+                            lvalue: LValue {
+                                kind: InstructionKind::Const,
+                                place: frame.place.clone(),
+                            },
+                            value: right,
+                            type_annotation: None,
+                            loc: right_loc.clone(),
+                        },
+                    )?;
+                    builder.complete_current_and_restore(
+                        suspended_block,
+                        Terminal::Goto {
+                            block: frame.continuation_block.id,
+                            variant: GotoVariant::Break,
+                            id: EvaluationOrder(0),
+                            loc: right_loc,
+                        },
+                    );
+                    builder.terminate_with_continuation(
+                        Terminal::Logical {
+                            operator: frame.operator,
+                            test: test_block.id,
+                            fallthrough: frame.continuation_block.id,
+                            id: EvaluationOrder(0),
+                            loc: frame.loc.clone(),
+                        },
+                        test_block,
+                    );
+                    let left = frame.left;
+                    tasks.push(LogicalLoweringTask::FinishLeft(frame));
+                    next = Next::Expression(left);
+                    continue 'lower;
+                }
+                LogicalLoweringTask::FinishLeft(frame) => {
+                    let left_value = value;
+                    builder.push(Instruction {
+                        id: EvaluationOrder(0),
+                        lvalue: frame.left_place.clone(),
+                        value: InstructionValue::LoadLocal {
+                            place: left_value,
+                            loc: frame.loc.clone(),
+                        },
+                        effects: None,
+                        loc: frame.loc.clone(),
+                    });
+                    builder.terminate_with_continuation(
+                        Terminal::Branch {
+                            test: frame.left_place,
+                            consequent: frame.consequent_block,
+                            alternate: frame.alternate_block,
+                            fallthrough: frame.continuation_block.id,
+                            id: EvaluationOrder(0),
+                            loc: frame.loc,
+                        },
+                        frame.continuation_block,
+                    );
+                    value = frame.place;
+                }
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Operator conversion
 // =============================================================================
@@ -852,111 +1050,7 @@ fn lower_expression(
         Expression::OptionalMemberExpression(opt_member) => {
             Ok(lower_optional_member_expression(builder, opt_member)?)
         }
-        Expression::LogicalExpression(expr) => {
-            let loc = convert_opt_loc(&expr.base.loc);
-            let continuation_block = builder.reserve(builder.current_block_kind());
-            let continuation_id = continuation_block.id;
-            let test_block = builder.reserve(BlockKind::Value);
-            let test_block_id = test_block.id;
-            let place = build_temporary_place(builder, loc.clone());
-            let left_loc = expression_loc(&expr.left);
-            let left_place = build_temporary_place(builder, left_loc);
-
-            // Block for short-circuit case: store left value as result, goto continuation
-            let consequent_block = builder.try_enter(BlockKind::Value, |builder, _block_id| {
-                lower_value_to_temporary(
-                    builder,
-                    InstructionValue::StoreLocal {
-                        lvalue: LValue {
-                            kind: InstructionKind::Const,
-                            place: place.clone(),
-                        },
-                        value: left_place.clone(),
-                        type_annotation: None,
-                        loc: left_place.loc.clone(),
-                    },
-                )?;
-                Ok(Terminal::Goto {
-                    block: continuation_id,
-                    variant: GotoVariant::Break,
-                    id: EvaluationOrder(0),
-                    loc: left_place.loc.clone(),
-                })
-            });
-
-            // Block for evaluating right side
-            let alternate_block = builder.try_enter(BlockKind::Value, |builder, _block_id| {
-                let right = lower_expression_to_temporary(builder, &expr.right)?;
-                let right_loc = right.loc.clone();
-                lower_value_to_temporary(
-                    builder,
-                    InstructionValue::StoreLocal {
-                        lvalue: LValue {
-                            kind: InstructionKind::Const,
-                            place: place.clone(),
-                        },
-                        value: right,
-                        type_annotation: None,
-                        loc: right_loc.clone(),
-                    },
-                )?;
-                Ok(Terminal::Goto {
-                    block: continuation_id,
-                    variant: GotoVariant::Break,
-                    id: EvaluationOrder(0),
-                    loc: right_loc,
-                })
-            });
-
-            let hir_op = match expr.operator {
-                react_compiler_ast::operators::LogicalOperator::And => LogicalOperator::And,
-                react_compiler_ast::operators::LogicalOperator::Or => LogicalOperator::Or,
-                react_compiler_ast::operators::LogicalOperator::NullishCoalescing => {
-                    LogicalOperator::NullishCoalescing
-                }
-            };
-
-            builder.terminate_with_continuation(
-                Terminal::Logical {
-                    operator: hir_op,
-                    test: test_block_id,
-                    fallthrough: continuation_id,
-                    id: EvaluationOrder(0),
-                    loc: loc.clone(),
-                },
-                test_block,
-            );
-
-            // Now in test block: lower left expression, copy to left_place
-            let left_value = lower_expression_to_temporary(builder, &expr.left)?;
-            builder.push(Instruction {
-                id: EvaluationOrder(0),
-                lvalue: left_place.clone(),
-                value: InstructionValue::LoadLocal {
-                    place: left_value,
-                    loc: loc.clone(),
-                },
-                effects: None,
-                loc: loc.clone(),
-            });
-
-            builder.terminate_with_continuation(
-                Terminal::Branch {
-                    test: left_place,
-                    consequent: consequent_block?,
-                    alternate: alternate_block?,
-                    fallthrough: continuation_id,
-                    id: EvaluationOrder(0),
-                    loc: loc.clone(),
-                },
-                continuation_block,
-            );
-
-            Ok(InstructionValue::LoadLocal {
-                place: place.clone(),
-                loc: place.loc.clone(),
-            })
-        }
+        Expression::LogicalExpression(expr) => lower_logical_expression(builder, expr),
         Expression::UpdateExpression(update) => {
             let loc = convert_opt_loc(&update.base.loc);
             match update.argument.as_ref() {
