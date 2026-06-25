@@ -473,6 +473,19 @@ let workInProgressRootIsPrerendering: boolean = false;
 // listeners to a promise we've already seen (per root and lane).
 let workInProgressRootDidAttachPingListener: boolean = false;
 
+// Set before rendering so useSyncExternalStore can record consistency checks
+// when a sync render may pause before unwinding so a settled thenable can
+// replay.
+let workInProgressRootMayPauseForSyncThenableReplay: boolean = false;
+// Set only if this render actually paused before unwinding. If the thenable
+// settles and we replay, store reads from the first attempt may be stale by the
+// time we commit, so verify them first.
+let workInProgressRootDidPauseForSyncThenableReplay: boolean = false;
+
+export function shouldTrackStoreConsistencyForSyncThenableReplay(): boolean {
+  return workInProgressRootMayPauseForSyncThenableReplay;
+}
+
 // A contextual version of workInProgressRootRenderLanes. It is a superset of
 // the lanes that we started working on at the root. When we enter a subtree
 // that is currently hidden, we add the lanes that would have committed if
@@ -1203,14 +1216,16 @@ export function performWorkOnRoot(
 
       // The render completed.
 
-      // Check if this render may have yielded to a concurrent event, and if so,
-      // confirm that any newly rendered stores are consistent.
+      // Check if this render may have yielded to a concurrent event or paused
+      // before unwinding, and if so, confirm that any newly rendered stores are
+      // consistent. Sync renders only enter this path if they actually paused.
       // TODO: It's possible that even a concurrent render may never have yielded
       // to the main thread, if it was fast enough, or if it expired. We could
       // skip the consistency check in that case, too.
       const finishedWork: Fiber = root.current.alternate as any;
       if (
-        renderWasConcurrent &&
+        (renderWasConcurrent ||
+          workInProgressRootDidPauseForSyncThenableReplay) &&
         !isRenderConsistentWithExternalStores(finishedWork)
       ) {
         if (enableProfilerTimer && enableComponentPerformanceTrack) {
@@ -2265,6 +2280,8 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   workInProgressRootDidSkipSuspendedSiblings = false;
   workInProgressRootIsPrerendering = checkIfRootIsPrerendering(root, lanes);
   workInProgressRootDidAttachPingListener = false;
+  workInProgressRootMayPauseForSyncThenableReplay = false;
+  workInProgressRootDidPauseForSyncThenableReplay = false;
   workInProgressRootExitStatus = RootInProgress;
   workInProgressRootSkippedLanes = NoLanes;
   workInProgressRootInterleavedUpdatedLanes = NoLanes;
@@ -2638,12 +2655,7 @@ function replayOrUnwindSuspendedUnitOfWork(
     // Otherwise, unwind then continue with the normal work loop.
     workInProgressSuspendedReason = NotSuspended;
     workInProgressThrownValue = null;
-    throwAndUnwindWorkLoop(
-      root,
-      unitOfWork,
-      thrownValue,
-      unwindReason,
-    );
+    throwAndUnwindWorkLoop(root, unitOfWork, thrownValue, unwindReason);
     return true;
   }
 }
@@ -2689,6 +2701,13 @@ function renderRootSync(
     markRenderStarted(lanes);
   }
 
+  // Scheduled sync renders may pause before unwinding so React can replay
+  // suspended work if the thenable settles, or unwind otherwise. Store reads
+  // before that pause need consistency checks in case they become stale before
+  // commit.
+  workInProgressRootMayPauseForSyncThenableReplay =
+    shouldPauseForSyncThenableReplay;
+
   let didSuspendInShell = false;
   let exitStatus = workInProgressRootExitStatus;
   outer: do {
@@ -2732,6 +2751,7 @@ function renderRootSync(
               // Pause this sync render before unwinding to a fallback. When React
               // resumes, SuspendedAndReadyToContinue will check the thenable and
               // replay if the thenable settled, otherwise unwind.
+              workInProgressRootDidPauseForSyncThenableReplay = true;
               workInProgressSuspendedReason = SuspendedAndReadyToContinue;
               exitStatus = RootInProgress;
               break outer;
@@ -2892,6 +2912,9 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
   if (enableSchedulingProfiler) {
     markRenderStarted(lanes);
   }
+
+  // Concurrent renders already use renderWasConcurrent for store consistency.
+  workInProgressRootMayPauseForSyncThenableReplay = false;
 
   outer: do {
     try {

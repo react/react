@@ -17,6 +17,7 @@ let use;
 let useDebugValue;
 let useState;
 let useTransition;
+let useSyncExternalStore;
 let useMemo;
 let useEffect;
 let Suspense;
@@ -41,6 +42,7 @@ describe('ReactUse', () => {
     useDebugValue = React.useDebugValue;
     useState = React.useState;
     useTransition = React.useTransition;
+    useSyncExternalStore = React.useSyncExternalStore;
     useMemo = React.useMemo;
     useEffect = React.useEffect;
     Suspense = React.Suspense;
@@ -332,6 +334,57 @@ describe('ReactUse', () => {
     expect(root).toMatchRenderedOutput('Loading...');
 
     await waitForAll(['Async']);
+  });
+
+  it('rerenders if an external store updates before a sync suspend replay commits', async () => {
+    const listeners = new Set();
+    let storeValue = 0;
+    const store = {
+      set(value) {
+        storeValue = value;
+        listeners.forEach(listener => listener());
+      },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getState() {
+        return storeValue;
+      },
+    };
+    const promise = Promise.resolve('Async');
+    let didScheduleStoreUpdate = false;
+
+    function StoreReader() {
+      const value = useSyncExternalStore(store.subscribe, store.getState);
+      if (!didScheduleStoreUpdate) {
+        didScheduleStoreUpdate = true;
+        Promise.resolve().then(() => {
+          store.set(1);
+        });
+      }
+      return <Text text={'Store: ' + value} />;
+    }
+
+    function Async() {
+      return <Text text={use(promise)} />;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <StoreReader />
+          <Async />
+        </Suspense>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog(['Store: 0', 'Async', 'Store: 1', 'Async']);
+    expect(root).toMatchRenderedOutput('Store: 1Async');
   });
 
   it("using a promise that's not cached between attempts", async () => {
