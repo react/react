@@ -2625,6 +2625,7 @@ function replayOrUnwindSuspendedUnitOfWork(
   root: FiberRoot,
   unitOfWork: Fiber,
   thrownValue: mixed,
+  unwindReason: SuspendedReason,
 ): boolean {
   const thenable: Thenable<mixed> = thrownValue as any;
   if (isThenableResolved(thenable)) {
@@ -2641,7 +2642,7 @@ function replayOrUnwindSuspendedUnitOfWork(
       root,
       unitOfWork,
       thrownValue,
-      SuspendedAndReadyToContinue,
+      unwindReason,
     );
     return true;
   }
@@ -2764,6 +2765,9 @@ function renderRootSync(
               root,
               unitOfWork,
               thrownValue,
+              // If it is still pending, unwind as the original immediate
+              // suspend so sync fallback/prewarming behavior stays the same.
+              SuspendedOnImmediate,
             );
             if (didUnwind) {
               // No Suspense handler means there was no boundary to capture
@@ -2959,7 +2963,12 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
             break outer;
           }
           case SuspendedAndReadyToContinue: {
-            replayOrUnwindSuspendedUnitOfWork(root, unitOfWork, thrownValue);
+            replayOrUnwindSuspendedUnitOfWork(
+              root,
+              unitOfWork,
+              thrownValue,
+              SuspendedAndReadyToContinue,
+            );
             break;
           }
           case SuspendedOnInstanceAndReadyToContinue: {
