@@ -49,5 +49,6 @@
   background: none;
   color: var(--color-link);
   font: inherit;
+  font-style: italic;
   text-decoration: underline;
 }
