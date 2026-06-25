@@ -89,8 +89,8 @@ export type TreeTools = {
     pageSize?: number,
   ) => FindComponentsResult | ToolError,
   getComponentSource: (uid: string) => ComponentSource | ToolError,
-  getOwnersStack: (uid: string) => OwnersStack | ToolError,
-  getOwnersBranch: (uid: string) => Array<OwnerEntry> | ToolError,
+  getOwnerStackTrace: (uid: string) => OwnersStack | ToolError,
+  getOwnerStack: (uid: string) => Array<OwnerEntry> | ToolError,
   // Shared with the profiler tools so component uids are consistent across all
   // tools. Maps a fiber to its stable uid (assigning one on first encounter).
   getUid: (fiber: Fiber) => string,
@@ -605,7 +605,7 @@ export function createTreeTools(
    *
    * @param uid - The component uid (e.g. "r5").
    */
-  function getOwnersStack(uid: string): OwnersStack | ToolError {
+  function getOwnerStackTrace(uid: string): OwnersStack | ToolError {
     const result = findFiberByUid(uid);
     if (result.error != null) {
       return {error: result.error};
@@ -631,7 +631,7 @@ export function createTreeTools(
    *
    * @param uid - The component uid (e.g. "r5").
    */
-  function getOwnersBranch(uid: string): Array<OwnerEntry> | ToolError {
+  function getOwnerStack(uid: string): Array<OwnerEntry> | ToolError {
     const result = findFiberByUid(uid);
     if (result.error != null) {
       return {error: result.error};
@@ -667,8 +667,8 @@ export function createTreeTools(
     getComponentByUid,
     findComponents,
     getComponentSource,
-    getOwnersStack,
-    getOwnersBranch,
+    getOwnerStackTrace,
+    getOwnerStack,
     getUid,
   };
 }
