@@ -22,7 +22,6 @@ export const {
   alwaysThrottleRetries,
   enableEffectEventMutationPhase,
   enableObjectFiber,
-  enableEagerAlternateStateNodeCleanup,
   passChildrenWhenCloningPersistedNodes,
   enableFragmentRefs,
   enableFragmentRefsScrollIntoView,

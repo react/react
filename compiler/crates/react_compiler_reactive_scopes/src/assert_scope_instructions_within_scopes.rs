@@ -8,7 +8,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/AssertScopeInstructionsWithinScope.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
@@ -25,7 +25,7 @@ pub fn assert_scope_instructions_within_scopes(
     env: &Environment,
 ) -> Result<(), CompilerDiagnostic> {
     // Pass 1: Collect all scope IDs
-    let mut existing_scopes: HashSet<ScopeId> = HashSet::new();
+    let mut existing_scopes: FxHashSet<ScopeId> = FxHashSet::default();
     let find_visitor = FindAllScopesVisitor { env };
     visit_reactive_function(func, &find_visitor, &mut existing_scopes);
 
@@ -33,7 +33,7 @@ pub fn assert_scope_instructions_within_scopes(
     let check_visitor = CheckInstructionsAgainstScopesVisitor { env };
     let mut check_state = CheckState {
         existing_scopes,
-        active_scopes: HashSet::new(),
+        active_scopes: FxHashSet::default(),
         error: None,
     };
     visit_reactive_function(func, &check_visitor, &mut check_state);
@@ -52,13 +52,13 @@ struct FindAllScopesVisitor<'a> {
 }
 
 impl<'a> ReactiveFunctionVisitor for FindAllScopesVisitor<'a> {
-    type State = HashSet<ScopeId>;
+    type State = FxHashSet<ScopeId>;
 
     fn env(&self) -> &Environment {
         self.env
     }
 
-    fn visit_scope(&self, scope: &ReactiveScopeBlock, state: &mut HashSet<ScopeId>) {
+    fn visit_scope(&self, scope: &ReactiveScopeBlock, state: &mut FxHashSet<ScopeId>) {
         self.traverse_scope(scope, state);
         state.insert(scope.scope);
     }
@@ -69,8 +69,8 @@ impl<'a> ReactiveFunctionVisitor for FindAllScopesVisitor<'a> {
 // =============================================================================
 
 struct CheckState {
-    existing_scopes: HashSet<ScopeId>,
-    active_scopes: HashSet<ScopeId>,
+    existing_scopes: FxHashSet<ScopeId>,
+    active_scopes: FxHashSet<ScopeId>,
     error: Option<CompilerDiagnostic>,
 }
 

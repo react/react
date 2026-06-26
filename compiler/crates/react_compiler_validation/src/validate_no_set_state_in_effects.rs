@@ -12,7 +12,7 @@
 //!
 //! Port of ValidateNoSetStateInEffects.ts.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
@@ -37,7 +37,7 @@ pub fn validate_no_set_state_in_effects(
     let enable_allow_set_state_from_refs = env.config.enable_allow_set_state_from_refs_in_effects;
 
     // Map from IdentifierId to the Place where the setState originated
-    let mut set_state_functions: HashMap<IdentifierId, SetStateInfo> = HashMap::new();
+    let mut set_state_functions: FxHashMap<IdentifierId, SetStateInfo> = FxHashMap::default();
     let mut errors = CompilerError::new();
 
     for (_block_id, block) in &func.body.blocks {
@@ -246,7 +246,7 @@ fn push_error(errors: &mut CompilerError, info: &SetStateInfo, enable_verbose: b
 /// Recursively collect all Place identifiers from a destructure pattern.
 fn collect_destructure_places(
     pattern: &react_compiler_hir::Pattern,
-    ref_derived_values: &mut HashSet<IdentifierId>,
+    ref_derived_values: &mut FxHashSet<IdentifierId>,
 ) {
     match pattern {
         react_compiler_hir::Pattern::Array(arr) => {
@@ -279,7 +279,7 @@ fn collect_destructure_places(
 
 fn is_derived_from_ref(
     id: IdentifierId,
-    ref_derived_values: &HashSet<IdentifierId>,
+    ref_derived_values: &FxHashSet<IdentifierId>,
     identifiers: &[Identifier],
     types: &[Type],
 ) -> bool {
@@ -306,12 +306,12 @@ fn collect_operands(value: &InstructionValue, functions: &[HirFunction]) -> Vec<
 fn create_ref_controlled_block_checker(
     func: &HirFunction,
     next_block_id_counter: u32,
-    ref_derived_values: &HashSet<IdentifierId>,
+    ref_derived_values: &FxHashSet<IdentifierId>,
     identifiers: &[Identifier],
     types: &[Type],
-) -> Result<HashMap<BlockId, bool>, CompilerDiagnostic> {
+) -> Result<FxHashMap<BlockId, bool>, CompilerDiagnostic> {
     let post_dominators = compute_post_dominator_tree(func, next_block_id_counter, false)?;
-    let mut cache: HashMap<BlockId, bool> = HashMap::new();
+    let mut cache: FxHashMap<BlockId, bool> = FxHashMap::default();
 
     for (block_id, _block) in &func.body.blocks {
         let frontier = post_dominator_frontier(func, &post_dominators, *block_id);
@@ -365,7 +365,7 @@ fn create_ref_controlled_block_checker(
 /// Tracks ref-derived values to allow setState when the value being set comes from a ref.
 fn get_set_state_call(
     func: &HirFunction,
-    set_state_functions: &mut HashMap<IdentifierId, SetStateInfo>,
+    set_state_functions: &mut FxHashMap<IdentifierId, SetStateInfo>,
     identifiers: &[Identifier],
     types: &[Type],
     functions: &[HirFunction],
@@ -373,7 +373,7 @@ fn get_set_state_call(
     next_block_id_counter: u32,
     source_code: Option<&str>,
 ) -> Result<Option<SetStateInfo>, CompilerDiagnostic> {
-    let mut ref_derived_values: HashSet<IdentifierId> = HashSet::new();
+    let mut ref_derived_values: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // First pass: collect ref-derived values (needed before building control dominator checker)
     // We do a pre-pass to seed ref_derived_values so the control dominator checker has them.
@@ -432,7 +432,7 @@ fn get_set_state_call(
             types,
         )?
     } else {
-        HashMap::new()
+        FxHashMap::default()
     };
 
     let is_ref_controlled_block = |block_id: BlockId| -> bool {

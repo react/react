@@ -979,13 +979,13 @@ describe('react-devtools-facade', () => {
     });
   });
 
-  describe('getOwnersStack', () => {
-    let getOwnersStack;
+  describe('getOwnerStackTrace', () => {
+    let getOwnerStackTrace;
     let getComponentTree;
 
     beforeEach(() => {
       const tools = createTools(facade);
-      getOwnersStack = tools.getOwnersStack;
+      getOwnerStackTrace = tools.getOwnerStackTrace;
       getComponentTree = tools.getComponentTree;
     });
 
@@ -1007,7 +1007,7 @@ describe('react-devtools-facade', () => {
       const child = getComponentTree().find(n => n.name === 'Child');
       expect(child).toBeDefined();
 
-      const result = getOwnersStack(child.uid);
+      const result = getOwnerStackTrace(child.uid);
       expect(typeof result.stack).toBe('string');
       // The stack should mention the owner components
       expect(result.stack).toContain('Parent');
@@ -1024,23 +1024,23 @@ describe('react-devtools-facade', () => {
       });
 
       const app = getComponentTree().find(n => n.name === 'App');
-      const result = getOwnersStack(app.uid);
+      const result = getOwnerStackTrace(app.uid);
       expect(typeof result.stack).toBe('string');
     });
 
     it('returns error for non-existent uid', () => {
-      const result = getOwnersStack('r9999');
+      const result = getOwnerStackTrace('r9999');
       expect(result.error).toMatch(/Component not found/);
     });
   });
 
-  describe('getOwnersBranch', () => {
-    let getOwnersBranch;
+  describe('getOwnerStack', () => {
+    let getOwnerStack;
     let getComponentTree;
 
     beforeEach(() => {
       const tools = createTools(facade);
-      getOwnersBranch = tools.getOwnersBranch;
+      getOwnerStack = tools.getOwnerStack;
       getComponentTree = tools.getComponentTree;
     });
 
@@ -1062,7 +1062,7 @@ describe('react-devtools-facade', () => {
       const child = getComponentTree().find(n => n.name === 'Child');
       expect(child).toBeDefined();
 
-      const owners = getOwnersBranch(child.uid);
+      const owners = getOwnerStack(child.uid);
       expect(owners).toEqual([
         {
           uid: 'r2',
@@ -1090,7 +1090,7 @@ describe('react-devtools-facade', () => {
       });
 
       const child = getComponentTree().find(n => n.name === 'Child');
-      const owners = getOwnersBranch(child.uid);
+      const owners = getOwnerStack(child.uid);
 
       expect(owners).toHaveLength(1);
       expect(owners[0].uid).toBe('r0');
@@ -1114,7 +1114,7 @@ describe('react-devtools-facade', () => {
       const child = tree.find(n => n.name === 'Child');
       const app = tree.find(n => n.name === 'App');
 
-      const owners = getOwnersBranch(child.uid);
+      const owners = getOwnerStack(child.uid);
       expect(owners[0].uid).toBe(app.uid);
     });
 
@@ -1128,12 +1128,12 @@ describe('react-devtools-facade', () => {
       });
 
       const app = getComponentTree().find(n => n.name === 'App');
-      const owners = getOwnersBranch(app.uid);
+      const owners = getOwnerStack(app.uid);
       expect(owners).toEqual([]);
     });
 
     it('returns error for non-existent uid', () => {
-      const result = getOwnersBranch('r9999');
+      const result = getOwnerStack('r9999');
       expect(result.error).toMatch(/Component not found/);
     });
 
@@ -1156,7 +1156,7 @@ describe('react-devtools-facade', () => {
       });
 
       const gc = getComponentTree().find(n => n.name === 'GrandChild');
-      const owners = getOwnersBranch(gc.uid);
+      const owners = getOwnerStack(gc.uid);
       expect(owners).toEqual([
         {
           uid: 'r3',

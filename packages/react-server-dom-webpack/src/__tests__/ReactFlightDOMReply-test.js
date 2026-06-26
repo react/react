@@ -774,9 +774,7 @@ describe('ReactFlightDOMReply', () => {
 
     const result = await ReactServerDOMServer.decodeReply(await bodyPromise);
     expect(result.hello).toBe('world');
-    // TODO: await result.promise should reject at this point because the stream
-    // has closed but that's a bug in both ReactFlightReplyServer and ReactFlightClient.
-    // It just halts in this case.
+    await expect(result.promise).rejects.toThrow('Connection closed.');
   });
 
   it('cannot deserialize a Blob reference backed by a string', async () => {

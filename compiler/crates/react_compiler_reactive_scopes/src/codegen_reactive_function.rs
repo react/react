@@ -10,8 +10,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/CodegenReactiveFunction.ts` in the TS compiler.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::common::BaseNode;
 use react_compiler_ast::common::Position as AstPosition;
@@ -195,8 +194,8 @@ fn source_file_hash(code: &str) -> String {
 pub fn codegen_function(
     func: &ReactiveFunction,
     env: &mut Environment,
-    unique_identifiers: HashSet<String>,
-    fbt_operands: HashSet<IdentifierId>,
+    unique_identifiers: FxHashSet<String>,
+    fbt_operands: FxHashSet<IdentifierId>,
 ) -> Result<CodegenFunction, CompilerError> {
     let fn_name = func.id.as_deref().unwrap_or("[[ anonymous ]]");
     let mut cx = Context::new(env, fn_name.to_string(), unique_identifiers, fbt_operands);
@@ -556,7 +555,7 @@ pub fn codegen_function(
 // Context
 // =============================================================================
 
-type Temporaries = HashMap<DeclarationId, Option<ExpressionOrJsxText>>;
+type Temporaries = FxHashMap<DeclarationId, Option<ExpressionOrJsxText>>;
 
 #[derive(Clone)]
 enum ExpressionOrJsxText {
@@ -569,37 +568,37 @@ struct Context<'env> {
     #[allow(dead_code)]
     fn_name: String,
     next_cache_index: u32,
-    declarations: HashSet<DeclarationId>,
+    declarations: FxHashSet<DeclarationId>,
     temp: Temporaries,
-    object_methods: HashMap<
+    object_methods: FxHashMap<
         IdentifierId,
         (
             InstructionValue,
             Option<react_compiler_diagnostics::SourceLocation>,
         ),
     >,
-    unique_identifiers: HashSet<String>,
-    fbt_operands: HashSet<IdentifierId>,
-    synthesized_names: HashMap<String, String>,
+    unique_identifiers: FxHashSet<String>,
+    fbt_operands: FxHashSet<IdentifierId>,
+    synthesized_names: FxHashMap<String, String>,
 }
 
 impl<'env> Context<'env> {
     fn new(
         env: &'env mut Environment,
         fn_name: String,
-        unique_identifiers: HashSet<String>,
-        fbt_operands: HashSet<IdentifierId>,
+        unique_identifiers: FxHashSet<String>,
+        fbt_operands: FxHashSet<IdentifierId>,
     ) -> Self {
         Context {
             env,
             fn_name,
             next_cache_index: 0,
-            declarations: HashSet::new(),
-            temp: HashMap::new(),
-            object_methods: HashMap::new(),
+            declarations: FxHashSet::default(),
+            temp: FxHashMap::default(),
+            object_methods: FxHashMap::default(),
             unique_identifiers,
             fbt_operands,
-            synthesized_names: HashMap::new(),
+            synthesized_names: FxHashMap::default(),
         }
     }
 
@@ -4163,7 +4162,7 @@ fn create_function_body_hook_guard(
 fn apply_renames_to_json(
     value: &mut serde_json::Value,
     renames: &[react_compiler_hir::environment::BindingRename],
-    reference_node_ids: &std::collections::HashSet<u32>,
+    reference_node_ids: &rustc_hash::FxHashSet<u32>,
 ) {
     apply_renames_to_json_inner(value, renames, reference_node_ids, false);
 }
@@ -4171,7 +4170,7 @@ fn apply_renames_to_json(
 fn apply_renames_to_json_inner(
     value: &mut serde_json::Value,
     renames: &[react_compiler_hir::environment::BindingRename],
-    reference_node_ids: &std::collections::HashSet<u32>,
+    reference_node_ids: &rustc_hash::FxHashSet<u32>,
     is_property_key: bool,
 ) {
     if renames.is_empty() {

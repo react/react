@@ -129,8 +129,6 @@ export const enableEffectEventMutationPhase: boolean = false;
 
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
 
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
-
 /**
  * Enables an expiration time for retry lanes to avoid starvation.
  */
