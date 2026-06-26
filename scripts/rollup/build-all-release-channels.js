@@ -237,6 +237,12 @@ function processStable(buildDir) {
         buildDir + '/facebook-react-native',
         rnVersionString
       );
+
+      // Also save a file with the version number.
+      fs.writeFileSync(
+        buildDir + '/facebook-react-native/VERSION_NATIVE_FB',
+        rnVersionString
+      );
     }
 
     if (fs.existsSync(buildDir + '/react-native')) {
@@ -347,12 +353,7 @@ function processExperimental(buildDir, version) {
       buildDir + '/facebook-react-native',
       rnVersionString
     );
-
-    // Also save a file with the version number
-    fs.writeFileSync(
-      buildDir + '/facebook-react-native/VERSION_NATIVE_FB',
-      rnVersionString
-    );
+    // NOTE: VERSION_NATIVE_FB is written in processStable
   }
 
   if (fs.existsSync(buildDir + '/react-native')) {
