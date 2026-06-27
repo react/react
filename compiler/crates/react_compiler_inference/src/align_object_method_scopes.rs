@@ -9,8 +9,8 @@
 //!
 //! Ported from TypeScript `src/ReactiveScopes/AlignObjectMethodScopes.ts`.
 
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp;
-use std::collections::{HashMap, HashSet};
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
@@ -26,7 +26,7 @@ use react_compiler_utils::DisjointSet;
 /// instructions whose operands reference those methods. Returns a disjoint set
 /// of scopes that must be merged.
 fn find_scopes_to_merge(func: &HirFunction, env: &Environment) -> DisjointSet<ScopeId> {
-    let mut object_method_decls: HashSet<IdentifierId> = HashSet::new();
+    let mut object_method_decls: FxHashSet<IdentifierId> = FxHashSet::default();
     let mut merged_scopes = DisjointSet::<ScopeId>::new();
 
     for (_block_id, block) in &func.body.blocks {
@@ -99,9 +99,10 @@ pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment)
     let mut merged_scopes = find_scopes_to_merge(func, env);
 
     // Step 1: Merge affected scopes to their canonical root.
-    // Use a HashMap to accumulate min/max across all scopes mapping to the same root,
+    // Use a FxHashMap to accumulate min/max across all scopes mapping to the same root,
     // matching TS behavior where root.range is updated in-place during iteration.
-    let mut range_updates: HashMap<ScopeId, (EvaluationOrder, EvaluationOrder)> = HashMap::new();
+    let mut range_updates: FxHashMap<ScopeId, (EvaluationOrder, EvaluationOrder)> =
+        FxHashMap::default();
 
     merged_scopes.for_each(|scope_id, root_id| {
         if scope_id == root_id {
@@ -118,7 +119,7 @@ pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment)
     });
 
     // Save original scope range IDs before updating
-    let original_range_ids: HashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
+    let original_range_ids: FxHashMap<ScopeId, react_compiler_hir::MutableRangeId> = range_updates
         .keys()
         .map(|&root_id| {
             let range_id = env.scopes[root_id.0 as usize].range.id;
@@ -147,7 +148,7 @@ pub fn align_object_method_scopes(func: &mut HirFunction, env: &mut Environment)
 
     // Step 2: Repoint identifiers whose scopes were merged
     // Build a map from old scope -> root scope for quick lookup
-    let mut scope_remap: HashMap<ScopeId, ScopeId> = HashMap::new();
+    let mut scope_remap: FxHashMap<ScopeId, ScopeId> = FxHashMap::default();
     merged_scopes.for_each(|scope_id, root_id| {
         if scope_id != root_id {
             scope_remap.insert(scope_id, root_id);

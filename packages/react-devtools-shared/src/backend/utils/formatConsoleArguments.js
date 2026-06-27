@@ -64,7 +64,13 @@ export default function formatConsoleArguments(
       }
 
       default:
-        template += `%${nextChar}`;
+        if (nextChar === undefined) {
+          // A trailing '%' with no following character. Keep it as a literal
+          // '%' rather than emitting the string 'undefined'.
+          template += '%';
+        } else {
+          template += `%${nextChar}`;
+        }
     }
   }
 
