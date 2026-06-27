@@ -3409,19 +3409,19 @@ function lowerJsxElementName(
   const exprLoc = exprNode.loc ?? GeneratedSource;
   if (exprPath.isJSXIdentifier()) {
     const tag: string = exprPath.node.name;
-    if (tag.match(/^[A-Z]/)) {
+    if (tag.match(/^[a-z]/)) {
+      return {
+        kind: 'BuiltinTag',
+        name: tag,
+        loc: exprLoc,
+      };
+    } else {
       const kind = getLoadKind(builder, exprPath);
       return lowerValueToTemporary(builder, {
         kind: kind,
         place: lowerIdentifier(builder, exprPath),
         loc: exprLoc,
       });
-    } else {
-      return {
-        kind: 'BuiltinTag',
-        name: tag,
-        loc: exprLoc,
-      };
     }
   } else if (exprPath.isJSXMemberExpression()) {
     return lowerJsxMemberExpression(builder, exprPath);
