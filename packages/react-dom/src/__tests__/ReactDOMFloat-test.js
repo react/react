@@ -6532,6 +6532,95 @@ body {
       );
     });
 
+    it('supports fetchPriority', async () => {
+      function Component({isServer}) {
+        const suffix = isServer ? 'server' : 'client';
+        ReactDOM.preloadModule('high' + suffix, {
+          fetchPriority: 'high',
+        });
+        ReactDOM.preloadModule('low' + suffix, {
+          fetchPriority: 'low',
+        });
+        ReactDOM.preloadModule('auto' + suffix, {
+          fetchPriority: 'auto',
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component isServer={true} />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="modulepreload" href="highserver" fetchpriority="high" />
+            <link rel="modulepreload" href="lowserver" fetchpriority="low" />
+            <link rel="modulepreload" href="autoserver" fetchpriority="auto" />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Component />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="modulepreload" href="highserver" fetchpriority="high" />
+            <link rel="modulepreload" href="lowserver" fetchpriority="low" />
+            <link rel="modulepreload" href="autoserver" fetchpriority="auto" />
+            <link rel="modulepreload" href="highclient" fetchpriority="high" />
+            <link rel="modulepreload" href="lowclient" fetchpriority="low" />
+            <link rel="modulepreload" href="autoclient" fetchpriority="auto" />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+    });
+
+    it('preloads multiple non-script modules with the same as type', async () => {
+      function App() {
+        ReactDOM.preloadModule('serviceworker one', {as: 'serviceworker'});
+        ReactDOM.preloadModule('serviceworker two', {as: 'serviceworker'});
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App />).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link
+            rel="modulepreload"
+            href="serviceworker one"
+            as="serviceworker"
+          />
+          <link
+            rel="modulepreload"
+            href="serviceworker two"
+            as="serviceworker"
+          />
+          <div>hello</div>
+        </div>,
+      );
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preloadModule();
@@ -7234,6 +7323,112 @@ body {
               <div>hello</div>
             </div>
           </body>
+        </html>,
+      );
+    });
+
+    it('supports fetchPriority', async () => {
+      function Component({isServer}) {
+        const suffix = isServer ? 'server' : 'client';
+        ReactDOM.preinitModule('high' + suffix, {
+          fetchPriority: 'high',
+        });
+        ReactDOM.preinitModule('low' + suffix, {
+          fetchPriority: 'low',
+        });
+        ReactDOM.preinitModule('auto' + suffix, {
+          fetchPriority: 'auto',
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component isServer={true} />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              type="module"
+              src="highserver"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowserver"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoserver"
+              fetchpriority="auto"
+              async=""
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Component />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              type="module"
+              src="highserver"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowserver"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoserver"
+              fetchpriority="auto"
+              async=""
+            />
+            <script
+              type="module"
+              src="highclient"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowclient"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoclient"
+              fetchpriority="auto"
+              async=""
+            />
+          </head>
+          <body>hello</body>
         </html>,
       );
     });

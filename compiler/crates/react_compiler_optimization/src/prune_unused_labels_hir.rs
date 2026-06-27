@@ -12,7 +12,7 @@
 //! Analogous to TS `PruneUnusedLabelsHIR.ts`.
 
 use react_compiler_hir::{BlockId, BlockKind, GotoVariant, HirFunction, Terminal};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub fn prune_unused_labels_hir(func: &mut HirFunction) {
     // Phase 1: Identify label terminals whose body block immediately breaks
@@ -45,7 +45,7 @@ pub fn prune_unused_labels_hir(func: &mut HirFunction) {
     }
 
     // Phase 2: Apply merges
-    let mut rewrites: HashMap<BlockId, BlockId> = HashMap::new();
+    let mut rewrites: FxHashMap<BlockId, BlockId> = FxHashMap::default();
 
     for (original_label_id, next_id, fallthrough_id) in &merged {
         let label_id = rewrites

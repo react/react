@@ -15,7 +15,7 @@
 //! 3. MergeOverlappingReactiveScopes ensures scopes do not overlap.
 //! 4. BuildReactiveBlocks groups the statements for each scope.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 use react_compiler_hir::environment::Environment;
@@ -45,7 +45,7 @@ pub fn infer_reactive_scope_variables(
 
     // Phase 2: assign scopes
     // Maps each group root identifier to the ScopeId assigned to that group.
-    let mut scopes: HashMap<IdentifierId, ScopeState> = HashMap::new();
+    let mut scopes: FxHashMap<IdentifierId, ScopeState> = FxHashMap::default();
 
     scope_identifiers.for_each(|identifier_id, group_id| {
         let ident_range = env.identifiers[identifier_id.0 as usize]
@@ -267,7 +267,7 @@ pub(crate) fn find_disjoint_mutable_values(
     env: &Environment,
 ) -> DisjointSet<IdentifierId> {
     let mut scope_identifiers = DisjointSet::<IdentifierId>::new();
-    let mut declarations: HashMap<DeclarationId, IdentifierId> = HashMap::new();
+    let mut declarations: FxHashMap<DeclarationId, IdentifierId> = FxHashMap::default();
 
     let enable_forest = env.config.enable_forest;
 
@@ -284,7 +284,26 @@ pub(crate) fn find_disjoint_mutable_values(
                 .map(|iid| func.instructions[iid.0 as usize].id)
                 .unwrap_or(block.terminal.evaluation_order());
 
-            if phi_range.start.0 + 1 != phi_range.end.0 && phi_range.end > first_instr_id {
+            let is_phi_mutated_after_creation =
+                phi_range.start.0 + 1 != phi_range.end.0 && phi_range.end > first_instr_id;
+            // A phi operand defined at or after the phi's block is a loop
+            // back-edge: the variable is reassigned within the loop (eg a
+            // counter `a++` or `a = a + 1`). The reassignment must count as
+            // the loop's scope reassigning the variable, so union the phi
+            // with its operands and declaration. Otherwise the variable's
+            // pre-loop value would become a dependency of the scope even
+            // though the scope changes the value as it executes, making the
+            // scope's dependencies unstable (the cached dependency would be
+            // the post-loop value, which can never match the pre-loop value
+            // compared at the top of the scope).
+            let is_loop_carried_reassignment = !is_phi_mutated_after_creation
+                && phi.operands.iter().any(|(_pred_id, operand)| {
+                    env.identifiers[operand.identifier.0 as usize]
+                        .mutable_range
+                        .start
+                        >= first_instr_id
+                });
+            if is_phi_mutated_after_creation || is_loop_carried_reassignment {
                 let mut operands = vec![phi_id];
                 if let Some(&decl_id) = declarations.get(&phi_decl_id) {
                     operands.push(decl_id);

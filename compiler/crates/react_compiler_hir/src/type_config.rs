@@ -9,6 +9,7 @@
 //! and `installTypeConfig` to describe module/function/hook types.
 
 use indexmap::IndexMap;
+use rustc_hash::FxBuildHasher;
 
 use crate::Effect;
 
@@ -166,7 +167,7 @@ pub enum TypeConfig {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ObjectTypeConfig {
-    pub properties: Option<IndexMap<String, TypeConfig>>,
+    pub properties: Option<IndexMap<String, TypeConfig, FxBuildHasher>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
