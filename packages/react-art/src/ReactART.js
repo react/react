@@ -73,6 +73,17 @@ class Pattern {
 class Surface extends React.Component {
   componentDidMount() {
     const {height, width} = this.props;
+    
+
+if (__DEV__) {
+  if (height == null || width == null) {
+    console.error(
+      'Surface requires both width and height props.'
+    );
+  }
+}
+
+this._surface = Mode.Surface(+width, +height, this._tagRef);
 
     this._surface = Mode.Surface(+width, +height, this._tagRef);
 
