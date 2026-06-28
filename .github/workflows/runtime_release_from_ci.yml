@@ -126,10 +126,10 @@ jobs:
       # Always check out the commit the workflow file itself was loaded from.
       # Crucially, no user-supplied ref is accepted, since this job runs in a
       # protected environment.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Using modern Node.js that ships with NPM supporting trusted publishing
           node-version: "24"
@@ -138,7 +138,7 @@ jobs:
       # own node_modules. Cache is owned by this workflow (this is the only
       # consumer), so on a miss we install and save.
       - name: Restore cached scripts/release node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: release_node_modules
         with:
           path: scripts/release/node_modules

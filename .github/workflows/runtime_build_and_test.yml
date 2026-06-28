@@ -34,20 +34,20 @@ jobs:
     name: Cache Runtime node_modules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       
       - name: Prepare cache
         id: node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             **/node_modules
           key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.node_modules.outputs.cache-hit != 'true'
         with:
           node-version-file: '.nvmrc'
@@ -59,15 +59,15 @@ jobs:
     name: Cache Runtime, Compiler node_modules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Prepare cache
         id: node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             **/node_modules
@@ -85,10 +85,10 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.result }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         id: set-matrix
         with:
           script: |
@@ -104,10 +104,10 @@ jobs:
       matrix:
         flow_inline_config_shortname: ${{ fromJSON(needs.discover_flow_inline_configs.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -130,10 +130,10 @@ jobs:
     needs: [runtime_node_modules_cache]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -158,10 +158,10 @@ jobs:
     needs: [runtime_node_modules_cache]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -212,10 +212,10 @@ jobs:
           - 4/5
           - 5/5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -241,8 +241,8 @@ jobs:
     needs: [runtime_compiler_node_modules_cache]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -274,13 +274,13 @@ jobs:
         worker_id: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
         release_channel: [stable, experimental]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: 11.0.22
@@ -308,7 +308,7 @@ jobs:
       - name: Display structure of build
         run: ls -R build
       - name: Archive build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: _build_${{ matrix.worker_id }}_${{ matrix.release_channel }}
           path: build
@@ -360,10 +360,10 @@ jobs:
           - 10/10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -381,7 +381,7 @@ jobs:
       - run: yarn --cwd compiler install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -405,10 +405,10 @@ jobs:
           - 5/5
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -424,7 +424,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -443,10 +443,10 @@ jobs:
       attestations: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -462,7 +462,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -480,14 +480,14 @@ jobs:
       - run: cp ./build.tgz ./build2.tgz
       - name: Archive build artifacts
         id: upload_artifacts_combined
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: artifacts_combined
           path: |
             ./build.tgz
             ./build2.tgz
           if-no-files-found: error
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         # We don't verify builds generated from pull requests not originating from react/react.
         # However, if the PR lands, the run on release branches will generate the attestation which can then
         # be used to download a build via scripts/release/download-experimental-build.js.
@@ -504,10 +504,10 @@ jobs:
     needs: [build_and_lint, runtime_node_modules_cache]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -523,7 +523,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -540,10 +540,10 @@ jobs:
     needs: [build_and_lint, runtime_node_modules_cache]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -559,7 +559,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -573,14 +573,14 @@ jobs:
     needs: build_and_lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
-        uses: actions/cache@v4 # note: this does not reuse centralized cache since it has unique cache key
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # note: this does not reuse centralized cache since it has unique cache key
         id: node_modules
         with:
           path: |
@@ -591,7 +591,7 @@ jobs:
       - run: yarn --cwd fixtures/dom install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -612,17 +612,17 @@ jobs:
     needs: build_and_lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       # Fixture copies some built packages from the workroot after install.
       # That means dependencies of the built packages are not installed.
       # We need to install dependencies of the workroot to fulfill all dependency constraints
       - name: Restore cached node_modules
-        uses: actions/cache@v4 # note: this does not reuse centralized cache since it has unique cache key
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # note: this does not reuse centralized cache since it has unique cache key
         id: node_modules
         with:
           path: |
@@ -639,7 +639,7 @@ jobs:
         run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
         id: cache_playwright_browsers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
@@ -648,7 +648,7 @@ jobs:
         working-directory: fixtures/flight
         run: npx playwright install --with-deps chromium
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -662,13 +662,13 @@ jobs:
           # Otherwise the webserver is a blackbox
           DEBUG: pw:webserver
       - name: Archive Flight fixture artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: flight-playwright-report
           path: fixtures/flight/playwright-report
           if-no-files-found: warn
       - name: Archive Flight fixture artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: flight-test-results
           path: fixtures/flight/test-results
@@ -684,10 +684,10 @@ jobs:
       matrix:
         browser: [chrome, firefox, edge]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -703,7 +703,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -715,13 +715,13 @@ jobs:
         run: ls -R build
       # Simplifies getting the extension for local testing
       - name: Archive ${{ matrix.browser }} extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: react-devtools-${{ matrix.browser }}-extension
           path: build/devtools/${{ matrix.browser }}-extension.zip
           if-no-files-found: error
       - name: Archive ${{ matrix.browser }} metadata
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: react-devtools-${{ matrix.browser }}-metadata
           path: build/devtools/webpack-stats.*.json
@@ -742,10 +742,10 @@ jobs:
     needs: [build_and_lint, runtime_node_modules_cache]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
@@ -761,7 +761,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -771,7 +771,7 @@ jobs:
         run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
         id: cache_playwright_browsers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
@@ -782,7 +782,7 @@ jobs:
         env:
           RELEASE_CHANNEL: experimental
       - name: Archive Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: devtools-playwright-artifacts
           path: tmp/playwright-artifacts
@@ -798,14 +798,14 @@ jobs:
       actions: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Restore cached node_modules
-        uses: actions/cache@v4 # note: this does not reuse centralized cache since it has unique cache key
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 # note: this does not reuse centralized cache since it has unique cache key
         id: node_modules
         with:
           path: |
@@ -836,7 +836,7 @@ jobs:
       - name: Ensure clean build directory
         run: rm -rf build
       - name: Restore archived build for PR
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: _build_*
           path: build
@@ -850,7 +850,7 @@ jobs:
       - run: echo ${{ github.event.pull_request.head.sha || github.sha }} >> build/COMMIT_SHA
       - run: node ./scripts/tasks/danger
       - name: Archive sizebot results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sizebot-message
           path: sizebot-message.md

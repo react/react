@@ -24,12 +24,12 @@ jobs:
       # We use github.token to download the build artifact from a previous runtime_build_and_test.yml run
       actions: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: node_modules
         with:
           path: |
@@ -48,7 +48,7 @@ jobs:
       - name: Display structure of build
         run: ls -R build
       - name: Archive build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build
           path: build
@@ -59,12 +59,12 @@ jobs:
     needs: download_build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: node_modules
         with:
           path: |
@@ -75,7 +75,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore archived build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: build
           path: build
@@ -85,20 +85,20 @@ jobs:
       - name: Display structure of build
         run: ls -R build
       - name: Archive devtools build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: react-devtools
           path: build/devtools
           if-no-files-found: error
       # Simplifies getting the extension for local testing
       - name: Archive chrome extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: react-devtools-chrome-extension
           path: build/devtools/chrome-extension.zip
           if-no-files-found: error
       - name: Archive firefox extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: react-devtools-firefox-extension
           path: build/devtools/firefox-extension.zip
@@ -119,12 +119,12 @@ jobs:
           - "18.0"
           - "18.2" # compiler polyfill
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: node_modules
         with:
           path: |
@@ -133,7 +133,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore all archived build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
       - name: Display structure of build
         run: ls -R build
       - run: ./scripts/ci/download_devtools_regression_build.js ${{ matrix.version }} --replaceBuild
@@ -153,12 +153,12 @@ jobs:
           - "17.0"
           - "18.0"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: node_modules
         with:
           path: |
@@ -167,7 +167,7 @@ jobs:
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore all archived build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
       - name: Display structure of build
         run: ls -R build
       - name: Check Playwright version
@@ -175,7 +175,7 @@ jobs:
         run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
         id: cache_playwright_browsers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
@@ -190,7 +190,7 @@ jobs:
           RELEASE_CHANNEL: experimental
       - name: Cleanup build regression folder
         run: rm -r ./build-regression
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: screenshots
           path: ./tmp/playwright-artifacts

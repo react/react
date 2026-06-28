@@ -36,9 +36,9 @@ jobs:
       # We use github.token to download the build artifact from a previous runtime_build_and_test.yml run
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: node_modules
         with:
           path: |
@@ -56,7 +56,7 @@ jobs:
       - name: Display structure of build
         run: ls -R build
       - name: Archive build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build
           path: build/
@@ -76,7 +76,7 @@ jobs:
       current_version_modern: ${{ steps.get_current_version.outputs.current_version_modern }}
       current_version_rn: ${{ steps.get_current_version.outputs.current_version_rn }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: builds/facebook-www
       - name: "Get last version string for www"
@@ -89,7 +89,7 @@ jobs:
           echo "Last modern version is $VERSION_MODERN"
           echo "last_version_classic=$VERSION_CLASSIC" >> "$GITHUB_OUTPUT"
           echo "last_version_modern=$VERSION_MODERN" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: builds/facebook-fbsource
       - name: "Get last version string for rn"
@@ -99,14 +99,14 @@ jobs:
           VERSION_NATIVE_FB=$( [ -f ./compiled-rn/VERSION_NATIVE_FB ] && cat ./compiled-rn/VERSION_NATIVE_FB || echo '' )
           echo "Last rn version is $VERSION_NATIVE_FB"
           echo "last_version_rn=$VERSION_NATIVE_FB" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: "Check branches"
         id: check_branches
         run: |
           echo "www_branch_count=$(git ls-remote --heads origin "refs/heads/meta-www" | wc -l)" >> "$GITHUB_OUTPUT"
           echo "fbsource_branch_count=$(git ls-remote --heads origin "refs/heads/meta-fbsource" | wc -l)" >> "$GITHUB_OUTPUT"
       - name: Restore downloaded build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: build
           path: build
@@ -195,12 +195,12 @@ jobs:
           echo "current_version_classic=$VERSION_CLASSIC" >> "$GITHUB_OUTPUT"
           echo "current_version_modern=$VERSION_MODERN" >> "$GITHUB_OUTPUT"
           echo "current_version_rn=$VERSION_NATIVE_FB" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: compiled
           path: compiled/
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: compiled-rn
           path: compiled-rn/
@@ -214,12 +214,12 @@ jobs:
       # Used to push a commit to builds/facebook-www
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: builds/facebook-www
       - name: Ensure clean directory
         run: rm -rf compiled
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: compiled
           path: compiled/
@@ -305,12 +305,12 @@ jobs:
     if: inputs.force == true || (github.ref == 'refs/heads/main' && needs.process_artifacts.outputs.fbsource_branch_count == '0')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: builds/facebook-fbsource
       - name: Ensure clean directory
         run: rm -rf compiled-rn
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: compiled-rn
           path: compiled-rn/
@@ -360,7 +360,7 @@ jobs:
           git add .
       - name: Signing files
         if: inputs.force == true || steps.check_should_commit.outputs.should_commit == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             // TODO: Move this to a script file.
