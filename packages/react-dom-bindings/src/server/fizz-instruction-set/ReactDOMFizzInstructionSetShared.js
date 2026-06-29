@@ -29,19 +29,6 @@ const TARGET_VANITY_METRIC = 2300;
 // working. Closure converts it to a dot access anyway, though, so it's not an
 // urgent issue.
 
-// rAF is throttled or never fires in hidden/occluded tabs (e.g. background
-// tabs, Chromium window-occlusion on Windows). Fall back to a zero-delay timer
-// so that streamed Suspense boundaries are still revealed and hydrated even
-// when the tab is not currently visible.
-// See https://github.com/facebook/react/issues/36741
-function scheduleCallback(fn) {
-  if (document.visibilityState === 'hidden') {
-    setTimeout(fn, 0);
-  } else {
-    requestAnimationFrame(fn);
-  }
-}
-
 export function revealCompletedBoundaries(batch) {
   window['$RT'] = performance.now();
   for (let i = 0; i < batch.length; i += 2) {
@@ -107,7 +94,7 @@ export function revealCompletedBoundaries(batch) {
 
     suspenseNode.data = SUSPENSE_START_DATA;
     if (suspenseNode['_reactRetry']) {
-      scheduleCallback(suspenseNode['_reactRetry']);
+      requestAnimationFrame(suspenseNode['_reactRetry']);
     }
   }
   batch.length = 0;
@@ -442,9 +429,7 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
     // to flush the batch. This is delayed by the throttle heuristic.
     if (typeof window['$RT'] !== 'number') {
       // If we haven't had our rAF callback yet, schedule everything for the first paint.
-      // Use a zero-delay timer instead of rAF when the document is hidden, because rAF
-      // never fires in background/occluded tabs.
-      scheduleCallback(window['$RV'].bind(null, window['$RB']));
+      requestAnimationFrame(window['$RV'].bind(null, window['$RB']));
     } else {
       const currentTime = performance.now();
       const msUntilTimeout =
