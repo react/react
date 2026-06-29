@@ -9840,6 +9840,39 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     );
   });
 
+  it('outlines boundaries based on UTF-8 byte size, not code unit count', async () => {
+    // Boundaries are outlined when byteSize > 500. Content is 200 three-byte
+    // characters: 600 UTF-8 bytes but only 200 code units. The boundary must be
+    // outlined (fallback emitted to the stream), which only happens if byte size
+    // is measured in real UTF-8 bytes. A string.length shortcut would count 200,
+    // stay under threshold, and incorrectly inline it.
+    const multiByte = '한'.repeat(200);
+    const fallbackTag = 'fallback-' + Math.random().toString(36).slice(2, 10);
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={fallbackTag}>
+            <span>{multiByte}</span>
+          </Suspense>
+        </div>
+      );
+    }
+
+    let streamedContent = '';
+    writable.on('data', chunk => (streamedContent += chunk));
+
+    await act(() => {
+      renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
+        writable,
+      );
+    });
+
+    expect(multiByte.length).toBe(200);
+    expect(Buffer.byteLength(multiByte)).toBe(600);
+    expect(streamedContent).toContain(fallbackTag);
+  });
+
   it('useId is consistent for siblings when component suspends with nested lazy', async () => {
     // Inner component uses useId
     function InnerComponent() {
