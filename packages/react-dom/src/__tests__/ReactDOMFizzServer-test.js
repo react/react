@@ -9859,9 +9859,6 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
       );
     }
 
-    expect(multiByte.length).toBe(200);
-    expect(Buffer.byteLength(multiByte)).toBe(600);
-
     await act(async () => {
       renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
         writable,

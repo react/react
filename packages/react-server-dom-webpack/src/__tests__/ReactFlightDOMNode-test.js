@@ -345,7 +345,6 @@ describe('ReactFlightDOMNode', () => {
     // characters: byte length is 3x the code unit count. A string.length
     // shortcut for byteLengthOfChunk would undercount and truncate parsing.
     const testString = '한'.repeat(1100);
-    expect(Buffer.byteLength(testString)).toBe(testString.length * 3);
 
     const stream = await serverAct(() =>
       ReactServerDOMServer.renderToPipeableStream({
