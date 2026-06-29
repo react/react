@@ -8,7 +8,7 @@
  */
 
 import Agent from 'react-devtools-shared/src/backend/agent';
-import {destroy as destroyCanvas, draw} from './canvas';
+import {destroy as destroyCanvas, draw} from '../canvas';
 import {extractHOCNames, getNestedBoundingClientRect} from '../utils';
 
 import type {HostInstance} from '../../types';
@@ -38,11 +38,11 @@ const getCurrentTime =
     : () => Date.now();
 
 export type Data = {
-  count: number,
-  expirationTime: number,
-  lastMeasuredAt: number,
-  rect: Rect | null,
-  displayName: string | null,
+  count: number;
+  expirationTime: number;
+  lastMeasuredAt: number;
+  rect: Rect | null;
+  displayName: string | null;
 };
 
 const nodeToData: Map<HostInstance, Data> = new Map();
