@@ -418,6 +418,23 @@ function lowerStatement(
             ) {
               return;
             }
+            /*
+             * TypeScript function overload signatures (TSDeclareFunction) share
+             * a name with their implementation FunctionDeclaration. Babel's
+             * `isReferencedIdentifier()` returns true for the overload-signature
+             * id because the binding's path resolves to the implementation, but
+             * the signature itself is type-only and erased. Treating it as a
+             * reference incorrectly forces the implementation to be hoisted into
+             * a context variable, which then escapes its reactive memo block as
+             * a block-scoped function declaration that never assigns the outer
+             * `let` binding (issue #34378).
+             */
+            if (
+              id.parent.type === 'TSDeclareFunction' &&
+              (id.parent as t.TSDeclareFunction).id === id.node
+            ) {
+              return;
+            }
             const binding = id.scope.getBinding(id.node.name);
             /**
              * We can only hoist an identifier decl if
