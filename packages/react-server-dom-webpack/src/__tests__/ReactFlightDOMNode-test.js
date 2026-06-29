@@ -344,7 +344,7 @@ describe('ReactFlightDOMNode', () => {
     // so the prefix must be the true UTF-8 byte length. These are three-byte
     // characters: byte length is 3x the code unit count. A string.length
     // shortcut for byteLengthOfChunk would undercount and truncate parsing.
-    const testString = '한'.repeat(1100);
+    const testString = '✓'.repeat(1100);
 
     const stream = await serverAct(() =>
       ReactServerDOMServer.renderToPipeableStream({

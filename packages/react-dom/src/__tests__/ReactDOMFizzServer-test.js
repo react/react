@@ -9847,7 +9847,7 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     // large enough to outline. A string.length shortcut for byte size would
     // count 200, stay under the threshold, and inline the content with no
     // fallback shown — which would be incorrect.
-    const multiByte = '한'.repeat(200);
+    const multiByte = '✓'.repeat(200);
 
     function App() {
       return (
