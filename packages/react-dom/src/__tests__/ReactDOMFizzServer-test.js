@@ -9841,36 +9841,43 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
   });
 
   it('outlines boundaries based on UTF-8 byte size, not code unit count', async () => {
-    // Boundaries are outlined when byteSize > 500. Content is 200 three-byte
-    // characters: 600 UTF-8 bytes but only 200 code units. The boundary must be
-    // outlined (fallback emitted to the stream), which only happens if byte size
-    // is measured in real UTF-8 bytes. A string.length shortcut would count 200,
-    // stay under threshold, and incorrectly inline it.
+    // Boundaries are outlined when byteSize > 500, which streams the fallback
+    // first. Content is 200 three-byte characters: 600 UTF-8 bytes but only 200
+    // code units. The fallback should be shown initially because the boundary is
+    // large enough to outline. A string.length shortcut for byte size would
+    // count 200, stay under the threshold, and inline the content with no
+    // fallback shown — which would be incorrect.
     const multiByte = '한'.repeat(200);
-    const fallbackTag = 'fallback-' + Math.random().toString(36).slice(2, 10);
 
     function App() {
       return (
         <div>
-          <Suspense fallback={fallbackTag}>
+          <Suspense fallback="Waiting">
             <span>{multiByte}</span>
           </Suspense>
         </div>
       );
     }
 
-    let streamedContent = '';
-    writable.on('data', chunk => (streamedContent += chunk));
+    expect(multiByte.length).toBe(200);
+    expect(Buffer.byteLength(multiByte)).toBe(600);
 
-    await act(() => {
+    await act(async () => {
       renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
         writable,
       );
+      await jest.runAllTimers();
+      const temp = document.createElement('body');
+      temp.innerHTML = buffer;
+      // Fallback is shown because the boundary is outlined by its UTF-8 size.
+      expect(getVisibleChildren(temp)).toEqual(<div>Waiting</div>);
     });
 
-    expect(multiByte.length).toBe(200);
-    expect(Buffer.byteLength(multiByte)).toBe(600);
-    expect(streamedContent).toContain(fallbackTag);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>{multiByte}</span>
+      </div>,
+    );
   });
 
   it('useId is consistent for siblings when component suspends with nested lazy', async () => {

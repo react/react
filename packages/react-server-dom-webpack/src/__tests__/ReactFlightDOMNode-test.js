@@ -338,6 +338,32 @@ describe('ReactFlightDOMNode', () => {
     expect(result.text).toBe(testString);
   });
 
+  it('round-trips long multi-byte strings using true UTF-8 byte length', async () => {
+    // Strings >= 1024 chars are emitted out-of-band with a binary length
+    // prefix (`id:T<byteLength>,`). The client reads exactly that many bytes,
+    // so the prefix must be the true UTF-8 byte length. These are three-byte
+    // characters: byte length is 3x the code unit count. A string.length
+    // shortcut for byteLengthOfChunk would undercount and truncate parsing.
+    const testString = '한'.repeat(1100);
+    expect(Buffer.byteLength(testString)).toBe(testString.length * 3);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        text: testString,
+      }),
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+    const parsedResult = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+
+    const result = await parsedResult;
+    expect(result.text).toBe(testString);
+  });
+
   it('should be able to serialize any kind of typed array', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
