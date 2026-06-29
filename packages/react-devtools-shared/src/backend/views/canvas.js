@@ -33,7 +33,7 @@ const highlightColors = {
   margin: 'rgba(255, 155, 0, 0.3)',
   border: 'rgba(255, 200, 50, 0.3)',
   padding: 'rgba(77, 200, 0, 0.2)',
-  content: 'rgba(120, 170, 210, 0.7)'
+  content: 'rgba(120, 170, 210, 0.7)',
 };
 
 let canvas: HTMLCanvasElement | null = null;
@@ -53,7 +53,7 @@ function drawNative(nodeToData: Map<HostInstance, Data>, agent: Agent) {
 function resizeCanvas(
   canvasFlow: HTMLCanvasElement,
   context: CanvasRenderingContext2D,
-  dpr: number
+  dpr: number,
 ) {
   // const dpr = window.devicePixelRatio || 1;
   canvasFlow.width = window.innerWidth * dpr;
@@ -68,14 +68,12 @@ function drawWeb(nodeToData: Map<HostInstance, Data>) {
     initialize();
   }
 
-
   const dpr = window.devicePixelRatio || 1;
   const canvasFlow: HTMLCanvasElement = canvas as any;
   const context = canvasFlow.getContext('2d');
   if (!context) return;
 
   resizeCanvas(canvasFlow, context, dpr);
-
 
   context.clearRect(0, 0, canvasFlow.width / dpr, canvasFlow.height / dpr);
 
@@ -250,12 +248,11 @@ export function destroy(agent: Agent): void {
 
 export function drawHighlighter(
   elements: $ReadOnlyArray<HTMLElement>,
-  componentName: string | null
+  componentName: string | null,
 ) {
   if (canvas == null) {
     initialize();
   }
-
 
   const canvasFlow: HTMLCanvasElement = canvas as any;
   const context = canvasFlow.getContext('2d');
@@ -273,7 +270,7 @@ export function drawHighlighter(
     right: Number.NEGATIVE_INFINITY,
     bottom: Number.NEGATIVE_INFINITY,
     left: Number.POSITIVE_INFINITY,
-  }
+  };
 
   elements.forEach(element => {
     if (element.nodeType !== Node.ELEMENT_NODE) return;
@@ -347,7 +344,7 @@ function drawOverlayTip(
   name: string,
   width: number,
   height: number,
-  targetBox: {top: number; left: number; width: number; height: number},
+  targetBox: {top: number, left: number, width: number, height: number},
 ) {
   context.font =
     'bold 12px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace';
