@@ -244,9 +244,7 @@ describe('ReactDOMFizzServerNode', () => {
     expect(reportedErrors).toEqual([theError]);
     expect(reportedShellErrors).toEqual([theError]);
     expect(shellReadyCalls).toBe(0);
-    // onAllReady currently still fires once after a fatal shell error, even
-    // though the render never completed (facebook/react#36890).
-    expect(allReadyCalls).toBe(1);
+    expect(allReadyCalls).toBe(0);
   });
 
   it('should not report aborts after the shell has fatally errored', async () => {
