@@ -38,11 +38,11 @@ const getCurrentTime =
     : () => Date.now();
 
 export type Data = {
-  count: number;
-  expirationTime: number;
-  lastMeasuredAt: number;
-  rect: Rect | null;
-  displayName: string | null;
+  count: number,
+  expirationTime: number,
+  lastMeasuredAt: number,
+  rect: Rect | null,
+  displayName: string | null,
 };
 
 const nodeToData: Map<HostInstance, Data> = new Map();
