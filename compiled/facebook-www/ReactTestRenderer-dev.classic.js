@@ -12351,7 +12351,10 @@ __DEV__ &&
                   renderWasConcurrent,
                   !1
                 );
-                if (renderWasConcurrent !== RootErrored) {
+                if (
+                  renderWasConcurrent !== RootErrored &&
+                  renderWasConcurrent !== RootSuspendedAtTheShell
+                ) {
                   if (workInProgressRootDidAttachPingListener) {
                     exitStatus.errorRecoveryDisabledLanes |=
                       originallyAttemptedLanes;
@@ -16758,10 +16761,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-9c1f0977-20260630",
+        version: "19.3.0-www-classic-c3555f0c-20260630",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-9c1f0977-20260630"
+        reconcilerVersion: "19.3.0-www-classic-c3555f0c-20260630"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -16897,5 +16900,5 @@ __DEV__ &&
     exports.unstable_batchedUpdates = function (fn, a) {
       return fn(a);
     };
-    exports.version = "19.3.0-www-classic-9c1f0977-20260630";
+    exports.version = "19.3.0-www-classic-c3555f0c-20260630";
   })();

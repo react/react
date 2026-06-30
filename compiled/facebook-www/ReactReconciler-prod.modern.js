@@ -11204,7 +11204,10 @@ module.exports = function ($$$config) {
                 JSCompiler_inline_result,
                 !1
               );
-              if (2 !== JSCompiler_inline_result) {
+              if (
+                2 !== JSCompiler_inline_result &&
+                6 !== JSCompiler_inline_result
+              ) {
                 if (
                   workInProgressRootDidAttachPingListener &&
                   !wasRootDehydrated
@@ -14218,7 +14221,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-9c1f0977-20260630"
+      reconcilerVersion: "19.3.0-www-modern-c3555f0c-20260630"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);
