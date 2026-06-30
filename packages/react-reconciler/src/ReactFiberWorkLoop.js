@@ -473,6 +473,19 @@ let workInProgressRootIsPrerendering: boolean = false;
 // listeners to a promise we've already seen (per root and lane).
 let workInProgressRootDidAttachPingListener: boolean = false;
 
+// Set before rendering so useSyncExternalStore can record consistency checks
+// when a sync render may pause before unwinding so a settled thenable can
+// replay.
+let workInProgressRootMayPauseForSyncThenableReplay: boolean = false;
+// Set only if this render actually paused before unwinding. If the thenable
+// settles and we replay, store reads from the first attempt may be stale by the
+// time we commit, so verify them first.
+let workInProgressRootDidPauseForSyncThenableReplay: boolean = false;
+
+export function shouldTrackStoreConsistencyForSyncThenableReplay(): boolean {
+  return workInProgressRootMayPauseForSyncThenableReplay;
+}
+
 // A contextual version of workInProgressRootRenderLanes. It is a superset of
 // the lanes that we started working on at the root. When we enter a subtree
 // that is currently hidden, we add the lanes that would have committed if
@@ -1120,11 +1133,14 @@ export function isUnsafeClassRenderPhaseUpdate(fiber: Fiber): boolean {
   return (executionContext & RenderContext) !== NoContext;
 }
 
+// Returns whether a sync render paused before unwinding so React can replay
+// suspended work if the thenable settles, or unwind otherwise.
 export function performWorkOnRoot(
   root: FiberRoot,
   lanes: Lanes,
   forceSync: boolean,
-): void {
+  shouldPauseForSyncThenableReplay: boolean,
+): boolean {
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
     throw new Error('Should not already be working.');
   }
@@ -1164,7 +1180,7 @@ export function performWorkOnRoot(
 
   let exitStatus: RootExitStatus = shouldTimeSlice
     ? renderRootConcurrent(root, lanes)
-    : renderRootSync(root, lanes, true);
+    : renderRootSync(root, lanes, true, shouldPauseForSyncThenableReplay);
 
   let renderWasConcurrent = shouldTimeSlice;
 
@@ -1200,14 +1216,16 @@ export function performWorkOnRoot(
 
       // The render completed.
 
-      // Check if this render may have yielded to a concurrent event, and if so,
-      // confirm that any newly rendered stores are consistent.
+      // Check if this render may have yielded to a concurrent event or paused
+      // before unwinding, and if so, confirm that any newly rendered stores are
+      // consistent. Sync renders only enter this path if they actually paused.
       // TODO: It's possible that even a concurrent render may never have yielded
       // to the main thread, if it was fast enough, or if it expired. We could
       // skip the consistency check in that case, too.
       const finishedWork: Fiber = root.current.alternate as any;
       if (
-        renderWasConcurrent &&
+        (renderWasConcurrent ||
+          workInProgressRootDidPauseForSyncThenableReplay) &&
         !isRenderConsistentWithExternalStores(finishedWork)
       ) {
         if (enableProfilerTimer && enableComponentPerformanceTrack) {
@@ -1221,7 +1239,13 @@ export function performWorkOnRoot(
         }
         // A store was mutated in an interleaved event. Render again,
         // synchronously, to block further mutations.
-        exitStatus = renderRootSync(root, lanes, false);
+        exitStatus = renderRootSync(
+          root,
+          lanes,
+          false,
+          // Keep this external store retry synchronous.
+          false,
+        );
         // We assume the tree is now consistent because we didn't yield to any
         // concurrent events.
         renderWasConcurrent = false;
@@ -1308,6 +1332,14 @@ export function performWorkOnRoot(
   } while (true);
 
   ensureRootIsScheduled(root);
+  // Signal that this render stopped before unwinding so React can check whether
+  // the thenable settled before showing a fallback.
+  return (
+    !shouldTimeSlice &&
+    shouldPauseForSyncThenableReplay &&
+    exitStatus === RootInProgress &&
+    workInProgressSuspendedReason === SuspendedAndReadyToContinue
+  );
 }
 
 function recoverFromConcurrentError(
@@ -1340,7 +1372,13 @@ function recoverFromConcurrentError(
     rootWorkInProgress.flags |= ForceClientRender;
   }
 
-  const exitStatus = renderRootSync(root, errorRetryLanes, false);
+  const exitStatus = renderRootSync(
+    root,
+    errorRetryLanes,
+    false,
+    // This error recovery retry should not yield again.
+    false,
+  );
   if (exitStatus !== RootErrored) {
     // Successfully finished rendering on retry
 
@@ -2242,6 +2280,8 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   workInProgressRootDidSkipSuspendedSiblings = false;
   workInProgressRootIsPrerendering = checkIfRootIsPrerendering(root, lanes);
   workInProgressRootDidAttachPingListener = false;
+  workInProgressRootMayPauseForSyncThenableReplay = false;
+  workInProgressRootDidPauseForSyncThenableReplay = false;
   workInProgressRootExitStatus = RootInProgress;
   workInProgressRootSkippedLanes = NoLanes;
   workInProgressRootInterleavedUpdatedLanes = NoLanes;
@@ -2598,6 +2638,28 @@ export function renderHasNotSuspendedYet(): boolean {
   return workInProgressRootExitStatus === RootInProgress;
 }
 
+function replayOrUnwindSuspendedUnitOfWork(
+  root: FiberRoot,
+  unitOfWork: Fiber,
+  thrownValue: mixed,
+  unwindReason: SuspendedReason,
+): boolean {
+  const thenable: Thenable<mixed> = thrownValue as any;
+  if (isThenableResolved(thenable)) {
+    // The data resolved. Try rendering the component again.
+    workInProgressSuspendedReason = NotSuspended;
+    workInProgressThrownValue = null;
+    replaySuspendedUnitOfWork(unitOfWork);
+    return false;
+  } else {
+    // Otherwise, unwind then continue with the normal work loop.
+    workInProgressSuspendedReason = NotSuspended;
+    workInProgressThrownValue = null;
+    throwAndUnwindWorkLoop(root, unitOfWork, thrownValue, unwindReason);
+    return true;
+  }
+}
+
 // TODO: Over time, this function and renderRootConcurrent have become more
 // and more similar. Not sure it makes sense to maintain forked paths. Consider
 // unifying them again.
@@ -2605,6 +2667,7 @@ function renderRootSync(
   root: FiberRoot,
   lanes: Lanes,
   shouldYieldForPrerendering: boolean,
+  shouldPauseForSyncThenableReplay: boolean,
 ): RootExitStatus {
   const prevExecutionContext = executionContext;
   executionContext |= RenderContext;
@@ -2638,6 +2701,13 @@ function renderRootSync(
     markRenderStarted(lanes);
   }
 
+  // Scheduled sync renders may pause before unwinding so React can replay
+  // suspended work if the thenable settles, or unwind otherwise. Store reads
+  // before that pause need consistency checks in case they become stale before
+  // commit.
+  workInProgressRootMayPauseForSyncThenableReplay =
+    shouldPauseForSyncThenableReplay;
+
   let didSuspendInShell = false;
   let exitStatus = workInProgressRootExitStatus;
   outer: do {
@@ -2646,14 +2716,12 @@ function renderRootSync(
         workInProgressSuspendedReason !== NotSuspended &&
         workInProgress !== null
       ) {
-        // The work loop is suspended. During a synchronous render, we don't
-        // yield to the main thread. Immediately unwind the stack. This will
-        // trigger either a fallback or an error boundary.
-        // TODO: For discrete and "default" updates (anything that's not
-        // flushSync), we want to wait for the microtasks the flush before
-        // unwinding. Will probably implement this using renderRootConcurrent,
-        // or merge renderRootSync and renderRootConcurrent into the same
-        // function and fork the behavior some other way.
+        // The work loop is suspended. During a synchronous render, we usually
+        // unwind immediately to a fallback or error boundary. Scheduled sync
+        // suspends can pause below so React can replay if the thenable
+        // settles, or unwind otherwise.
+        // TODO: Refactor renderRootSync and renderRootConcurrent into a shared
+        // renderRoot path, with this behavior forked by render mode.
         const unitOfWork = workInProgress;
         const thrownValue = workInProgressThrownValue;
         switch (workInProgressSuspendedReason) {
@@ -2672,7 +2740,23 @@ function renderRootSync(
           case SuspendedOnData:
           case SuspendedOnAction:
           case SuspendedOnDeprecatedThrowPromise: {
-            if (getSuspenseHandler() === null) {
+            const suspenseHandler = getSuspenseHandler();
+            if (
+              workInProgressSuspendedReason === SuspendedOnImmediate &&
+              shouldPauseForSyncThenableReplay &&
+              // Only pause when there is a Suspense handler that can capture
+              // this if replay is not possible.
+              suspenseHandler !== null
+            ) {
+              // Pause this sync render before unwinding to a fallback. When React
+              // resumes, SuspendedAndReadyToContinue will check the thenable and
+              // replay if the thenable settled, otherwise unwind.
+              workInProgressRootDidPauseForSyncThenableReplay = true;
+              workInProgressSuspendedReason = SuspendedAndReadyToContinue;
+              exitStatus = RootInProgress;
+              break outer;
+            }
+            if (suspenseHandler === null) {
               didSuspendInShell = true;
             }
             const reason = workInProgressSuspendedReason;
@@ -2690,6 +2774,37 @@ function renderRootSync(
               // work loop.
               exitStatus = RootInProgress;
               break outer;
+            }
+            break;
+          }
+          case SuspendedAndReadyToContinue: {
+            // Snapshot the Suspense handler before replaying or unwinding
+            // because unwinding can pop the handler stack.
+            const suspenseHandler = getSuspenseHandler();
+            const didUnwind = replayOrUnwindSuspendedUnitOfWork(
+              root,
+              unitOfWork,
+              thrownValue,
+              // If it is still pending, unwind as the original immediate
+              // suspend so sync fallback/prewarming behavior stays the same.
+              SuspendedOnImmediate,
+            );
+            if (didUnwind) {
+              // No Suspense handler means there was no boundary to capture
+              // this suspend, so this suspended in the shell.
+              if (suspenseHandler === null) {
+                didSuspendInShell = true;
+              }
+              if (
+                shouldYieldForPrerendering &&
+                workInProgressRootIsPrerendering
+              ) {
+                // We've switched into prerendering mode. Yield to the main
+                // thread so we can continue prerendering using the concurrent
+                // work loop.
+                exitStatus = RootInProgress;
+                break outer;
+              }
             }
             break;
           }
@@ -2798,6 +2913,9 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
     markRenderStarted(lanes);
   }
 
+  // Concurrent renders already use renderWasConcurrent for store consistency.
+  workInProgressRootMayPauseForSyncThenableReplay = false;
+
   outer: do {
     try {
       if (
@@ -2868,23 +2986,12 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
             break outer;
           }
           case SuspendedAndReadyToContinue: {
-            const thenable: Thenable<mixed> = thrownValue as any;
-            if (isThenableResolved(thenable)) {
-              // The data resolved. Try rendering the component again.
-              workInProgressSuspendedReason = NotSuspended;
-              workInProgressThrownValue = null;
-              replaySuspendedUnitOfWork(unitOfWork);
-            } else {
-              // Otherwise, unwind then continue with the normal work loop.
-              workInProgressSuspendedReason = NotSuspended;
-              workInProgressThrownValue = null;
-              throwAndUnwindWorkLoop(
-                root,
-                unitOfWork,
-                thrownValue,
-                SuspendedAndReadyToContinue,
-              );
-            }
+            replayOrUnwindSuspendedUnitOfWork(
+              root,
+              unitOfWork,
+              thrownValue,
+              SuspendedAndReadyToContinue,
+            );
             break;
           }
           case SuspendedOnInstanceAndReadyToContinue: {

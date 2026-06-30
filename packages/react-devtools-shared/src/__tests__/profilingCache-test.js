@@ -1018,13 +1018,13 @@ describe('ProfilingCache', () => {
       `);
       expect(commitData[1].fiberActualDurations).toMatchInlineSnapshot(`
         Map {
-          5 => 3,
-          3 => 3,
+          5 => 6,
+          3 => 6,
         }
       `);
       expect(commitData[1].fiberSelfDurations).toMatchInlineSnapshot(`
         Map {
-          5 => 3,
+          5 => 6,
           3 => 0,
         }
       `);

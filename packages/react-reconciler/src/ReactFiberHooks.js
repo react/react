@@ -105,6 +105,7 @@ import {
   requestDeferredLane,
   markSkippedUpdateLanes,
   isInvalidExecutionContextForEventFunction,
+  shouldTrackStoreConsistencyForSyncThenableReplay,
 } from './ReactFiberWorkLoop';
 
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -1674,6 +1675,9 @@ function mountSyncExternalStore<T>(
       }
     }
     // Unless we're rendering a blocking lane, schedule a consistency check.
+    // Do the same for sync renders that may replay suspended work before
+    // committing a Suspense fallback, because store reads may become stale
+    // before commit.
     // Right before committing, we will walk the tree and check if any of the
     // stores were mutated.
     //
@@ -1689,7 +1693,10 @@ function mountSyncExternalStore<T>(
     }
 
     const rootRenderLanes = getWorkInProgressRootRenderLanes();
-    if (!includesBlockingLane(rootRenderLanes)) {
+    if (
+      !includesBlockingLane(rootRenderLanes) ||
+      shouldTrackStoreConsistencyForSyncThenableReplay()
+    ) {
       pushStoreConsistencyCheck(fiber, getSnapshot, nextSnapshot);
     }
   }
@@ -1791,6 +1798,9 @@ function updateSyncExternalStore<T>(
     );
 
     // Unless we're rendering a blocking lane, schedule a consistency check.
+    // Do the same for sync renders that may replay suspended work before
+    // committing a Suspense fallback, because store reads may become stale
+    // before commit.
     // Right before committing, we will walk the tree and check if any of the
     // stores were mutated.
     const root: FiberRoot | null = getWorkInProgressRoot();
@@ -1801,7 +1811,11 @@ function updateSyncExternalStore<T>(
       );
     }
 
-    if (!isHydrating && !includesBlockingLane(renderLanes)) {
+    if (
+      !isHydrating &&
+      (!includesBlockingLane(renderLanes) ||
+        shouldTrackStoreConsistencyForSyncThenableReplay())
+    ) {
       pushStoreConsistencyCheck(fiber, getSnapshot, nextSnapshot);
     }
   }
