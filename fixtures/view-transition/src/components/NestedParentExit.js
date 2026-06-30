@@ -43,10 +43,16 @@ function FeedItem({item, index, activeIndex, onSelect}) {
           share={{
             'nav-forward': 'nested-shared-inner-forward',
             'nav-back': 'nested-shared-inner-back',
-          }}>
+          }}
+          parentExit={isActive ? undefined : 'nested-title-exit-up'}
+          parentEnter={isActive ? undefined : 'nested-title-enter-from-up'}>
           <div className="feed-item-title">{item.title}</div>
         </ViewTransition>
-        <p>{item.body}</p>
+        <ViewTransition
+          parentExit={isActive ? undefined : 'nested-body-exit-right'}
+          parentEnter={isActive ? undefined : 'nested-body-enter-from-right'}>
+          <p>{item.body}</p>
+        </ViewTransition>
       </div>
     </ViewTransition>
   );
@@ -107,9 +113,9 @@ export default function NestedParentExit() {
   const {selected, activeIndex} = optimisticNav;
 
   function goToDetail(item, index) {
-    setNav({selected: item, activeIndex: index});
     startTransition(() => {
       addTransitionType('nav-forward');
+      setNav({selected: item, activeIndex: index});
     });
   }
 
@@ -119,9 +125,9 @@ export default function NestedParentExit() {
       return;
     }
     const backIndex = items.findIndex(i => i.id === current.id);
-    setNav({selected: null, activeIndex: backIndex});
     startTransition(() => {
       addTransitionType('nav-back');
+      setNav({selected: null, activeIndex: backIndex});
     });
   }
 

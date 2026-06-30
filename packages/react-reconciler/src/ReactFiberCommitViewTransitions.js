@@ -343,6 +343,7 @@ export function commitParentEnterViewTransitions(
         ? props.onGestureParentEnter != null
         : props.onParentEnter != null;
       if (hasParentClass || hasParentHandler) {
+        let relay = true;
         if (hasParentClass) {
           const state: ViewTransitionState = child.stateNode;
           const name = getViewTransitionName(props, state);
@@ -350,7 +351,9 @@ export function commitParentEnterViewTransitions(
             props.default,
             props.parentEnter,
           );
-          if (className !== 'none') {
+          if (className === 'none') {
+            relay = false;
+          } else {
             applyViewTransitionToHostInstances(
               child,
               name,
@@ -376,7 +379,9 @@ export function commitParentEnterViewTransitions(
             scheduleViewTransitionEvent(child, props.onParentEnter);
           }
         }
-        commitParentEnterViewTransitions(child, gesture);
+        if (relay) {
+          commitParentEnterViewTransitions(child, gesture);
+        }
       }
     } else if ((child.subtreeFlags & ViewTransitionStaticParent) !== NoFlags) {
       commitParentEnterViewTransitions(child, gesture);
@@ -400,6 +405,7 @@ export function commitParentExitViewTransitions(
         ? props.onGestureParentExit != null
         : props.onParentExit != null;
       if (hasParentClass || hasParentHandler) {
+        let relay = true;
         if (hasParentClass) {
           const state: ViewTransitionState = child.stateNode;
           const name = getViewTransitionName(props, state);
@@ -407,7 +413,9 @@ export function commitParentExitViewTransitions(
             props.default,
             props.parentExit,
           );
-          if (className !== 'none') {
+          if (className === 'none') {
+            relay = false;
+          } else {
             applyViewTransitionToHostInstances(
               child,
               name,
@@ -433,7 +441,9 @@ export function commitParentExitViewTransitions(
             scheduleViewTransitionEvent(child, props.onParentExit);
           }
         }
-        commitParentExitViewTransitions(child, gesture);
+        if (relay) {
+          commitParentExitViewTransitions(child, gesture);
+        }
       }
     } else if ((child.subtreeFlags & ViewTransitionStaticParent) !== NoFlags) {
       commitParentExitViewTransitions(child, gesture);

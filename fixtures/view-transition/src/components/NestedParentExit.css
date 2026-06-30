@@ -79,6 +79,68 @@
   animation: nested-enter-from-left 450ms ease-out 650ms both;
 }
 
+/* Title relays the parent activation but exits/enters vertically. */
+@keyframes nested-title-exit-up {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: 0 -80%;
+  }
+}
+
+::view-transition-old(.nested-title-exit-up) {
+  animation: nested-title-exit-up 450ms ease-out forwards;
+}
+
+@keyframes nested-title-enter-from-up {
+  from {
+    opacity: 0;
+    translate: 0 -80%;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+::view-transition-new(.nested-title-enter-from-up) {
+  animation: nested-title-enter-from-up 450ms ease-out 650ms both;
+}
+
+/* Body relays the same parent activation but exits/enters to the right. */
+@keyframes nested-body-exit-right {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: 120% 0;
+  }
+}
+
+::view-transition-old(.nested-body-exit-right) {
+  animation: nested-body-exit-right 450ms ease-in forwards;
+}
+
+@keyframes nested-body-enter-from-right {
+  from {
+    opacity: 0;
+    translate: 120% 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+::view-transition-new(.nested-body-enter-from-right) {
+  animation: nested-body-enter-from-right 450ms ease-out 650ms both;
+}
+
 ::view-transition-group(.nested-shared-post-forward) {
   animation-duration: 600ms;
   animation-delay: 300ms;

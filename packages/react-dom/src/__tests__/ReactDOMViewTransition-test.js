@@ -677,7 +677,111 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit2).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('stops the parentExit relay when an intermediate class is "none"', async () => {
+      const onParentExitDeep = jest.fn();
+      const onParentExitSibling = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition exit="page-exit">
+            <div>
+              <ViewTransition parentExit="none">
+                <div>
+                  <ViewTransition
+                    parentExit="nested-exit"
+                    onParentExit={onParentExitDeep}>
+                    <div>Deep</div>
+                  </ViewTransition>
+                </div>
+              </ViewTransition>
+              <ViewTransition
+                parentExit="nested-exit"
+                onParentExit={onParentExitSibling}>
+                <div>Shallow</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      onParentExitDeep.mockClear();
+      onParentExitSibling.mockClear();
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      // The "none" class stops the relay so nested activations below it never fire.
+      expect(onParentExitDeep).not.toHaveBeenCalled();
+      // A sibling that is not behind a "none" boundary still relays.
+      expect(onParentExitSibling).toHaveBeenCalledTimes(1);
+    });
+
+    // @gate enableViewTransition && enableViewTransitionParentEnterExit
+    it('stops the parentEnter relay when an intermediate class is "none"', async () => {
+      const onParentEnterDeep = jest.fn();
+      const onParentEnterSibling = jest.fn();
+
+      function App({show}) {
+        if (!show) {
+          return null;
+        }
+        return (
+          <ViewTransition enter="page-enter">
+            <div>
+              <ViewTransition parentEnter="none">
+                <div>
+                  <ViewTransition
+                    parentEnter="nested-enter"
+                    onParentEnter={onParentEnterDeep}>
+                    <div>Deep</div>
+                  </ViewTransition>
+                </div>
+              </ViewTransition>
+              <ViewTransition
+                parentEnter="nested-enter"
+                onParentEnter={onParentEnterSibling}>
+                <div>Shallow</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      // The "none" class stops the relay so nested activations below it never fire.
+      expect(onParentEnterDeep).not.toHaveBeenCalled();
+      // A sibling that is not behind a "none" boundary still relays.
+      expect(onParentEnterSibling).toHaveBeenCalledTimes(1);
+    });
+
     it('does not fire onParentEnter when ancestor exits', async () => {
       const onParentEnter = jest.fn();
 
@@ -817,7 +921,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('does not fire onParentExit when ancestor exit is none', async () => {
       const onParentExit = jest.fn();
 
@@ -855,7 +958,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit).not.toHaveBeenCalled();
     });
 
-    // @gate enableViewTransition
     it('does not fire onParentEnter when ancestor enter is none', async () => {
       const onParentEnter = jest.fn();
 
@@ -1027,7 +1129,6 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterDeep).toHaveBeenCalledTimes(1);
     });
 
-    // @gate enableViewTransition
     it('does not fire onParentEnter when ancestor enter is none with handler only', async () => {
       const onParentEnter = jest.fn();
 
