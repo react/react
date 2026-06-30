@@ -3006,7 +3006,8 @@ function updateDehydratedSuspenseComponent(
 
     if (
       // TODO: Factoring is a little weird, since we check this right below, too.
-      !didReceiveUpdate
+      !didReceiveUpdate &&
+      !suspenseState.didContextChange
     ) {
       // We need to check if any children have context before we decide to bail
       // out, so propagate the changes now.
