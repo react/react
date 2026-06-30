@@ -655,4 +655,121 @@ describe('ReactDOMFizzShellHydration', () => {
       expect(container.innerHTML).toBe('Client');
     },
   );
+
+  it('handles conditional use with a cascading update and error boundaries', async () => {
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = {error: null};
+      }
+
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+
+      componentDidCatch() {}
+
+      render() {
+        if (this.state.error) {
+          return 'Something went wrong: ' + this.state.error.message;
+        }
+
+        return this.props.children;
+      }
+    }
+
+    function Bomb() {
+      throw new Error('boom');
+    }
+
+    function Updater({setPromise}) {
+      const [state, setState] = React.useState(false);
+
+      React.useEffect(() => {
+        // deleting this set state removes too many hooks error
+        setState(true);
+        // deleting this startTransition removes too many hooks error
+        startTransition(() => {
+          setPromise(Promise.resolve('resolved'));
+        });
+      }, [state]);
+
+      return null;
+    }
+
+    function Page() {
+      const [promise, setPromise] = React.useState(null);
+      Scheduler.log('use: ' + promise);
+      /**
+       * this part is tricky, I cannot say confidently the conditional `use` is required for the reproduction.
+       * If we tried to run use(promise ?? cachedPromise) we wouldn't be able renderToString without a parent suspense boundary
+       * but with a parent suspense the bug is no longer reproducible (with or without conditional use)
+       * and without renderToString + hydration, the bug is no longer reproducible
+       */
+      const value = promise ? React.use(promise) : promise;
+      Scheduler.log('used: ' + value);
+
+      React.useMemo(() => {}, []); // to trigger too many hooks error
+      return (
+        <>
+          <Updater setPromise={setPromise} />
+          <React.Suspense fallback="Loading...">
+            <ErrorBoundary>
+              <Bomb />
+            </ErrorBoundary>
+          </React.Suspense>
+          hello world
+        </>
+      );
+    }
+    function App() {
+      return <Page />;
+    }
+
+    // Server render
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />, {
+        onError(error) {
+          Scheduler.log('onError: ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['use: null', 'used: null', 'onError: boom']);
+
+    expect(container.textContent).toBe('Loading...hello world');
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onCaughtError(error) {
+          Scheduler.log('onCaughtError: ' + error.message);
+        },
+        onUncaughtError(error) {
+          Scheduler.log('onUncaughtError: ' + error.message);
+        },
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + error.message);
+          if (error.cause) {
+            Scheduler.log('Cause: ' + error.cause.message);
+          }
+        },
+      });
+    });
+    assertLog([
+      'use: null',
+      'used: null',
+      'use: [object Promise]',
+      'onCaughtError: boom',
+      'use: [object Promise]',
+      'use: [object Promise]',
+      'used: resolved',
+      'use: [object Promise]',
+      'used: resolved',
+      // FIXME
+      'onUncaughtError: Rendered more hooks than during the previous render.',
+    ]);
+
+    // Should've rendered something. The error was handled by the error boundary.
+    expect(container.textContent).toBe('');
+  });
 });
