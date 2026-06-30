@@ -937,6 +937,35 @@ export function resetHooksAfterThrow(): void {
 }
 
 export function resetHooksOnUnwind(workInProgress: Fiber): void {
+  // When a component's render is interrupted (by suspension or error), the
+  // work-in-progress fiber may have an incomplete hook chain — only the hooks
+  // that were processed before the interruption are present. If this fiber is
+  // later committed (e.g., as part of a Suspense boundary showing its
+  // fallback), the incomplete hook chain replaces the current fiber's complete
+  // chain. This causes "Rendered more hooks than during the previous render"
+  // errors when the component re-renders, because the current fiber no longer
+  // has entries for hooks that come after the interruption point.
+  //
+  // To prevent this, we complete the work-in-progress hook chain by cloning
+  // the remaining hooks from the current fiber.
+  if (currentHook !== null && workInProgressHook !== null) {
+    let nextCurrentHook: Hook | null = currentHook.next;
+    if (nextCurrentHook !== null) {
+      let tail: Hook = workInProgressHook;
+      while (nextCurrentHook !== null) {
+        const clone: Hook = {
+          memoizedState: nextCurrentHook.memoizedState,
+          baseState: nextCurrentHook.baseState,
+          baseQueue: nextCurrentHook.baseQueue,
+          queue: nextCurrentHook.queue,
+          next: null,
+        };
+        tail = tail.next = clone;
+        nextCurrentHook = nextCurrentHook.next;
+      }
+    }
+  }
+
   if (didScheduleRenderPhaseUpdate) {
     // There were render phase updates. These are only valid for this render
     // phase, which we are now aborting. Remove the updates from the queues so

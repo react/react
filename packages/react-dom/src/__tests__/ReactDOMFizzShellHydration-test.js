@@ -655,4 +655,108 @@ describe('ReactDOMFizzShellHydration', () => {
       expect(container.innerHTML).toBe('Client');
     },
   );
+
+  it('handles conditional use with a cascading update and error boundaries (#33580)', async () => {
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = {error: null};
+      }
+
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+
+      componentDidCatch() {}
+
+      render() {
+        if (this.state.error) {
+          return 'Something went wrong: ' + this.state.error.message;
+        }
+
+        return this.props.children;
+      }
+    }
+
+    function Bomb() {
+      throw new Error('boom');
+    }
+
+    function Updater({setPromise}) {
+      const [state, setState] = React.useState(false);
+
+      React.useEffect(() => {
+        setState(true);
+        startTransition(() => {
+          setPromise(Promise.resolve('resolved'));
+        });
+      }, [state]);
+
+      return null;
+    }
+
+    function Page() {
+      const [promise, setPromise] = React.useState(null);
+      const value = promise ? React.use(promise) : promise;
+
+      React.useMemo(() => {}, []);
+
+      return (
+        <>
+          <Updater setPromise={setPromise} />
+          <React.Suspense fallback="Loading...">
+            <ErrorBoundary>
+              <Bomb />
+            </ErrorBoundary>
+          </React.Suspense>
+          {value !== null ? value : 'hello world'}
+        </>
+      );
+    }
+
+    function App() {
+      return <Page />;
+    }
+
+    // Server render
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />, {
+        onError(error) {
+          Scheduler.log('onError: ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['onError: boom']);
+
+    const errors = [];
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onCaughtError(error) {
+          Scheduler.log('onCaughtError: ' + error.message);
+          errors.push('caught: ' + error.message);
+        },
+        onUncaughtError(error) {
+          Scheduler.log('onUncaughtError: ' + error.message);
+          errors.push('uncaught: ' + error.message);
+        },
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + error.message);
+          errors.push('recoverable: ' + error.message);
+        },
+      });
+    });
+
+    assertLog(['onCaughtError: boom']);
+
+    // The bug (#33580) manifested as "Rendered more hooks than during the
+    // previous render" when a component calls use(thenable) conditionally after
+    // hydration inside a Suspense boundary with an ErrorBoundary, combined with
+    // a cascading transition update. The fix ensures the work-in-progress hook
+    // chain is completed during unwind so that committing a Suspense fallback
+    // does not corrupt the current fiber's hooks.
+    const hooksError = errors.find(e => e.includes('Rendered more hooks'));
+    expect(hooksError).toBeUndefined();
+    expect(container.textContent).toBe('Something went wrong: boomresolved');
+  });
 });
