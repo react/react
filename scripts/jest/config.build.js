@@ -62,6 +62,7 @@ module.exports = Object.assign({}, baseConfig, {
     'packages/react-devtools-extensions',
     'packages/react-devtools-facade',
     'packages/react-devtools-shared',
+    'packages/react-devtools-cdt-mcp',
   ],
   // Don't run bundle tests on -test.internal.* files
   testPathIgnorePatterns: ['/node_modules/', '-test.internal.js$'],

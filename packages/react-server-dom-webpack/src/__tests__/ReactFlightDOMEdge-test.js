@@ -1794,23 +1794,33 @@ describe('ReactFlightDOMEdge', () => {
     const expectedError = new Error('Bam!');
     const errors = [];
 
-    const {prelude} = await ReactServerDOMStaticServer.prerender(
-      new ReadableStream({
-        async start(controller) {
-          await serverAct(() => {
-            setTimeout(() => {
-              controller.error(expectedError);
-            });
-          });
-        },
-      }),
-      webpackMap,
-      {
-        onError(err) {
-          errors.push(err);
-        },
+    let streamController;
+    const erroringStream = new ReadableStream({
+      start(controller) {
+        streamController = controller;
       },
-    );
+    });
+
+    const {pendingResult} = await serverAct(async () => {
+      // destructure trick to avoid the act scope from awaiting the returned value
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(
+          erroringStream,
+          webpackMap,
+          {
+            onError(err) {
+              errors.push(err);
+            },
+          },
+        ),
+      };
+    });
+
+    await serverAct(() => {
+      streamController.error(expectedError);
+    });
+
+    const {prelude} = await pendingResult;
 
     expect(errors).toEqual([expectedError]);
 
@@ -2007,25 +2017,33 @@ describe('ReactFlightDOMEdge', () => {
 
     const serverAbortController = new AbortController();
     const errors = [];
-    const prerenderResult = ReactServerDOMStaticServer.prerender(
-      ReactServer.createElement(App, null),
-      webpackMap,
-      {
-        signal: serverAbortController.signal,
-        onError(err) {
-          errors.push(err);
-        },
-      },
-    );
-
-    await new Promise(resolve => {
-      setImmediate(() => {
-        serverAbortController.abort();
-        resolve();
-      });
+    const {pendingResult} = await serverAct(async () => {
+      // destructure trick to avoid the act scope from awaiting the returned value
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(
+          ReactServer.createElement(App, null),
+          webpackMap,
+          {
+            signal: serverAbortController.signal,
+            onError(err) {
+              errors.push(err);
+            },
+          },
+        ),
+      };
     });
 
-    const {prelude} = await prerenderResult;
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          setImmediate(() => {
+            serverAbortController.abort();
+            resolve();
+          });
+        }),
+    );
+
+    const {prelude} = await pendingResult;
 
     expect(errors).toEqual([]);
 
@@ -2061,12 +2079,15 @@ describe('ReactFlightDOMEdge', () => {
       },
     );
 
-    await new Promise(resolve => {
-      setImmediate(() => {
-        clientAbortController.abort();
-        resolve();
-      });
-    });
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          setImmediate(() => {
+            clientAbortController.abort();
+            resolve();
+          });
+        }),
+    );
 
     const fizzPrerenderStream = await fizzPrerenderStreamResult;
     const prerenderHTML = await readResult(fizzPrerenderStream.prelude);
