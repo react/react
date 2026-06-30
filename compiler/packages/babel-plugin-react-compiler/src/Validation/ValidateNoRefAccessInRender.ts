@@ -156,6 +156,20 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           ) {
             continue;
           }
+          /*
+           * Skip the temporary alias when the loaded property is itself a ref
+           * (e.g. `props.ref`). The loaded value is a new ref value with its
+           * own env classification; widening env[object] through the alias
+           * would incorrectly make the object appear to be a ref and cause
+           * false positive ref-access errors on unrelated sibling property
+           * reads.
+           */
+          if (
+            isUseRefType(lvalue.identifier) ||
+            isRefValueType(lvalue.identifier)
+          ) {
+            break;
+          }
           const temp = env.lookup(value.object);
           if (temp != null) {
             env.define(lvalue, temp);
