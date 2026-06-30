@@ -3786,11 +3786,19 @@ describe('ReactDOMServerPartialHydration', () => {
       return <span>Hidden</span>;
     }
 
+    function VisibleChild() {
+      Scheduler.log('VisibleChild');
+      React.useEffect(() => {
+        Scheduler.log('VisibleChild Effect');
+      });
+      return <span ref={visibleRef}>Visible</span>;
+    }
+
     function App() {
       Scheduler.log('App');
       return (
         <>
-          <span ref={visibleRef}>Visible</span>
+          <VisibleChild />
           <Activity mode="hidden">
             <HiddenChild />
           </Activity>
@@ -3806,7 +3814,7 @@ describe('ReactDOMServerPartialHydration', () => {
     // During server rendering, the Child component should not be evaluated,
     // because it's inside a hidden tree.
     const finalHTML = ReactDOMServer.renderToString(<App />);
-    assertLog(['App']);
+    assertLog(['App', 'VisibleChild']);
 
     const container = document.createElement('div');
     container.innerHTML = finalHTML;
@@ -3826,17 +3834,18 @@ describe('ReactDOMServerPartialHydration', () => {
 
     // The visible span successfully hydrates
     ReactDOMClient.hydrateRoot(container, <App />);
-    await waitForPaint(['App']);
+    await waitForPaint(['App', 'VisibleChild']);
     expect(visibleRef.current).toBe(visibleSpan);
-
-    if (gate(flags => flags.enableYieldingBeforePassive)) {
-      // Passive effects.
-      await waitForPaint([]);
-    }
 
     // Subsequently, the hidden child is prerendered on the client
     // along with hydrating the Suspense boundary outside the Activity.
-    await waitForPaint(['HiddenChild']);
+    if (gate(flags => flags.enableYieldingBeforePassive)) {
+      await waitForPaint(['VisibleChild Effect']);
+      await waitForPaint(['HiddenChild']);
+    } else {
+      await waitForPaint(['VisibleChild Effect', 'HiddenChild']);
+    }
+
     expect(container).toMatchInlineSnapshot(`
       <div>
         <span>
@@ -3851,6 +3860,11 @@ describe('ReactDOMServerPartialHydration', () => {
         </span>
       </div>
     `);
+
+    if (gate(flags => flags.enableYieldingBeforePassive)) {
+      // passive effects
+      await waitForPaint([]);
+    }
 
     // Next the child inside the Activity is hydrated.
     await waitForPaint(['HiddenChild']);

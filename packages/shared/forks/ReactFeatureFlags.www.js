@@ -36,6 +36,7 @@ export const {
   enableFragmentRefsTextNodes,
   enableInternalInstanceMap,
   enableParallelTransitions,
+  enableYieldingBeforePassive,
 } = dynamicFeatureFlags;
 
 // On WWW, __EXPERIMENTAL__ is used for a new modern build.
@@ -53,8 +54,6 @@ export const enableCPUSuspense: boolean = true;
 export const enableMoveBefore: boolean = false;
 export const disableInputAttributeSyncing: boolean = false;
 export const enableLegacyFBSupport: boolean = true;
-
-export const enableYieldingBeforePassive: boolean = false;
 
 export const enableThrottledScheduling: boolean = false;
 

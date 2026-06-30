@@ -67,7 +67,7 @@ export const enableLegacyFBSupport: boolean = false;
 
 // Yield to the browser event loop and not just the scheduler event loop before passive effects.
 // Fix gated tests that fail with this flag enabled before turning it back on.
-export const enableYieldingBeforePassive: boolean = false;
+export const enableYieldingBeforePassive: boolean = __EXPERIMENTAL__;
 
 // Experiment to intentionally yield less to block high framerate animations.
 export const enableThrottledScheduling: boolean = false;

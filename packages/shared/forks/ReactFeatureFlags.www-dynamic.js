@@ -38,6 +38,7 @@ export const enableFragmentRefsScrollIntoView: boolean = __VARIANT__;
 export const enableFragmentRefsTextNodes: boolean = __VARIANT__;
 export const enableInternalInstanceMap: boolean = __VARIANT__;
 export const enableParallelTransitions: boolean = __VARIANT__;
+export const enableYieldingBeforePassive: boolean = __VARIANT__;
 
 export const enableEffectEventMutationPhase: boolean = __VARIANT__;
 
