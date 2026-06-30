@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<ca8b8c70cd2717d29e6931a750e8a03c>>
+ * @generated SignedSource<<643572a1f08ed8d0506ed23cad1e222f>>
  */
 
 "use strict";
@@ -11811,6 +11811,7 @@ function performWorkOnRoot(root$jscomp$0, lanes, forceSync) {
           yieldDuration = workInProgressRootConcurrentErrors;
           exitStatus = renderRootSync(root, JSCompiler_inline_result, !1);
           2 !== exitStatus &&
+            6 !== exitStatus &&
             (workInProgressRootDidAttachPingListener
               ? ((root.errorRecoveryDisabledLanes |= renderWasConcurrent),
                 (workInProgressRootInterleavedUpdatedLanes |=
@@ -14312,10 +14313,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1686 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-9c1f0977-20260630",
+    version: "19.3.0-native-fb-c3555f0c-20260630",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-9c1f0977-20260630"
+    reconcilerVersion: "19.3.0-native-fb-c3555f0c-20260630"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1686.rendererConfig = extraDevToolsConfig);
