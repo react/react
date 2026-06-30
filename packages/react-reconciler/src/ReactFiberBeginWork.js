@@ -2259,6 +2259,7 @@ const SUSPENDED_MARKER: SuspenseState = {
   treeContext: null,
   retryLane: NoLane,
   hydrationErrors: null,
+  didContextChange: false,
 };
 
 function mountSuspenseOffscreenState(renderLanes: Lanes): OffscreenState {
@@ -3014,7 +3015,13 @@ function updateDehydratedSuspenseComponent(
 
     // We use lanes to indicate that a child might depend on context, so if
     // any context has changed, we need to treat is as if the input might have changed.
-    const hasContextChanged = includesSomeLane(renderLanes, current.childLanes);
+    let hasContextChanged = includesSomeLane(renderLanes, current.childLanes);
+    if (
+      suspenseState.didContextChange &&
+      !isSuspenseInstancePending(suspenseInstance)
+    ) {
+      hasContextChanged = true;
+    }
     if (didReceiveUpdate || hasContextChanged) {
       // This boundary has changed since the first render. This means that we are now unable to
       // hydrate it. We might still be able to hydrate it using a higher priority lane.
@@ -4000,11 +4007,7 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
             renderLanes,
           );
           if (contextChanged) {
-            return updateSuspenseComponent(
-              current,
-              workInProgress,
-              renderLanes,
-            );
+            state.didContextChange = true;
           }
           // We're not going to render the children, so this is just to maintain
           // push/pop symmetry
