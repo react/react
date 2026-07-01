@@ -1,0 +1,25 @@
+{
+  "name": "react-devtools-cdt-mcp",
+  "version": "0.0.0",
+  "description": "Integration of React tools with chrome-devtools-mcp",
+  "license": "MIT",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/facebook/react.git",
+    "directory": "packages/react-devtools-cdt-mcp"
+  },
+  "files": [
+    "dist",
+    "index.js"
+  ],
+  "scripts": {
+    "build": "cross-env NODE_ENV=production rollup -c rollup.config.cjs",
+    "prepublish": "yarn run build",
+    "start": "cross-env NODE_ENV=development rollup -c rollup.config.cjs --watch"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.11.1",
+    "cross-env": "^7.0.3"
+  }
+}
