@@ -216,7 +216,10 @@ describe('ReactPerformanceTracks', () => {
 
     Scheduler.unstable_advanceTime(10);
 
-    const bigData = new Uint8Array(1000);
+    const bigData = {};
+    for (let i = 0; i < 150; i++) {
+      bigData[i] = 0;
+    }
     await act(() => {
       ReactNoop.render(<App data={{buffer: bigData}} />);
     });
@@ -232,7 +235,7 @@ describe('ReactPerformanceTracks', () => {
                 ['Changed Props', ''],
                 ['  data', ''],
                 ['-   buffer', 'null'],
-                ['+   buffer', 'Uint8Array'],
+                ['+   buffer', ''],
                 ['+     0', '0'],
                 ['+     1', '0'],
                 ['+     2', '0'],
@@ -337,6 +340,68 @@ describe('ReactPerformanceTracks', () => {
                   '+     Only 100 properties are shown. React will not log more properties of this object.',
                   '',
                 ],
+              ],
+              tooltipText: 'App',
+              track: 'Components ⚛',
+            },
+          },
+          end: 31,
+          start: 21,
+        },
+      ],
+    ]);
+  });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
+  it('shows the type and length of typed arrays instead of enumerating them', async () => {
+    const App = function App({buffer}) {
+      Scheduler.unstable_advanceTime(10);
+      React.useEffect(() => {}, [buffer]);
+    };
+
+    Scheduler.unstable_advanceTime(1);
+    await act(() => {
+      ReactNoop.render(<App buffer={new Uint8Array(0)} />);
+    });
+
+    expect(performanceMeasureCalls).toEqual([
+      [
+        'Mount',
+        {
+          detail: {
+            devtools: {
+              color: 'warning',
+              properties: null,
+              tooltipText: 'Mount',
+              track: 'Components ⚛',
+            },
+          },
+          end: 11,
+          start: 1,
+        },
+      ],
+    ]);
+    performanceMeasureCalls.length = 0;
+
+    Scheduler.unstable_advanceTime(10);
+
+    // A typed array can hold millions of elements. React must not enumerate
+    // them element-by-element, which would freeze rendering (issue #36200).
+    await act(() => {
+      ReactNoop.render(<App buffer={new Float32Array(1000)} />);
+    });
+
+    expect(performanceMeasureCalls).toEqual([
+      [
+        '​App',
+        {
+          detail: {
+            devtools: {
+              color: 'primary-dark',
+              properties: [
+                ['Changed Props', ''],
+                ['-\xa0buffer', 'Uint8Array(0)'],
+                ['+\xa0buffer', 'Float32Array(1000)'],
               ],
               tooltipText: 'App',
               track: 'Components ⚛',
