@@ -57,7 +57,9 @@ var dynamicFeatureFlags = require("ReactFeatureFlags"),
     dynamicFeatureFlags.enableFragmentRefsScrollIntoView,
   enableFragmentRefsTextNodes = dynamicFeatureFlags.enableFragmentRefsTextNodes,
   enableInternalInstanceMap = dynamicFeatureFlags.enableInternalInstanceMap,
-  enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions;
+  enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
+  enableViewTransitionParentEnterExit =
+    dynamicFeatureFlags.enableViewTransitionParentEnterExit;
 function getNearestMountedFiber(fiber) {
   for (var node = fiber, nextNode = node; nextNode && !nextNode.alternate; )
     (node = nextNode),
@@ -6829,7 +6831,7 @@ function updateSuspenseComponent(current, workInProgress, renderLanes) {
         mode: "hidden",
         children: nextProps.children
       })),
-      (nextProps.subtreeFlags = nextFallbackChildren.subtreeFlags & 133169152),
+      (nextProps.subtreeFlags = nextFallbackChildren.subtreeFlags & 1206910976),
       null !== digest
         ? (nextPrimaryChildren = createWorkInProgress(
             digest,
@@ -8040,8 +8042,8 @@ function bubbleProperties(completedWork) {
   if (didBailout)
     for (var child$123 = completedWork.child; null !== child$123; )
       (newChildLanes |= child$123.lanes | child$123.childLanes),
-        (subtreeFlags |= child$123.subtreeFlags & 133169152),
-        (subtreeFlags |= child$123.flags & 133169152),
+        (subtreeFlags |= child$123.subtreeFlags & 1206910976),
+        (subtreeFlags |= child$123.flags & 1206910976),
         (child$123.return = completedWork),
         (child$123 = child$123.sibling);
   else
@@ -8620,6 +8622,17 @@ function completeWork(current, workInProgress, renderLanes) {
       return (
         enableViewTransition &&
           ((workInProgress.flags |= 33554432),
+          enableViewTransitionParentEnterExit &&
+            ((current = workInProgress.pendingProps),
+            (workInProgress.flags =
+              void 0 !== current.parentEnter ||
+              void 0 !== current.parentExit ||
+              null != current.onParentEnter ||
+              null != current.onParentExit ||
+              null != current.onGestureParentEnter ||
+              null != current.onGestureParentExit
+                ? workInProgress.flags | 1073741824
+                : workInProgress.flags & -1073741825)),
           bubbleProperties(workInProgress)),
         null
       );
@@ -9274,6 +9287,106 @@ function commitAppearingPairViewTransitions(placement) {
       placement = placement.sibling;
     }
 }
+function commitParentEnterViewTransitions(parent, gesture) {
+  for (parent = parent.child; null !== parent; ) {
+    if (22 !== parent.tag || null === parent.memoizedState)
+      if (30 === parent.tag) {
+        var props = parent.memoizedProps,
+          hasParentClass = void 0 !== props.parentEnter,
+          hasParentHandler = gesture
+            ? null != props.onGestureParentEnter
+            : null != props.onParentEnter;
+        if (hasParentClass || hasParentHandler) {
+          var relay = !0;
+          if (hasParentClass) {
+            hasParentClass = getViewTransitionName(props, parent.stateNode);
+            var className = getViewTransitionClassName(
+              props.default,
+              props.parentEnter
+            );
+            "none" === className
+              ? (relay = !1)
+              : (applyViewTransitionToHostInstances(
+                  parent,
+                  hasParentClass,
+                  className,
+                  null,
+                  !1
+                ),
+                hasParentHandler &&
+                  !gesture &&
+                  scheduleViewTransitionEvent(parent, props.onParentEnter));
+          } else
+            gesture || scheduleViewTransitionEvent(parent, props.onParentEnter);
+          relay && commitParentEnterViewTransitions(parent, gesture);
+        }
+      } else
+        0 !== (parent.subtreeFlags & 1073741824) &&
+          commitParentEnterViewTransitions(parent, gesture);
+    parent = parent.sibling;
+  }
+}
+function commitParentExitViewTransitions(parent, gesture) {
+  for (parent = parent.child; null !== parent; ) {
+    if (22 !== parent.tag || null === parent.memoizedState)
+      if (30 === parent.tag) {
+        var props = parent.memoizedProps,
+          hasParentClass = void 0 !== props.parentExit,
+          hasParentHandler = gesture
+            ? null != props.onGestureParentExit
+            : null != props.onParentExit;
+        if (hasParentClass || hasParentHandler) {
+          var relay = !0;
+          if (hasParentClass) {
+            hasParentClass = getViewTransitionName(props, parent.stateNode);
+            var className = getViewTransitionClassName(
+              props.default,
+              props.parentExit
+            );
+            "none" === className
+              ? (relay = !1)
+              : (applyViewTransitionToHostInstances(
+                  parent,
+                  hasParentClass,
+                  className,
+                  null,
+                  !1
+                ),
+                hasParentHandler &&
+                  !gesture &&
+                  scheduleViewTransitionEvent(parent, props.onParentExit));
+          } else
+            gesture || scheduleViewTransitionEvent(parent, props.onParentExit);
+          relay && commitParentExitViewTransitions(parent, gesture);
+        }
+      } else
+        0 !== (parent.subtreeFlags & 1073741824) &&
+          commitParentExitViewTransitions(parent, gesture);
+    parent = parent.sibling;
+  }
+}
+function restoreParentEnterOrExitViewTransitions(parent) {
+  for (parent = parent.child; null !== parent; ) {
+    if (22 !== parent.tag || null === parent.memoizedState)
+      if (30 === parent.tag) {
+        var props = parent.memoizedProps,
+          hasParentClass =
+            void 0 !== props.parentEnter || void 0 !== props.parentExit;
+        props =
+          null != props.onParentEnter ||
+          null != props.onParentExit ||
+          null != props.onGestureParentEnter ||
+          null != props.onGestureParentExit;
+        hasParentClass &&
+          restoreViewTransitionOnHostInstances(parent.child, !1);
+        (hasParentClass || props) &&
+          restoreParentEnterOrExitViewTransitions(parent);
+      } else
+        0 !== (parent.subtreeFlags & 1073741824) &&
+          restoreParentEnterOrExitViewTransitions(parent);
+    parent = parent.sibling;
+  }
+}
 function commitEnterViewTransitions(placement, gesture) {
   if (30 === placement.tag) {
     var state = placement.stateNode,
@@ -9287,8 +9400,9 @@ function commitEnterViewTransitions(placement, gesture) {
       ? applyViewTransitionToHostInstances(placement, name, className, null, !1)
         ? (commitAppearingPairViewTransitions(placement),
           state.paired ||
-            gesture ||
-            scheduleViewTransitionEvent(placement, props.onEnter))
+            (gesture || scheduleViewTransitionEvent(placement, props.onEnter),
+            enableViewTransitionParentEnterExit &&
+              commitParentEnterViewTransitions(placement, gesture)))
         : restoreViewTransitionOnHostInstances(placement.child, !1)
       : commitAppearingPairViewTransitions(placement);
   } else if (0 !== (placement.subtreeFlags & 33554432))
@@ -9360,7 +9474,9 @@ function commitExitViewTransitions(deletion) {
             (className.paired = pair),
             appearingViewTransitions.delete(name),
             scheduleViewTransitionEvent(deletion, props.onShare))
-          : scheduleViewTransitionEvent(deletion, props.onExit)
+          : (scheduleViewTransitionEvent(deletion, props.onExit),
+            enableViewTransitionParentEnterExit &&
+              commitParentExitViewTransitions(deletion, !1))
         : restoreViewTransitionOnHostInstances(deletion.child, !1));
     null !== appearingViewTransitions &&
       commitDeletedPairViewTransitions(deletion);
@@ -9411,6 +9527,8 @@ function restoreEnterOrExitViewTransitions(fiber) {
   if (30 === fiber.tag)
     (fiber.stateNode.paired = null),
       restoreViewTransitionOnHostInstances(fiber.child, !1),
+      enableViewTransitionParentEnterExit &&
+        restoreParentEnterOrExitViewTransitions(fiber),
       restorePairedViewTransitions(fiber);
   else if (0 !== (fiber.subtreeFlags & 33554432))
     for (fiber = fiber.child; null !== fiber; )
@@ -13902,7 +14020,7 @@ function createWorkInProgress(current, pendingProps) {
       (workInProgress.flags = 0),
       (workInProgress.subtreeFlags = 0),
       (workInProgress.deletions = null));
-  workInProgress.flags = current.flags & 133169152;
+  workInProgress.flags = current.flags & 1206910976;
   workInProgress.childLanes = current.childLanes;
   workInProgress.lanes = current.lanes;
   workInProgress.child = current.child;
@@ -13921,7 +14039,7 @@ function createWorkInProgress(current, pendingProps) {
   return workInProgress;
 }
 function resetWorkInProgress(workInProgress, renderLanes) {
-  workInProgress.flags &= 133169154;
+  workInProgress.flags &= 1206910978;
   var current = workInProgress.alternate;
   null === current
     ? ((workInProgress.childLanes = 0),
@@ -20049,14 +20167,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2050 = React.version;
 if (
-  "19.3.0-www-modern-a1a6bc89-20260701" !==
+  "19.3.0-www-modern-ec0fca31-20260701" !==
   isomorphicReactPackageVersion$jscomp$inline_2050
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2050,
-      "19.3.0-www-modern-a1a6bc89-20260701"
+      "19.3.0-www-modern-ec0fca31-20260701"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -20074,10 +20192,10 @@ Internals.Events = [
 ];
 var internals$jscomp$inline_2608 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-a1a6bc89-20260701",
+  version: "19.3.0-www-modern-ec0fca31-20260701",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-a1a6bc89-20260701"
+  reconcilerVersion: "19.3.0-www-modern-ec0fca31-20260701"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2609 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -20515,4 +20633,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-a1a6bc89-20260701";
+exports.version = "19.3.0-www-modern-ec0fca31-20260701";

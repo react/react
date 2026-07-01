@@ -83,7 +83,9 @@ var dynamicFeatureFlags = require("ReactFeatureFlags"),
   enableSuspenseyImages = dynamicFeatureFlags.enableSuspenseyImages,
   enableViewTransition = dynamicFeatureFlags.enableViewTransition,
   enableFragmentRefs = dynamicFeatureFlags.enableFragmentRefs,
-  enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions;
+  enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
+  enableViewTransitionParentEnterExit =
+    dynamicFeatureFlags.enableViewTransitionParentEnterExit;
 function isFiberSuspenseAndTimedOut(fiber) {
   var memoizedState = fiber.memoizedState;
   return (
@@ -5754,7 +5756,7 @@ function updateSuspenseComponent(current, workInProgress, renderLanes) {
       mode: "hidden",
       children: nextProps.children
     });
-    nextProps.subtreeFlags = didSuspend.subtreeFlags & 133169152;
+    nextProps.subtreeFlags = didSuspend.subtreeFlags & 1206910976;
     null !== currentFallbackChildFragment
       ? (showFallback = createWorkInProgress(
           currentFallbackChildFragment,
@@ -6828,8 +6830,8 @@ function bubbleProperties(completedWork) {
   if (didBailout)
     for (var child$84 = completedWork.child; null !== child$84; )
       (newChildLanes |= child$84.lanes | child$84.childLanes),
-        (subtreeFlags |= child$84.subtreeFlags & 133169152),
-        (subtreeFlags |= child$84.flags & 133169152),
+        (subtreeFlags |= child$84.subtreeFlags & 1206910976),
+        (subtreeFlags |= child$84.flags & 1206910976),
         (child$84.return = completedWork),
         (child$84 = child$84.sibling);
   else
@@ -7250,6 +7252,17 @@ function completeWork(current, workInProgress, renderLanes) {
       return (
         enableViewTransition &&
           ((workInProgress.flags |= 33554432),
+          enableViewTransitionParentEnterExit &&
+            ((current = workInProgress.pendingProps),
+            (workInProgress.flags =
+              void 0 !== current.parentEnter ||
+              void 0 !== current.parentExit ||
+              null != current.onParentEnter ||
+              null != current.onParentExit ||
+              null != current.onGestureParentEnter ||
+              null != current.onGestureParentExit
+                ? workInProgress.flags | 1073741824
+                : workInProgress.flags & -1073741825)),
           bubbleProperties(workInProgress)),
         null
       );
@@ -7683,6 +7696,45 @@ function applyViewTransitionToHostInstancesRecursive(
   }
   return inViewport;
 }
+function commitParentExitViewTransitions(parent, gesture) {
+  for (parent = parent.child; null !== parent; ) {
+    if (22 !== parent.tag || null === parent.memoizedState)
+      if (30 === parent.tag) {
+        var props = parent.memoizedProps,
+          hasParentClass = void 0 !== props.parentExit,
+          hasParentHandler = gesture
+            ? null != props.onGestureParentExit
+            : null != props.onParentExit;
+        if (hasParentClass || hasParentHandler) {
+          var relay = !0;
+          if (hasParentClass) {
+            hasParentClass = getViewTransitionName(props, parent.stateNode);
+            var className = getViewTransitionClassName(
+              props.default,
+              props.parentExit
+            );
+            "none" === className
+              ? (relay = !1)
+              : (applyViewTransitionToHostInstancesRecursive(
+                  parent.child,
+                  hasParentClass,
+                  className,
+                  null,
+                  !1
+                ),
+                hasParentHandler &&
+                  !gesture &&
+                  scheduleViewTransitionEvent(parent, props.onParentExit));
+          } else
+            gesture || scheduleViewTransitionEvent(parent, props.onParentExit);
+          relay && commitParentExitViewTransitions(parent, gesture);
+        }
+      } else
+        0 !== (parent.subtreeFlags & 1073741824) &&
+          commitParentExitViewTransitions(parent, gesture);
+    parent = parent.sibling;
+  }
+}
 function commitDeletedPairViewTransitions(deletion) {
   if (
     null !== appearingViewTransitions &&
@@ -7751,7 +7803,9 @@ function commitExitViewTransitions(deletion) {
           (className.paired = pair),
           appearingViewTransitions.delete(name),
           scheduleViewTransitionEvent(deletion, props.onShare))
-        : scheduleViewTransitionEvent(deletion, props.onExit));
+        : (scheduleViewTransitionEvent(deletion, props.onExit),
+          enableViewTransitionParentEnterExit &&
+            commitParentExitViewTransitions(deletion, !1)));
     null !== appearingViewTransitions &&
       commitDeletedPairViewTransitions(deletion);
   } else if (0 !== (deletion.subtreeFlags & 33554432))
@@ -11215,7 +11269,7 @@ function createWorkInProgress(current, pendingProps) {
       (workInProgress.flags = 0),
       (workInProgress.subtreeFlags = 0),
       (workInProgress.deletions = null));
-  workInProgress.flags = current.flags & 133169152;
+  workInProgress.flags = current.flags & 1206910976;
   workInProgress.childLanes = current.childLanes;
   workInProgress.lanes = current.lanes;
   workInProgress.child = current.child;
@@ -11234,7 +11288,7 @@ function createWorkInProgress(current, pendingProps) {
   return workInProgress;
 }
 function resetWorkInProgress(workInProgress, renderLanes) {
-  workInProgress.flags &= 133169154;
+  workInProgress.flags &= 1206910978;
   var current = workInProgress.alternate;
   null === current
     ? ((workInProgress.childLanes = 0),
@@ -11656,10 +11710,10 @@ var slice = Array.prototype.slice,
   })(React.Component);
 var internals$jscomp$inline_1629 = {
   bundleType: 0,
-  version: "19.3.0-www-classic-a1a6bc89-20260701",
+  version: "19.3.0-www-classic-ec0fca31-20260701",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-classic-a1a6bc89-20260701"
+  reconcilerVersion: "19.3.0-www-classic-ec0fca31-20260701"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1630 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11685,4 +11739,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-classic-a1a6bc89-20260701";
+exports.version = "19.3.0-www-classic-ec0fca31-20260701";
