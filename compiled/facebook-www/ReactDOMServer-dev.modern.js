@@ -5192,6 +5192,7 @@ __DEV__ &&
     function fatalError(request, error, errorInfo, debugTask) {
       errorInfo = request.onShellError;
       var onFatalError = request.onFatalError;
+      request.onAllReady = noop;
       debugTask
         ? (debugTask.run(errorInfo.bind(null, error)),
           debugTask.run(onFatalError.bind(null, error)))
@@ -10511,5 +10512,5 @@ __DEV__ &&
         'The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToReadableStream" which supports Suspense on the server'
       );
     };
-    exports.version = "19.3.0-www-modern-c3555f0c-20260630";
+    exports.version = "19.3.0-www-modern-a1a6bc89-20260701";
   })();

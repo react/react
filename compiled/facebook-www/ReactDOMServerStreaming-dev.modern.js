@@ -4970,6 +4970,7 @@ __DEV__ &&
     function fatalError(request, error, errorInfo, debugTask) {
       errorInfo = request.onShellError;
       var onFatalError = request.onFatalError;
+      request.onAllReady = noop;
       debugTask
         ? (debugTask.run(errorInfo.bind(null, error)),
           debugTask.run(onFatalError.bind(null, error)))

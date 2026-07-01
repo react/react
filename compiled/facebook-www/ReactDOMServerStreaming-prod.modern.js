@@ -4032,6 +4032,7 @@ function logRecoverableError(request, error, errorInfo) {
 function fatalError(request, error) {
   var onShellError = request.onShellError,
     onFatalError = request.onFatalError;
+  request.onAllReady = noop;
   onShellError(error);
   onFatalError(error);
   null !== request.destination
