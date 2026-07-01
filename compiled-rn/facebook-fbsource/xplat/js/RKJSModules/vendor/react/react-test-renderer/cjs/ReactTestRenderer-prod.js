@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<1a9e43f5b2fe620a73ec3e5e513988c9>>
+ * @generated SignedSource<<8803c521fa50b717cd343134e616f980>>
  */
 
 "use strict";
@@ -5502,7 +5502,7 @@ function updateSuspenseComponent(current, workInProgress, renderLanes) {
         (nextProps.pendingProps = primaryChildProps),
         (workInProgress.deletions = null))
       : ((nextProps = createWorkInProgress(didSuspend, primaryChildProps)),
-        (nextProps.subtreeFlags = didSuspend.subtreeFlags & 133169152));
+        (nextProps.subtreeFlags = didSuspend.subtreeFlags & 1206910976));
     null !== currentFallbackChildFragment
       ? (showFallback = createWorkInProgress(
           currentFallbackChildFragment,
@@ -6447,8 +6447,8 @@ function bubbleProperties(completedWork) {
   if (didBailout)
     for (var child$85 = completedWork.child; null !== child$85; )
       (newChildLanes |= child$85.lanes | child$85.childLanes),
-        (subtreeFlags |= child$85.subtreeFlags & 133169152),
-        (subtreeFlags |= child$85.flags & 133169152),
+        (subtreeFlags |= child$85.subtreeFlags & 1206910976),
+        (subtreeFlags |= child$85.flags & 1206910976),
         (child$85.return = completedWork),
         (child$85 = child$85.sibling);
   else
@@ -10386,7 +10386,7 @@ function createWorkInProgress(current, pendingProps) {
       (workInProgress.flags = 0),
       (workInProgress.subtreeFlags = 0),
       (workInProgress.deletions = null));
-  workInProgress.flags = current.flags & 133169152;
+  workInProgress.flags = current.flags & 1206910976;
   workInProgress.childLanes = current.childLanes;
   workInProgress.lanes = current.lanes;
   workInProgress.child = current.child;
@@ -10405,7 +10405,7 @@ function createWorkInProgress(current, pendingProps) {
   return workInProgress;
 }
 function resetWorkInProgress(workInProgress, renderLanes) {
-  workInProgress.flags &= 133169154;
+  workInProgress.flags &= 1206910978;
   var current = workInProgress.alternate;
   null === current
     ? ((workInProgress.childLanes = 0),
@@ -10991,10 +10991,10 @@ function wrapFiber(fiber) {
 }
 var internals$jscomp$inline_1584 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-c3555f0c-20260630",
+  version: "19.3.0-native-fb-ec0fca31-20260701",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-c3555f0c-20260630"
+  reconcilerVersion: "19.3.0-native-fb-ec0fca31-20260701"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1585 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11130,4 +11130,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-c3555f0c-20260630";
+exports.version = "19.3.0-native-fb-ec0fca31-20260701";

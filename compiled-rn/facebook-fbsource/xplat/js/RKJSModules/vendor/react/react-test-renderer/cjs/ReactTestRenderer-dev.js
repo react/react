@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<afde6b72cc43ca04ad009719c44ff989>>
+ * @generated SignedSource<<8d6930dd1f68f92fdbc2f3ef1185d24a>>
  */
 
 "use strict";
@@ -4556,7 +4556,7 @@ __DEV__ &&
           null;
       hookTypesUpdateIndexDev = -1;
       null !== current &&
-        (current.flags & 133169152) !== (workInProgress.flags & 133169152) &&
+        (current.flags & 1206910976) !== (workInProgress.flags & 1206910976) &&
         0 !== (current.mode & 1) &&
         console.error(
           "Internal React error: Expected static flag was missing. Please notify the React team."
@@ -7652,7 +7652,7 @@ __DEV__ &&
               (nextProps.treeBaseDuration = didSuspend.treeBaseDuration)),
             (workInProgress.deletions = null))
           : ((nextProps = createWorkInProgress(didSuspend, primaryChildProps)),
-            (nextProps.subtreeFlags = didSuspend.subtreeFlags & 133169152));
+            (nextProps.subtreeFlags = didSuspend.subtreeFlags & 1206910976));
         null !== currentFallbackChildFragment
           ? (showFallback = createWorkInProgress(
               currentFallbackChildFragment,
@@ -8894,8 +8894,8 @@ __DEV__ &&
 
           )
             (newChildLanes |= _child2.lanes | _child2.childLanes),
-              (subtreeFlags |= _child2.subtreeFlags & 133169152),
-              (subtreeFlags |= _child2.flags & 133169152),
+              (subtreeFlags |= _child2.subtreeFlags & 1206910976),
+              (subtreeFlags |= _child2.flags & 1206910976),
               (_treeBaseDuration += _child2.treeBaseDuration),
               (_child2 = _child2.sibling);
           completedWork.treeBaseDuration = _treeBaseDuration;
@@ -8907,8 +8907,8 @@ __DEV__ &&
           )
             (newChildLanes |=
               _treeBaseDuration.lanes | _treeBaseDuration.childLanes),
-              (subtreeFlags |= _treeBaseDuration.subtreeFlags & 133169152),
-              (subtreeFlags |= _treeBaseDuration.flags & 133169152),
+              (subtreeFlags |= _treeBaseDuration.subtreeFlags & 1206910976),
+              (subtreeFlags |= _treeBaseDuration.flags & 1206910976),
               (_treeBaseDuration.return = completedWork),
               (_treeBaseDuration = _treeBaseDuration.sibling);
       else if (0 !== (completedWork.mode & 2)) {
@@ -14282,7 +14282,7 @@ __DEV__ &&
           (workInProgress.deletions = null),
           (workInProgress.actualDuration = -0),
           (workInProgress.actualStartTime = -1.1));
-      workInProgress.flags = current.flags & 133169152;
+      workInProgress.flags = current.flags & 1206910976;
       workInProgress.childLanes = current.childLanes;
       workInProgress.lanes = current.lanes;
       workInProgress.child = current.child;
@@ -14320,7 +14320,7 @@ __DEV__ &&
       return workInProgress;
     }
     function resetWorkInProgress(workInProgress, renderLanes) {
-      workInProgress.flags &= 133169154;
+      workInProgress.flags &= 1206910978;
       var current = workInProgress.alternate;
       null === current
         ? ((workInProgress.childLanes = 0),
@@ -17041,10 +17041,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-c3555f0c-20260630",
+        version: "19.3.0-native-fb-ec0fca31-20260701",
         rendererPackageName: "react-test-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-c3555f0c-20260630"
+        reconcilerVersion: "19.3.0-native-fb-ec0fca31-20260701"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -17190,5 +17190,5 @@ __DEV__ &&
             flushSyncWorkAcrossRoots_impl(0, !0));
       }
     };
-    exports.version = "19.3.0-native-fb-c3555f0c-20260630";
+    exports.version = "19.3.0-native-fb-ec0fca31-20260701";
   })();
