@@ -8,6 +8,7 @@ module.exports = Object.assign({}, baseConfig, {
     'packages/react-devtools-extensions',
     'packages/react-devtools-facade',
     'packages/react-devtools-shared',
+    'packages/react-devtools-cdt-mcp',
     'ReactIncrementalPerf',
     'ReactIncrementalUpdatesMinimalism',
     'ReactIncrementalTriangle',
