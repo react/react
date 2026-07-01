@@ -1378,6 +1378,10 @@ function fatalError(
   // It's also called if React itself or its host configs errors.
   const onShellError = request.onShellError;
   const onFatalError = request.onFatalError;
+  // The shell has fatally errored, so the render can never complete. Prevent a
+  // later completeAll from invoking onAllReady, which would signal a successful
+  // render to consumers waiting on all content.
+  request.onAllReady = noop;
   if (__DEV__ && debugTask) {
     debugTask.run(onShellError.bind(null, error));
     debugTask.run(onFatalError.bind(null, error));
