@@ -20,7 +20,7 @@
     "improve-images": "node ./improveImages.mjs"
   },
   "devDependencies": {
-    "@babel/core": "^7.11.1",
+    "@babel/core": "^7.29.6",
     "@babel/node": "^7.14.7",
     "@babel/parser": "^7.14.8",
     "@babel/plugin-proposal-class-properties": "^7.10.4",

@@ -21,7 +21,7 @@
     "test:e2e:ci": "cross-env E2E_CI=true node e2e/run.js"
   },
   "devDependencies": {
-    "@babel/core": "^7.11.1",
+    "@babel/core": "^7.29.6",
     "@babel/plugin-transform-flow-strip-types": "^7.10.4",
     "@babel/register": "^7.14.5",
     "chrome-devtools-mcp": "1.3.0",

@@ -11,7 +11,7 @@
     "semver": "^6.3.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.11.1",
+    "@babel/core": "^7.29.6",
     "@babel/plugin-proposal-class-properties": "^7.10.4",
     "@babel/plugin-transform-flow-strip-types": "^7.10.4",
     "@babel/plugin-transform-react-jsx-source": "^7.10.5",
