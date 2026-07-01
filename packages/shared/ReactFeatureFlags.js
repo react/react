@@ -80,6 +80,8 @@ export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
 
+export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
+
 export const enableViewTransitionForPersistenceMode: boolean = false;
 
 export const enableGestureTransition = __EXPERIMENTAL__;
