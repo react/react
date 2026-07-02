@@ -21,33 +21,7 @@ use crate::hir_builder::is_always_reserved_word;
 use crate::hir_builder::reserved_identifier_diagnostic;
 use crate::identifier_loc_index::IdentifierLocIndex;
 use crate::identifier_loc_index::build_identifier_loc_index;
-
-// =============================================================================
-// Source location conversion
-// =============================================================================
-
-/// Convert an AST SourceLocation to an HIR SourceLocation.
-fn convert_loc(loc: &react_compiler_ast::common::SourceLocation) -> SourceLocation {
-    SourceLocation {
-        start: Position {
-            line: loc.start.line,
-            column: loc.start.column,
-            index: loc.start.index,
-        },
-        end: Position {
-            line: loc.end.line,
-            column: loc.end.column,
-            index: loc.end.index,
-        },
-    }
-}
-
-/// Convert an optional AST SourceLocation to an optional HIR SourceLocation.
-fn convert_opt_loc(
-    loc: &Option<react_compiler_ast::common::SourceLocation>,
-) -> Option<SourceLocation> {
-    loc.as_ref().map(convert_loc)
-}
+use crate::source_location::convert_base_loc;
 
 /// Serialize an expression to a serde_json::Value for UnsupportedNode's original_node.
 /// Returns None if serialization fails (should not happen for valid AST nodes).
@@ -71,75 +45,72 @@ fn serialize_pattern(pat: &react_compiler_ast::patterns::PatternLike) -> Option<
     serde_json::to_value(pat).ok()
 }
 
-fn pattern_like_loc(
-    pattern: &react_compiler_ast::patterns::PatternLike,
-) -> Option<react_compiler_ast::common::SourceLocation> {
+fn pattern_like_loc(pattern: &react_compiler_ast::patterns::PatternLike) -> Option<SourceLocation> {
     use react_compiler_ast::patterns::PatternLike;
     match pattern {
-        PatternLike::Identifier(id) => id.base.loc.clone(),
-        PatternLike::ObjectPattern(p) => p.base.loc.clone(),
-        PatternLike::ArrayPattern(p) => p.base.loc.clone(),
-        PatternLike::AssignmentPattern(p) => p.base.loc.clone(),
-        PatternLike::RestElement(p) => p.base.loc.clone(),
-        PatternLike::MemberExpression(p) => p.base.loc.clone(),
-        PatternLike::TSAsExpression(p) => p.base.loc.clone(),
-        PatternLike::TSSatisfiesExpression(p) => p.base.loc.clone(),
-        PatternLike::TSNonNullExpression(p) => p.base.loc.clone(),
-        PatternLike::TSTypeAssertion(p) => p.base.loc.clone(),
-        PatternLike::TypeCastExpression(p) => p.base.loc.clone(),
+        PatternLike::Identifier(id) => convert_base_loc(&id.base),
+        PatternLike::ObjectPattern(p) => convert_base_loc(&p.base),
+        PatternLike::ArrayPattern(p) => convert_base_loc(&p.base),
+        PatternLike::AssignmentPattern(p) => convert_base_loc(&p.base),
+        PatternLike::RestElement(p) => convert_base_loc(&p.base),
+        PatternLike::MemberExpression(p) => convert_base_loc(&p.base),
+        PatternLike::TSAsExpression(p) => convert_base_loc(&p.base),
+        PatternLike::TSSatisfiesExpression(p) => convert_base_loc(&p.base),
+        PatternLike::TSNonNullExpression(p) => convert_base_loc(&p.base),
+        PatternLike::TSTypeAssertion(p) => convert_base_loc(&p.base),
+        PatternLike::TypeCastExpression(p) => convert_base_loc(&p.base),
     }
 }
 
 /// Extract the HIR SourceLocation from an Expression AST node.
 fn expression_loc(expr: &react_compiler_ast::expressions::Expression) -> Option<SourceLocation> {
     use react_compiler_ast::expressions::Expression;
-    let loc = match expr {
-        Expression::Identifier(e) => e.base.loc.clone(),
-        Expression::StringLiteral(e) => e.base.loc.clone(),
-        Expression::NumericLiteral(e) => e.base.loc.clone(),
-        Expression::BooleanLiteral(e) => e.base.loc.clone(),
-        Expression::NullLiteral(e) => e.base.loc.clone(),
-        Expression::BigIntLiteral(e) => e.base.loc.clone(),
-        Expression::RegExpLiteral(e) => e.base.loc.clone(),
-        Expression::CallExpression(e) => e.base.loc.clone(),
-        Expression::MemberExpression(e) => e.base.loc.clone(),
-        Expression::OptionalCallExpression(e) => e.base.loc.clone(),
-        Expression::OptionalMemberExpression(e) => e.base.loc.clone(),
-        Expression::BinaryExpression(e) => e.base.loc.clone(),
-        Expression::LogicalExpression(e) => e.base.loc.clone(),
-        Expression::UnaryExpression(e) => e.base.loc.clone(),
-        Expression::UpdateExpression(e) => e.base.loc.clone(),
-        Expression::ConditionalExpression(e) => e.base.loc.clone(),
-        Expression::AssignmentExpression(e) => e.base.loc.clone(),
-        Expression::SequenceExpression(e) => e.base.loc.clone(),
-        Expression::ArrowFunctionExpression(e) => e.base.loc.clone(),
-        Expression::FunctionExpression(e) => e.base.loc.clone(),
-        Expression::ObjectExpression(e) => e.base.loc.clone(),
-        Expression::ArrayExpression(e) => e.base.loc.clone(),
-        Expression::NewExpression(e) => e.base.loc.clone(),
-        Expression::TemplateLiteral(e) => e.base.loc.clone(),
-        Expression::TaggedTemplateExpression(e) => e.base.loc.clone(),
-        Expression::AwaitExpression(e) => e.base.loc.clone(),
-        Expression::YieldExpression(e) => e.base.loc.clone(),
-        Expression::SpreadElement(e) => e.base.loc.clone(),
-        Expression::MetaProperty(e) => e.base.loc.clone(),
-        Expression::ClassExpression(e) => e.base.loc.clone(),
-        Expression::PrivateName(e) => e.base.loc.clone(),
-        Expression::Super(e) => e.base.loc.clone(),
-        Expression::Import(e) => e.base.loc.clone(),
-        Expression::ThisExpression(e) => e.base.loc.clone(),
-        Expression::ParenthesizedExpression(e) => e.base.loc.clone(),
-        Expression::JSXElement(e) => e.base.loc.clone(),
-        Expression::JSXFragment(e) => e.base.loc.clone(),
-        Expression::AssignmentPattern(e) => e.base.loc.clone(),
-        Expression::TSAsExpression(e) => e.base.loc.clone(),
-        Expression::TSSatisfiesExpression(e) => e.base.loc.clone(),
-        Expression::TSNonNullExpression(e) => e.base.loc.clone(),
-        Expression::TSTypeAssertion(e) => e.base.loc.clone(),
-        Expression::TSInstantiationExpression(e) => e.base.loc.clone(),
-        Expression::TypeCastExpression(e) => e.base.loc.clone(),
-    };
-    convert_opt_loc(&loc)
+    match expr {
+        Expression::Identifier(e) => convert_base_loc(&e.base),
+        Expression::StringLiteral(e) => convert_base_loc(&e.base),
+        Expression::NumericLiteral(e) => convert_base_loc(&e.base),
+        Expression::BooleanLiteral(e) => convert_base_loc(&e.base),
+        Expression::NullLiteral(e) => convert_base_loc(&e.base),
+        Expression::BigIntLiteral(e) => convert_base_loc(&e.base),
+        Expression::RegExpLiteral(e) => convert_base_loc(&e.base),
+        Expression::CallExpression(e) => convert_base_loc(&e.base),
+        Expression::MemberExpression(e) => convert_base_loc(&e.base),
+        Expression::OptionalCallExpression(e) => convert_base_loc(&e.base),
+        Expression::OptionalMemberExpression(e) => convert_base_loc(&e.base),
+        Expression::BinaryExpression(e) => convert_base_loc(&e.base),
+        Expression::LogicalExpression(e) => convert_base_loc(&e.base),
+        Expression::UnaryExpression(e) => convert_base_loc(&e.base),
+        Expression::UpdateExpression(e) => convert_base_loc(&e.base),
+        Expression::ConditionalExpression(e) => convert_base_loc(&e.base),
+        Expression::AssignmentExpression(e) => convert_base_loc(&e.base),
+        Expression::SequenceExpression(e) => convert_base_loc(&e.base),
+        Expression::ArrowFunctionExpression(e) => convert_base_loc(&e.base),
+        Expression::FunctionExpression(e) => convert_base_loc(&e.base),
+        Expression::ObjectExpression(e) => convert_base_loc(&e.base),
+        Expression::ArrayExpression(e) => convert_base_loc(&e.base),
+        Expression::NewExpression(e) => convert_base_loc(&e.base),
+        Expression::TemplateLiteral(e) => convert_base_loc(&e.base),
+        Expression::TaggedTemplateExpression(e) => convert_base_loc(&e.base),
+        Expression::AwaitExpression(e) => convert_base_loc(&e.base),
+        Expression::YieldExpression(e) => convert_base_loc(&e.base),
+        Expression::SpreadElement(e) => convert_base_loc(&e.base),
+        Expression::MetaProperty(e) => convert_base_loc(&e.base),
+        Expression::ClassExpression(e) => convert_base_loc(&e.base),
+        Expression::PrivateName(e) => convert_base_loc(&e.base),
+        Expression::Super(e) => convert_base_loc(&e.base),
+        Expression::Import(e) => convert_base_loc(&e.base),
+        Expression::ThisExpression(e) => convert_base_loc(&e.base),
+        Expression::ParenthesizedExpression(e) => convert_base_loc(&e.base),
+        Expression::JSXElement(e) => convert_base_loc(&e.base),
+        Expression::JSXFragment(e) => convert_base_loc(&e.base),
+        Expression::AssignmentPattern(e) => convert_base_loc(&e.base),
+        Expression::TSAsExpression(e) => convert_base_loc(&e.base),
+        Expression::TSSatisfiesExpression(e) => convert_base_loc(&e.base),
+        Expression::TSNonNullExpression(e) => convert_base_loc(&e.base),
+        Expression::TSTypeAssertion(e) => convert_base_loc(&e.base),
+        Expression::TSInstantiationExpression(e) => convert_base_loc(&e.base),
+        Expression::TypeCastExpression(e) => convert_base_loc(&e.base),
+    }
 }
 
 fn validate_ts_this_parameter(
@@ -497,7 +468,7 @@ fn lower_member_expression_with_object(
 ) -> Result<LoweredMemberExpression, CompilerError> {
     // OptionalMemberExpression has the same shape as MemberExpression for property access
     use react_compiler_ast::expressions::Expression;
-    let loc = convert_opt_loc(&member.base.loc);
+    let loc = convert_base_loc(&member.base);
     let object = lowered_object;
 
     if !member.computed {
@@ -576,7 +547,7 @@ fn lower_member_expression_impl(
     lowered_object: Option<Place>,
 ) -> Result<LoweredMemberExpression, CompilerError> {
     use react_compiler_ast::expressions::Expression;
-    let loc = convert_opt_loc(&member.base.loc);
+    let loc = convert_base_loc(&member.base);
     let object = match lowered_object {
         Some(obj) => obj,
         None => lower_expression_to_temporary(builder, &member.object)?,
@@ -667,7 +638,7 @@ fn lower_expression(
 
     match expr {
         Expression::Identifier(ident) => {
-            let loc = convert_opt_loc(&ident.base.loc);
+            let loc = convert_base_loc(&ident.base);
             let start = ident.base.start.unwrap_or(0);
             let place =
                 lower_identifier(builder, &ident.name, start, loc.clone(), ident.base.node_id)?;
@@ -679,35 +650,35 @@ fn lower_expression(
             }
         }
         Expression::NullLiteral(lit) => {
-            let loc = convert_opt_loc(&lit.base.loc);
+            let loc = convert_base_loc(&lit.base);
             Ok(InstructionValue::Primitive {
                 value: PrimitiveValue::Null,
                 loc,
             })
         }
         Expression::BooleanLiteral(lit) => {
-            let loc = convert_opt_loc(&lit.base.loc);
+            let loc = convert_base_loc(&lit.base);
             Ok(InstructionValue::Primitive {
                 value: PrimitiveValue::Boolean(lit.value),
                 loc,
             })
         }
         Expression::NumericLiteral(lit) => {
-            let loc = convert_opt_loc(&lit.base.loc);
+            let loc = convert_base_loc(&lit.base);
             Ok(InstructionValue::Primitive {
                 value: PrimitiveValue::Number(FloatValue::new(lit.precise_value())),
                 loc,
             })
         }
         Expression::StringLiteral(lit) => {
-            let loc = convert_opt_loc(&lit.base.loc);
+            let loc = convert_base_loc(&lit.base);
             Ok(InstructionValue::Primitive {
                 value: PrimitiveValue::String(lit.value.clone()),
                 loc,
             })
         }
         Expression::BinaryExpression(bin) => {
-            let loc = convert_opt_loc(&bin.base.loc);
+            let loc = convert_base_loc(&bin.base);
             // Check for pipeline operator before lowering operands
             if matches!(
                 bin.operator,
@@ -737,11 +708,11 @@ fn lower_expression(
             })
         }
         Expression::UnaryExpression(unary) => {
-            let loc = convert_opt_loc(&unary.base.loc);
+            let loc = convert_base_loc(&unary.base);
             match &unary.operator {
                 react_compiler_ast::operators::UnaryOperator::Delete => {
                     // Delete can be on member expressions or identifiers
-                    let loc = convert_opt_loc(&unary.base.loc);
+                    let loc = convert_base_loc(&unary.base);
                     match &*unary.argument {
                         Expression::MemberExpression(member) => {
                             let object = lower_expression_to_temporary(builder, &member.object)?;
@@ -798,7 +769,7 @@ fn lower_expression(
                 }
                 react_compiler_ast::operators::UnaryOperator::Throw => {
                     // throw as unary operator (Babel-specific)
-                    let loc = convert_opt_loc(&unary.base.loc);
+                    let loc = convert_base_loc(&unary.base);
                     builder.record_error(CompilerErrorDetail {
                         reason: "throw expressions are not supported".to_string(),
                         category: ErrorCategory::Todo,
@@ -824,7 +795,7 @@ fn lower_expression(
             }
         }
         Expression::CallExpression(call) => {
-            let loc = convert_opt_loc(&call.base.loc);
+            let loc = convert_base_loc(&call.base);
             // Check if callee is a MemberExpression => MethodCall
             if let Expression::MemberExpression(member) = call.callee.as_ref() {
                 let lowered = lower_member_expression(builder, member)?;
@@ -853,7 +824,7 @@ fn lower_expression(
             Ok(lower_optional_member_expression(builder, opt_member)?)
         }
         Expression::LogicalExpression(expr) => {
-            let loc = convert_opt_loc(&expr.base.loc);
+            let loc = convert_base_loc(&expr.base);
             let continuation_block = builder.reserve(builder.current_block_kind());
             let continuation_id = continuation_block.id;
             let test_block = builder.reserve(BlockKind::Value);
@@ -958,7 +929,7 @@ fn lower_expression(
             })
         }
         Expression::UpdateExpression(update) => {
-            let loc = convert_opt_loc(&update.base.loc);
+            let loc = convert_base_loc(&update.base);
             match update.argument.as_ref() {
                 Expression::MemberExpression(member) => {
                     let binary_op = match &update.operator {
@@ -971,7 +942,7 @@ fn lower_expression(
                     };
                     // Use the member expression's loc (not the update expression's)
                     // to match TS behavior where the inner operations use leftExpr.node.loc
-                    let member_loc = convert_opt_loc(&member.base.loc);
+                    let member_loc = convert_base_loc(&member.base);
                     let lowered = lower_member_expression(builder, member)?;
                     let object = lowered.object;
                     let lowered_property = lowered.property;
@@ -1046,7 +1017,7 @@ fn lower_expression(
                         });
                     }
 
-                    let ident_loc = convert_opt_loc(&ident.base.loc);
+                    let ident_loc = convert_base_loc(&ident.base);
                     let binding = builder.resolve_identifier(
                         &ident.name,
                         start,
@@ -1138,7 +1109,7 @@ fn lower_expression(
             }
         }
         Expression::ConditionalExpression(expr) => {
-            let loc = convert_opt_loc(&expr.base.loc);
+            let loc = convert_base_loc(&expr.base);
             let continuation_block = builder.reserve(builder.current_block_kind());
             let continuation_id = continuation_block.id;
             let test_block = builder.reserve(BlockKind::Value);
@@ -1224,7 +1195,7 @@ fn lower_expression(
         }
         Expression::AssignmentExpression(expr) => {
             use react_compiler_ast::operators::AssignmentOperator;
-            let loc = convert_opt_loc(&expr.base.loc);
+            let loc = convert_base_loc(&expr.base);
 
             if matches!(expr.operator, AssignmentOperator::Assign) {
                 // Simple `=` assignment
@@ -1233,7 +1204,7 @@ fn lower_expression(
                         // Handle simple identifier assignment directly
                         let start = ident.base.start.unwrap_or(0);
                         let right = lower_expression_to_temporary(builder, &expr.right)?;
-                        let ident_loc = convert_opt_loc(&ident.base.loc);
+                        let ident_loc = convert_base_loc(&ident.base);
                         let binding = builder.resolve_identifier(
                             &ident.name,
                             start,
@@ -1331,7 +1302,7 @@ fn lower_expression(
                     react_compiler_ast::patterns::PatternLike::MemberExpression(member) => {
                         // Member expression assignment: a.b = value or a[b] = value
                         let right = lower_expression_to_temporary(builder, &expr.right)?;
-                        let left_loc = convert_opt_loc(&member.base.loc);
+                        let left_loc = convert_base_loc(&member.base);
                         let object = lower_expression_to_temporary(builder, &member.object)?;
                         let temp = if !member.computed
                             || matches!(
@@ -1483,7 +1454,7 @@ fn lower_expression(
                                 loc: loc.clone(),
                             },
                         )?;
-                        let ident_loc = convert_opt_loc(&ident.base.loc);
+                        let ident_loc = convert_base_loc(&ident.base);
                         let binding = builder.resolve_identifier(
                             &ident.name,
                             start,
@@ -1553,7 +1524,7 @@ fn lower_expression(
                         // a.b += right: read, compute, store
                         // Match TS behavior: return the PropertyStore/ComputedStore value
                         // directly (let the caller lower it to a temporary)
-                        let member_loc = convert_opt_loc(&member.base.loc);
+                        let member_loc = convert_base_loc(&member.base);
                         let lowered = lower_member_expression(builder, member)?;
                         let object = lowered.object;
                         let lowered_property = lowered.property;
@@ -1609,7 +1580,7 @@ fn lower_expression(
             }
         }
         Expression::SequenceExpression(seq) => {
-            let loc = convert_opt_loc(&seq.base.loc);
+            let loc = convert_base_loc(&seq.base);
 
             if seq.expressions.is_empty() {
                 builder.record_error(CompilerErrorDetail {
@@ -1680,7 +1651,7 @@ fn lower_expression(
             FunctionExpressionType::FunctionExpression,
         )?),
         Expression::ObjectExpression(obj) => {
-            let loc = convert_opt_loc(&obj.base.loc);
+            let loc = convert_base_loc(&obj.base);
             let mut properties: Vec<ObjectPropertyOrSpread> = Vec::new();
             for prop in &obj.properties {
                 match prop {
@@ -1717,7 +1688,7 @@ fn lower_expression(
             Ok(InstructionValue::ObjectExpression { properties, loc })
         }
         Expression::ArrayExpression(arr) => {
-            let loc = convert_opt_loc(&arr.base.loc);
+            let loc = convert_base_loc(&arr.base);
             let mut elements: Vec<ArrayElement> = Vec::new();
             for element in &arr.elements {
                 match element {
@@ -1737,13 +1708,13 @@ fn lower_expression(
             Ok(InstructionValue::ArrayExpression { elements, loc })
         }
         Expression::NewExpression(new_expr) => {
-            let loc = convert_opt_loc(&new_expr.base.loc);
+            let loc = convert_base_loc(&new_expr.base);
             let callee = lower_expression_to_temporary(builder, &new_expr.callee)?;
             let args = lower_arguments(builder, &new_expr.arguments)?;
             Ok(InstructionValue::NewExpression { callee, args, loc })
         }
         Expression::TemplateLiteral(tmpl) => {
-            let loc = convert_opt_loc(&tmpl.base.loc);
+            let loc = convert_base_loc(&tmpl.base);
             let subexprs: Vec<Place> = tmpl
                 .expressions
                 .iter()
@@ -1764,7 +1735,7 @@ fn lower_expression(
             })
         }
         Expression::TaggedTemplateExpression(tagged) => {
-            let loc = convert_opt_loc(&tagged.base.loc);
+            let loc = convert_base_loc(&tagged.base);
             if !tagged.quasi.expressions.is_empty() {
                 builder.record_error(CompilerErrorDetail {
                     category: ErrorCategory::Todo,
@@ -1809,12 +1780,12 @@ fn lower_expression(
             Ok(InstructionValue::TaggedTemplateExpression { tag, value, loc })
         }
         Expression::AwaitExpression(await_expr) => {
-            let loc = convert_opt_loc(&await_expr.base.loc);
+            let loc = convert_base_loc(&await_expr.base);
             let value = lower_expression_to_temporary(builder, &await_expr.argument)?;
             Ok(InstructionValue::Await { value, loc })
         }
         Expression::YieldExpression(yld) => {
-            let loc = convert_opt_loc(&yld.base.loc);
+            let loc = convert_base_loc(&yld.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle YieldExpression expressions"
@@ -1835,7 +1806,7 @@ fn lower_expression(
             Ok(lower_expression(builder, &spread.argument)?)
         }
         Expression::MetaProperty(meta) => {
-            let loc = convert_opt_loc(&meta.base.loc);
+            let loc = convert_base_loc(&meta.base);
             if meta.meta.name == "import" && meta.property.name == "meta" {
                 Ok(InstructionValue::MetaProperty {
                     meta: meta.meta.name.clone(),
@@ -1858,7 +1829,7 @@ fn lower_expression(
             }
         }
         Expression::ClassExpression(cls) => {
-            let loc = convert_opt_loc(&cls.base.loc);
+            let loc = convert_base_loc(&cls.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle ClassExpression expressions"
@@ -1874,7 +1845,7 @@ fn lower_expression(
             })
         }
         Expression::PrivateName(pn) => {
-            let loc = convert_opt_loc(&pn.base.loc);
+            let loc = convert_base_loc(&pn.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle PrivateName expressions".to_string(),
@@ -1889,7 +1860,7 @@ fn lower_expression(
             })
         }
         Expression::Super(sup) => {
-            let loc = convert_opt_loc(&sup.base.loc);
+            let loc = convert_base_loc(&sup.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle Super expressions".to_string(),
@@ -1904,7 +1875,7 @@ fn lower_expression(
             })
         }
         Expression::Import(imp) => {
-            let loc = convert_opt_loc(&imp.base.loc);
+            let loc = convert_base_loc(&imp.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle Import expressions".to_string(),
@@ -1919,7 +1890,7 @@ fn lower_expression(
             })
         }
         Expression::ThisExpression(this) => {
-            let loc = convert_opt_loc(&this.base.loc);
+            let loc = convert_base_loc(&this.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle ThisExpression expressions".to_string(),
@@ -1937,12 +1908,12 @@ fn lower_expression(
             Ok(lower_expression(builder, &paren.expression)?)
         }
         Expression::JSXElement(jsx_element) => {
-            let loc = convert_opt_loc(&jsx_element.base.loc);
-            let opening_loc = convert_opt_loc(&jsx_element.opening_element.base.loc);
+            let loc = convert_base_loc(&jsx_element.base);
+            let opening_loc = convert_base_loc(&jsx_element.opening_element.base);
             let closing_loc = jsx_element
                 .closing_element
                 .as_ref()
-                .and_then(|c| convert_opt_loc(&c.base.loc));
+                .and_then(|c| convert_base_loc(&c.base));
 
             // Lower the tag name
             let tag = lower_jsx_element_name(builder, &jsx_element.opening_element.name)?;
@@ -1971,7 +1942,7 @@ fn lower_expression(
                                             name
                                         ),
                                         description: None,
-                                        loc: convert_opt_loc(&id.base.loc),
+                                        loc: convert_base_loc(&id.base),
                                         suggestions: None,
                                     })?;
                                 }
@@ -1985,7 +1956,7 @@ fn lower_expression(
                         // Get the attribute value
                         let value = match &attr.value {
                             Some(JSXAttributeValue::StringLiteral(s)) => {
-                                let str_loc = convert_opt_loc(&s.base.loc);
+                                let str_loc = convert_base_loc(&s.base);
                                 lower_value_to_temporary(
                                     builder,
                                     InstructionValue::Primitive {
@@ -2026,7 +1997,7 @@ fn lower_expression(
                             }
                             None => {
                                 // No value means boolean true (e.g., <div disabled />)
-                                let attr_loc = convert_opt_loc(&attr.base.loc);
+                                let attr_loc = convert_base_loc(&attr.base);
                                 lower_value_to_temporary(
                                     builder,
                                     InstructionValue::Primitive {
@@ -2059,7 +2030,7 @@ fn lower_expression(
                 if let react_compiler_ast::jsx::JSXElementName::JSXIdentifier(jsx_id) =
                     &jsx_element.opening_element.name
                 {
-                    let id_loc = convert_opt_loc(&jsx_id.base.loc);
+                    let id_loc = convert_base_loc(&jsx_id.base);
                     // Check if fbt/fbs tag name resolves to a local binding.
                     // JSX identifiers may not be in our position-based reference map,
                     // so check if ANY binding with this name exists in the function scope.
@@ -2168,7 +2139,7 @@ fn lower_expression(
             })
         }
         Expression::JSXFragment(jsx_fragment) => {
-            let loc = convert_opt_loc(&jsx_fragment.base.loc);
+            let loc = convert_base_loc(&jsx_fragment.base);
 
             // Lower children
             let children: Vec<Place> = jsx_fragment
@@ -2183,10 +2154,7 @@ fn lower_expression(
             Ok(InstructionValue::JsxFragment { children, loc })
         }
         Expression::AssignmentPattern(_) => {
-            let loc = convert_opt_loc(&match expr {
-                Expression::AssignmentPattern(p) => p.base.loc.clone(),
-                _ => unreachable!(),
-            });
+            let loc = expression_loc(expr);
             builder.record_error(CompilerErrorDetail {
                 reason: "(BuildHIR::lowerExpression) Handle AssignmentPattern expressions"
                     .to_string(),
@@ -2202,7 +2170,7 @@ fn lower_expression(
             })
         }
         Expression::TSAsExpression(ts) => {
-            let loc = convert_opt_loc(&ts.base.loc);
+            let loc = convert_base_loc(&ts.base);
             let value = lower_expression_to_temporary(builder, &ts.expression)?;
             let type_annotation = ts.type_annotation.parse_value();
             let type_ = lower_type_annotation(&type_annotation, builder);
@@ -2217,7 +2185,7 @@ fn lower_expression(
             })
         }
         Expression::TSSatisfiesExpression(ts) => {
-            let loc = convert_opt_loc(&ts.base.loc);
+            let loc = convert_base_loc(&ts.base);
             let value = lower_expression_to_temporary(builder, &ts.expression)?;
             let type_annotation = ts.type_annotation.parse_value();
             let type_ = lower_type_annotation(&type_annotation, builder);
@@ -2233,7 +2201,7 @@ fn lower_expression(
         }
         Expression::TSNonNullExpression(ts) => Ok(lower_expression(builder, &ts.expression)?),
         Expression::TSTypeAssertion(ts) => {
-            let loc = convert_opt_loc(&ts.base.loc);
+            let loc = convert_base_loc(&ts.base);
             let value = lower_expression_to_temporary(builder, &ts.expression)?;
             let type_annotation = ts.type_annotation.parse_value();
             let type_ = lower_type_annotation(&type_annotation, builder);
@@ -2249,7 +2217,7 @@ fn lower_expression(
         }
         Expression::TSInstantiationExpression(ts) => Ok(lower_expression(builder, &ts.expression)?),
         Expression::TypeCastExpression(tc) => {
-            let loc = convert_opt_loc(&tc.base.loc);
+            let loc = convert_base_loc(&tc.base);
             let value = lower_expression_to_temporary(builder, &tc.expression)?;
             let annotation_value = tc.type_annotation.parse_value();
             // Flow TypeCastExpression: typeAnnotation is a TypeAnnotation node wrapping the actual type
@@ -2268,7 +2236,7 @@ fn lower_expression(
             })
         }
         Expression::BigIntLiteral(big) => {
-            let loc = convert_opt_loc(&big.base.loc);
+            let loc = convert_base_loc(&big.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::Todo,
                 reason: "(BuildHIR::lowerExpression) Handle BigIntLiteral expressions".to_string(),
@@ -2283,7 +2251,7 @@ fn lower_expression(
             })
         }
         Expression::RegExpLiteral(re) => {
-            let loc = convert_opt_loc(&re.base.loc);
+            let loc = convert_base_loc(&re.base);
             Ok(InstructionValue::RegExpLiteral {
                 pattern: re.pattern.clone(),
                 flags: re.flags.clone(),
@@ -2475,54 +2443,54 @@ fn statement_end(stmt: &react_compiler_ast::statements::Statement) -> Option<u32
 /// Extract the HIR SourceLocation from a Statement AST node.
 fn statement_loc(stmt: &react_compiler_ast::statements::Statement) -> Option<SourceLocation> {
     use react_compiler_ast::statements::Statement;
-    let loc = match stmt {
-        Statement::BlockStatement(s) => s.base.loc.clone(),
-        Statement::ReturnStatement(s) => s.base.loc.clone(),
-        Statement::IfStatement(s) => s.base.loc.clone(),
-        Statement::ForStatement(s) => s.base.loc.clone(),
-        Statement::WhileStatement(s) => s.base.loc.clone(),
-        Statement::DoWhileStatement(s) => s.base.loc.clone(),
-        Statement::ForInStatement(s) => s.base.loc.clone(),
-        Statement::ForOfStatement(s) => s.base.loc.clone(),
-        Statement::SwitchStatement(s) => s.base.loc.clone(),
-        Statement::ThrowStatement(s) => s.base.loc.clone(),
-        Statement::TryStatement(s) => s.base.loc.clone(),
-        Statement::BreakStatement(s) => s.base.loc.clone(),
-        Statement::ContinueStatement(s) => s.base.loc.clone(),
-        Statement::LabeledStatement(s) => s.base.loc.clone(),
-        Statement::ExpressionStatement(s) => s.base.loc.clone(),
-        Statement::EmptyStatement(s) => s.base.loc.clone(),
-        Statement::DebuggerStatement(s) => s.base.loc.clone(),
-        Statement::WithStatement(s) => s.base.loc.clone(),
-        Statement::VariableDeclaration(s) => s.base.loc.clone(),
-        Statement::FunctionDeclaration(s) => s.base.loc.clone(),
-        Statement::ClassDeclaration(s) => s.base.loc.clone(),
-        Statement::ImportDeclaration(s) => s.base.loc.clone(),
-        Statement::ExportNamedDeclaration(s) => s.base.loc.clone(),
-        Statement::ExportDefaultDeclaration(s) => s.base.loc.clone(),
-        Statement::ExportAllDeclaration(s) => s.base.loc.clone(),
-        Statement::TSTypeAliasDeclaration(s) => s.base.loc.clone(),
-        Statement::TSInterfaceDeclaration(s) => s.base.loc.clone(),
-        Statement::TSEnumDeclaration(s) => s.base.loc.clone(),
-        Statement::TSModuleDeclaration(s) => s.base.loc.clone(),
-        Statement::TSDeclareFunction(s) => s.base.loc.clone(),
-        Statement::TypeAlias(s) => s.base.loc.clone(),
-        Statement::OpaqueType(s) => s.base.loc.clone(),
-        Statement::InterfaceDeclaration(s) => s.base.loc.clone(),
-        Statement::DeclareVariable(s) => s.base.loc.clone(),
-        Statement::DeclareFunction(s) => s.base.loc.clone(),
-        Statement::DeclareClass(s) => s.base.loc.clone(),
-        Statement::DeclareModule(s) => s.base.loc.clone(),
-        Statement::DeclareModuleExports(s) => s.base.loc.clone(),
-        Statement::DeclareExportDeclaration(s) => s.base.loc.clone(),
-        Statement::DeclareExportAllDeclaration(s) => s.base.loc.clone(),
-        Statement::DeclareInterface(s) => s.base.loc.clone(),
-        Statement::DeclareTypeAlias(s) => s.base.loc.clone(),
-        Statement::DeclareOpaqueType(s) => s.base.loc.clone(),
-        Statement::EnumDeclaration(s) => s.base.loc.clone(),
-        Statement::Unknown(s) => s.base().loc.clone(),
+    let base = match stmt {
+        Statement::BlockStatement(s) => &s.base,
+        Statement::ReturnStatement(s) => &s.base,
+        Statement::IfStatement(s) => &s.base,
+        Statement::ForStatement(s) => &s.base,
+        Statement::WhileStatement(s) => &s.base,
+        Statement::DoWhileStatement(s) => &s.base,
+        Statement::ForInStatement(s) => &s.base,
+        Statement::ForOfStatement(s) => &s.base,
+        Statement::SwitchStatement(s) => &s.base,
+        Statement::ThrowStatement(s) => &s.base,
+        Statement::TryStatement(s) => &s.base,
+        Statement::BreakStatement(s) => &s.base,
+        Statement::ContinueStatement(s) => &s.base,
+        Statement::LabeledStatement(s) => &s.base,
+        Statement::ExpressionStatement(s) => &s.base,
+        Statement::EmptyStatement(s) => &s.base,
+        Statement::DebuggerStatement(s) => &s.base,
+        Statement::WithStatement(s) => &s.base,
+        Statement::VariableDeclaration(s) => &s.base,
+        Statement::FunctionDeclaration(s) => &s.base,
+        Statement::ClassDeclaration(s) => &s.base,
+        Statement::ImportDeclaration(s) => &s.base,
+        Statement::ExportNamedDeclaration(s) => &s.base,
+        Statement::ExportDefaultDeclaration(s) => &s.base,
+        Statement::ExportAllDeclaration(s) => &s.base,
+        Statement::TSTypeAliasDeclaration(s) => &s.base,
+        Statement::TSInterfaceDeclaration(s) => &s.base,
+        Statement::TSEnumDeclaration(s) => &s.base,
+        Statement::TSModuleDeclaration(s) => &s.base,
+        Statement::TSDeclareFunction(s) => &s.base,
+        Statement::TypeAlias(s) => &s.base,
+        Statement::OpaqueType(s) => &s.base,
+        Statement::InterfaceDeclaration(s) => &s.base,
+        Statement::DeclareVariable(s) => &s.base,
+        Statement::DeclareFunction(s) => &s.base,
+        Statement::DeclareClass(s) => &s.base,
+        Statement::DeclareModule(s) => &s.base,
+        Statement::DeclareModuleExports(s) => &s.base,
+        Statement::DeclareExportDeclaration(s) => &s.base,
+        Statement::DeclareExportAllDeclaration(s) => &s.base,
+        Statement::DeclareInterface(s) => &s.base,
+        Statement::DeclareTypeAlias(s) => &s.base,
+        Statement::DeclareOpaqueType(s) => &s.base,
+        Statement::EnumDeclaration(s) => &s.base,
+        Statement::Unknown(s) => s.base(),
     };
-    convert_opt_loc(&loc)
+    convert_base_loc(base)
 }
 
 /// Collect binding names from a pattern that are declared in the given scope.
@@ -2996,7 +2964,7 @@ fn lower_statement(
             // no-op
         }
         Statement::DebuggerStatement(dbg) => {
-            let loc = convert_opt_loc(&dbg.base.loc);
+            let loc = convert_base_loc(&dbg.base);
             let value = InstructionValue::Debugger { loc };
             lower_value_to_temporary(builder, value)?;
         }
@@ -3004,7 +2972,7 @@ fn lower_statement(
             lower_expression_to_temporary(builder, &expr_stmt.expression)?;
         }
         Statement::ReturnStatement(ret) => {
-            let loc = convert_opt_loc(&ret.base.loc);
+            let loc = convert_base_loc(&ret.base);
             let value = if let Some(arg) = &ret.argument {
                 lower_expression_to_temporary(builder, arg)?
             } else {
@@ -3027,7 +2995,7 @@ fn lower_statement(
             );
         }
         Statement::ThrowStatement(throw) => {
-            let loc = convert_opt_loc(&throw.base.loc);
+            let loc = convert_base_loc(&throw.base);
             let value = lower_expression_to_temporary(builder, &throw.argument)?;
 
             // Check for throw handler (try/catch)
@@ -3070,7 +3038,7 @@ fn lower_statement(
                         "(BuildHIR::lowerStatement) Handle {node_kind} kinds in VariableDeclaration"
                     ),
                     category: ErrorCategory::Todo,
-                    loc: convert_opt_loc(&var_decl.base.loc),
+                    loc: convert_base_loc(&var_decl.base),
                     description: None,
                     suggestions: None,
                 })?;
@@ -3084,7 +3052,7 @@ fn lower_statement(
                 | VariableDeclarationKind::AwaitUsing => InstructionKind::Const,
             };
             for declarator in &var_decl.declarations {
-                let stmt_loc = convert_opt_loc(&var_decl.base.loc);
+                let stmt_loc = convert_base_loc(&var_decl.base);
                 if let Some(init) = &declarator.init {
                     let value = lower_expression_to_temporary(builder, init)?;
                     let assign_style = match &declarator.id {
@@ -3096,7 +3064,7 @@ fn lower_statement(
                     lower_assignment(builder, stmt_loc, kind, &declarator.id, value, assign_style)?;
                 } else if let PatternLike::Identifier(id) = &declarator.id {
                     // No init: emit DeclareLocal or DeclareContext
-                    let id_loc = convert_opt_loc(&id.base.loc);
+                    let id_loc = convert_base_loc(&id.base);
                     let mut binding = builder.resolve_identifier(
                         &id.name,
                         id.base.start.unwrap_or(0),
@@ -3185,7 +3153,7 @@ fn lower_statement(
                     builder.record_error(CompilerErrorDetail {
                         reason: "Expected variable declaration to be an identifier if no initializer was provided".to_string(),
                         category: ErrorCategory::Syntax,
-                        loc: convert_opt_loc(&declarator.base.loc),
+                        loc: convert_base_loc(&declarator.base),
                         description: None,
                         suggestions: None,
                     })?;
@@ -3193,7 +3161,7 @@ fn lower_statement(
             }
         }
         Statement::BreakStatement(brk) => {
-            let loc = convert_opt_loc(&brk.base.loc);
+            let loc = convert_base_loc(&brk.base);
             let label_name = brk.label.as_ref().map(|l| l.name.as_str());
             let target = builder.lookup_break(label_name)?;
             let fallthrough = builder.reserve(BlockKind::Block);
@@ -3208,7 +3176,7 @@ fn lower_statement(
             );
         }
         Statement::ContinueStatement(cont) => {
-            let loc = convert_opt_loc(&cont.base.loc);
+            let loc = convert_base_loc(&cont.base);
             let label_name = cont.label.as_ref().map(|l| l.name.as_str());
             let target = builder.lookup_continue(label_name)?;
             let fallthrough = builder.reserve(BlockKind::Block);
@@ -3223,7 +3191,7 @@ fn lower_statement(
             );
         }
         Statement::IfStatement(if_stmt) => {
-            let loc = convert_opt_loc(&if_stmt.base.loc);
+            let loc = convert_base_loc(&if_stmt.base);
             // Block for code following the if
             let continuation_block = builder.reserve(BlockKind::Block);
             let continuation_id = continuation_block.id;
@@ -3271,7 +3239,7 @@ fn lower_statement(
             );
         }
         Statement::ForStatement(for_stmt) => {
-            let loc = convert_opt_loc(&for_stmt.base.loc);
+            let loc = convert_base_loc(&for_stmt.base);
 
             let test_block = builder.reserve(BlockKind::Loop);
             let test_block_id = test_block.id;
@@ -3294,7 +3262,7 @@ fn lower_statement(
                     Some(init) => {
                         match init.as_ref() {
                             react_compiler_ast::statements::ForInit::VariableDeclaration(var_decl) => {
-                                let init_loc = convert_opt_loc(&var_decl.base.loc);
+                                let init_loc = convert_base_loc(&var_decl.base);
                                 lower_statement(builder, &Statement::VariableDeclaration(var_decl.clone()), None, parent_scope)?;
                                 init_loc
                             }
@@ -3414,7 +3382,7 @@ fn lower_statement(
             }
         }
         Statement::WhileStatement(while_stmt) => {
-            let loc = convert_opt_loc(&while_stmt.base.loc);
+            let loc = convert_base_loc(&while_stmt.base);
             // Block used to evaluate whether to (re)enter or exit the loop
             let conditional_block = builder.reserve(BlockKind::Loop);
             let conditional_id = conditional_block.id;
@@ -3468,7 +3436,7 @@ fn lower_statement(
             );
         }
         Statement::DoWhileStatement(do_while_stmt) => {
-            let loc = convert_opt_loc(&do_while_stmt.base.loc);
+            let loc = convert_base_loc(&do_while_stmt.base);
             // Block used to evaluate whether to (re)enter or exit the loop
             let conditional_block = builder.reserve(BlockKind::Loop);
             let conditional_id = conditional_block.id;
@@ -3522,7 +3490,7 @@ fn lower_statement(
             );
         }
         Statement::ForInStatement(for_in) => {
-            let loc = convert_opt_loc(&for_in.base.loc);
+            let loc = convert_base_loc(&for_in.base);
             let continuation_block = builder.reserve(BlockKind::Block);
             let continuation_id = continuation_block.id;
             let init_block = builder.reserve(BlockKind::Loop);
@@ -3561,10 +3529,10 @@ fn lower_statement(
             // Lower the init: NextPropertyOf + assignment
             let left_loc = match for_in.left.as_ref() {
                 react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
-                    convert_opt_loc(&var_decl.base.loc).or(loc.clone())
+                    convert_base_loc(&var_decl.base).or(loc)
                 }
                 react_compiler_ast::statements::ForInOfLeft::Pattern(pat) => {
-                    pattern_like_hir_loc(pat).or(loc.clone())
+                    pattern_like_hir_loc(pat).or(loc)
                 }
             };
             let next_property = lower_value_to_temporary(
@@ -3633,7 +3601,7 @@ fn lower_statement(
             );
         }
         Statement::ForOfStatement(for_of) => {
-            let loc = convert_opt_loc(&for_of.base.loc);
+            let loc = convert_base_loc(&for_of.base);
             let continuation_block = builder.reserve(BlockKind::Block);
             let continuation_id = continuation_block.id;
             let init_block = builder.reserve(BlockKind::Loop);
@@ -3704,10 +3672,10 @@ fn lower_statement(
             // Test block: IteratorNext, assign, branch
             let left_loc = match for_of.left.as_ref() {
                 react_compiler_ast::statements::ForInOfLeft::VariableDeclaration(var_decl) => {
-                    convert_opt_loc(&var_decl.base.loc).or(loc.clone())
+                    convert_base_loc(&var_decl.base).or(loc)
                 }
                 react_compiler_ast::statements::ForInOfLeft::Pattern(pat) => {
-                    pattern_like_hir_loc(pat).or(loc.clone())
+                    pattern_like_hir_loc(pat).or(loc)
                 }
             };
             let advance_iterator = lower_value_to_temporary(
@@ -3777,7 +3745,7 @@ fn lower_statement(
             );
         }
         Statement::SwitchStatement(switch_stmt) => {
-            let loc = convert_opt_loc(&switch_stmt.base.loc);
+            let loc = convert_base_loc(&switch_stmt.base);
             let continuation_block = builder.reserve(BlockKind::Block);
             let continuation_id = continuation_block.id;
 
@@ -3789,7 +3757,7 @@ fn lower_statement(
 
             for ii in (0..switch_stmt.cases.len()).rev() {
                 let case = &switch_stmt.cases[ii];
-                let case_loc = convert_opt_loc(&case.base.loc);
+                let case_loc = convert_base_loc(&case.base);
 
                 if case.test.is_none() {
                     if has_default {
@@ -3855,7 +3823,7 @@ fn lower_statement(
             );
         }
         Statement::TryStatement(try_stmt) => {
-            let loc = convert_opt_loc(&try_stmt.base.loc);
+            let loc = convert_base_loc(&try_stmt.base);
             let continuation_block = builder.reserve(BlockKind::Block);
             let continuation_id = continuation_block.id;
 
@@ -3904,7 +3872,7 @@ fn lower_statement(
                         ) {
                             match pat {
                                 react_compiler_ast::patterns::PatternLike::Identifier(id) => {
-                                    locs.push(convert_opt_loc(&id.base.loc));
+                                    locs.push(convert_base_loc(&id.base));
                                 }
                                 react_compiler_ast::patterns::PatternLike::ObjectPattern(obj) => {
                                     for prop in &obj.properties {
@@ -3941,7 +3909,7 @@ fn lower_statement(
                         }
                         None
                     } else {
-                        let param_loc = convert_opt_loc(&pattern_like_loc(param));
+                        let param_loc = pattern_like_loc(param);
                         let id = builder.make_temporary(param_loc.clone());
                         promote_temporary(builder, id);
                         let place = Place {
@@ -3970,12 +3938,9 @@ fn lower_statement(
 
             // Create the handler (catch) block
             let handler_binding_for_block = handler_binding_info.clone();
-            let handler_loc = convert_opt_loc(&handler_clause.base.loc);
+            let handler_loc = convert_base_loc(&handler_clause.base);
             // Use the catch param's loc for the assignment, matching TS: handlerBinding.path.node.loc
-            let handler_param_loc = handler_clause
-                .param
-                .as_ref()
-                .and_then(|p| convert_opt_loc(&pattern_like_loc(p)));
+            let handler_param_loc = handler_clause.param.as_ref().and_then(pattern_like_loc);
             let handler_block = builder.try_enter(BlockKind::Catch, |builder, _block_id| {
                 if let Some((ref place, ref pattern)) = handler_binding_for_block {
                     lower_assignment(
@@ -4024,7 +3989,7 @@ fn lower_statement(
             // lower_block_statement_with_scope and ensures self-referencing function
             // declarations (e.g., `const loop = () => { loop(); }`) inside try blocks
             // are correctly promoted to context variables.
-            let try_body_loc = convert_opt_loc(&try_stmt.block.base.loc);
+            let try_body_loc = convert_base_loc(&try_stmt.block.base);
             let try_block = builder.try_enter(BlockKind::Block, |builder, _block_id| {
                 builder.try_enter_try_catch(handler_block, |builder| {
                     lower_block_statement(builder, &try_stmt.block, parent_scope)?;
@@ -4052,7 +4017,7 @@ fn lower_statement(
         }
         Statement::LabeledStatement(labeled_stmt) => {
             let label_name = &labeled_stmt.label.name;
-            let loc = convert_opt_loc(&labeled_stmt.base.loc);
+            let loc = convert_base_loc(&labeled_stmt.base);
 
             // Check if the body is a loop statement - if so, delegate with label
             match labeled_stmt.body.as_ref() {
@@ -4096,7 +4061,7 @@ fn lower_statement(
             }
         }
         Statement::WithStatement(with_stmt) => {
-            let loc = convert_opt_loc(&with_stmt.base.loc);
+            let loc = convert_base_loc(&with_stmt.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::UnsupportedSyntax,
                 reason: "JavaScript 'with' syntax is not supported".to_string(),
@@ -4117,7 +4082,7 @@ fn lower_statement(
             lower_function_declaration(builder, func_decl)?;
         }
         Statement::ClassDeclaration(cls) => {
-            let loc = convert_opt_loc(&cls.base.loc);
+            let loc = convert_base_loc(&cls.base);
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::UnsupportedSyntax,
                 reason: "Inline `class` declarations are not supported".to_string(),
@@ -4141,17 +4106,15 @@ fn lower_statement(
         | Statement::ExportDefaultDeclaration(_)
         | Statement::ExportAllDeclaration(_) => {
             let (loc, node_type_name) = match stmt {
-                Statement::ImportDeclaration(s) => {
-                    (convert_opt_loc(&s.base.loc), "ImportDeclaration")
-                }
+                Statement::ImportDeclaration(s) => (convert_base_loc(&s.base), "ImportDeclaration"),
                 Statement::ExportNamedDeclaration(s) => {
-                    (convert_opt_loc(&s.base.loc), "ExportNamedDeclaration")
+                    (convert_base_loc(&s.base), "ExportNamedDeclaration")
                 }
                 Statement::ExportDefaultDeclaration(s) => {
-                    (convert_opt_loc(&s.base.loc), "ExportDefaultDeclaration")
+                    (convert_base_loc(&s.base), "ExportDefaultDeclaration")
                 }
                 Statement::ExportAllDeclaration(s) => {
-                    (convert_opt_loc(&s.base.loc), "ExportAllDeclaration")
+                    (convert_base_loc(&s.base), "ExportAllDeclaration")
                 }
                 _ => unreachable!(),
             };
@@ -4173,7 +4136,7 @@ fn lower_statement(
         }
         // TypeScript/Flow declarations are type-only, skip them
         Statement::TSEnumDeclaration(e) => {
-            let loc = convert_opt_loc(&e.base.loc);
+            let loc = convert_base_loc(&e.base);
             let original_node = serde_json::to_value(
                 &react_compiler_ast::statements::Statement::TSEnumDeclaration(e.clone()),
             )
@@ -4188,7 +4151,7 @@ fn lower_statement(
             )?;
         }
         Statement::EnumDeclaration(e) => {
-            let loc = convert_opt_loc(&e.base.loc);
+            let loc = convert_base_loc(&e.base);
             let original_node = serde_json::to_value(
                 &react_compiler_ast::statements::Statement::EnumDeclaration(e.clone()),
             )
@@ -4225,7 +4188,7 @@ fn lower_statement(
         // here unmodeled syntax is reachable by construction and degrades
         // like the other unsupported-statement arms instead.
         Statement::Unknown(unknown) => {
-            let loc = convert_opt_loc(&unknown.base().loc);
+            let loc = convert_base_loc(unknown.base());
             let node_type = unknown.node_type().to_string();
             builder.record_error(CompilerErrorDetail {
                 category: ErrorCategory::UnsupportedSyntax,
@@ -4277,7 +4240,7 @@ pub fn lower(
             FunctionBody::Block(&decl.body),
             decl.generator,
             decl.is_async,
-            convert_opt_loc(&decl.base.loc),
+            convert_base_loc(&decl.base),
             decl.base.start.unwrap_or(0),
             decl.base.end.unwrap_or(0),
             decl.id.as_ref().map(|id| id.name.as_str()),
@@ -4287,7 +4250,7 @@ pub fn lower(
             FunctionBody::Block(&expr.body),
             expr.generator,
             expr.is_async,
-            convert_opt_loc(&expr.base.loc),
+            convert_base_loc(&expr.base),
             expr.base.start.unwrap_or(0),
             expr.base.end.unwrap_or(0),
             expr.id.as_ref().map(|id| id.name.as_str()),
@@ -4306,7 +4269,7 @@ pub fn lower(
                 body,
                 arrow.generator,
                 arrow.is_async,
-                convert_opt_loc(&arrow.base.loc),
+                convert_base_loc(&arrow.base),
                 arrow.base.start.unwrap_or(0),
                 arrow.base.end.unwrap_or(0),
                 None, // Arrow functions never have an AST id
@@ -4467,7 +4430,7 @@ fn lower_assignment(
 
     match target {
         PatternLike::Identifier(id) => {
-            let id_loc = convert_opt_loc(&id.base.loc);
+            let id_loc = convert_base_loc(&id.base);
             let result = lower_identifier_for_assignment(
                 builder,
                 loc.clone(),
@@ -4670,7 +4633,7 @@ fn lower_assignment(
                                 found = true;
                                 break;
                             }
-                            let ident_loc = convert_opt_loc(&id.base.loc);
+                            let ident_loc = convert_base_loc(&id.base);
                             match builder.resolve_identifier(
                                 &id.name,
                                 start,
@@ -4715,8 +4678,8 @@ fn lower_assignment(
                                 if can_use_direct {
                                     match lower_identifier_for_assignment(
                                         builder,
-                                        convert_opt_loc(&rest.base.loc),
-                                        convert_opt_loc(&id.base.loc),
+                                        convert_base_loc(&rest.base),
+                                        convert_base_loc(&id.base),
                                         kind,
                                         &id.name,
                                         start,
@@ -4730,7 +4693,7 @@ fn lower_assignment(
                                         Some(IdentifierForAssignment::Global { .. }) => {
                                             let temp = build_temporary_place(
                                                 builder,
-                                                convert_opt_loc(&rest.base.loc),
+                                                convert_base_loc(&rest.base),
                                             );
                                             promote_temporary(builder, temp.identifier);
                                             items.push(ArrayPatternElement::Spread(
@@ -4747,7 +4710,7 @@ fn lower_assignment(
                                 } else {
                                     let temp = build_temporary_place(
                                         builder,
-                                        convert_opt_loc(&rest.base.loc),
+                                        convert_base_loc(&rest.base),
                                     );
                                     promote_temporary(builder, temp.identifier);
                                     items.push(ArrayPatternElement::Spread(SpreadPattern {
@@ -4758,7 +4721,7 @@ fn lower_assignment(
                             }
                             _ => {
                                 let temp =
-                                    build_temporary_place(builder, convert_opt_loc(&rest.base.loc));
+                                    build_temporary_place(builder, convert_base_loc(&rest.base));
                                 promote_temporary(builder, temp.identifier);
                                 items.push(ArrayPatternElement::Spread(SpreadPattern {
                                     place: temp.clone(),
@@ -4777,8 +4740,8 @@ fn lower_assignment(
                         if can_use_direct {
                             match lower_identifier_for_assignment(
                                 builder,
-                                convert_opt_loc(&id.base.loc),
-                                convert_opt_loc(&id.base.loc),
+                                convert_base_loc(&id.base),
+                                convert_base_loc(&id.base),
                                 kind,
                                 &id.name,
                                 start,
@@ -4788,10 +4751,8 @@ fn lower_assignment(
                                     items.push(ArrayPatternElement::Place(place));
                                 }
                                 Some(IdentifierForAssignment::Global { .. }) => {
-                                    let temp = build_temporary_place(
-                                        builder,
-                                        convert_opt_loc(&id.base.loc),
-                                    );
+                                    let temp =
+                                        build_temporary_place(builder, convert_base_loc(&id.base));
                                     promote_temporary(builder, temp.identifier);
                                     items.push(ArrayPatternElement::Place(temp.clone()));
                                     followups.push((temp, element.as_ref().unwrap()));
@@ -4802,8 +4763,7 @@ fn lower_assignment(
                             }
                         } else {
                             // Context variable or force_temporaries: use promoted temporary
-                            let temp =
-                                build_temporary_place(builder, convert_opt_loc(&id.base.loc));
+                            let temp = build_temporary_place(builder, convert_base_loc(&id.base));
                             promote_temporary(builder, temp.identifier);
                             items.push(ArrayPatternElement::Place(temp.clone()));
                             followups.push((temp, element.as_ref().unwrap()));
@@ -4826,7 +4786,7 @@ fn lower_assignment(
                     lvalue: LValuePattern {
                         pattern: Pattern::Array(ArrayPattern {
                             items,
-                            loc: convert_opt_loc(&pattern.base.loc),
+                            loc: convert_base_loc(&pattern.base),
                         }),
                         kind,
                     },
@@ -4859,7 +4819,7 @@ fn lower_assignment(
                         ObjectPatternProperty::ObjectProperty(obj_prop) => match &*obj_prop.value {
                             PatternLike::Identifier(id) => {
                                 let start = id.base.start.unwrap_or(0);
-                                let ident_loc = convert_opt_loc(&id.base.loc);
+                                let ident_loc = convert_base_loc(&id.base);
                                 match builder.resolve_identifier(
                                     &id.name,
                                     start,
@@ -4899,8 +4859,8 @@ fn lower_assignment(
                                 if can_use_direct {
                                     match lower_identifier_for_assignment(
                                         builder,
-                                        convert_opt_loc(&rest.base.loc),
-                                        convert_opt_loc(&id.base.loc),
+                                        convert_base_loc(&rest.base),
+                                        convert_base_loc(&id.base),
                                         kind,
                                         &id.name,
                                         start,
@@ -4915,7 +4875,7 @@ fn lower_assignment(
                                             builder.record_error(CompilerErrorDetail {
                                                 reason: "Expected reassignment of globals to enable forceTemporaries".to_string(),
                                                 category: ErrorCategory::Todo,
-                                                loc: convert_opt_loc(&rest.base.loc),
+                                                loc: convert_base_loc(&rest.base),
                                                 description: None,
                                                 suggestions: None,
                                             })?;
@@ -4925,7 +4885,7 @@ fn lower_assignment(
                                 } else {
                                     let temp = build_temporary_place(
                                         builder,
-                                        convert_opt_loc(&rest.base.loc),
+                                        convert_base_loc(&rest.base),
                                     );
                                     promote_temporary(builder, temp.identifier);
                                     properties.push(ObjectPropertyOrSpread::Spread(
@@ -4947,7 +4907,7 @@ fn lower_assignment(
                                             _ => "unknown",
                                         }),
                                     category: ErrorCategory::Todo,
-                                    loc: convert_opt_loc(&rest.base.loc),
+                                    loc: convert_base_loc(&rest.base),
                                     description: None,
                                     suggestions: None,
                                 })?;
@@ -4961,7 +4921,7 @@ fn lower_assignment(
                             builder.record_error(CompilerErrorDetail {
                                 reason: "(BuildHIR::lowerAssignment) Handle computed properties in ObjectPattern".to_string(),
                                 category: ErrorCategory::Todo,
-                                loc: convert_opt_loc(&obj_prop.base.loc),
+                                loc: convert_base_loc(&obj_prop.base),
                                 description: None,
                                 suggestions: None,
                             })?;
@@ -4984,8 +4944,8 @@ fn lower_assignment(
                                 if can_use_direct {
                                     match lower_identifier_for_assignment(
                                         builder,
-                                        convert_opt_loc(&id.base.loc),
-                                        convert_opt_loc(&id.base.loc),
+                                        convert_base_loc(&id.base),
+                                        convert_base_loc(&id.base),
                                         kind,
                                         &id.name,
                                         start,
@@ -5004,7 +4964,7 @@ fn lower_assignment(
                                             builder.record_error(CompilerErrorDetail {
                                                 reason: "Expected reassignment of globals to enable forceTemporaries".to_string(),
                                                 category: ErrorCategory::Todo,
-                                                loc: convert_opt_loc(&id.base.loc),
+                                                loc: convert_base_loc(&id.base),
                                                 description: None,
                                                 suggestions: None,
                                             })?;
@@ -5015,10 +4975,8 @@ fn lower_assignment(
                                     }
                                 } else {
                                     // Context variable or force_temporaries: use promoted temporary
-                                    let temp = build_temporary_place(
-                                        builder,
-                                        convert_opt_loc(&id.base.loc),
-                                    );
+                                    let temp =
+                                        build_temporary_place(builder, convert_base_loc(&id.base));
                                     promote_temporary(builder, temp.identifier);
                                     properties.push(ObjectPropertyOrSpread::Property(
                                         ObjectProperty {
@@ -5053,7 +5011,7 @@ fn lower_assignment(
                     lvalue: LValuePattern {
                         pattern: Pattern::Object(ObjectPattern {
                             properties,
-                            loc: convert_opt_loc(&pattern.base.loc),
+                            loc: convert_base_loc(&pattern.base),
                         }),
                         kind,
                     },
@@ -5071,7 +5029,7 @@ fn lower_assignment(
 
         PatternLike::AssignmentPattern(pattern) => {
             // Default value: if value === undefined, use default, else use value
-            let pat_loc = convert_opt_loc(&pattern.base.loc);
+            let pat_loc = convert_base_loc(&pattern.base);
 
             let temp = build_temporary_place(builder, pat_loc.clone());
 
@@ -5202,7 +5160,7 @@ fn lower_assignment(
 
 /// Helper to extract HIR loc from a PatternLike (converts AST loc)
 fn pattern_like_hir_loc(pat: &react_compiler_ast::patterns::PatternLike) -> Option<SourceLocation> {
-    convert_opt_loc(&pattern_like_loc(pat))
+    pattern_like_loc(pat)
 }
 
 fn lower_optional_member_expression(
@@ -5226,7 +5184,7 @@ fn lower_optional_member_expression_impl(
 ) -> Result<(Place, Place), CompilerError> {
     use react_compiler_ast::expressions::Expression;
     let optional = expr.optional;
-    let loc = convert_opt_loc(&expr.base.loc);
+    let loc = convert_base_loc(&expr.base);
     let place = build_temporary_place(builder, loc.clone());
     let continuation_block = builder.reserve(builder.current_block_kind());
     let continuation_id = continuation_block.id;
@@ -5349,7 +5307,7 @@ fn lower_optional_call_expression_impl(
 ) -> Result<InstructionValue, CompilerError> {
     use react_compiler_ast::expressions::Expression;
     let optional = expr.optional;
-    let loc = convert_opt_loc(&expr.base.loc);
+    let loc = convert_base_loc(&expr.base);
     let place = build_temporary_place(builder, loc.clone());
     let continuation_block = builder.reserve(builder.current_block_kind());
     let continuation_id = continuation_block.id;
@@ -5524,8 +5482,8 @@ fn lower_function_to_value(
 ) -> Result<InstructionValue, CompilerDiagnostic> {
     use react_compiler_ast::expressions::Expression;
     let loc = match expr {
-        Expression::ArrowFunctionExpression(arrow) => convert_opt_loc(&arrow.base.loc),
-        Expression::FunctionExpression(func) => convert_opt_loc(&func.base.loc),
+        Expression::ArrowFunctionExpression(arrow) => convert_base_loc(&arrow.base),
+        Expression::FunctionExpression(func) => convert_base_loc(&func.base),
         _ => None,
     };
     let name = match expr {
@@ -5568,7 +5526,7 @@ fn lower_function(
                     arrow.is_async,
                     arrow.base.start.unwrap_or(0),
                     arrow.base.end.unwrap_or(0),
-                    convert_opt_loc(&arrow.base.loc),
+                    convert_base_loc(&arrow.base),
                     arrow.base.node_id,
                 )
             }
@@ -5580,7 +5538,7 @@ fn lower_function(
                 func.is_async,
                 func.base.start.unwrap_or(0),
                 func.base.end.unwrap_or(0),
-                convert_opt_loc(&func.base.loc),
+                convert_base_loc(&func.base),
                 func.base.node_id,
             ),
             _ => {
@@ -5727,7 +5685,7 @@ fn lower_function_declaration(
     builder: &mut HirBuilder,
     func_decl: &react_compiler_ast::statements::FunctionDeclaration,
 ) -> Result<(), CompilerError> {
-    let loc = convert_opt_loc(&func_decl.base.loc);
+    let loc = convert_base_loc(&func_decl.base);
     let func_start = func_decl.base.start.unwrap_or(0);
     let func_end = func_decl.base.end.unwrap_or(0);
 
@@ -5818,7 +5776,7 @@ fn lower_function_declaration(
     if let Some(ref name) = func_name {
         if let Some(id_node) = &func_decl.id {
             let start = id_node.base.start.unwrap_or(0);
-            let ident_loc = convert_opt_loc(&id_node.base.loc);
+            let ident_loc = convert_base_loc(&id_node.base);
             let scope_binding = builder.get_function_declaration_binding(function_scope, name);
             let mut is_context = false;
             let binding = match scope_binding {
@@ -5938,7 +5896,7 @@ fn lower_function_for_object_method(
 ) -> Result<LoweredFunction, CompilerError> {
     let func_start = method.base.start.unwrap_or(0);
     let func_end = method.base.end.unwrap_or(0);
-    let func_loc = convert_opt_loc(&method.base.loc);
+    let func_loc = convert_base_loc(&method.base);
 
     let function_scope = builder
         .scope_info()
@@ -6076,7 +6034,7 @@ fn lower_inner(
                     )));
                 }
                 let start = ident.base.start.unwrap_or(0);
-                let param_loc = convert_opt_loc(&ident.base.loc);
+                let param_loc = convert_base_loc(&ident.base);
                 let mut binding = builder.resolve_identifier(
                     &ident.name,
                     start,
@@ -6126,7 +6084,7 @@ fn lower_inner(
                             )
                             .with_detail(
                                 CompilerDiagnosticDetail::Error {
-                                    loc: convert_opt_loc(&ident.base.loc),
+                                    loc: convert_base_loc(&ident.base),
                                     message: Some("Could not find binding".to_string()),
                                     identifier_name: None,
                                 },
@@ -6136,7 +6094,7 @@ fn lower_inner(
                 }
             }
             react_compiler_ast::patterns::PatternLike::RestElement(rest) => {
-                let rest_loc = convert_opt_loc(&rest.base.loc);
+                let rest_loc = convert_base_loc(&rest.base);
                 // Create a temporary place for the spread param
                 let place = build_temporary_place(&mut builder, rest_loc.clone());
                 hir_params.push(ParamPattern::Spread(SpreadPattern {
@@ -6155,7 +6113,7 @@ fn lower_inner(
             react_compiler_ast::patterns::PatternLike::ObjectPattern(_)
             | react_compiler_ast::patterns::PatternLike::ArrayPattern(_)
             | react_compiler_ast::patterns::PatternLike::AssignmentPattern(_) => {
-                let param_loc = convert_opt_loc(&pattern_like_loc(param));
+                let param_loc = pattern_like_loc(param);
                 let place = build_temporary_place(&mut builder, param_loc.clone());
                 promote_temporary(&mut builder, place.identifier);
                 hir_params.push(ParamPattern::Place(place.clone()));
@@ -6176,7 +6134,7 @@ fn lower_inner(
                         Some("[BuildHIR] Add support for MemberExpression parameters".to_string()),
                     )
                     .with_detail(CompilerDiagnosticDetail::Error {
-                        loc: convert_opt_loc(&member.base.loc),
+                        loc: convert_base_loc(&member.base),
                         message: Some("Unsupported parameter type".to_string()),
                         identifier_name: None,
                     }),
@@ -6277,7 +6235,7 @@ fn lower_jsx_element_name(
     match name {
         JSXElementName::JSXIdentifier(id) => {
             let tag = &id.name;
-            let loc = convert_opt_loc(&id.base.loc);
+            let loc = convert_base_loc(&id.base);
             let start = id.base.start.unwrap_or(0);
             if !tag.starts_with(|c: char| c.is_ascii_lowercase()) {
                 // Component tag: resolve as identifier and load
@@ -6305,7 +6263,7 @@ fn lower_jsx_element_name(
             let namespace = &ns.namespace.name;
             let name = &ns.name.name;
             let tag = format!("{}:{}", namespace, name);
-            let loc = convert_opt_loc(&ns.base.loc);
+            let loc = convert_base_loc(&ns.base);
             if namespace.contains(':') || name.contains(':') {
                 builder.record_error(CompilerErrorDetail {
                     category: ErrorCategory::Syntax,
@@ -6334,10 +6292,10 @@ fn lower_jsx_member_expression(
 ) -> Result<Place, CompilerError> {
     use react_compiler_ast::jsx::JSXMemberExprObject;
     // Use the full member expression's loc for instruction locs (matching TS: exprPath.node.loc)
-    let expr_loc = convert_opt_loc(&expr.base.loc);
+    let expr_loc = convert_base_loc(&expr.base);
     let object = match &*expr.object {
         JSXMemberExprObject::JSXIdentifier(id) => {
-            let id_loc = convert_opt_loc(&id.base.loc);
+            let id_loc = convert_base_loc(&id.base);
             let start = id.base.start.unwrap_or(0);
             // Use identifier's own loc for the place, but member expression's loc for the instruction
             let place = lower_identifier(builder, &id.name, start, id_loc, id.base.node_id)?;
@@ -6386,7 +6344,7 @@ fn lower_jsx_element(
             match value {
                 None => Ok(None),
                 Some(value) => {
-                    let loc = convert_opt_loc(&text.base.loc);
+                    let loc = convert_base_loc(&text.base);
                     let place = lower_value_to_temporary(
                         builder,
                         InstructionValue::JSXText { value, loc },
@@ -6513,7 +6471,7 @@ fn lower_object_method(
                 kind_str
             ),
             category: ErrorCategory::Todo,
-            loc: convert_opt_loc(&method.base.loc),
+            loc: convert_base_loc(&method.base),
             description: None,
             suggestions: None,
         })?;
@@ -6527,7 +6485,7 @@ fn lower_object_method(
 
     let lowered_func = lower_function_for_object_method(builder, method)?;
 
-    let loc = convert_opt_loc(&method.base.loc);
+    let loc = convert_base_loc(&method.base);
     let method_value = InstructionValue::ObjectMethod {
         loc: loc.clone(),
         lowered_func,
@@ -6565,7 +6523,7 @@ fn lower_object_property_key(
         }
         _ => {
             let loc = match key {
-                Expression::Identifier(i) => convert_opt_loc(&i.base.loc),
+                Expression::Identifier(i) => convert_base_loc(&i.base),
                 _ => None,
             };
             builder.record_error(CompilerErrorDetail {
@@ -6988,7 +6946,7 @@ fn collect_fbt_sub_tags_from_element(
     use react_compiler_ast::jsx::JSXElementName;
     if let JSXElementName::JSXNamespacedName(ns) = &el.opening_element.name {
         if ns.namespace.name == tag_name {
-            let loc = convert_opt_loc(&ns.base.loc);
+            let loc = convert_base_loc(&ns.base);
             match ns.name.name.as_str() {
                 "enum" => enum_locs.push(loc),
                 "plural" => plural_locs.push(loc),
@@ -7386,5 +7344,44 @@ fn collect_identifier_node_ids_from_expr(
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use react_compiler_ast::common::BaseNode;
+    use react_compiler_ast::common::Position as AstPosition;
+    use react_compiler_ast::common::SourceLocation as AstSourceLocation;
+
+    #[test]
+    fn convert_base_loc_keeps_start_end_offsets_separate_from_loc_index() {
+        let base = BaseNode {
+            node_type: Some("Identifier".to_string()),
+            start: Some(7),
+            end: Some(13),
+            loc: Some(AstSourceLocation {
+                start: AstPosition {
+                    line: 1,
+                    column: 2,
+                    index: Some(70),
+                },
+                end: AstPosition {
+                    line: 1,
+                    column: 8,
+                    index: Some(130),
+                },
+                filename: None,
+                identifier_name: None,
+            }),
+            ..Default::default()
+        };
+
+        let loc = convert_base_loc(&base).unwrap();
+
+        assert_eq!(loc.start.index, Some(70));
+        assert_eq!(loc.end.index, Some(130));
+        assert_eq!(loc.start_offset, Some(7));
+        assert_eq!(loc.end_offset, Some(13));
     }
 }
