@@ -165,6 +165,14 @@ fn merge_location(l: Option<SourceLocation>, r: Option<SourceLocation>) -> Optio
                     (a, b) => a.or(b),
                 },
             },
+            start_offset: match (l.start_offset, r.start_offset) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
+            end_offset: match (l.end_offset, r.end_offset) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            },
         }),
     }
 }
