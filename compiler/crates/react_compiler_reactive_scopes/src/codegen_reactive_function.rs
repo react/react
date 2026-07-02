@@ -4267,6 +4267,7 @@ mod tests {
     use react_compiler_ast::expressions::TSSatisfiesExpression;
     use react_compiler_ast::expressions::TypeCastExpression;
     use react_compiler_ast::jsx::JSXText;
+    use react_compiler_ast::patterns::PatternLike;
     use react_compiler_ast::statements::Statement;
     use react_compiler_diagnostics::Position as DiagPosition;
     use react_compiler_diagnostics::SourceLocation as DiagSourceLocation;
@@ -4274,7 +4275,7 @@ mod tests {
 
     use super::{
         ExpressionOrJsxText, UnsupportedOriginalNode, apply_loc_to_value, base_node_with_loc,
-        codegen_unsupported_original_node,
+        codegen_unsupported_original_node, make_var_declarator,
     };
 
     #[test]
@@ -4442,6 +4443,66 @@ mod tests {
             assert_eq!(base.loc.as_ref().unwrap().start.index, Some(1700));
             assert_eq!(base.loc.as_ref().unwrap().end.index, Some(3400));
         }
+    }
+
+    #[test]
+    fn variable_declarator_uses_cast_init_offsets_for_end() {
+        let id_loc = DiagSourceLocation {
+            start: DiagPosition {
+                line: 1,
+                column: 6,
+                index: Some(6),
+            },
+            end: DiagPosition {
+                line: 1,
+                column: 7,
+                index: Some(7),
+            },
+            start_offset: Some(6),
+            end_offset: Some(7),
+        };
+        let init_loc = DiagSourceLocation {
+            start: DiagPosition {
+                line: 1,
+                column: 10,
+                index: Some(10),
+            },
+            end: DiagPosition {
+                line: 1,
+                column: 16,
+                index: Some(16),
+            },
+            start_offset: Some(10),
+            end_offset: Some(16),
+        };
+        let id = PatternLike::Identifier(Identifier {
+            base: base_node_with_loc("Identifier", Some(id_loc)),
+            name: "y".to_string(),
+            type_annotation: None,
+            optional: None,
+            decorators: None,
+        });
+        let init = Expression::TSAsExpression(TSAsExpression {
+            base: base_node_with_loc("TSAsExpression", Some(init_loc)),
+            expression: Box::new(Expression::Identifier(Identifier {
+                base: BaseNode::typed("Identifier"),
+                name: "x".to_string(),
+                type_annotation: None,
+                optional: None,
+                decorators: None,
+            })),
+            type_annotation: RawNode::null(),
+        });
+
+        let declarator = make_var_declarator(id, Some(init));
+
+        assert_eq!(declarator.base.start, Some(6));
+        assert_eq!(declarator.base.end, Some(16));
+        assert_eq!(
+            declarator.base.loc.as_ref().unwrap().start.index,
+            Some(6)
+        );
+        assert_eq!(declarator.base.loc.as_ref().unwrap().end.index, Some(16));
     }
 
     /// The Fast Refresh source hash must match Node's
