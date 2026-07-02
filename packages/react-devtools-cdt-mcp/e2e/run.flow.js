@@ -14,6 +14,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 
 // eslint-disable-next-line no-undef
@@ -109,8 +110,10 @@ type OwnersStackResult = {
   stack: string,
   ...
 };
-type Owner = {
+type ComponentBranchEntry = {
+  uid: string,
   name: string,
+  type: string,
   ...
 };
 type ErrorPayload = {
@@ -145,6 +148,7 @@ const TOOL_NAMES = [
   'react_find_components',
   'react_get_component_source',
   'react_get_owner_stack_trace',
+  'react_get_parent_stack',
   'react_get_owner_stack',
   'react_start_profiling',
   'react_stop_profiling',
@@ -220,9 +224,67 @@ function spawnLogged(
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   appendLog(options.logFile, formatCommand(command, args));
+  child.on('error', error => {
+    appendLog(
+      options.logFile,
+      `Failed to spawn ${command}: ${
+        error.stack || error.message || String(error)
+      }\n`
+    );
+  });
   child.stdout.on('data', chunk => appendLog(options.logFile, chunk));
   child.stderr.on('data', chunk => appendLog(options.logFile, chunk));
   return child;
+}
+
+function waitForExit(child: ChildProcess, timeout: number): Promise<void> {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      if (child.exitCode == null) {
+        child.kill('SIGKILL');
+      }
+      finish();
+    }, timeout);
+
+    if (child.exitCode != null) {
+      finish();
+      return;
+    }
+    child.once('exit', finish);
+    child.once('error', finish);
+  });
+}
+
+async function removePathWithRetries(
+  targetPath: string,
+  logFile: string
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.rmSync(targetPath, {force: true, recursive: true});
+      return;
+    } catch (error) {
+      if (attempt === 4) {
+        appendLog(
+          logFile,
+          `Failed to remove ${targetPath}: ${
+            error.stack || error.message || String(error)
+          }\n`
+        );
+        return;
+      }
+      await sleep(250);
+    }
+  }
 }
 
 function runCommand(
@@ -273,6 +335,40 @@ function runCommand(
       }
     });
   });
+}
+
+function startDebuggableChrome(
+  chromeExecutablePath: string,
+  remoteDebuggingPort: number,
+  logFile: string
+): {profileDir: string, process: ChildProcess} {
+  const profileDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'react-devtools-cdt-mcp-chrome-')
+  );
+  appendLog(logFile, `chromeUserDataDir=${profileDir}\n`);
+
+  const args = [
+    '--headless=new',
+    `--remote-debugging-port=${remoteDebuggingPort}`,
+    '--remote-debugging-address=127.0.0.1',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    'about:blank',
+  ];
+
+  if (process.platform === 'linux') {
+    args.splice(1, 0, '--no-sandbox', '--disable-setuid-sandbox');
+  }
+
+  return {
+    profileDir,
+    process: spawnLogged(chromeExecutablePath, args, {
+      cwd: PACKAGE_DIR,
+      env: process.env,
+      logFile,
+    }),
+  };
 }
 
 function getChromeDevToolsBin(): string {
@@ -572,10 +668,21 @@ function parseNamedObject(value: mixed, message: string): {name: string, ...} {
   };
 }
 
+function parseComponentBranchEntry(
+  value: mixed,
+  message: string
+): ComponentBranchEntry {
+  const object = expectObject(value, message);
+  return {
+    uid: expectString(object.uid, `${message} uid`),
+    name: expectString(object.name, `${message} name`),
+    type: expectString(object.type, `${message} type`),
+  };
+}
+
 function parseComponentDetails(value: mixed): ComponentDetails {
   const object = expectObject(value, 'Expected component details object');
-  return {
-    ...object,
+  const details: ComponentDetails = {
     name: expectString(object.name, 'Expected component details name'),
     type: expectString(object.type, 'Expected component details type'),
     hooks: expectArray(object.hooks, 'Expected component details hooks').map(
@@ -583,6 +690,7 @@ function parseComponentDetails(value: mixed): ComponentDetails {
         parseNamedObject(hook, `Expected component hook ${index}`)
     ),
   };
+  return details;
 }
 
 function parseComponentType(value: mixed): string {
@@ -682,9 +790,13 @@ function parseOwnersStack(value: mixed): OwnersStackResult {
   };
 }
 
-function parseOwnersBranch(value: mixed): Array<Owner> {
-  return expectArray(value, 'Expected owners branch array').map(
-    (owner, index) => parseNamedObject(owner, `Expected owner ${index}`)
+function parseComponentBranch(
+  value: mixed,
+  label: string
+): Array<ComponentBranchEntry> {
+  return expectArray(value, `Expected ${label} branch array`).map(
+    (entry, index) =>
+      parseComponentBranchEntry(entry, `Expected ${label} ${index}`)
   );
 }
 
@@ -896,6 +1008,31 @@ async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
     node => node.name === 'Todo' && node.type === 'function',
     'Expected function component Todo'
   );
+  const todoList = findNode(
+    tree,
+    node => node.name === 'TodoList' && node.type === 'function',
+    'Expected function component TodoList'
+  );
+  const todoListHost = findNode(
+    tree,
+    node => node.name === 'ul' && node.type === 'host',
+    'Expected host ul for TodoList'
+  );
+  const mainNode = findNode(
+    tree,
+    node => node.name === 'main' && node.type === 'host',
+    'Expected host main'
+  );
+  const app = findNode(
+    tree,
+    node => node.name === 'App' && node.type === 'function',
+    'Expected function component App'
+  );
+  const root = findNode(
+    tree,
+    node => node.type === 'root',
+    'Expected root node'
+  );
   const memoBox = findNode(
     tree,
     node => node.name.includes('MemoBox') && node.type === 'memo',
@@ -976,7 +1113,7 @@ async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
   assert.strictEqual(domLookup.type, 'host');
   assert.strictEqual(domLookup.name, 'button');
 
-  log('Checking source, owners, and error payloads...');
+  log('Checking source, parents, owners, and error payloads...');
   const source = parseSourceResult(
     await callTool('react_get_component_source', {
       uid: counter.uid,
@@ -995,10 +1132,45 @@ async function runE2E(chrome: Chrome, appUrl: string): Promise<void> {
     );
   }
 
-  const ownersBranch = parseOwnersBranch(
+  const parentsBranch = parseComponentBranch(
+    await callTool('react_get_parent_stack', {
+      uid: todo.uid,
+    }),
+    'parents'
+  );
+  assert.deepStrictEqual(parentsBranch, [
+    {
+      uid: todoListHost.uid,
+      name: todoListHost.name,
+      type: todoListHost.type,
+    },
+    {
+      uid: todoList.uid,
+      name: todoList.name,
+      type: todoList.type,
+    },
+    {
+      uid: mainNode.uid,
+      name: mainNode.name,
+      type: mainNode.type,
+    },
+    {
+      uid: app.uid,
+      name: app.name,
+      type: app.type,
+    },
+    {
+      uid: root.uid,
+      name: root.name,
+      type: root.type,
+    },
+  ]);
+
+  const ownersBranch = parseComponentBranch(
     await callTool('react_get_owner_stack', {
       uid: todo.uid,
-    })
+    }),
+    'owners'
   );
   assert(
     ownersBranch.some(owner => owner.name === 'TodoList'),
@@ -1078,6 +1250,8 @@ async function main(): Promise<void> {
   const appUrl = `http://127.0.0.1:${port}/`;
 
   let fixture: ?ChildProcess;
+  let debuggableChrome: ?ChildProcess;
+  let debuggableChromeProfile: ?string;
   const runChrome = (args: Array<string>): Promise<CommandResult> =>
     runCommand(
       process.execPath,
@@ -1117,14 +1291,25 @@ async function main(): Promise<void> {
     const startArgs = [
       'start',
       '--categoryExperimentalThirdParty=true',
-      '--headless=true',
-      '--isolated=true',
       '--usageStatistics=false',
       '--logFile',
       chromeLog,
     ];
-    if (process.env.CHROME_EXECUTABLE_PATH) {
-      startArgs.push('--executablePath', process.env.CHROME_EXECUTABLE_PATH);
+    const chromeExecutablePath = process.env.CHROME_EXECUTABLE_PATH;
+    if (chromeExecutablePath != null) {
+      const remoteDebuggingPort = await getFreePort();
+      const launchedChrome = startDebuggableChrome(
+        chromeExecutablePath,
+        remoteDebuggingPort,
+        chromeLog
+      );
+      debuggableChrome = launchedChrome.process;
+      debuggableChromeProfile = launchedChrome.profileDir;
+      const browserUrl = `http://127.0.0.1:${remoteDebuggingPort}`;
+      await waitForHttp(`${browserUrl}/json/version`, 30000);
+      startArgs.push('--browserUrl', browserUrl);
+    } else {
+      startArgs.push('--headless=true', '--isolated=true');
     }
     log('Starting chrome-devtools daemon...');
     await chrome.run(startArgs);
@@ -1136,6 +1321,17 @@ async function main(): Promise<void> {
       await chrome.run(['stop']);
     } catch (error) {
       appendLog(cliLog, `Failed to stop chrome-devtools: ${error.stack}\n`);
+    }
+    if (debuggableChrome) {
+      try {
+        debuggableChrome.kill('SIGTERM');
+        await waitForExit(debuggableChrome, 5000);
+      } catch (error) {
+        appendLog(chromeLog, `Failed to stop Chrome: ${error.stack}\n`);
+      }
+    }
+    if (debuggableChromeProfile) {
+      await removePathWithRetries(debuggableChromeProfile, chromeLog);
     }
     if (fixture && fixture.pid) {
       try {
