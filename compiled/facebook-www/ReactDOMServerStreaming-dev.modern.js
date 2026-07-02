@@ -4969,12 +4969,12 @@ __DEV__ &&
     }
     function fatalError(request, error, errorInfo, debugTask) {
       errorInfo = request.onShellError;
-      var onFatalError = request.onFatalError;
-      request.onAllReady = noop;
+      var onFatalError = request.onFatalError,
+        shellComplete = 0 === request.pendingRootTasks;
       debugTask
-        ? (debugTask.run(errorInfo.bind(null, error)),
+        ? (shellComplete || debugTask.run(errorInfo.bind(null, error)),
           debugTask.run(onFatalError.bind(null, error)))
-        : (errorInfo(error), onFatalError(error));
+        : (shellComplete || errorInfo(error), onFatalError(error));
       null !== request.destination
         ? ((request.status = CLOSED),
           (request = request.destination),
@@ -7535,7 +7535,6 @@ __DEV__ &&
     function completeShell(request) {
       null === request.trackedPostpones && safelyEmitEarlyPreloads(request, !0);
       null === request.trackedPostpones && preparePreamble(request);
-      request.onShellError = noop;
       request = request.onShellReady;
       request();
     }
@@ -10235,36 +10234,39 @@ __DEV__ &&
                         errorInfo$jscomp$0,
                         debugTask
                       );
-                    else if (
-                      (boundary$jscomp$0.pendingTasks--,
-                      boundary$jscomp$0.status !== CLIENT_RENDERED)
-                    ) {
-                      boundary$jscomp$0.status = CLIENT_RENDERED;
-                      encodeErrorForBoundary(
-                        boundary$jscomp$0,
-                        errorDigest$jscomp$0,
-                        x$jscomp$0,
-                        errorInfo$jscomp$0,
-                        !1
-                      );
-                      untrackBoundary(request$jscomp$0, boundary$jscomp$0);
-                      var boundaryRow = boundary$jscomp$0.row;
-                      null !== boundaryRow &&
-                        (request$jscomp$0.allPendingTasks++,
-                        0 === --boundaryRow.pendingTasks &&
-                          finishSuspenseListRow(request$jscomp$0, boundaryRow),
-                        request$jscomp$0.allPendingTasks--);
-                      boundary$jscomp$0.parentFlushed &&
-                        request$jscomp$0.clientRenderedBoundaries.push(
-                          boundary$jscomp$0
+                    else {
+                      boundary$jscomp$0.pendingTasks--;
+                      if (boundary$jscomp$0.status !== CLIENT_RENDERED) {
+                        boundary$jscomp$0.status = CLIENT_RENDERED;
+                        encodeErrorForBoundary(
+                          boundary$jscomp$0,
+                          errorDigest$jscomp$0,
+                          x$jscomp$0,
+                          errorInfo$jscomp$0,
+                          !1
                         );
-                      0 === request$jscomp$0.pendingRootTasks &&
-                        null === request$jscomp$0.trackedPostpones &&
-                        null !== boundary$jscomp$0.preamble &&
-                        preparePreamble(request$jscomp$0);
+                        untrackBoundary(request$jscomp$0, boundary$jscomp$0);
+                        var boundaryRow = boundary$jscomp$0.row;
+                        null !== boundaryRow &&
+                          (request$jscomp$0.allPendingTasks++,
+                          0 === --boundaryRow.pendingTasks &&
+                            finishSuspenseListRow(
+                              request$jscomp$0,
+                              boundaryRow
+                            ),
+                          request$jscomp$0.allPendingTasks--);
+                        boundary$jscomp$0.parentFlushed &&
+                          request$jscomp$0.clientRenderedBoundaries.push(
+                            boundary$jscomp$0
+                          );
+                        0 === request$jscomp$0.pendingRootTasks &&
+                          null === request$jscomp$0.trackedPostpones &&
+                          null !== boundary$jscomp$0.preamble &&
+                          preparePreamble(request$jscomp$0);
+                      }
+                      0 === request$jscomp$0.allPendingTasks &&
+                        completeAll(request$jscomp$0);
                     }
-                    0 === request$jscomp$0.allPendingTasks &&
-                      completeAll(request$jscomp$0);
                   }
                 } finally {
                   (request$jscomp$0.currentTask = prevTask$jscomp$0),

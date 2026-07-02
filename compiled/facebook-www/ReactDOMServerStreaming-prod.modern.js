@@ -4032,8 +4032,7 @@ function logRecoverableError(request, error, errorInfo) {
 function fatalError(request, error) {
   var onShellError = request.onShellError,
     onFatalError = request.onFatalError;
-  request.onAllReady = noop;
-  onShellError(error);
+  0 !== request.pendingRootTasks && onShellError(error);
   onFatalError(error);
   null !== request.destination
     ? ((request.status = 13),
@@ -5855,7 +5854,6 @@ function safelyEmitEarlyPreloads(request, shellComplete) {
 function completeShell(request) {
   null === request.trackedPostpones && safelyEmitEarlyPreloads(request, !0);
   null === request.trackedPostpones && preparePreamble(request);
-  request.onShellError = noop;
   request = request.onShellReady;
   request();
 }
@@ -6875,27 +6873,27 @@ exports.renderNextChunk = function (stream) {
                   errorInfo$jscomp$0
                 );
                 if (null === boundary$jscomp$0) fatalError(request, x$jscomp$0);
-                else if (
-                  (boundary$jscomp$0.pendingTasks--,
-                  4 !== boundary$jscomp$0.status)
-                ) {
-                  boundary$jscomp$0.status = 4;
-                  boundary$jscomp$0.errorDigest = errorDigest$jscomp$0;
-                  untrackBoundary(request, boundary$jscomp$0);
-                  var boundaryRow = boundary$jscomp$0.row;
-                  null !== boundaryRow &&
-                    (request.allPendingTasks++,
-                    0 === --boundaryRow.pendingTasks &&
-                      finishSuspenseListRow(request, boundaryRow),
-                    request.allPendingTasks--);
-                  boundary$jscomp$0.parentFlushed &&
-                    request.clientRenderedBoundaries.push(boundary$jscomp$0);
-                  0 === request.pendingRootTasks &&
-                    null === request.trackedPostpones &&
-                    null !== boundary$jscomp$0.preamble &&
-                    preparePreamble(request);
+                else {
+                  boundary$jscomp$0.pendingTasks--;
+                  if (4 !== boundary$jscomp$0.status) {
+                    boundary$jscomp$0.status = 4;
+                    boundary$jscomp$0.errorDigest = errorDigest$jscomp$0;
+                    untrackBoundary(request, boundary$jscomp$0);
+                    var boundaryRow = boundary$jscomp$0.row;
+                    null !== boundaryRow &&
+                      (request.allPendingTasks++,
+                      0 === --boundaryRow.pendingTasks &&
+                        finishSuspenseListRow(request, boundaryRow),
+                      request.allPendingTasks--);
+                    boundary$jscomp$0.parentFlushed &&
+                      request.clientRenderedBoundaries.push(boundary$jscomp$0);
+                    0 === request.pendingRootTasks &&
+                      null === request.trackedPostpones &&
+                      null !== boundary$jscomp$0.preamble &&
+                      preparePreamble(request);
+                  }
+                  0 === request.allPendingTasks && completeAll(request);
                 }
-                0 === request.allPendingTasks && completeAll(request);
               }
             } finally {
               request.currentTask = prevTask$jscomp$0;
