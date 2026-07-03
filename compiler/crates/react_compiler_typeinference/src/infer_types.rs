@@ -38,12 +38,15 @@ pub fn infer_types(
         env.config.enable_treat_ref_like_identifiers_as_refs;
     let enable_treat_set_identifiers_as_state_setters =
         env.config.enable_treat_set_identifiers_as_state_setters;
+    let enable_optimistic_builtin_method_shapes =
+        env.config.enable_optimistic_builtin_method_shapes;
     // Pre-compute custom hook type for property resolution fallback
     let custom_hook_type = env.get_custom_hook_type_opt();
     let mut unifier = Unifier::new(
         enable_treat_ref_like_identifiers_as_refs,
         custom_hook_type,
         enable_treat_set_identifiers_as_state_setters,
+        enable_optimistic_builtin_method_shapes,
     );
     generate(func, env, &mut unifier)?;
 
@@ -226,6 +229,42 @@ fn resolve_property_type(
         },
         PropertyNameKind::Computed { .. } => shape.properties.get("*").cloned(),
     }
+}
+
+/// Non-mutating builtin collection methods that are also defined on the
+/// MixedReadonly shape (see `BUILT_IN_MIXED_READONLY_ID` in object_shape.rs) and
+/// carry a non-mutating signature on the builtin Array shape. When
+/// `enable_optimistic_builtin_method_shapes` is set and one of these is called
+/// on a value with an unknown type, we resolve the method against the Array
+/// shape so its non-mutating signature applies instead of the conservative
+/// default. Matches TS `OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS` in
+/// InferTypes.ts.
+const OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS: &[&str] = &[
+    "at",
+    "concat",
+    "every",
+    "filter",
+    "find",
+    "findIndex",
+    "flatMap",
+    "includes",
+    "indexOf",
+    "join",
+    "map",
+    "slice",
+    "some",
+    "toString",
+];
+
+/// Matches TS `isOptimisticNonMutatingBuiltinMethod`: true when the property is
+/// a string literal in the non-mutating builtin method allowlist.
+fn is_optimistic_non_mutating_builtin_method(property_name: &PropertyNameKind) -> bool {
+    matches!(
+        property_name,
+        PropertyNameKind::Literal {
+            value: PropertyLiteral::String(s),
+        } if OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS.contains(&s.as_str())
+    )
 }
 
 /// Check if a property access looks like a ref pattern (e.g. `ref.current`, `fooRef.current`).
@@ -1307,6 +1346,7 @@ struct Unifier {
     substitutions: FxHashMap<TypeId, Type>,
     enable_treat_ref_like_identifiers_as_refs: bool,
     enable_treat_set_identifiers_as_state_setters: bool,
+    enable_optimistic_builtin_method_shapes: bool,
     custom_hook_type: Option<Type>,
 }
 
@@ -1315,11 +1355,13 @@ impl Unifier {
         enable_treat_ref_like_identifiers_as_refs: bool,
         custom_hook_type: Option<Type>,
         enable_treat_set_identifiers_as_state_setters: bool,
+        enable_optimistic_builtin_method_shapes: bool,
     ) -> Self {
         Unifier {
             substitutions: FxHashMap::default(),
             enable_treat_ref_like_identifiers_as_refs,
             enable_treat_set_identifiers_as_state_setters,
+            enable_optimistic_builtin_method_shapes,
             custom_hook_type,
         }
     }
@@ -1369,12 +1411,32 @@ impl Unifier {
 
             // Resolve property type via the shapes registry
             let resolved_object = self.get(object_type);
-            let property_type = resolve_property_type(
+            let mut property_type = resolve_property_type(
                 shapes,
                 &resolved_object,
                 property_name,
                 self.custom_hook_type.as_ref(),
             );
+            if property_type.is_none()
+                && self.enable_optimistic_builtin_method_shapes
+                && matches!(resolved_object, Type::TypeVar { .. })
+                && is_optimistic_non_mutating_builtin_method(property_name)
+            {
+                // The receiver has an unresolved/unknown type but a known
+                // non-mutating builtin collection method is being accessed on
+                // it. Optimistically resolve the method against the Array shape
+                // so its non-mutating signature (which does not mutate the
+                // receiver) is used. See
+                // `enable_optimistic_builtin_method_shapes`.
+                property_type = resolve_property_type(
+                    shapes,
+                    &Type::Object {
+                        shape_id: Some(BUILT_IN_ARRAY_ID.to_string()),
+                    },
+                    property_name,
+                    self.custom_hook_type.as_ref(),
+                );
+            }
             if let Some(property_type) = property_type {
                 self.unify_impl(t_a, property_type, shapes)?;
             }
@@ -1639,4 +1701,104 @@ fn try_union_types(ty1: &Type, ty2: &Type) -> Option<Type> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use react_compiler_hir::environment_config::EnvironmentConfig;
+
+    /// Build a `Type::Property` accessing `property` on `receiver`, mirroring the
+    /// shape produced by the HIR for `receiver.property`.
+    fn property_access(receiver: Type, property: &str) -> Type {
+        Type::Property {
+            object_type: Box::new(receiver),
+            object_name: String::new(),
+            property_name: PropertyNameKind::Literal {
+                value: PropertyLiteral::String(property.to_string()),
+            },
+        }
+    }
+
+    /// Create an Environment (with the base builtin shapes) plus a fresh result
+    /// variable `t_a` and an unbound receiver type variable, wired to a Unifier
+    /// whose optimistic flag matches `env`.
+    fn setup(enable_optimistic: bool) -> (Environment, Unifier, Type, Type) {
+        let config = EnvironmentConfig {
+            enable_optimistic_builtin_method_shapes: enable_optimistic,
+            ..Default::default()
+        };
+        let mut env = Environment::with_config(config);
+        let t_a = make_type(&mut env.types);
+        let receiver = make_type(&mut env.types);
+        let unifier = Unifier::new(false, None, false, enable_optimistic);
+        (env, unifier, t_a, receiver)
+    }
+
+    /// The Array shape's resolution for `property`, used as the expected type
+    /// when the optimistic fallback fires.
+    fn array_shape_property(env: &Environment, property: &str) -> Type {
+        resolve_property_type(
+            &env.shapes,
+            &Type::Object {
+                shape_id: Some(BUILT_IN_ARRAY_ID.to_string()),
+            },
+            &PropertyNameKind::Literal {
+                value: PropertyLiteral::String(property.to_string()),
+            },
+            None,
+        )
+        .expect("Array shape should define the queried method")
+    }
+
+    #[test]
+    fn optimistic_flag_on_resolves_allowlisted_method_to_array_shape() {
+        let (env, mut unifier, t_a, receiver) = setup(true);
+        unifier
+            .unify(t_a.clone(), property_access(receiver, "map"), &env.shapes)
+            .unwrap();
+
+        let resolved = unifier.get(&t_a);
+        // The unknown-receiver `.map` resolves against the builtin Array shape.
+        assert!(
+            matches!(resolved, Type::Function { .. }),
+            "expected `map` to resolve to a method, got {resolved:?}"
+        );
+        assert!(
+            type_equals(&resolved, &array_shape_property(&env, "map")),
+            "expected `map` to resolve to the Array shape's `map`, got {resolved:?}"
+        );
+    }
+
+    #[test]
+    fn optimistic_flag_off_leaves_allowlisted_method_unresolved() {
+        let (env, mut unifier, t_a, receiver) = setup(false);
+        unifier
+            .unify(t_a.clone(), property_access(receiver, "map"), &env.shapes)
+            .unwrap();
+
+        let resolved = unifier.get(&t_a);
+        // With the flag off, an unknown receiver's `.map` stays unresolved, so
+        // no unification occurs and the result is still a type variable.
+        assert!(
+            matches!(resolved, Type::TypeVar { .. }),
+            "expected `map` to stay unresolved with the flag off, got {resolved:?}"
+        );
+    }
+
+    #[test]
+    fn optimistic_flag_on_ignores_non_allowlisted_method() {
+        let (env, mut unifier, t_a, receiver) = setup(true);
+        // `push` mutates and is not in the non-mutating allowlist, so the
+        // optimistic fallback must not fire even with the flag on.
+        unifier
+            .unify(t_a.clone(), property_access(receiver, "push"), &env.shapes)
+            .unwrap();
+
+        let resolved = unifier.get(&t_a);
+        assert!(
+            matches!(resolved, Type::TypeVar { .. }),
+            "expected non-allowlisted `push` to stay unresolved, got {resolved:?}"
+        );
+    }
 }
