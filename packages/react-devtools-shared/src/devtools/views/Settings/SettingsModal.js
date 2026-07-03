@@ -19,6 +19,7 @@ import {
   useModalDismissSignal,
   useSubscription,
 } from '../hooks';
+import AISettings from './AISettings';
 import ComponentsSettings from './ComponentsSettings';
 import DebuggingSettings from './DebuggingSettings';
 import GeneralSettings from './GeneralSettings';
@@ -28,7 +29,7 @@ import styles from './SettingsModal.css';
 
 import type Store from 'react-devtools-shared/src/devtools/store';
 
-type TabID = 'general' | 'debugging' | 'components' | 'profiler';
+type TabID = 'general' | 'debugging' | 'components' | 'profiler' | 'ai';
 
 export default function SettingsModal(): React.Node {
   const {isModalShowing, setIsModalShowing} = useContext(SettingsModalContext);
@@ -85,6 +86,9 @@ function SettingsModalImpl({store}: ImplProps) {
 
   let view = null;
   switch (selectedTabID) {
+    case 'ai':
+      view = <AISettings />;
+      break;
     case 'components':
       view = <ComponentsSettings environmentNames={environmentNames} />;
       break;
@@ -143,5 +147,10 @@ const tabs = [
     id: 'profiler',
     icon: 'profiler',
     label: 'Profiler',
+  },
+  {
+    id: 'ai',
+    icon: 'ai-chat',
+    label: 'AI',
   },
 ];

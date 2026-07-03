@@ -11,6 +11,7 @@ import * as React from 'react';
 import styles from './Icon.css';
 
 export type IconType =
+  | 'ai-chat'
   | 'arrow'
   | 'bug'
   | 'code'
@@ -45,6 +46,9 @@ export default function Icon({
   let pathData = null;
   let viewBox = '0 0 24 24';
   switch (type) {
+    case 'ai-chat':
+      pathData = PATH_AI_CHAT;
+      break;
     case 'arrow':
       pathData = PATH_ARROW;
       break;
@@ -116,6 +120,11 @@ export default function Icon({
     </svg>
   );
 }
+
+const PATH_AI_CHAT = `
+  M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6
+  9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z
+`;
 
 const PATH_ARROW = 'M8 5v14l11-7z';
 

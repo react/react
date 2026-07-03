@@ -16,6 +16,7 @@ import InspectableElements from './InspectableElements';
 import ReactNativeWeb from './ReactNativeWeb';
 import ToDoList from './ToDoList';
 import Toggle from './Toggle';
+import UserList from './UserList';
 import ErrorBoundaries from './ErrorBoundaries';
 import PartiallyStrictApp from './PartiallyStrictApp';
 import Segments from './Segments';
@@ -105,6 +106,7 @@ const shouldRenderLegacy = semver.lte(
 );
 function mountTestApp() {
   mountStrictApp(ToDoList);
+  mountApp(UserList);
   mountApp(InspectableElements);
   mountApp(Hydration);
   mountApp(ElementTypes);
