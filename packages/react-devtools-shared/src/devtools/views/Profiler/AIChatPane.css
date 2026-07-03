@@ -50,6 +50,40 @@
   border: 1px solid var(--color-border);
 }
 
+.ToolCall {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-small);
+  color: var(--color-dim);
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.ToolMessage {
+  border: 1px dashed var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-dim);
+}
+
+.ToolMessageSummary {
+  cursor: pointer;
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-small);
+  user-select: none;
+}
+
+.ToolMessageContent {
+  margin: 0.25rem 0 0;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-small);
+  color: var(--color-text);
+}
+
 .Error {
   border: 1px solid var(--color-error-border);
   background-color: var(--color-error-background);

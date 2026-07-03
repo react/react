@@ -16,6 +16,49 @@ import {SettingsModalContext} from 'react-devtools-shared/src/devtools/views/Set
 
 import styles from './AIChatPane.css';
 
+import type {ChatMessage} from 'react-devtools-shared/src/devtools/aiChat/types';
+
+function formatArguments(argumentsJSON: string): string {
+  try {
+    return JSON.stringify(JSON.parse(argumentsJSON));
+  } catch (_) {
+    return argumentsJSON;
+  }
+}
+
+function TranscriptEntry({message}: {message: ChatMessage}) {
+  if (message.role === 'tool') {
+    return (
+      <details className={styles.ToolMessage}>
+        <summary className={styles.ToolMessageSummary}>
+          Result: {message.name != null ? message.name : 'tool'} (
+          {message.content.length} chars)
+        </summary>
+        <pre className={styles.ToolMessageContent}>{message.content}</pre>
+      </details>
+    );
+  }
+
+  const toolCalls = message.toolCalls;
+  if (message.content === '' && toolCalls == null) {
+    return null;
+  }
+  return (
+    <div
+      className={
+        message.role === 'user' ? styles.UserMessage : styles.AIMessage
+      }>
+      {message.content !== '' ? message.content : null}
+      {toolCalls != null &&
+        toolCalls.map(toolCall => (
+          <div key={toolCall.id} className={styles.ToolCall}>
+            → {toolCall.name}({formatArguments(toolCall.argumentsJSON)})
+          </div>
+        ))}
+    </div>
+  );
+}
+
 export default function AIChatPane(_: {}): React.Node {
   const {
     messages,
@@ -85,18 +128,13 @@ export default function AIChatPane(_: {}): React.Node {
           </div>
         )}
         {messages.map((message, index) => (
-          <div
-            key={index}
-            className={
-              message.role === 'user' ? styles.UserMessage : styles.AIMessage
-            }>
-            {message.content === '' &&
-            isStreaming &&
-            index === messages.length - 1
-              ? '…'
-              : message.content}
-          </div>
+          <TranscriptEntry key={index} message={message} />
         ))}
+        {isStreaming &&
+          (messages.length === 0 ||
+            messages[messages.length - 1].streaming !== true) && (
+            <div className={styles.AIMessage}>…</div>
+          )}
         {error !== null && <div className={styles.Error}>{error}</div>}
       </div>
       <div className={styles.InputRow}>

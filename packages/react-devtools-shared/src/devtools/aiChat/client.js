@@ -7,15 +7,39 @@
  * @flow
  */
 
-import type {StreamChatOptions} from './types';
+import type {ChatMessage, StreamChatOptions, CompletionResult} from './types';
+
+function toWireMessage(message: ChatMessage): Object {
+  switch (message.role) {
+    case 'assistant': {
+      const wire: Object = {role: 'assistant', content: message.content};
+      if (message.toolCalls != null && message.toolCalls.length > 0) {
+        wire.tool_calls = message.toolCalls.map(toolCall => ({
+          id: toolCall.id,
+          type: 'function',
+          function: {name: toolCall.name, arguments: toolCall.argumentsJSON},
+        }));
+      }
+      return wire;
+    }
+    case 'tool':
+      return {
+        role: 'tool',
+        content: message.content,
+        tool_call_id: message.toolCallId,
+      };
+    default:
+      return {role: message.role, content: message.content};
+  }
+}
 
 // Streams a chat completion from any OpenAI-compatible endpoint
 // (Ollama Cloud, local Ollama, OpenRouter, etc.).
-// Resolves with the full assistant message text once the stream ends.
+// Resolves with the full assistant text and any tool calls the model made.
 export async function streamChatCompletion(
   options: StreamChatOptions,
-): Promise<string> {
-  const {config, messages, signal, onTextDelta} = options;
+): Promise<CompletionResult> {
+  const {config, messages, tools, signal, onTextDelta} = options;
 
   if (config.baseUrl === '') {
     throw new Error(
@@ -37,17 +61,22 @@ export async function streamChatCompletion(
 
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
+  const body: Object = {
+    model: config.model,
+    messages: messages.map(toWireMessage),
+    stream: true,
+  };
+  if (tools != null && tools.length > 0) {
+    body.tools = tools;
+  }
+
   let response;
   try {
     response = await fetch(url, {
       method: 'POST',
       headers,
       signal,
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        stream: true,
-      }),
+      body: JSON.stringify(body),
     });
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -77,19 +106,85 @@ export async function streamChatCompletion(
     );
   }
 
-  const body = response.body;
-  if (body == null) {
+  const responseBody = response.body;
+  if (responseBody == null) {
     throw new Error('Response has no body; streaming is not supported.');
   }
 
   // $FlowFixMe[incompatible-use]: ReadableStream.getReader is not in Flow's dom lib.
-  const reader = body.getReader();
+  const reader = responseBody.getReader();
   const decoder = new TextDecoder();
 
   let fullText = '';
   let buffered = '';
+  // Accumulates streamed tool_calls deltas by index; the id/name arrive on
+  // the first delta and the arguments string builds up across deltas.
+  const toolCallsByIndex: Map<
+    number,
+    {id: string, name: string, argumentsJSON: string},
+  > = new Map();
 
-  while (true) {
+  const processLine = (line: string): boolean => {
+    const trimmed = line.trim();
+    if (trimmed === '' || !trimmed.startsWith('data:')) {
+      return false;
+    }
+    const data = trimmed.slice(5).trim();
+    if (data === '[DONE]') {
+      return true;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(data);
+    } catch (_) {
+      return false;
+    }
+
+    const choice =
+      parsed.choices != null && parsed.choices.length > 0
+        ? parsed.choices[0]
+        : null;
+    if (choice == null || choice.delta == null) {
+      return false;
+    }
+
+    const textDelta = choice.delta.content;
+    if (typeof textDelta === 'string' && textDelta !== '') {
+      fullText += textDelta;
+      onTextDelta(textDelta);
+    }
+
+    const toolCallDeltas = choice.delta.tool_calls;
+    if (Array.isArray(toolCallDeltas)) {
+      for (let i = 0; i < toolCallDeltas.length; i++) {
+        const delta = toolCallDeltas[i];
+        const index = typeof delta.index === 'number' ? delta.index : 0;
+        let accumulated = toolCallsByIndex.get(index);
+        if (accumulated == null) {
+          accumulated = {id: '', name: '', argumentsJSON: ''};
+          toolCallsByIndex.set(index, accumulated);
+        }
+        if (typeof delta.id === 'string' && delta.id !== '') {
+          accumulated.id = delta.id;
+        }
+        if (delta.function != null) {
+          if (
+            typeof delta.function.name === 'string' &&
+            delta.function.name !== ''
+          ) {
+            accumulated.name += delta.function.name;
+          }
+          if (typeof delta.function.arguments === 'string') {
+            accumulated.argumentsJSON += delta.function.arguments;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  outer: while (true) {
     const {done, value} = await reader.read();
     if (done) {
       break;
@@ -103,34 +198,20 @@ export async function streamChatCompletion(
     buffered = lines.pop() || '';
 
     for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (trimmed === '' || !trimmed.startsWith('data:')) {
-        continue;
-      }
-      const data = trimmed.slice(5).trim();
-      if (data === '[DONE]') {
-        return fullText;
-      }
-
-      let parsed;
-      try {
-        parsed = JSON.parse(data);
-      } catch (_) {
-        continue;
-      }
-
-      const choice =
-        parsed.choices != null && parsed.choices.length > 0
-          ? parsed.choices[0]
-          : null;
-      const delta =
-        choice != null && choice.delta != null ? choice.delta.content : null;
-      if (typeof delta === 'string' && delta !== '') {
-        fullText += delta;
-        onTextDelta(delta);
+      if (processLine(lines[i])) {
+        break outer;
       }
     }
   }
 
-  return fullText;
+  const toolCalls = Array.from(toolCallsByIndex.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([index, accumulated]) => ({
+      id: accumulated.id !== '' ? accumulated.id : `call_${index}`,
+      name: accumulated.name,
+      argumentsJSON: accumulated.argumentsJSON,
+    }))
+    .filter(toolCall => toolCall.name !== '');
+
+  return {content: fullText, toolCalls};
 }

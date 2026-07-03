@@ -1001,13 +1001,22 @@ export default class Agent extends EventEmitter<{
   startProfiling: ({
     recordChangeDescriptions: boolean,
     recordTimeline: boolean,
-  }) => void = ({recordChangeDescriptions, recordTimeline}) => {
+    recordUserInputEvents?: boolean,
+  }) => void = ({
+    recordChangeDescriptions,
+    recordTimeline,
+    recordUserInputEvents,
+  }) => {
     this._isProfiling = true;
     for (const rendererID in this._rendererInterfaces) {
       const renderer = this._rendererInterfaces[
         rendererID as any
       ] as any as RendererInterface;
-      renderer.startProfiling(recordChangeDescriptions, recordTimeline);
+      renderer.startProfiling(
+        recordChangeDescriptions,
+        recordTimeline,
+        recordUserInputEvents !== false,
+      );
     }
     this._bridge.send('profilingStatus', this._isProfiling);
   };

@@ -228,10 +228,19 @@ export type ProfilingDataForRootBackend = {
 
 // Profiling data collected by the renderer interface.
 // This information will be passed to the frontend and combined with info it collects.
+// A user interaction observed while profiling. Types and timings only —
+// never key values, input text, or target content. Timestamps are ms
+// offsets from profiling start (the same clock as commit timestamps).
+export type UserInputEventBackend = {
+  type: string,
+  timestamp: number,
+};
+
 export type ProfilingDataBackend = {
   dataForRoots: Array<ProfilingDataForRootBackend>,
   rendererID: number,
   timelineData: TimelineDataExport | null,
+  userInputEvents?: Array<UserInputEventBackend>,
 };
 
 export type PathFrame = {
@@ -477,6 +486,7 @@ export type RendererInterface = {
   startProfiling: (
     recordChangeDescriptions: boolean,
     recordTimeline: boolean,
+    recordUserInputEvents: boolean,
   ) => void,
   stopProfiling: () => void,
   storeAsGlobal: (
@@ -547,6 +557,10 @@ export type DevToolsBackend = {
 export type ProfilingSettings = {
   recordChangeDescriptions: boolean,
   recordTimeline: boolean,
+  // Record user interaction events (types and timings only) into timeline
+  // data while profiling. Optional for compatibility; treated as true when
+  // omitted.
+  recordUserInputEvents?: boolean,
 };
 
 export type DevToolsHook = {

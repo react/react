@@ -46,8 +46,12 @@ export function prepareProfilingDataFrontendFromBackendAndStore(
   const dataForRoots: Map<number, ProfilingDataForRootFrontend> = new Map();
 
   const timelineDataArray = [];
+  const userInputEvents = [];
 
   dataBackends.forEach(dataBackend => {
+    if (dataBackend.userInputEvents != null) {
+      userInputEvents.push(...dataBackend.userInputEvents);
+    }
     const {timelineData} = dataBackend;
     if (timelineData != null) {
       const {
@@ -125,7 +129,14 @@ export function prepareProfilingDataFrontendFromBackendAndStore(
     );
   });
 
-  return {dataForRoots, imported: false, timelineData: timelineDataArray};
+  userInputEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+  return {
+    dataForRoots,
+    imported: false,
+    timelineData: timelineDataArray,
+    userInputEvents,
+  };
 }
 
 // Converts a Profiling data export into the format required by the Store.
@@ -232,6 +243,7 @@ export function prepareProfilingDataFrontendFromExport(
     dataForRoots,
     imported: true,
     timelineData,
+    userInputEvents: profilingDataExport.userInputEvents || [],
   };
 }
 
@@ -340,6 +352,7 @@ export function prepareProfilingDataExport(
     version: PROFILER_EXPORT_VERSION,
     dataForRoots,
     timelineData,
+    userInputEvents: profilingDataFrontend.userInputEvents,
   };
 }
 

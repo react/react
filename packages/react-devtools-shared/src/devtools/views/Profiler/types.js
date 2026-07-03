@@ -113,6 +113,13 @@ export type ProfilingDataForRootFrontend = {
   snapshots: Map<number, SnapshotNode>,
 };
 
+// A user interaction observed while profiling (event type + ms offset from
+// profiling start; never key values, input text, or target content).
+export type UserInputEventFrontend = {
+  type: string,
+  timestamp: number,
+};
+
 // Combination of profiling data collected by the renderer interface (backend) and Store (frontend).
 export type ProfilingDataFrontend = {
   // Legacy profiling data is per renderer + root.
@@ -120,6 +127,9 @@ export type ProfilingDataFrontend = {
 
   // Timeline data is per rederer.
   timelineData: Array<TimelineData>,
+
+  // User interactions recorded during the session (all renderers combined).
+  userInputEvents: Array<UserInputEventFrontend>,
 
   // Some functionality should be disabled for imported data.
   // e.g. DevTools should not try to sync selection between Components and Profiler tabs,
@@ -161,4 +171,8 @@ export type ProfilingDataExport = {
   // Timeline data is per rederer.
   // Note that old exported profiles won't contain this key.
   timelineData?: Array<TimelineDataExport>,
+
+  // User interactions recorded during the session.
+  // Note that old exported profiles won't contain this key.
+  userInputEvents?: Array<UserInputEventFrontend>,
 };

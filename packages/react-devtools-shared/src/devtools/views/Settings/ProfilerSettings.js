@@ -45,6 +45,27 @@ export default function ProfilerSettings(_: {}): React.Node {
     },
     [store],
   );
+
+  const recordUserInputEventsSubscription = useMemo(
+    () => ({
+      getCurrentValue: () => store.recordUserInputEvents,
+      subscribe: (callback: Function) => {
+        store.addListener('recordUserInputEvents', callback);
+        return () => store.removeListener('recordUserInputEvents', callback);
+      },
+    }),
+    [store],
+  );
+  const recordUserInputEvents = useSubscription<boolean>(
+    recordUserInputEventsSubscription,
+  );
+
+  const updateRecordUserInputEvents = useCallback(
+    ({currentTarget}: $FlowFixMe) => {
+      store.recordUserInputEvents = currentTarget.checked;
+    },
+    [store],
+  );
   const updateMinCommitDuration = useCallback(
     (event: SyntheticEvent) => {
       const newValue = parseFloat(event.currentTarget.value);
@@ -80,6 +101,18 @@ export default function ProfilerSettings(_: {}): React.Node {
             className={styles.SettingRowCheckbox}
           />
           Record why each component rendered while profiling
+        </label>
+      </div>
+
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <input
+            type="checkbox"
+            checked={recordUserInputEvents}
+            onChange={updateRecordUserInputEvents}
+            className={styles.SettingRowCheckbox}
+          />
+          Record user interaction events (clicks, key presses) while profiling
         </label>
       </div>
 

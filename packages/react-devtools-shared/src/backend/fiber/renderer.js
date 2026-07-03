@@ -7252,6 +7252,65 @@ export function attach(
   let profilingStartTime: number = 0;
   let recordChangeDescriptions: boolean = false;
   let recordTimeline: boolean = false;
+  let recordUserInputEvents: boolean = true;
+
+  // User interactions observed while profiling (types and timings only —
+  // never key values, input text, or target content). Recorded here rather
+  // than in the timeline hooks so it works with any React build, including
+  // ones without scheduling-profiler support. Timestamps share the commit
+  // clock (ms offsets from profiling start).
+  const USER_INPUT_EVENT_TYPES = [
+    'click',
+    'pointerdown',
+    'keydown',
+    'input',
+    'submit',
+    'scroll',
+  ];
+  // Coalesce high-frequency events (scroll, key repeat) per type.
+  const USER_INPUT_EVENT_MIN_GAP_MS = 50;
+  const USER_INPUT_EVENT_LIMIT = 500;
+  let userInputEvents: Array<{type: string, timestamp: number}> = [];
+  const lastUserInputEventTimeByType: Map<string, number> = new Map();
+
+  function onUserInputEvent(event: Event) {
+    if (!isProfiling || userInputEvents.length >= USER_INPUT_EVENT_LIMIT) {
+      return;
+    }
+    const timestamp = getCurrentTime() - profilingStartTime;
+    const lastTime = lastUserInputEventTimeByType.get(event.type);
+    if (
+      lastTime != null &&
+      timestamp - lastTime < USER_INPUT_EVENT_MIN_GAP_MS
+    ) {
+      return;
+    }
+    lastUserInputEventTimeByType.set(event.type, timestamp);
+    userInputEvents.push({type: event.type, timestamp});
+  }
+
+  function toggleUserInputEventListeners(enabled: boolean) {
+    // Use the window the renderer serves (`global`), not this module's own
+    // realm — with react-devtools-inline the backend can run in a different
+    // window than the page being profiled.
+    if (global == null || typeof global.addEventListener !== 'function') {
+      return; // Non-DOM environments (e.g. React Native).
+    }
+    for (let i = 0; i < USER_INPUT_EVENT_TYPES.length; i++) {
+      if (enabled) {
+        global.addEventListener(USER_INPUT_EVENT_TYPES[i], onUserInputEvent, {
+          capture: true,
+          passive: true,
+        });
+      } else {
+        global.removeEventListener(
+          USER_INPUT_EVENT_TYPES[i],
+          onUserInputEvent,
+          {capture: true},
+        );
+      }
+    }
+  }
   let rootToCommitProfilingMetadataMap: CommitProfilingMetadataMap | null =
     null;
 
@@ -7372,6 +7431,7 @@ export function attach(
       dataForRoots,
       rendererID,
       timelineData,
+      userInputEvents: userInputEvents.slice(),
     };
   }
 
@@ -7396,6 +7456,7 @@ export function attach(
   function startProfiling(
     shouldRecordChangeDescriptions: boolean,
     shouldRecordTimeline: boolean,
+    shouldRecordUserInputEvents: boolean = true,
   ) {
     if (isProfiling) {
       return;
@@ -7403,6 +7464,7 @@ export function attach(
 
     recordChangeDescriptions = shouldRecordChangeDescriptions;
     recordTimeline = shouldRecordTimeline;
+    recordUserInputEvents = shouldRecordUserInputEvents;
 
     // Capture initial values as of the time profiling starts.
     // It's important we snapshot both the durations and the id-to-root map,
@@ -7435,6 +7497,12 @@ export function attach(
     profilingStartTime = getCurrentTime();
     rootToCommitProfilingMetadataMap = new Map();
 
+    if (recordUserInputEvents) {
+      userInputEvents = [];
+      lastUserInputEventTimeByType.clear();
+      toggleUserInputEventListeners(true);
+    }
+
     if (toggleProfilingStatus !== null) {
       toggleProfilingStatus(true, recordTimeline);
     }
@@ -7443,6 +7511,7 @@ export function attach(
   function stopProfiling() {
     isProfiling = false;
     recordChangeDescriptions = false;
+    toggleUserInputEventListeners(false);
 
     if (toggleProfilingStatus !== null) {
       toggleProfilingStatus(false, recordTimeline);

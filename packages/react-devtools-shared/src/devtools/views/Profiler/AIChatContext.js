@@ -22,11 +22,20 @@ import {
 import {ProfilerContext} from './ProfilerContext';
 import {StoreContext} from '../context';
 import {InspectedElementContext} from '../Components/InspectedElementContext';
-import {streamChatCompletion} from 'react-devtools-shared/src/devtools/aiChat/client';
+import {runAgentLoop} from 'react-devtools-shared/src/devtools/aiChat/agentLoop';
+import ToolRegistry from 'react-devtools-shared/src/devtools/aiChat/toolRegistry';
+import {createProfilerTools} from 'react-devtools-shared/src/devtools/aiChat/profilerTools';
 import {
+  buildSkillCatalog,
+  createSkillLoaderTool,
+} from 'react-devtools-shared/src/devtools/aiChat/skills';
+import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
+import {
+  buildInteractionsSummary,
   buildProfileSummary,
   buildSelectionContext,
   buildSystemPrompt,
+  INTERACTION_GUIDANCE,
 } from 'react-devtools-shared/src/devtools/aiChat/profileSummary';
 import {useAIProviderConfig} from 'react-devtools-shared/src/devtools/aiChat/useAIProviderConfig';
 
@@ -76,6 +85,7 @@ export function AIChatContextController({children}: Props): React.Node {
       ? inspectedElementContext.inspectedElement
       : null;
   const {config} = useAIProviderConfig();
+  const {skills} = useSkills();
 
   const [messages, setMessages] = useState<Array<ChatMessage>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -120,68 +130,123 @@ export function AIChatContextController({children}: Props): React.Node {
       }
 
       setError(null);
-
-      // The system prompt is rebuilt per message so it always reflects the
-      // current profile and the current selection in the Profiler UI.
-      const summary = buildProfileSummary(
-        profilingData,
-        rootID,
-        store.profilerStore,
-      );
-      const selection = buildSelectionContext(
-        profilingData,
-        rootID,
-        store.profilerStore,
-        selectedCommitIndex,
-        selectedFiberID,
-        selectedFiberName,
-        inspectedElement,
-        hookNames,
-      );
-      const systemPrompt = buildSystemPrompt(summary, selection);
-
-      const history = [...messages, {role: 'user', content: question}];
-      setMessages([...history, {role: 'assistant', content: ''}]);
       setIsStreaming(true);
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
       try {
-        await streamChatCompletion({
+        const registry = new ToolRegistry();
+        createProfilerTools(profilingData, rootID, store.profilerStore).forEach(
+          tool => registry.register(tool),
+        );
+        const enabledSkills = skills.filter(skill => skill.enabled);
+        if (enabledSkills.length > 0) {
+          registry.register(createSkillLoaderTool(skills));
+        }
+
+        // The system prompt is rebuilt per message so it always reflects the
+        // current profile and the current selection in the Profiler UI.
+        const summary = buildProfileSummary(
+          profilingData,
+          rootID,
+          store.profilerStore,
+        );
+        const interactions = buildInteractionsSummary(profilingData);
+        const selection = buildSelectionContext(
+          profilingData,
+          rootID,
+          store.profilerStore,
+          selectedCommitIndex,
+          selectedFiberID,
+          selectedFiberName,
+          inspectedElement,
+          hookNames,
+        );
+
+        const extraSections = [];
+        if (interactions !== '') {
+          extraSections.push(interactions);
+          extraSections.push(INTERACTION_GUIDANCE);
+        }
+        const skillCatalog = buildSkillCatalog(skills);
+        if (skillCatalog !== '') {
+          extraSections.push(skillCatalog);
+        }
+
+        const systemPrompt = buildSystemPrompt(
+          summary,
+          selection,
+          extraSections.join('\n\n'),
+        );
+
+        const userMessage: ChatMessage = {role: 'user', content: question};
+        const history = [...messages, userMessage];
+        setMessages(history);
+
+        // NOTE: state updaters below must stay pure (no ref mutation inside):
+        // React may re-run them while rebasing rapid streamed updates. The
+        // replace-vs-append decision is derived from the previous state via
+        // the message's `streaming` marker.
+        await runAgentLoop(
           config,
-          messages: [{role: 'system', content: systemPrompt}, ...history],
-          signal: abortController.signal,
-          onTextDelta: delta => {
-            setMessages(currentMessages => {
-              const nextMessages = currentMessages.slice();
-              const lastIndex = nextMessages.length - 1;
-              nextMessages[lastIndex] = {
-                role: 'assistant',
-                content: nextMessages[lastIndex].content + delta,
-              };
-              return nextMessages;
-            });
+          [{role: 'system', content: systemPrompt}, ...history],
+          registry,
+          abortController.signal,
+          {
+            onTextDelta: delta => {
+              setMessages(currentMessages => {
+                const lastMessage = currentMessages[currentMessages.length - 1];
+                if (lastMessage != null && lastMessage.streaming === true) {
+                  const nextMessages = currentMessages.slice();
+                  nextMessages[nextMessages.length - 1] = {
+                    role: 'assistant',
+                    content: lastMessage.content + delta,
+                    streaming: true,
+                  };
+                  return nextMessages;
+                }
+                return [
+                  ...currentMessages,
+                  {role: 'assistant', content: delta, streaming: true},
+                ];
+              });
+            },
+            onAssistantMessage: message => {
+              setMessages(currentMessages => {
+                const lastMessage = currentMessages[currentMessages.length - 1];
+                if (lastMessage != null && lastMessage.streaming === true) {
+                  const nextMessages = currentMessages.slice();
+                  nextMessages[nextMessages.length - 1] = message;
+                  return nextMessages;
+                }
+                return [...currentMessages, message];
+              });
+            },
+            onToolMessage: message => {
+              setMessages(currentMessages => [...currentMessages, message]);
+            },
           },
-        });
+        );
       } catch (requestError) {
         if (requestError.name !== 'AbortError') {
           setError(requestError.message);
         }
-        // Drop the empty assistant placeholder if nothing streamed in.
+      } finally {
+        abortControllerRef.current = null;
+        // Clear any dangling streaming marker (e.g. after an abort).
         setMessages(currentMessages => {
           const lastMessage = currentMessages[currentMessages.length - 1];
-          if (
-            lastMessage != null &&
-            lastMessage.role === 'assistant' &&
-            lastMessage.content === ''
-          ) {
-            return currentMessages.slice(0, -1);
+          if (lastMessage != null && lastMessage.streaming === true) {
+            const nextMessages = currentMessages.slice();
+            nextMessages[nextMessages.length - 1] = {
+              role: 'assistant',
+              content: lastMessage.content,
+            };
+            return nextMessages;
           }
           return currentMessages;
         });
-      } finally {
-        abortControllerRef.current = null;
         setIsStreaming(false);
       }
     },
@@ -197,6 +262,7 @@ export function AIChatContextController({children}: Props): React.Node {
       hookNames,
       store,
       config,
+      skills,
     ],
   );
 

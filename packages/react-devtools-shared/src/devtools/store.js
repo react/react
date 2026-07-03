@@ -111,6 +111,8 @@ const LOCAL_STORAGE_COLLAPSE_ROOTS_BY_DEFAULT_KEY =
   'React::DevTools::collapseNodesByDefault';
 const LOCAL_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY =
   'React::DevTools::recordChangeDescriptions';
+const LOCAL_STORAGE_RECORD_USER_INPUT_EVENTS_KEY =
+  'React::DevTools::recordUserInputEvents';
 
 type ErrorAndWarningTuples = Array<{id: number, index: number}>;
 
@@ -160,6 +162,7 @@ export default class Store extends EventEmitter<{
     ],
   ],
   recordChangeDescriptions: [],
+  recordUserInputEvents: [],
   roots: [],
   rootSupportsBasicProfiling: [],
   rootSupportsTimelineProfiling: [],
@@ -220,6 +223,7 @@ export default class Store extends EventEmitter<{
   _profilerStore: ProfilerStore;
 
   _recordChangeDescriptions: boolean = false;
+  _recordUserInputEvents: boolean = true;
 
   // Incremented each time the store is mutated.
   // This enables a passive effect to detect a mutation between render and commit phase.
@@ -286,6 +290,12 @@ export default class Store extends EventEmitter<{
     this._recordChangeDescriptions =
       localStorageGetItem(LOCAL_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY) ===
       'true';
+
+    // Defaults to true; interaction events give profiling sessions their
+    // cause data (what the user did) at the cost of a few event listeners.
+    this._recordUserInputEvents =
+      localStorageGetItem(LOCAL_STORAGE_RECORD_USER_INPUT_EVENTS_KEY) !==
+      'false';
 
     this._componentFilters = getSavedComponentFilters();
 
@@ -514,6 +524,20 @@ export default class Store extends EventEmitter<{
     );
 
     this.emit('recordChangeDescriptions');
+  }
+
+  get recordUserInputEvents(): boolean {
+    return this._recordUserInputEvents;
+  }
+  set recordUserInputEvents(value: boolean): void {
+    this._recordUserInputEvents = value;
+
+    localStorageSetItem(
+      LOCAL_STORAGE_RECORD_USER_INPUT_EVENTS_KEY,
+      value ? 'true' : 'false',
+    );
+
+    this.emit('recordUserInputEvents');
   }
 
   get revision(): number {

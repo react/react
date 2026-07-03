@@ -403,15 +403,63 @@ export function buildSelectionContext(
   return lines.join('\n');
 }
 
+// Injected into the system prompt when the recorded session includes
+// user interaction events.
+export const INTERACTION_GUIDANCE: string = [
+  '## Correlating commits with user interactions',
+  'This session recorded the user interactions of the ORIGINAL run (event',
+  'type + timestamp only). Interaction timestamps use THE SAME clock as',
+  'commit timestamps (ms from profiling start), so an interaction at time T',
+  'directly precedes commits with timestamps shortly after T.',
+  'To explain WHY a commit happened, follow the causal chain:',
+  '  interaction event -> update scheduled (see updaters / change reasons)',
+  '  -> commit(s).',
+  'Use get_interactions to inspect events; get_render_cause shows which',
+  'component scheduled each commit. If scheduling events are available',
+  '(get_scheduling_events; requires a profiling-enabled React build), they',
+  'add lane info — but note their timestamps use the timeline clock, which',
+  'may be offset from commit timestamps by a small fixed amount.',
+].join('\n');
+
+// Builds the "what did the user do" section of the summary from interaction
+// events recorded during the session.
+export function buildInteractionsSummary(
+  profilingData: ProfilingDataFrontend,
+): string {
+  const events = profilingData.userInputEvents;
+  if (events == null || events.length === 0) {
+    return '';
+  }
+  const MAX_INTERACTION_ROWS = 30;
+  const lines = [];
+  lines.push(
+    '## User interactions (type;time_ms — same clock as commit timestamps)',
+  );
+  const rowCount = Math.min(events.length, MAX_INTERACTION_ROWS);
+  for (let i = 0; i < rowCount; i++) {
+    lines.push(`${events[i].type};${round(events[i].timestamp)}`);
+  }
+  if (events.length > MAX_INTERACTION_ROWS) {
+    lines.push(
+      `(truncated: ${events.length - MAX_INTERACTION_ROWS} more events — use get_interactions)`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export function buildSystemPrompt(
   profileSummary: string,
   selectionContext: string,
+  extraGuidance: string = '',
 ): string {
   return [
     'You are an assistant embedded in the React DevTools Profiler.',
     'You help developers understand and optimize React rendering performance.',
     '',
     'The user has recorded a profiling session. A summary is provided below.',
+    'You may also have tools. Prefer calling tools over guessing: use',
+    'get_commit / get_render_cause / get_component_commits to inspect commits',
+    'before citing specifics that are not in the summary.',
     'All durations are in milliseconds. Lines in tables are semicolon-delimited.',
     '"self time" excludes children; "actual time" includes children.',
     '"parent_caused_renders" counts renders where the component had no prop, state,',
@@ -429,5 +477,6 @@ export function buildSystemPrompt(
     '',
     profileSummary,
     selectionContext !== '' ? '\n' + selectionContext : '',
+    extraGuidance !== '' ? '\n' + extraGuidance : '',
   ].join('\n');
 }
