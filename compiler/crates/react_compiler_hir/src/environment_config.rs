@@ -195,6 +195,12 @@ pub struct EnvironmentConfig {
     /// collection method with a mutating implementation of the same name, this
     /// would under-approximate mutation. That risk is why this is default-off.
     ///
+    /// Note the optimism compounds through return types: resolving against the
+    /// Array shape also asserts the method's *return* is a real Array, so e.g.
+    /// `unknown.slice()` becomes Array-typed and later methods on that result
+    /// (including mutating ones like `.push`) resolve against the builtin Array
+    /// shape with full confidence, without any further flag check.
+    ///
     /// Motivating case (facebook/react#35902): the result of a plain function
     /// call (`const processedData = expensiveProcessing(data)`) has an unknown
     /// type, so `processedData.map(cb)` is treated conservatively and the map's
