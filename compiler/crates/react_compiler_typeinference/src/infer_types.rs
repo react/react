@@ -239,6 +239,11 @@ fn resolve_property_type(
 /// shape so its non-mutating signature applies instead of the conservative
 /// default. Matches TS `OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS` in
 /// InferTypes.ts.
+///
+/// `toString` is deliberately excluded: every object inherits it from
+/// `Object.prototype`, so its presence implies nothing about the receiver
+/// being a builtin collection, and custom mutating/lazy `toString`
+/// implementations exist in the wild.
 const OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS: &[&str] = &[
     "at",
     "concat",
@@ -253,7 +258,6 @@ const OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS: &[&str] = &[
     "map",
     "slice",
     "some",
-    "toString",
 ];
 
 /// Matches TS `isOptimisticNonMutatingBuiltinMethod`: true when the property is
@@ -1799,6 +1803,27 @@ mod tests {
         assert!(
             matches!(resolved, Type::TypeVar { .. }),
             "expected non-allowlisted `push` to stay unresolved, got {resolved:?}"
+        );
+    }
+
+    #[test]
+    fn optimistic_flag_on_ignores_tostring() {
+        let (env, mut unifier, t_a, receiver) = setup(true);
+        // `toString` exists on every object via Object.prototype, so its
+        // presence implies nothing about the receiver being a collection; it is
+        // deliberately excluded from the allowlist.
+        unifier
+            .unify(
+                t_a.clone(),
+                property_access(receiver, "toString"),
+                &env.shapes,
+            )
+            .unwrap();
+
+        let resolved = unifier.get(&t_a);
+        assert!(
+            matches!(resolved, Type::TypeVar { .. }),
+            "expected `toString` to stay unresolved, got {resolved:?}"
         );
     }
 }
