@@ -806,6 +806,11 @@ class Unifier {
  * enableOptimisticBuiltinMethodShapes is set and one of these is called on a
  * value with an unknown type, we resolve the method against the Array shape so
  * its non-mutating signature applies instead of the conservative default.
+ *
+ * `toString` is deliberately excluded: every object inherits it from
+ * `Object.prototype`, so its presence implies nothing about the receiver being
+ * a builtin collection, and custom mutating/lazy `toString` implementations
+ * exist in the wild.
  */
 const OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS: ReadonlySet<string> = new Set([
   'at',
@@ -821,7 +826,6 @@ const OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS: ReadonlySet<string> = new Set([
   'map',
   'slice',
   'some',
-  'toString',
 ]);
 
 function isOptimisticNonMutatingBuiltinMethod(
