@@ -1378,11 +1378,19 @@ function fatalError(
   // It's also called if React itself or its host configs errors.
   const onShellError = request.onShellError;
   const onFatalError = request.onFatalError;
+  // Once the shell has completed it can't error anymore, so onShellError only
+  // fires while root tasks are still pending. onFatalError always fires because
+  // the error is always fatal to the request.
+  const shellComplete = request.pendingRootTasks === 0;
   if (__DEV__ && debugTask) {
-    debugTask.run(onShellError.bind(null, error));
+    if (!shellComplete) {
+      debugTask.run(onShellError.bind(null, error));
+    }
     debugTask.run(onFatalError.bind(null, error));
   } else {
-    onShellError(error);
+    if (!shellComplete) {
+      onShellError(error);
+    }
     onFatalError(error);
   }
   if (request.destination !== null) {
@@ -4505,6 +4513,11 @@ function erroredTask(
   const errorDigest = logRecoverableError(request, error, errorInfo, debugTask);
   if (boundary === null) {
     fatalError(request, error, errorInfo, debugTask);
+    // The shell fatally errored, so the render can never complete. Return before
+    // the completeAll check below so we don't fire onAllReady for a render that
+    // produced nothing. This mirrors finishAbortedTask, which also returns after
+    // a fatalError on the root.
+    return;
   } else {
     boundary.pendingTasks--;
     if (boundary.status !== CLIENT_RENDERED) {
@@ -4956,8 +4969,6 @@ function completeShell(request: Request) {
     preparePreamble(request);
   }
 
-  // We have completed the shell so the shell can't error anymore.
-  request.onShellError = noop;
   const onShellReady = request.onShellReady;
   onShellReady();
 }

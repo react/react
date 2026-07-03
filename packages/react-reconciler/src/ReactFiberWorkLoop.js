@@ -1341,7 +1341,12 @@ function recoverFromConcurrentError(
   }
 
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
-  if (exitStatus !== RootErrored) {
+  // A status of RootSuspendedAtTheShell means the retry unwound to the root
+  // without completing (e.g. something suspended in the shell), so the tree is
+  // incomplete and must not be treated as recovered — committing it would
+  // corrupt the current tree. Fall through and return the status as-is so the
+  // root stays suspended.
+  if (exitStatus !== RootErrored && exitStatus !== RootSuspendedAtTheShell) {
     // Successfully finished rendering on retry
 
     if (workInProgressRootDidAttachPingListener && !wasRootDehydrated) {
