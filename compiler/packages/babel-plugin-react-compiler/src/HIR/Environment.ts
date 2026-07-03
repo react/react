@@ -476,6 +476,40 @@ export const EnvironmentConfigSchema = z.object({
   enableTreatSetIdentifiersAsStateSetters: z.boolean().default(false),
 
   /**
+   * When a value has an unresolved/unknown type (no inferred shape) and a
+   * known non-mutating builtin collection method is called on it (e.g.
+   * `unknownValue.map(...)`, `.filter`, `.slice`, `.at`, ...), optimistically
+   * resolve that method against the builtin `Array` shape so its precise,
+   * receiver-non-mutating signature is used, instead of falling back to the
+   * conservative default that treats the method as potentially mutating the
+   * receiver.
+   *
+   * This relies on the same soundness argument that motivates
+   * `BuiltInMixedReadonly` (used for hook return values): assuming builtins are
+   * not patched, the only way `value.map` can exist and be callable is if
+   * `value` is an Array (or array-like), so `Array.prototype.map` semantics
+   * apply. See the doc comment on `BuiltInMixedReadonlyId` in ObjectShape.ts.
+   * The `Array` shape is used rather than `MixedReadonly` because its `map`
+   * (and siblings) carry an explicit aliasing signature that reads — rather
+   * than conditionally mutates — the receiver, which is what keeps the
+   * receiver out of the method call's reactive scope.
+   *
+   * Soundness tradeoff: this assumes the receiver is a real collection whose
+   * builtin (non-patched) method is being invoked. If user code shadows a
+   * collection method with a mutating implementation of the same name, this
+   * would under-approximate mutation. That risk is why this is default-off.
+   *
+   * Motivating case (facebook/react#35902): the result of a plain function
+   * call (`const processedData = expensiveProcessing(data)`) has an unknown
+   * type, so `processedData.map(cb)` is treated conservatively and the map's
+   * mutable range extends over `processedData`, merging it into the same
+   * reactive scope as an unrelated captured value in `cb`. With this flag the
+   * `.map` is known to be non-mutating and `expensiveProcessing(data)` gets its
+   * own scope keyed only on `data`.
+   */
+  enableOptimisticBuiltinMethodShapes: z.boolean().default(false),
+
+  /**
    * If enabled, will validate useMemos that don't return any values:
    *
    * Valid:
