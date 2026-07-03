@@ -12,6 +12,7 @@ import {useContext, useEffect, useRef, useState} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {AIChatContext} from './AIChatContext';
+import ChatMarkdown from './ChatMarkdown';
 import {SettingsModalContext} from 'react-devtools-shared/src/devtools/views/Settings/SettingsModalContext';
 
 import styles from './AIChatPane.css';
@@ -48,7 +49,13 @@ function TranscriptEntry({message}: {message: ChatMessage}) {
       className={
         message.role === 'user' ? styles.UserMessage : styles.AIMessage
       }>
-      {message.content !== '' ? message.content : null}
+      {message.content !== '' ? (
+        message.role === 'assistant' ? (
+          <ChatMarkdown content={message.content} />
+        ) : (
+          message.content
+        )
+      ) : null}
       {toolCalls != null &&
         toolCalls.map(toolCall => (
           <div key={toolCall.id} className={styles.ToolCall}>

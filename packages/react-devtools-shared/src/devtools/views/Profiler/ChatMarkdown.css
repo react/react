@@ -1,0 +1,77 @@
+.ChatMarkdown {
+  overflow-wrap: break-word;
+}
+
+.Paragraph {
+  margin: 0 0 0.5rem;
+}
+
+.Paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.Heading1,
+.Heading2,
+.Heading3 {
+  font-weight: bold;
+  margin: 0.75rem 0 0.375rem;
+}
+
+.Heading1 {
+  font-size: 1.2em;
+}
+
+.Heading2 {
+  font-size: 1.1em;
+}
+
+.Heading3 {
+  font-size: 1em;
+}
+
+.List {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.List li {
+  margin: 0.125rem 0;
+}
+
+.InlineCode {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  background-color: var(--color-button-background-focus);
+  border-radius: 0.125rem;
+  padding: 0 0.25rem;
+}
+
+.CodeBlock {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  background-color: var(--color-button-background-focus);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  margin: 0 0 0.5rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.Table {
+  border-collapse: collapse;
+  margin: 0 0 0.5rem;
+  font-size: inherit;
+}
+
+.Table th,
+.Table td {
+  border: 1px solid var(--color-border);
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+
+.Table th {
+  background-color: var(--color-button-background-focus);
+  font-weight: bold;
+}

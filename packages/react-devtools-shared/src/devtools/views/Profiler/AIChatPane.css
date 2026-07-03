@@ -33,12 +33,16 @@
 
 .UserMessage,
 .AIMessage {
-  white-space: pre-wrap;
   overflow-wrap: break-word;
   border-radius: 0.25rem;
   padding: 0.375rem 0.5rem;
   margin-bottom: 0.5rem;
   max-width: 100%;
+}
+
+/* User text is plain; assistant text is rendered markdown (ChatMarkdown). */
+.UserMessage {
+  white-space: pre-wrap;
 }
 
 .UserMessage {
