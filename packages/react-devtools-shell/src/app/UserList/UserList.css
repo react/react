@@ -1,0 +1,25 @@
+.Form {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.Input {
+  font-size: 1rem;
+  padding: 0.25rem;
+}
+
+.SaveButton {
+  font-size: 1rem;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+}
+
+.List {
+  margin: 0.5rem 0 0;
+  padding: 0 0 0 1.25rem;
+}
+
+.ListItem {
+  padding: 0.125rem 0;
+}

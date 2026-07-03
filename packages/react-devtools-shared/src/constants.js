@@ -66,6 +66,11 @@ export const LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY =
   'React::DevTools::traceUpdatesEnabled';
 export const LOCAL_STORAGE_SUPPORTS_PROFILING_KEY =
   'React::DevTools::supportsProfiling';
+export const LOCAL_STORAGE_AI_PROVIDER_ID_KEY =
+  'React::DevTools::AI::providerId';
+export const LOCAL_STORAGE_AI_BASE_URL_KEY = 'React::DevTools::AI::baseUrl';
+export const LOCAL_STORAGE_AI_API_KEY_KEY = 'React::DevTools::AI::apiKey';
+export const LOCAL_STORAGE_AI_MODEL_KEY = 'React::DevTools::AI::model';
 
 export const PROFILER_EXPORT_VERSION = 5;
 

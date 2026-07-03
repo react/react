@@ -12,6 +12,8 @@ import {Fragment, useContext, useEffect, useRef, useEffectEvent} from 'react';
 import {ModalDialog} from '../ModalDialog';
 import {ProfilerContext} from './ProfilerContext';
 import TabBar from '../TabBar';
+import AIChatPane from './AIChatPane';
+import {AIChatContextController} from './AIChatContext';
 import ClearProfilingDataButton from './ClearProfilingDataButton';
 import CommitFlamegraph from './CommitFlamegraph';
 import CommitRanked from './CommitRanked';
@@ -121,6 +123,9 @@ function Profiler(_: {}) {
       case 'timeline':
         view = <Timeline />;
         break;
+      case 'ai-chat':
+        view = <AIChatPane />;
+        break;
       default:
         break;
     }
@@ -165,45 +170,47 @@ function Profiler(_: {}) {
 
   return (
     <SettingsModalContextController>
-      <div ref={profilerRef} className={styles.Profiler}>
-        <div className={styles.LeftColumn}>
-          <div className={styles.Toolbar}>
-            <RecordToggle disabled={!supportsProfiling} />
-            <ReloadAndProfileButton disabled={!supportsProfiling} />
-            <ClearProfilingDataButton />
-            <ProfilingImportExportButtons />
-            <div className={styles.VRule} />
-            <TabBar
-              currentTab={selectedTabID}
-              id="Profiler"
-              selectTab={selectTab}
-              tabs={supportsTimeline ? tabsWithTimeline : tabs}
-              type="profiler"
-            />
-            <RootSelector />
-            <div className={styles.Spacer} />
-            {!isLegacyProfilerSelected && (
-              <div
-                ref={searchInputContainerRef}
-                className={styles.TimelineSearchInputContainer}
+      <AIChatContextController>
+        <div ref={profilerRef} className={styles.Profiler}>
+          <div className={styles.LeftColumn}>
+            <div className={styles.Toolbar}>
+              <RecordToggle disabled={!supportsProfiling} />
+              <ReloadAndProfileButton disabled={!supportsProfiling} />
+              <ClearProfilingDataButton />
+              <ProfilingImportExportButtons />
+              <div className={styles.VRule} />
+              <TabBar
+                currentTab={selectedTabID}
+                id="Profiler"
+                selectTab={selectTab}
+                tabs={supportsTimeline ? tabsWithTimeline : tabs}
+                type="profiler"
               />
-            )}
-            <SettingsModalContextToggle />
-            {isLegacyProfilerSelected && didRecordCommits && (
-              <Fragment>
-                <div className={styles.VRule} />
-                <SnapshotSelector />
-              </Fragment>
-            )}
+              <RootSelector />
+              <div className={styles.Spacer} />
+              {!isLegacyProfilerSelected && (
+                <div
+                  ref={searchInputContainerRef}
+                  className={styles.TimelineSearchInputContainer}
+                />
+              )}
+              <SettingsModalContextToggle />
+              {isLegacyProfilerSelected && didRecordCommits && (
+                <Fragment>
+                  <div className={styles.VRule} />
+                  <SnapshotSelector />
+                </Fragment>
+              )}
+            </div>
+            <div className={styles.Content}>
+              {view}
+              <ModalDialog />
+            </div>
           </div>
-          <div className={styles.Content}>
-            {view}
-            <ModalDialog />
-          </div>
+          <div className={styles.RightColumn}>{sidebar}</div>
+          <SettingsModal />
         </div>
-        <div className={styles.RightColumn}>{sidebar}</div>
-        <SettingsModal />
-      </div>
+      </AIChatContextController>
     </SettingsModalContextController>
   );
 }
@@ -229,6 +236,12 @@ const tabs = [
     icon: 'ranked-chart',
     label: 'Ranked',
     title: 'Ranked chart',
+  },
+  {
+    id: 'ai-chat',
+    icon: 'ai-chat',
+    label: 'AI Chat',
+    title: 'Ask AI about this profiling session',
   },
 ];
 
