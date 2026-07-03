@@ -147,6 +147,20 @@ describe('utils', () => {
       ).toEqual('a 123 b true c');
     });
 
+    it('should support integer substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%i', 3.14)).toEqual('3');
+    });
+
+    it('should support float substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%f', 3.5)).toEqual('3.5');
+    });
+
+    it('should keep argument alignment across mixed substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('a %i b %s', 7, 'x')).toEqual(
+        'a 7 b x',
+      );
+    });
+
     it('should gracefully handle Symbol types', () => {
       expect(
         formatConsoleArgumentsToSingleString(Symbol('a'), 'b', Symbol('c')),
