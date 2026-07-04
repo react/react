@@ -16,6 +16,7 @@ import {serializeValue} from './profileSummary';
 import {
   formatSourceWindow,
   getKnownSourceContent,
+  getKnownSourceStats,
   getOriginalSource,
   hasLoadedAnySources,
   searchKnownSources,
@@ -670,41 +671,135 @@ function getComponentSourceTool(context: ToolContext): ToolDefinition {
         return resolved;
       }
       const {inspected} = resolved;
+      const componentName =
+        inspected.displayName != null
+          ? inspected.displayName
+          : String(args.component_name || '');
+
+      // Candidate runtime locations, most reliable first. The function
+      // location can be distorted by HOC/factory wrappers (it points at
+      // where the function object was created); hook call sites are by
+      // definition inside the component's own body.
+      const candidates = [];
+      const hookSource = findFirstHookCallSite(inspected.hooks);
+      if (hookSource != null) {
+        candidates.push({
+          url: hookSource.fileName,
+          line: hookSource.lineNumber,
+          column: hookSource.columnNumber,
+          origin: 'hook call site',
+        });
+      }
       const source = inspected.source;
-      if (source == null) {
+      if (source != null) {
+        // ReactFunctionLocation tuple: [functionName, fileName, line, column].
+        candidates.push({
+          url: source[1],
+          line: source[2],
+          column: source[3],
+          origin: 'function location',
+        });
+      }
+      if (candidates.length === 0) {
         return (
           'No source location is available for this component (host ' +
           'component, or a production build without source info).'
         );
       }
-      // ReactFunctionLocation tuple: [functionName, fileName, line, column].
-      const [, runtimeURL, runtimeLine, runtimeColumn] = source;
 
-      const original = await getOriginalSource(
-        fetchFile,
-        runtimeURL,
-        runtimeLine,
-        runtimeColumn,
-      );
-      if (original == null) {
-        return (
-          `Only the build location is known: ${runtimeURL}:${runtimeLine}. ` +
-          'No source map could be loaded (the app may not serve source maps).'
+      let bestWithContent = null;
+      let bestPathOnly = null;
+      for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        const original = await getOriginalSource(
+          fetchFile,
+          candidate.url,
+          candidate.line,
+          candidate.column,
         );
+        if (original == null) {
+          continue;
+        }
+        if (original.content == null) {
+          if (bestPathOnly == null) {
+            bestPathOnly = {candidate, original};
+          }
+          continue;
+        }
+        const nameMatches =
+          componentName !== '' && original.content.includes(componentName);
+        if (nameMatches) {
+          bestWithContent = {candidate, original, nameMatches: true};
+          break;
+        }
+        if (bestWithContent == null) {
+          bestWithContent = {candidate, original, nameMatches: false};
+        }
       }
-      if (original.content == null) {
+
+      if (bestWithContent != null) {
+        const {candidate, original, nameMatches} = bestWithContent;
+        const lines = [
+          `// ${original.url} (via ${candidate.origin}; current code — may differ from the profiled run)`,
+        ];
+        if (!nameMatches && componentName !== '') {
+          const suggestions = searchKnownSources(componentName).slice(0, 5);
+          lines.push(
+            `// WARNING: this file does not mention "${componentName}" — the ` +
+              'source map may have resolved the wrong module.' +
+              (suggestions.length > 0
+                ? ` Files whose path matches the name: ${suggestions.join(', ')} (read with get_source_file).`
+                : ' Try list_source_files to browse known files.'),
+          );
+        }
+        lines.push(formatSourceWindow(original.content, original.line));
+        return lines.join('\n');
+      }
+
+      if (bestPathOnly != null) {
+        const {original} = bestPathOnly;
         return (
           `Original location: ${original.url}:${original.line ?? '?'} — but ` +
           'the source map does not embed the file contents (no sourcesContent).'
         );
       }
 
-      return [
-        `// ${original.url} (current code; may differ from the profiled run)`,
-        formatSourceWindow(original.content, original.line),
-      ].join('\n');
+      const first = candidates[0];
+      return (
+        `Only the build location is known: ${first.url}:${first.line}. ` +
+        'No source map could be loaded (the app may not serve source maps).'
+      );
     },
   };
+}
+
+// Walks the inspected hooks tree for the first hook with a recorded call
+// site. Hook call sites live in the component's own body, making them a
+// reliable anchor for locating its implementation.
+function findFirstHookCallSite(hooks: any): Object | null {
+  if (!Array.isArray(hooks)) {
+    return null;
+  }
+  for (let i = 0; i < hooks.length; i++) {
+    const hook = hooks[i];
+    if (hook == null) {
+      continue;
+    }
+    const hookSource = hook.hookSource;
+    if (
+      hookSource != null &&
+      typeof hookSource.fileName === 'string' &&
+      typeof hookSource.lineNumber === 'number' &&
+      typeof hookSource.columnNumber === 'number'
+    ) {
+      return hookSource;
+    }
+    const nested = findFirstHookCallSite(hook.subHooks);
+    if (nested != null) {
+      return nested;
+    }
+  }
+  return null;
 }
 
 function getSourceFileTool(context: ToolContext): ToolDefinition {
@@ -738,7 +833,14 @@ function getSourceFileTool(context: ToolContext): ToolDefinition {
       }
       const matches = searchKnownSources(query);
       if (matches.length === 0) {
-        return `No known source file matches "${query}".`;
+        const stats = getKnownSourceStats();
+        return (
+          `No known source file matches "${query}". ${stats.files} file(s) ` +
+          `are known from ${stats.bundles} loaded bundle map(s) — call ` +
+          'list_source_files to browse them. Note: files only become known ' +
+          'after get_component_source loads their bundle, so components in ' +
+          'other code-split chunks may not be visible yet.'
+        );
       }
       if (matches.length > 1) {
         return (
@@ -754,6 +856,52 @@ function getSourceFileTool(context: ToolContext): ToolDefinition {
         `// ${matches[0]} (current code; may differ from the profiled run)`,
         formatSourceWindow(content, null),
       ].join('\n');
+    },
+  };
+}
+
+function listSourceFilesTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'list_source_files',
+    description:
+      'Lists the original source file paths known from source maps loaded ' +
+      'this session (maps load when get_component_source runs). Use this ' +
+      'to discover exact paths instead of guessing them for ' +
+      'get_source_file. Optional query filters by substring.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Substring to filter paths (case-insensitive).',
+        },
+      },
+    },
+    execute: async (args: Object) => {
+      if (!hasLoadedAnySources()) {
+        return (
+          'No source maps loaded yet. Call get_component_source for a ' +
+          "component first; that loads its bundle's source map."
+        );
+      }
+      const matches = searchKnownSources(String(args.query || ''));
+      const stats = getKnownSourceStats();
+      if (matches.length === 0) {
+        return (
+          `No paths match. ${stats.files} file(s) known from ` +
+          `${stats.bundles} bundle map(s); try a shorter query.`
+        );
+      }
+      const MAX_LISTED = 100;
+      const lines = [
+        `${matches.length} of ${stats.files} known file(s)` +
+          (matches.length > MAX_LISTED ? ` (showing ${MAX_LISTED})` : '') +
+          ':',
+      ];
+      for (let i = 0; i < Math.min(matches.length, MAX_LISTED); i++) {
+        lines.push(matches[i]);
+      }
+      return lines.join('\n');
     },
   };
 }
@@ -783,5 +931,6 @@ export function createProfilerTools(
     getComponentDetailsTool(context),
     getComponentSourceTool(context),
     getSourceFileTool(context),
+    listSourceFilesTool(context),
   ];
 }

@@ -25,6 +25,7 @@ type BundleSourceMap = {
 const SOURCE_MAP_ANNOTATION_PREFIX = 'sourceMappingURL=';
 
 const bundleCache: Map<string, Promise<BundleSourceMap | null>> = new Map();
+let loadedBundleCount = 0;
 // All original sources discovered so far (across bundles), for lookups by path.
 const knownSources: Map<string, string> = new Map();
 
@@ -109,6 +110,7 @@ async function loadBundleSourceMapImpl(
     for (const [url, content] of contentByURL) {
       knownSources.set(url, content);
     }
+    loadedBundleCount++;
     return {consumer, contentByURL};
   } catch (error) {
     return null;
@@ -201,6 +203,10 @@ export function getKnownSourceContent(url: string): string | null {
 
 export function hasLoadedAnySources(): boolean {
   return knownSources.size > 0;
+}
+
+export function getKnownSourceStats(): {files: number, bundles: number} {
+  return {files: knownSources.size, bundles: loadedBundleCount};
 }
 
 const MAX_SOURCE_LINES = 400;
