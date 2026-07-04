@@ -8,8 +8,15 @@
  */
 
 import {getCommitTree} from 'react-devtools-shared/src/devtools/views/Profiler/CommitTreeBuilder';
+import {
+  inspectElement,
+  convertInspectedElementBackendToFrontend,
+} from 'react-devtools-shared/src/backendAPI';
+import {serializeValue} from './profileSummary';
 
+import type Store from 'react-devtools-shared/src/devtools/store';
 import type ProfilerStore from 'react-devtools-shared/src/devtools/ProfilerStore';
+import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 import type {ProfilingDataFrontend} from 'react-devtools-shared/src/devtools/views/Profiler/types';
 import type {ToolDefinition} from './types';
 
@@ -47,6 +54,8 @@ type ToolContext = {
   profilingData: ProfilingDataFrontend,
   rootID: number,
   profilerStore: ProfilerStore,
+  store: Store,
+  bridge: FrontendBridge,
 };
 
 function getCommitOrThrow(context: ToolContext, commitIndex: number) {
@@ -293,88 +302,6 @@ function getRenderCauseTool(context: ToolContext): ToolDefinition {
   };
 }
 
-function getTimelineData(context: ToolContext) {
-  return context.profilingData.timelineData.length > 0
-    ? context.profilingData.timelineData[0]
-    : null;
-}
-
-function laneLabels(
-  lanes: Array<number>,
-  laneToLabelMap: Map<number, string>,
-): string {
-  return lanes.map(lane => laneToLabelMap.get(lane) || `lane${lane}`).join('+');
-}
-
-function getSchedulingEventsTool(context: ToolContext): ToolDefinition {
-  return {
-    name: 'get_scheduling_events',
-    description:
-      'Returns the update-scheduling events recorded during the session: ' +
-      'which component scheduled a render/state update, when (timeline ms), ' +
-      'and on which lane (lane labels indicate the event class, e.g. ' +
-      'discrete input vs transition). Use before_timeline_ms to look at the ' +
-      'window leading up to a commit.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        before_timeline_ms: {
-          type: 'number',
-          description:
-            'Only include events at or before this timeline timestamp.',
-        },
-        after_timeline_ms: {
-          type: 'number',
-          description:
-            'Only include events at or after this timeline timestamp.',
-        },
-      },
-    },
-    execute: async (args: Object) => {
-      const timelineData = getTimelineData(context);
-      if (timelineData == null) {
-        return (
-          'No timeline data in this session. Scheduling events require ' +
-          'timeline recording support during profiling.'
-        );
-      }
-      const events = timelineData.schedulingEvents.filter(event => {
-        if (
-          typeof args.before_timeline_ms === 'number' &&
-          event.timestamp > args.before_timeline_ms
-        ) {
-          return false;
-        }
-        if (
-          typeof args.after_timeline_ms === 'number' &&
-          event.timestamp < args.after_timeline_ms
-        ) {
-          return false;
-        }
-        return true;
-      });
-      if (events.length === 0) {
-        return 'No scheduling events in the requested window.';
-      }
-      const lines = [
-        'Scheduling events (timeline_time_ms;type;component;lanes):',
-      ];
-      for (let i = 0; i < events.length; i++) {
-        const event = events[i];
-        lines.push(
-          [
-            round(event.timestamp),
-            event.type,
-            event.componentName != null ? event.componentName : '',
-            laneLabels(event.lanes, timelineData.laneToLabelMap),
-          ].join(';'),
-        );
-      }
-      return lines.join('\n');
-    },
-  };
-}
-
 function getInteractionsTool(context: ToolContext): ToolDefinition {
   return {
     name: 'get_interactions',
@@ -425,17 +352,186 @@ function getInteractionsTool(context: ToolContext): ToolDefinition {
   };
 }
 
+function formatHooksTree(hooks: any, lines: Array<string>, depth: number) {
+  if (!Array.isArray(hooks)) {
+    return;
+  }
+  for (let i = 0; i < hooks.length; i++) {
+    const hook = hooks[i];
+    if (hook == null) {
+      continue;
+    }
+    const indent = '  '.repeat(depth + 1);
+    const label = hook.id !== null ? `#${hook.id + 1} ` : '';
+    lines.push(
+      `${indent}${label}${hook.name}${hook.value !== undefined ? ` = ${serializeValue(hook.value)}` : ''}`,
+    );
+    if (hook.subHooks != null && hook.subHooks.length > 0) {
+      formatHooksTree(hook.subHooks, lines, depth + 1);
+    }
+  }
+}
+
+function getComponentDetailsTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_component_details',
+    description:
+      'Inspects a live component and returns its CURRENT props and hooks ' +
+      '(hook types like State/Reducer/custom hooks, with current values). ' +
+      'Use this to resolve hook indices from change descriptions (e.g. ' +
+      '"hooks changed: #1") into what the hooks actually hold. Values ' +
+      'reflect the app right now, not the profiled commit. Only works ' +
+      'while the component is still mounted (not for imported profiles).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        component_name: {
+          type: 'string',
+          description:
+            'Component display name (case-insensitive substring match).',
+        },
+        fiber_id: {
+          type: 'integer',
+          description: 'Exact fiber id (overrides component_name).',
+        },
+      },
+    },
+    execute: async (args: Object) => {
+      if (context.profilingData.imported) {
+        return (
+          'This profile was imported from a file; live component inspection ' +
+          'is unavailable. Reason about the recorded change descriptions ' +
+          'instead.'
+        );
+      }
+
+      // Resolve candidate fiber ids from the profiled commit trees.
+      const candidateIDs: Array<number> = [];
+      if (typeof args.fiber_id === 'number') {
+        candidateIDs.push(args.fiber_id);
+      } else {
+        const query = String(args.component_name || '').toLowerCase();
+        if (query === '') {
+          throw new Error('Provide component_name or fiber_id.');
+        }
+        const dataForRoot = context.profilingData.dataForRoots.get(
+          context.rootID,
+        );
+        if (dataForRoot == null) {
+          throw new Error('No profiling data for the selected root.');
+        }
+        // Search newest commit first so current fibers win.
+        for (
+          let commitIndex = dataForRoot.commitData.length - 1;
+          commitIndex >= 0 && candidateIDs.length < 10;
+          commitIndex--
+        ) {
+          const commitTree = getCommitTree({
+            commitIndex,
+            profilerStore: context.profilerStore,
+            rootID: context.rootID,
+          });
+          // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+          for (const [fiberID, node] of commitTree.nodes) {
+            if (
+              node.displayName != null &&
+              node.displayName.toLowerCase().includes(query) &&
+              !candidateIDs.includes(fiberID)
+            ) {
+              candidateIDs.push(fiberID);
+            }
+          }
+        }
+        if (candidateIDs.length === 0) {
+          return `No component matching "${args.component_name}" found in the profile.`;
+        }
+      }
+
+      // Inspect the first candidate that is still mounted.
+      const mountedID = candidateIDs.find(id =>
+        context.store.containsElement(id),
+      );
+      if (mountedID == null) {
+        return (
+          'The component is no longer mounted, so its current props/hooks ' +
+          'cannot be inspected. Use the recorded change descriptions instead.'
+        );
+      }
+      const rendererID = context.store.getRendererIDForElement(mountedID);
+      if (rendererID == null) {
+        return 'Could not determine the renderer for this component.';
+      }
+
+      const payload = await inspectElement(
+        context.bridge,
+        true, // forceFullData
+        mountedID,
+        null,
+        rendererID,
+        false,
+      );
+      if (payload.type !== 'full-data') {
+        return `Inspection did not return data (${payload.type}).`;
+      }
+      const inspected = convertInspectedElementBackendToFrontend(payload.value);
+
+      const lines = [];
+      lines.push(
+        `${inspected.displayName || 'Component'} (fiber id ${mountedID}) — ` +
+          'current values (the app NOW, not at commit time):',
+      );
+
+      const props = inspected.props;
+      if (props != null && Object.keys(props).length > 0) {
+        lines.push('Props:');
+        const propNames = Object.keys(props);
+        for (let i = 0; i < Math.min(propNames.length, 15); i++) {
+          lines.push(
+            `  ${propNames[i]} = ${serializeValue(props[propNames[i]])}`,
+          );
+        }
+      } else {
+        lines.push('Props: (none)');
+      }
+
+      if (inspected.state != null) {
+        lines.push(`State (class): ${serializeValue(inspected.state)}`);
+      }
+
+      if (Array.isArray(inspected.hooks) && inspected.hooks.length > 0) {
+        lines.push(
+          'Hooks (numbered like change descriptions; nested = custom hooks):',
+        );
+        formatHooksTree(inspected.hooks, lines, 0);
+      } else {
+        lines.push('Hooks: (none)');
+      }
+
+      if (candidateIDs.length > 1) {
+        lines.push(
+          `(${candidateIDs.length - 1} other instance(s) matched: ids ${candidateIDs
+            .filter(id => id !== mountedID)
+            .join(', ')} — pass fiber_id to inspect a specific one)`,
+        );
+      }
+      return lines.join('\n');
+    },
+  };
+}
+
 export function createProfilerTools(
   profilingData: ProfilingDataFrontend,
   rootID: number,
   profilerStore: ProfilerStore,
+  store: Store,
+  bridge: FrontendBridge,
 ): Array<ToolDefinition> {
-  const context = {profilingData, rootID, profilerStore};
+  const context = {profilingData, rootID, profilerStore, store, bridge};
   return [
     getCommitTool(context),
     getComponentCommitsTool(context),
     getRenderCauseTool(context),
-    getSchedulingEventsTool(context),
     getInteractionsTool(context),
+    getComponentDetailsTool(context),
   ];
 }

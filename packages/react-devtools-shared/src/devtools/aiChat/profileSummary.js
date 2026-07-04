@@ -9,6 +9,7 @@
 
 import {getCommitTree} from 'react-devtools-shared/src/devtools/views/Profiler/CommitTreeBuilder';
 import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookSourceLocation';
+import {meta} from 'react-devtools-shared/src/hydration';
 
 import type ProfilerStore from 'react-devtools-shared/src/devtools/ProfilerStore';
 import type {ProfilingDataFrontend} from 'react-devtools-shared/src/devtools/views/Profiler/types';
@@ -183,24 +184,56 @@ export function buildProfileSummary(
 
 const MAX_VALUE_PREVIEW_LENGTH = 150;
 
-// Values coming from element inspection may contain functions, cycles, or
-// dehydrated placeholders for deep objects; render a short, safe preview.
-function serializeValue(value: any): string {
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof value.preview_short === 'string'
-  ) {
+// Hydrated inspection data replaces deep/complex values with placeholder
+// objects whose previews live under Symbol keys (see hydration.js meta).
+function getDehydratedPreview(value: any): string | null {
+  if (value === null || typeof value !== 'object') {
+    return null;
+  }
+  // $FlowFixMe[invalid-computed-prop]: Symbol-keyed metadata.
+  const preview = value[meta.preview_short];
+  if (typeof preview === 'string') {
+    return preview;
+  }
+  if (typeof value.preview_short === 'string') {
     return value.preview_short;
   }
+  return null;
+}
+
+// Values coming from element inspection may contain functions, cycles, or
+// dehydrated placeholders for deep objects; render a short, safe preview.
+export function serializeValue(value: any): string {
+  const preview = getDehydratedPreview(value);
+  if (preview != null) {
+    return preview;
+  }
+
   let serialized;
-  try {
-    serialized =
-      value === undefined
-        ? 'undefined'
-        : (JSON.stringify(value) ?? String(value));
-  } catch (error) {
-    serialized = String(value);
+  if (Array.isArray(value)) {
+    // Surface per-item previews for arrays of dehydrated objects, which
+    // would otherwise JSON.stringify to "{}" (their data is Symbol-keyed).
+    const parts = value.slice(0, 10).map(item => {
+      const itemPreview = getDehydratedPreview(item);
+      if (itemPreview != null) {
+        return itemPreview;
+      }
+      try {
+        return JSON.stringify(item) ?? String(item);
+      } catch (error) {
+        return String(item);
+      }
+    });
+    serialized = `[${parts.join(', ')}${value.length > 10 ? ', …' : ''}]`;
+  } else {
+    try {
+      serialized =
+        value === undefined
+          ? 'undefined'
+          : (JSON.stringify(value) ?? String(value));
+    } catch (error) {
+      serialized = String(value);
+    }
   }
   if (serialized.length > MAX_VALUE_PREVIEW_LENGTH) {
     serialized = serialized.slice(0, MAX_VALUE_PREVIEW_LENGTH) + '…';
@@ -415,10 +448,9 @@ export const INTERACTION_GUIDANCE: string = [
   '  interaction event -> update scheduled (see updaters / change reasons)',
   '  -> commit(s).',
   'Use get_interactions to inspect events; get_render_cause shows which',
-  'component scheduled each commit. If scheduling events are available',
-  '(get_scheduling_events; requires a profiling-enabled React build), they',
-  'add lane info — but note their timestamps use the timeline clock, which',
-  'may be offset from commit timestamps by a small fixed amount.',
+  'component scheduled each commit. When change descriptions mention hook',
+  'indices (e.g. "hooks changed: #1"), call get_component_details to resolve',
+  'what those hooks actually are and currently hold.',
 ].join('\n');
 
 // Builds the "what did the user do" section of the summary from interaction

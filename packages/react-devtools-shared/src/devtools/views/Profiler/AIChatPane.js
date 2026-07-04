@@ -13,6 +13,7 @@ import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {AIChatContext} from './AIChatContext';
 import ChatMarkdown from './ChatMarkdown';
+import {ProfilerContext} from './ProfilerContext';
 import {SettingsModalContext} from 'react-devtools-shared/src/devtools/views/Settings/SettingsModalContext';
 
 import styles from './AIChatPane.css';
@@ -72,10 +73,14 @@ export default function AIChatPane(_: {}): React.Node {
     isStreaming,
     error,
     config,
+    isSelectionIncluded,
+    setIsSelectionIncluded,
     sendMessage,
     stopStreaming,
     clearConversation,
   } = useContext(AIChatContext);
+  const {selectedCommitIndex, selectedFiberID, selectedFiberName} =
+    useContext(ProfilerContext);
   const {setIsModalShowing} = useContext(SettingsModalContext);
 
   const [input, setInput] = useState('');
@@ -120,8 +125,9 @@ export default function AIChatPane(_: {}): React.Node {
         {messages.length === 0 && (
           <div className={styles.EmptyState}>
             Ask about the recorded profiling session, e.g. "Which components are
-            worth optimizing?" or select a commit and ask "Why was this commit
-            slow?".
+            worth optimizing?". Tip: click a commit or a component in the
+            Flamegraph to focus your questions on it — it will appear as a
+            context chip below.
             {!isConfigured && (
               <div className={styles.EmptyStateWarning}>
                 No AI provider is configured yet.{' '}
@@ -144,6 +150,30 @@ export default function AIChatPane(_: {}): React.Node {
           )}
         {error !== null && <div className={styles.Error}>{error}</div>}
       </div>
+      {isSelectionIncluded &&
+        (selectedCommitIndex !== null || selectedFiberID !== null) && (
+          <div className={styles.ContextChips}>
+            <span className={styles.ContextChip}>
+              <span className={styles.ContextChipLabel}>
+                {selectedFiberID !== null
+                  ? `⚛ ${selectedFiberName != null ? selectedFiberName : `fiber ${selectedFiberID}`}`
+                  : null}
+                {selectedFiberID !== null && selectedCommitIndex !== null
+                  ? ' — '
+                  : null}
+                {selectedCommitIndex !== null
+                  ? `commit ${selectedCommitIndex}`
+                  : null}
+              </span>
+              <Button
+                onClick={() => setIsSelectionIncluded(false)}
+                title="Remove from chat context">
+                <ButtonIcon type="close" />
+              </Button>
+            </span>
+            <span className={styles.ContextChipHint}>included as context</span>
+          </div>
+        )}
       <div className={styles.InputRow}>
         <textarea
           className={styles.Input}

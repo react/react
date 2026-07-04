@@ -98,6 +98,38 @@
   white-space: pre-wrap;
 }
 
+.ContextChips {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem 0;
+}
+
+.ContextChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.625rem;
+  background-color: var(--color-button-background-focus);
+  max-width: 70%;
+}
+
+.ContextChipLabel {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ContextChipHint {
+  color: var(--color-dim);
+  font-size: var(--font-size-monospace-small);
+}
+
 .InputRow {
   flex: 0 0 auto;
   display: flex;

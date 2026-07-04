@@ -20,7 +20,7 @@ import {
   useState,
 } from 'react';
 import {ProfilerContext} from './ProfilerContext';
-import {StoreContext} from '../context';
+import {BridgeContext, StoreContext} from '../context';
 import {InspectedElementContext} from '../Components/InspectedElementContext';
 import {runAgentLoop} from 'react-devtools-shared/src/devtools/aiChat/agentLoop';
 import ToolRegistry from 'react-devtools-shared/src/devtools/aiChat/toolRegistry';
@@ -49,6 +49,10 @@ export type AIChatContextType = {
   isStreaming: boolean,
   error: string | null,
   config: AIProviderConfig,
+  // Whether the Profiler's current selection (commit/component) is included
+  // as context for the next question. Shown as a removable chip in the UI.
+  isSelectionIncluded: boolean,
+  setIsSelectionIncluded: (value: boolean) => void,
   sendMessage: (text: string) => void,
   stopStreaming: () => void,
   clearConversation: () => void,
@@ -75,6 +79,7 @@ export function AIChatContextController({children}: Props): React.Node {
     selectedFiberName,
   } = useContext(ProfilerContext);
   const store = useContext(StoreContext);
+  const bridge = useContext(BridgeContext);
   // May be null when the Profiler is rendered without the Components tab's
   // InspectedElementContextController (e.g. in tests).
   const inspectedElementContext = useContext(InspectedElementContext);
@@ -90,8 +95,14 @@ export function AIChatContextController({children}: Props): React.Node {
   const [messages, setMessages] = useState<Array<ChatMessage>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSelectionIncluded, setIsSelectionIncluded] = useState(true);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // A new selection re-arms the context chip after the user dismissed it.
+  useEffect(() => {
+    setIsSelectionIncluded(true);
+  }, [selectedCommitIndex, selectedFiberID]);
 
   const stopStreaming = useCallback(() => {
     if (abortControllerRef.current !== null) {
@@ -137,9 +148,13 @@ export function AIChatContextController({children}: Props): React.Node {
 
       try {
         const registry = new ToolRegistry();
-        createProfilerTools(profilingData, rootID, store.profilerStore).forEach(
-          tool => registry.register(tool),
-        );
+        createProfilerTools(
+          profilingData,
+          rootID,
+          store.profilerStore,
+          store,
+          bridge,
+        ).forEach(tool => registry.register(tool));
         const enabledSkills = skills.filter(skill => skill.enabled);
         if (enabledSkills.length > 0) {
           registry.register(createSkillLoaderTool(skills));
@@ -153,16 +168,18 @@ export function AIChatContextController({children}: Props): React.Node {
           store.profilerStore,
         );
         const interactions = buildInteractionsSummary(profilingData);
-        const selection = buildSelectionContext(
-          profilingData,
-          rootID,
-          store.profilerStore,
-          selectedCommitIndex,
-          selectedFiberID,
-          selectedFiberName,
-          inspectedElement,
-          hookNames,
-        );
+        const selection = isSelectionIncluded
+          ? buildSelectionContext(
+              profilingData,
+              rootID,
+              store.profilerStore,
+              selectedCommitIndex,
+              selectedFiberID,
+              selectedFiberName,
+              inspectedElement,
+              hookNames,
+            )
+          : '';
 
         const extraSections = [];
         if (interactions !== '') {
@@ -252,6 +269,7 @@ export function AIChatContextController({children}: Props): React.Node {
     },
     [
       isStreaming,
+      isSelectionIncluded,
       messages,
       profilingData,
       rootID,
@@ -261,6 +279,7 @@ export function AIChatContextController({children}: Props): React.Node {
       inspectedElement,
       hookNames,
       store,
+      bridge,
       config,
       skills,
     ],
@@ -272,6 +291,8 @@ export function AIChatContextController({children}: Props): React.Node {
       isStreaming,
       error,
       config,
+      isSelectionIncluded,
+      setIsSelectionIncluded,
       sendMessage,
       stopStreaming,
       clearConversation,
@@ -281,6 +302,8 @@ export function AIChatContextController({children}: Props): React.Node {
       isStreaming,
       error,
       config,
+      isSelectionIncluded,
+      setIsSelectionIncluded,
       sendMessage,
       stopStreaming,
       clearConversation,
