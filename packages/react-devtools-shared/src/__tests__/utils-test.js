@@ -509,5 +509,12 @@ function f() { }
       ]);
       expect(formatConsoleArguments('%s 100%', 'done')).toEqual(['done 100%']);
     });
+
+    it('keeps specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArguments('%s %s', 'the')).toEqual(['the %s']);
+      expect(formatConsoleArguments('%s %d', 'value')).toEqual(['value %d']);
+      expect(formatConsoleArguments('%s %i', 'value')).toEqual(['value %i']);
+      expect(formatConsoleArguments('%s %f', 'value')).toEqual(['value %f']);
+    });
   });
 });
