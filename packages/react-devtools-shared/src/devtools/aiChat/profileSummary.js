@@ -101,7 +101,7 @@ export function buildProfileSummary(
   }
   if (commitData.length > MAX_COMMIT_ROWS) {
     lines.push(
-      `(truncated: ${commitData.length - MAX_COMMIT_ROWS} more commits not listed)`,
+      `(truncated: ${commitData.length - MAX_COMMIT_ROWS} more commits not listed — use get_commits to page or filter by min_render_ms)`,
     );
   }
   lines.push('');

@@ -82,6 +82,93 @@ function getCommitOrThrow(context: ToolContext, commitNumber: number) {
   return {dataForRoot, commit};
 }
 
+function getCommitsTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_commits',
+    description:
+      'Lists commits of the session (number, timestamp, render duration, ' +
+      'priority, components rendered). Use when the summary table was ' +
+      'truncated or to find slow commits in large sessions: filter with ' +
+      'min_render_ms and/or page with start_number/end_number.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        start_number: {
+          type: 'integer',
+          description: 'First commit number to include (1-based). Default 1.',
+        },
+        end_number: {
+          type: 'integer',
+          description: 'Last commit number to include. Default: last commit.',
+        },
+        min_render_ms: {
+          type: 'number',
+          description:
+            'Only include commits with render duration >= this value.',
+        },
+      },
+    },
+    execute: async (args: Object) => {
+      const dataForRoot = context.profilingData.dataForRoots.get(
+        context.rootID,
+      );
+      if (dataForRoot == null) {
+        throw new Error('No profiling data for the selected root.');
+      }
+      const commitData = dataForRoot.commitData;
+      const total = commitData.length;
+      const start = Math.max(
+        1,
+        typeof args.start_number === 'number' ? args.start_number : 1,
+      );
+      const end = Math.min(
+        total,
+        typeof args.end_number === 'number' ? args.end_number : total,
+      );
+      const minRenderMs =
+        typeof args.min_render_ms === 'number' ? args.min_render_ms : 0;
+
+      const MAX_ROWS = 100;
+      const lines = [
+        `Commits ${start}-${end} of ${total}` +
+          (minRenderMs > 0 ? ` with render >= ${minRenderMs}ms` : '') +
+          ' (number;time_ms;render_ms;priority;components_rendered):',
+      ];
+      let shown = 0;
+      let matched = 0;
+      for (let number = start; number <= end; number++) {
+        const commit = commitData[number - 1];
+        if (commit.duration < minRenderMs) {
+          continue;
+        }
+        matched++;
+        if (shown >= MAX_ROWS) {
+          continue;
+        }
+        shown++;
+        lines.push(
+          [
+            number,
+            round(commit.timestamp),
+            round(commit.duration),
+            commit.priorityLevel != null ? commit.priorityLevel : '',
+            commit.fiberActualDurations.size,
+          ].join(';'),
+        );
+      }
+      if (matched === 0) {
+        return 'No commits match the requested window/filter.';
+      }
+      if (matched > shown) {
+        lines.push(
+          `(${matched - shown} more matching commits not shown — narrow the window or raise min_render_ms)`,
+        );
+      }
+      return lines.join('\n');
+    },
+  };
+}
+
 function getCommitTool(context: ToolContext): ToolDefinition {
   return {
     name: 'get_commit',
@@ -688,6 +775,7 @@ export function createProfilerTools(
     fetchFile,
   };
   return [
+    getCommitsTool(context),
     getCommitTool(context),
     getComponentCommitsTool(context),
     getRenderCauseTool(context),

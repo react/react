@@ -114,12 +114,30 @@ export function AIChatContextController({children}: Props): React.Node {
   const [messages, setMessages] = useState<Array<ChatMessage>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSelectionIncluded, setIsSelectionIncluded] = useState(true);
+  const [isSelectionIncluded, setIsSelectionIncluded] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // A new selection re-arms the context chip after the user dismissed it.
+  // The Profiler auto-selects the first commit whenever a session is
+  // recorded or imported. That automatic selection should NOT become chat
+  // context — only selections the user actually makes. Each profilingData
+  // change arms a one-shot suppression consumed by the next selection
+  // change (the auto-select); later selection changes re-arm the chip.
+  const suppressNextSelectionRef = useRef<boolean>(true);
+  const prevProfilingDataForSelectionRef = useRef(profilingData);
+  if (prevProfilingDataForSelectionRef.current !== profilingData) {
+    prevProfilingDataForSelectionRef.current = profilingData;
+    suppressNextSelectionRef.current = true;
+  }
+
+  // A user-made selection (re-)arms the context chip, including after the
+  // user dismissed it.
   useEffect(() => {
+    if (suppressNextSelectionRef.current) {
+      suppressNextSelectionRef.current = false;
+      setIsSelectionIncluded(false);
+      return;
+    }
     setIsSelectionIncluded(true);
   }, [selectedCommitIndex, selectedFiberID]);
 
