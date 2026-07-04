@@ -22,7 +22,6 @@ import {
 import {ProfilerContext} from './ProfilerContext';
 import {BridgeContext, StoreContext} from '../context';
 import {InspectedElementContext} from '../Components/InspectedElementContext';
-import FetchFileWithCachingContext from '../Components/FetchFileWithCachingContext';
 import {runAgentLoop} from 'react-devtools-shared/src/devtools/aiChat/agentLoop';
 import ToolRegistry from 'react-devtools-shared/src/devtools/aiChat/toolRegistry';
 import {createProfilerTools} from 'react-devtools-shared/src/devtools/aiChat/profilerTools';
@@ -31,6 +30,7 @@ import {
   createSkillLoaderTool,
 } from 'react-devtools-shared/src/devtools/aiChat/skills';
 import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
+import {clearSourceCaches} from 'react-devtools-shared/src/devtools/aiChat/sourceFiles';
 import {
   buildInteractionsSummary,
   buildProfileSummary,
@@ -81,13 +81,10 @@ export function AIChatContextController({children}: Props): React.Node {
   } = useContext(ProfilerContext);
   const store = useContext(StoreContext);
   const bridge = useContext(BridgeContext);
-  // Embedders (extension) provide a caching fetch for source files; fall
-  // back to plain fetch elsewhere (e.g. the dev shell).
-  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+  // Plain fetch, deliberately NOT the extension's long-lived file cache:
+  // dev bundles change under stable URLs, and source freshness is managed
+  // by the session-scoped caches in aiChat/sourceFiles.js instead.
   const fetchFile = useMemo(() => {
-    if (fetchFileWithCaching != null) {
-      return fetchFileWithCaching;
-    }
     if (typeof fetch !== 'function') {
       return null;
     }
@@ -98,7 +95,7 @@ export function AIChatContextController({children}: Props): React.Node {
         }
         return response.text();
       });
-  }, [fetchFileWithCaching]);
+  }, []);
   // May be null when the Profiler is rendered without the Components tab's
   // InspectedElementContextController (e.g. in tests).
   const inspectedElementContext = useContext(InspectedElementContext);
@@ -160,6 +157,9 @@ export function AIChatContextController({children}: Props): React.Node {
     if (prevProfilingDataRef.current !== profilingData) {
       prevProfilingDataRef.current = profilingData;
       clearConversation();
+      // Re-read bundles/maps fresh for the new session; dev servers change
+      // bundle contents under stable URLs between recordings.
+      clearSourceCaches();
     }
   }, [profilingData, clearConversation]);
 

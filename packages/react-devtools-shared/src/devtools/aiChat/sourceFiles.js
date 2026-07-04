@@ -209,6 +209,15 @@ export function getKnownSourceStats(): {files: number, bundles: number} {
   return {files: knownSources.size, bundles: loadedBundleCount};
 }
 
+// Dev bundles change under stable URLs (watch rebuilds, HMR); cached maps
+// go stale. Callers clear the caches whenever a new profiling session
+// starts so each session reads the bundles as they currently are.
+export function clearSourceCaches(): void {
+  bundleCache.clear();
+  knownSources.clear();
+  loadedBundleCount = 0;
+}
+
 const MAX_SOURCE_LINES = 400;
 const WINDOW_RADIUS = 100;
 
