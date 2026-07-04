@@ -133,7 +133,7 @@ function getCommitsTool(context: ToolContext): ToolDefinition {
       const lines = [
         `Commits ${start}-${end} of ${total}` +
           (minRenderMs > 0 ? ` with render >= ${minRenderMs}ms` : '') +
-          ' (number;time_ms;render_ms;priority;components_rendered):',
+          ' (number;time_ms;render_ms;layout_effects_ms;passive_effects_ms;priority;components_rendered):',
       ];
       let shown = 0;
       let matched = 0;
@@ -152,6 +152,10 @@ function getCommitsTool(context: ToolContext): ToolDefinition {
             number,
             round(commit.timestamp),
             round(commit.duration),
+            commit.effectDuration != null ? round(commit.effectDuration) : '',
+            commit.passiveEffectDuration != null
+              ? round(commit.passiveEffectDuration)
+              : '',
             commit.priorityLevel != null ? commit.priorityLevel : '',
             commit.fiberActualDurations.size,
           ].join(';'),
@@ -208,6 +212,12 @@ function getCommitTool(context: ToolContext): ToolDefinition {
       const lines = [];
       lines.push(
         `Commit ${commitNumber}: render ${round(commit.duration)}ms` +
+          (commit.effectDuration != null
+            ? `, layout effects ${round(commit.effectDuration)}ms`
+            : '') +
+          (commit.passiveEffectDuration != null
+            ? `, passive effects ${round(commit.passiveEffectDuration)}ms`
+            : '') +
           (commit.priorityLevel != null
             ? `, priority ${commit.priorityLevel}`
             : '') +
@@ -365,6 +375,12 @@ function getRenderCauseTool(context: ToolContext): ToolDefinition {
       const lines = [];
       lines.push(
         `Commit ${commitNumber}: render ${round(commit.duration)}ms at +${round(commit.timestamp)}ms` +
+          (commit.effectDuration != null
+            ? `, layout effects ${round(commit.effectDuration)}ms`
+            : '') +
+          (commit.passiveEffectDuration != null
+            ? `, passive effects ${round(commit.passiveEffectDuration)}ms`
+            : '') +
           (commit.priorityLevel != null
             ? `, priority ${commit.priorityLevel}`
             : ''),

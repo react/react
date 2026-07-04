@@ -26,6 +26,10 @@ const MAX_SELECTED_COMMIT_COMPONENTS = 10;
 
 const round = (value: number): number => Math.round(value * 10) / 10;
 
+// Effect durations are null on renderers that don't record them.
+const roundOrEmpty = (value: number | null): number | string =>
+  value == null ? '' : round(value);
+
 type ComponentAggregate = {
   displayName: string,
   renderCount: number,
@@ -84,7 +88,7 @@ export function buildProfileSummary(
   lines.push('');
 
   lines.push(
-    '## Commits (number;time_ms;render_ms;priority;components_rendered)',
+    '## Commits (number;time_ms;render_ms;layout_effects_ms;passive_effects_ms;priority;components_rendered)',
   );
   const commitRowCount = Math.min(commitData.length, MAX_COMMIT_ROWS);
   for (let commitIndex = 0; commitIndex < commitRowCount; commitIndex++) {
@@ -94,6 +98,8 @@ export function buildProfileSummary(
         commitIndex + 1,
         round(commit.timestamp),
         round(commit.duration),
+        roundOrEmpty(commit.effectDuration),
+        roundOrEmpty(commit.passiveEffectDuration),
         commit.priorityLevel != null ? commit.priorityLevel : '',
         commit.fiberActualDurations.size,
       ].join(';'),
@@ -305,6 +311,12 @@ export function buildSelectionContext(
   lines.push('## Current selection in the Profiler UI');
   lines.push(
     `Selected commit: ${selectedCommitIndex + 1} (render ${round(commit.duration)}ms` +
+      (commit.effectDuration != null
+        ? `, layout effects ${round(commit.effectDuration)}ms`
+        : '') +
+      (commit.passiveEffectDuration != null
+        ? `, passive effects ${round(commit.passiveEffectDuration)}ms`
+        : '') +
       (commit.priorityLevel != null
         ? `, priority ${commit.priorityLevel})`
         : ')'),
@@ -497,6 +509,9 @@ export function buildSystemPrompt(
     'cite real lines.',
     'All durations are in milliseconds. Lines in tables are semicolon-delimited.',
     'Commits are numbered starting at 1, matching the Profiler UI.',
+    'layout_effects_ms/passive_effects_ms are time spent in useLayoutEffect',
+    'and useEffect bodies after rendering — a commit can be slow because of',
+    'effects even when its render time is small.',
     '"self time" excludes children; "actual time" includes children.',
     '"parent_caused_renders" counts renders where the component had no prop, state,',
     'hook, or context change of its own — usually addressable with React.memo or by',
