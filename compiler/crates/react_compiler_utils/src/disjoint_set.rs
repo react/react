@@ -7,7 +7,7 @@
 //!
 //! Ported from TypeScript `src/Utils/DisjointSet.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::hash::Hash;
 
 use indexmap::IndexMap;
@@ -17,13 +17,13 @@ use indexmap::IndexMap;
 /// Corresponds to TS `DisjointSet<T>` in `src/Utils/DisjointSet.ts`.
 /// Uses `IndexMap` to preserve insertion order (matching TS `Map` behavior).
 pub struct DisjointSet<K: Copy + Eq + Hash> {
-    entries: IndexMap<K, K>,
+    entries: IndexMap<K, K, FxBuildHasher>,
 }
 
 impl<K: Copy + Eq + Hash> DisjointSet<K> {
     pub fn new() -> Self {
         DisjointSet {
-            entries: IndexMap::new(),
+            entries: IndexMap::default(),
         }
     }
 
@@ -87,8 +87,8 @@ impl<K: Copy + Eq + Hash> DisjointSet<K> {
     /// root) and returns a map of items to their roots.
     ///
     /// Corresponds to TS `canonicalize(): Map<T, T>`.
-    pub fn canonicalize(&mut self) -> IndexMap<K, K> {
-        let mut result = IndexMap::new();
+    pub fn canonicalize(&mut self) -> IndexMap<K, K, FxBuildHasher> {
+        let mut result = IndexMap::default();
         let keys: Vec<K> = self.entries.keys().copied().collect();
         for item in keys {
             let root = self.find(item);
@@ -115,9 +115,9 @@ impl<K: Copy + Eq + Hash> DisjointSet<K> {
     /// Groups all items by their root and returns the groups as a list of sets.
     ///
     /// Corresponds to TS `buildSets(): Array<Set<T>>`.
-    pub fn build_sets(&mut self) -> Vec<HashSet<K>> {
-        let mut group_to_index: IndexMap<K, usize> = IndexMap::new();
-        let mut sets: Vec<HashSet<K>> = Vec::new();
+    pub fn build_sets(&mut self) -> Vec<FxHashSet<K>> {
+        let mut group_to_index: IndexMap<K, usize, FxBuildHasher> = IndexMap::default();
+        let mut sets: Vec<FxHashSet<K>> = Vec::new();
         let keys: Vec<K> = self.entries.keys().copied().collect();
         for item in keys {
             let group = self.find(item);
@@ -126,7 +126,7 @@ impl<K: Copy + Eq + Hash> DisjointSet<K> {
                 None => {
                     let idx = sets.len();
                     group_to_index.insert(group, idx);
-                    sets.push(HashSet::new());
+                    sets.push(FxHashSet::default());
                     idx
                 }
             };

@@ -6556,7 +6556,7 @@ function preloadModule(
           resumableState.moduleUnknownResources.hasOwnProperty(as);
         let resources;
         if (hasAsType) {
-          resources = resumableState.unknownResources[as];
+          resources = resumableState.moduleUnknownResources[as];
           if (resources.hasOwnProperty(key)) {
             // we can return if we already have this resource
             return;

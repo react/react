@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 indexmap = "2"
+rustc-hash = "2"

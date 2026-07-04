@@ -8,8 +8,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/PruneNonEscapingScopes.ts`.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
 use indexmap::IndexSet;
 use react_compiler_hir::ArrayPatternElement;
@@ -74,8 +73,8 @@ pub fn prune_non_escaping_scopes(
     // Prune scopes that do not declare/reassign any escaping values
     let mut transform = PruneScopesTransform {
         env,
-        pruned_scopes: HashSet::new(),
-        reassignments: HashMap::new(),
+        pruned_scopes: FxHashSet::default(),
+        reassignments: FxHashMap::default(),
     };
     let mut memoized_state = memoized;
     transform_reactive_function(func, &mut transform, &mut memoized_state)
@@ -120,8 +119,8 @@ fn join_aliases(kind1: MemoizationLevel, kind2: MemoizationLevel) -> Memoization
 struct IdentifierNode {
     level: MemoizationLevel,
     memoized: bool,
-    dependencies: IndexSet<DeclarationId>,
-    scopes: IndexSet<ScopeId>,
+    dependencies: IndexSet<DeclarationId, FxBuildHasher>,
+    scopes: IndexSet<ScopeId, FxBuildHasher>,
     seen: bool,
 }
 
@@ -137,19 +136,19 @@ struct ScopeNode {
 
 struct CollectState {
     /// Maps lvalues for LoadLocal to the identifier being loaded, to resolve indirections.
-    definitions: HashMap<DeclarationId, DeclarationId>,
-    identifiers: HashMap<DeclarationId, IdentifierNode>,
-    scopes: HashMap<ScopeId, ScopeNode>,
-    escaping_values: IndexSet<DeclarationId>,
+    definitions: FxHashMap<DeclarationId, DeclarationId>,
+    identifiers: FxHashMap<DeclarationId, IdentifierNode>,
+    scopes: FxHashMap<ScopeId, ScopeNode>,
+    escaping_values: IndexSet<DeclarationId, FxBuildHasher>,
 }
 
 impl CollectState {
     fn new() -> Self {
         CollectState {
-            definitions: HashMap::new(),
-            identifiers: HashMap::new(),
-            scopes: HashMap::new(),
-            escaping_values: IndexSet::new(),
+            definitions: FxHashMap::default(),
+            identifiers: FxHashMap::default(),
+            scopes: FxHashMap::default(),
+            escaping_values: IndexSet::default(),
         }
     }
 
@@ -160,8 +159,8 @@ impl CollectState {
             IdentifierNode {
                 level: MemoizationLevel::Never,
                 memoized: false,
-                dependencies: IndexSet::new(),
-                scopes: IndexSet::new(),
+                dependencies: IndexSet::default(),
+                scopes: IndexSet::default(),
                 seen: false,
             },
         );
@@ -900,8 +899,8 @@ impl<'a> CollectDependenciesVisitor<'a> {
                 .or_insert_with(|| IdentifierNode {
                     level: MemoizationLevel::Never,
                     memoized: false,
-                    dependencies: IndexSet::new(),
-                    scopes: IndexSet::new(),
+                    dependencies: IndexSet::default(),
+                    scopes: IndexSet::default(),
                     seen: false,
                 });
             node.level = join_aliases(node.level, lv.level);
@@ -1049,17 +1048,17 @@ impl<'a> ReactiveFunctionVisitor for CollectDependenciesVisitor<'a> {
 // computeMemoizedIdentifiers
 // =============================================================================
 
-fn compute_memoized_identifiers(state: &CollectState) -> HashSet<DeclarationId> {
-    let mut memoized = HashSet::new();
+fn compute_memoized_identifiers(state: &CollectState) -> FxHashSet<DeclarationId> {
+    let mut memoized = FxHashSet::default();
 
     // We need mutable access to the nodes, so we clone the state into mutable structures
-    let mut identifier_nodes: HashMap<
+    let mut identifier_nodes: FxHashMap<
         DeclarationId,
         (
             MemoizationLevel,
             bool,
-            IndexSet<DeclarationId>,
-            IndexSet<ScopeId>,
+            IndexSet<DeclarationId, FxBuildHasher>,
+            IndexSet<ScopeId, FxBuildHasher>,
             bool,
         ),
     > = state
@@ -1079,7 +1078,7 @@ fn compute_memoized_identifiers(state: &CollectState) -> HashSet<DeclarationId> 
         })
         .collect();
 
-    let mut scope_nodes: HashMap<ScopeId, (Vec<DeclarationId>, bool)> = state
+    let mut scope_nodes: FxHashMap<ScopeId, (Vec<DeclarationId>, bool)> = state
         .scopes
         .iter()
         .map(|(id, node)| (*id, (node.dependencies.clone(), node.seen)))
@@ -1088,18 +1087,18 @@ fn compute_memoized_identifiers(state: &CollectState) -> HashSet<DeclarationId> 
     fn visit(
         id: DeclarationId,
         force_memoize: bool,
-        identifier_nodes: &mut HashMap<
+        identifier_nodes: &mut FxHashMap<
             DeclarationId,
             (
                 MemoizationLevel,
                 bool,
-                IndexSet<DeclarationId>,
-                IndexSet<ScopeId>,
+                IndexSet<DeclarationId, FxBuildHasher>,
+                IndexSet<ScopeId, FxBuildHasher>,
                 bool,
             ),
         >,
-        scope_nodes: &mut HashMap<ScopeId, (Vec<DeclarationId>, bool)>,
-        memoized: &mut HashSet<DeclarationId>,
+        scope_nodes: &mut FxHashMap<ScopeId, (Vec<DeclarationId>, bool)>,
+        memoized: &mut FxHashSet<DeclarationId>,
     ) -> bool {
         let Some(&(level, _, _, _, seen)) = identifier_nodes.get(&id) else {
             return false;
@@ -1149,18 +1148,18 @@ fn compute_memoized_identifiers(state: &CollectState) -> HashSet<DeclarationId> 
 
     fn force_memoize_scope_dependencies(
         id: ScopeId,
-        identifier_nodes: &mut HashMap<
+        identifier_nodes: &mut FxHashMap<
             DeclarationId,
             (
                 MemoizationLevel,
                 bool,
-                IndexSet<DeclarationId>,
-                IndexSet<ScopeId>,
+                IndexSet<DeclarationId, FxBuildHasher>,
+                IndexSet<ScopeId, FxBuildHasher>,
                 bool,
             ),
         >,
-        scope_nodes: &mut HashMap<ScopeId, (Vec<DeclarationId>, bool)>,
-        memoized: &mut HashSet<DeclarationId>,
+        scope_nodes: &mut FxHashMap<ScopeId, (Vec<DeclarationId>, bool)>,
+        memoized: &mut FxHashSet<DeclarationId>,
     ) {
         let seen = scope_nodes
             .get(&id)
@@ -1198,12 +1197,12 @@ fn compute_memoized_identifiers(state: &CollectState) -> HashSet<DeclarationId> 
 
 struct PruneScopesTransform<'a> {
     env: &'a Environment,
-    pruned_scopes: HashSet<ScopeId>,
-    reassignments: HashMap<DeclarationId, HashSet<IdentifierId>>,
+    pruned_scopes: FxHashSet<ScopeId>,
+    reassignments: FxHashMap<DeclarationId, FxHashSet<IdentifierId>>,
 }
 
 impl<'a> ReactiveFunctionTransform for PruneScopesTransform<'a> {
-    type State = HashSet<DeclarationId>;
+    type State = FxHashSet<DeclarationId>;
 
     fn env(&self) -> &Environment {
         self.env
@@ -1212,7 +1211,7 @@ impl<'a> ReactiveFunctionTransform for PruneScopesTransform<'a> {
     fn transform_scope(
         &mut self,
         scope: &mut ReactiveScopeBlock,
-        state: &mut HashSet<DeclarationId>,
+        state: &mut FxHashSet<DeclarationId>,
     ) -> Result<Transformed<ReactiveStatement>, react_compiler_diagnostics::CompilerError> {
         self.visit_scope(scope, state)?;
 
@@ -1248,7 +1247,7 @@ impl<'a> ReactiveFunctionTransform for PruneScopesTransform<'a> {
     fn transform_instruction(
         &mut self,
         instruction: &mut ReactiveInstruction,
-        state: &mut HashSet<DeclarationId>,
+        state: &mut FxHashSet<DeclarationId>,
     ) -> Result<Transformed<ReactiveStatement>, react_compiler_diagnostics::CompilerError> {
         self.traverse_instruction(instruction, state)?;
 
@@ -1263,7 +1262,7 @@ impl<'a> ReactiveFunctionTransform for PruneScopesTransform<'a> {
                 let ids = self
                     .reassignments
                     .entry(decl_id)
-                    .or_insert_with(HashSet::new);
+                    .or_insert_with(FxHashSet::default);
                 ids.insert(store_value.identifier);
             }
             ReactiveValue::Instruction(InstructionValue::LoadLocal { place, .. }) => {
@@ -1285,7 +1284,7 @@ impl<'a> ReactiveFunctionTransform for PruneScopesTransform<'a> {
                         let ids = self
                             .reassignments
                             .entry(decl_id)
-                            .or_insert_with(HashSet::new);
+                            .or_insert_with(FxHashSet::default);
                         ids.insert(place.identifier);
                     }
                 }

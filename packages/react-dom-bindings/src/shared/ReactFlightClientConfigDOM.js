@@ -118,7 +118,9 @@ export function preinitModuleForSSR(
   ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
     .M(/* preinitModuleScript */ href, {
       crossOrigin: getCrossOriginString(crossOrigin),
+      integrity: undefined,
       nonce,
+      fetchPriority: undefined,
     });
 }
 
@@ -130,6 +132,8 @@ export function preinitScriptForSSR(
   ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
     .X(/* preinitScript */ href, {
       crossOrigin: getCrossOriginString(crossOrigin),
+      integrity: undefined,
+      fetchPriority: undefined,
       nonce,
     });
 }

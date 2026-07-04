@@ -1,0 +1,212 @@
+.nested-parent-exit {
+  width: 280px;
+  min-height: 280px;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ccc;
+}
+
+.nested-parent-exit-swipe {
+  min-height: 200px;
+}
+
+.nested-parent-exit-label {
+  margin: 0 0 0.75rem;
+  font-size: 13px;
+  color: #666;
+}
+
+.nested-parent-exit-panel {
+  min-height: 240px;
+}
+
+.nested-parent-exit .feed-item {
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+}
+
+.nested-parent-exit .feed-item-title {
+  margin: 0 0 0.15rem;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.nested-parent-exit .feed-item p,
+.nested-parent-exit .detail-view p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.nested-parent-exit .back-button {
+  margin-bottom: 0.75rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+}
+
+@keyframes nested-exit-left {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: -120% 0;
+  }
+}
+
+::view-transition-old(.nested-exit-left) {
+  animation: nested-exit-left 450ms ease-out forwards;
+}
+
+@keyframes nested-enter-from-left {
+  from {
+    opacity: 0;
+    translate: -120% 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+::view-transition-new(.nested-enter-from-left) {
+  animation: nested-enter-from-left 450ms ease-out 650ms both;
+}
+
+/* Title relays the parent activation but exits/enters vertically. */
+@keyframes nested-title-exit-up {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: 0 -80%;
+  }
+}
+
+::view-transition-old(.nested-title-exit-up) {
+  animation: nested-title-exit-up 450ms ease-out forwards;
+}
+
+@keyframes nested-title-enter-from-up {
+  from {
+    opacity: 0;
+    translate: 0 -80%;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+::view-transition-new(.nested-title-enter-from-up) {
+  animation: nested-title-enter-from-up 450ms ease-out 650ms both;
+}
+
+/* Body relays the same parent activation but exits/enters to the right. */
+@keyframes nested-body-exit-right {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: 120% 0;
+  }
+}
+
+::view-transition-old(.nested-body-exit-right) {
+  animation: nested-body-exit-right 450ms ease-in forwards;
+}
+
+@keyframes nested-body-enter-from-right {
+  from {
+    opacity: 0;
+    translate: 120% 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+::view-transition-new(.nested-body-enter-from-right) {
+  animation: nested-body-enter-from-right 450ms ease-out 650ms both;
+}
+
+::view-transition-group(.nested-shared-post-forward) {
+  animation-duration: 600ms;
+  animation-delay: 300ms;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
+}
+
+::view-transition-old(.nested-shared-post-forward),
+::view-transition-new(.nested-shared-post-forward) {
+  animation-delay: 300ms;
+  animation-duration: 600ms;
+  animation-fill-mode: both;
+}
+
+::view-transition-group(.nested-shared-post-back) {
+  animation-duration: 600ms;
+  animation-timing-function: ease-in-out;
+}
+
+::view-transition-group(.nested-shared-inner-forward) {
+  animation-duration: 500ms;
+  animation-delay: 400ms;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
+}
+
+::view-transition-old(.nested-shared-inner-forward),
+::view-transition-new(.nested-shared-inner-forward) {
+  animation-delay: 400ms;
+  animation-duration: 500ms;
+  animation-fill-mode: both;
+}
+
+::view-transition-group(.nested-shared-inner-back) {
+  animation-duration: 500ms;
+  animation-delay: 100ms;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
+}
+
+@keyframes nested-back-btn-enter {
+  from {
+    opacity: 0;
+    translate: -20px 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes nested-back-btn-exit {
+  from {
+    opacity: 1;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: -20px 0;
+  }
+}
+
+::view-transition-new(.nested-back-btn-enter):only-child {
+  animation: nested-back-btn-enter 300ms ease-out 650ms both;
+}
+
+::view-transition-old(.nested-back-btn-exit):only-child {
+  animation: nested-back-btn-exit 200ms ease-in forwards;
+}
