@@ -22,6 +22,7 @@ import {
 import {ProfilerContext} from './ProfilerContext';
 import {BridgeContext, StoreContext} from '../context';
 import {InspectedElementContext} from '../Components/InspectedElementContext';
+import FetchFileWithCachingContext from '../Components/FetchFileWithCachingContext';
 import {runAgentLoop} from 'react-devtools-shared/src/devtools/aiChat/agentLoop';
 import ToolRegistry from 'react-devtools-shared/src/devtools/aiChat/toolRegistry';
 import {createProfilerTools} from 'react-devtools-shared/src/devtools/aiChat/profilerTools';
@@ -80,6 +81,24 @@ export function AIChatContextController({children}: Props): React.Node {
   } = useContext(ProfilerContext);
   const store = useContext(StoreContext);
   const bridge = useContext(BridgeContext);
+  // Embedders (extension) provide a caching fetch for source files; fall
+  // back to plain fetch elsewhere (e.g. the dev shell).
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+  const fetchFile = useMemo(() => {
+    if (fetchFileWithCaching != null) {
+      return fetchFileWithCaching;
+    }
+    if (typeof fetch !== 'function') {
+      return null;
+    }
+    return (url: string) =>
+      fetch(url).then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.text();
+      });
+  }, [fetchFileWithCaching]);
   // May be null when the Profiler is rendered without the Components tab's
   // InspectedElementContextController (e.g. in tests).
   const inspectedElementContext = useContext(InspectedElementContext);
@@ -154,6 +173,7 @@ export function AIChatContextController({children}: Props): React.Node {
           store.profilerStore,
           store,
           bridge,
+          fetchFile,
         ).forEach(tool => registry.register(tool));
         const enabledSkills = skills.filter(skill => skill.enabled);
         if (enabledSkills.length > 0) {
@@ -280,6 +300,7 @@ export function AIChatContextController({children}: Props): React.Node {
       hookNames,
       store,
       bridge,
+      fetchFile,
       config,
       skills,
     ],

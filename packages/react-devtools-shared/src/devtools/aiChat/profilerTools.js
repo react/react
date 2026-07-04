@@ -13,7 +13,15 @@ import {
   convertInspectedElementBackendToFrontend,
 } from 'react-devtools-shared/src/backendAPI';
 import {serializeValue} from './profileSummary';
+import {
+  formatSourceWindow,
+  getKnownSourceContent,
+  getOriginalSource,
+  hasLoadedAnySources,
+  searchKnownSources,
+} from './sourceFiles';
 
+import type {FetchFile} from './sourceFiles';
 import type Store from 'react-devtools-shared/src/devtools/store';
 import type ProfilerStore from 'react-devtools-shared/src/devtools/ProfilerStore';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
@@ -56,6 +64,7 @@ type ToolContext = {
   profilerStore: ProfilerStore,
   store: Store,
   bridge: FrontendBridge,
+  fetchFile: FetchFile | null,
 };
 
 function getCommitOrThrow(context: ToolContext, commitIndex: number) {
@@ -352,6 +361,95 @@ function getInteractionsTool(context: ToolContext): ToolDefinition {
   };
 }
 
+type InspectedComponent = {
+  mountedID: number,
+  candidateIDs: Array<number>,
+  inspected: Object,
+};
+
+// Shared resolution for tools that inspect a live component: finds fiber ids
+// matching a display name in the profiled commit trees (newest first), picks
+// the first still-mounted one, and inspects it over the bridge.
+// Returns a user-facing message string when inspection is not possible.
+async function inspectComponent(
+  context: ToolContext,
+  args: Object,
+): Promise<InspectedComponent | string> {
+  if (context.profilingData.imported) {
+    return (
+      'This profile was imported from a file; live component inspection ' +
+      'is unavailable. Reason about the recorded change descriptions instead.'
+    );
+  }
+
+  // Resolve candidate fiber ids from the profiled commit trees.
+  const candidateIDs: Array<number> = [];
+  if (typeof args.fiber_id === 'number') {
+    candidateIDs.push(args.fiber_id);
+  } else {
+    const query = String(args.component_name || '').toLowerCase();
+    if (query === '') {
+      throw new Error('Provide component_name or fiber_id.');
+    }
+    const dataForRoot = context.profilingData.dataForRoots.get(context.rootID);
+    if (dataForRoot == null) {
+      throw new Error('No profiling data for the selected root.');
+    }
+    // Search newest commit first so current fibers win.
+    for (
+      let commitIndex = dataForRoot.commitData.length - 1;
+      commitIndex >= 0 && candidateIDs.length < 10;
+      commitIndex--
+    ) {
+      const commitTree = getCommitTree({
+        commitIndex,
+        profilerStore: context.profilerStore,
+        rootID: context.rootID,
+      });
+      // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+      for (const [fiberID, node] of commitTree.nodes) {
+        if (
+          node.displayName != null &&
+          node.displayName.toLowerCase().includes(query) &&
+          !candidateIDs.includes(fiberID)
+        ) {
+          candidateIDs.push(fiberID);
+        }
+      }
+    }
+    if (candidateIDs.length === 0) {
+      return `No component matching "${args.component_name}" found in the profile.`;
+    }
+  }
+
+  // Inspect the first candidate that is still mounted.
+  const mountedID = candidateIDs.find(id => context.store.containsElement(id));
+  if (mountedID == null) {
+    return (
+      'The component is no longer mounted, so it cannot be inspected. ' +
+      'Use the recorded change descriptions instead.'
+    );
+  }
+  const rendererID = context.store.getRendererIDForElement(mountedID);
+  if (rendererID == null) {
+    return 'Could not determine the renderer for this component.';
+  }
+
+  const payload = await inspectElement(
+    context.bridge,
+    true, // forceFullData
+    mountedID,
+    null,
+    rendererID,
+    false,
+  );
+  if (payload.type !== 'full-data') {
+    return `Inspection did not return data (${payload.type}).`;
+  }
+  const inspected = convertInspectedElementBackendToFrontend(payload.value);
+  return {mountedID, candidateIDs, inspected};
+}
+
 function formatHooksTree(hooks: any, lines: Array<string>, depth: number) {
   if (!Array.isArray(hooks)) {
     return;
@@ -397,83 +495,11 @@ function getComponentDetailsTool(context: ToolContext): ToolDefinition {
       },
     },
     execute: async (args: Object) => {
-      if (context.profilingData.imported) {
-        return (
-          'This profile was imported from a file; live component inspection ' +
-          'is unavailable. Reason about the recorded change descriptions ' +
-          'instead.'
-        );
+      const resolved = await inspectComponent(context, args);
+      if (typeof resolved === 'string') {
+        return resolved;
       }
-
-      // Resolve candidate fiber ids from the profiled commit trees.
-      const candidateIDs: Array<number> = [];
-      if (typeof args.fiber_id === 'number') {
-        candidateIDs.push(args.fiber_id);
-      } else {
-        const query = String(args.component_name || '').toLowerCase();
-        if (query === '') {
-          throw new Error('Provide component_name or fiber_id.');
-        }
-        const dataForRoot = context.profilingData.dataForRoots.get(
-          context.rootID,
-        );
-        if (dataForRoot == null) {
-          throw new Error('No profiling data for the selected root.');
-        }
-        // Search newest commit first so current fibers win.
-        for (
-          let commitIndex = dataForRoot.commitData.length - 1;
-          commitIndex >= 0 && candidateIDs.length < 10;
-          commitIndex--
-        ) {
-          const commitTree = getCommitTree({
-            commitIndex,
-            profilerStore: context.profilerStore,
-            rootID: context.rootID,
-          });
-          // eslint-disable-next-line no-for-of-loops/no-for-of-loops
-          for (const [fiberID, node] of commitTree.nodes) {
-            if (
-              node.displayName != null &&
-              node.displayName.toLowerCase().includes(query) &&
-              !candidateIDs.includes(fiberID)
-            ) {
-              candidateIDs.push(fiberID);
-            }
-          }
-        }
-        if (candidateIDs.length === 0) {
-          return `No component matching "${args.component_name}" found in the profile.`;
-        }
-      }
-
-      // Inspect the first candidate that is still mounted.
-      const mountedID = candidateIDs.find(id =>
-        context.store.containsElement(id),
-      );
-      if (mountedID == null) {
-        return (
-          'The component is no longer mounted, so its current props/hooks ' +
-          'cannot be inspected. Use the recorded change descriptions instead.'
-        );
-      }
-      const rendererID = context.store.getRendererIDForElement(mountedID);
-      if (rendererID == null) {
-        return 'Could not determine the renderer for this component.';
-      }
-
-      const payload = await inspectElement(
-        context.bridge,
-        true, // forceFullData
-        mountedID,
-        null,
-        rendererID,
-        false,
-      );
-      if (payload.type !== 'full-data') {
-        return `Inspection did not return data (${payload.type}).`;
-      }
-      const inspected = convertInspectedElementBackendToFrontend(payload.value);
+      const {mountedID, candidateIDs, inspected} = resolved;
 
       const lines = [];
       lines.push(
@@ -519,19 +545,152 @@ function getComponentDetailsTool(context: ToolContext): ToolDefinition {
   };
 }
 
+function getComponentSourceTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_component_source',
+    description:
+      'Returns the ORIGINAL source code of a component (reconstructed from ' +
+      "the page's source maps), with line numbers and the definition line " +
+      'marked. Use before suggesting code changes so recommendations cite ' +
+      'real code. Requires the app to serve source maps and the component ' +
+      'to still be mounted. Note: this is the CURRENT code, which may ' +
+      'differ from what ran during the recorded session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        component_name: {
+          type: 'string',
+          description:
+            'Component display name (case-insensitive substring match).',
+        },
+        fiber_id: {
+          type: 'integer',
+          description: 'Exact fiber id (overrides component_name).',
+        },
+      },
+    },
+    execute: async (args: Object) => {
+      if (context.fetchFile == null) {
+        return 'Source fetching is not available in this environment.';
+      }
+      const fetchFile = context.fetchFile;
+
+      const resolved = await inspectComponent(context, args);
+      if (typeof resolved === 'string') {
+        return resolved;
+      }
+      const {inspected} = resolved;
+      const source = inspected.source;
+      if (source == null) {
+        return (
+          'No source location is available for this component (host ' +
+          'component, or a production build without source info).'
+        );
+      }
+      // ReactFunctionLocation tuple: [functionName, fileName, line, column].
+      const [, runtimeURL, runtimeLine, runtimeColumn] = source;
+
+      const original = await getOriginalSource(
+        fetchFile,
+        runtimeURL,
+        runtimeLine,
+        runtimeColumn,
+      );
+      if (original == null) {
+        return (
+          `Only the build location is known: ${runtimeURL}:${runtimeLine}. ` +
+          'No source map could be loaded (the app may not serve source maps).'
+        );
+      }
+      if (original.content == null) {
+        return (
+          `Original location: ${original.url}:${original.line ?? '?'} — but ` +
+          'the source map does not embed the file contents (no sourcesContent).'
+        );
+      }
+
+      return [
+        `// ${original.url} (current code; may differ from the profiled run)`,
+        formatSourceWindow(original.content, original.line),
+      ].join('\n');
+    },
+  };
+}
+
+function getSourceFileTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_source_file',
+    description:
+      'Reads a related original source file by path, from the source maps ' +
+      'already loaded this session (call get_component_source first to load ' +
+      'them). Use to follow imports (e.g. read the parent component that ' +
+      'passes the props). Path is matched as a substring.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'File path or suffix (e.g. "UserList/UserForm.js").',
+        },
+      },
+      required: ['path'],
+    },
+    execute: async (args: Object) => {
+      const query = String(args.path || '');
+      if (query === '') {
+        throw new Error('path is required.');
+      }
+      if (!hasLoadedAnySources()) {
+        return (
+          'No source maps loaded yet. Call get_component_source for a ' +
+          "component first; that loads the app bundle's source map."
+        );
+      }
+      const matches = searchKnownSources(query);
+      if (matches.length === 0) {
+        return `No known source file matches "${query}".`;
+      }
+      if (matches.length > 1) {
+        return (
+          `${matches.length} files match "${query}" — be more specific:\n` +
+          matches.slice(0, 20).join('\n')
+        );
+      }
+      const content = getKnownSourceContent(matches[0]);
+      if (content == null) {
+        return `Could not read ${matches[0]}.`;
+      }
+      return [
+        `// ${matches[0]} (current code; may differ from the profiled run)`,
+        formatSourceWindow(content, null),
+      ].join('\n');
+    },
+  };
+}
+
 export function createProfilerTools(
   profilingData: ProfilingDataFrontend,
   rootID: number,
   profilerStore: ProfilerStore,
   store: Store,
   bridge: FrontendBridge,
+  fetchFile: FetchFile | null,
 ): Array<ToolDefinition> {
-  const context = {profilingData, rootID, profilerStore, store, bridge};
+  const context = {
+    profilingData,
+    rootID,
+    profilerStore,
+    store,
+    bridge,
+    fetchFile,
+  };
   return [
     getCommitTool(context),
     getComponentCommitsTool(context),
     getRenderCauseTool(context),
     getInteractionsTool(context),
     getComponentDetailsTool(context),
+    getComponentSourceTool(context),
+    getSourceFileTool(context),
   ];
 }
