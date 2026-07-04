@@ -243,46 +243,81 @@ export function AIChatContextController({children}: Props): React.Node {
         // React may re-run them while rebasing rapid streamed updates. The
         // replace-vs-append decision is derived from the previous state via
         // the message's `streaming` marker.
-        await runAgentLoop(
-          config,
-          [{role: 'system', content: systemPrompt}, ...history],
-          registry,
-          abortController.signal,
-          {
-            onTextDelta: delta => {
-              setMessages(currentMessages => {
-                const lastMessage = currentMessages[currentMessages.length - 1];
-                if (lastMessage != null && lastMessage.streaming === true) {
-                  const nextMessages = currentMessages.slice();
-                  nextMessages[nextMessages.length - 1] = {
-                    role: 'assistant',
-                    content: lastMessage.content + delta,
-                    streaming: true,
-                  };
-                  return nextMessages;
+        //
+        // Local models emit tokens fast enough that a render (and markdown
+        // re-parse) per delta saturates the main thread on long answers.
+        // Deltas are batched and flushed at most every FLUSH_INTERVAL_MS.
+        const FLUSH_INTERVAL_MS = 80;
+        let pendingDelta = '';
+        let flushTimer = null;
+        const flushDeltas = () => {
+          flushTimer = null;
+          if (pendingDelta === '') {
+            return;
+          }
+          const delta = pendingDelta;
+          pendingDelta = '';
+          setMessages(currentMessages => {
+            const lastMessage = currentMessages[currentMessages.length - 1];
+            if (lastMessage != null && lastMessage.streaming === true) {
+              const nextMessages = currentMessages.slice();
+              nextMessages[nextMessages.length - 1] = {
+                role: 'assistant',
+                content: lastMessage.content + delta,
+                streaming: true,
+              };
+              return nextMessages;
+            }
+            return [
+              ...currentMessages,
+              {role: 'assistant', content: delta, streaming: true},
+            ];
+          });
+        };
+        const cancelPendingFlush = () => {
+          if (flushTimer != null) {
+            clearTimeout(flushTimer);
+            flushTimer = null;
+          }
+          pendingDelta = '';
+        };
+
+        try {
+          await runAgentLoop(
+            config,
+            [{role: 'system', content: systemPrompt}, ...history],
+            registry,
+            abortController.signal,
+            {
+              onTextDelta: delta => {
+                pendingDelta += delta;
+                if (flushTimer == null) {
+                  flushTimer = setTimeout(flushDeltas, FLUSH_INTERVAL_MS);
                 }
-                return [
-                  ...currentMessages,
-                  {role: 'assistant', content: delta, streaming: true},
-                ];
-              });
+              },
+              onAssistantMessage: message => {
+                // The final message carries the complete text; any buffered
+                // deltas are subsumed by it.
+                cancelPendingFlush();
+                setMessages(currentMessages => {
+                  const lastMessage =
+                    currentMessages[currentMessages.length - 1];
+                  if (lastMessage != null && lastMessage.streaming === true) {
+                    const nextMessages = currentMessages.slice();
+                    nextMessages[nextMessages.length - 1] = message;
+                    return nextMessages;
+                  }
+                  return [...currentMessages, message];
+                });
+              },
+              onToolMessage: message => {
+                setMessages(currentMessages => [...currentMessages, message]);
+              },
             },
-            onAssistantMessage: message => {
-              setMessages(currentMessages => {
-                const lastMessage = currentMessages[currentMessages.length - 1];
-                if (lastMessage != null && lastMessage.streaming === true) {
-                  const nextMessages = currentMessages.slice();
-                  nextMessages[nextMessages.length - 1] = message;
-                  return nextMessages;
-                }
-                return [...currentMessages, message];
-              });
-            },
-            onToolMessage: message => {
-              setMessages(currentMessages => [...currentMessages, message]);
-            },
-          },
-        );
+          );
+        } finally {
+          cancelPendingFlush();
+        }
       } catch (requestError) {
         if (requestError.name !== 'AbortError') {
           setError(requestError.message);

@@ -17,6 +17,10 @@
   min-height: 0;
   overflow-y: auto;
   padding: 0.5rem;
+  /* Streamed markdown re-renders DOM nodes each token; native scroll
+     anchoring re-anchors against them and makes the view jitter while
+     scrolled up. Our pinned-to-bottom logic is the sole scroll authority. */
+  overflow-anchor: none;
 }
 
 .EmptyState {
