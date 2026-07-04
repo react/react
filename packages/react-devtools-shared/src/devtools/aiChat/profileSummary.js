@@ -84,14 +84,14 @@ export function buildProfileSummary(
   lines.push('');
 
   lines.push(
-    '## Commits (index;time_ms;render_ms;priority;components_rendered)',
+    '## Commits (number;time_ms;render_ms;priority;components_rendered)',
   );
   const commitRowCount = Math.min(commitData.length, MAX_COMMIT_ROWS);
   for (let commitIndex = 0; commitIndex < commitRowCount; commitIndex++) {
     const commit = commitData[commitIndex];
     lines.push(
       [
-        commitIndex,
+        commitIndex + 1,
         round(commit.timestamp),
         round(commit.duration),
         commit.priorityLevel != null ? commit.priorityLevel : '',
@@ -304,7 +304,7 @@ export function buildSelectionContext(
   const lines = [];
   lines.push('## Current selection in the Profiler UI');
   lines.push(
-    `Selected commit: ${selectedCommitIndex} (render ${round(commit.duration)}ms` +
+    `Selected commit: ${selectedCommitIndex + 1} (render ${round(commit.duration)}ms` +
       (commit.priorityLevel != null
         ? `, priority ${commit.priorityLevel})`
         : ')'),
@@ -495,6 +495,7 @@ export function buildSystemPrompt(
     'code changes, call get_component_source to read the actual component',
     'code (and get_source_file for related files) so fixes cite real lines.',
     'All durations are in milliseconds. Lines in tables are semicolon-delimited.',
+    'Commits are numbered starting at 1, matching the Profiler UI.',
     '"self time" excludes children; "actual time" includes children.',
     '"parent_caused_renders" counts renders where the component had no prop, state,',
     'hook, or context change of its own — usually addressable with React.memo or by',

@@ -162,7 +162,7 @@ export default function AIChatPane(_: {}): React.Node {
                   ? ' — '
                   : null}
                 {selectedCommitIndex !== null
-                  ? `commit ${selectedCommitIndex}`
+                  ? `commit ${selectedCommitIndex + 1}`
                   : null}
               </span>
               <Button

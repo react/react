@@ -67,15 +67,16 @@ type ToolContext = {
   fetchFile: FetchFile | null,
 };
 
-function getCommitOrThrow(context: ToolContext, commitIndex: number) {
+// commitNumber is 1-based, matching the Profiler UI and the summary table.
+function getCommitOrThrow(context: ToolContext, commitNumber: number) {
   const dataForRoot = context.profilingData.dataForRoots.get(context.rootID);
   if (dataForRoot == null) {
     throw new Error('No profiling data for the selected root.');
   }
-  const commit = dataForRoot.commitData[commitIndex];
+  const commit = dataForRoot.commitData[commitNumber - 1];
   if (commit == null) {
     throw new Error(
-      `Commit ${commitIndex} does not exist. Valid range: 0-${dataForRoot.commitData.length - 1}.`,
+      `Commit ${commitNumber} does not exist. Valid range: 1-${dataForRoot.commitData.length}.`,
     );
   }
   return {dataForRoot, commit};
@@ -92,9 +93,10 @@ function getCommitTool(context: ToolContext): ToolDefinition {
     inputSchema: {
       type: 'object',
       properties: {
-        commit_index: {
+        commit_number: {
           type: 'integer',
-          description: 'Zero-based commit index.',
+          description:
+            'Commit number as shown in the commit table and Profiler UI (1-based).',
         },
         min_self_ms: {
           type: 'number',
@@ -102,22 +104,22 @@ function getCommitTool(context: ToolContext): ToolDefinition {
             'Prune subtrees containing no component with self time >= this value. Default 0.',
         },
       },
-      required: ['commit_index'],
+      required: ['commit_number'],
     },
     execute: async (args: Object) => {
-      const commitIndex = args.commit_index;
+      const commitNumber = args.commit_number;
       const minSelfMs =
         typeof args.min_self_ms === 'number' ? args.min_self_ms : 0;
-      const {commit} = getCommitOrThrow(context, commitIndex);
+      const {commit} = getCommitOrThrow(context, commitNumber);
       const commitTree = getCommitTree({
-        commitIndex,
+        commitIndex: commitNumber - 1,
         profilerStore: context.profilerStore,
         rootID: context.rootID,
       });
 
       const lines = [];
       lines.push(
-        `Commit ${commitIndex}: render ${round(commit.duration)}ms` +
+        `Commit ${commitNumber}: render ${round(commit.duration)}ms` +
           (commit.priorityLevel != null
             ? `, priority ${commit.priorityLevel}`
             : '') +
@@ -229,7 +231,7 @@ function getComponentCommitsTool(context: ToolContext): ToolDefinition {
               ? commit.changeDescriptions.get(fiberID)
               : null;
           lines.push(
-            `commit ${commitIndex} (+${round(commit.timestamp)}ms): ${name} id=${fiberID} ` +
+            `commit ${commitIndex + 1} (+${round(commit.timestamp)}ms): ${name} id=${fiberID} ` +
               `self=${round(selfDuration)}ms actual=${round(actualDuration)}ms — ` +
               (change != null ? formatChange(change) : 'reason not recorded'),
           );
@@ -255,25 +257,26 @@ function getRenderCauseTool(context: ToolContext): ToolDefinition {
     inputSchema: {
       type: 'object',
       properties: {
-        commit_index: {
+        commit_number: {
           type: 'integer',
-          description: 'Zero-based commit index.',
+          description:
+            'Commit number as shown in the commit table and Profiler UI (1-based).',
         },
       },
-      required: ['commit_index'],
+      required: ['commit_number'],
     },
     execute: async (args: Object) => {
-      const commitIndex = args.commit_index;
-      const {commit} = getCommitOrThrow(context, commitIndex);
+      const commitNumber = args.commit_number;
+      const {commit} = getCommitOrThrow(context, commitNumber);
       const commitTree = getCommitTree({
-        commitIndex,
+        commitIndex: commitNumber - 1,
         profilerStore: context.profilerStore,
         rootID: context.rootID,
       });
 
       const lines = [];
       lines.push(
-        `Commit ${commitIndex}: render ${round(commit.duration)}ms at +${round(commit.timestamp)}ms` +
+        `Commit ${commitNumber}: render ${round(commit.duration)}ms at +${round(commit.timestamp)}ms` +
           (commit.priorityLevel != null
             ? `, priority ${commit.priorityLevel}`
             : ''),
