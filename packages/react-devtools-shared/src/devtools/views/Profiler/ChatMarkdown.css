@@ -58,6 +58,23 @@
   white-space: pre;
 }
 
+.TokenComment {
+  color: var(--color-dim);
+  font-style: italic;
+}
+
+.TokenString {
+  color: var(--color-attribute-value);
+}
+
+.TokenKeyword {
+  color: var(--color-attribute-name);
+}
+
+.TokenNumber {
+  color: var(--color-component-name);
+}
+
 .Table {
   border-collapse: collapse;
   margin: 0 0 0.5rem;

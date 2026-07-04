@@ -95,6 +95,50 @@ function isTableSeparator(line: string): boolean {
   );
 }
 
+// Lightweight JS/JSX syntax highlighting for fenced code blocks — enough
+// for the code models emit in React performance answers, with zero
+// dependencies. Order matters: comments, then strings, then keywords/numbers.
+const CODE_TOKEN_PATTERN =
+  /(\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\.)*`?)|\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|import|export|from|default|new|class|extends|async|await|try|catch|finally|throw|typeof|instanceof|in|of|delete|void|yield|static|get|set|null|undefined|true|false|this)\b|(\b\d[\d._]*\b)/g;
+
+function highlightCode(code: string): Array<React.Node> {
+  const nodes: Array<React.Node> = [];
+  let lastIndex = 0;
+  let key = 0;
+  CODE_TOKEN_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = CODE_TOKEN_PATTERN.exec(code)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(code.slice(lastIndex, match.index));
+    }
+    const [token, comment, string, keyword, number] = match;
+    const tokenClass =
+      comment != null
+        ? styles.TokenComment
+        : string != null
+          ? styles.TokenString
+          : keyword != null
+            ? styles.TokenKeyword
+            : number != null
+              ? styles.TokenNumber
+              : null;
+    if (tokenClass != null) {
+      nodes.push(
+        <span key={key++} className={tokenClass}>
+          {token}
+        </span>,
+      );
+    } else {
+      nodes.push(token);
+    }
+    lastIndex = match.index + token.length;
+  }
+  if (lastIndex < code.length) {
+    nodes.push(code.slice(lastIndex));
+  }
+  return nodes;
+}
+
 function parseBlocks(content: string): Array<React.Node> {
   const lines = content.split('\n');
   const blocks: Array<React.Node> = [];
@@ -121,7 +165,7 @@ function parseBlocks(content: string): Array<React.Node> {
       index++; // Skip the closing fence if present.
       blocks.push(
         <pre key={key++} className={styles.CodeBlock}>
-          {codeLines.join('\n')}
+          {highlightCode(codeLines.join('\n'))}
         </pre>,
       );
       continue;

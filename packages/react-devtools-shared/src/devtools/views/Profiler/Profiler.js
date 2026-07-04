@@ -240,7 +240,7 @@ const tabs = [
   {
     id: 'ai-chat',
     icon: 'ai-chat',
-    label: 'AI Chat',
+    label: 'Chat',
     title: 'Ask AI about this profiling session',
   },
 ];
