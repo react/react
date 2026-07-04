@@ -151,6 +151,6 @@ const tabs = [
   {
     id: 'ai',
     icon: 'ai-chat',
-    label: 'AI',
+    label: 'Chat',
   },
 ];

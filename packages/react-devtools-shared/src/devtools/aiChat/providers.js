@@ -15,7 +15,7 @@ export const PROVIDER_PRESETS: Array<AIProviderPreset> = [
     label: 'Ollama Cloud',
     baseUrl: 'https://ollama.com/v1',
     requiresApiKey: true,
-    models: ['glm-4.6', 'kimi-k2'],
+    models: ['kimi-k2.7', 'glm-4.6', 'kimi-k2'],
   },
   {
     id: 'ollama-local',

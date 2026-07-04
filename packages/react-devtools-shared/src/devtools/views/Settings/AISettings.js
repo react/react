@@ -97,14 +97,8 @@ export default function AISettings(_: {}): React.Node {
             preset.models.length > 0 ? preset.models.join(', ') : 'model name'
           }
           onChange={({currentTarget}) => setModel(currentTarget.value)}
-          list="ai-settings-model-suggestions"
           size={40}
         />
-        <datalist id="ai-settings-model-suggestions">
-          {preset.models.map(model => (
-            <option key={model} value={model} />
-          ))}
-        </datalist>
       </div>
 
       <div className={styles.SettingWrapper}>
