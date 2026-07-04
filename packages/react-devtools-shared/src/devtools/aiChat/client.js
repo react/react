@@ -97,6 +97,21 @@ export async function streamChatCompletion(
       detail = await response.text();
     } catch (_) {}
     if (response.status === 401 || response.status === 403) {
+      // Local Ollama enforces an origin allowlist server-side and answers
+      // 403 for origins outside it (e.g. chrome-extension:// when DevTools
+      // runs as a browser extension) — not an API key problem.
+      if (
+        response.status === 403 &&
+        (url.includes('localhost') || url.includes('127.0.0.1'))
+      ) {
+        throw new Error(
+          'The local server rejected this origin (HTTP 403). If you are ' +
+            'using local Ollama, allow this origin and restart it, e.g. ' +
+            'OLLAMA_ORIGINS="chrome-extension://*" ollama serve — or on the ' +
+            'macOS Ollama app: launchctl setenv OLLAMA_ORIGINS ' +
+            '"chrome-extension://*" then quit and reopen Ollama.',
+        );
+      }
       throw new Error(
         'Authentication failed. Check the API key in Settings > AI.',
       );
