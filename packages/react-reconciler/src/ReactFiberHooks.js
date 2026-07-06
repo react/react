@@ -247,7 +247,12 @@ export type OwnedHostTransitionStatusDependency = {
   kind: 'form',
   owner: Fiber,
   provider: Fiber | null,
+  // The most recently observed status of the bound provider. Updated by
+  // commitOwnedHostTransitionStatusChanged when a status change commits.
   value: TransitionStatus,
+  // The status the owner actually rendered with. When this differs from
+  // `value` on a subsequent render, the owner cannot bail out.
+  renderedValue: TransitionStatus,
   ambiguous: boolean,
 };
 
@@ -256,9 +261,7 @@ export type FunctionComponentUpdateQueue = {
   events: Array<EventFunctionPayload<any, any, any>> | null,
   stores: Array<StoreConsistencyCheck<any>> | null,
   memoCache: MemoCache | null,
-  ownedHostTransitionStatus:
-    | Array<OwnedHostTransitionStatusDependency>
-    | null,
+  ownedHostTransitionStatus: Array<OwnedHostTransitionStatusDependency> | null,
 };
 
 type BasicStateAction<S> = (S => S) | S;
@@ -1248,9 +1251,7 @@ export function commitOwnedHostTransitionStatusChanged(
   }
 }
 
-export function warnIfOwnedHostTransitionStatusIsAmbiguous(
-  owner: Fiber,
-): void {
+export function warnIfOwnedHostTransitionStatusIsAmbiguous(owner: Fiber): void {
   if (__DEV__) {
     const updateQueue: FunctionComponentUpdateQueue | null =
       owner.updateQueue as any;
