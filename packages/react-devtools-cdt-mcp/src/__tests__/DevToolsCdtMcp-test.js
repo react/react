@@ -94,6 +94,30 @@ describe('react-devtools-cdt-mcp', () => {
     expect(globalThis.__dtmcp).toBeUndefined();
   });
 
+  it('throws when the auto entry is imported outside an event target', () => {
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalRemoveEventListener = globalThis.removeEventListener;
+
+    unregister();
+    delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    jest.resetModules();
+
+    try {
+      // $FlowFixMe[cannot-write]
+      globalThis.addEventListener = undefined;
+      // $FlowFixMe[cannot-write]
+      globalThis.removeEventListener = undefined;
+
+      expect(() => require('../index')).toThrow(
+        'react-devtools-cdt-mcp must be imported in a browser-like environment',
+      );
+      expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeUndefined();
+    } finally {
+      globalThis.addEventListener = originalAddEventListener;
+      globalThis.removeEventListener = originalRemoveEventListener;
+    }
+  });
+
   it('builds a "react" tool group exposing every facade tool', () => {
     expect(toolGroup.name).toBe('react');
     expect(typeof toolGroup.description).toBe('string');
