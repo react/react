@@ -30,8 +30,7 @@ const skipFilter = new Set([
    * `using`/`await using` (explicit resource management) is not supported by
    * the Node version the evaluator runs on.
    */
-  'bug-using-declaration-compiled-as-const',
-  'bug-await-using-declaration-compiled-as-const',
+  'using-declaration-bailout-sibling-compiles',
 
   /**
    * Observable different in logging between Forget and non-Forget
