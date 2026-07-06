@@ -39,6 +39,18 @@ export const PROVIDERS: Array<AIProviderDefinition> = [
     auth: 'api-key',
     models: ['gpt-5.1', 'gpt-5.1-mini', 'gpt-4.1'],
   },
+  {
+    id: 'openai-codex',
+    label: 'OpenAI Codex (ChatGPT subscription)',
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    wire: 'openai-responses',
+    auth: 'subscription',
+    // Which models a ChatGPT account may use here is plan-tier dependent,
+    // and Codex-suffixed API model ids are rejected. If the default is not
+    // available on your plan, the chat surfaces the backend's error naming
+    // the unsupported model; enter one your plan allows.
+    models: ['gpt-5.5', 'gpt-5.1', 'gpt-5'],
+  },
 ];
 
 export const DEFAULT_PROVIDER_ID = 'ollama-cloud';

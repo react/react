@@ -8,12 +8,12 @@
  */
 
 // The on-the-wire request/response dialect a provider speaks. Each maps to
-// one adapter under aiChat/wire/. 'openai-responses' (Codex) lands in P1.
-export type WireProtocol = 'openai-chat';
+// one adapter under aiChat/wire/.
+export type WireProtocol = 'openai-chat' | 'openai-responses';
 
-// How a provider is authenticated. 'subscription' (imported OAuth tokens,
-// e.g. Codex) lands in P1.
-export type AuthMethod = 'none' | 'api-key';
+// How a provider is authenticated. 'subscription' = imported OAuth tokens
+// (Codex "Sign in with ChatGPT"), resolved + refreshed by the auth loader.
+export type AuthMethod = 'none' | 'api-key' | 'subscription';
 
 // A provider is data, not code: the catalog (providers.js) is a list of
 // these, and adding a provider is adding an entry.

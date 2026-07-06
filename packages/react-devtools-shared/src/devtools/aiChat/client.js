@@ -9,6 +9,7 @@
 
 import {resolveRequest} from './providerRuntime';
 import {streamOpenAIChat} from './wire/openaiChat';
+import {streamOpenAIResponses} from './wire/openaiResponses';
 
 import type {StreamChatOptions, CompletionResult} from './types';
 
@@ -29,6 +30,14 @@ export async function streamChatCompletion(
   switch (resolved.wire) {
     case 'openai-chat':
       return streamOpenAIChat({
+        request: resolved,
+        messages,
+        tools,
+        signal,
+        onTextDelta,
+      });
+    case 'openai-responses':
+      return streamOpenAIResponses({
         request: resolved,
         messages,
         tools,

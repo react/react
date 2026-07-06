@@ -8,19 +8,21 @@
  */
 
 import {getProvider} from './providers';
+import {getValidCodexAuth} from './codexAuth';
 
 import type {AIProviderConfig, ResolvedRequest} from './types';
 
 // The auth loader: turns stored config into everything a wire adapter needs
 // to issue requests (base URL, headers, wire dialect, model). This is the
-// extension point for new auth methods — the 'subscription' branch (Codex
-// token import + refresh + ChatGPT-Account-Id header) lands here in P1.
+// extension point for auth methods — api-key, none, and subscription (Codex
+// token import + refresh + ChatGPT-Account-Id header) all resolve here.
 //
+// Async because subscription auth may refresh tokens over the network.
 // Returns a user-facing error string when the config is unusable, so the
 // chat surfaces a clear message instead of a raw network failure.
-export function resolveRequest(
+export async function resolveRequest(
   config: AIProviderConfig,
-): ResolvedRequest | {error: string} {
+): Promise<ResolvedRequest | {error: string}> {
   const provider = getProvider(config.providerId);
   const baseUrl = config.baseUrl !== '' ? config.baseUrl : provider.baseUrl;
 
@@ -38,6 +40,7 @@ export function resolveRequest(
   }
 
   const headers: {[string]: string} = {'Content-Type': 'application/json'};
+
   if (provider.auth === 'api-key') {
     if (config.apiKey === '') {
       return {
@@ -45,6 +48,15 @@ export function resolveRequest(
       };
     }
     headers.Authorization = `Bearer ${config.apiKey}`;
+  } else if (provider.auth === 'subscription') {
+    let auth;
+    try {
+      auth = await getValidCodexAuth();
+    } catch (error) {
+      return {error: error.message};
+    }
+    headers.Authorization = `Bearer ${auth.accessToken}`;
+    headers['ChatGPT-Account-Id'] = auth.accountId;
   }
 
   return {

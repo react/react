@@ -17,6 +17,12 @@ import {
 } from 'react-devtools-shared/src/devtools/aiChat/providers';
 import {useAIProviderConfig} from 'react-devtools-shared/src/devtools/aiChat/useAIProviderConfig';
 import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
+import {
+  parseCodexAuthInput,
+  setStoredCodexTokens,
+  clearStoredCodexTokens,
+  hasCodexTokens,
+} from 'react-devtools-shared/src/devtools/aiChat/codexAuth';
 
 import styles from './SettingsShared.css';
 
@@ -27,6 +33,29 @@ export default function AISettings(_: {}): React.Node {
 
   const [newSkillMarkdown, setNewSkillMarkdown] = useState('');
   const [skillError, setSkillError] = useState<string | null>(null);
+
+  const [codexInput, setCodexInput] = useState('');
+  const [codexSignedIn, setCodexSignedIn] = useState<boolean>(hasCodexTokens());
+  const [codexError, setCodexError] = useState<string | null>(null);
+
+  const handleSaveCodexTokens = () => {
+    const tokens = parseCodexAuthInput(codexInput);
+    if (tokens == null) {
+      setCodexError(
+        'Could not read tokens. Paste the full contents of ~/.codex/auth.json.',
+      );
+      return;
+    }
+    setStoredCodexTokens(tokens);
+    setCodexError(null);
+    setCodexInput('');
+    setCodexSignedIn(true);
+  };
+
+  const handleClearCodexTokens = () => {
+    clearStoredCodexTokens();
+    setCodexSignedIn(false);
+  };
 
   const handleAddSkill = () => {
     const added = addSkill(newSkillMarkdown);
@@ -43,6 +72,7 @@ export default function AISettings(_: {}): React.Node {
 
   const provider = getProvider(config.providerId);
   const usesApiKey = provider.auth === 'api-key';
+  const usesSubscription = provider.auth === 'subscription';
 
   const selectProvider = (providerId: string) => {
     setProviderId(providerId);
@@ -89,6 +119,49 @@ export default function AISettings(_: {}): React.Node {
             onChange={({currentTarget}) => setApiKey(currentTarget.value)}
             size={40}
           />
+        </div>
+      )}
+
+      {usesSubscription && (
+        <div className={styles.SettingWrapper}>
+          <div className={styles.RadioLabel}>ChatGPT sign-in</div>
+          {codexSignedIn ? (
+            <div>
+              Signed in.{' '}
+              <Button
+                onClick={handleClearCodexTokens}
+                title="Forget the stored Codex tokens">
+                Sign out
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <div>
+                Run <code>codex login</code> in a terminal, then paste the
+                contents of <code>~/.codex/auth.json</code> below. Tokens are
+                stored in this panel and refreshed automatically.
+              </div>
+              <textarea
+                rows={4}
+                cols={50}
+                placeholder='{"tokens":{"access_token":"…","refresh_token":"…","account_id":"…"}}'
+                value={codexInput}
+                onChange={({currentTarget}) =>
+                  setCodexInput(currentTarget.value)
+                }
+              />
+              <div>
+                <Button
+                  onClick={handleSaveCodexTokens}
+                  title="Save Codex tokens">
+                  Save tokens
+                </Button>
+              </div>
+              {codexError !== null && (
+                <div className={styles.ModelError}>{codexError}</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
