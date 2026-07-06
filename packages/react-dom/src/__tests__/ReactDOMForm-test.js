@@ -945,6 +945,53 @@ describe('ReactDOMForm', () => {
     assertLog(['Async action finished', 'No pending action']);
   });
 
+  it('useFormStatus can read the status of a form returned by the same component', async () => {
+    const formRef = React.createRef();
+
+    async function myAction() {
+      Scheduler.log('Async action started');
+      await getText('Wait');
+      Scheduler.log('Async action finished');
+    }
+
+    function App() {
+      const {pending, data, action, method} = useFormStatus();
+      let status;
+      if (!pending) {
+        status = 'No pending action';
+      } else {
+        status = `Pending action ${action.name}: foo is ${data.get(
+          'foo',
+        )}, method is ${method}`;
+      }
+
+      return (
+        <form action={myAction} ref={formRef}>
+          <input type="text" name="foo" defaultValue="bar" />
+          <Text text={status} />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+    assertLog(['No pending action']);
+    expect(container.textContent).toBe('No pending action');
+
+    await submit(formRef.current);
+    assertLog([
+      'Async action started',
+      'Pending action myAction: foo is bar, method is get',
+    ]);
+    expect(container.textContent).toBe(
+      'Pending action myAction: foo is bar, method is get',
+    );
+
+    await act(() => resolveText('Wait'));
+    assertLog(['Async action finished', 'No pending action']);
+    expect(container.textContent).toBe('No pending action');
+  });
+
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
 
