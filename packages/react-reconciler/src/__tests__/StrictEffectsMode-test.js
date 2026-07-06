@@ -808,6 +808,197 @@ describe('StrictEffectsMode', () => {
     ]);
   });
 
+  it('should not double-invoke effects when a keyed child is moved', async () => {
+    const log = [];
+    function Item({label}) {
+      React.useEffect(() => {
+        log.push('useEffect mount ' + label);
+        return () => log.push('useEffect unmount ' + label);
+      }, []);
+
+      React.useLayoutEffect(() => {
+        log.push('useLayoutEffect mount ' + label);
+        return () => log.push('useLayoutEffect unmount ' + label);
+      }, []);
+
+      return label;
+    }
+
+    function App({items}) {
+      return items.map(item => <Item key={item} label={item} />);
+    }
+
+    // Initial mount: [A, B, C]
+    await act(() => {
+      ReactNoop.renderToRootWithID(
+        <React.StrictMode>
+          <App items={['A', 'B', 'C']} />
+        </React.StrictMode>,
+        'root',
+      );
+    });
+
+    // StrictMode double-invokes on mount — this is expected.
+    if (__DEV__) {
+      expect(log).toEqual([
+        'useLayoutEffect mount A',
+        'useLayoutEffect mount B',
+        'useLayoutEffect mount C',
+        'useEffect mount A',
+        'useEffect mount B',
+        'useEffect mount C',
+        'useLayoutEffect unmount A',
+        'useLayoutEffect unmount B',
+        'useLayoutEffect unmount C',
+        'useEffect unmount A',
+        'useEffect unmount B',
+        'useEffect unmount C',
+        'useLayoutEffect mount A',
+        'useLayoutEffect mount B',
+        'useLayoutEffect mount C',
+        'useEffect mount A',
+        'useEffect mount B',
+        'useEffect mount C',
+      ]);
+    } else {
+      expect(log).toEqual([
+        'useLayoutEffect mount A',
+        'useLayoutEffect mount B',
+        'useLayoutEffect mount C',
+        'useEffect mount A',
+        'useEffect mount B',
+        'useEffect mount C',
+      ]);
+    }
+
+    // Clear log after initial mount
+    log.length = 0;
+
+    // Re-render with items reordered: [C, A, B] (move, not mount)
+    await act(() => {
+      ReactNoop.renderToRootWithID(
+        <React.StrictMode>
+          <App items={['C', 'A', 'B']} />
+        </React.StrictMode>,
+        'root',
+      );
+    });
+
+    // Effects should NOT be double-invoked on reorder since these are
+    // moves, not new insertions.
+    expect(log).toEqual([]);
+  });
+
+  it('should only double-invoke effects for a new item when mixed with moves', async () => {
+    const log = [];
+    function Item({label}) {
+      React.useEffect(() => {
+        log.push('useEffect mount ' + label);
+        return () => log.push('useEffect unmount ' + label);
+      }, []);
+
+      React.useLayoutEffect(() => {
+        log.push('useLayoutEffect mount ' + label);
+        return () => log.push('useLayoutEffect unmount ' + label);
+      }, []);
+
+      return label;
+    }
+
+    function App({items}) {
+      return items.map(item => <Item key={item} label={item} />);
+    }
+
+    // Initial mount: [A, B, C]
+    await act(() => {
+      ReactNoop.renderToRootWithID(
+        <React.StrictMode>
+          <App items={['A', 'B', 'C']} />
+        </React.StrictMode>,
+        'root',
+      );
+    });
+
+    // Clear log after initial mount
+    log.length = 0;
+
+    // Re-render with items reordered and a new item D: [C, A, D, B]
+    // C, A, B are moved (effects should NOT re-run)
+    // D is NEW (its effects SHOULD be double-invoked by StrictMode)
+    await act(() => {
+      ReactNoop.renderToRootWithID(
+        <React.StrictMode>
+          <App items={['C', 'A', 'D', 'B']} />
+        </React.StrictMode>,
+        'root',
+      );
+    });
+
+    if (__DEV__) {
+      // Only D's effects should appear: mount, unmount, mount (StrictMode double-invoke)
+      expect(log).toEqual([
+        'useLayoutEffect mount D',
+        'useEffect mount D',
+        'useLayoutEffect unmount D',
+        'useEffect unmount D',
+        'useLayoutEffect mount D',
+        'useEffect mount D',
+      ]);
+    } else {
+      // In production, D just mounts once
+      expect(log).toEqual(['useLayoutEffect mount D', 'useEffect mount D']);
+    }
+  });
+
+  it('should only fire unmount effects for a removed item when mixed with moves', async () => {
+    const log = [];
+    function Item({label}) {
+      React.useEffect(() => {
+        log.push('useEffect mount ' + label);
+        return () => log.push('useEffect unmount ' + label);
+      }, []);
+
+      React.useLayoutEffect(() => {
+        log.push('useLayoutEffect mount ' + label);
+        return () => log.push('useLayoutEffect unmount ' + label);
+      }, []);
+
+      return label;
+    }
+
+    function App({items}) {
+      return items.map(item => <Item key={item} label={item} />);
+    }
+
+    // Initial mount: [A, B, C]
+    await act(() => {
+      ReactNoop.renderToRootWithID(
+        <React.StrictMode>
+          <App items={['A', 'B', 'C']} />
+        </React.StrictMode>,
+        'root',
+      );
+    });
+
+    // Clear log after initial mount
+    log.length = 0;
+
+    // Re-render with B removed and items reordered: [C, A]
+    // C, A are moved (effects should NOT re-run)
+    // B is REMOVED (its cleanup effects SHOULD fire)
+    await act(() => {
+      ReactNoop.renderToRootWithID(
+        <React.StrictMode>
+          <App items={['C', 'A']} />
+        </React.StrictMode>,
+        'root',
+      );
+    });
+
+    // Only B's unmount effects should appear
+    expect(log).toEqual(['useLayoutEffect unmount B', 'useEffect unmount B']);
+  });
+
   // @gate __DEV__
   it('should double invoke effects after a re-suspend', async () => {
     // Not using log.push because it silences double render logs.
