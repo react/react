@@ -1,6 +1,6 @@
 {
   "name": "react-dom",
-  "version": "19.1.8",
+  "version": "19.1.9",
   "description": "React package for working with the DOM.",
   "main": "index.js",
   "repository": {
@@ -20,7 +20,7 @@
     "scheduler": "^0.26.0"
   },
   "peerDependencies": {
-    "react": "^19.1.8"
+    "react": "^19.1.9"
   },
   "files": [
     "LICENSE",
