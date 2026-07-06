@@ -122,6 +122,7 @@ import {
   getNativeTag,
   getCurrentTime,
 } from 'react-devtools-shared/src/backend/DevToolsNativeHost';
+import {createPerformanceTrackCapture} from 'react-devtools-shared/src/backend/performanceTrackCapture';
 import {
   isError,
   rootSupportsProfiling,
@@ -7311,6 +7312,14 @@ export function attach(
       }
     }
   }
+
+  // React 19.2+ Performance Track spans (scheduler phases, component/effect
+  // spans), captured by wrapping console.timeStamp while profiling. Uses the
+  // renderer's `global` console for the same reason as the input listeners.
+  // Older React versions never emit these — the capture just stays empty.
+  const performanceTrackCapture = createPerformanceTrackCapture({
+    getTimeOffset: () => profilingStartTime,
+  });
   let rootToCommitProfilingMetadataMap: CommitProfilingMetadataMap | null =
     null;
 
@@ -7432,6 +7441,8 @@ export function attach(
       rendererID,
       timelineData,
       userInputEvents: userInputEvents.slice(),
+      performanceTrackSpans: performanceTrackCapture.getSpans(),
+      droppedPerformanceTrackSpans: performanceTrackCapture.getDroppedCount(),
     };
   }
 
@@ -7503,6 +7514,10 @@ export function attach(
       toggleUserInputEventListeners(true);
     }
 
+    performanceTrackCapture.start(
+      global != null && global.console != null ? global.console : console,
+    );
+
     if (toggleProfilingStatus !== null) {
       toggleProfilingStatus(true, recordTimeline);
     }
@@ -7512,6 +7527,7 @@ export function attach(
     isProfiling = false;
     recordChangeDescriptions = false;
     toggleUserInputEventListeners(false);
+    performanceTrackCapture.stop();
 
     if (toggleProfilingStatus !== null) {
       toggleProfilingStatus(false, recordTimeline);

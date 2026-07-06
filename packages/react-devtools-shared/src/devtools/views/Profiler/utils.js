@@ -47,10 +47,18 @@ export function prepareProfilingDataFrontendFromBackendAndStore(
 
   const timelineDataArray = [];
   const userInputEvents = [];
+  const performanceTrackSpans = [];
+  let droppedPerformanceTrackSpans = 0;
 
   dataBackends.forEach(dataBackend => {
     if (dataBackend.userInputEvents != null) {
       userInputEvents.push(...dataBackend.userInputEvents);
+    }
+    if (dataBackend.performanceTrackSpans != null) {
+      performanceTrackSpans.push(...dataBackend.performanceTrackSpans);
+    }
+    if (dataBackend.droppedPerformanceTrackSpans != null) {
+      droppedPerformanceTrackSpans += dataBackend.droppedPerformanceTrackSpans;
     }
     const {timelineData} = dataBackend;
     if (timelineData != null) {
@@ -130,12 +138,15 @@ export function prepareProfilingDataFrontendFromBackendAndStore(
   });
 
   userInputEvents.sort((a, b) => a.timestamp - b.timestamp);
+  performanceTrackSpans.sort((a, b) => a.start - b.start);
 
   return {
     dataForRoots,
     imported: false,
     timelineData: timelineDataArray,
     userInputEvents,
+    performanceTrackSpans,
+    droppedPerformanceTrackSpans,
   };
 }
 
@@ -244,6 +255,9 @@ export function prepareProfilingDataFrontendFromExport(
     imported: true,
     timelineData,
     userInputEvents: profilingDataExport.userInputEvents || [],
+    performanceTrackSpans: profilingDataExport.performanceTrackSpans || [],
+    droppedPerformanceTrackSpans:
+      profilingDataExport.droppedPerformanceTrackSpans || 0,
   };
 }
 
@@ -353,6 +367,9 @@ export function prepareProfilingDataExport(
     dataForRoots,
     timelineData,
     userInputEvents: profilingDataFrontend.userInputEvents,
+    performanceTrackSpans: profilingDataFrontend.performanceTrackSpans,
+    droppedPerformanceTrackSpans:
+      profilingDataFrontend.droppedPerformanceTrackSpans,
   };
 }
 

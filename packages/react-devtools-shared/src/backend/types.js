@@ -31,6 +31,7 @@ import type {
 } from 'react-devtools-shared/src/backend/NativeStyleEditor/setupNativeStyleEditor';
 import type {InitBackend} from 'react-devtools-shared/src/backend';
 import type {TimelineDataExport} from 'react-devtools-timeline/src/types';
+import type {PerformanceTrackSpan} from 'react-devtools-shared/src/backend/performanceTrackCapture';
 import type {BackendBridge} from 'react-devtools-shared/src/bridge';
 import type {ReactFunctionLocation, ReactStackTrace} from 'shared/ReactTypes';
 import type Agent from './agent';
@@ -241,6 +242,10 @@ export type ProfilingDataBackend = {
   rendererID: number,
   timelineData: TimelineDataExport | null,
   userInputEvents?: Array<UserInputEventBackend>,
+  // React 19.2+ Performance Track spans captured during the session (see
+  // backend/performanceTrackCapture.js). Absent/empty on older React.
+  performanceTrackSpans?: Array<PerformanceTrackSpan>,
+  droppedPerformanceTrackSpans?: number,
 };
 
 export type PathFrame = {

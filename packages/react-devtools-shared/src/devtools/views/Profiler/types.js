@@ -15,6 +15,7 @@ import type {
   TimelineData,
   TimelineDataExport,
 } from 'react-devtools-timeline/src/types';
+import type {PerformanceTrackSpan} from 'react-devtools-shared/src/backend/performanceTrackCapture';
 
 export type CommitTreeNode = {
   id: number,
@@ -131,6 +132,11 @@ export type ProfilingDataFrontend = {
   // User interactions recorded during the session (all renderers combined).
   userInputEvents: Array<UserInputEventFrontend>,
 
+  // React 19.2+ Performance Track spans recorded during the session (all
+  // renderers combined). Empty when the profiled app doesn't emit them.
+  performanceTrackSpans: Array<PerformanceTrackSpan>,
+  droppedPerformanceTrackSpans: number,
+
   // Some functionality should be disabled for imported data.
   // e.g. DevTools should not try to sync selection between Components and Profiler tabs,
   // even if there are Fibers with the same IDs.
@@ -175,4 +181,9 @@ export type ProfilingDataExport = {
   // User interactions recorded during the session.
   // Note that old exported profiles won't contain this key.
   userInputEvents?: Array<UserInputEventFrontend>,
+
+  // React 19.2+ Performance Track spans recorded during the session.
+  // Note that old exported profiles won't contain these keys.
+  performanceTrackSpans?: Array<PerformanceTrackSpan>,
+  droppedPerformanceTrackSpans?: number,
 };
