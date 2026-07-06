@@ -115,3 +115,74 @@ malformed-tool-call tolerance for small models.
   snapshots via JSON.parse — only store primitives (serialize arrays to
   JSON strings); `setMessages` updaters must stay pure (no ref mutation) or
   streamed updates duplicate under rebasing.
+
+## Provider architecture v2 (planned)
+
+### Goal
+
+Replace the ad-hoc provider presets with a well-architected provider layer
+(modeled on opencode's proven split) that makes adding providers cheap and
+supports two auth kinds per provider: **api-key** and **subscription**
+(imported OAuth tokens). First targets: OpenAI (api key) and OpenAI Codex
+via ChatGPT subscription. The "Custom" preset is removed; custom needs are
+covered by the OpenAI-compatible provider definition shape itself.
+
+### Architecture (opencode-inspired, zero new dependencies)
+
+Three seams, mirroring the industry-standard shapes without taking the
+Vercel AI SDK dependency (~100–125 KB gz for core+one provider; too heavy
+for the panel today, and the repo is dependency-conservative):
+
+1. **Provider catalog** — data, not code:
+   `{id, label, baseUrl, wire, authMethods, models, headers?}`.
+2. **Auth loader** (opencode's key trick) — per provider, resolves stored
+   credentials into request options `{baseUrl, headers, fetch?}`; a custom
+   fetch injects bearer tokens, adds provider headers, refreshes expired
+   tokens, and retries once on 401.
+3. **Wire adapters** behind a LanguageModelV2-shaped seam
+   (`doStream(callOptions) -> stream parts: text-delta | tool-call |
+   finish`): `openai-chat` (today's client, unchanged) and
+   `openai-responses` (new, for Codex). Mirror the concepts, not exact SDK
+   types (the spec churns V1→V2→V3); adopting real `@ai-sdk/*` packages
+   later stays possible behind this seam.
+
+### Codex subscription — feasibility findings (2026-07-05 research)
+
+- OAuth is PKCE against auth.openai.com with client id
+  `app_EMoamEEZ73f0CkXaXp7hrann`, redirect **locked to
+  http://localhost:1455/auth/callback** — a browser extension cannot run
+  this flow (chrome.identity needs its own redirect URI; OpenAI rejects
+  others). **In-panel OAuth is off the table.**
+- Practical path: **token import** — the user logs in once with Codex CLI
+  (`codex login`), then pastes `~/.codex/auth.json` contents (access +
+  refresh token + account id) into settings. The auth loader refreshes via
+  the token endpoint (refresh TTL ≈ 30 days) and stores rotated tokens.
+- Tokens call ChatGPT's private backend
+  (`chatgpt.com/backend-api/codex/responses`), **Responses API** wire:
+  `store: false` (stateless — resend full history), `input_text` content
+  parts, `ChatGPT-Account-Id` header from the JWT claim.
+- Open risks to validate first: CORS/origin acceptance of that backend from
+  an extension origin (browser CORS is bypassed by host_permissions, but
+  the server may reject unknown origins — same failure mode as local
+  Ollama); refresh endpoint CORS; ToS gray area (community tools frame it
+  as personal use of one's own subscription; OpenAI can break it anytime).
+  Ship behind honest UI copy.
+
+### Workflow
+
+- **P0 — provider core refactor**: catalog + auth loader + wire-adapter
+  seam; settings UI rendered from provider definitions (auth fields per
+  method); remove Custom; Ollama cloud/local become catalog entries over
+  the openai-chat adapter. No behavior change.
+- **P1 — Codex subscription provider** (user priority): probe spike first
+  (validate backend + refresh from extension origin with a pasted token),
+  then token-import auth method (paste auth.json), loader with refresh +
+  ChatGPT-Account-Id, openai-responses adapter with tool-calling mapping.
+- **P2 — OpenAI api-key provider**: near-free after P0 (openai-chat
+  adapter + catalog entry + key field).
+- **P3 — scale-out (later)**: optionally consume the models.dev JSON
+  catalog for provider/model metadata; more providers (Anthropic requires
+  the anthropic-dangerous-direct-browser-access header; OpenRouter etc.)
+  become catalog entries + small adapters.
+- **P4 — re-evaluate adopting the real AI SDK** if provider count or wire
+  dialects outgrow the hand-rolled adapters.
