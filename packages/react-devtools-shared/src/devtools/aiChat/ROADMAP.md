@@ -222,9 +222,50 @@ the suite instead of shipping.
     toolCalls with id/name/argumentsJSON); request-body shape assertions
     (instructions/input mapping, tool flattening, store:false).
   - `codexAuth`: parse variants (full auth.json vs tokens object vs
-    garbage), JWT exp decoding, refresh rotation (rotated + non-rotated
-    refresh_token), storage round-trip.
+    garbage), JWT exp decoding + expiry error, stored-text round-trip.
   - `client`: dispatch per wire value; error branch actually throws.
 - **R2 — end-to-end smoke in the extension** (manual, user): Ollama Cloud
   + Codex both answer with tool use.
 - Then resume P2/P3 as planned.
+
+## Performance Tracks capture (v3)
+
+### Why
+
+React 19.2+ replaced the old scheduling profiler with Performance Tracks
+(`ReactFiberPerformanceTrack.js`): scheduler lane phases (Event → Update
+→ Render → Commit → Remaining Effects), per-effect spans, yields, and
+cascading-update attribution — exactly the causality data the chat lost
+when `get_scheduling_events` was removed. Since PR #32736 nearly all
+entries are emitted via `console.timeStamp(label, start, end, track,
+trackGroup, color)`, which never enters the performance timeline; the
+officially blessed consumption path (stated in that PR) is patching
+`console.timeStamp`. Timings share the profiler clock (`performance.now`),
+so conversion is `t - profilingStartTime`.
+
+### Version policy (decided 2026-07-06)
+
+Tracks are a **progressive enhancement, never a dependency** — React 18/17
+apps emit nothing and must keep today's full experience. No version
+sniffing: wrap `console.timeStamp` during every recording; the presence of
+captured spans IS the capability check. Do NOT resurrect the React-18
+legacy `injectProfilingHooks` timeline path (needs profiling builds nobody
+runs in dev; backup on `profiler-ai-chat-mcp-backup`).
+
+### Workflow
+
+- **T1 — capture**: in the backend (renderer.js, alongside userInputEvents
+  capture), wrap `console.timeStamp` only while profiling (pass-through +
+  restore on stop); record {label, start, end, track, trackGroup, color}
+  rebased to the commit clock; coalesce + cap like input events; ride
+  `ProfilingDataFrontend` (export-safe, optional field).
+- **T2 — expose**: tools `get_scheduler_phases` (per-lane phase breakdown
+  around a commit/time window) and `get_cascading_updates` (warning spans
+  with the component/method that scheduled them); one availability line in
+  the profile summary ("Scheduler phase data: available" / "not available —
+  requires React 19.2+ development build"); tools listed in the prompt only
+  when data exists; guidance: prefer phase data when present, else reason
+  from commit data and say the analysis is commit-level.
+- **T3 — verify**: shell app (19.2+ dev) — chat ties a click to Event →
+  Update → Render phases and flags a cascading update; then an 18.x app —
+  chat degrades with the explicit version message.
