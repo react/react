@@ -170,22 +170,24 @@ for the panel today, and the repo is dependency-conservative):
 
 ### Workflow
 
-- **P0 — provider core refactor**: catalog + auth loader + wire-adapter
-  seam; settings UI rendered from provider definitions (auth fields per
-  method); remove Custom; Ollama cloud/local become catalog entries over
-  the openai-chat adapter. No behavior change.
-- **P1 — Codex subscription provider** (user priority): probe spike first
-  (validate backend + refresh from extension origin with a pasted token),
-  then token-import auth method (paste auth.json), loader with refresh +
-  ChatGPT-Account-Id, openai-responses adapter with tool-calling mapping.
-- **P2 — OpenAI api-key provider**: near-free after P0 (openai-chat
-  adapter + catalog entry + key field).
-- **P3 — scale-out (later)**: optionally consume the models.dev JSON
-  catalog for provider/model metadata; more providers (Anthropic requires
-  the anthropic-dangerous-direct-browser-access header; OpenRouter etc.)
-  become catalog entries + small adapters.
-- **P4 — re-evaluate adopting the real AI SDK** if provider count or wire
-  dialects outgrow the hand-rolled adapters.
+- ✅ **P0 — provider core refactor (done, d18d87c76)**: catalog + auth
+  loader + wire-adapter seam; settings UI rendered from provider
+  definitions; Custom removed; Ollama cloud/local are catalog entries
+  over the openai-chat adapter.
+- ✅ **P1 — Codex subscription provider (done, 1e4e6cd68)**: spike
+  validated the backend from the extension origin, openai-responses
+  adapter with tool calling. Auth UX settled after two dead ends (file
+  picker is blocked in DevTools panel iframes; native messaging host
+  rejected as too much setup, recoverable from 20b9bcf9f): a single
+  auto-saving paste field for ~/.codex/auth.json, no stored refresh —
+  expired tokens ask the user to re-run `codex login` (7dc7e2589).
+- ✅ **P2 — OpenAI api-key provider (done, shipped with P0)**: catalog
+  entry over the openai-chat adapter.
+- ⏸ **P3 — scale-out (parked by decision 2026-07-06)**: models.dev JSON
+  catalog; more providers (Anthropic needs the
+  anthropic-dangerous-direct-browser-access header; OpenRouter etc.).
+- ⏸ **P4 — re-evaluate adopting the real AI SDK (parked)** if provider
+  count or wire dialects outgrow the hand-rolled adapters.
 
 ## Provider layer hardening (v2.1)
 
@@ -209,24 +211,18 @@ the suite instead of shipping.
 
 ### Workflow
 
-- **R0 — fix + fresh-eyes review (done 2026-07-06)**: `await` fix
+- ✅ **R0 — fix + fresh-eyes review (done 2026-07-06)**: `await` fix
   (44979c9bb); audit of all async call paths in aiChat (agentLoop,
   providerRuntime, codexAuth — no other missed awaits).
-- **R1 — unit tests for the provider layer**:
-  - `providerRuntime`: resolves baseUrl/model/headers per auth method;
-    error strings for missing key/model/tokens; subscription branch mocks
-    codexAuth.
-  - `wire/openaiChat` + `wire/openaiResponses`: feed captured real SSE
-    fixtures (text stream, tool-call stream, error event) through the
-    parse loop via mocked fetch; assert CompletionResult (content,
-    toolCalls with id/name/argumentsJSON); request-body shape assertions
-    (instructions/input mapping, tool flattening, store:false).
-  - `codexAuth`: parse variants (full auth.json vs tokens object vs
-    garbage), JWT exp decoding + expiry error, stored-text round-trip.
-  - `client`: dispatch per wire value; error branch actually throws.
-- **R2 — end-to-end smoke in the extension** (manual, user): Ollama Cloud
-  + Codex both answer with tool use.
-- Then resume P2/P3 as planned.
+- ✅ **R1 — unit tests for the provider layer (done, c66078f08)**: 32
+  tests in `__tests__/aiChatProviders-test.js` — catalog invariants,
+  resolveRequest per auth method, codexAuth parse/expiry/storage, both
+  wire adapters against realistic SSE fixtures (chunk-split buffering,
+  live-captured Codex tool-call event shape), client dispatch. The
+  missing-await regression test is mutation-verified (reintroducing the
+  bug fails 4 tests).
+- ✅ **R2 — end-to-end smoke in the extension (done, user-verified)**:
+  providers answer with tool use in the extension build.
 
 ## Performance Tracks capture (v3)
 
@@ -254,18 +250,43 @@ runs in dev; backup on `profiler-ai-chat-mcp-backup`).
 
 ### Workflow
 
-- **T1 — capture**: in the backend (renderer.js, alongside userInputEvents
-  capture), wrap `console.timeStamp` only while profiling (pass-through +
-  restore on stop); record {label, start, end, track, trackGroup, color}
-  rebased to the commit clock; coalesce + cap like input events; ride
-  `ProfilingDataFrontend` (export-safe, optional field).
-- **T2 — expose**: tools `get_scheduler_phases` (per-lane phase breakdown
-  around a commit/time window) and `get_cascading_updates` (warning spans
-  with the component/method that scheduled them); one availability line in
-  the profile summary ("Scheduler phase data: available" / "not available —
-  requires React 19.2+ development build"); tools listed in the prompt only
-  when data exists; guidance: prefer phase data when present, else reason
-  from commit data and say the analysis is commit-level.
-- **T3 — verify**: shell app (19.2+ dev) — chat ties a click to Event →
-  Update → Render phases and flags a cascading update; then an 18.x app —
-  chat degrades with the explicit version message.
+- ✅ **T1 — capture (done, 3c68512b2)**:
+  `backend/performanceTrackCapture.js` wraps `console.timeStamp` on the
+  renderer's `global` only while profiling — pass-through (Chrome's own
+  panel keeps working), React-tracks-only filter (`Components ⚛` /
+  `Scheduler ⚛` group), commit-clock rebase, prioritized caps (scheduler
+  spans limit 2000 and never dropped in favor of component spans, limit
+  2500, drops counted), stacking-safe restore (never clobbers a wrapper
+  someone stacked on ours). Spans ride optional
+  `performanceTrackSpans` / `droppedPerformanceTrackSpans` fields,
+  backend → frontend → export/import (old exports still load). 8 unit
+  tests.
+- ✅ **T2 — expose (done, 194af898c)**: tools `get_scheduler_phases`,
+  `get_cascading_updates` (cross-referenced to the next commit), and
+  `get_component_track_spans` (individual effect timings; strips the DEV
+  props-diff zero-width-space prefix) — registered ONLY when spans exist;
+  "Scheduler phase data" availability section in the profile summary;
+  prompt guidance to prefer phase data and say when analysis is
+  commit-level. 7 unit tests.
+- ✅ **T3 — verify (done 2026-07-06, live in the shell)**: wrapper
+  installed in the app iframe's realm and restored to native; chat
+  answered from real spans (Blocking: Waiting → Render; Transition:
+  Prewarm → Suspended) and matched a click at 26935.8ms to its commit at
+  26936.4ms; cascading correctly reported none. The 18.x degradation
+  path is covered by unit tests (empty spans → no tools + explicit
+  summary line). Perf note: profiling lag reported during testing turned
+  out to be the dev-mode extension build (`build:chrome:local`), not the
+  capture — use `yarn build:chrome` (production) for real-feel testing.
+
+### Todo
+
+- **T4 — measure-entry enrichment (deferred)**: add a best-effort
+  `PerformanceObserver` (measure entries) alongside the
+  `console.timeStamp` wrapper in `performanceTrackCapture.js` to also
+  capture React's measure-only track spans — Mount/Unmount/Reconnect/
+  Disconnect badges, error spans, and cascading-update attribution
+  (component + method). Best-effort by design: React treats that surface
+  as non-API, so the feature must stay complete without it.
+- **T5 — tool-window guidance (small)**: nudge models toward ≥±500ms
+  windows in the `get_scheduler_phases` description — small local models
+  burn the per-question tool-call limit probing 10ms slices.
