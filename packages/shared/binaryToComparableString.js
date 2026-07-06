@@ -9,20 +9,14 @@
 
 // Turns a TypedArray or ArrayBuffer into a string that can be used for comparison
 // in a Map to see if the bytes are the same.
+let latin1Decoder: TextDecoder | void;
 export default function binaryToComparableString(
   view: $ArrayBufferView,
 ): string {
-  // String.fromCharCode.apply(String, largeArray) throws a RangeError when the
-  // array exceeds the JavaScript engine's call-argument limit (~65535 in most
-  // engines). Process the bytes in chunks to avoid this.
-  const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-  const chunkSize = 8192;
-  let result = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    result += String.fromCharCode.apply(
-      String,
-      bytes.subarray(i, i + chunkSize),
-    );
+  // Lazily initialize to avoid ReferenceError in environments where TextDecoder
+  // is not yet available at module load time (e.g. some Jest setups).
+  if (latin1Decoder === undefined) {
+    latin1Decoder = new TextDecoder('latin1');
   }
-  return result;
+  return latin1Decoder.decode(view);
 }
