@@ -8,7 +8,15 @@
  */
 
 import * as React from 'react';
-import {forwardRef, useCallback, useContext, useMemo, useState} from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {FixedSizeList} from 'react-window';
 import {ProfilerContext} from './ProfilerContext';
@@ -176,6 +184,14 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
     [hoveredFiberData],
   );
 
+  // Scroll the selected fiber into view (e.g. when navigating search results).
+  const listRef = useRef<FixedSizeList | null>(null);
+  useEffect(() => {
+    if (selectedFiberID !== null && listRef.current !== null) {
+      listRef.current.scrollToItem(selectedChartNodeIndex, 'smart');
+    }
+  }, [selectedFiberID, selectedChartNodeIndex]);
+
   return (
     <Tooltip label={tooltipLabel}>
       <FixedSizeList
@@ -184,6 +200,7 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
         itemCount={chartData.depth}
         itemData={itemData}
         itemSize={lineHeight}
+        ref={listRef}
         width={width}>
         {CommitFlamegraphListItem}
       </FixedSizeList>

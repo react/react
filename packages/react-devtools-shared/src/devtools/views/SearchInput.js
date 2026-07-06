@@ -16,8 +16,10 @@ import Icon from './Icon';
 import styles from './SearchInput.css';
 
 type Props = {
+  autoFocus?: boolean,
   goToNextResult: () => void,
   goToPreviousResult: () => void,
+  onClose?: () => void,
   placeholder: string,
   search: (text: string) => void,
   searchIndex: number,
@@ -27,8 +29,10 @@ type Props = {
 };
 
 export default function SearchInput({
+  autoFocus,
   goToNextResult,
   goToPreviousResult,
+  onClose,
   placeholder,
   search,
   searchIndex,
@@ -61,6 +65,10 @@ export default function SearchInput({
       return () => {};
     }
 
+    if (autoFocus) {
+      inputRef.current.focus();
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
       const {key, metaKey} = event;
       if (key === 'f' && metaKey) {
@@ -84,7 +92,7 @@ export default function SearchInput({
 
     return () =>
       ownerDocumentElement.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [autoFocus]);
 
   return (
     <div className={styles.SearchInput} data-testname={testName}>
@@ -130,14 +138,24 @@ export default function SearchInput({
             }>
             <ButtonIcon type="down" />
           </Button>
-          <Button
-            data-testname={testName ? `${testName}-ResetButton` : undefined}
-            disabled={!searchText}
-            onClick={resetSearch}
-            title="Reset search">
-            <ButtonIcon type="close" />
-          </Button>
+          {onClose == null && (
+            <Button
+              data-testname={testName ? `${testName}-ResetButton` : undefined}
+              disabled={!searchText}
+              onClick={resetSearch}
+              title="Reset search">
+              <ButtonIcon type="close" />
+            </Button>
+          )}
         </React.Fragment>
+      )}
+      {onClose != null && (
+        <Button
+          data-testname={testName ? `${testName}-CloseButton` : undefined}
+          onClick={onClose}
+          title="Close search (Esc)">
+          <ButtonIcon type="close" />
+        </Button>
       )}
     </div>
   );
