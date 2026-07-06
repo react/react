@@ -138,7 +138,7 @@ export default function SidebarSelectedFiberInfo(): React.Node {
         )}
         <WhatChanged fiberID={selectedFiberID as any as number} />
         {listItems.length > 0 && (
-          <div>
+          <div className={styles.CommitListContainer}>
             <label className={styles.Label}>Rendered at: </label>
             {listItems}
           </div>

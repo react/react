@@ -26,6 +26,10 @@
   text-overflow: ellipsis;
 }
 
+.CommitListContainer {
+  flex: 0 0 auto;
+}
+
 .Label {
   font-weight: bold;
   margin-bottom: 0.5rem;
