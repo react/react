@@ -1129,6 +1129,67 @@ function recordOwnedHostTransitionStatusDependency(): TransitionStatus {
   return NoPendingHostTransition;
 }
 
+export function bindOwnedHostTransitionStatusDependencies(
+  owner: Fiber,
+  provider: Fiber,
+): void {
+  const updateQueue: FunctionComponentUpdateQueue | null =
+    owner.updateQueue as any;
+  const dependencies =
+    updateQueue !== null ? updateQueue.ownedHostTransitionStatus : null;
+  if (dependencies == null) {
+    return;
+  }
+
+  for (let i = 0; i < dependencies.length; i++) {
+    const dependency = dependencies[i];
+    if (dependency.kind !== 'form') {
+      continue;
+    }
+    if (dependency.provider === null) {
+      dependency.provider = provider;
+      dependency.value = getTransitionStatusFromHostFiber(provider);
+    } else if (dependency.provider !== provider) {
+      dependency.ambiguous = true;
+      dependency.provider = null;
+      dependency.value = NoPendingHostTransition;
+    }
+  }
+}
+
+function getTransitionStatusFromHostFiber(provider: Fiber): TransitionStatus {
+  const stateHook: Hook | null = provider.memoizedState;
+  if (stateHook === null) {
+    return NoPendingHostTransition;
+  }
+  return stateHook.memoizedState;
+}
+
+export function warnIfOwnedHostTransitionStatusIsAmbiguous(
+  owner: Fiber,
+): void {
+  if (__DEV__) {
+    const updateQueue: FunctionComponentUpdateQueue | null =
+      owner.updateQueue as any;
+    const dependencies =
+      updateQueue !== null ? updateQueue.ownedHostTransitionStatus : null;
+    if (dependencies == null) {
+      return;
+    }
+    for (let i = 0; i < dependencies.length; i++) {
+      if (dependencies[i].ambiguous) {
+        console.error(
+          'useFormStatus() was called in a component that returns multiple ' +
+            '<form> elements. React cannot infer which form status to read. ' +
+            'Move useFormStatus() into a child of the form, or use an explicit ' +
+            'form scope when that API is available.',
+        );
+        return;
+      }
+    }
+  }
+}
+
 function useThenable<T>(thenable: Thenable<T>): T {
   // Track the position of the thenable within this fiber.
   const index = thenableIndexCounter;

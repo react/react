@@ -226,6 +226,8 @@ import {
   bailoutHooks,
   replaySuspendedComponentWithHooks,
   renderTransitionAwareHostComponentWithHooks,
+  bindOwnedHostTransitionStatusDependencies,
+  warnIfOwnedHostTransitionStatusIsAmbiguous,
 } from './ReactFiberHooks';
 import {stopProfilerTimerIfRunning} from './ReactProfilerTimer';
 import {
@@ -1531,7 +1533,25 @@ function updateFunctionComponent(
   // React DevTools reads this flag.
   workInProgress.flags |= PerformedWork;
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  bindOwnedHostTransitionStatusToDirectForms(
+    workInProgress,
+    workInProgress.child,
+  );
   return workInProgress.child;
+}
+
+function bindOwnedHostTransitionStatusToDirectForms(
+  owner: Fiber,
+  child: Fiber | null,
+): void {
+  let node = child;
+  while (node !== null) {
+    if (node.tag === HostComponent && node.type === 'form') {
+      bindOwnedHostTransitionStatusDependencies(owner, node);
+    }
+    node = node.sibling;
+  }
+  warnIfOwnedHostTransitionStatusIsAmbiguous(owner);
 }
 
 export function replayFunctionComponent(
