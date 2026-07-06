@@ -22,7 +22,7 @@ export async function streamChatCompletion(
 ): Promise<CompletionResult> {
   const {config, messages, tools, signal, onTextDelta} = options;
 
-  const resolved = resolveRequest(config);
+  const resolved = await resolveRequest(config);
   if (resolved.error != null) {
     throw new Error(resolved.error);
   }
