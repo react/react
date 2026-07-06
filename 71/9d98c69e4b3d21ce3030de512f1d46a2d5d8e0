@@ -1,0 +1,19 @@
+packages/react-reconciler/src/__tests__/useSyncExternalStore-test.js
+  s_4b88ae310ae383::t_592b596316b9b2 355-480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "719d98c69e4b3d21ce3030de512f1d46a2d5d8e0",
+  "prompts": {},
+  "sessions": {
+    "s_4b88ae310ae383": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53d3afde-f2e3-4e73-b395-59ea24fbc335",
+        "model": "unknown"
+      },
+      "human_author": "Sophie Alpert <sophie.alpert@clay.com>"
+    }
+  }
+}
