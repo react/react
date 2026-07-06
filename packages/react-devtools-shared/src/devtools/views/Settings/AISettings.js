@@ -12,8 +12,8 @@ import {useState} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {
-  PROVIDER_PRESETS,
-  getProviderPreset,
+  PROVIDERS,
+  getProvider,
 } from 'react-devtools-shared/src/devtools/aiChat/providers';
 import {useAIProviderConfig} from 'react-devtools-shared/src/devtools/aiChat/useAIProviderConfig';
 import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
@@ -41,14 +41,15 @@ export default function AISettings(_: {}): React.Node {
     }
   };
 
-  const preset = getProviderPreset(config.providerId);
+  const provider = getProvider(config.providerId);
+  const usesApiKey = provider.auth === 'api-key';
 
   const selectProvider = (providerId: string) => {
     setProviderId(providerId);
-    // Reset per-provider fields so the new preset's defaults apply.
+    // Reset per-provider fields so the new provider's defaults apply.
     setBaseUrl('');
-    const nextPreset = getProviderPreset(providerId);
-    setModel(nextPreset.models.length > 0 ? nextPreset.models[0] : '');
+    const nextProvider = getProvider(providerId);
+    setModel(nextProvider.models.length > 0 ? nextProvider.models[0] : '');
   };
 
   return (
@@ -58,7 +59,7 @@ export default function AISettings(_: {}): React.Node {
         <select
           value={config.providerId}
           onChange={({currentTarget}) => selectProvider(currentTarget.value)}>
-          {PROVIDER_PRESETS.map(({id, label}) => (
+          {PROVIDERS.map(({id, label}) => (
             <option key={id} value={id}>
               {label}
             </option>
@@ -71,23 +72,25 @@ export default function AISettings(_: {}): React.Node {
         <input
           type="text"
           value={config.baseUrl}
-          placeholder={preset.baseUrl !== '' ? preset.baseUrl : 'https://…/v1'}
+          placeholder={
+            provider.baseUrl !== '' ? provider.baseUrl : 'https://…/v1'
+          }
           onChange={({currentTarget}) => setBaseUrl(currentTarget.value)}
           size={40}
         />
       </div>
 
-      <div className={styles.SettingWrapper}>
-        <div className={styles.RadioLabel}>
-          API key{preset.requiresApiKey ? '' : ' (optional)'}
+      {usesApiKey && (
+        <div className={styles.SettingWrapper}>
+          <div className={styles.RadioLabel}>API key</div>
+          <input
+            type="password"
+            value={config.apiKey}
+            onChange={({currentTarget}) => setApiKey(currentTarget.value)}
+            size={40}
+          />
         </div>
-        <input
-          type="password"
-          value={config.apiKey}
-          onChange={({currentTarget}) => setApiKey(currentTarget.value)}
-          size={40}
-        />
-      </div>
+      )}
 
       <div className={styles.SettingWrapper}>
         <div className={styles.RadioLabel}>Model</div>
@@ -95,7 +98,9 @@ export default function AISettings(_: {}): React.Node {
           type="text"
           value={config.model}
           placeholder={
-            preset.models.length > 0 ? preset.models.join(', ') : 'model name'
+            provider.models.length > 0
+              ? provider.models.join(', ')
+              : 'model name'
           }
           onChange={({currentTarget}) => setModel(currentTarget.value)}
           size={40}
@@ -108,9 +113,13 @@ export default function AISettings(_: {}): React.Node {
       </div>
 
       <div className={styles.SettingWrapper}>
-        The API key is stored unencrypted in this DevTools panel's local storage
-        and is only sent to the API base URL above. When using local Ollama,
-        start it with OLLAMA_ORIGINS="*" so it accepts requests from DevTools.
+        {usesApiKey
+          ? "The API key is stored unencrypted in this DevTools panel's local " +
+            'storage and is only sent to the API base URL above. '
+          : ''}
+        When using local Ollama, start it with OLLAMA_ORIGINS="*" (or
+        "chrome-extension://*" in the extension) so it accepts requests from
+        DevTools.
       </div>
 
       <div className={styles.SettingWrapper}>

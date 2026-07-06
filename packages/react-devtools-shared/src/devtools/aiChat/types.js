@@ -7,11 +7,22 @@
  * @flow
  */
 
-export type AIProviderPreset = {
+// The on-the-wire request/response dialect a provider speaks. Each maps to
+// one adapter under aiChat/wire/. 'openai-responses' (Codex) lands in P1.
+export type WireProtocol = 'openai-chat';
+
+// How a provider is authenticated. 'subscription' (imported OAuth tokens,
+// e.g. Codex) lands in P1.
+export type AuthMethod = 'none' | 'api-key';
+
+// A provider is data, not code: the catalog (providers.js) is a list of
+// these, and adding a provider is adding an entry.
+export type AIProviderDefinition = {
   id: string,
   label: string,
   baseUrl: string,
-  requiresApiKey: boolean,
+  wire: WireProtocol,
+  auth: AuthMethod,
   // Suggested models for this provider; the model field is free-form.
   models: Array<string>,
 };
@@ -23,6 +34,15 @@ export type AIProviderConfig = {
   baseUrl: string,
   apiKey: string,
   model: string,
+};
+
+// What the auth loader resolves a config into: everything a wire adapter
+// needs to make requests, independent of how the credentials were obtained.
+export type ResolvedRequest = {
+  wire: WireProtocol,
+  baseUrl: string,
+  model: string,
+  headers: {[string]: string},
 };
 
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';

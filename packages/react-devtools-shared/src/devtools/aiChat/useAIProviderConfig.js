@@ -15,7 +15,7 @@ import {
   LOCAL_STORAGE_AI_MODEL_KEY,
   LOCAL_STORAGE_AI_PROVIDER_ID_KEY,
 } from 'react-devtools-shared/src/constants';
-import {DEFAULT_PROVIDER_ID, getProviderPreset} from './providers';
+import {DEFAULT_PROVIDER_ID, getProvider} from './providers';
 
 import type {AIProviderConfig} from './types';
 
@@ -48,17 +48,17 @@ export function useAIProviderConfig(): AIProviderConfigHook {
     LOCAL_STORAGE_AI_API_KEY_KEY,
     '',
   );
-  const defaultPreset = getProviderPreset(DEFAULT_PROVIDER_ID);
+  const defaultProvider = getProvider(DEFAULT_PROVIDER_ID);
   const [model, setModel] = useLocalStorage<string>(
     LOCAL_STORAGE_AI_MODEL_KEY,
-    defaultPreset.models.length > 0 ? defaultPreset.models[0] : '',
+    defaultProvider.models.length > 0 ? defaultProvider.models[0] : '',
   );
 
   const config = useMemo(() => {
-    const preset = getProviderPreset(providerId);
+    const provider = getProvider(providerId);
     return {
       providerId,
-      baseUrl: baseUrl !== '' ? baseUrl : preset.baseUrl,
+      baseUrl: baseUrl !== '' ? baseUrl : provider.baseUrl,
       apiKey,
       model,
     };
