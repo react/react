@@ -12,8 +12,17 @@
 export default function binaryToComparableString(
   view: $ArrayBufferView,
 ): string {
-  return String.fromCharCode.apply(
-    String,
-    new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
-  );
+  // String.fromCharCode.apply(String, largeArray) throws a RangeError when the
+  // array exceeds the JavaScript engine's call-argument limit (~65535 in most
+  // engines). Process the bytes in chunks to avoid this.
+  const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  const chunkSize = 8192;
+  let result = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    result += String.fromCharCode.apply(
+      String,
+      bytes.subarray(i, i + chunkSize),
+    );
+  }
+  return result;
 }
