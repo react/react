@@ -536,7 +536,7 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
           // Jump directly to a specific result (0-based), clamped to range.
           // This lets users skip past large virtualized lists instead of
           // stepping through results one at a time.
-          const targetIndex = (action: ACTION_GO_TO_SEARCH_RESULT).payload;
+          const targetIndex = (action as ACTION_GO_TO_SEARCH_RESULT).payload;
           searchIndex = Math.max(
             0,
             Math.min(targetIndex, numPrevSearchResults - 1),
