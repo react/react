@@ -7,25 +7,14 @@
  * @flow
  */
 
-import {
-  localStorageGetItem,
-  localStorageSetItem,
-  localStorageRemoveItem,
-} from 'react-devtools-shared/src/storage';
-import {LOCAL_STORAGE_AI_CODEX_TOKENS_KEY} from 'react-devtools-shared/src/constants';
-
 // OpenAI Codex subscription ("Sign in with ChatGPT") auth.
 //
-// A browser extension cannot run the OAuth flow itself — the Codex OAuth
-// client only allows the http://localhost:1455 redirect. So the user logs
-// in once with the Codex CLI (`codex login`) and pastes the resulting
-// ~/.codex/auth.json here; we use the access token, refresh it via the
-// token endpoint before it expires, and persist the rotated tokens.
-
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
-const TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token';
-// Refresh when the access token has this little life left (or no exp known).
-const REFRESH_BUFFER_MS = 10 * 60 * 1000;
+// The user signs in with the Codex CLI (`codex login`), which writes
+// ~/.codex/auth.json. The panel never copies or refreshes those tokens:
+// the user selects that file once and we re-read it on every request via a
+// persisted File System Access handle, so tokens the CLI rotates are picked
+// up automatically. When the access token in the file has expired, the fix
+// is on the CLI side (re-run `codex login`), not here.
 
 export type CodexTokens = {
   accessToken: string,
@@ -33,8 +22,8 @@ export type CodexTokens = {
   accountId: string,
 };
 
-// Parses pasted content: either a full ~/.codex/auth.json or just its
-// `tokens` object. Returns null if it doesn't contain the required fields.
+// Parses auth.json content: either the full file or just its `tokens`
+// object. Returns null if it doesn't contain the required fields.
 export function parseCodexAuthInput(text: string): CodexTokens | null {
   let parsed;
   try {
@@ -63,42 +52,9 @@ export function parseCodexAuthInput(text: string): CodexTokens | null {
   return null;
 }
 
-export function getStoredCodexTokens(): CodexTokens | null {
-  const raw = localStorageGetItem(LOCAL_STORAGE_AI_CODEX_TOKENS_KEY);
-  if (raw == null) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed.accessToken === 'string' &&
-      typeof parsed.refreshToken === 'string' &&
-      typeof parsed.accountId === 'string'
-    ) {
-      return parsed;
-    }
-  } catch (error) {}
-  return null;
-}
-
-export function setStoredCodexTokens(tokens: CodexTokens): void {
-  localStorageSetItem(
-    LOCAL_STORAGE_AI_CODEX_TOKENS_KEY,
-    JSON.stringify(tokens),
-  );
-}
-
-export function clearStoredCodexTokens(): void {
-  localStorageRemoveItem(LOCAL_STORAGE_AI_CODEX_TOKENS_KEY);
-}
-
-export function hasCodexTokens(): boolean {
-  return getStoredCodexTokens() != null;
-}
-
 // Reads the `exp` claim (ms) from a JWT access token, or null if it's not a
 // decodable JWT.
-function getAccessTokenExpiryMs(accessToken: string): number | null {
+export function getAccessTokenExpiryMs(accessToken: string): number | null {
   const parts = accessToken.split('.');
   if (parts.length !== 3) {
     return null;
@@ -113,66 +69,147 @@ function getAccessTokenExpiryMs(accessToken: string): number | null {
   return null;
 }
 
-async function refreshCodexTokens(refreshToken: string): Promise<CodexTokens> {
-  let response;
-  try {
-    response = await fetch(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        client_id: CLIENT_ID,
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        scope: 'openid profile email',
-      }),
-    });
-  } catch (error) {
-    throw new Error(
-      `Could not reach the OpenAI token endpoint: ${error.message}`,
-    );
-  }
-  if (!response.ok) {
-    throw new Error(
-      'Codex token refresh failed. Re-run `codex login` and paste the new ' +
-        'tokens in Settings > Chat.',
-    );
-  }
-  const data = await response.json();
-  const current = getStoredCodexTokens();
-  const next: CodexTokens = {
-    accessToken: data.access_token,
-    // The refresh token may be rotated; keep the previous one if not.
-    refreshToken:
-      typeof data.refresh_token === 'string'
-        ? data.refresh_token
-        : refreshToken,
-    accountId: current != null ? current.accountId : '',
-  };
-  setStoredCodexTokens(next);
-  return next;
+// --- Persisted file handle ---
+// FileSystemFileHandle is structured-cloneable, so it survives in IndexedDB
+// (localStorage cannot hold it).
+
+const DB_NAME = 'React::DevTools::AI';
+const STORE_NAME = 'fileHandles';
+const HANDLE_KEY = 'codexAuthJson';
+
+function promisifyRequest<T>(request: any): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-// Returns a valid access token + account id, refreshing first if the stored
-// access token is missing an exp or expiring within the buffer window.
+async function openHandleStore(): Promise<any> {
+  const request = indexedDB.open(DB_NAME, 1);
+  request.onupgradeneeded = () => {
+    request.result.createObjectStore(STORE_NAME);
+  };
+  return promisifyRequest(request);
+}
+
+async function getStoredHandle(): Promise<any> {
+  try {
+    const db = await openHandleStore();
+    try {
+      return await promisifyRequest(
+        db.transaction(STORE_NAME).objectStore(STORE_NAME).get(HANDLE_KEY),
+      );
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    return null;
+  }
+}
+
+async function setStoredHandle(handle: any): Promise<void> {
+  const db = await openHandleStore();
+  try {
+    await promisifyRequest(
+      db
+        .transaction(STORE_NAME, 'readwrite')
+        .objectStore(STORE_NAME)
+        .put(handle, HANDLE_KEY),
+    );
+  } finally {
+    db.close();
+  }
+}
+
+// Fallback when the File System Access picker is unavailable (e.g. blocked
+// inside the DevTools panel frame): a plain <input type="file"> File. Plain
+// Files can't be persisted, so this lives for the current session only.
+let fallbackFile: any = null;
+
+export function supportsCodexFilePicker(): boolean {
+  return typeof (window: any).showOpenFilePicker === 'function';
+}
+
+// Opens the picker and persists the handle. Throws AbortError if the user
+// cancels the dialog.
+export async function pickCodexAuthFile(): Promise<void> {
+  const showOpenFilePicker = (window: any).showOpenFilePicker;
+  if (typeof showOpenFilePicker !== 'function') {
+    throw new Error('The file picker is not available in this browser.');
+  }
+  const handles = await showOpenFilePicker({
+    types: [
+      {description: 'Codex auth.json', accept: {'application/json': ['.json']}},
+    ],
+  });
+  await setStoredHandle(handles[0]);
+  fallbackFile = null;
+}
+
+export function setCodexAuthFallbackFile(file: any): void {
+  fallbackFile = file;
+}
+
+export async function hasCodexAuthFile(): Promise<boolean> {
+  if (fallbackFile != null) {
+    return true;
+  }
+  return (await getStoredHandle()) != null;
+}
+
+async function readCodexAuthText(): Promise<string> {
+  const handle = await getStoredHandle();
+  if (handle != null) {
+    let permission = 'granted';
+    if (typeof handle.queryPermission === 'function') {
+      permission = await handle.queryPermission({mode: 'read'});
+      if (
+        permission === 'prompt' &&
+        typeof handle.requestPermission === 'function'
+      ) {
+        // Works when called on the way into a send — the click's transient
+        // user activation is what allows the re-grant prompt.
+        permission = await handle.requestPermission({mode: 'read'});
+      }
+    }
+    if (permission !== 'granted') {
+      throw new Error(
+        'Access to auth.json was not re-granted. Select the file again in ' +
+          'Settings > Chat.',
+      );
+    }
+    const file = await handle.getFile();
+    return file.text();
+  }
+  if (fallbackFile != null) {
+    return fallbackFile.text();
+  }
+  throw new Error(
+    'Codex is not connected. Run `codex login` in a terminal, then select ' +
+      '~/.codex/auth.json in Settings > Chat.',
+  );
+}
+
+// Returns the access token + account id currently in auth.json. No refresh
+// happens here by design: the Codex CLI owns the tokens.
 export async function getValidCodexAuth(): Promise<{
   accessToken: string,
   accountId: string,
 }> {
-  const tokens = getStoredCodexTokens();
+  const text = await readCodexAuthText();
+  const tokens = parseCodexAuthInput(text);
   if (tokens == null) {
     throw new Error(
-      'Not signed in to Codex. In Settings > Chat, paste the contents of ' +
-        '~/.codex/auth.json (run `codex login` first).',
+      'The selected file is not a Codex auth.json. Run `codex login`, then ' +
+        'select ~/.codex/auth.json in Settings > Chat.',
     );
   }
-
   const expiryMs = getAccessTokenExpiryMs(tokens.accessToken);
-  const needsRefresh =
-    expiryMs == null || expiryMs - Date.now() < REFRESH_BUFFER_MS;
-
-  const usable = needsRefresh
-    ? await refreshCodexTokens(tokens.refreshToken)
-    : tokens;
-
-  return {accessToken: usable.accessToken, accountId: usable.accountId};
+  if (expiryMs != null && expiryMs <= Date.now()) {
+    throw new Error(
+      'The Codex access token has expired. Run `codex login` in a terminal ' +
+        'to refresh it, then send your message again.',
+    );
+  }
+  return {accessToken: tokens.accessToken, accountId: tokens.accountId};
 }

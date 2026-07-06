@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {
@@ -18,10 +18,10 @@ import {
 import {useAIProviderConfig} from 'react-devtools-shared/src/devtools/aiChat/useAIProviderConfig';
 import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
 import {
-  parseCodexAuthInput,
-  setStoredCodexTokens,
-  clearStoredCodexTokens,
-  hasCodexTokens,
+  hasCodexAuthFile,
+  pickCodexAuthFile,
+  setCodexAuthFallbackFile,
+  supportsCodexFilePicker,
 } from 'react-devtools-shared/src/devtools/aiChat/codexAuth';
 
 import styles from './SettingsShared.css';
@@ -34,27 +34,49 @@ export default function AISettings(_: {}): React.Node {
   const [newSkillMarkdown, setNewSkillMarkdown] = useState('');
   const [skillError, setSkillError] = useState<string | null>(null);
 
-  const [codexInput, setCodexInput] = useState('');
-  const [codexSignedIn, setCodexSignedIn] = useState<boolean>(hasCodexTokens());
+  const [codexConnected, setCodexConnected] = useState(false);
   const [codexError, setCodexError] = useState<string | null>(null);
+  // The picker can be unavailable/blocked in some panel frames; fall back to
+  // a plain file input (session-only — plain Files can't be persisted).
+  const [usePickerFallback, setUsePickerFallback] = useState(
+    !supportsCodexFilePicker(),
+  );
 
-  const handleSaveCodexTokens = () => {
-    const tokens = parseCodexAuthInput(codexInput);
-    if (tokens == null) {
-      setCodexError(
-        'Could not read tokens. Paste the full contents of ~/.codex/auth.json.',
-      );
-      return;
+  useEffect(() => {
+    let cancelled = false;
+    hasCodexAuthFile().then(connected => {
+      if (!cancelled) {
+        setCodexConnected(connected);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePickCodexFile = async () => {
+    try {
+      await pickCodexAuthFile();
+      setCodexConnected(true);
+      setCodexError(null);
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return; // User cancelled the dialog.
+      }
+      if (error.name === 'SecurityError') {
+        setUsePickerFallback(true);
+        return;
+      }
+      setCodexError(error.message);
     }
-    setStoredCodexTokens(tokens);
-    setCodexError(null);
-    setCodexInput('');
-    setCodexSignedIn(true);
   };
 
-  const handleClearCodexTokens = () => {
-    clearStoredCodexTokens();
-    setCodexSignedIn(false);
+  const handleCodexFallbackFile = (file: any) => {
+    if (file != null) {
+      setCodexAuthFallbackFile(file);
+      setCodexConnected(true);
+      setCodexError(null);
+    }
   };
 
   const handleAddSkill = () => {
@@ -125,42 +147,34 @@ export default function AISettings(_: {}): React.Node {
       {usesSubscription && (
         <div className={styles.SettingWrapper}>
           <div className={styles.RadioLabel}>ChatGPT sign-in</div>
-          {codexSignedIn ? (
-            <div>
-              Signed in.{' '}
-              <Button
-                onClick={handleClearCodexTokens}
-                title="Forget the stored Codex tokens">
-                Sign out
-              </Button>
-            </div>
+          <div>
+            Run <code>codex login</code> in a terminal, then select{' '}
+            <code>~/.codex/auth.json</code>. The file is read on each request —
+            tokens are never copied or refreshed by this panel; re-run{' '}
+            <code>codex login</code> when they expire. In the file dialog, press{' '}
+            <kbd>Cmd/Ctrl+Shift+.</kbd> to show the hidden <code>.codex</code>{' '}
+            folder.
+          </div>
+          {usePickerFallback ? (
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={({currentTarget}) =>
+                handleCodexFallbackFile(
+                  currentTarget.files != null ? currentTarget.files[0] : null,
+                )
+              }
+            />
           ) : (
-            <div>
-              <div>
-                Run <code>codex login</code> in a terminal, then paste the
-                contents of <code>~/.codex/auth.json</code> below. Tokens are
-                stored in this panel and refreshed automatically.
-              </div>
-              <textarea
-                rows={4}
-                cols={50}
-                placeholder='{"tokens":{"access_token":"…","refresh_token":"…","account_id":"…"}}'
-                value={codexInput}
-                onChange={({currentTarget}) =>
-                  setCodexInput(currentTarget.value)
-                }
-              />
-              <div>
-                <Button
-                  onClick={handleSaveCodexTokens}
-                  title="Save Codex tokens">
-                  Save tokens
-                </Button>
-              </div>
-              {codexError !== null && (
-                <div className={styles.ModelError}>{codexError}</div>
-              )}
-            </div>
+            <Button
+              onClick={handlePickCodexFile}
+              title="Select ~/.codex/auth.json">
+              {codexConnected ? 'Change auth.json…' : 'Select auth.json…'}
+            </Button>
+          )}
+          {codexConnected && <span> Connected.</span>}
+          {codexError !== null && (
+            <div className={styles.ModelError}>{codexError}</div>
           )}
         </div>
       )}

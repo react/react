@@ -186,3 +186,45 @@ for the panel today, and the repo is dependency-conservative):
   become catalog entries + small adapters.
 - **P4 — re-evaluate adopting the real AI SDK** if provider count or wire
   dialects outgrow the hand-rolled adapters.
+
+## Provider layer hardening (v2.1)
+
+### Why
+
+P0+P1 shipped with a dispatcher bug (`resolveRequest` became async but was
+called without `await`, so every provider failed with "Unsupported wire
+protocol undefined"). The bug was one keyword, but it exposed the real
+gap: **nothing guards this layer.** Flow does not cover the aiChat
+directory (a deliberate type error passes `yarn flow dom-node`), and the
+DevTools suite has zero tests for providers/wire/auth. Live backend spikes
+validated the wire formats but not the in-app call path.
+
+### Goal
+
+Keep the catalog + auth-loader + wire-adapter architecture (it is the
+right shape and its wire formats are live-validated), but make the layer
+provably correct: every seam covered by unit tests that run in
+`yarn test-build-devtools`, so a regression like the missing await fails
+the suite instead of shipping.
+
+### Workflow
+
+- **R0 — fix + fresh-eyes review (done 2026-07-06)**: `await` fix
+  (44979c9bb); audit of all async call paths in aiChat (agentLoop,
+  providerRuntime, codexAuth — no other missed awaits).
+- **R1 — unit tests for the provider layer**:
+  - `providerRuntime`: resolves baseUrl/model/headers per auth method;
+    error strings for missing key/model/tokens; subscription branch mocks
+    codexAuth.
+  - `wire/openaiChat` + `wire/openaiResponses`: feed captured real SSE
+    fixtures (text stream, tool-call stream, error event) through the
+    parse loop via mocked fetch; assert CompletionResult (content,
+    toolCalls with id/name/argumentsJSON); request-body shape assertions
+    (instructions/input mapping, tool flattening, store:false).
+  - `codexAuth`: parse variants (full auth.json vs tokens object vs
+    garbage), JWT exp decoding, refresh rotation (rotated + non-rotated
+    refresh_token), storage round-trip.
+  - `client`: dispatch per wire value; error branch actually throws.
+- **R2 — end-to-end smoke in the extension** (manual, user): Ollama Cloud
+  + Codex both answer with tool use.
+- Then resume P2/P3 as planned.
