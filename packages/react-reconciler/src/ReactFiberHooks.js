@@ -243,11 +243,22 @@ type EventFunctionPayload<Args, Return, F: (...Array<Args>) => Return> = {
   nextImpl: F,
 };
 
+export type OwnedHostTransitionStatusDependency = {
+  kind: 'form',
+  owner: Fiber,
+  provider: Fiber | null,
+  value: TransitionStatus,
+  ambiguous: boolean,
+};
+
 export type FunctionComponentUpdateQueue = {
   lastEffect: Effect | null,
   events: Array<EventFunctionPayload<any, any, any>> | null,
   stores: Array<StoreConsistencyCheck<any>> | null,
   memoCache: MemoCache | null,
+  ownedHostTransitionStatus:
+    | Array<OwnedHostTransitionStatusDependency>
+    | null,
 };
 
 type BasicStateAction<S> = (S => S) | S;
@@ -1074,6 +1085,7 @@ function createFunctionComponentUpdateQueue(): FunctionComponentUpdateQueue {
     events: null,
     stores: null,
     memoCache: null,
+    ownedHostTransitionStatus: null,
   };
 }
 
@@ -1083,12 +1095,38 @@ function resetFunctionComponentUpdateQueue(
   updateQueue.lastEffect = null;
   updateQueue.events = null;
   updateQueue.stores = null;
+  updateQueue.ownedHostTransitionStatus = null;
   if (updateQueue.memoCache != null) {
     // NOTE: this function intentionally does not reset memoCache data. We reuse updateQueue for the memo
     // cache to avoid increasing the size of fibers that don't need a cache, but we don't want to reset
     // the cache when other properties are reset.
     updateQueue.memoCache.index = 0;
   }
+}
+
+function recordOwnedHostTransitionStatusDependency(): TransitionStatus {
+  let updateQueue: FunctionComponentUpdateQueue | null =
+    currentlyRenderingFiber.updateQueue as any;
+  if (updateQueue === null) {
+    updateQueue = createFunctionComponentUpdateQueue();
+    currentlyRenderingFiber.updateQueue = updateQueue as any;
+  }
+
+  const dependency: OwnedHostTransitionStatusDependency = {
+    kind: 'form',
+    owner: currentlyRenderingFiber,
+    provider: null,
+    value: NoPendingHostTransition,
+    ambiguous: false,
+  };
+
+  if (updateQueue.ownedHostTransitionStatus === null) {
+    updateQueue.ownedHostTransitionStatus = [dependency];
+  } else {
+    updateQueue.ownedHostTransitionStatus.push(dependency);
+  }
+
+  return NoPendingHostTransition;
 }
 
 function useThenable<T>(thenable: Thenable<T>): T {
