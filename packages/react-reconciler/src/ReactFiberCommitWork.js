@@ -29,6 +29,7 @@ import type {ActivityState} from './ReactFiberActivityComponent';
 import type {SuspenseState, RetryQueue} from './ReactFiberSuspenseComponent';
 import type {UpdateQueue} from './ReactFiberClassUpdateQueue';
 import type {FunctionComponentUpdateQueue} from './ReactFiberHooks';
+import {commitOwnedHostTransitionStatusChanged} from './ReactFiberHooks';
 import type {Wakeable, ViewTransitionProps} from 'shared/ReactTypes';
 import type {
   OffscreenState,
@@ -687,6 +688,13 @@ function commitLayoutEffectOnFiber(
         } else if (flags & Hydrate) {
           commitHostHydratedInstance(finishedWork);
         }
+      }
+
+      // A stateful host component (a form with a pending action) committed a
+      // transition status change. Notify function components that observe
+      // this status as a directly owned form so they re-render with it.
+      if (flags & Callback) {
+        commitOwnedHostTransitionStatusChanged(finishedWork);
       }
 
       if (flags & Ref) {
