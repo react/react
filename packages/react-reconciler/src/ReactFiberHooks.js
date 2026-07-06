@@ -3485,7 +3485,11 @@ function rerenderTransition(): [
 }
 
 function useHostTransitionStatus(): TransitionStatus {
-  return readContext(HostTransitionContext);
+  const status = readContext(HostTransitionContext);
+  if (status !== NoPendingHostTransition) {
+    return status;
+  }
+  return recordOwnedHostTransitionStatusDependency();
 }
 
 function mountId(): string {
