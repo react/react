@@ -27,6 +27,13 @@ const skipFilter = new Set([
   'ts-namespace-export-declaration',
 
   /**
+   * `using`/`await using` (explicit resource management) is not supported by
+   * the Node version the evaluator runs on.
+   */
+  'bug-using-declaration-compiled-as-const',
+  'bug-await-using-declaration-compiled-as-const',
+
+  /**
    * Observable different in logging between Forget and non-Forget
    */
   'early-return-no-declarations-reassignments-dependencies',
