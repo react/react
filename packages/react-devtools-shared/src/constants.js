@@ -72,6 +72,8 @@ export const LOCAL_STORAGE_AI_BASE_URL_KEY = 'React::DevTools::AI::baseUrl';
 export const LOCAL_STORAGE_AI_API_KEY_KEY = 'React::DevTools::AI::apiKey';
 export const LOCAL_STORAGE_AI_MODEL_KEY = 'React::DevTools::AI::model';
 export const LOCAL_STORAGE_AI_SKILLS_KEY = 'React::DevTools::AI::skills';
+export const LOCAL_STORAGE_AI_CODEX_AUTH_KEY =
+  'React::DevTools::AI::codexAuthJson';
 
 export const PROFILER_EXPORT_VERSION = 5;
 

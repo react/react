@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {
@@ -18,8 +18,10 @@ import {
 import {useAIProviderConfig} from 'react-devtools-shared/src/devtools/aiChat/useAIProviderConfig';
 import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
 import {
-  getCodexSetupCommand,
-  getValidCodexAuth,
+  getAccessTokenExpiryMs,
+  getStoredCodexAuthText,
+  parseCodexAuthInput,
+  setStoredCodexAuthText,
 } from 'react-devtools-shared/src/devtools/aiChat/codexAuth';
 
 import styles from './SettingsShared.css';
@@ -32,39 +34,34 @@ export default function AISettings(_: {}): React.Node {
   const [newSkillMarkdown, setNewSkillMarkdown] = useState('');
   const [skillError, setSkillError] = useState<string | null>(null);
 
-  // 'checking' | 'connected' | 'error'
-  const [codexStatus, setCodexStatus] = useState('checking');
-  const [codexError, setCodexError] = useState<string | null>(null);
-  const [codexCheckCount, setCodexCheckCount] = useState(0);
+  // Auto-saves like the API key field: state mirrors localStorage.
+  const [codexAuthText, setCodexAuthText] = useState(getStoredCodexAuthText);
+
+  const handleCodexAuthChange = (text: string) => {
+    setCodexAuthText(text);
+    setStoredCodexAuthText(text);
+  };
 
   const provider = getProvider(config.providerId);
   const usesApiKey = provider.auth === 'api-key';
   const usesSubscription = provider.auth === 'subscription';
 
-  useEffect(() => {
-    if (!usesSubscription) {
-      return;
+  // Inline validation only; nothing blocks typing.
+  let codexHint = null;
+  if (usesSubscription && codexAuthText.trim() !== '') {
+    const codexTokens = parseCodexAuthInput(codexAuthText);
+    if (codexTokens == null) {
+      codexHint =
+        'This does not look like auth.json — paste the full file contents.';
+    } else {
+      const expiryMs = getAccessTokenExpiryMs(codexTokens.accessToken);
+      if (expiryMs != null && expiryMs <= Date.now()) {
+        codexHint =
+          'These tokens have expired. Run `codex login`, then paste the ' +
+          'new auth.json.';
+      }
     }
-    let cancelled = false;
-    setCodexStatus('checking');
-    getValidCodexAuth().then(
-      () => {
-        if (!cancelled) {
-          setCodexStatus('connected');
-          setCodexError(null);
-        }
-      },
-      error => {
-        if (!cancelled) {
-          setCodexStatus('error');
-          setCodexError(error.message);
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [usesSubscription, codexCheckCount]);
+  }
 
   const handleAddSkill = () => {
     const added = addSkill(newSkillMarkdown);
@@ -129,29 +126,23 @@ export default function AISettings(_: {}): React.Node {
 
       {usesSubscription && (
         <div className={styles.SettingWrapper}>
-          <div className={styles.RadioLabel}>ChatGPT sign-in</div>
-          {codexStatus === 'checking' && <div>Checking…</div>}
-          {codexStatus === 'connected' && (
-            <div>
-              Connected — signed in via the Codex CLI. Tokens are read from{' '}
-              <code>~/.codex/auth.json</code> on each request; run{' '}
-              <code>codex login</code> again if they expire.
-            </div>
-          )}
-          {codexStatus === 'error' && (
-            <div>
-              <div className={styles.ModelError}>{codexError}</div>
-              <div>
-                Setup: run <code>codex login</code>, and once per machine run
-                this from the React repo (then reload the extension):
-              </div>
-              <pre>{getCodexSetupCommand()}</pre>
-              <Button
-                onClick={() => setCodexCheckCount(count => count + 1)}
-                title="Check the Codex connection again">
-                Re-check
-              </Button>
-            </div>
+          <div className={styles.RadioLabel}>Codex auth.json</div>
+          <div>
+            Run <code>codex login</code> in a terminal, then paste the contents
+            of <code>~/.codex/auth.json</code>. If the tokens expire, run{' '}
+            <code>codex login</code> and paste again.
+          </div>
+          <input
+            type="password"
+            value={codexAuthText}
+            placeholder="contents of ~/.codex/auth.json"
+            onChange={({currentTarget}) =>
+              handleCodexAuthChange(currentTarget.value)
+            }
+            size={40}
+          />
+          {codexHint !== null && (
+            <div className={styles.ModelError}>{codexHint}</div>
           )}
         </div>
       )}
