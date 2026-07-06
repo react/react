@@ -8,12 +8,35 @@
 }
 
 .Content {
-  padding: 0.5rem;
+  padding-bottom: 0.5rem;
   user-select: none;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.RenderInfo {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.RenderInfoContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.CommitList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
 }
 
 .Component {
