@@ -10,13 +10,11 @@
 import type {ChatMessage, CompletionResult, ToolCall} from '../types';
 import type {WireStreamOptions} from './openaiChat';
 
-// Adapter for the OpenAI Responses API dialect, as used by Codex against the
-// ChatGPT backend (chatgpt.com/backend-api/codex/responses). Differs from
-// chat-completions: system prompt goes in `instructions`, messages are typed
-// "input" items, the request is stateless (store:false — full history each
-// turn), tools are flat, and the SSE stream is a sequence of typed events.
+// Adapter for the OpenAI Responses API dialect (Codex / ChatGPT backend).
+// Unlike chat-completions: system prompt goes in `instructions`, messages
+// are typed "input" items, the request is stateless (store:false — full
+// history each turn), and tool declarations are flat.
 
-// Chat-completions tool declaration -> Responses tool declaration (flat).
 function toResponsesTool(tool: Object): Object {
   const fn = tool.function != null ? tool.function : tool;
   return {
@@ -28,8 +26,6 @@ function toResponsesTool(tool: Object): Object {
   };
 }
 
-// Splits the transcript into the top-level `instructions` (system prompt)
-// and the typed `input` items the Responses API expects.
 function buildInput(messages: Array<ChatMessage>): {
   instructions: string,
   input: Array<Object>,

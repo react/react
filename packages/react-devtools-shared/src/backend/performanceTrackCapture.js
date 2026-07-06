@@ -7,18 +7,13 @@
  * @flow
  */
 
-// Captures React's Performance Track entries while profiling.
-//
-// React 19.2+ emits its Chrome DevTools performance tracks (scheduler lane
-// phases, component render/effect spans, cascading updates) via the
-// extended console.timeStamp(label, start, end, track, trackGroup, color).
-// Those calls never enter the performance timeline, so PerformanceObserver
-// cannot see them; the sanctioned consumption path (facebook/react #32736)
-// is patching console.timeStamp. This module wraps it pass-through during a
-// profiling session and records React's own spans, rebased to the commit
-// clock. Older React versions simply never call it with track arguments,
-// so the capture stays empty — the presence of spans IS the capability
-// check, and the chat degrades gracefully without them.
+// Captures React 19.2+ Performance Track entries (scheduler lane phases,
+// component/effect spans) while profiling. React emits them via the
+// extended console.timeStamp, which never enters the performance timeline —
+// patching console.timeStamp is the sanctioned consumption path
+// (facebook/react #32736). Older React never calls the extended signature,
+// so the capture stays empty; callers treat the presence of spans as the
+// capability check.
 
 export type PerformanceTrackSpan = {
   name: string,
@@ -43,17 +38,16 @@ export type PerformanceTrackCapture = {
 const COMPONENTS_TRACK = 'Components ⚛';
 const SCHEDULER_TRACK_GROUP = 'Scheduler ⚛';
 
-// Scheduler spans are few and carry the causality story — never trade them
-// for component spans. Component spans are plentiful and largely duplicate
-// commit-level data, so they get the lower budget and are dropped first.
+// Component spans are plentiful and largely duplicate commit-level data,
+// so they are capped separately and dropped before scheduler spans.
 const SCHEDULER_SPAN_LIMIT = 2000;
 const COMPONENT_SPAN_LIMIT = 2500;
 
 export function createPerformanceTrackCapture({
   getTimeOffset,
 }: {
-  // Returns the epoch to rebase against (profilingStartTime, on the same
-  // performance.now() clock React stamps spans with).
+  // The epoch to rebase against (profilingStartTime; same clock as React's
+  // span timestamps).
   getTimeOffset: () => number,
 }): PerformanceTrackCapture {
   let spans: Array<PerformanceTrackSpan> = [];

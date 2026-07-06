@@ -9,11 +9,8 @@
 
 import type {AIProviderDefinition} from './types';
 
-// The provider catalog. Adding a provider is adding an entry here; the auth
-// loader (providerRuntime.js) and wire adapters (wire/) are keyed off the
-// `auth` and `wire` fields. Free-form baseUrl/model overrides are still
-// stored per user, so an OpenAI-compatible endpoint not listed here can be
-// reached by picking the closest provider and editing its base URL.
+// Users can still reach unlisted OpenAI-compatible endpoints by picking the
+// closest provider and overriding its base URL.
 export const PROVIDERS: Array<AIProviderDefinition> = [
   {
     id: 'ollama-cloud',
@@ -45,10 +42,8 @@ export const PROVIDERS: Array<AIProviderDefinition> = [
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     wire: 'openai-responses',
     auth: 'subscription',
-    // Which models a ChatGPT account may use here is plan-tier dependent,
-    // and Codex-suffixed API model ids are rejected. If the default is not
-    // available on your plan, the chat surfaces the backend's error naming
-    // the unsupported model; enter one your plan allows.
+    // Model availability is ChatGPT-plan dependent, and codex-suffixed API
+    // model ids are rejected; the backend's error names unsupported models.
     models: ['gpt-5.5', 'gpt-5.1', 'gpt-5'],
   },
 ];

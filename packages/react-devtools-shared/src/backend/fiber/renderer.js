@@ -7313,10 +7313,9 @@ export function attach(
     }
   }
 
-  // React 19.2+ Performance Track spans (scheduler phases, component/effect
-  // spans), captured by wrapping console.timeStamp while profiling. Uses the
-  // renderer's `global` console for the same reason as the input listeners.
-  // Older React versions never emit these — the capture just stays empty.
+  // React 19.2+ Performance Track spans, captured by wrapping
+  // console.timeStamp while profiling — on the renderer's `global` console,
+  // for the same reason as the input listeners above.
   const performanceTrackCapture = createPerformanceTrackCapture({
     getTimeOffset: () => profilingStartTime,
   });

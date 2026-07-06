@@ -14,15 +14,10 @@ import {
 } from 'react-devtools-shared/src/storage';
 import {LOCAL_STORAGE_AI_CODEX_AUTH_KEY} from 'react-devtools-shared/src/constants';
 
-// OpenAI Codex subscription ("Sign in with ChatGPT") auth.
-//
-// The user signs in with the Codex CLI (`codex login`), which writes
-// ~/.codex/auth.json, and pastes that file's contents into the settings
-// field — a browser extension cannot read the disk, so the paste is the
-// manual step that stands in for it. The field auto-saves like the API key
-// field; there is no save/sign-in/sign-out flow. The panel never refreshes
-// tokens: when the access token expires, the user re-runs `codex login`
-// and pastes the new file.
+// OpenAI Codex subscription ("Sign in with ChatGPT") auth: the user runs
+// `codex login` and pastes ~/.codex/auth.json into settings — a browser
+// extension cannot read the disk. The panel never refreshes tokens; an
+// expired access token means re-running `codex login` and pasting again.
 
 export type CodexTokens = {
   accessToken: string,
@@ -30,8 +25,7 @@ export type CodexTokens = {
   accountId: string,
 };
 
-// Parses auth.json content: either the full file or just its `tokens`
-// object. Returns null if it doesn't contain the required fields.
+// Accepts the full auth.json or just its `tokens` object.
 export function parseCodexAuthInput(text: string): CodexTokens | null {
   let parsed;
   try {
@@ -60,8 +54,7 @@ export function parseCodexAuthInput(text: string): CodexTokens | null {
   return null;
 }
 
-// Reads the `exp` claim (ms) from a JWT access token, or null if it's not a
-// decodable JWT.
+// Reads the JWT `exp` claim in ms, or null if not decodable.
 export function getAccessTokenExpiryMs(accessToken: string): number | null {
   const parts = accessToken.split('.');
   if (parts.length !== 3) {
@@ -90,9 +83,6 @@ export function setStoredCodexAuthText(text: string): void {
   }
 }
 
-// Returns the access token + account id from the pasted auth.json. No
-// refresh happens here by design: the Codex CLI owns the tokens, so an
-// expired token means re-running `codex login` and pasting the new file.
 export async function getValidCodexAuth(): Promise<{
   accessToken: string,
   accountId: string,

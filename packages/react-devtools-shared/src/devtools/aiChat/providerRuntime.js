@@ -12,14 +12,9 @@ import {getValidCodexAuth} from './codexAuth';
 
 import type {AIProviderConfig, ResolvedRequest} from './types';
 
-// The auth loader: turns stored config into everything a wire adapter needs
-// to issue requests (base URL, headers, wire dialect, model). This is the
-// extension point for auth methods — api-key, none, and subscription (Codex
-// token import + refresh + ChatGPT-Account-Id header) all resolve here.
-//
-// Async because subscription auth may refresh tokens over the network.
-// Returns a user-facing error string when the config is unusable, so the
-// chat surfaces a clear message instead of a raw network failure.
+// Turns stored config into everything a wire adapter needs (base URL,
+// headers, wire dialect, model). Returns a user-facing error string when
+// the config is unusable so the chat shows it instead of a network failure.
 export async function resolveRequest(
   config: AIProviderConfig,
 ): Promise<ResolvedRequest | {error: string}> {

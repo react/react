@@ -13,10 +13,8 @@ import {streamOpenAIResponses} from './wire/openaiResponses';
 
 import type {StreamChatOptions, CompletionResult} from './types';
 
-// Entry point for the agent loop: resolves the stored config into a request
-// (auth loader) and dispatches to the adapter for the provider's wire
-// dialect. Adding a wire dialect (e.g. openai-responses for Codex) is adding
-// a case here plus its adapter under wire/.
+// Resolves the stored config into a request and dispatches to the adapter
+// for the provider's wire dialect.
 export async function streamChatCompletion(
   options: StreamChatOptions,
 ): Promise<CompletionResult> {

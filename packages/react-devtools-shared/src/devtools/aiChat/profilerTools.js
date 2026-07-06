@@ -922,12 +922,8 @@ function listSourceFilesTool(context: ToolContext): ToolDefinition {
   };
 }
 
-// --- React 19.2+ Performance Track tools ---
-// Spans come from wrapping console.timeStamp while profiling (see
-// backend/performanceTrackCapture.js). They share the commit clock. These
-// tools are only registered when spans exist, so the prompt never
-// advertises them for apps (React <19.2 / production builds) that can't
-// produce them.
+// React 19.2+ Performance Track tools (spans captured by
+// backend/performanceTrackCapture.js; same clock as commits).
 
 const SCHEDULER_TRACK_GROUP = 'Scheduler ⚛';
 const COMPONENTS_TRACK = 'Components ⚛';
@@ -941,8 +937,6 @@ function getTrackSpans(context: ToolContext) {
   return spans != null ? spans : [];
 }
 
-// Rows are lane;phase;start;end;duration — semicolon-delimited like the
-// summary tables.
 function formatSpanRow(span: Object): string {
   return [
     span.track,
