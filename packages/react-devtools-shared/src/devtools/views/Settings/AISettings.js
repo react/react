@@ -18,10 +18,8 @@ import {
 import {useAIProviderConfig} from 'react-devtools-shared/src/devtools/aiChat/useAIProviderConfig';
 import {useSkills} from 'react-devtools-shared/src/devtools/aiChat/useSkills';
 import {
-  hasCodexAuthFile,
-  pickCodexAuthFile,
-  setCodexAuthFallbackFile,
-  supportsCodexFilePicker,
+  getCodexSetupCommand,
+  getValidCodexAuth,
 } from 'react-devtools-shared/src/devtools/aiChat/codexAuth';
 
 import styles from './SettingsShared.css';
@@ -34,50 +32,39 @@ export default function AISettings(_: {}): React.Node {
   const [newSkillMarkdown, setNewSkillMarkdown] = useState('');
   const [skillError, setSkillError] = useState<string | null>(null);
 
-  const [codexConnected, setCodexConnected] = useState(false);
+  // 'checking' | 'connected' | 'error'
+  const [codexStatus, setCodexStatus] = useState('checking');
   const [codexError, setCodexError] = useState<string | null>(null);
-  // The picker can be unavailable/blocked in some panel frames; fall back to
-  // a plain file input (session-only — plain Files can't be persisted).
-  const [usePickerFallback, setUsePickerFallback] = useState(
-    !supportsCodexFilePicker(),
-  );
+  const [codexCheckCount, setCodexCheckCount] = useState(0);
+
+  const provider = getProvider(config.providerId);
+  const usesApiKey = provider.auth === 'api-key';
+  const usesSubscription = provider.auth === 'subscription';
 
   useEffect(() => {
+    if (!usesSubscription) {
+      return;
+    }
     let cancelled = false;
-    hasCodexAuthFile().then(connected => {
-      if (!cancelled) {
-        setCodexConnected(connected);
-      }
-    });
+    setCodexStatus('checking');
+    getValidCodexAuth().then(
+      () => {
+        if (!cancelled) {
+          setCodexStatus('connected');
+          setCodexError(null);
+        }
+      },
+      error => {
+        if (!cancelled) {
+          setCodexStatus('error');
+          setCodexError(error.message);
+        }
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const handlePickCodexFile = async () => {
-    try {
-      await pickCodexAuthFile();
-      setCodexConnected(true);
-      setCodexError(null);
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        return; // User cancelled the dialog.
-      }
-      if (error.name === 'SecurityError') {
-        setUsePickerFallback(true);
-        return;
-      }
-      setCodexError(error.message);
-    }
-  };
-
-  const handleCodexFallbackFile = (file: any) => {
-    if (file != null) {
-      setCodexAuthFallbackFile(file);
-      setCodexConnected(true);
-      setCodexError(null);
-    }
-  };
+  }, [usesSubscription, codexCheckCount]);
 
   const handleAddSkill = () => {
     const added = addSkill(newSkillMarkdown);
@@ -91,10 +78,6 @@ export default function AISettings(_: {}): React.Node {
       setNewSkillMarkdown('');
     }
   };
-
-  const provider = getProvider(config.providerId);
-  const usesApiKey = provider.auth === 'api-key';
-  const usesSubscription = provider.auth === 'subscription';
 
   const selectProvider = (providerId: string) => {
     setProviderId(providerId);
@@ -147,34 +130,28 @@ export default function AISettings(_: {}): React.Node {
       {usesSubscription && (
         <div className={styles.SettingWrapper}>
           <div className={styles.RadioLabel}>ChatGPT sign-in</div>
-          <div>
-            Run <code>codex login</code> in a terminal, then select{' '}
-            <code>~/.codex/auth.json</code>. The file is read on each request —
-            tokens are never copied or refreshed by this panel; re-run{' '}
-            <code>codex login</code> when they expire. In the file dialog, press{' '}
-            <kbd>Cmd/Ctrl+Shift+.</kbd> to show the hidden <code>.codex</code>{' '}
-            folder.
-          </div>
-          {usePickerFallback ? (
-            <input
-              type="file"
-              accept=".json,application/json"
-              onChange={({currentTarget}) =>
-                handleCodexFallbackFile(
-                  currentTarget.files != null ? currentTarget.files[0] : null,
-                )
-              }
-            />
-          ) : (
-            <Button
-              onClick={handlePickCodexFile}
-              title="Select ~/.codex/auth.json">
-              {codexConnected ? 'Change auth.json…' : 'Select auth.json…'}
-            </Button>
+          {codexStatus === 'checking' && <div>Checking…</div>}
+          {codexStatus === 'connected' && (
+            <div>
+              Connected — signed in via the Codex CLI. Tokens are read from{' '}
+              <code>~/.codex/auth.json</code> on each request; run{' '}
+              <code>codex login</code> again if they expire.
+            </div>
           )}
-          {codexConnected && <span> Connected.</span>}
-          {codexError !== null && (
-            <div className={styles.ModelError}>{codexError}</div>
+          {codexStatus === 'error' && (
+            <div>
+              <div className={styles.ModelError}>{codexError}</div>
+              <div>
+                Setup: run <code>codex login</code>, and once per machine run
+                this from the React repo (then reload the extension):
+              </div>
+              <pre>{getCodexSetupCommand()}</pre>
+              <Button
+                onClick={() => setCodexCheckCount(count => count + 1)}
+                title="Check the Codex connection again">
+                Re-check
+              </Button>
+            </div>
           )}
         </div>
       )}

@@ -43,7 +43,8 @@
   "permissions": [
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "nativeMessaging"
   ],
   "optional_permissions": [
     "clipboardWrite"

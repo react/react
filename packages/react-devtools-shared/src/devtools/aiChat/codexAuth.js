@@ -10,17 +10,20 @@
 // OpenAI Codex subscription ("Sign in with ChatGPT") auth.
 //
 // The user signs in with the Codex CLI (`codex login`), which writes
-// ~/.codex/auth.json. The panel never copies or refreshes those tokens:
-// the user selects that file once and we re-read it on every request via a
-// persisted File System Access handle, so tokens the CLI rotates are picked
-// up automatically. When the access token in the file has expired, the fix
-// is on the CLI side (re-run `codex login`), not here.
+// ~/.codex/auth.json. Browser extensions cannot read the disk, so a tiny
+// native messaging host (codex-auth-host/ in react-devtools-extensions,
+// one-time install) reads that file on request. The panel never copies or
+// refreshes tokens: every request re-reads the file, so tokens the CLI
+// rotates are picked up automatically, and an expired token means "run
+// `codex login` again" — refresh stays the CLI's job.
 
 export type CodexTokens = {
   accessToken: string,
   refreshToken: string,
   accountId: string,
 };
+
+const NATIVE_HOST_NAME = 'com.react_devtools.codex_auth';
 
 // Parses auth.json content: either the full file or just its `tokens`
 // object. Returns null if it doesn't contain the required fields.
@@ -69,139 +72,86 @@ export function getAccessTokenExpiryMs(accessToken: string): number | null {
   return null;
 }
 
-// --- Persisted file handle ---
-// FileSystemFileHandle is structured-cloneable, so it survives in IndexedDB
-// (localStorage cannot hold it).
-
-const DB_NAME = 'React::DevTools::AI';
-const STORE_NAME = 'fileHandles';
-const HANDLE_KEY = 'codexAuthJson';
-
-function promisifyRequest<T>(request: any): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function openHandleStore(): Promise<any> {
-  const request = indexedDB.open(DB_NAME, 1);
-  request.onupgradeneeded = () => {
-    request.result.createObjectStore(STORE_NAME);
-  };
-  return promisifyRequest(request);
-}
-
-async function getStoredHandle(): Promise<any> {
-  try {
-    const db = await openHandleStore();
-    try {
-      return await promisifyRequest(
-        db.transaction(STORE_NAME).objectStore(STORE_NAME).get(HANDLE_KEY),
-      );
-    } finally {
-      db.close();
-    }
-  } catch (error) {
-    return null;
+function getRuntime(): any | null {
+  const chrome = (window: any).chrome;
+  if (
+    chrome != null &&
+    chrome.runtime != null &&
+    typeof chrome.runtime.sendNativeMessage === 'function'
+  ) {
+    return chrome.runtime;
   }
+  return null;
 }
 
-async function setStoredHandle(handle: any): Promise<void> {
-  const db = await openHandleStore();
-  try {
-    await promisifyRequest(
-      db
-        .transaction(STORE_NAME, 'readwrite')
-        .objectStore(STORE_NAME)
-        .put(handle, HANDLE_KEY),
-    );
-  } finally {
-    db.close();
-  }
-}
-
-// Fallback when the File System Access picker is unavailable (e.g. blocked
-// inside the DevTools panel frame): a plain <input type="file"> File. Plain
-// Files can't be persisted, so this lives for the current session only.
-let fallbackFile: any = null;
-
-export function supportsCodexFilePicker(): boolean {
-  return typeof (window: any).showOpenFilePicker === 'function';
-}
-
-// Opens the picker and persists the handle. Throws AbortError if the user
-// cancels the dialog.
-export async function pickCodexAuthFile(): Promise<void> {
-  const showOpenFilePicker = (window: any).showOpenFilePicker;
-  if (typeof showOpenFilePicker !== 'function') {
-    throw new Error('The file picker is not available in this browser.');
-  }
-  const handles = await showOpenFilePicker({
-    types: [
-      {description: 'Codex auth.json', accept: {'application/json': ['.json']}},
-    ],
-  });
-  await setStoredHandle(handles[0]);
-  fallbackFile = null;
-}
-
-export function setCodexAuthFallbackFile(file: any): void {
-  fallbackFile = file;
-}
-
-export async function hasCodexAuthFile(): Promise<boolean> {
-  if (fallbackFile != null) {
-    return true;
-  }
-  return (await getStoredHandle()) != null;
-}
-
-async function readCodexAuthText(): Promise<string> {
-  const handle = await getStoredHandle();
-  if (handle != null) {
-    let permission = 'granted';
-    if (typeof handle.queryPermission === 'function') {
-      permission = await handle.queryPermission({mode: 'read'});
-      if (
-        permission === 'prompt' &&
-        typeof handle.requestPermission === 'function'
-      ) {
-        // Works when called on the way into a send — the click's transient
-        // user activation is what allows the re-grant prompt.
-        permission = await handle.requestPermission({mode: 'read'});
-      }
-    }
-    if (permission !== 'granted') {
-      throw new Error(
-        'Access to auth.json was not re-granted. Select the file again in ' +
-          'Settings > Chat.',
-      );
-    }
-    const file = await handle.getFile();
-    return file.text();
-  }
-  if (fallbackFile != null) {
-    return fallbackFile.text();
-  }
-  throw new Error(
-    'Codex is not connected. Run `codex login` in a terminal, then select ' +
-      '~/.codex/auth.json in Settings > Chat.',
+// The one-time setup command shown to the user, with this install's actual
+// extension ID filled in (unpacked extension IDs are path-derived).
+export function getCodexSetupCommand(): string {
+  const runtime = getRuntime();
+  const extensionId =
+    runtime != null && typeof runtime.id === 'string'
+      ? runtime.id
+      : '<extension-id from chrome://extensions>';
+  return (
+    'packages/react-devtools-extensions/codex-auth-host/install.sh ' +
+    extensionId
   );
 }
 
-// Returns the access token + account id currently in auth.json. No refresh
-// happens here by design: the Codex CLI owns the tokens.
+function readAuthViaNativeHost(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const runtime = getRuntime();
+    if (runtime == null) {
+      reject(
+        new Error(
+          'Codex sign-in needs the React DevTools browser extension ' +
+            '(native messaging is not available here).',
+        ),
+      );
+      return;
+    }
+    runtime.sendNativeMessage(
+      NATIVE_HOST_NAME,
+      {type: 'read-auth'},
+      (response: any) => {
+        if (runtime.lastError != null) {
+          reject(
+            new Error(
+              'Codex helper is not set up. One-time setup: from the React ' +
+                `repo, run \`${getCodexSetupCommand()}\`, then reload the ` +
+                `extension. (Chrome said: ${runtime.lastError.message})`,
+            ),
+          );
+          return;
+        }
+        if (response == null || response.ok !== true) {
+          reject(
+            new Error(
+              response != null && typeof response.error === 'string'
+                ? response.error
+                : 'Could not read ~/.codex/auth.json.',
+            ),
+          );
+          return;
+        }
+        resolve(response.content);
+      },
+    );
+  });
+}
+
+// Returns the access token + account id currently in ~/.codex/auth.json.
+// No refresh happens here by design: the Codex CLI owns the tokens.
 export async function getValidCodexAuth(): Promise<{
   accessToken: string,
   accountId: string,
 }> {
-  const text = await readCodexAuthText();
+  const text = await readAuthViaNativeHost();
   const tokens = parseCodexAuthInput(text);
   if (tokens == null) {
     throw new Error(
-      'The selected file is not a Codex auth.json. Run `codex login`, then ' +
-        'select ~/.codex/auth.json in Settings > Chat.',
+      '~/.codex/auth.json does not contain ChatGPT tokens. Run ' +
+        '`codex login` (choosing "Sign in with ChatGPT"), then try again.',
     );
   }
   const expiryMs = getAccessTokenExpiryMs(tokens.accessToken);
