@@ -15,7 +15,6 @@ import {
 } from 'react-reconciler/src/ReactFiberReconciler';
 import {canUseDOM} from 'shared/ExecutionEnvironment';
 import ReactVersion from 'shared/ReactVersion';
-import {ELEMENT_NODE} from 'react-dom-bindings/src/client/HTMLNodeType';
 
 import Internals from 'shared/ReactDOMSharedInternals';
 
@@ -42,14 +41,8 @@ if (__DEV__) {
 }
 
 function findDOMNode(
-  componentOrElement: Element | ?component(...props: any),
+  componentOrElement: component(...props: any),
 ): null | Element | Text {
-  if (componentOrElement == null) {
-    return null;
-  }
-  if ((componentOrElement as any).nodeType === ELEMENT_NODE) {
-    return componentOrElement as any;
-  }
   return findHostInstance(componentOrElement);
 }
 
