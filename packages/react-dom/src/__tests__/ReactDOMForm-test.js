@@ -992,6 +992,50 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('No pending action');
   });
 
+  it('useFormStatus returns not pending for ambiguous same-component forms', async () => {
+    const firstFormRef = React.createRef();
+    const secondFormRef = React.createRef();
+
+    async function firstAction() {
+      Scheduler.log('First action started');
+      await getText('First');
+    }
+
+    async function secondAction() {
+      Scheduler.log('Second action started');
+      await getText('Second');
+    }
+
+    function App() {
+      const {pending} = useFormStatus();
+      return (
+        <>
+          <form action={firstAction} ref={firstFormRef}>
+            <Text text={pending ? 'Pending' : 'Not pending'} />
+          </form>
+          <form action={secondAction} ref={secondFormRef} />
+        </>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+    assertConsoleErrorDev([
+      'useFormStatus() was called in a component that returns multiple <form> elements. ' +
+        'React cannot infer which form status to read. Move useFormStatus() into a child ' +
+        'of the form, or use an explicit form scope when that API is available.\n' +
+        '    in App (at **)',
+    ]);
+    assertLog(['Not pending']);
+    expect(container.textContent).toBe('Not pending');
+
+    await submit(firstFormRef.current);
+    assertLog(['First action started']);
+    expect(container.textContent).toBe('Not pending');
+
+    await act(() => resolveText('First'));
+  });
+
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
 
