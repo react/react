@@ -922,6 +922,235 @@ function listSourceFilesTool(context: ToolContext): ToolDefinition {
   };
 }
 
+// --- React 19.2+ Performance Track tools ---
+// Spans come from wrapping console.timeStamp while profiling (see
+// backend/performanceTrackCapture.js). They share the commit clock. These
+// tools are only registered when spans exist, so the prompt never
+// advertises them for apps (React <19.2 / production builds) that can't
+// produce them.
+
+const SCHEDULER_TRACK_GROUP = 'Scheduler ⚛';
+const COMPONENTS_TRACK = 'Components ⚛';
+
+// DEV component render spans are prefixed with a zero-width space when the
+// entry carries a props diff; strip it for matching and display.
+const cleanSpanName = (name: string): string => name.replace(/^​/, '');
+
+function getTrackSpans(context: ToolContext) {
+  const spans = context.profilingData.performanceTrackSpans;
+  return spans != null ? spans : [];
+}
+
+// Rows are lane;phase;start;end;duration — semicolon-delimited like the
+// summary tables.
+function formatSpanRow(span: Object): string {
+  return [
+    span.track,
+    cleanSpanName(span.name),
+    round(span.start),
+    round(span.end),
+    round(span.end - span.start),
+  ].join(';');
+}
+
+function resolveWindow(
+  context: ToolContext,
+  args: Object,
+): {startMs: number, endMs: number, label: string} {
+  if (typeof args.commit_number === 'number') {
+    const {commit} = getCommitOrThrow(context, args.commit_number);
+    // Scheduling (event, update, blocked time) precedes the commit
+    // timestamp; look further back than forward.
+    return {
+      startMs: commit.timestamp - 1000,
+      endMs: commit.timestamp + 500,
+      label: `around commit ${args.commit_number} (t=${round(commit.timestamp)}ms)`,
+    };
+  }
+  const startMs = typeof args.start_ms === 'number' ? args.start_ms : -Infinity;
+  const endMs = typeof args.end_ms === 'number' ? args.end_ms : Infinity;
+  const label =
+    startMs === -Infinity && endMs === Infinity
+      ? 'entire session'
+      : `window ${startMs === -Infinity ? 'start' : round(startMs)}-${
+          endMs === Infinity ? 'end' : round(endMs)
+        }ms`;
+  return {startMs, endMs, label};
+}
+
+const MAX_SPAN_ROWS = 300;
+
+function listSpanRows(spans: Array<Object>): Array<string> {
+  const lines = [];
+  const rowCount = Math.min(spans.length, MAX_SPAN_ROWS);
+  for (let i = 0; i < rowCount; i++) {
+    lines.push(formatSpanRow(spans[i]));
+  }
+  if (spans.length > MAX_SPAN_ROWS) {
+    lines.push(
+      `(truncated: ${spans.length - MAX_SPAN_ROWS} more spans — narrow the window)`,
+    );
+  }
+  return lines;
+}
+
+function getSchedulerPhasesTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_scheduler_phases',
+    description:
+      'Returns React scheduler phase spans (Event, Update, Blocked, ' +
+      'Render, Commit, Remaining Effects, Cascading Update...) per ' +
+      'priority lane (Blocking, Transition...), from React 19.2+ ' +
+      'Performance Tracks. Shows what happened BEFORE and between ' +
+      'renders — input event to update to render latency, blocked time, ' +
+      'interruptions. Same clock as commits. Filter by commit_number ' +
+      '(window around that commit) or start_ms/end_ms.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        commit_number: {
+          type: 'integer',
+          description: '1-based commit; shows spans around its timestamp.',
+        },
+        start_ms: {type: 'number', description: 'Window start.'},
+        end_ms: {type: 'number', description: 'Window end.'},
+      },
+    },
+    execute: async (args: Object) => {
+      const {startMs, endMs, label} = resolveWindow(context, args);
+      const spans = getTrackSpans(context)
+        .filter(
+          span =>
+            span.trackGroup === SCHEDULER_TRACK_GROUP &&
+            span.end >= startMs &&
+            span.start <= endMs,
+        )
+        .sort((a, b) => a.start - b.start);
+      if (spans.length === 0) {
+        return `No scheduler phase spans in ${label}.`;
+      }
+      const lines = [
+        `Scheduler phases, ${label} (lane;phase;start_ms;end_ms;duration_ms):`,
+        ...listSpanRows(spans),
+      ];
+      return lines.join('\n');
+    },
+  };
+}
+
+function getCascadingUpdatesTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_cascading_updates',
+    description:
+      'Returns cascading updates recorded by React 19.2+ Performance ' +
+      'Tracks: updates scheduled while React was already rendering or ' +
+      'committing (e.g. setState in an effect), a common cause of ' +
+      'unexpected extra commits. Each is cross-referenced with the next ' +
+      'commit at or after it.',
+    inputSchema: {type: 'object', properties: {}},
+    execute: async (args: Object) => {
+      const cascading = getTrackSpans(context)
+        .filter(span => cleanSpanName(span.name).includes('Cascading'))
+        .sort((a, b) => a.start - b.start);
+      if (cascading.length === 0) {
+        return 'No cascading updates were recorded in this session.';
+      }
+      const dataForRoot = context.profilingData.dataForRoots.get(
+        context.rootID,
+      );
+      const commitData = dataForRoot != null ? dataForRoot.commitData : [];
+      const lines = [
+        `${cascading.length} cascading update(s) ` +
+          '(lane;phase;start_ms;end_ms;duration_ms;next_commit):',
+      ];
+      const rowCount = Math.min(cascading.length, MAX_SPAN_ROWS);
+      for (let i = 0; i < rowCount; i++) {
+        const span = cascading[i];
+        let nextCommit = '';
+        for (let c = 0; c < commitData.length; c++) {
+          if (commitData[c].timestamp >= span.start) {
+            nextCommit = String(c + 1);
+            break;
+          }
+        }
+        lines.push(`${formatSpanRow(span)};${nextCommit}`);
+      }
+      lines.push(
+        'Use get_render_cause on the next_commit to see which components ' +
+          'rendered, and get_component_source to find the scheduling code.',
+      );
+      return lines.join('\n');
+    },
+  };
+}
+
+function getComponentTrackSpansTool(context: ToolContext): ToolDefinition {
+  return {
+    name: 'get_component_track_spans',
+    description:
+      'Returns per-component render and effect spans from React 19.2+ ' +
+      'Performance Tracks — wall-clock placement of individual renders ' +
+      '(split across yields) and INDIVIDUAL effect timings, which the ' +
+      'aggregate effect durations cannot show. Filter by component_name ' +
+      '(substring), commit_number, or start_ms/end_ms.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        component_name: {
+          type: 'string',
+          description: 'Case-insensitive substring of the span name.',
+        },
+        commit_number: {
+          type: 'integer',
+          description: '1-based commit; shows spans around its timestamp.',
+        },
+        start_ms: {type: 'number', description: 'Window start.'},
+        end_ms: {type: 'number', description: 'Window end.'},
+      },
+    },
+    execute: async (args: Object) => {
+      const {startMs, endMs, label} = resolveWindow(context, args);
+      const nameQuery =
+        typeof args.component_name === 'string'
+          ? args.component_name.toLowerCase()
+          : null;
+      const spans = getTrackSpans(context)
+        .filter(span => {
+          if (span.track !== COMPONENTS_TRACK) {
+            return false;
+          }
+          if (span.end < startMs || span.start > endMs) {
+            return false;
+          }
+          if (
+            nameQuery != null &&
+            !cleanSpanName(span.name).toLowerCase().includes(nameQuery)
+          ) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => a.start - b.start);
+      if (spans.length === 0) {
+        return `No component track spans match (${label}${
+          nameQuery != null ? `, name~"${nameQuery}"` : ''
+        }).`;
+      }
+      const lines = [
+        `Component spans, ${label} (track;name;start_ms;end_ms;duration_ms):`,
+        ...listSpanRows(spans),
+      ];
+      const dropped = context.profilingData.droppedPerformanceTrackSpans;
+      if (dropped != null && dropped > 0) {
+        lines.push(
+          `(note: ${dropped} component spans were dropped at capture time — view is partial)`,
+        );
+      }
+      return lines.join('\n');
+    },
+  };
+}
+
 export function createProfilerTools(
   profilingData: ProfilingDataFrontend,
   rootID: number,
@@ -938,7 +1167,7 @@ export function createProfilerTools(
     bridge,
     fetchFile,
   };
-  return [
+  const tools = [
     getCommitsTool(context),
     getCommitTool(context),
     getComponentCommitsTool(context),
@@ -949,4 +1178,15 @@ export function createProfilerTools(
     getSourceFileTool(context),
     listSourceFilesTool(context),
   ];
+  // Performance Track tools only exist when the profiled app emitted spans
+  // (React 19.2+ dev/profiling builds) — never advertise dead tools.
+  const trackSpans = profilingData.performanceTrackSpans;
+  if (trackSpans != null && trackSpans.length > 0) {
+    tools.push(
+      getSchedulerPhasesTool(context),
+      getCascadingUpdatesTool(context),
+      getComponentTrackSpansTool(context),
+    );
+  }
+  return tools;
 }

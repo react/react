@@ -185,6 +185,41 @@ export function buildProfileSummary(
     );
   }
 
+  lines.push('');
+  lines.push('## Scheduler phase data (React Performance Tracks)');
+  const trackSpans = profilingData.performanceTrackSpans;
+  if (trackSpans != null && trackSpans.length > 0) {
+    let schedulerSpans = 0;
+    let componentSpans = 0;
+    let cascadingUpdates = 0;
+    for (let i = 0; i < trackSpans.length; i++) {
+      if (trackSpans[i].track === 'Components ⚛') {
+        componentSpans++;
+      } else {
+        schedulerSpans++;
+      }
+      if (trackSpans[i].name.includes('Cascading')) {
+        cascadingUpdates++;
+      }
+    }
+    const dropped = profilingData.droppedPerformanceTrackSpans;
+    lines.push(
+      `Available: ${schedulerSpans} scheduler phase spans, ` +
+        `${componentSpans} component spans, ${cascadingUpdates} cascading ` +
+        `update(s)${dropped > 0 ? `, ${dropped} spans dropped over cap` : ''}. ` +
+        'Use get_scheduler_phases, get_cascading_updates, and ' +
+        'get_component_track_spans for event-to-render latency, blocked ' +
+        'time, individual effect timings, and update causality.',
+    );
+  } else {
+    lines.push(
+      'Not available — requires the profiled app to run React 19.2+ in ' +
+        'development. Timing analysis is commit-level only; say so when ' +
+        'asked about pre-render latency, blocked time, or what scheduled ' +
+        'an update.',
+    );
+  }
+
   return lines.join('\n');
 }
 
@@ -519,6 +554,10 @@ export function buildSystemPrompt(
     'code changes, call get_component_source to read the actual component',
     'code (get_source_file / list_source_files for related files) so fixes',
     'cite real lines.',
+    'When scheduler phase data is available (see the summary section),',
+    'prefer it for timing-causality questions — event-to-render latency,',
+    'blocked time, what scheduled an update. When it is not available,',
+    'reason from commit data and say the analysis is commit-level.',
     'All durations are in milliseconds. Lines in tables are semicolon-delimited.',
     'Commits are numbered starting at 1, matching the Profiler UI.',
     'layout_effects_ms/passive_effects_ms are time spent in useLayoutEffect',
