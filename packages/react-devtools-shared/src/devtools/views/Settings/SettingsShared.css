@@ -167,3 +167,8 @@
   padding: 0;
   margin: 0;
 }
+
+.ModelError {
+  color: var(--color-error-text);
+  margin-top: 0.25rem;
+}

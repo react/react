@@ -30,8 +30,11 @@ export type AIProviderConfigHook = {
 };
 
 // Reads and writes the persisted AI chat provider settings.
-// The stored base URL and model apply per provider; switching providers
-// re-derives defaults from the preset when nothing was stored yet.
+// The stored base URL applies per provider; switching providers re-derives
+// its default from the preset when nothing was stored. The model is taken
+// literally: the default provider's first model seeds the INITIAL value,
+// but a cleared field stays empty (the settings UI shows an error and the
+// chat refuses to send until a model is set).
 export function useAIProviderConfig(): AIProviderConfigHook {
   const [providerId, setProviderId] = useLocalStorage<string>(
     LOCAL_STORAGE_AI_PROVIDER_ID_KEY,
@@ -45,9 +48,10 @@ export function useAIProviderConfig(): AIProviderConfigHook {
     LOCAL_STORAGE_AI_API_KEY_KEY,
     '',
   );
+  const defaultPreset = getProviderPreset(DEFAULT_PROVIDER_ID);
   const [model, setModel] = useLocalStorage<string>(
     LOCAL_STORAGE_AI_MODEL_KEY,
-    '',
+    defaultPreset.models.length > 0 ? defaultPreset.models[0] : '',
   );
 
   const config = useMemo(() => {
@@ -56,8 +60,7 @@ export function useAIProviderConfig(): AIProviderConfigHook {
       providerId,
       baseUrl: baseUrl !== '' ? baseUrl : preset.baseUrl,
       apiKey,
-      model:
-        model !== '' ? model : preset.models.length > 0 ? preset.models[0] : '',
+      model,
     };
   }, [providerId, baseUrl, apiKey, model]);
 

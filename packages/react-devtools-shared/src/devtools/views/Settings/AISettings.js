@@ -47,7 +47,8 @@ export default function AISettings(_: {}): React.Node {
     setProviderId(providerId);
     // Reset per-provider fields so the new preset's defaults apply.
     setBaseUrl('');
-    setModel('');
+    const nextPreset = getProviderPreset(providerId);
+    setModel(nextPreset.models.length > 0 ? nextPreset.models[0] : '');
   };
 
   return (
@@ -99,6 +100,11 @@ export default function AISettings(_: {}): React.Node {
           onChange={({currentTarget}) => setModel(currentTarget.value)}
           size={40}
         />
+        {config.model.trim() === '' && (
+          <div className={styles.ModelError}>
+            A model is required — the chat cannot send requests without one.
+          </div>
+        )}
       </div>
 
       <div className={styles.SettingWrapper}>
