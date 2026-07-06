@@ -486,6 +486,12 @@ describe('ReactDOM', () => {
     }
   });
 
+  it('findDOMNode returns a DOM node when passed a DOM node', () => {
+    const node = document.createElement('div');
+
+    expect(findDOMNode(node)).toBe(node);
+  });
+
   it('reports stacks with re-entrant renderToString() calls on the client', async () => {
     function Child2(props) {
       return <span ariaTypo3="no">{props.children}</span>;

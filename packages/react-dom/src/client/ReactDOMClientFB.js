@@ -33,6 +33,7 @@ import {
   getNodeFromInstance,
   getFiberCurrentPropsFromNode,
 } from 'react-dom-bindings/src/client/ReactDOMComponentTree';
+import {ELEMENT_NODE} from 'react-dom-bindings/src/client/HTMLNodeType';
 import {
   enqueueStateRestore,
   restoreStateIfNeeded,
@@ -109,8 +110,14 @@ const flushSync: typeof flushSyncIsomorphic = disableLegacyMode
   : flushSyncFromReconciler;
 
 function findDOMNode(
-  componentOrElement: component(...props: any),
+  componentOrElement: Element | ?component(...props: any),
 ): null | Element | Text {
+  if (componentOrElement == null) {
+    return null;
+  }
+  if ((componentOrElement as any).nodeType === ELEMENT_NODE) {
+    return componentOrElement as any;
+  }
   return findHostInstance(componentOrElement);
 }
 
