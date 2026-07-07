@@ -1,0 +1,22 @@
+packages/react-reconciler/src/__tests__/useSyncExternalStore-test.js
+  s_4b88ae310ae383::t_592b596316b9b2 355-480
+packages/react-reconciler/src/ReactFiberHooks.js
+  s_4b88ae310ae383::t_ec8a32cf98720c 1778,1784-1785,1787-1801,1803,1862-1863
+  s_4b88ae310ae383::t_36cd64baf21518 95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e7f3c6d82f239023c39be91691f5d4e8cad21fcf",
+  "prompts": {},
+  "sessions": {
+    "s_4b88ae310ae383": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53d3afde-f2e3-4e73-b395-59ea24fbc335",
+        "model": "unknown"
+      },
+      "human_author": "Sophie Alpert <sophie.alpert@clay.com>"
+    }
+  }
+}
