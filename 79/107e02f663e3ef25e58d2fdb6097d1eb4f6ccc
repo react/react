@@ -1,0 +1,21 @@
+packages/react-reconciler/src/ReactChildFiber.js
+  s_4af792541f343f::t_8517add180528d 527-530
+packages/react-reconciler/src/__tests__/StrictEffectsMode-test.js
+  s_4af792541f343f::t_b48970f240f5be 631-696
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "79107e02f663e3ef25e58d2fdb6097d1eb4f6ccc",
+  "prompts": {},
+  "sessions": {
+    "s_4af792541f343f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8f110b54-10cf-43d9-bff2-42d55469ca1e",
+        "model": "unknown"
+      },
+      "human_author": "Sophie Alpert <sophie.alpert@clay.com>"
+    }
+  }
+}
