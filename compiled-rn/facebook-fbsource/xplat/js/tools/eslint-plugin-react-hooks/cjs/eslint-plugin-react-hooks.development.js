@@ -12,7 +12,7 @@
  * @lightSyntaxTransform
  * @preventMunge
  * @oncall react_core
- * @generated SignedSource<<aa15b34bb5a8d2f67120533ecfe3f9b2>>
+ * @generated SignedSource<<cd4f6a922346425277efcf43127043da>>
  */
 
 'use strict';
@@ -31627,6 +31627,13 @@ function defaultModuleTypeProvider(moduleName) {
                         restParam: Effect.Read,
                         returnType: { kind: 'type', name: 'Any' },
                         knownIncompatible: `TanStack Virtual's \`useVirtualizer()\` API returns functions that cannot be memoized safely`,
+                    },
+                    useWindowVirtualizer: {
+                        kind: 'hook',
+                        positionalParams: [],
+                        restParam: Effect.Read,
+                        returnType: { kind: 'type', name: 'Any' },
+                        knownIncompatible: `TanStack Virtual's \`useWindowVirtualizer()\` API returns functions that cannot be memoized safely`,
                     },
                 },
             };

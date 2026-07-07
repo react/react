@@ -6,7 +6,7 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
- * @generated SignedSource<<4632eca3603ca36a80a28892bae651db>>
+ * @generated SignedSource<<e60ff8fcec882377d86e5523757e18c5>>
  */
 
 'use strict';
@@ -31406,6 +31406,13 @@ function defaultModuleTypeProvider(moduleName) {
                         restParam: Effect.Read,
                         returnType: { kind: 'type', name: 'Any' },
                         knownIncompatible: `TanStack Virtual's \`useVirtualizer()\` API returns functions that cannot be memoized safely`,
+                    },
+                    useWindowVirtualizer: {
+                        kind: 'hook',
+                        positionalParams: [],
+                        restParam: Effect.Read,
+                        returnType: { kind: 'type', name: 'Any' },
+                        knownIncompatible: `TanStack Virtual's \`useWindowVirtualizer()\` API returns functions that cannot be memoized safely`,
                     },
                 },
             };
