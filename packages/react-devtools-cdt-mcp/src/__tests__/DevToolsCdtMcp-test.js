@@ -94,7 +94,19 @@ describe('react-devtools-cdt-mcp', () => {
     expect(globalThis.__dtmcp).toBeUndefined();
   });
 
-  it('throws when the auto entry is imported outside an event target', () => {
+  it('root entry exports tools without registering', () => {
+    unregister();
+    delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    jest.resetModules();
+
+    const api = require('../index');
+
+    expect(typeof api.register).toBe('function');
+    expect(typeof api.buildToolGroup).toBe('function');
+    expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeUndefined();
+  });
+
+  it('throws when the register entry is imported outside an event target', () => {
     const originalAddEventListener = globalThis.addEventListener;
     const originalRemoveEventListener = globalThis.removeEventListener;
 
@@ -108,11 +120,50 @@ describe('react-devtools-cdt-mcp', () => {
       // $FlowFixMe[cannot-write]
       globalThis.removeEventListener = undefined;
 
-      expect(() => require('../index')).toThrow(
-        'react-devtools-cdt-mcp must be imported in a browser-like environment',
+      expect(() => require('../register')).toThrow(
+        'react-devtools-cdt-mcp/register must be imported in a browser-like environment',
       );
       expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeUndefined();
     } finally {
+      globalThis.addEventListener = originalAddEventListener;
+      globalThis.removeEventListener = originalRemoveEventListener;
+    }
+  });
+
+  it('register entry installs the DevTools hook', () => {
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalRemoveEventListener = globalThis.removeEventListener;
+    let autoListener = null;
+
+    unregister();
+    delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    jest.resetModules();
+
+    try {
+      // $FlowFixMe[cannot-write]
+      globalThis.addEventListener = (type, listener, options) => {
+        if (type === 'devtoolstooldiscovery') {
+          autoListener = listener;
+        }
+        return originalAddEventListener.call(
+          globalThis,
+          type,
+          listener,
+          options,
+        );
+      };
+
+      require('../register');
+
+      expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeDefined();
+    } finally {
+      if (autoListener !== null) {
+        originalRemoveEventListener.call(
+          globalThis,
+          'devtoolstooldiscovery',
+          autoListener,
+        );
+      }
       globalThis.addEventListener = originalAddEventListener;
       globalThis.removeEventListener = originalRemoveEventListener;
     }

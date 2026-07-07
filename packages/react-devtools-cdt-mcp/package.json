@@ -11,7 +11,8 @@
   },
   "files": [
     "dist",
-    "index.js"
+    "index.js",
+    "register.js"
   ],
   "scripts": {
     "build": "cross-env NODE_ENV=production rollup -c rollup.config.cjs",
