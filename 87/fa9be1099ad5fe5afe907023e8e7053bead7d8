@@ -1,0 +1,25 @@
+packages/react-reconciler/src/ReactFiberBeginWork.js
+  s_d5e13cda7b40c0::t_ba969ae8abd157 139,4199-4202
+packages/react-reconciler/src/ReactFiberHotReloading.js
+  s_d5e13cda7b40c0::t_c5312c0b6f5c02 124-146,288,291-295,301-308,311,337-343
+packages/react-refresh/src/ReactFreshRuntime.js
+  s_d5e13cda7b40c0::t_fefdad974c1475 149-161
+packages/react-refresh/src/__tests__/ReactFresh-test.js
+  s_d5e13cda7b40c0::t_08d546dad4de14 702-996
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "87fa9be1099ad5fe5afe907023e8e7053bead7d8",
+  "prompts": {},
+  "sessions": {
+    "s_d5e13cda7b40c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "823dfc91-e21b-419a-96a7-c3559582d9f4",
+        "model": "unknown"
+      },
+      "human_author": "Sophie Alpert <sophie.alpert@clay.com>"
+    }
+  }
+}
