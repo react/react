@@ -1,0 +1,19 @@
+packages/react-dom/src/__tests__/ReactDOMComponent-test.js
+  s_ba8910d527a990::t_13719302aabbf6 1286-1320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "589bffd1c9caeb97859ed1292be8605320a2a62a",
+  "prompts": {},
+  "sessions": {
+    "s_ba8910d527a990": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9599972a-cc35-43cb-8834-a72a7846ce44",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Sophie Alpert <sophie.alpert@clay.com>"
+    }
+  }
+}
