@@ -7,7 +7,7 @@
  * @flow
  */
 
-import {register} from './DevToolsCdtMcp';
+import {register} from './DevToolsCdtMcp.js';
 
 // Side effect: install the facade (before React) and register the React tool
 // group for chrome-devtools-mcp. Import this module before React.
@@ -26,4 +26,4 @@ if (
   );
 }
 
-export * from './DevToolsCdtMcp';
+export * from './DevToolsCdtMcp.js';

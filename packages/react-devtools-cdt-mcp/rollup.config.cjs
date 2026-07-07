@@ -32,14 +32,12 @@ const plugins = [
   }),
 ];
 
-function createBundle(input, file) {
+function createBundle(input, name) {
   return {
     input,
-    // CommonJS bundles for the npm package (referenced by root stubs).
     output: {
-      file,
-      format: 'cjs',
-      exports: 'named',
+      file: `dist/${name}.js`,
+      format: 'es',
     },
     treeshake: {moduleSideEffects: false},
     plugins,
@@ -47,6 +45,6 @@ function createBundle(input, file) {
 }
 
 module.exports = [
-  createBundle('src/index.js', 'dist/index.js'),
-  createBundle('src/register.js', 'dist/register.js'),
+  createBundle('src/index.js', 'index'),
+  createBundle('src/register.js', 'register'),
 ];

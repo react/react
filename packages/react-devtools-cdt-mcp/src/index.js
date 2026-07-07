@@ -7,4 +7,4 @@
  * @flow
  */
 
-export * from './DevToolsCdtMcp';
+export * from './DevToolsCdtMcp.js';
