@@ -12,7 +12,7 @@
  * @lightSyntaxTransform
  * @preventMunge
  * @oncall react_core
- * @generated SignedSource<<cd4f6a922346425277efcf43127043da>>
+ * @generated SignedSource<<09150f76ad08375f5c3fc1f4478e52e8>>
  */
 
 'use strict';
@@ -25353,7 +25353,7 @@ function lowerJsxElementName(builder, exprPath) {
     const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
     if (exprPath.isJSXIdentifier()) {
         const tag = exprPath.node.name;
-        if (tag.match(/^[A-Z]/)) {
+        if (!tag.match(/^[a-z]/)) {
             const kind = getLoadKind(builder, exprPath);
             return lowerValueToTemporary(builder, {
                 kind: kind,

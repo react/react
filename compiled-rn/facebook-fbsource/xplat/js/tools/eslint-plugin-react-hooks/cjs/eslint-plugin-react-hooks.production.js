@@ -6,7 +6,7 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
- * @generated SignedSource<<e60ff8fcec882377d86e5523757e18c5>>
+ * @generated SignedSource<<4d21bf7aa2771170822941c60dd24a77>>
  */
 
 'use strict';
@@ -25338,7 +25338,7 @@ function lowerJsxElementName(builder, exprPath) {
     const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
     if (exprPath.isJSXIdentifier()) {
         const tag = exprPath.node.name;
-        if (tag.match(/^[A-Z]/)) {
+        if (!tag.match(/^[a-z]/)) {
             const kind = getLoadKind(builder, exprPath);
             return lowerValueToTemporary(builder, {
                 kind: kind,
