@@ -6271,7 +6271,7 @@ fn lower_jsx_element_name(
             let tag = &id.name;
             let loc = convert_opt_loc(&id.base.loc);
             let start = id.base.start.unwrap_or(0);
-            if tag.starts_with(|c: char| c.is_ascii_uppercase()) {
+            if !tag.starts_with(|c: char| c.is_ascii_lowercase()) {
                 // Component tag: resolve as identifier and load
                 let place = lower_identifier(builder, tag, start, loc.clone(), id.base.node_id)?;
                 let load_value = if builder.is_context_identifier(tag, start, id.base.node_id) {
