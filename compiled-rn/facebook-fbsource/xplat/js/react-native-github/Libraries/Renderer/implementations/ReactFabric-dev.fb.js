@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<9a49548fb803b3dcde2408269d22f93c>>
+ * @generated SignedSource<<4e8898365aeb29c198642fe00860d452>>
  */
 
 "use strict";
@@ -4540,7 +4540,7 @@ __DEV__ &&
           return (
             (newIndex = newIndex.index),
             newIndex < lastPlacedIndex
-              ? ((newFiber.flags |= 134217730), lastPlacedIndex)
+              ? ((newFiber.flags |= 2), lastPlacedIndex)
               : newIndex
           );
         newFiber.flags |= 134217730;
@@ -21280,10 +21280,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-b8f50c93-20260707",
+        version: "19.3.0-native-fb-129154ce-20260707",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-b8f50c93-20260707"
+        reconcilerVersion: "19.3.0-native-fb-129154ce-20260707"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
