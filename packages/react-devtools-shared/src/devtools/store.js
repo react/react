@@ -48,7 +48,11 @@ import {
   BRIDGE_PROTOCOL,
   currentBridgeProtocol,
 } from 'react-devtools-shared/src/bridge';
-import {StrictMode} from 'react-devtools-shared/src/frontend/types';
+import {
+  StrictMode,
+  ActivityHiddenMode,
+  ActivityVisibleMode,
+} from 'react-devtools-shared/src/frontend/types';
 import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
 
 import type {
@@ -92,6 +96,7 @@ class RectRBush extends RBush<Rect> {
 }
 
 const debug = (methodName: string, ...args: Array<string>) => {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `%cStore %c${methodName}`,
@@ -269,6 +274,7 @@ export default class Store extends EventEmitter<{
   constructor(bridge: FrontendBridge, config?: Config) {
     super();
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('constructor', 'subscribing to Bridge');
     }
@@ -1011,12 +1017,12 @@ export default class Store extends EventEmitter<{
   ): void {
     for (let i = 0; i < children.length; i++) {
       const childID = children[i];
-      const suspense = this.getSuspenseByID(childID);
-      if (suspense !== null) {
+      const suspense = this._idToSuspense.get(childID);
+      if (suspense !== undefined) {
         target.push(suspense.id);
       } else {
-        const childElement = this.getElementByID(childID);
-        if (childElement !== null) {
+        const childElement = this._idToElement.get(childID);
+        if (childElement !== undefined) {
           this._pushSuspenseChildrenInDocumentOrder(
             childElement.children,
             target,
@@ -1051,6 +1057,7 @@ export default class Store extends EventEmitter<{
   ): Array<SuspenseTimelineStep> {
     const target: Array<SuspenseTimelineStep> = [];
     const focusedTransitionID = this._focusedTransition;
+    // $FlowFixMe[invalid-compare]
     if (focusedTransitionID === null) {
       return target;
     }
@@ -1306,7 +1313,7 @@ export default class Store extends EventEmitter<{
       if (didMutate) {
         let weightAcrossRoots = 0;
         this._roots.forEach(rootID => {
-          const {weight} = ((this.getElementByID(rootID): any): Element);
+          const {weight} = this.getElementByID(rootID) as any as Element;
           weightAcrossRoots += weight;
         });
         this._weightAcrossRoots = weightAcrossRoots;
@@ -1369,6 +1376,7 @@ export default class Store extends EventEmitter<{
   };
 
   onBridgeOperations: (operations: Array<number>) => void = operations => {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.groupCollapsed('onBridgeOperations');
       debug('onBridgeOperations', operations.join(','));
@@ -1418,7 +1426,7 @@ export default class Store extends EventEmitter<{
       switch (operation) {
         case TREE_OPERATION_ADD: {
           const id = operations[i + 1];
-          const type = ((operations[i + 2]: any): ElementType);
+          const type = operations[i + 2] as any as ElementType;
 
           i += 3;
 
@@ -1431,6 +1439,7 @@ export default class Store extends EventEmitter<{
           }
 
           if (type === ElementTypeRoot) {
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               debug('Add', `new root node ${id}`);
             }
@@ -1491,6 +1500,8 @@ export default class Store extends EventEmitter<{
               id,
               isCollapsed: false, // Never collapse roots; it would hide the entire tree.
               isStrictModeNonCompliant,
+              isActivityHidden: false,
+              isInsideHiddenActivity: false,
               key: null,
               nameProp: null,
               ownerID: 0,
@@ -1520,6 +1531,7 @@ export default class Store extends EventEmitter<{
             const nameProp = stringTable[namePropStringID];
             i++;
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               debug(
                 'Add',
@@ -1560,6 +1572,10 @@ export default class Store extends EventEmitter<{
               id,
               isCollapsed: this._collapseNodesByDefault,
               isStrictModeNonCompliant: parentElement.isStrictModeNonCompliant,
+              isActivityHidden: false,
+              isInsideHiddenActivity:
+                parentElement.isInsideHiddenActivity ||
+                parentElement.isActivityHidden,
               key,
               nameProp,
               ownerID,
@@ -1623,6 +1639,7 @@ export default class Store extends EventEmitter<{
 
             let parentElement: ?Element = null;
             if (parentID === 0) {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Remove', `node ${id} root`);
               }
@@ -1633,6 +1650,7 @@ export default class Store extends EventEmitter<{
 
               haveRootsChanged = true;
             } else {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Remove', `node ${id} from parent ${parentID}`);
               }
@@ -1711,6 +1729,7 @@ export default class Store extends EventEmitter<{
           }
           i += numChildren;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug('Re-order', `Node ${id} children ${children.join(',')}`);
           }
@@ -1728,8 +1747,45 @@ export default class Store extends EventEmitter<{
             this._recursivelyUpdateSubtree(id, element => {
               element.isStrictModeNonCompliant = false;
             });
+          } else if (mode === ActivityHiddenMode) {
+            const element = this._idToElement.get(id);
+            if (element != null) {
+              element.isActivityHidden = true;
+              element.children.forEach(childID =>
+                this._recursivelyUpdateSubtree(childID, child => {
+                  child.isInsideHiddenActivity = true;
+                }),
+              );
+              // Collapse hidden Activity subtrees by default.
+              if (!element.isCollapsed) {
+                element.isCollapsed = true;
+                if (element.children.length > 0) {
+                  const weightDelta = 1 - element.weight;
+                  const parentElement = this._idToElement.get(element.parentID);
+                  this._adjustParentTreeWeight(parentElement, weightDelta);
+                }
+              }
+            }
+          } else if (mode === ActivityVisibleMode) {
+            const element = this._idToElement.get(id);
+            if (element != null) {
+              element.isActivityHidden = false;
+              element.children.forEach(childID =>
+                this._recursivelyUpdateSubtree(childID, child => {
+                  child.isInsideHiddenActivity = false;
+                }),
+              );
+              // Expand Activity subtree when it becomes visible.
+              if (element.isCollapsed && element.children.length > 0) {
+                element.isCollapsed = false;
+                const weightDelta = element.weight - 1;
+                const parentElement = this._idToElement.get(element.parentID);
+                this._adjustParentTreeWeight(parentElement, weightDelta);
+              }
+            }
           }
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Subtree mode',
@@ -1764,7 +1820,7 @@ export default class Store extends EventEmitter<{
           const parentID = operations[i + 2];
           const nameStringID = operations[i + 3];
           const isSuspended = operations[i + 4] === 1;
-          const numRects = ((operations[i + 5]: any): number);
+          const numRects = operations[i + 5] as any as number;
           let name = stringTable[nameStringID];
 
           if (this._idToSuspense.has(id)) {
@@ -1812,6 +1868,7 @@ export default class Store extends EventEmitter<{
             }
           }
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug('Suspense Add', `node ${id} as child of ${parentID}`);
           }
@@ -1885,10 +1942,12 @@ export default class Store extends EventEmitter<{
 
             let parentSuspense: ?SuspenseNode = null;
             if (parentID === 0) {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Suspense remove', `node ${id} root`);
               }
             } else {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Suspense Remove', `node ${id} from parent ${parentID}`);
               }
@@ -1959,6 +2018,7 @@ export default class Store extends EventEmitter<{
           }
           i += numChildren;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Re-order',
@@ -1970,8 +2030,8 @@ export default class Store extends EventEmitter<{
           break;
         }
         case SUSPENSE_TREE_OPERATION_RESIZE: {
-          const id = ((operations[i + 1]: any): number);
-          const numRects = ((operations[i + 2]: any): number);
+          const id = operations[i + 1] as any as number;
+          const numRects = operations[i + 2] as any as number;
           i += 3;
 
           const suspense = this._idToSuspense.get(id);
@@ -2017,6 +2077,7 @@ export default class Store extends EventEmitter<{
 
           suspense.rects = nextRects;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Resize',
@@ -2071,11 +2132,14 @@ export default class Store extends EventEmitter<{
               break;
             }
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               const previousHasUniqueSuspenders = suspense.hasUniqueSuspenders;
               debug(
                 'Suspender changes',
-                `Suspense node ${id} unique suspenders set to ${String(hasUniqueSuspenders)} (was ${String(previousHasUniqueSuspenders)})`,
+                `Suspense node ${id} unique suspenders set to ${String(
+                  hasUniqueSuspenders,
+                )} (was ${String(previousHasUniqueSuspenders)})`,
               );
             }
 
@@ -2187,6 +2251,7 @@ export default class Store extends EventEmitter<{
       this.emit('suspenseTreeMutated', [removedSuspenseIDs]);
     }
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(printStore(this, true));
       console.groupEnd();
@@ -2211,7 +2276,7 @@ export default class Store extends EventEmitter<{
       if (didCollapse) {
         let weightAcrossRoots = 0;
         this._roots.forEach(rootID => {
-          const {weight} = ((this.getElementByID(rootID): any): Element);
+          const {weight} = this.getElementByID(rootID) as any as Element;
           weightAcrossRoots += weight;
         });
         this._weightAcrossRoots = weightAcrossRoots;
@@ -2271,6 +2336,7 @@ export default class Store extends EventEmitter<{
   }
 
   onBridgeShutdown: () => void = () => {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('onBridgeShutdown', 'unsubscribing from Bridge');
     }

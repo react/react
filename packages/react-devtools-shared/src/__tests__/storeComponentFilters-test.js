@@ -229,9 +229,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
 
       await actAsync(
@@ -244,6 +244,7 @@ describe('Store component filters', () => {
       expect(store).toMatchInlineSnapshot(`
         [root]
             <div>
+            <div>
       `);
 
       await actAsync(
@@ -255,9 +256,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
     }
   });
@@ -871,12 +872,12 @@ describe('Store component filters', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Root>
-          ▾ <Activity name="/">
+          ▾ <Activity name="/" mode="visible">
             ▾ <Suspense>
                 <h1>
               ▾ <main>
                 ▾ <Layout>
-                  ▾ <Activity name="/blog">
+                  ▾ <Activity name="/blog" mode="visible">
                       <h2>
                     ▾ <section>
                       ▾ <Page>
@@ -896,12 +897,12 @@ describe('Store component filters', () => {
 
     expect(store).toMatchInlineSnapshot(`
       [root]
-        ▾ <Activity name="/">
+        ▾ <Activity name="/" mode="visible">
           ▾ <Suspense>
               <h1>
             ▾ <main>
               ▾ <Layout>
-                ▸ <Activity name="/blog">
+                ▸ <Activity name="/blog" mode="visible">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
         <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
           <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
@@ -912,12 +913,12 @@ describe('Store component filters', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Root>
-          ▾ <Activity name="/">
+          ▾ <Activity name="/" mode="visible">
             ▾ <Suspense>
                 <h1>
               ▾ <main>
                 ▾ <Layout>
-                  ▾ <Activity name="/blog">
+                  ▾ <Activity name="/blog" mode="visible">
                       <h2>
                     ▾ <section>
                       ▾ <Page>

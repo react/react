@@ -3268,6 +3268,21 @@ function isReorderableExpression(
           )
       );
     }
+    case 'NewExpression': {
+      const newExpr = expr as NodePath<t.NewExpression>;
+      const callee = newExpr.get('callee');
+      return (
+        callee.isExpression() &&
+        isReorderableExpression(builder, callee, allowLocalIdentifiers) &&
+        newExpr
+          .get('arguments')
+          .every(
+            arg =>
+              arg.isExpression() &&
+              isReorderableExpression(builder, arg, allowLocalIdentifiers),
+          )
+      );
+    }
     default: {
       return false;
     }
@@ -3394,7 +3409,7 @@ function lowerJsxElementName(
   const exprLoc = exprNode.loc ?? GeneratedSource;
   if (exprPath.isJSXIdentifier()) {
     const tag: string = exprPath.node.name;
-    if (tag.match(/^[A-Z]/)) {
+    if (!tag.match(/^[a-z]/)) {
       const kind = getLoadKind(builder, exprPath);
       return lowerValueToTemporary(builder, {
         kind: kind,

@@ -10,6 +10,7 @@
 import JSON5 from 'json5';
 
 import type {ReactFunctionLocation} from 'shared/ReactTypes';
+import {ElementTypeActivity} from 'react-devtools-shared/src/frontend/types';
 import type {
   Element,
   SuspenseNode,
@@ -44,6 +45,11 @@ export function printElement(
   const hocs =
     hocDisplayNames === null ? '' : ` [${hocDisplayNames.join('][')}]`;
 
+  let mode = '';
+  if (element.type === ElementTypeActivity) {
+    mode = ` mode="${element.isActivityHidden ? 'hidden' : 'visible'}"`;
+  }
+
   let suffix = '';
   if (includeWeight) {
     suffix = ` (${element.isCollapsed ? 1 : element.weight})`;
@@ -51,7 +57,7 @@ export function printElement(
 
   return `${'  '.repeat(element.depth + 1)}${prefix} <${
     element.displayName || 'null'
-  }${key}${name}>${hocs}${suffix}`;
+  }${key}${name}${mode}>${hocs}${suffix}`;
 }
 
 function printRects(rects: SuspenseNode['rects']): string {
@@ -150,7 +156,7 @@ export function printStore(
     }
 
     store.roots.forEach(rootID => {
-      const {weight} = ((store.getElementByID(rootID): any): Element);
+      const {weight} = store.getElementByID(rootID) as any as Element;
       const maybeWeightLabel = includeWeight ? ` (${weight})` : '';
 
       // Store does not (yet) expose a way to get errors/warnings per root.
@@ -229,6 +235,8 @@ export function smartParse(value: any): any | void | number {
   switch (value) {
     case 'Infinity':
       return Infinity;
+    case '-Infinity':
+      return -Infinity;
     case 'NaN':
       return NaN;
     case 'undefined':
@@ -243,7 +251,7 @@ export function smartStringify(value: any): string {
     if (Number.isNaN(value)) {
       return 'NaN';
     } else if (!Number.isFinite(value)) {
-      return 'Infinity';
+      return value > 0 ? 'Infinity' : '-Infinity';
     }
   } else if (value === undefined) {
     return 'undefined';

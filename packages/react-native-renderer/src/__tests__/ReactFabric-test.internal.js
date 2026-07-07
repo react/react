@@ -1521,6 +1521,10 @@ describe('ReactFabric', () => {
       dangerouslyRetainedViewRef,
       'eventTypeName',
     );
+    assertConsoleErrorDev([
+      "sendAccessibilityEvent was called with a ref that isn't a " +
+        'native component. Use React.forwardRef to get access to the underlying native component',
+    ]);
 
     expect(nativeFabricUIManager.sendAccessibilityEvent).not.toBeCalled();
   });

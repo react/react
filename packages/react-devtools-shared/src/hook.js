@@ -17,6 +17,7 @@ import type {
   DevToolsBackend,
   DevToolsHookSettings,
   ProfilingSettings,
+  ReactBuildType,
 } from './backend/types';
 import type {ComponentFilter} from './frontend/types';
 
@@ -71,7 +72,7 @@ export function installHook(
     return null;
   }
 
-  function detectReactBuildType(renderer: ReactRenderer) {
+  function detectReactBuildType(renderer: ReactRenderer): ReactBuildType {
     try {
       if (typeof renderer.version === 'string') {
         // React DOM Fiber (16+)
@@ -211,7 +212,7 @@ export function installHook(
     const id = ++uidCounter;
     renderers.set(id, renderer);
 
-    const reactBuildType = hasDetectedBadDCE
+    const reactBuildType: ReactBuildType = hasDetectedBadDCE
       ? 'deadcode'
       : detectReactBuildType(renderer);
 
@@ -432,7 +433,7 @@ export function installHook(
       const startStackFrame = openModuleRangesStack.pop();
       const stopStackFrame = getTopStackFrameString(error);
       if (stopStackFrame !== null) {
-        // $FlowFixMe[incompatible-call]
+        // $FlowFixMe[incompatible-type]
         moduleRanges.push([startStackFrame, stopStackFrame]);
       }
     }
@@ -492,7 +493,7 @@ export function installHook(
               // The backend is what implements a message queue, so it's the only one that injects onErrorOrWarning.
               if (onErrorOrWarning != null) {
                 onErrorOrWarning(
-                  ((method: any): 'error' | 'warn'),
+                  method as any as 'error' | 'warn',
                   args.slice(),
                 );
               }
@@ -698,19 +699,15 @@ export function installHook(
       });
   }
 
-  Object.defineProperty(
-    target,
-    '__REACT_DEVTOOLS_GLOBAL_HOOK__',
-    ({
-      // This property needs to be configurable for the test environment,
-      // else we won't be able to delete and recreate it between tests.
-      configurable: __DEV__,
-      enumerable: false,
-      get() {
-        return hook;
-      },
-    }: Object),
-  );
+  Object.defineProperty(target, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {
+    // This property needs to be configurable for the test environment,
+    // else we won't be able to delete and recreate it between tests.
+    configurable: __DEV__,
+    enumerable: false,
+    get() {
+      return hook;
+    },
+  } as Object);
 
   return hook;
 }

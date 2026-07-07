@@ -415,7 +415,7 @@ const bundles = [
     entry: 'react-dom/unstable_server-external-runtime',
     outputPath: 'unstable_server-external-runtime.js',
     global: 'ReactDOMServerExternalRuntime',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: [],
   },
@@ -454,7 +454,7 @@ const bundles = [
     name: 'react-server-dom-webpack-server.browser',
     condition: 'react-server',
     global: 'ReactServerDOMServer',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -496,7 +496,7 @@ const bundles = [
       'react-server-dom-webpack/src/client/react-flight-dom-client.browser',
     name: 'react-server-dom-webpack-client.browser',
     global: 'ReactServerDOMClient',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -566,7 +566,7 @@ const bundles = [
     name: 'react-server-dom-turbopack-server.browser',
     condition: 'react-server',
     global: 'ReactServerDOMServer',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -608,7 +608,7 @@ const bundles = [
       'react-server-dom-turbopack/src/client/react-flight-dom-client.browser',
     name: 'react-server-dom-turbopack-client.browser',
     global: 'ReactServerDOMClient',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -641,7 +641,7 @@ const bundles = [
     name: 'react-server-dom-parcel-server.browser',
     condition: 'react-server',
     global: 'ReactServerDOMServer',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -682,7 +682,7 @@ const bundles = [
     entry: 'react-server-dom-parcel/src/client/react-flight-dom-client.browser',
     name: 'react-server-dom-parcel-client.browser',
     global: 'ReactServerDOMClient',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -731,7 +731,7 @@ const bundles = [
     bundleTypes: [NODE_DEV, NODE_PROD, ESM_DEV, ESM_PROD],
     moduleType: RENDERER,
     entry: 'react-server-dom-esm/client.browser',
-    minifyWithProdErrorCodes: false,
+    minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
     externals: ['react', 'react-dom'],
   },
@@ -754,6 +754,29 @@ const bundles = [
     minifyWithProdErrorCodes: false,
     wrapWithModuleBoundaries: false,
     externals: ['acorn'],
+  },
+
+  /******* React Flight Server FB Server *******/
+  {
+    bundleTypes: [FB_WWW_DEV, FB_WWW_PROD],
+    moduleType: RENDERER,
+    entry: 'react-flight-server-fb/src/server/react-flight-dom-server.node',
+    global: 'ReactFlightServer',
+    condition: 'react-server',
+    minifyWithProdErrorCodes: false,
+    wrapWithModuleBoundaries: false,
+    externals: ['react', 'react-dom', 'stream'],
+  },
+
+  /******* React Flight Client FB *******/
+  {
+    bundleTypes: [FB_WWW_DEV, FB_WWW_PROD],
+    moduleType: RENDERER,
+    entry: 'react-flight-server-fb/client.browser',
+    global: 'ReactFlightClient',
+    minifyWithProdErrorCodes: false,
+    wrapWithModuleBoundaries: false,
+    externals: ['react', 'react-dom'],
   },
 
   /******* React Server DOM Unbundled Server *******/
@@ -1235,12 +1258,15 @@ const bundles = [
     // currently required in order for the package to be copied over correctly.
     // So, it would be worth improving that flow.
     name: 'eslint-plugin-react-hooks',
-    bundleTypes: [NODE_DEV, NODE_PROD, CJS_DTS],
+    bundleTypes: [NODE_DEV, NODE_PROD, FB_WWW_DEV, CJS_DTS],
     moduleType: ISOMORPHIC,
     entry: 'eslint-plugin-react-hooks/src/index.ts',
     global: 'ESLintPluginReactHooks',
     minifyWithProdErrorCodes: false,
     wrapWithModuleBoundaries: false,
+    // This is a Node.js build tool (ESLint plugin), not a www runtime bundle.
+    // Use process.env.NODE_ENV guard instead of __DEV__ for the dev wrapper.
+    wrapWithNodeDevGuard: true,
     preferBuiltins: true,
     externals: [
       '@babel/core',

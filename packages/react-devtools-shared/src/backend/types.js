@@ -603,3 +603,10 @@ export type DevToolsHookSettings = {
 export type DevToolsSettings = DevToolsHookSettings & {
   componentFilters: Array<ComponentFilter>,
 };
+
+export type ReactBuildType =
+  | 'deadcode'
+  | 'development'
+  | 'outdated'
+  | 'production'
+  | 'unminified';

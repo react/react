@@ -156,7 +156,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <CaughtErrorView
             callStack={callStack}
             componentStack={componentStack}
-            errorMessage={errorMessage || 'Error occured in inspected element'}
+            errorMessage={errorMessage || 'Error occurred in inspected element'}
             info={
               <>
                 React DevTools encountered an error while trying to inspect the

@@ -1418,6 +1418,95 @@ describe('ReactFlightDOM', () => {
     expect(reportedErrors).toEqual([]);
   });
 
+  it('should not retain stale error reason after reentrant module chunk initialization', async () => {
+    function MyComponent() {
+      return <div>hello from client component</div>;
+    }
+    const ClientComponent = clientExports(MyComponent);
+
+    let resolveAsyncComponent;
+    async function AsyncComponent() {
+      await new Promise(r => {
+        resolveAsyncComponent = r;
+      });
+      return null;
+    }
+
+    function ServerComponent() {
+      return (
+        <>
+          <ClientComponent />
+          <Suspense>
+            <AsyncComponent />
+          </Suspense>
+        </>
+      );
+    }
+
+    const {writable: flightWritable, readable: flightReadable} =
+      getTestStream();
+    const {writable: fizzWritable, readable: fizzReadable} = getTestStream();
+
+    const {pipe} = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        <ServerComponent />,
+        webpackMap,
+      ),
+    );
+    pipe(flightWritable);
+
+    let response = null;
+    function getResponse() {
+      if (response === null) {
+        response =
+          ReactServerDOMClient.createFromReadableStream(flightReadable);
+      }
+      return response;
+    }
+
+    // Simulate a module that calls captureOwnerStack() during evaluation.
+    // In Fizz SSR, this causes a reentrant readChunk on the same module chunk.
+    // The reentrant require throws a TDZ error.
+    let evaluatingModuleId = null;
+    const origRequire = global.__webpack_require__;
+    global.__webpack_require__ = function (id) {
+      if (id === evaluatingModuleId) {
+        throw new ReferenceError(
+          "Cannot access 'MyComponent' before initialization",
+        );
+      }
+      const result = origRequire(id);
+      if (result === MyComponent) {
+        evaluatingModuleId = id;
+        if (__DEV__) {
+          React.captureOwnerStack();
+        }
+        evaluatingModuleId = null;
+      }
+      return result;
+    };
+
+    function App() {
+      return use(getResponse());
+    }
+
+    await serverAct(async () => {
+      ReactDOMFizzServer.renderToPipeableStream(<App />).pipe(fizzWritable);
+    });
+
+    global.__webpack_require__ = origRequire;
+
+    // Resolve the async component so the Flight stream closes after the client
+    // module chunk was initialized.
+    await serverAct(async () => {
+      resolveAsyncComponent();
+    });
+
+    const container = document.createElement('div');
+    await readInto(container, fizzReadable);
+    expect(container.innerHTML).toContain('hello from client component');
+  });
+
   it('should be able to recover from a direct reference erroring server-side', async () => {
     const reportedErrors = [];
 
@@ -1615,20 +1704,32 @@ describe('ReactFlightDOM', () => {
       FlightReactDOM.preconnect('c2 before', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l before', {as: 'style'});
       FlightReactDOM.preloadModule('lm before');
-      FlightReactDOM.preloadModule('lm2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i before', {as: 'script'});
       FlightReactDOM.preinitModule('m before');
-      FlightReactDOM.preinitModule('m2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       await 1;
       FlightReactDOM.prefetchDNS('d after');
       FlightReactDOM.preconnect('c after');
       FlightReactDOM.preconnect('c2 after', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l after', {as: 'style'});
       FlightReactDOM.preloadModule('lm after');
-      FlightReactDOM.preloadModule('lm2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i after', {as: 'script'});
       FlightReactDOM.preinitModule('m after');
-      FlightReactDOM.preinitModule('m2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       return <ClientComponent />;
     }
 
@@ -1677,19 +1778,41 @@ describe('ReactFlightDOM', () => {
           <link rel="preconnect" href="c2 before" crossorigin="" />
           <link rel="preload" as="style" href="l before" />
           <link rel="modulepreload" href="lm before" />
-          <link rel="modulepreload" href="lm2 before" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 before"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <script async="" src="i before" />
           <script type="module" async="" src="m before" />
-          <script type="module" async="" src="m2 before" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 before"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <link rel="dns-prefetch" href="d after" />
           <link rel="preconnect" href="c after" />
           <link rel="preconnect" href="c2 after" crossorigin="" />
           <link rel="preload" as="style" href="l after" />
           <link rel="modulepreload" href="lm after" />
-          <link rel="modulepreload" href="lm2 after" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 after"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <script async="" src="i after" />
           <script type="module" async="" src="m after" />
-          <script type="module" async="" src="m2 after" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 after"
+            crossorigin=""
+            fetchpriority="high"
+          />
         </head>
         <body />
       </html>,
@@ -1710,20 +1833,32 @@ describe('ReactFlightDOM', () => {
       FlightReactDOM.preconnect('c2 before', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l before', {as: 'style'});
       FlightReactDOM.preloadModule('lm before');
-      FlightReactDOM.preloadModule('lm2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i before', {as: 'script'});
       FlightReactDOM.preinitModule('m before');
-      FlightReactDOM.preinitModule('m2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       await 1;
       FlightReactDOM.prefetchDNS('d after');
       FlightReactDOM.preconnect('c after');
       FlightReactDOM.preconnect('c2 after', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l after', {as: 'style'});
       FlightReactDOM.preloadModule('lm after');
-      FlightReactDOM.preloadModule('lm2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i after', {as: 'script'});
       FlightReactDOM.preinitModule('m after');
-      FlightReactDOM.preinitModule('m2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       return <ClientComponent />;
     }
 
@@ -1777,16 +1912,38 @@ describe('ReactFlightDOM', () => {
           <link rel="preconnect" href="c2 after" crossorigin="" />
           <script async="" src="i before" />
           <script type="module" async="" src="m before" />
-          <script type="module" async="" src="m2 before" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 before"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <script async="" src="i after" />
           <script type="module" async="" src="m after" />
-          <script type="module" async="" src="m2 after" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 after"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <link rel="preload" as="style" href="l before" />
           <link rel="modulepreload" href="lm before" />
-          <link rel="modulepreload" href="lm2 before" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 before"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <link rel="preload" as="style" href="l after" />
           <link rel="modulepreload" href="lm after" />
-          <link rel="modulepreload" href="lm2 after" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 after"
+            crossorigin=""
+            fetchpriority="low"
+          />
         </head>
         <body>
           <p>hello world</p>

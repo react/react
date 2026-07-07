@@ -35,7 +35,7 @@ export function unbadgeConsole(
     case 'table': {
       // These methods cannot be colorized because they don't take a formatting string.
       // So we wouldn't have added any badge in the first place.
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       return null;
     }
     case 'assert': {

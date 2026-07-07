@@ -16,6 +16,8 @@ import BabelPluginReactCompiler, {
   ErrorCategory,
   parseConfigPragmaForTests,
   ValueKind,
+  type CompilerDiagnosticDetail,
+  type CompilerErrorDetailOptions,
   type Hook,
   PluginOptions,
   CompilerPipelineValue,
@@ -25,11 +27,52 @@ import BabelPluginReactCompiler, {
   type LoggerEvent,
 } from 'babel-plugin-react-compiler';
 import {transformFromAstSync} from '@babel/core';
+import JSON5 from 'json5';
 import type {
   CompilerOutput,
   CompilerTransformOutput,
   PrintedCompilerPipelineValue,
 } from '../components/Editor/Output';
+
+type LoggedCompileErrorDetail = Extract<
+  LoggerEvent,
+  {kind: 'CompileError'}
+>['detail'];
+
+/**
+ * logEvent() emits error details as plain objects (normalized for parity with
+ * the Rust compiler's logger output), not class instances. Rehydrate them into
+ * CompilerDiagnostic / CompilerErrorDetail so downstream consumers (error
+ * printing, Monaco diagnostics) can call methods like printErrorMessage().
+ */
+function rehydrateLoggedDetail(
+  detail: LoggedCompileErrorDetail,
+): CompilerErrorDetail | CompilerDiagnostic {
+  const category = detail.category as ErrorCategory;
+  const suggestions =
+    (detail.suggestions as CompilerErrorDetailOptions['suggestions']) ?? null;
+  if (detail.details != null) {
+    return new CompilerDiagnostic({
+      category,
+      reason: detail.reason,
+      description: detail.description,
+      suggestions,
+      details: detail.details.map((d): CompilerDiagnosticDetail => {
+        if (d.kind === 'hint') {
+          return {kind: 'hint', message: d.message ?? ''};
+        }
+        return {kind: 'error', loc: d.loc, message: d.message};
+      }),
+    });
+  }
+  return new CompilerErrorDetail({
+    category,
+    reason: detail.reason,
+    description: detail.description,
+    loc: detail.loc ?? null,
+    suggestions,
+  });
+}
 
 function parseInput(
   input: string,
@@ -126,6 +169,14 @@ const COMMON_HOOKS: Array<[string, Hook]> = [
   ],
 ];
 
+export function parseConfigOverrides(configOverrides: string): any {
+  const trimmed = configOverrides.trim();
+  if (!trimmed) {
+    return {};
+  }
+  return JSON5.parse(trimmed);
+}
+
 function parseOptions(
   source: string,
   mode: 'compiler' | 'linter',
@@ -156,16 +207,7 @@ function parseOptions(
   });
 
   // Parse config overrides from config editor
-  let configOverrideOptions: any = {};
-  const configMatch = configOverrides.match(/^\s*import.*?\n\n\((.*)\)/s);
-  if (configOverrides.trim()) {
-    if (configMatch && configMatch[1]) {
-      const configString = configMatch[1].replace(/satisfies.*$/, '').trim();
-      configOverrideOptions = new Function(`return (${configString})`)();
-    } else {
-      throw new Error('Invalid override format');
-    }
-  }
+  const configOverrideOptions = parseConfigOverrides(configOverrides);
 
   const opts: PluginOptions = parsePluginOptions({
     ...parsedPragmaOptions,
@@ -264,7 +306,7 @@ export function compile(
           debugLogIRs: logIR,
           logEvent: (_filename: string | null, event: LoggerEvent): void => {
             if (event.kind === 'CompileError') {
-              otherErrors.push(event.detail);
+              otherErrors.push(rehydrateLoggedDetail(event.detail));
             }
           },
         },

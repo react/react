@@ -116,6 +116,7 @@ export function parseInput(
       sourceFilename: filename,
       sourceType,
       enableExperimentalComponentSyntax: true,
+      enableExperimentalFlowMatchSyntax: true,
     });
   } else {
     return BabelParser.parse(input, {

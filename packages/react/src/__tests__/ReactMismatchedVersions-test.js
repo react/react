@@ -136,14 +136,4 @@ describe('ReactMismatchedVersions-test', () => {
         `  - react-dom:  ${actualReactVersion}`,
     );
   });
-
-  // @gate source
-  it('importing "react-native-renderer" throws if version does not match React version', async () => {
-    expect(() => require('react-native-renderer')).toThrow(
-      'Incompatible React versions: The "react" and "react-native-renderer" packages ' +
-        'must have the exact same version. Instead got:\n' +
-        '  - react:                  18.0.0-whoa-this-aint-the-right-react\n' +
-        `  - react-native-renderer:  ${actualReactVersion}`,
-    );
-  });
 });

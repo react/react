@@ -187,6 +187,18 @@ describe('ReactDOMServerIntegration', () => {
       });
     });
 
+    describe('credentialless property', function () {
+      itRenders('credentialless prop with true value', async render => {
+        const e = await render(<iframe credentialless={true} />);
+        expect(e.getAttribute('credentialless')).toBe('');
+      });
+
+      itRenders('credentialless prop with false value', async render => {
+        const e = await render(<iframe credentialless={false} />);
+        expect(e.hasAttribute('credentialless')).toBe(false);
+      });
+    });
+
     describe('download property (combined boolean/string attribute)', function () {
       itRenders('download prop with true value', async render => {
         const e = await render(<a download={true} />);

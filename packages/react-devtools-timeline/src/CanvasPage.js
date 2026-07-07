@@ -438,6 +438,7 @@ function AutoSizedCanvas({
     if (suspenseEventsViewWrapper !== null) {
       rootView.addSubview(suspenseEventsViewWrapper);
     }
+    // $FlowFixMe[invalid-compare]
     if (reactMeasuresViewWrapper !== null) {
       rootView.addSubview(reactMeasuresViewWrapper);
     }

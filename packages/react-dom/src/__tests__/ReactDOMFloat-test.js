@@ -3674,6 +3674,110 @@ body {
     );
   });
 
+  it('does not suspend a transition on a stylesheet whose preload has already loaded', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">initial</Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    ReactDOM.preload('route.css', {as: 'style'});
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+
+    React.startTransition(() => {
+      root.render(
+        <html>
+          <body>
+            <Suspense fallback="loading...">
+              <link rel="stylesheet" href="route.css" precedence="default" />
+              next
+            </Suspense>
+          </body>
+        </html>,
+      );
+    });
+    await waitForAll([]);
+
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+  });
+
+  it('suspends a transition on a stylesheet whose preload has not loaded yet', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <body>
+          <Suspense fallback="loading...">initial</Suspense>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    ReactDOM.preload('route.css', {as: 'style'});
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    React.startTransition(() => {
+      root.render(
+        <html>
+          <body>
+            <Suspense fallback="loading...">
+              <link rel="stylesheet" href="route.css" precedence="default" />
+              next
+            </Suspense>
+          </body>
+        </html>,
+      );
+    });
+    await waitForAll([]);
+
+    expect(getMeaningfulChildren(document.head)).toEqual(
+      <link rel="preload" href="route.css" as="style" />,
+    );
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadPreloads(['route.css']);
+    assertLog(['load preload: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('initial');
+
+    loadStylesheets(['route.css']);
+    assertLog(['load stylesheet: route.css']);
+    await waitForAll([]);
+    expect(getMeaningfulChildren(document.head)).toEqual([
+      <link rel="stylesheet" href="route.css" data-precedence="default" />,
+      <link rel="preload" href="route.css" as="style" />,
+    ]);
+    expect(getMeaningfulChildren(document.body)).toEqual('next');
+  });
+
   it('can suspend commits on more than one root for the same resource at the same time', async () => {
     document.body.innerHTML = '';
     const container1 = document.createElement('div');
@@ -6428,6 +6532,118 @@ body {
       );
     });
 
+    it('supports fetchPriority', async () => {
+      function Component({isServer}) {
+        const suffix = isServer ? 'server' : 'client';
+        ReactDOM.preloadModule('high' + suffix, {
+          fetchPriority: 'high',
+        });
+        ReactDOM.preloadModule('low' + suffix, {
+          fetchPriority: 'low',
+        });
+        ReactDOM.preloadModule('auto' + suffix, {
+          fetchPriority: 'auto',
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component isServer={true} />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="modulepreload" href="highserver" fetchpriority="high" />
+            <link rel="modulepreload" href="lowserver" fetchpriority="low" />
+            <link rel="modulepreload" href="autoserver" fetchpriority="auto" />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Component />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <link rel="modulepreload" href="highserver" fetchpriority="high" />
+            <link rel="modulepreload" href="lowserver" fetchpriority="low" />
+            <link rel="modulepreload" href="autoserver" fetchpriority="auto" />
+            <link rel="modulepreload" href="highclient" fetchpriority="high" />
+            <link rel="modulepreload" href="lowclient" fetchpriority="low" />
+            <link rel="modulepreload" href="autoclient" fetchpriority="auto" />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+    });
+
+    it('preloads multiple non-script modules with the same as type', async () => {
+      function App() {
+        ReactDOM.preloadModule('serviceworker one', {as: 'serviceworker'});
+        ReactDOM.preloadModule('serviceworker two', {as: 'serviceworker'});
+        return <div>hello</div>;
+      }
+
+      await act(() => {
+        renderToPipeableStream(<App />).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link
+            rel="modulepreload"
+            href="serviceworker one"
+            as="serviceworker"
+          />
+          <link
+            rel="modulepreload"
+            href="serviceworker two"
+            as="serviceworker"
+          />
+          <div>hello</div>
+        </div>,
+      );
+    });
+
+    it('supports nonce', async () => {
+      function App({ssr}) {
+        const prefix = ssr ? 'ssr ' : 'browser ';
+        ReactDOM.preloadModule(prefix + 'module', {nonce: 'abc'});
+        return <div>hello</div>;
+      }
+      await act(() => {
+        renderToPipeableStream(<App ssr={true} />).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link rel="modulepreload" href="ssr module" nonce="abc" />
+          <div>hello</div>
+        </div>,
+      );
+
+      ReactDOMClient.hydrateRoot(container, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <link rel="modulepreload" href="browser module" nonce="abc" />,
+      );
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preloadModule();
@@ -7130,6 +7346,112 @@ body {
               <div>hello</div>
             </div>
           </body>
+        </html>,
+      );
+    });
+
+    it('supports fetchPriority', async () => {
+      function Component({isServer}) {
+        const suffix = isServer ? 'server' : 'client';
+        ReactDOM.preinitModule('high' + suffix, {
+          fetchPriority: 'high',
+        });
+        ReactDOM.preinitModule('low' + suffix, {
+          fetchPriority: 'low',
+        });
+        ReactDOM.preinitModule('auto' + suffix, {
+          fetchPriority: 'auto',
+        });
+        return 'hello';
+      }
+
+      await act(() => {
+        renderToPipeableStream(
+          <html>
+            <body>
+              <Component isServer={true} />
+            </body>
+          </html>,
+        ).pipe(writable);
+      });
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              type="module"
+              src="highserver"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowserver"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoserver"
+              fetchpriority="auto"
+              async=""
+            />
+          </head>
+          <body>hello</body>
+        </html>,
+      );
+
+      ReactDOMClient.hydrateRoot(
+        document,
+        <html>
+          <body>
+            <Component />
+          </body>
+        </html>,
+      );
+      await waitForAll([]);
+
+      expect(getMeaningfulChildren(document)).toEqual(
+        <html>
+          <head>
+            <script
+              type="module"
+              src="highserver"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowserver"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoserver"
+              fetchpriority="auto"
+              async=""
+            />
+            <script
+              type="module"
+              src="highclient"
+              fetchpriority="high"
+              async=""
+            />
+            <script
+              type="module"
+              src="lowclient"
+              fetchpriority="low"
+              async=""
+            />
+            <script
+              type="module"
+              src="autoclient"
+              fetchpriority="auto"
+              async=""
+            />
+          </head>
+          <body>hello</body>
         </html>,
       );
     });

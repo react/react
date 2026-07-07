@@ -17,6 +17,16 @@ declare const __IS_CHROME__: boolean;
 declare const __IS_EDGE__: boolean;
 declare const __IS_NATIVE__: boolean;
 
+interface ExtensionAction {
+  /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/action/setIcon} */
+  setIcon(details: {
+    tabId: number,
+    path?: string | {[iconSize: string]: string},
+  }): void;
+  /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/action/setPopup} */
+  setPopup(details: {tabId: number, popup: string}): void;
+}
+
 interface ExtensionDevtools {
   /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/devtools/inspectedWindow} */
   inspectedWindow: $FlowFixMe;
@@ -73,6 +83,8 @@ interface ExtensionRuntime {
     extensionId: string,
     connectInfo?: {name?: string, includeTlsChannelId?: boolean},
   ): ExtensionRuntimePort;
+  /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/getURL} */
+  getURL(path: string): string;
   /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage} */
   onMessage: ExtensionEvent<
     (
@@ -108,6 +120,8 @@ interface ExtensionTabs {
 }
 
 interface ExtensionAPI {
+  /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/action} */
+  action: ExtensionAction;
   devtools: ExtensionDevtools;
   /** @see {@link https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/permissions} */
   permissions: $FlowFixMe;

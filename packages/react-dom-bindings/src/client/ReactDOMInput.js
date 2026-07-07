@@ -96,7 +96,7 @@ export function updateInput(
   type: ?string,
   name: ?string,
 ) {
-  const node: HTMLInputElement = (element: any);
+  const node: HTMLInputElement = element as any;
 
   // Temporarily disconnect the input from any radio buttons.
   // Changing the type or name as the same time as changing the checked value
@@ -122,10 +122,11 @@ export function updateInput(
     if (type === 'number') {
       if (
         // $FlowFixMe[incompatible-type]
+        // $FlowFixMe[invalid-compare]
         (value === 0 && node.value === '') ||
         // We explicitly want to coerce to number here if possible.
         // eslint-disable-next-line
-        node.value != (value: any)
+        node.value != (value as any)
       ) {
         node.value = toString(getToStringValue(value));
       }
@@ -213,7 +214,7 @@ export function initInput(
   name: ?string,
   isHydrating: boolean,
 ) {
-  const node: HTMLInputElement = (element: any);
+  const node: HTMLInputElement = element as any;
 
   if (
     type != null &&
@@ -234,7 +235,7 @@ export function initInput(
     // default value provided by the browser. See: #12872
     if (isButton && (value === undefined || value === null)) {
       // We track the value just in case it changes type later on.
-      track((element: any));
+      track(element as any);
       return;
     }
 
@@ -341,7 +342,7 @@ export function initInput(
     }
     node.name = name;
   }
-  track((element: any));
+  track(element as any);
 }
 
 export function hydrateInput(
@@ -351,7 +352,7 @@ export function hydrateInput(
   checked: ?boolean,
   defaultChecked: ?boolean,
 ): void {
-  const node: HTMLInputElement = (element: any);
+  const node: HTMLInputElement = element as any;
 
   const defaultValueStr =
     defaultValue != null ? toString(getToStringValue(defaultValue)) : '';
@@ -369,7 +370,7 @@ export function hydrateInput(
   // Detach .checked from .defaultChecked but leave user input alone
   node.checked = node.checked;
 
-  const changed = trackHydrated((node: any), initialValue, initialChecked);
+  const changed = trackHydrated(node as any, initialValue, initialChecked);
   if (changed) {
     // If the current value is different, that suggests that the user
     // changed it before hydration. Queue a replay of the change event.
@@ -381,7 +382,7 @@ export function hydrateInput(
 }
 
 export function restoreControlledInputState(element: Element, props: Object) {
-  const rootNode: HTMLInputElement = (element: any);
+  const rootNode: HTMLInputElement = element as any;
   updateInput(
     rootNode,
     props.value,
@@ -397,7 +398,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     let queryRoot: Element = rootNode;
 
     while (queryRoot.parentNode) {
-      queryRoot = ((queryRoot.parentNode: any): Element);
+      queryRoot = queryRoot.parentNode as any as Element;
     }
 
     // If `rootNode.form` was non-null, then we could try `form.elements`,
@@ -417,7 +418,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     );
 
     for (let i = 0; i < group.length; i++) {
-      const otherNode = ((group[i]: any): HTMLInputElement);
+      const otherNode = group[i] as any as HTMLInputElement;
       if (otherNode === rootNode || otherNode.form !== rootNode.form) {
         continue;
       }
@@ -452,7 +453,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
     // If any updateInput() call set .checked to true, an input in this group
     // (often, `rootNode` itself) may have become unchecked
     for (let i = 0; i < group.length; i++) {
-      const otherNode = ((group[i]: any): HTMLInputElement);
+      const otherNode = group[i] as any as HTMLInputElement;
       if (otherNode.form !== rootNode.form) {
         continue;
       }

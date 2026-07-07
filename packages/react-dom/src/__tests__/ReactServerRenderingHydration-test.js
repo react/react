@@ -392,6 +392,56 @@ describe('ReactDOMServerHydration', () => {
     expect(element.textContent).toBe('Hi');
   });
 
+  it('replays effects when hydrating a StrictMode subtree', async () => {
+    const log = [];
+    function Child() {
+      React.useLayoutEffect(() => {
+        log.push('layout mount');
+        return () => log.push('layout unmount');
+      }, []);
+      React.useEffect(() => {
+        log.push('effect mount');
+        return () => log.push('effect unmount');
+      }, []);
+      return <span>Hello</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Child />
+        </div>
+      );
+    }
+
+    const markup = (
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+
+    const element = document.createElement('div');
+    element.innerHTML = ReactDOMServer.renderToString(markup);
+    expect(element.textContent).toBe('Hello');
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(element, markup);
+    });
+
+    if (__DEV__) {
+      expect(log).toEqual([
+        'layout mount',
+        'effect mount',
+        'layout unmount',
+        'effect unmount',
+        'layout mount',
+        'effect mount',
+      ]);
+    } else {
+      expect(log).toEqual(['layout mount', 'effect mount']);
+    }
+  });
+
   it('should be able to render and hydrate forwardRef components', async () => {
     const FunctionComponent = ({label, forwardedRef}) => (
       <div ref={forwardedRef}>{label}</div>

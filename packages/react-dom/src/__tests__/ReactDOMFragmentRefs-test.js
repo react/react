@@ -255,6 +255,102 @@ describe('FragmentRefs', () => {
         expect(document.activeElement.id).toEqual('child-b');
         document.activeElement.blur();
       });
+
+      // @gate enableFragmentRefs
+      it('keeps focus on the first focusable child if already focused', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <a id="child-a" href="/">
+                A
+              </a>
+              <a id="child-b" href="/">
+                B
+              </a>
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        // Focus the first child manually
+        document.getElementById('child-a').focus();
+        expect(document.activeElement.id).toEqual('child-a');
+
+        // Calling fragment.focus() should keep focus on child-a,
+        // not skip to child-b
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(document.activeElement.id).toEqual('child-a');
+        document.activeElement.blur();
+      });
+
+      // @gate enableFragmentRefs
+      it('keeps focus on a nested child if already focused', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div>
+                <input id="nested-input" />
+              </div>
+              <a id="sibling-link" href="/">
+                Link
+              </a>
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        // Focus the nested input manually
+        document.getElementById('nested-input').focus();
+        expect(document.activeElement.id).toEqual('nested-input');
+
+        // Calling fragment.focus() should keep focus on nested-input
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(document.activeElement.id).toEqual('nested-input');
+        document.activeElement.blur();
+      });
+
+      // @gate enableFragmentRefs
+      it('focuses the first focusable child in a fieldset', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <fieldset>
+                <legend>Shipping</legend>
+                <input id="street" name="street" />
+                <input id="city" name="city" />
+              </fieldset>
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(document.activeElement.id).toEqual('street');
+        document.activeElement.blur();
+      });
     });
 
     describe('focusLast()', () => {
@@ -715,6 +811,80 @@ describe('FragmentRefs', () => {
         logs = [];
         fragmentRef.current.removeEventListener('click', logClick);
         childA.click();
+        expect(logs).toEqual([]);
+      });
+
+      // @gate enableFragmentRefs
+      it('removes a capture listener registered with boolean when removed with options object', async () => {
+        const fragmentRef = React.createRef(null);
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div id="child-a" />
+            </Fragment>
+          );
+        }
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        const logs = [];
+        function logCapture() {
+          logs.push('capture');
+        }
+
+        // Register with boolean `true` (capture phase)
+        fragmentRef.current.addEventListener('click', logCapture, true);
+        document.querySelector('#child-a').click();
+        expect(logs).toEqual(['capture']);
+
+        logs.length = 0;
+
+        // Remove with equivalent options object {capture: true}
+        // Per DOM spec, these are identical - the listener MUST be removed
+        fragmentRef.current.removeEventListener('click', logCapture, {
+          capture: true,
+        });
+        document.querySelector('#child-a').click();
+        // Listener should have been removed - logs must remain empty
+        expect(logs).toEqual([]);
+      });
+
+      // @gate enableFragmentRefs
+      it('removes a capture listener registered with options object when removed with boolean', async () => {
+        const fragmentRef = React.createRef(null);
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div id="child-b" />
+            </Fragment>
+          );
+        }
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        const logs = [];
+        function logCapture() {
+          logs.push('capture');
+        }
+
+        // Register with options object {capture: true}
+        fragmentRef.current.addEventListener('click', logCapture, {
+          capture: true,
+        });
+        document.querySelector('#child-b').click();
+        expect(logs).toEqual(['capture']);
+
+        logs.length = 0;
+
+        // Remove with boolean `true`
+        // Per DOM spec, these are identical - the listener MUST be removed
+        fragmentRef.current.removeEventListener('click', logCapture, true);
+        document.querySelector('#child-b').click();
+        // Listener should have been removed - logs must remain empty
         expect(logs).toEqual([]);
       });
 
@@ -2583,6 +2753,84 @@ describe('FragmentRefs', () => {
 
       window.scrollTo = originalScrollTo;
       restoreRange();
+    });
+
+    // @gate enableFragmentRefs
+    it('treats passive:true and passive:false as same listener per DOM spec', async () => {
+      const fragmentRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Fragment ref={fragmentRef}>
+            <div id="child" />
+          </Fragment>,
+        );
+      });
+
+      const logs = [];
+      const handler = () => logs.push('fired');
+
+      const child = document.querySelector('#child');
+      const spy = jest.spyOn(child, 'addEventListener');
+      // Per DOM spec, listener identity is (type, callback, capture).
+      // passive is NOT part of the key, so these are the SAME listener.
+      fragmentRef.current.addEventListener('click', handler, {passive: false});
+      // Second add is a no-op: same (type, callback, capture) identity.
+      fragmentRef.current.addEventListener('click', handler, {passive: true});
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith('click', handler, {passive: false});
+
+      document.querySelector('#child').click();
+      // First handler fires once (second add was a no-op).
+      expect(logs).toEqual(['fired']);
+
+      // removeEventListener also ignores passive when matching
+      fragmentRef.current.removeEventListener('click', handler, {
+        passive: true,
+      });
+
+      logs.length = 0;
+      document.querySelector('#child').click();
+      expect(logs).toEqual([]);
+    });
+    // @gate enableFragmentRefs
+    it('removes a listener registered with passive:false when removed with passive:true', async () => {
+      const fragmentRef = React.createRef(null);
+      function Test() {
+        return (
+          <>
+            <div id="child-x" />
+          </>
+        );
+      }
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <Fragment ref={fragmentRef}>
+            <Test />
+          </Fragment>,
+        );
+      });
+      const logs = [];
+      function handler() {
+        logs.push('fired');
+      }
+      // Register with passive: false
+      fragmentRef.current.addEventListener('click', handler, {
+        passive: false,
+      });
+      document.querySelector('#child-x').click();
+      expect(logs).toEqual(['fired']);
+      logs.length = 0;
+      // Remove with passive: true - per DOM spec, passive is NOT part of identity
+      // so this MUST remove the listener regardless of passive mismatch.
+      fragmentRef.current.removeEventListener('click', handler, {
+        passive: true,
+      });
+      document.querySelector('#child-x').click();
+      // Listener removed - no more invocations
+      expect(logs).toEqual([]);
     });
   });
 });

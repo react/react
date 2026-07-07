@@ -115,6 +115,13 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
       return format.replace(/%s/g, () => args[argIndex++]);
     };
     const OriginalError = global.Error;
+    // Cache Reflect methods so the proxies keep working even if a test
+    // temporarily deletes or overrides them (e.g. to exercise no-Reflect
+    // fallback paths in the React source).
+    const ReflectApply = Reflect.apply;
+    const ReflectConstruct = Reflect.construct;
+    const ReflectGet = Reflect.get;
+    const ReflectSet = Reflect.set;
     // V8's Error.captureStackTrace (used in Jest) fails if the error object is
     // a Proxy, so we need to pass it the unproxied instance.
     const originalErrorInstances = new WeakMap();
@@ -131,21 +138,16 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
       const proxy = new Proxy(error, {
         set(target, key, value, receiver) {
           if (key === 'message') {
-            return Reflect.set(
-              target,
-              key,
-              decodeErrorMessage(value),
-              receiver
-            );
+            return ReflectSet(target, key, decodeErrorMessage(value), receiver);
           }
-          return Reflect.set(target, key, value, receiver);
+          return ReflectSet(target, key, value, receiver);
         },
         get(target, key, receiver) {
           if (key === 'stack') {
             // https://github.com/nodejs/node/issues/60862
-            return Reflect.get(target, key);
+            return ReflectGet(target, key);
           }
-          return Reflect.get(target, key, receiver);
+          return ReflectGet(target, key, receiver);
         },
       });
       originalErrorInstances.set(proxy, error);
@@ -153,12 +155,12 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
     };
     const ErrorProxy = new Proxy(OriginalError, {
       apply(target, thisArg, argumentsList) {
-        const error = Reflect.apply(target, thisArg, argumentsList);
+        const error = ReflectApply(target, thisArg, argumentsList);
         error.message = decodeErrorMessage(error.message);
         return proxyErrorInstance(error);
       },
       construct(target, argumentsList, newTarget) {
-        const error = Reflect.construct(target, argumentsList, newTarget);
+        const error = ReflectConstruct(target, argumentsList, newTarget);
         error.message = decodeErrorMessage(error.message);
         return proxyErrorInstance(error);
       },
@@ -166,7 +168,7 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
         if (key === 'captureStackTrace') {
           return captureStackTrace;
         }
-        return Reflect.get(target, key, receiver);
+        return ReflectGet(target, key, receiver);
       },
     });
     ErrorProxy.OriginalError = OriginalError;

@@ -213,8 +213,8 @@ export function createProfilingHooks({
 
   function markAndClear(markName: string) {
     // This method won't be called unless these functions are defined, so we can skip the extra typeof check.
-    ((performanceTarget: any): Performance).mark(markName);
-    ((performanceTarget: any): Performance).clearMarks(markName);
+    (performanceTarget as any as Performance).mark(markName);
+    (performanceTarget as any as Performance).clearMarks(markName);
   }
 
   function recordReactMeasureStarted(
@@ -605,7 +605,7 @@ export function createProfilingHooks({
     if (!wakeableIDs.has(wakeable)) {
       wakeableIDs.set(wakeable, wakeableID++);
     }
-    return ((wakeableIDs.get(wakeable): any): number);
+    return wakeableIDs.get(wakeable) as any as number;
   }
 
   function markComponentSuspended(
@@ -626,7 +626,7 @@ export function createProfilingHooks({
     // frameworks like Relay may also annotate Promises with a displayName,
     // describing what operation/data the thrown Promise is related to.
     // When this is available we should pass it along to the Timeline.
-    const displayName = (wakeable: any).displayName || '';
+    const displayName = (wakeable as any).displayName || '';
 
     let suspenseEvent: SuspenseEvent | null = null;
     // TODO (timeline) Record and cache component stack

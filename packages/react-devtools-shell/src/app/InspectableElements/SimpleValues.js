@@ -25,6 +25,7 @@ export default class SimpleValues extends Component {
         null={null}
         nan={NaN}
         infinity={Infinity}
+        minusInfinity={-Infinity}
         true={true}
         false={false}
         function={noop}

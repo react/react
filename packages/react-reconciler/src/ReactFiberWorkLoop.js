@@ -51,6 +51,7 @@ import {
   disableLegacyContext,
   alwaysThrottleRetries,
   enableInfiniteRenderLoopDetection,
+  enableInfiniteRenderLoopDetectionForceThrow,
   disableLegacyMode,
   enableComponentPerformanceTrack,
   enableYieldingBeforePassive,
@@ -559,7 +560,7 @@ export function addTransitionStartCallbackToPendingTransition(
 
     if (currentPendingTransitionCallbacks.transitionStart === null) {
       currentPendingTransitionCallbacks.transitionStart =
-        ([]: Array<Transition>);
+        [] as Array<Transition>;
     }
 
     currentPendingTransitionCallbacks.transitionStart.push(transition);
@@ -573,14 +574,14 @@ export function addMarkerProgressCallbackToPendingTransition(
 ) {
   if (enableTransitionTracing) {
     if (currentPendingTransitionCallbacks === null) {
-      currentPendingTransitionCallbacks = ({
+      currentPendingTransitionCallbacks = {
         transitionStart: null,
         transitionProgress: null,
         transitionComplete: null,
         markerProgress: new Map(),
         markerIncomplete: null,
         markerComplete: null,
-      }: PendingTransitionCallbacks);
+      } as PendingTransitionCallbacks;
     }
 
     if (currentPendingTransitionCallbacks.markerProgress === null) {
@@ -693,7 +694,7 @@ export function addTransitionCompleteCallbackToPendingTransition(
 
     if (currentPendingTransitionCallbacks.transitionComplete === null) {
       currentPendingTransitionCallbacks.transitionComplete =
-        ([]: Array<Transition>);
+        [] as Array<Transition>;
     }
 
     currentPendingTransitionCallbacks.transitionComplete.push(transition);
@@ -727,8 +728,8 @@ const PENDING_PASSIVE_PHASE = 5;
 const PENDING_GESTURE_MUTATION_PHASE = 6;
 const PENDING_GESTURE_ANIMATION_PHASE = 7;
 let pendingEffectsStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 = 0;
-let pendingEffectsRoot: FiberRoot = (null: any);
-let pendingFinishedWork: Fiber = (null: any);
+let pendingEffectsRoot: FiberRoot = null as any;
+let pendingFinishedWork: Fiber = null as any;
 let pendingEffectsLanes: Lanes = NoLanes;
 let pendingEffectsRemainingLanes: Lanes = NoLanes;
 let pendingEffectsRenderEndTime: number = -0; // Profiling-only
@@ -750,6 +751,11 @@ let nestedUpdateCount: number = 0;
 let rootWithNestedUpdates: FiberRoot | null = null;
 let isFlushingPassiveEffects = false;
 let didScheduleUpdateDuringPassiveEffects = false;
+
+const NO_NESTED_UPDATE = 0;
+const NESTED_UPDATE_SYNC_LANE = 1;
+const NESTED_UPDATE_PHASE_SPAWN = 2;
+let nestedUpdateKind: 0 | 1 | 2 = NO_NESTED_UPDATE;
 
 const NESTED_PASSIVE_UPDATE_LIMIT = 50;
 let nestedPassiveUpdateCount: number = 0;
@@ -805,7 +811,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
   const mode = fiber.mode;
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return (SyncLane: Lane);
+    return SyncLane as Lane;
   } else if (
     (executionContext & RenderContext) !== NoContext &&
     workInProgressRootRenderLanes !== NoLanes
@@ -855,7 +861,7 @@ function requestRetryLane(fiber: Fiber) {
   // Special cases
   const mode = fiber.mode;
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return (SyncLane: Lane);
+    return SyncLane as Lane;
   }
 
   return claimNextRetryLane();
@@ -1199,7 +1205,7 @@ export function performWorkOnRoot(
       // TODO: It's possible that even a concurrent render may never have yielded
       // to the main thread, if it was fast enough, or if it expired. We could
       // skip the consistency check in that case, too.
-      const finishedWork: Fiber = (root.current.alternate: any);
+      const finishedWork: Fiber = root.current.alternate as any;
       if (
         renderWasConcurrent &&
         !isRenderConsistentWithExternalStores(finishedWork)
@@ -1315,7 +1321,9 @@ function recoverFromConcurrentError(
   // Before rendering again, save the errors from the previous attempt.
   const errorsFromFirstAttempt = workInProgressRootConcurrentErrors;
 
+  // $FlowFixMe[constant-condition]
   const wasRootDehydrated = supportsHydration && isRootDehydrated(root);
+  // $FlowFixMe[constant-condition]
   if (wasRootDehydrated) {
     // The shell failed to hydrate. Set a flag to force a client rendering
     // during the next attempt. To do this, we call prepareFreshStack now
@@ -1333,7 +1341,12 @@ function recoverFromConcurrentError(
   }
 
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
-  if (exitStatus !== RootErrored) {
+  // A status of RootSuspendedAtTheShell means the retry unwound to the root
+  // without completing (e.g. something suspended in the shell), so the tree is
+  // incomplete and must not be treated as recovered — committing it would
+  // corrupt the current tree. Fall through and return the status as-is so the
+  // root stays suspended.
+  if (exitStatus !== RootErrored && exitStatus !== RootSuspendedAtTheShell) {
     // Successfully finished rendering on retry
 
     if (workInProgressRootDidAttachPingListener && !wasRootDehydrated) {
@@ -1687,7 +1700,7 @@ function isRenderConsistentWithExternalStores(finishedWork: Fiber): boolean {
       node.flags & StoreConsistency
     ) {
       const updateQueue: FunctionComponentUpdateQueue | null =
-        (node.updateQueue: any);
+        node.updateQueue as any;
       if (updateQueue !== null) {
         const checks = updateQueue.stores;
         if (checks !== null) {
@@ -1749,7 +1762,7 @@ function markRootUpdated(root: FiberRoot, updatedLanes: Lanes) {
       didIncludeCommitPhaseUpdate = true;
     }
 
-    throwIfInfiniteUpdateLoopDetected();
+    throwIfInfiniteUpdateLoopDetected(true);
   }
 }
 
@@ -1768,7 +1781,7 @@ function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
       didIncludeCommitPhaseUpdate = true;
     }
 
-    throwIfInfiniteUpdateLoopDetected();
+    throwIfInfiniteUpdateLoopDetected(true);
   }
 }
 
@@ -2376,7 +2389,7 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
       case SuspendedOnImmediate:
       case SuspendedOnDeprecatedThrowPromise:
       case SuspendedAndReadyToContinue: {
-        const wakeable: Wakeable = (thrownValue: any);
+        const wakeable: Wakeable = thrownValue as any;
         markComponentSuspended(
           erroredWork,
           wakeable,
@@ -2815,7 +2828,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
           }
           case SuspendedOnData:
           case SuspendedOnAction: {
-            const thenable: Thenable<mixed> = (thrownValue: any);
+            const thenable: Thenable<mixed> = thrownValue as any;
             if (isThenableResolved(thenable)) {
               // The data resolved. Try rendering the component again.
               workInProgressSuspendedReason = NotSuspended;
@@ -2860,7 +2873,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
             break outer;
           }
           case SuspendedAndReadyToContinue: {
-            const thenable: Thenable<mixed> = (thrownValue: any);
+            const thenable: Thenable<mixed> = thrownValue as any;
             if (isThenableResolved(thenable)) {
               // The data resolved. Try rendering the component again.
               workInProgressSuspendedReason = NotSuspended;
@@ -3029,14 +3042,14 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
 function workLoopConcurrent(nonIdle: boolean) {
   // We yield every other "frame" when rendering Transition or Retries. Those are blocking
   // revealing new content. The purpose of this yield is not to avoid the overhead of yielding,
-  // which is very low, but rather to intentionally block any frequently occuring other main
+  // which is very low, but rather to intentionally block any frequently occurring other main
   // thread work like animations from starving our work. In other words, the purpose of this
   // is to reduce the framerate of animations to 30 frames per second.
   // For Idle work we yield every 5ms to keep animations going smooth.
   if (workInProgress !== null) {
     const yieldAfter = now() + (nonIdle ? 25 : 5);
     do {
-      // $FlowFixMe[incompatible-call] flow doesn't know that now() is side-effect free
+      // $FlowFixMe[incompatible-type] flow doesn't know that now() is side-effect free
       performUnitOfWork(workInProgress);
     } while (workInProgress !== null && now() < yieldAfter);
   }
@@ -3046,7 +3059,7 @@ function workLoopConcurrent(nonIdle: boolean) {
 function workLoopConcurrentByScheduler() {
   // Perform work until Scheduler asks us to yield
   while (workInProgress !== null && !shouldYield()) {
-    // $FlowFixMe[incompatible-call] flow doesn't know that shouldYield() is side-effect free
+    // $FlowFixMe[incompatible-type] flow doesn't know that shouldYield() is side-effect free
     performUnitOfWork(workInProgress);
   }
 }
@@ -3539,7 +3552,7 @@ function completeRoot(
       const hydrationFailed =
         finishedWork !== null &&
         finishedWork.alternate !== null &&
-        (finishedWork.alternate.memoizedState: RootState).isDehydrated &&
+        (finishedWork.alternate.memoizedState as RootState).isDehydrated &&
         (finishedWork.flags & ForceClientRender) !== NoFlags;
       logRecoveredRenderPhase(
         completedRenderStartTime,
@@ -3651,8 +3664,8 @@ function completeRoot(
           finalizeRender(lanes, completedRenderEndTime);
         }
         // We are no longer committing.
-        pendingEffectsRoot = (null: any); // Clear for GC purposes.
-        pendingFinishedWork = (null: any); // Clear for GC purposes.
+        pendingEffectsRoot = null as any; // Clear for GC purposes.
+        pendingFinishedWork = null as any; // Clear for GC purposes.
         pendingEffectsLanes = NoLanes;
       }
       // Schedule the root to be committed when the gesture completes.
@@ -3879,11 +3892,11 @@ function commitRoot(
       flushSpawnedWork,
       flushPassiveEffects,
       reportViewTransitionError,
-      enableProfilerTimer ? suspendedViewTransition : (null: any),
+      enableProfilerTimer ? suspendedViewTransition : (null as any),
       enableProfilerTimer
         ? // This callback fires after "pendingEffects" so we need to snapshot the arguments.
           finishedViewTransition.bind(null, lanes)
-        : (null: any),
+        : (null as any),
     );
   } else {
     // Flush synchronously.
@@ -4182,8 +4195,8 @@ function flushSpawnedWork(): void {
     pendingEffectsStatus = PENDING_PASSIVE_PHASE;
   } else {
     pendingEffectsStatus = NO_PENDING_EFFECTS;
-    pendingEffectsRoot = (null: any); // Clear for GC purposes.
-    pendingFinishedWork = (null: any); // Clear for GC purposes.
+    pendingEffectsRoot = null as any; // Clear for GC purposes.
+    pendingFinishedWork = null as any; // Clear for GC purposes.
     // There were no passive effects, so we can immediately release the cache
     // pool for this render.
     releaseRootPooledCache(root, root.pendingLanes);
@@ -4313,15 +4326,10 @@ function flushSpawnedWork(): void {
   // hydration lanes in this check, because render triggered by selective
   // hydration is conceptually not an update.
   if (
-    // Check if there was a recursive update spawned by this render, in either
-    // the render phase or the commit phase. We track these explicitly because
-    // we can't infer from the remaining lanes alone.
-    (enableInfiniteRenderLoopDetection &&
-      (didIncludeRenderPhaseUpdate || didIncludeCommitPhaseUpdate)) ||
     // Was the finished render the result of an update (not hydration)?
-    (includesSomeLane(lanes, UpdateLanes) &&
-      // Did it schedule a sync update?
-      includesSomeLane(remainingLanes, SyncUpdateLanes))
+    includesSomeLane(lanes, UpdateLanes) &&
+    // Did it schedule a sync update?
+    includesSomeLane(remainingLanes, SyncUpdateLanes)
   ) {
     if (enableProfilerTimer && enableProfilerNestedUpdatePhase) {
       markNestedUpdateScheduled();
@@ -4335,8 +4343,31 @@ function flushSpawnedWork(): void {
       nestedUpdateCount = 0;
       rootWithNestedUpdates = root;
     }
+    nestedUpdateKind = NESTED_UPDATE_SYNC_LANE;
+  } else if (
+    // Check if there was a recursive update spawned by this render, in either
+    // the render phase or the commit phase. We track these explicitly because
+    // we can't infer from the remaining lanes alone.
+    enableInfiniteRenderLoopDetection &&
+    (didIncludeRenderPhaseUpdate || didIncludeCommitPhaseUpdate)
+  ) {
+    if (enableProfilerTimer && enableProfilerNestedUpdatePhase) {
+      markNestedUpdateScheduled();
+    }
+
+    // Count the number of times the root synchronously re-renders without
+    // finishing. If there are too many, it indicates an infinite update loop.
+    if (root === rootWithNestedUpdates) {
+      nestedUpdateCount++;
+    } else {
+      nestedUpdateCount = 0;
+      rootWithNestedUpdates = root;
+    }
+    nestedUpdateKind = NESTED_UPDATE_PHASE_SPAWN;
   } else {
     nestedUpdateCount = 0;
+    rootWithNestedUpdates = null;
+    nestedUpdateKind = NO_NESTED_UPDATE;
   }
 
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
@@ -4347,6 +4378,7 @@ function flushSpawnedWork(): void {
 
   // Eagerly flush any event replaying that we unblocked within this commit.
   // This ensures that those are observed before we render any new changes.
+  // $FlowFixMe[constant-condition]
   if (supportsHydration) {
     flushHydrationEvents();
   }
@@ -4442,7 +4474,7 @@ function applyGestureOnRoot(
     enableProfilerTimer
       ? // This callback fires after "pendingEffects" so we need to snapshot the arguments.
         finishedViewTransition.bind(null, pendingEffectsLanes)
-      : (null: any),
+      : (null as any),
   );
 }
 
@@ -4515,8 +4547,8 @@ function flushGestureAnimations(): void {
   pendingEffectsStatus = NO_PENDING_EFFECTS;
   const root = pendingEffectsRoot;
   const finishedWork = pendingFinishedWork;
-  pendingEffectsRoot = (null: any); // Clear for GC purposes.
-  pendingFinishedWork = (null: any); // Clear for GC purposes.
+  pendingEffectsRoot = null as any; // Clear for GC purposes.
+  pendingFinishedWork = null as any; // Clear for GC purposes.
   pendingEffectsLanes = NoLanes;
 
   pendingViewTransition = null; // The view transition has now fully started.
@@ -4578,7 +4610,7 @@ function makeErrorInfo(componentStack: ?string) {
     componentStack,
   };
   if (__DEV__) {
-    Object.defineProperty((errorInfo: any), 'digest', {
+    Object.defineProperty(errorInfo as any, 'digest', {
       get() {
         console.error(
           'You are accessing "digest" from the errorInfo object passed to onRecoverableError.' +
@@ -4687,8 +4719,8 @@ function flushPassiveEffectsImpl() {
   const root = pendingEffectsRoot;
   const lanes = pendingEffectsLanes;
   pendingEffectsStatus = NO_PENDING_EFFECTS;
-  pendingEffectsRoot = (null: any); // Clear for GC purposes.
-  pendingFinishedWork = (null: any); // Clear for GC purposes.
+  pendingEffectsRoot = null as any; // Clear for GC purposes.
+  pendingFinishedWork = null as any; // Clear for GC purposes.
   // TODO: This is sometimes out of sync with pendingEffectsRoot.
   // Figure out why and fix it. It's not causing any known issues (probably
   // because it's only used for profiling), but it's a refactor hazard.
@@ -4855,9 +4887,9 @@ function captureCommitPhaseErrorOnRoot(
   const update = createRootErrorUpdate(
     rootFiber.stateNode,
     errorInfo,
-    (SyncLane: Lane),
+    SyncLane as Lane,
   );
-  const root = enqueueUpdate(rootFiber, update, (SyncLane: Lane));
+  const root = enqueueUpdate(rootFiber, update, SyncLane as Lane);
   if (root !== null) {
     markRootUpdated(root, SyncLane);
     ensureRootIsScheduled(root);
@@ -4896,8 +4928,8 @@ export function captureCommitPhaseError(
         if (enableProfilerTimer && enableComponentPerformanceTrack) {
           recordEffectError(errorInfo);
         }
-        const update = createClassErrorUpdate((SyncLane: Lane));
-        const root = enqueueUpdate(fiber, update, (SyncLane: Lane));
+        const update = createClassErrorUpdate(SyncLane as Lane);
+        const root = enqueueUpdate(fiber, update, SyncLane as Lane);
         if (root !== null) {
           initializeClassErrorUpdate(update, root, fiber, errorInfo);
           markRootUpdated(root, SyncLane);
@@ -5017,6 +5049,13 @@ function pingSuspendedRoot(
         // the special internal exception that we use to interrupt the stack for
         // selective hydration. That was temporarily reverted but we once we add
         // it back we can use it here.
+        //
+        // In the meantime, record the pinged lanes so markRootSuspended won't
+        // mark them as suspended, allowing a retry.
+        workInProgressRootPingedLanes = mergeLanes(
+          workInProgressRootPingedLanes,
+          pingedLanes,
+        );
       }
     } else {
       // Even though we can't restart right now, we might get an
@@ -5145,32 +5184,91 @@ export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
   retryTimedOutBoundary(boundaryFiber, retryLane);
 }
 
-export function throwIfInfiniteUpdateLoopDetected() {
+function throwForcedInfiniteRenderLoopError(
+  root: FiberRoot | null,
+  renderLanes: Lanes,
+): empty {
+  if (root !== null) {
+    // Disable concurrent error recovery for the in-progress render so the thrown
+    // error reaches the nearest error boundary and breaks the infinite update
+    // loop instead of being silently retried by the recovery mechanism.
+    root.errorRecoveryDisabledLanes = mergeLanes(
+      root.errorRecoveryDisabledLanes,
+      renderLanes,
+    );
+  }
+  throw new Error(
+    'Maximum update depth exceeded. This could be an infinite loop. This can happen when a component ' +
+      'repeatedly calls setState during render phase or inside useLayoutEffect, ' +
+      'causing infinite render loop. React limits the number of nested updates to ' +
+      'prevent infinite loops.',
+  );
+}
+
+export function throwIfInfiniteUpdateLoopDetected(
+  isFromInfiniteRenderLoopDetectionInstrumentation: boolean,
+) {
   if (nestedUpdateCount > NESTED_UPDATE_LIMIT) {
     nestedUpdateCount = 0;
     nestedPassiveUpdateCount = 0;
     rootWithNestedUpdates = null;
     rootWithPassiveNestedUpdates = null;
 
-    if (enableInfiniteRenderLoopDetection) {
-      if (executionContext & RenderContext && workInProgressRoot !== null) {
-        // We're in the render phase. Disable the concurrent error recovery
-        // mechanism to ensure that the error we're about to throw gets handled.
-        // We need it to trigger the nearest error boundary so that the infinite
-        // update loop is broken.
-        workInProgressRoot.errorRecoveryDisabledLanes = mergeLanes(
-          workInProgressRoot.errorRecoveryDisabledLanes,
-          workInProgressRootRenderLanes,
-        );
-      }
-    }
+    const updateKind = nestedUpdateKind;
+    nestedUpdateKind = NO_NESTED_UPDATE;
 
-    throw new Error(
-      'Maximum update depth exceeded. This can happen when a component ' +
-        'repeatedly calls setState inside componentWillUpdate or ' +
-        'componentDidUpdate. React limits the number of nested updates to ' +
-        'prevent infinite loops.',
-    );
+    if (enableInfiniteRenderLoopDetection) {
+      if (updateKind === NESTED_UPDATE_SYNC_LANE) {
+        if (
+          isFromInfiniteRenderLoopDetectionInstrumentation ||
+          (executionContext & RenderContext) !== NoContext
+        ) {
+          // This loop was identified only because of the instrumentation gated with enableInfiniteRenderLoopDetection,
+          // warn instead of throwing, unless enableInfiniteRenderLoopDetectionForceThrow.
+          if (enableInfiniteRenderLoopDetectionForceThrow) {
+            throwForcedInfiniteRenderLoopError(
+              workInProgressRoot,
+              workInProgressRootRenderLanes,
+            );
+          } else if (__DEV__) {
+            console.error(
+              'Maximum update depth exceeded. This could be an infinite loop. This can happen when a component ' +
+                'repeatedly calls setState during render phase or inside useLayoutEffect, ' +
+                'causing infinite render loop. React limits the number of nested updates to ' +
+                'prevent infinite loops.',
+            );
+          }
+        } else {
+          throw new Error(
+            'Maximum update depth exceeded. This can happen when a component ' +
+              'repeatedly calls setState inside componentWillUpdate or ' +
+              'componentDidUpdate. React limits the number of nested updates to ' +
+              'prevent infinite loops.',
+          );
+        }
+      } else if (updateKind === NESTED_UPDATE_PHASE_SPAWN) {
+        if (enableInfiniteRenderLoopDetectionForceThrow) {
+          throwForcedInfiniteRenderLoopError(
+            workInProgressRoot,
+            workInProgressRootRenderLanes,
+          );
+        } else if (__DEV__) {
+          console.error(
+            'Maximum update depth exceeded. This could be an infinite loop. This can happen when a component ' +
+              'repeatedly calls setState during render phase or inside useLayoutEffect, ' +
+              'causing infinite render loop. React limits the number of nested updates to ' +
+              'prevent infinite loops.',
+          );
+        }
+      }
+    } else {
+      throw new Error(
+        'Maximum update depth exceeded. This can happen when a component ' +
+          'repeatedly calls setState inside componentWillUpdate or ' +
+          'componentDidUpdate. React limits the number of nested updates to ' +
+          'prevent infinite loops.',
+      );
+    }
   }
 
   if (__DEV__) {
@@ -5255,9 +5353,11 @@ function doubleInvokeEffectsInDEVIfNecessary(
   if (fiber.memoizedState === null) {
     // Only consider Offscreen that is visible.
     // TODO (Offscreen) Handle manual mode.
-    if (isInStrictMode && fiber.flags & Visibility) {
-      // Double invoke effects on Offscreen's subtree only
+    if (isInStrictMode && fiber.flags & (Visibility | PlacementDEV)) {
+      // Double invoke effects on Offscreen's subtree
       // if it is visible and its visibility has changed.
+      // However, we also need to consider newly hydrated Offscreen because their
+      // visibility flags might not have changed.
       runWithFiberInDEV(fiber, doubleInvokeEffectsOnFiber, root, fiber);
     } else if (fiber.subtreeFlags & PlacementDEV) {
       // Something in the subtree could have been suspended.

@@ -43,11 +43,11 @@ import {
   ElementTypeActivity,
   ElementTypeVirtual,
   StrictMode,
+  ActivityHiddenMode,
+  ActivityVisibleMode,
 } from 'react-devtools-shared/src/frontend/types';
 import {
   deletePathInObject,
-  getDisplayName,
-  getWrappedDisplayName,
   getInObject,
   getUID,
   renamePathInObject,
@@ -57,7 +57,6 @@ import {
 import {
   formatConsoleArgumentsToSingleString,
   formatDurationToMicrosecondsGranularity,
-  gt,
   gte,
   serializeToString,
 } from 'react-devtools-shared/src/backend/utils';
@@ -109,14 +108,6 @@ import {
   STRICT_MODE_SYMBOL_STRING,
   PROFILER_NUMBER,
   PROFILER_SYMBOL_STRING,
-  REACT_MEMO_CACHE_SENTINEL,
-  SCOPE_NUMBER,
-  SCOPE_SYMBOL_STRING,
-  FORWARD_REF_NUMBER,
-  FORWARD_REF_SYMBOL_STRING,
-  MEMO_NUMBER,
-  MEMO_SYMBOL_STRING,
-  SERVER_CONTEXT_SYMBOL_STRING,
   LAZY_SYMBOL_STRING,
   REACT_OPTIMISTIC_KEY,
 } from '../shared/ReactSymbols';
@@ -144,6 +135,7 @@ import {
   getChangedHooksIndices,
   getChangedKeys,
 } from './shared/DevToolsFiberChangeDetection';
+import {getInternalReactConstants} from './shared/DevToolsFiberInternalReactConstants';
 import {
   ioExistsInSuspenseAncestor,
   getAwaitInSuspendedByFromIO,
@@ -179,9 +171,6 @@ import type {
   RendererInterface,
   SerializedElement,
   SerializedAsyncInfo,
-  WorkTagMap,
-  CurrentDispatcherRef,
-  LegacyDispatcherRef,
   ProfilingSettings,
 } from '../types';
 import type {
@@ -203,6 +192,7 @@ import {
   VIRTUAL_INSTANCE,
   FILTERED_FIBER_INSTANCE,
 } from './shared/DevToolsFiberTypes';
+import {getDispatcherRef} from '../shared/DevToolsReactDispatcher';
 import {getSourceLocationByFiber} from './DevToolsFiberComponentStack';
 import {formatOwnerStack} from '../shared/DevToolsOwnerStack';
 
@@ -224,7 +214,7 @@ function createFiberInstance(fiber: Fiber): FiberInstance {
 
 // This is used to represent a filtered Fiber but still lets us find its host instance.
 function createFilteredFiberInstance(fiber: Fiber): FilteredFiberInstance {
-  return ({
+  return {
     kind: FILTERED_FIBER_INSTANCE,
     id: 0,
     parent: null,
@@ -236,7 +226,7 @@ function createFilteredFiberInstance(fiber: Fiber): FilteredFiberInstance {
     suspendedBy: null,
     suspenseNode: null,
     data: fiber,
-  }: any);
+  } as any;
 }
 
 function createVirtualInstance(
@@ -282,509 +272,6 @@ function createSuspenseNode(
     hasUniqueSuspenders: false,
     hasUnknownSuspenders: false,
   });
-}
-
-type getDisplayNameForFiberType = (fiber: Fiber) => string | null;
-type getTypeSymbolType = (type: any) => symbol | string | number;
-
-type ReactPriorityLevelsType = {
-  ImmediatePriority: number,
-  UserBlockingPriority: number,
-  NormalPriority: number,
-  LowPriority: number,
-  IdlePriority: number,
-  NoPriority: number,
-};
-
-export function getDispatcherRef(renderer: {
-  +currentDispatcherRef?: LegacyDispatcherRef | CurrentDispatcherRef,
-  ...
-}): void | CurrentDispatcherRef {
-  if (renderer.currentDispatcherRef === undefined) {
-    return undefined;
-  }
-  const injectedRef = renderer.currentDispatcherRef;
-  if (
-    typeof injectedRef.H === 'undefined' &&
-    typeof injectedRef.current !== 'undefined'
-  ) {
-    // We got a legacy dispatcher injected, let's create a wrapper proxy to translate.
-    return {
-      get H() {
-        return (injectedRef: any).current;
-      },
-      set H(value) {
-        (injectedRef: any).current = value;
-      },
-    };
-  }
-  return (injectedRef: any);
-}
-
-export function getInternalReactConstants(version: string): {
-  getDisplayNameForFiber: getDisplayNameForFiberType,
-  getTypeSymbol: getTypeSymbolType,
-  ReactPriorityLevels: ReactPriorityLevelsType,
-  ReactTypeOfWork: WorkTagMap,
-  StrictModeBits: number,
-  SuspenseyImagesMode: number,
-} {
-  // **********************************************************
-  // The section below is copied from files in React repo.
-  // Keep it in sync, and add version guards if it changes.
-  //
-  // Technically these priority levels are invalid for versions before 16.9,
-  // but 16.9 is the first version to report priority level to DevTools,
-  // so we can avoid checking for earlier versions and support pre-16.9 canary releases in the process.
-  let ReactPriorityLevels: ReactPriorityLevelsType = {
-    ImmediatePriority: 99,
-    UserBlockingPriority: 98,
-    NormalPriority: 97,
-    LowPriority: 96,
-    IdlePriority: 95,
-    NoPriority: 90,
-  };
-
-  if (gt(version, '17.0.2')) {
-    ReactPriorityLevels = {
-      ImmediatePriority: 1,
-      UserBlockingPriority: 2,
-      NormalPriority: 3,
-      LowPriority: 4,
-      IdlePriority: 5,
-      NoPriority: 0,
-    };
-  }
-
-  let StrictModeBits = 0;
-  if (gte(version, '18.0.0-alpha')) {
-    // 18+
-    StrictModeBits = 0b011000;
-  } else if (gte(version, '16.9.0')) {
-    // 16.9 - 17
-    StrictModeBits = 0b1;
-  } else if (gte(version, '16.3.0')) {
-    // 16.3 - 16.8
-    StrictModeBits = 0b10;
-  }
-
-  const SuspenseyImagesMode = 0b0100000;
-
-  let ReactTypeOfWork: WorkTagMap = ((null: any): WorkTagMap);
-
-  // **********************************************************
-  // The section below is copied from files in React repo.
-  // Keep it in sync, and add version guards if it changes.
-  //
-  // TODO Update the gt() check below to be gte() whichever the next version number is.
-  // Currently the version in Git is 17.0.2 (but that version has not been/may not end up being released).
-  if (gt(version, '17.0.1')) {
-    ReactTypeOfWork = {
-      CacheComponent: 24, // Experimental
-      ClassComponent: 1,
-      ContextConsumer: 9,
-      ContextProvider: 10,
-      CoroutineComponent: -1, // Removed
-      CoroutineHandlerPhase: -1, // Removed
-      DehydratedSuspenseComponent: 18, // Behind a flag
-      ForwardRef: 11,
-      Fragment: 7,
-      FunctionComponent: 0,
-      HostComponent: 5,
-      HostPortal: 4,
-      HostRoot: 3,
-      HostHoistable: 26, // In reality, 18.2+. But doesn't hurt to include it here
-      HostSingleton: 27, // Same as above
-      HostText: 6,
-      IncompleteClassComponent: 17,
-      IncompleteFunctionComponent: 28,
-      IndeterminateComponent: 2, // removed in 19.0.0
-      LazyComponent: 16,
-      LegacyHiddenComponent: 23, // Does not exist in 18+ OSS but exists in fb builds
-      MemoComponent: 14,
-      Mode: 8,
-      OffscreenComponent: 22, // Experimental in 17. Stable in 18+
-      Profiler: 12,
-      ScopeComponent: 21, // Experimental
-      SimpleMemoComponent: 15,
-      SuspenseComponent: 13,
-      SuspenseListComponent: 19, // Experimental
-      TracingMarkerComponent: 25, // Experimental - This is technically in 18 but we don't
-      // want to fork again so we're adding it here instead
-      YieldComponent: -1, // Removed
-      Throw: 29,
-      ViewTransitionComponent: 30, // Experimental
-      ActivityComponent: 31,
-    };
-  } else if (gte(version, '17.0.0-alpha')) {
-    ReactTypeOfWork = {
-      CacheComponent: -1, // Doesn't exist yet
-      ClassComponent: 1,
-      ContextConsumer: 9,
-      ContextProvider: 10,
-      CoroutineComponent: -1, // Removed
-      CoroutineHandlerPhase: -1, // Removed
-      DehydratedSuspenseComponent: 18, // Behind a flag
-      ForwardRef: 11,
-      Fragment: 7,
-      FunctionComponent: 0,
-      HostComponent: 5,
-      HostPortal: 4,
-      HostRoot: 3,
-      HostHoistable: -1, // Doesn't exist yet
-      HostSingleton: -1, // Doesn't exist yet
-      HostText: 6,
-      IncompleteClassComponent: 17,
-      IncompleteFunctionComponent: -1, // Doesn't exist yet
-      IndeterminateComponent: 2,
-      LazyComponent: 16,
-      LegacyHiddenComponent: 24,
-      MemoComponent: 14,
-      Mode: 8,
-      OffscreenComponent: 23, // Experimental
-      Profiler: 12,
-      ScopeComponent: 21, // Experimental
-      SimpleMemoComponent: 15,
-      SuspenseComponent: 13,
-      SuspenseListComponent: 19, // Experimental
-      TracingMarkerComponent: -1, // Doesn't exist yet
-      YieldComponent: -1, // Removed
-      Throw: -1, // Doesn't exist yet
-      ViewTransitionComponent: -1, // Doesn't exist yet
-      ActivityComponent: -1, // Doesn't exist yet
-    };
-  } else if (gte(version, '16.6.0-beta.0')) {
-    ReactTypeOfWork = {
-      CacheComponent: -1, // Doesn't exist yet
-      ClassComponent: 1,
-      ContextConsumer: 9,
-      ContextProvider: 10,
-      CoroutineComponent: -1, // Removed
-      CoroutineHandlerPhase: -1, // Removed
-      DehydratedSuspenseComponent: 18, // Behind a flag
-      ForwardRef: 11,
-      Fragment: 7,
-      FunctionComponent: 0,
-      HostComponent: 5,
-      HostPortal: 4,
-      HostRoot: 3,
-      HostHoistable: -1, // Doesn't exist yet
-      HostSingleton: -1, // Doesn't exist yet
-      HostText: 6,
-      IncompleteClassComponent: 17,
-      IncompleteFunctionComponent: -1, // Doesn't exist yet
-      IndeterminateComponent: 2,
-      LazyComponent: 16,
-      LegacyHiddenComponent: -1,
-      MemoComponent: 14,
-      Mode: 8,
-      OffscreenComponent: -1, // Experimental
-      Profiler: 12,
-      ScopeComponent: -1, // Experimental
-      SimpleMemoComponent: 15,
-      SuspenseComponent: 13,
-      SuspenseListComponent: 19, // Experimental
-      TracingMarkerComponent: -1, // Doesn't exist yet
-      YieldComponent: -1, // Removed
-      Throw: -1, // Doesn't exist yet
-      ViewTransitionComponent: -1, // Doesn't exist yet
-      ActivityComponent: -1, // Doesn't exist yet
-    };
-  } else if (gte(version, '16.4.3-alpha')) {
-    ReactTypeOfWork = {
-      CacheComponent: -1, // Doesn't exist yet
-      ClassComponent: 2,
-      ContextConsumer: 11,
-      ContextProvider: 12,
-      CoroutineComponent: -1, // Removed
-      CoroutineHandlerPhase: -1, // Removed
-      DehydratedSuspenseComponent: -1, // Doesn't exist yet
-      ForwardRef: 13,
-      Fragment: 9,
-      FunctionComponent: 0,
-      HostComponent: 7,
-      HostPortal: 6,
-      HostRoot: 5,
-      HostHoistable: -1, // Doesn't exist yet
-      HostSingleton: -1, // Doesn't exist yet
-      HostText: 8,
-      IncompleteClassComponent: -1, // Doesn't exist yet
-      IncompleteFunctionComponent: -1, // Doesn't exist yet
-      IndeterminateComponent: 4,
-      LazyComponent: -1, // Doesn't exist yet
-      LegacyHiddenComponent: -1,
-      MemoComponent: -1, // Doesn't exist yet
-      Mode: 10,
-      OffscreenComponent: -1, // Experimental
-      Profiler: 15,
-      ScopeComponent: -1, // Experimental
-      SimpleMemoComponent: -1, // Doesn't exist yet
-      SuspenseComponent: 16,
-      SuspenseListComponent: -1, // Doesn't exist yet
-      TracingMarkerComponent: -1, // Doesn't exist yet
-      YieldComponent: -1, // Removed
-      Throw: -1, // Doesn't exist yet
-      ViewTransitionComponent: -1, // Doesn't exist yet
-      ActivityComponent: -1, // Doesn't exist yet
-    };
-  } else {
-    ReactTypeOfWork = {
-      CacheComponent: -1, // Doesn't exist yet
-      ClassComponent: 2,
-      ContextConsumer: 12,
-      ContextProvider: 13,
-      CoroutineComponent: 7,
-      CoroutineHandlerPhase: 8,
-      DehydratedSuspenseComponent: -1, // Doesn't exist yet
-      ForwardRef: 14,
-      Fragment: 10,
-      FunctionComponent: 1,
-      HostComponent: 5,
-      HostPortal: 4,
-      HostRoot: 3,
-      HostHoistable: -1, // Doesn't exist yet
-      HostSingleton: -1, // Doesn't exist yet
-      HostText: 6,
-      IncompleteClassComponent: -1, // Doesn't exist yet
-      IncompleteFunctionComponent: -1, // Doesn't exist yet
-      IndeterminateComponent: 0,
-      LazyComponent: -1, // Doesn't exist yet
-      LegacyHiddenComponent: -1,
-      MemoComponent: -1, // Doesn't exist yet
-      Mode: 11,
-      OffscreenComponent: -1, // Experimental
-      Profiler: 15,
-      ScopeComponent: -1, // Experimental
-      SimpleMemoComponent: -1, // Doesn't exist yet
-      SuspenseComponent: 16,
-      SuspenseListComponent: -1, // Doesn't exist yet
-      TracingMarkerComponent: -1, // Doesn't exist yet
-      YieldComponent: 9,
-      Throw: -1, // Doesn't exist yet
-      ViewTransitionComponent: -1, // Doesn't exist yet
-      ActivityComponent: -1, // Doesn't exist yet
-    };
-  }
-  // **********************************************************
-  // End of copied code.
-  // **********************************************************
-
-  function getTypeSymbol(type: any): symbol | string | number {
-    const symbolOrNumber =
-      typeof type === 'object' && type !== null ? type.$$typeof : type;
-
-    return typeof symbolOrNumber === 'symbol'
-      ? symbolOrNumber.toString()
-      : symbolOrNumber;
-  }
-
-  const {
-    CacheComponent,
-    ClassComponent,
-    IncompleteClassComponent,
-    IncompleteFunctionComponent,
-    FunctionComponent,
-    IndeterminateComponent,
-    ForwardRef,
-    HostRoot,
-    HostHoistable,
-    HostSingleton,
-    HostComponent,
-    HostPortal,
-    HostText,
-    Fragment,
-    LazyComponent,
-    LegacyHiddenComponent,
-    MemoComponent,
-    OffscreenComponent,
-    Profiler,
-    ScopeComponent,
-    SimpleMemoComponent,
-    SuspenseComponent,
-    SuspenseListComponent,
-    TracingMarkerComponent,
-    Throw,
-    ViewTransitionComponent,
-    ActivityComponent,
-  } = ReactTypeOfWork;
-
-  function resolveFiberType(type: any): $FlowFixMe {
-    const typeSymbol = getTypeSymbol(type);
-    switch (typeSymbol) {
-      case MEMO_NUMBER:
-      case MEMO_SYMBOL_STRING:
-        // recursively resolving memo type in case of memo(forwardRef(Component))
-        return resolveFiberType(type.type);
-      case FORWARD_REF_NUMBER:
-      case FORWARD_REF_SYMBOL_STRING:
-        return type.render;
-      default:
-        return type;
-    }
-  }
-
-  // NOTICE Keep in sync with shouldFilterFiber() and other get*ForFiber methods
-  function getDisplayNameForFiber(
-    fiber: Fiber,
-    shouldSkipForgetCheck: boolean = false,
-  ): string | null {
-    const {elementType, type, tag} = fiber;
-
-    let resolvedType = type;
-    if (typeof type === 'object' && type !== null) {
-      resolvedType = resolveFiberType(type);
-    }
-
-    let resolvedContext: any = null;
-    if (
-      !shouldSkipForgetCheck &&
-      // $FlowFixMe[incompatible-type] fiber.updateQueue is mixed
-      (fiber.updateQueue?.memoCache != null ||
-        (Array.isArray(fiber.memoizedState?.memoizedState) &&
-          fiber.memoizedState.memoizedState[0]?.[REACT_MEMO_CACHE_SENTINEL]) ||
-        fiber.memoizedState?.memoizedState?.[REACT_MEMO_CACHE_SENTINEL])
-    ) {
-      const displayNameWithoutForgetWrapper = getDisplayNameForFiber(
-        fiber,
-        true,
-      );
-      if (displayNameWithoutForgetWrapper == null) {
-        return null;
-      }
-
-      return `Forget(${displayNameWithoutForgetWrapper})`;
-    }
-
-    switch (tag) {
-      case ActivityComponent:
-        return 'Activity';
-      case CacheComponent:
-        return 'Cache';
-      case ClassComponent:
-      case IncompleteClassComponent:
-      case IncompleteFunctionComponent:
-      case FunctionComponent:
-      case IndeterminateComponent:
-        return getDisplayName(resolvedType);
-      case ForwardRef:
-        return getWrappedDisplayName(
-          elementType,
-          resolvedType,
-          'ForwardRef',
-          'Anonymous',
-        );
-      case HostRoot:
-        const fiberRoot = fiber.stateNode;
-        if (fiberRoot != null && fiberRoot._debugRootType !== null) {
-          return fiberRoot._debugRootType;
-        }
-        return null;
-      case HostComponent:
-      case HostSingleton:
-      case HostHoistable:
-        return type;
-      case HostPortal:
-      case HostText:
-        return null;
-      case Fragment:
-        return 'Fragment';
-      case LazyComponent:
-        // This display name will not be user visible.
-        // Once a Lazy component loads its inner component, React replaces the tag and type.
-        // This display name will only show up in console logs when DevTools DEBUG mode is on.
-        return 'Lazy';
-      case MemoComponent:
-      case SimpleMemoComponent:
-        // Display name in React does not use `Memo` as a wrapper but fallback name.
-        return getWrappedDisplayName(
-          elementType,
-          resolvedType,
-          'Memo',
-          'Anonymous',
-        );
-      case SuspenseComponent:
-        return 'Suspense';
-      case LegacyHiddenComponent:
-        return 'LegacyHidden';
-      case OffscreenComponent:
-        return 'Offscreen';
-      case ScopeComponent:
-        return 'Scope';
-      case SuspenseListComponent:
-        return 'SuspenseList';
-      case Profiler:
-        return 'Profiler';
-      case TracingMarkerComponent:
-        return 'TracingMarker';
-      case ViewTransitionComponent:
-        return 'ViewTransition';
-      case Throw:
-        // This should really never be visible.
-        return 'Error';
-      default:
-        const typeSymbol = getTypeSymbol(type);
-
-        switch (typeSymbol) {
-          case CONCURRENT_MODE_NUMBER:
-          case CONCURRENT_MODE_SYMBOL_STRING:
-          case DEPRECATED_ASYNC_MODE_SYMBOL_STRING:
-            return null;
-          case PROVIDER_NUMBER:
-          case PROVIDER_SYMBOL_STRING:
-            // 16.3.0 exposed the context object as "context"
-            // PR #12501 changed it to "_context" for 16.3.1+
-            // NOTE Keep in sync with inspectElementRaw()
-            resolvedContext = fiber.type._context || fiber.type.context;
-            return `${resolvedContext.displayName || 'Context'}.Provider`;
-          case CONTEXT_NUMBER:
-          case CONTEXT_SYMBOL_STRING:
-          case SERVER_CONTEXT_SYMBOL_STRING:
-            if (
-              fiber.type._context === undefined &&
-              fiber.type.Provider === fiber.type
-            ) {
-              // In 19+, Context.Provider === Context, so this is a provider.
-              resolvedContext = fiber.type;
-              return `${resolvedContext.displayName || 'Context'}.Provider`;
-            }
-
-            // 16.3-16.5 read from "type" because the Consumer is the actual context object.
-            // 16.6+ should read from "type._context" because Consumer can be different (in DEV).
-            // NOTE Keep in sync with inspectElementRaw()
-            resolvedContext = fiber.type._context || fiber.type;
-
-            // NOTE: TraceUpdatesBackendManager depends on the name ending in '.Consumer'
-            // If you change the name, figure out a more resilient way to detect it.
-            return `${resolvedContext.displayName || 'Context'}.Consumer`;
-          case CONSUMER_SYMBOL_STRING:
-            // 19+
-            resolvedContext = fiber.type._context;
-            return `${resolvedContext.displayName || 'Context'}.Consumer`;
-          case STRICT_MODE_NUMBER:
-          case STRICT_MODE_SYMBOL_STRING:
-            return null;
-          case PROFILER_NUMBER:
-          case PROFILER_SYMBOL_STRING:
-            return `Profiler(${fiber.memoizedProps.id})`;
-          case SCOPE_NUMBER:
-          case SCOPE_SYMBOL_STRING:
-            return 'Scope';
-          default:
-            // Unknown element type.
-            // This may mean a new element type that has not yet been added to DevTools.
-            return null;
-        }
-    }
-  }
-
-  return {
-    getDisplayNameForFiber,
-    getTypeSymbol,
-    ReactPriorityLevels,
-    ReactTypeOfWork,
-    StrictModeBits,
-    SuspenseyImagesMode,
-  };
 }
 
 // All environment names we've seen so far. This lets us create a list of filters to apply.
@@ -1252,6 +739,7 @@ export function attach(
     parentInstance: null | DevToolsInstance,
     extraString: string = '',
   ): void {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       const displayName =
         instance.kind === VIRTUAL_INSTANCE
@@ -1294,6 +782,7 @@ export function attach(
 
   // eslint-disable-next-line no-unused-vars
   function debugTree(instance: DevToolsInstance, indent: number = 0) {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       const name =
         (instance.kind !== VIRTUAL_INSTANCE
@@ -1456,7 +945,7 @@ export function attach(
       currentRoot = rootInstance;
       unmountInstanceRecursively(rootInstance);
       rootToFiberInstanceMap.delete(root);
-      currentRoot = (null: any);
+      currentRoot = null as any;
     });
 
     if (
@@ -1525,7 +1014,7 @@ export function attach(
       currentRoot = newRoot;
       setRootPseudoKey(currentRoot.id, root.current);
       mountFiberRecursively(root.current, false);
-      currentRoot = (null: any);
+      currentRoot = null as any;
     });
 
     // We need to write back the new ID for the focused Fiber.
@@ -1763,7 +1252,7 @@ export function attach(
   }
 
   // When a mount or update is in progress, this value tracks the root that is being operated on.
-  let currentRoot: FiberInstance = (null: any);
+  let currentRoot: FiberInstance = null as any;
 
   // Removes a Fiber (and its alternate) from the Maps used to track their id.
   // This method should always be called when a Fiber is unmounting.
@@ -2255,6 +1744,7 @@ export function attach(
     }
     idToDevToolsInstanceMap.set(fiberInstance.id, fiberInstance);
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('recordMount()', fiberInstance, parentInstance);
     }
@@ -2407,6 +1897,20 @@ export function attach(
           pushOperation(StrictMode);
         }
       }
+
+      // If this is an Activity component, check if it's hidden.
+      if (fiber.tag === ActivityComponent) {
+        const offscreenChild = fiber.child;
+        if (
+          offscreenChild !== null &&
+          offscreenChild.tag === OffscreenComponent &&
+          offscreenChild.memoizedState !== null
+        ) {
+          pushOperation(TREE_OPERATION_SET_SUBTREE_MODE);
+          pushOperation(id);
+          pushOperation(ActivityHiddenMode);
+        }
+      }
     }
 
     let componentLogsEntry = fiberToComponentLogsMap.get(fiber);
@@ -2551,6 +2055,7 @@ export function attach(
     const isSuspended =
       fiber.tag === SuspenseComponent && fiber.memoizedState !== null;
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log('recordSuspenseMount()', suspenseInstance);
     }
@@ -2579,6 +2084,7 @@ export function attach(
   }
 
   function recordUnmount(fiberInstance: FiberInstance): void {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('recordUnmount()', fiberInstance, reconcilingParent);
     }
@@ -2613,6 +2119,7 @@ export function attach(
   }
 
   function recordSuspenseResize(suspenseNode: SuspenseNode): void {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log('recordSuspenseResize()', suspenseNode);
     }
@@ -2640,6 +2147,7 @@ export function attach(
   }
 
   function recordSuspenseSuspenders(suspenseNode: SuspenseNode): void {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log('recordSuspenseSuspenders()', suspenseNode);
     }
@@ -2660,6 +2168,7 @@ export function attach(
   }
 
   function recordSuspenseUnmount(suspenseInstance: SuspenseNode): void {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(
         'recordSuspenseUnmount()',
@@ -2808,6 +2317,7 @@ export function attach(
       return;
     }
     let node: SuspenseNode = firstChild;
+    // $FlowFixMe[invalid-compare]
     while (node !== null) {
       if (node.suspendedBy.has(ioInfo)) {
         // We have found a child boundary that depended on the unblocked I/O.
@@ -3069,6 +2579,17 @@ export function attach(
       default:
         return false;
     }
+  }
+
+  // Returns true if this is a hidden OffscreenComponent that belongs to
+  // an Activity boundary (as opposed to Suspense). Activity's children
+  // should remain visible in the DevTools tree even when hidden.
+  function isActivityHiddenOffscreen(fiber: Fiber): boolean {
+    return (
+      isHiddenOffscreen(fiber) &&
+      fiber.return !== null &&
+      fiber.return.tag === ActivityComponent
+    );
   }
 
   /**
@@ -3337,7 +2858,7 @@ export function attach(
         for (let i = 0; i < debugInfo.length; i++) {
           const debugEntry = debugInfo[i];
           if (debugEntry.awaited) {
-            const asyncInfo: ReactAsyncInfo = (debugEntry: any);
+            const asyncInfo: ReactAsyncInfo = debugEntry as any;
             insertSuspendedBy(asyncInfo);
           }
         }
@@ -3370,7 +2891,7 @@ export function attach(
         for (let j = 0; j < debugInfo.length; j++) {
           const debugEntry = debugInfo[j];
           if (debugEntry.awaited) {
-            const asyncInfo: ReactAsyncInfo = (debugEntry: any);
+            const asyncInfo: ReactAsyncInfo = debugEntry as any;
             insertSuspendedBy(asyncInfo);
           }
         }
@@ -3442,20 +2963,20 @@ export function attach(
           start = resourceEntry.startTime;
           end = start + resourceEntry.duration;
           // $FlowFixMe[prop-missing]
-          byteSize = (resourceEntry.transferSize: any) || 0;
+          byteSize = (resourceEntry.transferSize as any) || 0;
         }
       }
     }
     const value = instance.sheet;
     const promise = Promise.resolve(value);
-    (promise: any).status = 'fulfilled';
-    (promise: any).value = value;
+    (promise as any).status = 'fulfilled';
+    (promise as any).value = value;
     const ioInfo: ReactIOInfo = {
       name: 'stylesheet',
       start,
       end,
       value: promise,
-      // $FlowFixMe: This field doesn't usually take a Fiber but we're only using inside this file.
+      // $FlowFixMe[incompatible-type]: This field doesn't usually take a Fiber but we're only using inside this file.
       owner: fiber, // Allow linking to the <link> if it's not filtered.
     };
     if (byteSize > 0) {
@@ -3464,7 +2985,7 @@ export function attach(
     }
     const asyncInfo: ReactAsyncInfo = {
       awaited: ioInfo,
-      // $FlowFixMe: This field doesn't usually take a Fiber but we're only using inside this file.
+      // $FlowFixMe[incompatible-type]: This field doesn't usually take a Fiber but we're only using inside this file.
       owner: fiber._debugOwner == null ? null : fiber._debugOwner,
       debugStack: fiber._debugStack == null ? null : fiber._debugStack,
       debugTask: fiber._debugTask == null ? null : fiber._debugTask,
@@ -3538,9 +3059,9 @@ export function attach(
           start = resourceEntry.startTime;
           end = start + resourceEntry.duration;
           // $FlowFixMe[prop-missing]
-          fileSize = (resourceEntry.decodedBodySize: any) || 0;
+          fileSize = (resourceEntry.decodedBodySize as any) || 0;
           // $FlowFixMe[prop-missing]
-          byteSize = (resourceEntry.transferSize: any) || 0;
+          byteSize = (resourceEntry.transferSize as any) || 0;
         }
       }
     }
@@ -3564,14 +3085,14 @@ export function attach(
       value.fileSize = fileSize;
     }
     const promise = Promise.resolve(value);
-    (promise: any).status = 'fulfilled';
-    (promise: any).value = value;
+    (promise as any).status = 'fulfilled';
+    (promise as any).value = value;
     const ioInfo: ReactIOInfo = {
       name: 'img',
       start,
       end,
       value: promise,
-      // $FlowFixMe: This field doesn't usually take a Fiber but we're only using inside this file.
+      // $FlowFixMe[incompatible-type]: This field doesn't usually take a Fiber but we're only using inside this file.
       owner: fiber, // Allow linking to the <link> if it's not filtered.
     };
     if (byteSize > 0) {
@@ -3580,7 +3101,7 @@ export function attach(
     }
     const asyncInfo: ReactAsyncInfo = {
       awaited: ioInfo,
-      // $FlowFixMe: This field doesn't usually take a Fiber but we're only using inside this file.
+      // $FlowFixMe[incompatible-type]: This field doesn't usually take a Fiber but we're only using inside this file.
       owner: fiber._debugOwner == null ? null : fiber._debugOwner,
       debugStack: fiber._debugStack == null ? null : fiber._debugStack,
       debugTask: fiber._debugTask == null ? null : fiber._debugTask,
@@ -3628,7 +3149,7 @@ export function attach(
           const debugEntry = fiber._debugInfo[i];
           if (debugEntry.awaited) {
             // Async Info
-            const asyncInfo: ReactAsyncInfo = (debugEntry: any);
+            const asyncInfo: ReactAsyncInfo = debugEntry as any;
             if (level === virtualLevel) {
               // Track any async info between the previous virtual instance up until to this
               // instance and add it to the parent. This can add the same set multiple times
@@ -3642,7 +3163,7 @@ export function attach(
             continue;
           }
           // Scan up until the next Component to see if this component changed environment.
-          const componentInfo: ReactComponentInfo = (debugEntry: any);
+          const componentInfo: ReactComponentInfo = debugEntry as any;
           const secondaryEnv = getSecondaryEnvironmentName(fiber._debugInfo, i);
           if (componentInfo.env != null) {
             knownEnvironmentNames.add(componentInfo.env);
@@ -3822,6 +3343,7 @@ export function attach(
         recordSuspenseMount(newSuspenseNode, reconcilingParentSuspenseNode);
       }
       insertChild(newInstance);
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         debug('mountFiberRecursively()', newInstance, reconcilingParent);
       }
@@ -3882,6 +3404,7 @@ export function attach(
         }
       }
       insertChild(newInstance);
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         debug('mountFiberRecursively()', newInstance, reconcilingParent);
       }
@@ -3975,7 +3498,16 @@ export function attach(
           isInDisconnectedSubtree = stashedDisconnected;
         }
       } else if (isHiddenOffscreen(fiber)) {
-        // hidden Activity is noisy.
+        if (isActivityHiddenOffscreen(fiber)) {
+          // Activity's hidden children should still be visible in DevTools.
+          if (fiber.child !== null) {
+            mountChildrenRecursively(
+              fiber.child,
+              traceNearestHostComponentUpdate,
+            );
+          }
+        }
+        // Otherwise, hidden Offscreen (e.g. non-Activity) is noisy.
         // Including it may show overlapping Suspense rects
       } else if (fiber.tag === SuspenseComponent && OffscreenComponent === -1) {
         // Legacy Suspense without the Offscreen wrapper. For the modern Suspense we just handle the
@@ -4073,6 +3605,7 @@ export function attach(
   // We use this to simulate unmounting for Suspense trees
   // when we switch from primary to fallback, or deleting a subtree.
   function unmountInstanceRecursively(instance: DevToolsInstance) {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('unmountInstanceRecursively()', instance, reconcilingParent);
     }
@@ -4108,6 +3641,7 @@ export function attach(
         isInFocusedActivity = true;
       } else if (
         instance.kind === FIBER_INSTANCE &&
+        // $FlowFixMe[invalid-compare]
         instance.data !== null &&
         instance.data.tag === ActivityComponent
       ) {
@@ -4229,7 +3763,7 @@ export function attach(
           // In some cases actualDuration might be 0 for fibers we worked on (particularly if we're using Date.now)
           // In other cases (e.g. Memo) actualDuration might be greater than 0 even if we "bailed out".
           const metadata =
-            ((currentCommitProfilingMetadata: any): CommitProfilingData);
+            currentCommitProfilingMetadata as any as CommitProfilingData;
           metadata.durations.push(id, actualDuration, selfDuration);
           metadata.maxActualDuration = Math.max(
             metadata.maxActualDuration,
@@ -4259,7 +3793,7 @@ export function attach(
           (fiber.alternate !== null && updaters.has(fiber.alternate)))
       ) {
         const metadata =
-          ((currentCommitProfilingMetadata: any): CommitProfilingData);
+          currentCommitProfilingMetadata as any as CommitProfilingData;
         if (metadata.updaters === null) {
           metadata.updaters = [];
         }
@@ -4308,8 +3842,9 @@ export function attach(
     while (child !== null) {
       if (child.kind === FILTERED_FIBER_INSTANCE) {
         const fiber = child.data;
-        if (isHiddenOffscreen(fiber)) {
+        if (isHiddenOffscreen(fiber) && !isActivityHiddenOffscreen(fiber)) {
           // The children of this Offscreen are hidden so they don't get added.
+          // Activity's hidden children are still shown in the tree.
         } else {
           addUnfilteredChildrenIDs(child, nextChildren);
         }
@@ -4323,6 +3858,7 @@ export function attach(
   function recordResetChildren(
     parentInstance: FiberInstance | VirtualInstance,
   ) {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       if (parentInstance.firstChild !== null) {
         debug(
@@ -4368,6 +3904,7 @@ export function attach(
   }
 
   function recordResetSuspenseChildren(parentInstance: SuspenseNode) {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       if (parentInstance.firstChild !== null) {
         console.log(
@@ -4391,6 +3928,7 @@ export function attach(
     }
     pushOperation(SUSPENSE_TREE_OPERATION_REORDER_CHILDREN);
     // $FlowFixMe[incompatible-call] TODO: Allow filtering SuspenseNode
+    // $FlowFixMe[incompatible-type]
     pushOperation(parentInstance.instance.id);
     pushOperation(numChildren);
     for (let i = 0; i < nextChildren.length; i++) {
@@ -4480,7 +4018,7 @@ export function attach(
           const debugEntry = nextChild._debugInfo[i];
           if (debugEntry.awaited) {
             // Async Info
-            const asyncInfo: ReactAsyncInfo = (debugEntry: any);
+            const asyncInfo: ReactAsyncInfo = debugEntry as any;
             if (level === virtualLevel) {
               // Track any async info between the previous virtual instance up until to this
               // instance and add it to the parent. This can add the same set multiple times
@@ -4493,7 +4031,7 @@ export function attach(
             // Not a Component. Some other Debug Info.
             continue;
           }
-          const componentInfo: ReactComponentInfo = (debugEntry: any);
+          const componentInfo: ReactComponentInfo = debugEntry as any;
           const secondaryEnv = getSecondaryEnvironmentName(
             nextChild._debugInfo,
             i,
@@ -4654,7 +4192,7 @@ export function attach(
         if (existingInstance !== null) {
           // Common case. Match in the same parent.
           const fiberInstance: FiberInstance | FilteredFiberInstance =
-            (existingInstance: any); // Only matches if it's a Fiber.
+            existingInstance as any; // Only matches if it's a Fiber.
 
           // We keep track if the order of the children matches the previous order.
           // They are always different referentially, but if the instances line up
@@ -4671,7 +4209,7 @@ export function attach(
           updateFlags |= updateFiberRecursively(
             fiberInstance,
             nextChild,
-            (prevChild: any),
+            prevChild as any,
             traceNearestHostComponentUpdate,
           );
         } else if (prevChild !== null && shouldFilterFiber(nextChild)) {
@@ -4817,6 +4355,7 @@ export function attach(
     prevFiber: Fiber,
     traceNearestHostComponentUpdate: boolean,
   ): UpdateFlags {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       if (fiberInstance !== null) {
         debug('updateFiberRecursively()', fiberInstance, reconcilingParent);
@@ -5093,22 +4632,42 @@ export function attach(
           updateFlags |= ShouldResetChildren | ShouldResetSuspenseChildren;
         }
       } else if (nextIsHidden) {
-        if (prevWasHidden) {
+        if (isActivityHiddenOffscreen(nextFiber)) {
+          // Activity's hidden children stay visible in the DevTools tree.
+          // Whether staying hidden or transitioning to hidden, update normally.
+          updateFlags |= updateChildrenRecursively(
+            nextFiber.child,
+            prevFiber.child,
+            traceNearestHostComponentUpdate,
+          );
+        } else if (prevWasHidden) {
           // still hidden. Nothing to do.
         } else {
           // We're hiding the children. Remove them from the Frontend
           unmountRemainingChildren();
         }
       } else if (prevWasHidden && !nextIsHidden) {
-        // Since we don't mount hidden children and unmount children when hiding,
-        // we need to enter the mount path when revealing.
-        const nextChildSet = nextFiber.child;
-        if (nextChildSet !== null) {
-          mountChildrenRecursively(
-            nextChildSet,
+        if (
+          nextFiber.return !== null &&
+          nextFiber.return.tag === ActivityComponent
+        ) {
+          // Activity children were never unmounted, so just update normally.
+          updateFlags |= updateChildrenRecursively(
+            nextFiber.child,
+            prevFiber.child,
             traceNearestHostComponentUpdate,
           );
-          updateFlags |= ShouldResetChildren | ShouldResetSuspenseChildren;
+        } else {
+          // Since we don't mount hidden children and unmount children when hiding,
+          // we need to enter the mount path when revealing.
+          const nextChildSet = nextFiber.child;
+          if (nextChildSet !== null) {
+            mountChildrenRecursively(
+              nextChildSet,
+              traceNearestHostComponentUpdate,
+            );
+            updateFlags |= ShouldResetChildren | ShouldResetSuspenseChildren;
+          }
         }
       } else if (
         nextFiber.tag === SuspenseComponent &&
@@ -5242,6 +4801,27 @@ export function attach(
       }
 
       if (fiberInstance !== null) {
+        // Detect Activity hidden/visible mode changes.
+        if (
+          prevFiber.tag === ActivityComponent &&
+          nextFiber.tag === ActivityComponent &&
+          fiberInstance.kind === FIBER_INSTANCE
+        ) {
+          const prevOffscreen = prevFiber.child;
+          const nextOffscreen = nextFiber.child;
+          if (prevOffscreen !== null && nextOffscreen !== null) {
+            const prevHidden = isHiddenOffscreen(prevOffscreen);
+            const nextHidden = isHiddenOffscreen(nextOffscreen);
+            if (prevHidden !== nextHidden) {
+              pushOperation(TREE_OPERATION_SET_SUBTREE_MODE);
+              pushOperation(fiberInstance.id);
+              pushOperation(
+                nextHidden ? ActivityHiddenMode : ActivityVisibleMode,
+              );
+            }
+          }
+        }
+
         removePreviousSuspendedBy(
           fiberInstance,
           previousSuspendedBy,
@@ -5384,9 +4964,11 @@ export function attach(
       if (
         (child.kind === FIBER_INSTANCE ||
           child.kind === FILTERED_FIBER_INSTANCE) &&
-        isHiddenOffscreen(child.data)
+        isHiddenOffscreen(child.data) &&
+        !isActivityHiddenOffscreen(child.data)
       ) {
         // This instance's children should remain disconnected.
+        // Activity's hidden children are still shown in the tree.
       } else {
         reconnectChildrenRecursively(child);
       }
@@ -5446,7 +5028,7 @@ export function attach(
 
         flushPendingEvents(currentRoot);
 
-        currentRoot = (null: any);
+        currentRoot = null as any;
       });
 
       needsToFlushComponentLogs = false;
@@ -5561,20 +5143,20 @@ export function attach(
 
     if (isProfiling && isProfilingSupported) {
       if (!shouldBailoutWithPendingOperations()) {
-        const commitProfilingMetadata =
-          ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).get(
-            currentRoot.id,
-          );
+        const commitProfilingMetadata = (
+          rootToCommitProfilingMetadataMap as any as CommitProfilingMetadataMap
+        ).get(currentRoot.id);
 
         if (commitProfilingMetadata != null) {
           commitProfilingMetadata.push(
-            ((currentCommitProfilingMetadata: any): CommitProfilingData),
+            currentCommitProfilingMetadata as any as CommitProfilingData,
           );
         } else {
-          ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).set(
-            currentRoot.id,
-            [((currentCommitProfilingMetadata: any): CommitProfilingData)],
-          );
+          (
+            rootToCommitProfilingMetadataMap as any as CommitProfilingMetadataMap
+          ).set(currentRoot.id, [
+            currentCommitProfilingMetadata as any as CommitProfilingData,
+          ]);
         }
       }
     }
@@ -5588,7 +5170,7 @@ export function attach(
       hook.emit('traceUpdates', traceUpdatesForNodes);
     }
 
-    currentRoot = (null: any);
+    currentRoot = null as any;
   }
 
   function getResourceInstance(fiber: Fiber): HostInstance | null {
@@ -5723,7 +5305,7 @@ export function attach(
         const owner = getUnfilteredOwner(fiber);
         if (owner != null) {
           if (typeof owner.tag === 'number') {
-            return getDisplayNameForFiber((owner: any));
+            return getDisplayNameForFiber(owner as any);
           } else {
             return owner.name || '';
           }
@@ -5750,7 +5332,7 @@ export function attach(
   function getNearestMountedDOMNode(publicInstance: Element): null | Element {
     let domNode: null | Element = publicInstance;
     while (domNode && !publicInstanceToDevToolsInstanceMap.has(domNode)) {
-      // $FlowFixMe: In practice this is either null or Element.
+      // $FlowFixMe[incompatible-type]: In practice this is either null or Element.
       domNode = domNode.parentNode;
     }
     return domNode;
@@ -5763,7 +5345,7 @@ export function attach(
     if (instance !== undefined) {
       if (instance.kind === FILTERED_FIBER_INSTANCE) {
         // A Filtered Fiber Instance will always have a Virtual Instance as a parent.
-        return ((instance.parent: any): VirtualInstance).id;
+        return (instance.parent as any as VirtualInstance).id;
       }
       return instance.id;
     }
@@ -5798,7 +5380,7 @@ export function attach(
   ): mixed {
     if (isMostRecentlyInspectedElement(id)) {
       return getInObject(
-        ((mostRecentlyInspectedElement: any): InspectedElement),
+        mostRecentlyInspectedElement as any as InspectedElement,
         path,
       );
     }
@@ -5924,21 +5506,21 @@ export function attach(
       return null;
     }
     if (typeof owner.tag === 'number') {
-      const ownerFiber: Fiber = (owner: any); // Refined
+      const ownerFiber: Fiber = owner as any; // Refined
       owner = ownerFiber._debugOwner;
     } else {
-      const ownerInfo: ReactComponentInfo = (owner: any); // Refined
+      const ownerInfo: ReactComponentInfo = owner as any; // Refined
       owner = ownerInfo.owner;
     }
     while (owner) {
       if (typeof owner.tag === 'number') {
-        const ownerFiber: Fiber = (owner: any); // Refined
+        const ownerFiber: Fiber = owner as any; // Refined
         if (!shouldFilterFiber(ownerFiber)) {
           return ownerFiber;
         }
         owner = ownerFiber._debugOwner;
       } else {
-        const ownerInfo: ReactComponentInfo = (owner: any); // Refined
+        const ownerInfo: ReactComponentInfo = owner as any; // Refined
         if (!shouldFilterVirtual(ownerInfo, null)) {
           return ownerInfo;
         }
@@ -5964,7 +5546,7 @@ export function attach(
         // isn't propagated down as the new owner. In that case we might match the alternate
         // instead. This is a bit hacky but the fastest check since type casting owner to a Fiber
         // needs a duck type check anyway.
-        parentInstance.data === (owner: any).alternate
+        parentInstance.data === (owner as any).alternate
       ) {
         if (parentInstance.kind === FILTERED_FIBER_INSTANCE) {
           return null;
@@ -6045,7 +5627,7 @@ export function attach(
       }
       let firstInstance: null | DevToolsInstance = null;
       if (filterByChildInstance === null) {
-        firstInstance = (set.values().next().value: any);
+        firstInstance = set.values().next().value as any;
       } else {
         // eslint-disable-next-line no-for-of-loops/no-for-of-loops
         for (const childInstance of set.values()) {
@@ -6454,6 +6036,7 @@ export function attach(
     }
 
     const fiber = devtoolsInstance.data;
+    // $FlowFixMe[invalid-compare]
     if (fiber !== null) {
       instance = fiber.stateNode;
 
@@ -6480,7 +6063,7 @@ export function attach(
         ? inspectRootsRaw(devtoolsInstance.id)
         : inspectFiberInstanceRaw(devtoolsInstance);
     }
-    (devtoolsInstance: FilteredFiberInstance); // assert exhaustive
+    devtoolsInstance as FilteredFiberInstance; // assert exhaustive
     throw new Error('Unsupported instance kind');
   }
 
@@ -6561,7 +6144,7 @@ export function attach(
       context = consumerResolvedContext._currentValue || null;
 
       // Look for overridden value.
-      let current = ((fiber: any): Fiber).return;
+      let current = (fiber as any as Fiber).return;
       while (current !== null) {
         const currentType = current.type;
         const currentTypeSymbol = getTypeSymbol(currentType);
@@ -6594,7 +6177,7 @@ export function attach(
       context = consumerResolvedContext._currentValue || null;
 
       // Look for overridden value.
-      let current = ((fiber: any): Fiber).return;
+      let current = (fiber as any as Fiber).return;
       while (current !== null) {
         const currentType = current.type;
         const currentTypeSymbol = getTypeSymbol(currentType);
@@ -7094,7 +6677,7 @@ export function attach(
   ): void {
     if (isMostRecentlyInspectedElement(id)) {
       const value = getInObject(
-        ((mostRecentlyInspectedElement: any): InspectedElement),
+        mostRecentlyInspectedElement as any as InspectedElement,
         path,
       );
       const key = `$reactTemp${count}`;
@@ -7112,7 +6695,7 @@ export function attach(
   ): ?string {
     if (isMostRecentlyInspectedElement(id)) {
       const valueToCopy = getInObject(
-        ((mostRecentlyInspectedElement: any): InspectedElement),
+        mostRecentlyInspectedElement as any as InspectedElement,
         path,
       );
 
@@ -7147,7 +6730,7 @@ export function attach(
             path,
             value: cleanForBridge(
               getInObject(
-                ((mostRecentlyInspectedElement: any): InspectedElement),
+                mostRecentlyInspectedElement as any as InspectedElement,
                 path,
               ),
               createIsPathAllowed(null, secondaryCategory),
@@ -7434,6 +7017,7 @@ export function attach(
       return;
     }
     const fiber = devtoolsInstance.data;
+    // $FlowFixMe[invalid-compare]
     if (fiber !== null) {
       const instance = fiber.stateNode;
 
@@ -7461,7 +7045,7 @@ export function attach(
           break;
         case 'hooks':
           if (typeof overrideHookStateDeletePath === 'function') {
-            overrideHookStateDeletePath(fiber, ((hookID: any): number), path);
+            overrideHookStateDeletePath(fiber, hookID as any as number, path);
           }
           break;
         case 'props':
@@ -7504,6 +7088,7 @@ export function attach(
       return;
     }
     const fiber = devtoolsInstance.data;
+    // $FlowFixMe[invalid-compare]
     if (fiber !== null) {
       const instance = fiber.stateNode;
 
@@ -7534,7 +7119,7 @@ export function attach(
           if (typeof overrideHookStateRenamePath === 'function') {
             overrideHookStateRenamePath(
               fiber,
-              ((hookID: any): number),
+              hookID as any as number,
               oldPath,
               newPath,
             );
@@ -7587,6 +7172,7 @@ export function attach(
       return;
     }
     const fiber = devtoolsInstance.data;
+    // $FlowFixMe[invalid-compare]
     if (fiber !== null) {
       const instance = fiber.stateNode;
 
@@ -7615,7 +7201,7 @@ export function attach(
           break;
         case 'hooks':
           if (typeof overrideHookState === 'function') {
-            overrideHookState(fiber, ((hookID: any): number), path, value);
+            overrideHookState(fiber, hookID as any as number, path, value);
           }
           break;
         case 'props':
@@ -7833,13 +7419,16 @@ export function attach(
         );
       }
       const rootID = rootInstance.id;
-      ((displayNamesByRootID: any): DisplayNamesByRootID).set(
+      (displayNamesByRootID as any as DisplayNamesByRootID).set(
         rootID,
         getDisplayNameForRoot(root.current),
       );
       const initialTreeBaseDurations: Array<[number, number]> = [];
       snapshotTreeBaseDurations(rootInstance, initialTreeBaseDurations);
-      (initialTreeBaseDurationsMap: any).set(rootID, initialTreeBaseDurations);
+      (initialTreeBaseDurationsMap as any).set(
+        rootID,
+        initialTreeBaseDurations,
+      );
     });
 
     isProfiling = true;
@@ -7898,7 +7487,7 @@ export function attach(
   // Map of Fiber and its force error status: true (error), false (toggled off)
   const forceErrorForFibers = new Map<Fiber, boolean>();
 
-  function shouldErrorFiberAccordingToMap(fiber: any): boolean {
+  function shouldErrorFiberAccordingToMap(fiber: any): boolean | null {
     if (typeof setErrorHandler !== 'function') {
       throw new Error(
         'Expected overrideError() to not get called for earlier React versions.',
@@ -7934,7 +7523,7 @@ export function attach(
       }
     }
     if (status === undefined) {
-      return false;
+      return null;
     }
     return status;
   }
@@ -8501,7 +8090,7 @@ export function attach(
     // but it's at least somewhere within it.
     if (isError(unresolvedSource)) {
       return (instance.source = extractLocationFromOwnerStack(
-        (unresolvedSource: any),
+        unresolvedSource as any,
       ));
     }
     if (typeof unresolvedSource === 'string') {
@@ -8511,7 +8100,7 @@ export function attach(
       return (instance.source = extractLocationFromComponentStack(lastLine));
     }
 
-    // $FlowFixMe: refined.
+    // $FlowFixMe[incompatible-type]: refined.
     return unresolvedSource;
   }
 

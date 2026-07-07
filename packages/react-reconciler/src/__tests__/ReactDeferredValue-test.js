@@ -1097,4 +1097,56 @@ describe('ReactDeferredValue', () => {
       expect(root).toMatchRenderedOutput(<div>B</div>);
     },
   );
+
+  // Regression test for https://github.com/facebook/react/issues/35821
+  it('deferred value catches up when a suspension is resolved during the same render', async () => {
+    let setValue;
+    function App() {
+      const [value, _setValue] = useState('initial');
+      setValue = _setValue;
+      const deferred = useDeferredValue(value);
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <AsyncText text={'A:' + deferred} />
+          <Sibling text={deferred} />
+        </Suspense>
+      );
+    }
+
+    function Sibling({text}) {
+      if (text !== 'initial') {
+        // Resolve A during this render, simulating data arriving while
+        // a render is already in progress.
+        resolveText('A:' + text);
+      }
+      readText('B:' + text);
+      Scheduler.log('B: ' + text);
+      return text;
+    }
+
+    const root = ReactNoop.createRoot();
+
+    resolveText('A:initial');
+    resolveText('B:initial');
+    await act(() => root.render(<App />));
+    assertLog(['A:initial', 'B: initial']);
+
+    // Pre-resolve B so the sibling won't suspend on retry.
+    resolveText('B:updated');
+
+    await act(() => setValue('updated'));
+    assertLog([
+      // Sync render defers the value.
+      'A:initial',
+      'B: initial',
+      // Deferred render: A suspends, then Sibling resolves A mid-render.
+      'Suspend! [A:updated]',
+      'B: updated',
+      'Loading...',
+      // React retries and the deferred value catches up.
+      'A:updated',
+      'B: updated',
+    ]);
+    expect(root).toMatchRenderedOutput('A:updatedupdated');
+  });
 });

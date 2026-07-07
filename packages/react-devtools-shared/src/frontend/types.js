@@ -156,6 +156,8 @@ export type Plugins = {
 };
 
 export const StrictMode = 1;
+export const ActivityHiddenMode = 2;
+export const ActivityVisibleMode = 3;
 
 // Each element on the frontend corresponds to an ElementID (e.g. a Fiber) on the backend.
 // Some of its information (e.g. id, type, displayName) come from the backend.
@@ -190,6 +192,12 @@ export type Element = {
   // This element is not in a StrictMode compliant subtree.
   // Only true for React versions supporting StrictMode.
   isStrictModeNonCompliant: boolean,
+
+  // Whether this Activity element has mode="hidden".
+  isActivityHidden: boolean,
+
+  // Whether this element is inside a hidden Activity subtree.
+  isInsideHiddenActivity: boolean,
 
   // If component is compiled with Forget, the backend will send its name as Forget(...)
   // Later, on the frontend side, we will strip HOC names and Forget prefix.

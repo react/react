@@ -60,7 +60,7 @@ export function useCommitFilteringAndNavigation(
           reduced.push(index);
         }
         return reduced;
-      }, ([]: Array<number>));
+      }, [] as Array<number>);
     },
     [commitData],
   );

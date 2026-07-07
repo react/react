@@ -297,6 +297,269 @@ describe('Store', () => {
     });
   });
 
+  describe('Activity hidden state', () => {
+    // @reactVersion >= 19
+    it('should mark Activity subtree elements as hidden when mode is hidden', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      // Activity element should be marked as hidden and collapsed
+      const activityElement = store.getElementAtIndex(1);
+      expect(activityElement.displayName).toBe('Activity');
+      expect(activityElement.isActivityHidden).toBe(true);
+      expect(activityElement.isInsideHiddenActivity).toBe(false);
+      expect(activityElement.isCollapsed).toBe(true);
+
+      // Expand to access children
+      store.toggleIsCollapsed(activityElement.id, false);
+
+      // Children should still be in the tree but marked as inside hidden Activity
+      const childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(true);
+    });
+
+    // @reactVersion >= 19
+    it('should not mark Activity subtree as hidden when mode is visible', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App() {
+        return (
+          <Activity mode="visible">
+            <Child />
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App />);
+      });
+
+      const activityElement = store.getElementAtIndex(1);
+      expect(activityElement.displayName).toBe('Activity');
+      expect(activityElement.isActivityHidden).toBe(false);
+      expect(activityElement.isInsideHiddenActivity).toBe(false);
+      expect(activityElement.isCollapsed).toBe(false);
+
+      const childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(false);
+    });
+
+    // @reactVersion >= 19
+    it('should update hidden state when Activity mode toggles', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      // Start visible
+      await actAsync(() => {
+        render(<App hidden={false} />);
+      });
+
+      let activityElement = store.getElementAtIndex(1);
+      expect(activityElement.isActivityHidden).toBe(false);
+      expect(activityElement.isCollapsed).toBe(false);
+
+      let childElement = store.getElementAtIndex(2);
+      expect(childElement.isInsideHiddenActivity).toBe(false);
+
+      // Toggle to hidden — children remain but subtree collapses
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      activityElement = store.getElementAtIndex(1);
+      expect(activityElement.isActivityHidden).toBe(true);
+      expect(activityElement.isCollapsed).toBe(true);
+
+      // Expand to verify children are still marked
+      store.toggleIsCollapsed(activityElement.id, false);
+
+      childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(true);
+
+      // Toggle back to visible — subtree expands automatically
+      await actAsync(() => {
+        render(<App hidden={false} />);
+      });
+
+      activityElement = store.getElementAtIndex(1);
+      expect(activityElement.isActivityHidden).toBe(false);
+      expect(activityElement.isCollapsed).toBe(false);
+
+      childElement = store.getElementAtIndex(2);
+      expect(childElement.isInsideHiddenActivity).toBe(false);
+    });
+
+    // @reactVersion >= 19
+    it('should propagate hidden state to deeply nested children', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function GrandChild() {
+        return <div>grandchild</div>;
+      }
+      function Child() {
+        return <GrandChild />;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      const activityElement = store.getElementAtIndex(1);
+      expect(activityElement.displayName).toBe('Activity');
+      expect(activityElement.isActivityHidden).toBe(true);
+      expect(activityElement.isCollapsed).toBe(true);
+
+      // Expand to access children
+      store.toggleIsCollapsed(activityElement.id, false);
+
+      const childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(true);
+
+      const grandChildElement = store.getElementAtIndex(3);
+      expect(grandChildElement.displayName).toBe('GrandChild');
+      expect(grandChildElement.isInsideHiddenActivity).toBe(true);
+    });
+
+    // @reactVersion >= 19
+    it('should collapse hidden Activity subtree by default', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      // Hidden Activity should be collapsed
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▸ <Activity mode="hidden">
+      `);
+
+      // Toggle to visible — should expand
+      await actAsync(() => {
+        render(<App hidden={false} />);
+      });
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▾ <Activity mode="visible">
+                <Child>
+      `);
+
+      // Toggle back to hidden — should collapse again
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▸ <Activity mode="hidden">
+      `);
+    });
+
+    // @reactVersion >= 19
+    it('should dim nested visible Activity inside a hidden Activity', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Leaf() {
+        return <div>leaf</div>;
+      }
+
+      function App() {
+        return (
+          <Activity mode="hidden" name="outer">
+            <Activity mode="visible" name="inner">
+              <Leaf />
+            </Activity>
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App />);
+      });
+
+      // Outer Activity: hidden, collapsed, not dimmed itself
+      const outerActivity = store.getElementAtIndex(1);
+      expect(outerActivity.displayName).toBe('Activity');
+      expect(outerActivity.nameProp).toBe('outer');
+      expect(outerActivity.isActivityHidden).toBe(true);
+      expect(outerActivity.isInsideHiddenActivity).toBe(false);
+      expect(outerActivity.isCollapsed).toBe(true);
+
+      // Expand to access inner elements
+      store.toggleIsCollapsed(outerActivity.id, false);
+
+      // Inner Activity: visible, but inside hidden outer so still dimmed
+      const innerActivity = store.getElementAtIndex(2);
+      expect(innerActivity.displayName).toBe('Activity');
+      expect(innerActivity.nameProp).toBe('inner');
+      expect(innerActivity.isActivityHidden).toBe(false);
+      expect(innerActivity.isInsideHiddenActivity).toBe(true);
+
+      // Leaf: inside both, dimmed
+      const leaf = store.getElementAtIndex(3);
+      expect(leaf.displayName).toBe('Leaf');
+      expect(leaf.isInsideHiddenActivity).toBe(true);
+    });
+  });
+
   describe('collapseNodesByDefault:false', () => {
     beforeEach(() => {
       store.collapseNodesByDefault = false;
@@ -3361,9 +3624,10 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-            <Activity>
+          ▸ <Activity mode="hidden">
             <Suspense name="outer-suspense">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}]}
+        <Suspense name="inside-activity" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
         <Suspense name="outer-suspense" uniqueSuspenders={true} rects={null}>
     `);
 
@@ -3378,7 +3642,7 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
             ▾ <Suspense name="inside-activity">
                 <Component key="inside-activity">
           ▾ <Suspense name="outer-suspense">
@@ -3397,9 +3661,10 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-            <Activity>
+          ▸ <Activity mode="hidden">
             <Suspense name="outer-suspense">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:15,height:1}]}
+        <Suspense name="inside-activity" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
         <Suspense name="outer-suspense" uniqueSuspenders={true} rects={[{x:1,y:2,width:15,height:1}]}>
           <Suspense name="inner-suspense" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
     `);
@@ -3411,7 +3676,7 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
             ▾ <Suspense name="inside-activity">
                 <Component key="inside-activity">
           ▾ <Suspense name="outer-suspense">
@@ -3604,7 +3869,7 @@ describe('Store', () => {
 
     expect(store).toMatchInlineSnapshot(`
       [root]
-          <Activity>
+        ▸ <Activity mode="hidden">
     `);
 
     await actAsync(() => {
@@ -3613,7 +3878,7 @@ describe('Store', () => {
 
     expect(store).toMatchInlineSnapshot(`
       [root]
-        ▾ <Activity>
+        ▾ <Activity mode="visible">
           ▾ <Component key="left">
               <div>
     `);

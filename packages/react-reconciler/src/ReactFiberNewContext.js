@@ -84,6 +84,7 @@ export function pushProvider<T>(
   context: ReactContext<T>,
   nextValue: T,
 ): void {
+  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     push(valueCursor, context._currentValue, providerFiber);
 
@@ -131,6 +132,7 @@ export function popProvider(
 ): void {
   const currentValue = valueCursor.current;
 
+  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     context._currentValue = currentValue;
     if (__DEV__) {
@@ -236,6 +238,7 @@ function propagateContextChanges<T>(
         findContext: for (let i = 0; i < contexts.length; i++) {
           const context: ReactContext<T> = contexts[i];
           // Check if the context matches.
+          // $FlowFixMe[invalid-compare]
           if (dependency.context === context) {
             // Match! Schedule an update on this fiber.
 
@@ -323,12 +326,23 @@ function propagateContextChanges<T>(
         renderLanes,
         workInProgress,
       );
-      if (!forcePropagateEntireTree) {
-        // During lazy propagation, we can defer propagating changes to
-        // the children, same as the consumer match above.
-        nextFiber = null;
+      // The primary children's fibers may not exist in the tree (they
+      // were discarded on initial mount if they suspended). However, the
+      // fallback children ARE in the committed tree and visible to the
+      // user. We need to continue propagating into the fallback subtree
+      // so that its context consumers are marked for re-render.
+      //
+      // The fiber structure is:
+      //   SuspenseComponent
+      //     → child: OffscreenComponent (primary, hidden)
+      //       → sibling: FallbackFragment
+      //
+      // Skip the primary (hidden) subtree and jump to the fallback.
+      const primaryChildFragment = fiber.child;
+      if (primaryChildFragment !== null) {
+        nextFiber = primaryChildFragment.sibling;
       } else {
-        nextFiber = fiber.child;
+        nextFiber = null;
       }
     } else {
       // Traverse down.
@@ -509,6 +523,7 @@ export function checkIfContextChanged(
   let dependency = currentDependencies.firstContext;
   while (dependency !== null) {
     const context = dependency.context;
+    // $FlowFixMe[constant-condition]
     const newValue = isPrimaryRenderer
       ? context._currentValue
       : context._currentValue2;
@@ -566,12 +581,13 @@ function readContextForConsumer<T>(
   consumer: Fiber | null,
   context: ReactContext<T>,
 ): T {
+  // $FlowFixMe[constant-condition]
   const value = isPrimaryRenderer
     ? context._currentValue
     : context._currentValue2;
 
   const contextItem = {
-    context: ((context: any): ReactContext<mixed>),
+    context: context as any as ReactContext<mixed>,
     memoizedValue: value,
     next: null,
   };
@@ -587,20 +603,24 @@ function readContextForConsumer<T>(
     }
 
     // This is the first dependency for this component. Create a new list.
+    // $FlowFixMe[incompatible-type]
     lastContextDependency = contextItem;
     consumer.dependencies = __DEV__
-      ? {
+      ? // $FlowFixMe[incompatible-type]
+        {
           lanes: NoLanes,
           firstContext: contextItem,
           _debugThenableState: null,
         }
-      : {
+      : // $FlowFixMe[incompatible-type]
+        {
           lanes: NoLanes,
           firstContext: contextItem,
         };
     consumer.flags |= NeedsPropagation;
   } else {
     // Append a new context item.
+    // $FlowFixMe[incompatible-type]
     lastContextDependency = lastContextDependency.next = contextItem;
   }
   return value;

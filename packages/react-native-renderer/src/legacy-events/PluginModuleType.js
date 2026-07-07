@@ -16,7 +16,9 @@ import type {TopLevelType} from './TopLevelEventTypes';
 
 export type EventTypes = {[key: string]: DispatchConfig};
 
-export type AnyNativeEvent = Event | KeyboardEvent | MouseEvent | TouchEvent;
+// Native events from C++ are plain objects with arbitrary properties,
+// not DOM Event class instances.
+export type AnyNativeEvent = {[string]: mixed};
 
 export type PluginName = string;
 

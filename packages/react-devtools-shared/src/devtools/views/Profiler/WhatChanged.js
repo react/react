@@ -37,7 +37,7 @@ export default function WhatChanged({
   }
 
   const {changeDescriptions} = profilerStore.getCommitData(
-    ((rootID: any): number),
+    rootID as any as number,
     selectedCommitIndex,
   );
 
