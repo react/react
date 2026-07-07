@@ -307,6 +307,17 @@ export type CdtMcpToolGroup = {
   tools: Array<CdtMcpTool>,
 };
 
+type Registration = {
+  facade: Facade,
+  unregister: () => void,
+};
+
+type ToolDiscoveryEvent = {
+  respondWith: (toolGroup: CdtMcpToolGroup) => void,
+};
+
+const registrations: WeakMap<any, Registration> = new WeakMap();
+
 /**
  * Build the chrome-devtools-mcp tool group from an assembled set of facade
  * tools. Each tool returns its facade result directly.
@@ -350,10 +361,15 @@ export function register(target?: any = globalThis): {
   facade: Facade,
   unregister: () => void,
 } {
+  const existingRegistration: Registration | void = registrations.get(target);
+  if (existingRegistration !== undefined) {
+    return existingRegistration;
+  }
+
   const facade = installFacade(target);
 
   let toolGroup: CdtMcpToolGroup | null = null;
-  const listener = (event: any) => {
+  const listener = (event: ToolDiscoveryEvent) => {
     if (toolGroup === null) {
       toolGroup = buildToolGroup(createTools(facade));
     }
@@ -361,10 +377,19 @@ export function register(target?: any = globalThis): {
   };
   target.addEventListener('devtoolstooldiscovery', listener);
 
-  return {
+  let isRegistered = true;
+  const registration: Registration = {
     facade,
     unregister: () => {
+      if (!isRegistered) {
+        return;
+      }
+      isRegistered = false;
       target.removeEventListener('devtoolstooldiscovery', listener);
+      registrations.delete(target);
     },
   };
+
+  registrations.set(target, registration);
+  return registration;
 }
