@@ -4213,7 +4213,7 @@ function lowerAssignment(
             continue;
           }
           const element = property.get('value');
-          if (!element.isLVal()) {
+          if (!element.isLVal() && !element.isPatternLike()) {
             builder.recordError(
               new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerAssignment) Expected object property value to be an LVal, got: ${element.type}`,
