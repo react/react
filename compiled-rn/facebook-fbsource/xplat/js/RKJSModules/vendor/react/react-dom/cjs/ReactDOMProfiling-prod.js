@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<da2d669c9ee3b11e961262ddad914b83>>
+ * @generated SignedSource<<78e24c5736741bf42d590f4bdc65d19e>>
  */
 
 /*
@@ -15390,7 +15390,8 @@ function setProp(domElement, tag, key, value, props, prevValue) {
         key = value.__html;
         if (null != key) {
           if (null != props.children) throw Error(formatProdErrorMessage(60));
-          domElement.innerHTML = key;
+          (null != prevValue ? prevValue.__html : void 0) !== key &&
+            (domElement.innerHTML = key);
         }
       }
       break;
@@ -15607,7 +15608,8 @@ function setPropOnCustomElement(domElement, tag, key, value, props, prevValue) {
         key = value.__html;
         if (null != key) {
           if (null != props.children) throw Error(formatProdErrorMessage(60));
-          domElement.innerHTML = key;
+          (null != prevValue ? prevValue.__html : void 0) !== key &&
+            (domElement.innerHTML = key);
         }
       }
       break;
@@ -15643,20 +15645,20 @@ function setPropOnCustomElement(domElement, tag, key, value, props, prevValue) {
             "o" === key[0] &&
             "n" === key[1] &&
             ((props = key.endsWith("Capture")),
-            (tag = key.slice(2, props ? key.length - 7 : void 0)),
-            (prevValue = domElement[internalPropsKey] || null),
-            (prevValue = null != prevValue ? prevValue[key] : null),
-            "function" === typeof prevValue &&
-              domElement.removeEventListener(tag, prevValue, props),
+            (prevValue = key.slice(2, props ? key.length - 7 : void 0)),
+            (tag = domElement[internalPropsKey] || null),
+            (tag = null != tag ? tag[key] : null),
+            "function" === typeof tag &&
+              domElement.removeEventListener(prevValue, tag, props),
             "function" === typeof value)
           ) {
-            "function" !== typeof prevValue &&
-              null !== prevValue &&
+            "function" !== typeof tag &&
+              null !== tag &&
               (key in domElement
                 ? (domElement[key] = null)
                 : domElement.hasAttribute(key) &&
                   domElement.removeAttribute(key));
-            domElement.addEventListener(tag, value, props);
+            domElement.addEventListener(prevValue, value, props);
             break a;
           }
           viewTransitionMutationContext = !0;
@@ -19265,14 +19267,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2135 = React.version;
 if (
-  "19.3.0-native-fb-fc08d760-20260706" !==
+  "19.3.0-native-fb-b8f50c93-20260707" !==
   isomorphicReactPackageVersion$jscomp$inline_2135
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2135,
-      "19.3.0-native-fb-fc08d760-20260706"
+      "19.3.0-native-fb-b8f50c93-20260707"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -19294,10 +19296,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2733 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-fc08d760-20260706",
+  version: "19.3.0-native-fb-b8f50c93-20260707",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-fc08d760-20260706"
+  reconcilerVersion: "19.3.0-native-fb-b8f50c93-20260707"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2734 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -19566,4 +19568,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-fc08d760-20260706";
+exports.version = "19.3.0-native-fb-b8f50c93-20260707";
