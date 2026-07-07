@@ -274,7 +274,12 @@ __DEV__ &&
           updatedFamiliesByType.set(_ref, family);
           family.current = _ref;
           (prevType.prototype && prevType.prototype.isReactComponent) ||
-          (_ref.prototype && _ref.prototype.isReactComponent)
+          (_ref.prototype && _ref.prototype.isReactComponent) ||
+          typeof prevType !== typeof _ref ||
+          ("object" === typeof prevType &&
+            null !== prevType &&
+            null !== _ref &&
+            getProperty(prevType, "$$typeof") !== getProperty(_ref, "$$typeof"))
             ? (_ref = !1)
             : ((prevType = allSignaturesByType.get(prevType)),
               (_ref = allSignaturesByType.get(_ref)),
