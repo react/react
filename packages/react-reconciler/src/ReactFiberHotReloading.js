@@ -78,29 +78,6 @@ export function resolveTypeForHotReloading(type: any): any {
   }
 }
 
-export function resolveRemountTypeForHotReloading(
-  elementType: any,
-  type: any,
-): any {
-  if (__DEV__) {
-    if (resolveFamily === null) {
-      // Hot reloading is disabled.
-      return type;
-    }
-    // The elementType is the fiber's public identity, so its family tracks
-    // the latest implementation even when an edit changed the kind of the
-    // type (e.g. memo to a plain function) and `type` still points at the
-    // old inner implementation.
-    const family = resolveFamily(elementType);
-    if (family === undefined) {
-      return type;
-    }
-    return family.current;
-  } else {
-    return type;
-  }
-}
-
 export function isCompatibleFamilyForHotReloading(
   fiber: Fiber,
   element: ReactElement,
@@ -294,6 +271,17 @@ function scheduleFibersWithFamiliesRecursively(
         const outerFamily = resolve(outerCandidateType);
         if (outerFamily !== undefined && staleFamilies.has(outerFamily)) {
           needsRemount = true;
+        } else if (
+          typeof outerCandidateType === 'object' &&
+          outerCandidateType.$$typeof === REACT_LAZY_TYPE
+        ) {
+          const payload = outerCandidateType._payload;
+          if (payload._status === 1 /* Resolved; see ReactLazy */) {
+            const middleFamily = resolve(payload._result.default);
+            if (middleFamily !== undefined && staleFamilies.has(middleFamily)) {
+              needsRemount = true;
+            }
+          }
         }
       }
       if (failedBoundaries !== null) {

@@ -132,10 +132,7 @@ import {
   REACT_CONTEXT_TYPE,
 } from 'shared/ReactSymbols';
 import {setCurrentFiber} from './ReactCurrentFiber';
-import {
-  resolveTypeForHotReloading,
-  resolveRemountTypeForHotReloading,
-} from './ReactFiberHotReloading';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 
 import {
   mountChildFibers,
@@ -4196,10 +4193,9 @@ function beginWork(
     if (workInProgress._debugNeedsRemount && current !== null) {
       // This will restart the begin phase with a new fiber.
       const copiedFiber = createFiberFromTypeAndProps(
-        resolveRemountTypeForHotReloading(
-          workInProgress.elementType,
-          workInProgress.type,
-        ),
+        // Remount from the fiber's outermost identity; mounting resolves
+        // any inner types to their latest implementations.
+        resolveTypeForHotReloading(workInProgress.elementType),
         workInProgress.key,
         workInProgress.pendingProps,
         workInProgress._debugOwner || null,
