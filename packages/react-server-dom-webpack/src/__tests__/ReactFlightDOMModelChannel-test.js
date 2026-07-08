@@ -145,9 +145,8 @@ describe('ReactFlightDOMModelChannel', () => {
   });
 
   it('resolves a string root model', async () => {
-    const {channelResponse, byteResponse} = await renderThroughBothTransports(
-      'just a string',
-    );
+    const {channelResponse, byteResponse} =
+      await renderThroughBothTransports('just a string');
     expect(await channelResponse).toBe('just a string');
     expect(await byteResponse).toBe('just a string');
   });
@@ -391,6 +390,143 @@ describe('ReactFlightDOMModelChannel', () => {
     }
     expect(error).not.toBe(null);
     expect(error.digest).toBe('aborted-digest');
+  });
+
+  it('handles a consumer that starts the byte stream from a resolve callback', async () => {
+    // Resolving a chunk over the channel runs consumer code synchronously in
+    // the middle of the server's flush. A natural consumer pattern is to wait
+    // for the root before piping the byte stream for hydration data. This
+    // must not reenter the flush and double-deliver rows.
+    let resolveData;
+    const dataPromise = new Promise(resolve => (resolveData = resolve));
+    const channel = ReactServerDOMClient.createModelChannel();
+    const channelResponse = ReactServerDOMClient.createFromModelChannel(
+      channel,
+      {serverConsumerManifest: {moduleMap: null, moduleLoading: null}},
+    );
+    const readable = new Stream.PassThrough();
+    const byteResult = readResult(readable);
+    let piped = false;
+    let pipeable = null;
+    // Subscribe before the render starts so the callback fires synchronously
+    // (in production builds) while the server is delivering rows.
+    channelResponse.then(() => {
+      piped = true;
+      pipeable.pipe(readable);
+    });
+    await serverAct(() => {
+      pipeable = ReactServerDOMServer.renderToPipeableStream(
+        {greeting: 'reentrant', lazy: dataPromise},
+        webpackMap,
+        {modelChannel: channel},
+      );
+    });
+    await serverAct(() => resolveData('later'));
+    expect(piped).toBe(true);
+    const result = await channelResponse;
+    expect(result.greeting).toBe('reentrant');
+    await expect(result.lazy).resolves.toBe('later');
+    // The byte stream must contain each row exactly once: a duplicated row
+    // would mean the reentrant flush serialized the same queue twice.
+    const byteText = await byteResult;
+    const rows = byteText.split('\n').filter(Boolean);
+    expect(new Set(rows).size).toBe(rows.length);
+  });
+
+  it('detaches the channel when the consumer throws without corrupting the render', async () => {
+    const channel = ReactServerDOMClient.createModelChannel();
+    const channelResponse = ReactServerDOMClient.createFromModelChannel(
+      channel,
+      {serverConsumerManifest: {moduleMap: null, moduleLoading: null}},
+    );
+    // Simulate a buggy consumer whose row handling throws synchronously while
+    // the server delivers rows during its flush.
+    const consumerError = new Error('consumer kaputt');
+    const originalPush = channel.push;
+    let threw = false;
+    channel.push = function (id, tag, payload) {
+      if (!threw && tag === '') {
+        threw = true;
+        throw consumerError;
+      }
+      return originalPush.apply(this, arguments);
+    };
+    let resolveData;
+    const dataPromise = new Promise(resolve => (resolveData = resolve));
+    const readable = new Stream.PassThrough();
+    const byteResponse = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: null,
+      moduleLoading: null,
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        {greeting: 'resilient', lazy: dataPromise},
+        webpackMap,
+        {modelChannel: channel},
+      ),
+    );
+    stream.pipe(readable);
+    await serverAct(() => resolveData('later'));
+    // The byte stream consumer is unaffected by the throwing channel consumer.
+    const fromBytes = await byteResponse;
+    expect(fromBytes.greeting).toBe('resilient');
+    await expect(fromBytes.lazy).resolves.toBe('later');
+    // The channel was detached and errored, so its root never resolves and
+    // rejects with the consumer's error instead.
+    let error = null;
+    try {
+      await channelResponse;
+    } catch (x) {
+      error = x;
+    }
+    expect(error).toBe(consumerError);
+  });
+
+  // @gate __DEV__
+  it('reads debug rows from a debug channel next to the model channel', async () => {
+    function Greeting({name}) {
+      return ReactServer.createElement('span', null, 'hi ', name);
+    }
+    function App() {
+      return ReactServer.createElement(Greeting, {name: 'Seb'});
+    }
+
+    // The server writes debug rows to the debug channel's writable side.
+    const debugReadable = new Stream.PassThrough();
+    const debugWritable = new Stream.Writable({
+      write(chunk, encoding, callback) {
+        debugReadable.write(chunk, encoding);
+        callback();
+      },
+      final() {
+        debugReadable.end();
+      },
+    });
+
+    const channel = ReactServerDOMClient.createModelChannel();
+    const channelResponse = ReactServerDOMClient.createFromModelChannel(
+      channel,
+      {
+        serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+        debugChannel: {readable: Stream.Readable.toWeb(debugReadable)},
+      },
+    );
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(App),
+        webpackMap,
+        {modelChannel: channel, debugChannel: debugWritable},
+      ),
+    );
+    stream.pipe(new Stream.PassThrough());
+
+    const html = await renderToHTML(channelResponse);
+    expect(html).toContain('hi <!-- -->Seb');
+
+    const root = await channelResponse;
+    const names = root._debugInfo.map(info => info.name).filter(Boolean);
+    expect(names).toContain('App');
   });
 
   // @gate __DEV__

@@ -5359,14 +5359,18 @@ export function processModelRow(
   switch (tag) {
     case '':
     case 'P': {
-      // An untagged model row. 'P' marks a payload that is JSON text even
-      // though DEV-only halted rows of the '' tag carry no payload at all.
+      // An untagged model row. 'P' marks a payload that is JSON text.
       if (payload === undefined) {
+        // A halted row that intentionally carries no payload.
         if (__DEV__) {
           resolveDebugHalt(response, id);
           return;
         }
-        // Fallthrough to error.
+        // Halted rows are DEV-only but a broken producer could send one in
+        // production. Resolve with empty JSON text which errors the chunk on
+        // initialization, the same way the byte stream parser behaves.
+        resolveModel(response, id, '', streamState);
+        return;
       }
       resolveModel(response, id, payload as any, streamState);
       return;
@@ -5602,7 +5606,7 @@ export function processModelRow(
     default: {
       if (tag.charCodeAt(0) === 72 /* "H" */) {
         // A hint row. The hint code is carried in the tag.
-        resolveHint(response, tag.charAt(1) as any, payload as any);
+        resolveHint(response, tag.slice(1) as any, payload as any);
         return;
       }
       throw new Error(

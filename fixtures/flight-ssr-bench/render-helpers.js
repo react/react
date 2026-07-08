@@ -190,9 +190,14 @@ function renderFlightFizzNodeChannel(
     serverConsumerManifest: ssrManifest,
   });
 
-  const {pipe: rscPipe} = renderRSCNode(clientManifest, AppComponent, itemCount, {
-    modelChannel: channel,
-  });
+  const {pipe: rscPipe} = renderRSCNode(
+    clientManifest,
+    AppComponent,
+    itemCount,
+    {
+      modelChannel: channel,
+    }
+  );
 
   // The byte stream is only used for hydration data now. No tee needed.
   const byteStream = new PassThrough();

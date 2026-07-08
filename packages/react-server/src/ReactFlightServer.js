@@ -626,6 +626,7 @@ export type Request = {
   status: 10 | 11 | 12 | 13 | 14,
   type: 20 | 21,
   flushScheduled: boolean,
+  isFlushing: boolean,
   fatalError: mixed,
   destination: null | Destination,
   bundlerConfig: ClientManifest,
@@ -747,6 +748,7 @@ function RequestInstance(
   this.type = type;
   this.status = OPENING;
   this.flushScheduled = false;
+  this.isFlushing = false;
   this.fatalError = null;
   this.destination = null;
   this.bundlerConfig = bundlerConfig;
@@ -6257,7 +6259,7 @@ function serializeRowToChunks(
         // A hint row. The hint code is carried in the tag.
         // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
         const json: string = stringify(payload);
-        target.push(stringToChunk(':H' + tag.charAt(1) + json + '\n'));
+        target.push(stringToChunk(':H' + tag.slice(1) + json + '\n'));
         return;
       }
       // A binary row. The payload is the already converted binary chunk.
@@ -6285,10 +6287,15 @@ function deliverRowToModelChannel(channel: ModelChannel, row: Row): void {
         payload = stringify(payload);
       }
       break;
+    case 'I':
+      // Import rows are always delivered as JSON text. Their payload can
+      // reference the bundler's manifest by identity, and the consumer
+      // initializes models in place, so it must receive its own copy.
+      payload = stringify(payload);
+      break;
     case PRESERIALIZED_MODEL_ROW:
     case 'T':
     case 'E':
-    case 'I':
     case 'R':
     case 'r':
     case 'X':
@@ -6317,7 +6324,7 @@ function deliverRowToModelChannel(channel: ModelChannel, row: Row): void {
 function serializeRows(
   request: Request,
   queue: CompletedRowQueue,
-  channel: null | ModelChannel,
+  deliver: boolean,
 ): CompletedRowQueue {
   // Serialize any rows in the queue into wire chunks in emission order. This
   // runs just before the queue is written so that rows never outlive a flush;
@@ -6332,8 +6339,26 @@ function serializeRows(
       // Serialize before delivering: the consumer may initialize the model
       // eagerly, which revives it in place.
       serializeRowToChunks(request, entry as any, serialized);
-      if (channel !== null) {
-        deliverRowToModelChannel(channel, entry as any);
+      if (deliver) {
+        // Reread the channel for every row so that a failing consumer can be
+        // detached in the middle of a flush.
+        const channel = request.modelChannel;
+        if (channel !== null) {
+          try {
+            deliverRowToModelChannel(channel, entry as any);
+          } catch (x) {
+            // The consumer threw. Detach it so it can't corrupt this render;
+            // the wire stream is unaffected. This mirrors how a byte stream
+            // consumer's errors don't propagate into the server.
+            request.modelChannel = null;
+            try {
+              channel.error(x);
+            } catch (_) {
+              // If even the error handler throws there's nothing further we
+              // can do to notify this consumer.
+            }
+          }
+        }
       }
     } else if (serialized !== null) {
       serialized.push(entry);
@@ -6343,21 +6368,38 @@ function serializeRows(
 }
 
 function flushCompletedChunks(request: Request): void {
+  if (request.isFlushing) {
+    // Delivering rows to a model channel can run consumer code synchronously,
+    // which may call back into methods that flush (e.g. attaching a
+    // destination starts flowing). Entering the flush loops reentrantly would
+    // serialize and deliver the same rows twice, so we finish the current
+    // flush and pick up whatever triggered this one in a scheduled flush.
+    enqueueFlush(request);
+    return;
+  }
+  request.isFlushing = true;
+  try {
+    flushCompletedChunksImpl(request);
+  } finally {
+    request.isFlushing = false;
+  }
+}
+
+function flushCompletedChunksImpl(request: Request): void {
   // Serialize all completed rows into their wire format before writing, and
   // deliver them to the model channel if one is attached. We do this even if
   // we don't currently have a destination so that completed rows are always
   // buffered in their compact serialized form rather than as retained model
   // objects, and so that a same-process consumer doesn't wait on the wire.
-  const modelChannel = request.modelChannel;
   request.completedImportChunks = serializeRows(
     request,
     request.completedImportChunks,
-    modelChannel,
+    true,
   );
   request.completedHintChunks = serializeRows(
     request,
     request.completedHintChunks,
-    modelChannel,
+    true,
   );
   if (__DEV__) {
     request.completedDebugChunks = serializeRows(
@@ -6366,18 +6408,18 @@ function flushCompletedChunks(request: Request): void {
       // When a debug channel is attached, debug rows flow through its own
       // byte stream rather than the main destination, and the consumer reads
       // that stream separately.
-      request.debugDestination === null ? modelChannel : null,
+      request.debugDestination === null,
     );
   }
   request.completedRegularChunks = serializeRows(
     request,
     request.completedRegularChunks,
-    modelChannel,
+    true,
   );
   request.completedErrorChunks = serializeRows(
     request,
     request.completedErrorChunks,
-    modelChannel,
+    true,
   );
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
@@ -6626,8 +6668,10 @@ function enqueueFlush(request: Request): void {
     // If there are pinged tasks we are going to flush anyway after work completes
     request.pingedTasks.length === 0 &&
     // If there is no destination there is nothing we can flush to. A flush will
-    // happen when we start flowing again
+    // happen when we start flowing again. A model channel can always be
+    // delivered to, though.
     (request.destination !== null ||
+      request.modelChannel !== null ||
       (__DEV__ && request.debugDestination !== null))
   ) {
     request.flushScheduled = true;
@@ -6635,7 +6679,12 @@ function enqueueFlush(request: Request): void {
     // here even during prerenders to allow as much batching as possible
     scheduleWork(() => {
       request.flushScheduled = false;
-      flushCompletedChunks(request);
+      try {
+        flushCompletedChunks(request);
+      } catch (error) {
+        logRecoverableError(request, error, null);
+        fatalError(request, error);
+      }
     });
   }
 }

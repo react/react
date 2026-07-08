@@ -197,10 +197,32 @@ function createFromModelChannel<T>(
 ): Thenable<T> {
   const response: FlightResponse = createResponseFromOptions(options);
   const streamState = createStreamState(response, channel);
+  let handleClose = close.bind(null, response);
+  if (
+    __DEV__ &&
+    options &&
+    options.debugChannel &&
+    options.debugChannel.readable
+  ) {
+    // DEV-only debug rows flow through the debug channel's own byte stream
+    // rather than the model channel, so we read it into the same response
+    // and only close once both sources are done.
+    let streamDoneCount = 0;
+    handleClose = () => {
+      if (++streamDoneCount === 2) {
+        close(response);
+      }
+    };
+    startReadingFromStream(
+      response,
+      options.debugChannel.readable,
+      handleClose,
+    );
+  }
   connectModelChannel(channel, {
     row: (id: number, tag: string, payload: mixed) =>
       processModelRow(response, streamState, id, tag, payload),
-    close: () => close(response),
+    close: handleClose,
     error: (reason: mixed) => reportGlobalError(response, reason),
   });
   return getRoot(response);
