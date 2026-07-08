@@ -204,15 +204,24 @@ function isPromiseCreationInternal(url: string, functionName: string): boolean {
   if (url !== '') {
     return false;
   }
+  // V8 used to name the frames of static methods on the Promise constructor
+  // "Function.x" but newer versions name them "Promise.x". We match both.
   switch (functionName) {
     case 'new Promise':
     case 'Function.withResolvers':
+    case 'Promise.withResolvers':
     case 'Function.reject':
+    case 'Promise.reject':
     case 'Function.resolve':
+    case 'Promise.resolve':
     case 'Function.all':
+    case 'Promise.all':
     case 'Function.allSettled':
+    case 'Promise.allSettled':
     case 'Function.race':
+    case 'Promise.race':
     case 'Function.try':
+    case 'Promise.try':
       return true;
     default:
       return false;
@@ -333,18 +342,28 @@ function isPromiseAwaitInternal(url: string, functionName: string): boolean {
   if (url !== '') {
     return false;
   }
+  // V8 used to name the frames of static methods on the Promise constructor
+  // "Function.x" but newer versions name them "Promise.x". We match both.
   switch (functionName) {
     case 'Promise.then':
     case 'Promise.catch':
     case 'Promise.finally':
     case 'Function.reject':
+    case 'Promise.reject':
     case 'Function.resolve':
+    case 'Promise.resolve':
     case 'Function.all':
+    case 'Promise.all':
     case 'Function.allSettled':
+    case 'Promise.allSettled':
     case 'Function.any':
+    case 'Promise.any':
     case 'Function.race':
+    case 'Promise.race':
     case 'Function.try':
+    case 'Promise.try':
     case 'Function.withResolvers':
+    case 'Promise.withResolvers':
       return true;
     default:
       return false;
