@@ -5,10 +5,11 @@ import {
 import App from './App';
 import AppAsync from './AppAsync';
 
-export function renderRSCNode(clientManifest, Component, itemCount) {
+export function renderRSCNode(clientManifest, Component, itemCount, options) {
   return renderToPipeableStream(
     <Component itemCount={itemCount} />,
-    clientManifest
+    clientManifest,
+    options
   );
 }
 

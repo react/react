@@ -47,6 +47,7 @@ function build() {
 
 const {
   renderFizzNode: renderFizzNodeStream,
+  renderFlightFizzNodeChannel: renderFlightFizzNodeChannelStream,
   renderFizzEdge: renderFizzEdgeStream,
   renderFlightFizzNode: renderFlightFizzNodeStream,
   renderFlightFizzEdge: renderFlightFizzEdgeStream,
@@ -66,6 +67,19 @@ function renderFizzEdge(AppComponent, itemCount) {
 function renderFlightFizzNode(renderRSCNode, AppComponent, itemCount) {
   return nodeStreamToString(
     renderFlightFizzNodeStream(
+      renderRSCNode,
+      AppComponent,
+      itemCount,
+      clientManifest,
+      ssrManifest,
+      {inject: INJECT}
+    )
+  );
+}
+
+function renderFlightFizzNodeChannel(renderRSCNode, AppComponent, itemCount) {
+  return nodeStreamToString(
+    renderFlightFizzNodeChannelStream(
       renderRSCNode,
       AppComponent,
       itemCount,
@@ -378,6 +392,21 @@ async function main() {
     flightFizzNodeHtml.length
   );
 
+  const flightFizzNodeChannelHtml = await renderFlightFizzNodeChannel(
+    renderRSCNode,
+    RSCApp,
+    ITEM_COUNT
+  );
+  console.log(
+    'Flight + Fizz (Node, chan): %d bytes',
+    flightFizzNodeChannelHtml.length
+  );
+  if (flightFizzNodeChannelHtml !== flightFizzNodeHtml) {
+    throw new Error(
+      'Model channel HTML does not match byte stream HTML for the sync app.'
+    );
+  }
+
   const fizzNodeAsyncHtml = await renderFizzNode(AppAsync, ITEM_COUNT);
   console.log('Fizz (Node, async):         %d bytes', fizzNodeAsyncHtml.length);
 
@@ -441,6 +470,14 @@ async function main() {
       PROFILE_WARMUP,
       PROFILE_ITERATIONS,
       path.join(profileDir, 'flight-fizz-node-sync.cpuprofile')
+    );
+
+    await profileRun(
+      'Flight + Fizz (Node, channel, sync)',
+      () => renderFlightFizzNodeChannel(renderRSCNode, RSCApp, ITEM_COUNT),
+      PROFILE_WARMUP,
+      PROFILE_ITERATIONS,
+      path.join(profileDir, 'flight-fizz-node-channel-sync.cpuprofile')
     );
 
     await profileRun(
@@ -641,6 +678,14 @@ async function main() {
   );
   printResult(flightFizzNodeSync);
 
+  const flightFizzNodeChannelSync = await runBenchmark(
+    'Flight + Fizz (Node, channel, sync)',
+    () => renderFlightFizzNodeChannel(renderRSCNode, RSCApp, ITEM_COUNT),
+    ITERATIONS,
+    WARMUP
+  );
+  printResult(flightFizzNodeChannelSync);
+
   const fizzNodeAsync = await runBenchmark(
     'Fizz (Node, async)',
     () => renderFizzNode(AppAsync, ITEM_COUNT),
@@ -656,6 +701,14 @@ async function main() {
     WARMUP
   );
   printResult(flightFizzNodeAsync);
+
+  const flightFizzNodeChannelAsync = await runBenchmark(
+    'Flight + Fizz (Node, channel, async)',
+    () => renderFlightFizzNodeChannel(renderRSCNode, RSCAppAsync, ITEM_COUNT),
+    ITERATIONS,
+    WARMUP
+  );
+  printResult(flightFizzNodeChannelAsync);
 
   const fizzEdgeSync = await runBenchmark(
     'Fizz (Edge, sync)',
@@ -699,6 +752,20 @@ async function main() {
       ['Node async', fizzNodeAsync, flightFizzNodeAsync],
       ['Edge sync', fizzEdgeSync, flightFizzEdgeSync],
       ['Edge async', fizzEdgeAsync, flightFizzEdgeAsync],
+    ],
+    median,
+    'ms',
+    'median, lower is better'
+  );
+
+  console.log('\n--- Model channel vs byte stream (Node) ---\n');
+  printGrid(
+    ['Bytes', 'Channel'],
+    [
+      ['Flight+Fizz sync', flightFizzNodeSync, flightFizzNodeChannelSync],
+      ['Flight+Fizz async', flightFizzNodeAsync, flightFizzNodeChannelAsync],
+      ['vs plain Fizz sync', fizzNodeSync, flightFizzNodeChannelSync],
+      ['vs plain Fizz async', fizzNodeAsync, flightFizzNodeChannelAsync],
     ],
     median,
     'ms',

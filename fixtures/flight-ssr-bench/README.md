@@ -35,6 +35,7 @@ Each script benchmarks 8 render variants:
 - **Fizz (Node, sync/async)** -- plain `renderToPipeableStream`, no RSC
 - **Fizz (Edge, sync/async)** -- plain `renderToReadableStream`, no RSC
 - **Flight + Fizz (Node, sync/async)** -- full RSC pipeline: Flight server (`renderToPipeableStream`) -> Flight client (`createFromNodeStream`) -> Fizz (`renderToPipeableStream`)
+- **Flight + Fizz (Node, channel, sync/async)** -- same pipeline but the SSR pass consumes the render through a `ModelChannel` (`createFromModelChannel`) instead of parsing the byte stream, which also removes the need to tee the Flight stream for script injection
 - **Flight + Fizz (Edge, sync/async)** -- full RSC pipeline: Flight server (`renderToReadableStream`) -> Flight client (`createFromReadableStream`) -> Fizz (`renderToReadableStream`)
 
 The "sync" variants use a fully synchronous app (no Suspense boundaries). The "async" variants use per-row async components with staggered delays and individual Suspense boundaries (~250 boundaries per render).

@@ -25,10 +25,10 @@
     "prebench:server": "yarn copy-modules",
     "prestart": "yarn copy-modules",
     "start": "NODE_ENV=production node bench-server.js",
-    "bench": "NODE_ENV=production node --expose-gc bench.js",
-    "bench:profile": "NODE_ENV=production node --expose-gc bench.js --profile",
-    "bench:bare": "NODE_ENV=production node --expose-gc bench.js --no-injection",
-    "bench:concurrent": "NODE_ENV=production node --expose-gc bench.js --concurrent",
+    "bench": "NODE_ENV=production node --expose-gc --max-old-space-size=8192 bench.js",
+    "bench:profile": "NODE_ENV=production node --expose-gc --max-old-space-size=8192 bench.js --profile",
+    "bench:bare": "NODE_ENV=production node --expose-gc --max-old-space-size=8192 bench.js --no-injection",
+    "bench:concurrent": "NODE_ENV=production node --expose-gc --max-old-space-size=8192 bench.js --concurrent",
     "bench:server": "NODE_ENV=production node bench-server.js --bench"
   }
 }

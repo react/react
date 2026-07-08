@@ -163,6 +163,120 @@ function renderFlightFizzNode(
 }
 
 // ---------------------------------------------------------------------------
+// Flight + Fizz (Node, model channel) — RSC render → model channel → Fizz.
+// The SSR pass consumes rows over the channel without parsing the wire
+// format, so the byte stream doesn't need to be teed: it feeds script
+// injection directly (or a sink when injection is disabled).
+// ---------------------------------------------------------------------------
+
+function renderFlightFizzNodeChannel(
+  renderRSCNode,
+  AppComponent,
+  itemCount,
+  clientManifest,
+  ssrManifest,
+  opts
+) {
+  const inject = !opts || opts.inject !== false;
+  const React = require('react');
+  const {renderToPipeableStream} = require('react-dom/server');
+  const {
+    createModelChannel,
+    createFromModelChannel,
+  } = require('react-server-dom-webpack/client');
+
+  const channel = createModelChannel();
+  const cachedResult = createFromModelChannel(channel, {
+    serverConsumerManifest: ssrManifest,
+  });
+
+  const {pipe: rscPipe} = renderRSCNode(clientManifest, AppComponent, itemCount, {
+    modelChannel: channel,
+  });
+
+  // The byte stream is only used for hydration data now. No tee needed.
+  const byteStream = new PassThrough();
+  let flightScripts = '';
+  if (inject) {
+    byteStream.on('data', function (chunk) {
+      flightScripts +=
+        '<script>(self.__FLIGHT_DATA||=[]).push(' +
+        JSON.stringify(chunk.toString()) +
+        ')</script>';
+    });
+  } else {
+    byteStream.resume(); // drain
+  }
+  rscPipe(byteStream);
+
+  function Root() {
+    return React.use(cachedResult);
+  }
+
+  const output = new PassThrough();
+
+  const {pipe} = renderToPipeableStream(React.createElement(Root), {
+    onShellReady() {
+      if (inject) {
+        const trailer = '</body></html>';
+        let buffered = [];
+        let timeout = null;
+        const injector = new Transform({
+          transform(chunk, _encoding, cb) {
+            buffered.push(chunk);
+            if (!timeout) {
+              timeout = setTimeout(() => {
+                for (const buf of buffered) {
+                  let str = buf.toString();
+                  if (str.endsWith(trailer)) {
+                    str = str.slice(0, -trailer.length);
+                  }
+                  this.push(str);
+                }
+                buffered.length = 0;
+                timeout = null;
+                if (flightScripts) {
+                  this.push(flightScripts);
+                  flightScripts = '';
+                }
+              }, 0);
+            }
+            cb();
+          },
+          flush(cb) {
+            if (timeout) {
+              clearTimeout(timeout);
+              for (const buf of buffered) {
+                let str = buf.toString();
+                if (str.endsWith(trailer)) {
+                  str = str.slice(0, -trailer.length);
+                }
+                this.push(str);
+              }
+              buffered.length = 0;
+            }
+            if (flightScripts) {
+              this.push(flightScripts);
+            }
+            this.push(trailer);
+            cb();
+          },
+        });
+        pipe(injector);
+        injector.pipe(output);
+      } else {
+        pipe(output);
+      }
+    },
+    onError(e) {
+      console.error('Fizz Node (channel) error:', e);
+      output.destroy(e);
+    },
+  });
+  return output;
+}
+
+// ---------------------------------------------------------------------------
 // Flight + Fizz (Edge) — RSC render → tee → Fizz + script injection via web
 // streams. HTML chunks are buffered within a tick to avoid injecting scripts
 // mid-tag. The </body></html> trailer is stripped, Flight scripts injected,
@@ -321,6 +435,7 @@ function webStreamToString(webStream) {
 
 module.exports = {
   renderFizzNode,
+  renderFlightFizzNodeChannel,
   renderFizzEdge,
   renderFlightFizzNode,
   renderFlightFizzEdge,
