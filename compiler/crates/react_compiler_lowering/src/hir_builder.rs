@@ -749,6 +749,11 @@ impl<'a> HirBuilder<'a> {
             .scope_info
             .find_binding_in_descendants(name, self.component_scope)
         {
+            // When component_scope == program_scope (e2e path where scope info
+            // is extracted from the function itself), any binding found is local.
+            if self.component_scope == self.scope_info.program_scope {
+                return true;
+            }
             return binding.scope != self.scope_info.program_scope;
         }
         false

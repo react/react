@@ -192,11 +192,30 @@ const TOOL_DEFINITIONS: Array<ToolDefinition> = [
     call: (tools, args) => tools.getOwnerStackTrace(args.uid),
   },
   {
+    name: 'react_get_parent_stack',
+    description:
+      'Rendered parent chain for a component, from immediate parent to root: ' +
+      'an array of {uid, name, type}. Parents describe where the node is ' +
+      'mounted in the rendered component tree and may include host DOM ' +
+      'components and the root. This differs from owners, which describe JSX ' +
+      'creation/render ownership.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uid: {type: 'string', description: 'Component uid, e.g. "r5".'},
+      },
+      required: ['uid'],
+    },
+    call: (tools, args) => tools.getParentStack(args.uid),
+  },
+  {
     name: 'react_get_owner_stack',
     description:
-      'Structured owner chain for a component, from immediate owner to root ' +
-      'ancestor: an array of {uid, name, type} (empty for a root ' +
-      'component). DEV-only.',
+      'JSX owner chain for a component, from immediate owner to root owner: ' +
+      'an array of {uid, name, type} (empty for a root component). Owners ' +
+      'describe which components created/rendered this element through JSX, ' +
+      'not where it is mounted in the rendered component tree. This DEV-only metadata ' +
+      'differs from structural parents.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -66,7 +66,11 @@ export type ComponentSource = {source: SourceLocation | null};
 
 export type OwnersStack = {stack: string};
 
-export type OwnerEntry = {uid: string, name: string, type: string};
+export type ComponentBranchEntry = {uid: string, name: string, type: string};
+
+export type ParentEntry = ComponentBranchEntry;
+
+export type OwnerEntry = ComponentBranchEntry;
 
 export type FindComponentsResult = {
   page: number,
@@ -94,6 +98,7 @@ export type TreeTools = {
   ) => FindComponentsResult | ToolError,
   getComponentSource: (uid: string) => ComponentSource | ToolError,
   getOwnerStackTrace: (uid: string) => OwnersStack | ToolError,
+  getParentStack: (uid: string) => Array<ParentEntry> | ToolError,
   getOwnerStack: (uid: string) => Array<OwnerEntry> | ToolError,
   // Shared with the profiler tools so component uids are consistent across all
   // tools. Maps a fiber to its stable uid (assigning one on first encounter).
@@ -738,9 +743,47 @@ export function createTreeTools(
   }
 
   /**
+   * Returns the structural parent branch for this fiber — the path formed by
+   * following Fiber.return pointers from this component to the host root.
+   * Parents describe where a node is mounted in the rendered tree, so this
+   * branch can include host DOM components and the host root.
+   *
+   * This differs from owners: owners describe which components created/rendered
+   * an element through JSX and are DEV-only metadata. Parents are structural
+   * runtime relationships and are available whenever the fiber tree exists.
+   *
+   * Returns an array of {uid, name, type}, ordered from immediate parent to
+   * root ancestor. The host root has an empty parent branch.
+   *
+   * @param uid - The component uid (e.g. "r5").
+   */
+  function getParentStack(uid: string): Array<ParentEntry> | ToolError {
+    const result = findFiberByUid(uid);
+    if (result.error != null) {
+      return {error: result.error};
+    }
+    const {internals} = result;
+    const parents: Array<ParentEntry> = [];
+    let parent = result.fiber.return;
+    while (parent !== null) {
+      parents.push({
+        uid: getUid(parent),
+        name: getDisplayName(internals, parent),
+        type: getTypeTagForFiber(internals, parent),
+      });
+      parent = parent.return;
+    }
+    return parents;
+  }
+
+  /**
    * Returns the structured list of owner components — which components rendered
-   * this component, ordered from immediate owner to root ancestor. Each entry
-   * includes a uid for cross-referencing with other tools (e.g.
+   * or created this element through JSX, ordered from immediate owner to root
+   * ancestor. Owners describe creation/render ownership, not where a node is
+   * mounted in the rendered tree. Use getParentStack for structural Fiber
+   * parent ancestry, including host DOM parents and the host root.
+   *
+   * Each entry includes a uid for cross-referencing with other tools (e.g.
    * getComponentByUid, getComponentSource, getComponentTree).
    *
    * Returns an array of {uid, name, type}, or an empty array if the component
@@ -787,6 +830,7 @@ export function createTreeTools(
     findComponents,
     getComponentSource,
     getOwnerStackTrace,
+    getParentStack,
     getOwnerStack,
     getUid,
   };

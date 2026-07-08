@@ -121,6 +121,29 @@ export function resolveForwardRefForHotReloading(type: any): any {
   }
 }
 
+export function resolveRemountTypeForHotReloading(
+  elementType: any,
+  type: any,
+): any {
+  if (__DEV__) {
+    if (resolveFamily === null) {
+      // Hot reloading is disabled.
+      return type;
+    }
+    // The elementType is the fiber's public identity, so its family tracks
+    // the latest implementation even when an edit changed the kind of the
+    // type (e.g. memo to a plain function) and `type` still points at the
+    // old inner implementation.
+    const family = resolveFamily(elementType);
+    if (family === undefined) {
+      return type;
+    }
+    return family.current;
+  } else {
+    return type;
+  }
+}
+
 export function isCompatibleFamilyForHotReloading(
   fiber: Fiber,
   element: ReactElement,
@@ -130,6 +153,7 @@ export function isCompatibleFamilyForHotReloading(
       // Hot reloading is disabled.
       return false;
     }
+    const resolve = resolveFamily;
 
     const prevType = fiber.elementType;
     const nextType = element.type;
@@ -191,9 +215,8 @@ export function isCompatibleFamilyForHotReloading(
       // If we unwrapped and compared the inner types for wrappers instead,
       // then we would risk falsely saying two separate memo(Foo)
       // calls are equivalent because they wrap the same Foo function.
-      const prevFamily = resolveFamily(prevType);
-      // $FlowFixMe[not-a-function] found when upgrading Flow
-      if (prevFamily !== undefined && prevFamily === resolveFamily(nextType)) {
+      const prevFamily = resolve(prevType);
+      if (prevFamily !== undefined && prevFamily === resolve(nextType)) {
         return true;
       }
     }
@@ -262,17 +285,30 @@ function scheduleFibersWithFamiliesRecursively(
 ): void {
   if (__DEV__) {
     do {
-      const {alternate, child, sibling, tag, type} = fiber;
+      const {alternate, child, sibling, tag, type, elementType} = fiber;
 
       let candidateType = null;
+      // Wrapper fibers (memo, forwardRef) resolve their family through the
+      // inner implementation, but an edit that changes the kind of the type
+      // (e.g. memo to a plain function) is only recorded on the family of the
+      // outer type. Check the outer type too so such edits trigger a remount.
+      let outerCandidateType = null;
       switch (tag) {
         case FunctionComponent:
-        case SimpleMemoComponent:
         case ClassComponent:
           candidateType = type;
           break;
+        case SimpleMemoComponent:
+          candidateType = type;
+          outerCandidateType = elementType;
+          break;
+        case MemoComponent:
+          // Edits to the inner implementation are handled by the inner fiber.
+          outerCandidateType = elementType;
+          break;
         case ForwardRef:
           candidateType = type.render;
+          outerCandidateType = elementType;
           break;
         default:
           break;
@@ -281,11 +317,12 @@ function scheduleFibersWithFamiliesRecursively(
       if (resolveFamily === null) {
         throw new Error('Expected resolveFamily to be set during hot reload.');
       }
+      const resolve = resolveFamily;
 
       let needsRender = false;
       let needsRemount = false;
       if (candidateType !== null) {
-        const family = resolveFamily(candidateType);
+        const family = resolve(candidateType);
         if (family !== undefined) {
           if (staleFamilies.has(family)) {
             needsRemount = true;
@@ -296,6 +333,12 @@ function scheduleFibersWithFamiliesRecursively(
               needsRender = true;
             }
           }
+        }
+      }
+      if (!needsRemount && outerCandidateType !== null) {
+        const outerFamily = resolve(outerCandidateType);
+        if (outerFamily !== undefined && staleFamilies.has(outerFamily)) {
+          needsRemount = true;
         }
       }
       if (failedBoundaries !== null) {
