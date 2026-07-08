@@ -8,7 +8,7 @@
 //! Provides `DEFAULT_SHAPES` (built-in object shapes) and `DEFAULT_GLOBALS`
 //! (global variable types including React hooks and JS built-ins).
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::LazyLock;
 
 use crate::Effect;
@@ -31,14 +31,14 @@ pub type Global = Type;
 /// Registry mapping global names to their types.
 ///
 /// Supports two modes:
-/// - **Builder mode** (`base=None`): wraps a single HashMap, used during
+/// - **Builder mode** (`base=None`): wraps a single FxHashMap, used during
 ///   `build_default_globals` to construct the static base.
-/// - **Overlay mode** (`base=Some`): holds a `&'static HashMap` base plus a small
-///   extras HashMap. Lookups check extras first, then base. Inserts go into extras.
+/// - **Overlay mode** (`base=Some`): holds a `&'static FxHashMap` base plus a small
+///   extras FxHashMap. Lookups check extras first, then base. Inserts go into extras.
 ///   Cloning only copies the extras map (the base pointer is shared).
 pub struct GlobalRegistry {
-    base: Option<&'static HashMap<String, Global>>,
-    entries: HashMap<String, Global>,
+    base: Option<&'static FxHashMap<String, Global>>,
+    entries: FxHashMap<String, Global>,
 }
 
 impl GlobalRegistry {
@@ -46,15 +46,15 @@ impl GlobalRegistry {
     pub fn new() -> Self {
         Self {
             base: None,
-            entries: HashMap::new(),
+            entries: FxHashMap::default(),
         }
     }
 
     /// Create an overlay-mode registry backed by a static base.
-    pub fn with_base(base: &'static HashMap<String, Global>) -> Self {
+    pub fn with_base(base: &'static FxHashMap<String, Global>) -> Self {
         Self {
             base: Some(base),
-            entries: HashMap::new(),
+            entries: FxHashMap::default(),
         }
     }
 
@@ -83,9 +83,9 @@ impl GlobalRegistry {
         self.entries.keys().chain(base_keys)
     }
 
-    /// Consume the registry and return the inner HashMap.
+    /// Consume the registry and return the inner FxHashMap.
     /// Only valid in builder mode (no base).
-    pub fn into_inner(self) -> HashMap<String, Global> {
+    pub fn into_inner(self) -> FxHashMap<String, Global> {
         debug_assert!(
             self.base.is_none(),
             "into_inner() called on overlay-mode GlobalRegistry"
@@ -108,8 +108,8 @@ impl Clone for GlobalRegistry {
 // =============================================================================
 
 struct BaseRegistries {
-    shapes: HashMap<String, ObjectShape>,
-    globals: HashMap<String, Global>,
+    shapes: FxHashMap<String, ObjectShape>,
+    globals: FxHashMap<String, Global>,
 }
 
 static BASE: LazyLock<BaseRegistries> = LazyLock::new(|| {
@@ -122,12 +122,12 @@ static BASE: LazyLock<BaseRegistries> = LazyLock::new(|| {
 });
 
 /// Get a reference to the static base shapes registry.
-pub fn base_shapes() -> &'static HashMap<String, ObjectShape> {
+pub fn base_shapes() -> &'static FxHashMap<String, ObjectShape> {
     &BASE.shapes
 }
 
 /// Get a reference to the static base globals registry.
-pub fn base_globals() -> &'static HashMap<String, Global> {
+pub fn base_globals() -> &'static FxHashMap<String, Global> {
     &BASE.globals
 }
 
@@ -1332,7 +1332,7 @@ fn build_object_shape(shapes: &mut ShapeRegistry) {
         None,
         false,
     );
-    let mut mixed_props = HashMap::new();
+    let mut mixed_props = FxHashMap::default();
     mixed_props.insert("toString".to_string(), mixed_to_string);
     mixed_props.insert("indexOf".to_string(), mixed_index_of);
     mixed_props.insert("includes".to_string(), mixed_includes);
@@ -1350,7 +1350,7 @@ fn build_object_shape(shapes: &mut ShapeRegistry) {
     mixed_props.insert(
         "*".to_string(),
         Type::Object {
-        shape_id: Some(BUILT_IN_MIXED_READONLY_ID.to_string()),
+            shape_id: Some(BUILT_IN_MIXED_READONLY_ID.to_string()),
         },
     );
     shapes.insert(
@@ -1370,7 +1370,7 @@ fn build_ref_shapes(shapes: &mut ShapeRegistry) {
         vec![(
             "current".to_string(),
             Type::Object {
-            shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
+                shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
             },
         )],
     );
@@ -1381,7 +1381,7 @@ fn build_ref_shapes(shapes: &mut ShapeRegistry) {
         vec![(
             "*".to_string(),
             Type::Object {
-            shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
+                shape_id: Some(BUILT_IN_REF_VALUE_ID.to_string()),
             },
         )],
     );
@@ -2141,9 +2141,9 @@ fn build_typed_globals(
 
     // Math
     let math_fns: Vec<(String, Type)> = ["max", "min", "trunc", "ceil", "floor", "pow"]
-    .iter()
-    .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
-    .collect();
+        .iter()
+        .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
+        .collect();
     let mut math_props = math_fns;
     math_props.push(("PI".to_string(), Type::Primitive));
     // Math.random is impure
@@ -2209,9 +2209,9 @@ fn build_typed_globals(
 
     // console
     let console_methods: Vec<(String, Type)> = ["error", "info", "log", "table", "trace", "warn"]
-            .iter()
-            .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
-            .collect();
+        .iter()
+        .map(|name| (name.to_string(), pure_primitive_fn(shapes)))
+        .collect();
     let console_global = add_object(shapes, Some("console"), console_methods);
     typed_globals.push(("console".to_string(), console_global.clone()));
     globals.insert("console".to_string(), console_global);

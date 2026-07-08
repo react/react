@@ -8,16 +8,16 @@
 //! Outlines JSX expressions in callbacks into separate component functions.
 //! This pass is conditional on `env.config.enable_jsx_outlining` (defaults to false).
 
-use std::collections::{HashMap, HashSet};
+use indexmap::{IndexMap, IndexSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-use indexmap::IndexMap;
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
-    BasicBlock, BlockId, BlockKind, EvaluationOrder, HirFunction, HIR, IdentifierId, Instruction,
-    InstructionId, InstructionKind, InstructionValue, JsxAttribute, JsxTag,
-    NonLocalBinding, ObjectProperty, ObjectPropertyKey, ObjectPropertyOrSpread,
-    ObjectPropertyType, ObjectPattern, ParamPattern, Pattern, Place, ReactFunctionType,
-    Terminal, ReturnVariant, IdentifierName, LValuePattern, FunctionId,
+    BasicBlock, BlockId, BlockKind, EvaluationOrder, FunctionId, HIR, HirFunction, IdentifierId,
+    IdentifierName, Instruction, InstructionId, InstructionKind, InstructionValue, JsxAttribute,
+    JsxTag, LValuePattern, NonLocalBinding, ObjectPattern, ObjectProperty, ObjectPropertyKey,
+    ObjectPropertyOrSpread, ObjectPropertyType, ParamPattern, Pattern, Place, ReactFunctionType,
+    ReturnVariant, Terminal,
 };
 
 /// Outline JSX expressions in inner functions into separate outlined components.
@@ -34,9 +34,9 @@ pub fn outline_jsx(func: &mut HirFunction, env: &mut Environment) {
 
 /// Data about a JSX instruction for outlining
 struct JsxInstrInfo {
-    instr_idx: usize,        // index into func.instructions
+    instr_idx: usize, // index into func.instructions
     #[allow(dead_code)]
-    instr_id: InstructionId,  // the InstructionId
+    instr_id: InstructionId, // the InstructionId
     lvalue_id: IdentifierId,
     eval_order: EvaluationOrder,
 }
@@ -58,7 +58,7 @@ fn outline_jsx_impl(
     outlined_fns: &mut Vec<HirFunction>,
 ) {
     // Collect LoadGlobal instructions (tag -> instr)
-    let mut globals: HashMap<IdentifierId, usize> = HashMap::new(); // id -> instr_idx
+    let mut globals: FxHashMap<IdentifierId, usize> = FxHashMap::default(); // id -> instr_idx
 
     // Process each block
     let block_ids: Vec<BlockId> = func.body.blocks.keys().copied().collect();
@@ -66,14 +66,19 @@ fn outline_jsx_impl(
         let block = &func.body.blocks[block_id];
         let instr_ids = block.instructions.clone();
 
-        let mut rewrite_instr: HashMap<EvaluationOrder, Vec<Instruction>> = HashMap::new();
+        let mut rewrite_instr: FxHashMap<EvaluationOrder, Vec<Instruction>> = FxHashMap::default();
         let mut jsx_group: Vec<JsxInstrInfo> = Vec::new();
-        let mut children_ids: HashSet<IdentifierId> = HashSet::new();
+        let mut children_ids: FxHashSet<IdentifierId> = FxHashSet::default();
 
         // First pass: collect all instruction info without borrowing func mutably
         enum InstrAction {
-            LoadGlobal { lvalue_id: IdentifierId, instr_idx: usize },
-            FunctionExpr { func_id: FunctionId },
+            LoadGlobal {
+                lvalue_id: IdentifierId,
+                instr_idx: usize,
+            },
+            FunctionExpr {
+                func_id: FunctionId,
+            },
             JsxExpr {
                 lvalue_id: IdentifierId,
                 instr_idx: usize,
@@ -91,13 +96,19 @@ fn outline_jsx_impl(
 
             match &instr.value {
                 InstructionValue::LoadGlobal { .. } => {
-                    actions.push(InstrAction::LoadGlobal { lvalue_id, instr_idx: iid.0 as usize });
+                    actions.push(InstrAction::LoadGlobal {
+                        lvalue_id,
+                        instr_idx: iid.0 as usize,
+                    });
                 }
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
-                    actions.push(InstrAction::FunctionExpr { func_id: lowered_func.func });
+                    actions.push(InstrAction::FunctionExpr {
+                        func_id: lowered_func.func,
+                    });
                 }
                 InstructionValue::JsxExpression { children, .. } => {
-                    let child_ids = children.as_ref()
+                    let child_ids = children
+                        .as_ref()
                         .map(|kids| kids.iter().map(|c| c.identifier).collect())
                         .unwrap_or_default();
                     actions.push(InstrAction::JsxExpr {
@@ -116,7 +127,10 @@ fn outline_jsx_impl(
         // Second pass: process actions
         for action in actions {
             match action {
-                InstrAction::LoadGlobal { lvalue_id, instr_idx } => {
+                InstrAction::LoadGlobal {
+                    lvalue_id,
+                    instr_idx,
+                } => {
                     globals.insert(lvalue_id, instr_idx);
                 }
                 InstrAction::FunctionExpr { func_id } => {
@@ -127,7 +141,12 @@ fn outline_jsx_impl(
                     outline_jsx_impl(&mut inner_func, env, outlined_fns);
                     env.functions[func_id.0 as usize] = inner_func;
                 }
-                InstrAction::JsxExpr { lvalue_id, instr_idx, eval_order, child_ids } => {
+                InstrAction::JsxExpr {
+                    lvalue_id,
+                    instr_idx,
+                    eval_order,
+                    child_ids,
+                } => {
                     if !children_ids.contains(&lvalue_id) {
                         process_and_outline_jsx(
                             func,
@@ -192,8 +211,8 @@ fn process_and_outline_jsx(
     func: &mut HirFunction,
     env: &mut Environment,
     jsx_group: &mut Vec<JsxInstrInfo>,
-    globals: &HashMap<IdentifierId, usize>,
-    rewrite_instr: &mut HashMap<EvaluationOrder, Vec<Instruction>>,
+    globals: &FxHashMap<IdentifierId, usize>,
+    rewrite_instr: &mut FxHashMap<EvaluationOrder, Vec<Instruction>>,
     outlined_fns: &mut Vec<HirFunction>,
 ) {
     if jsx_group.len() <= 1 {
@@ -218,7 +237,7 @@ fn process_jsx_group(
     func: &HirFunction,
     env: &mut Environment,
     jsx_group: &[JsxInstrInfo],
-    globals: &HashMap<IdentifierId, usize>,
+    globals: &FxHashMap<IdentifierId, usize>,
 ) -> Option<OutlinedResult> {
     // Only outline in callbacks, not top-level components
     if func.fn_type == ReactFunctionType::Component {
@@ -247,9 +266,9 @@ fn collect_props(
     jsx_group: &[JsxInstrInfo],
 ) -> Option<Vec<OutlinedJsxAttribute>> {
     let mut id_counter = 1u32;
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
     let mut attributes = Vec::new();
-    let jsx_ids: HashSet<IdentifierId> = jsx_group.iter().map(|j| j.lvalue_id).collect();
+    let jsx_ids: FxHashSet<IdentifierId> = jsx_group.iter().map(|j| j.lvalue_id).collect();
 
     let mut generate_name = |old_name: &str, _env: &mut Environment| -> String {
         let mut new_name = old_name.to_string();
@@ -265,7 +284,10 @@ fn collect_props(
 
     for info in jsx_group {
         let instr = &func.instructions[info.instr_idx];
-        if let InstructionValue::JsxExpression { props, children, .. } = &instr.value {
+        if let InstructionValue::JsxExpression {
+            props, children, ..
+        } = &instr.value
+        {
             for attr in props {
                 match attr {
                     JsxAttribute::SpreadAttribute { .. } => return None,
@@ -380,7 +402,7 @@ fn emit_outlined_fn(
     env: &mut Environment,
     jsx_group: &[JsxInstrInfo],
     old_props: &[OutlinedJsxAttribute],
-    globals: &HashMap<IdentifierId, usize>,
+    globals: &FxHashMap<IdentifierId, usize>,
 ) -> Option<HirFunction> {
     let old_to_new_props = create_old_to_new_props_mapping(env, old_props);
 
@@ -436,7 +458,7 @@ fn emit_outlined_fn(
         kind: BlockKind::Block,
         id: BlockId(0),
         instructions: instr_ids,
-        preds: indexmap::IndexSet::new(),
+        preds: IndexSet::default(),
         terminal: Terminal::Return {
             value: last_lvalue,
             return_variant: ReturnVariant::Explicit,
@@ -447,7 +469,7 @@ fn emit_outlined_fn(
         phis: Vec::new(),
     };
 
-    let mut blocks = IndexMap::new();
+    let mut blocks = IndexMap::default();
     blocks.insert(BlockId(0), block);
 
     let outlined_fn = HirFunction {
@@ -476,7 +498,7 @@ fn emit_outlined_fn(
 fn emit_load_globals(
     func: &HirFunction,
     jsx_group: &[JsxInstrInfo],
-    globals: &HashMap<IdentifierId, usize>,
+    globals: &FxHashMap<IdentifierId, usize>,
 ) -> Option<Vec<Instruction>> {
     let mut instructions = Vec::new();
     for info in jsx_group {
@@ -494,9 +516,9 @@ fn emit_load_globals(
 fn emit_updated_jsx(
     func: &HirFunction,
     jsx_group: &[JsxInstrInfo],
-    old_to_new_props: &IndexMap<IdentifierId, OutlinedJsxAttribute>,
+    old_to_new_props: &IndexMap<IdentifierId, OutlinedJsxAttribute, FxBuildHasher>,
 ) -> Vec<Instruction> {
-    let jsx_ids: HashSet<IdentifierId> = jsx_group.iter().map(|j| j.lvalue_id).collect();
+    let jsx_ids: FxHashSet<IdentifierId> = jsx_group.iter().map(|j| j.lvalue_id).collect();
     let mut new_instrs = Vec::new();
 
     for info in jsx_group {
@@ -572,8 +594,8 @@ fn emit_updated_jsx(
 fn create_old_to_new_props_mapping(
     env: &mut Environment,
     old_props: &[OutlinedJsxAttribute],
-) -> IndexMap<IdentifierId, OutlinedJsxAttribute> {
-    let mut old_to_new = IndexMap::new();
+) -> IndexMap<IdentifierId, OutlinedJsxAttribute, FxBuildHasher> {
+    let mut old_to_new = IndexMap::default();
 
     for old_prop in old_props {
         if old_prop.original_name == "key" {
@@ -607,7 +629,7 @@ fn create_old_to_new_props_mapping(
 fn emit_destructure_props(
     env: &mut Environment,
     props_obj: &Place,
-    old_to_new_props: &IndexMap<IdentifierId, OutlinedJsxAttribute>,
+    old_to_new_props: &IndexMap<IdentifierId, OutlinedJsxAttribute, FxBuildHasher>,
 ) -> Instruction {
     let mut properties = Vec::new();
     for prop in old_to_new_props.values() {

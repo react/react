@@ -136,6 +136,7 @@ import {
   resolveFunctionForHotReloading,
   resolveForwardRefForHotReloading,
   resolveClassForHotReloading,
+  resolveRemountTypeForHotReloading,
 } from './ReactFiberHotReloading';
 
 import {
@@ -4195,7 +4196,10 @@ function beginWork(
     if (workInProgress._debugNeedsRemount && current !== null) {
       // This will restart the begin phase with a new fiber.
       const copiedFiber = createFiberFromTypeAndProps(
-        workInProgress.type,
+        resolveRemountTypeForHotReloading(
+          workInProgress.elementType,
+          workInProgress.type,
+        ),
         workInProgress.key,
         workInProgress.pendingProps,
         workInProgress._debugOwner || null,

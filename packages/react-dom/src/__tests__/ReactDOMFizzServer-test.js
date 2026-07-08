@@ -3934,6 +3934,35 @@ describe('ReactDOMFizzServer', () => {
     });
   });
 
+  it('preserves referrerPolicy for image preload headers', async () => {
+    let headers = null;
+    function onHeaders(x) {
+      headers = x;
+    }
+
+    function App() {
+      return (
+        <html>
+          <body>
+            <img
+              src="image-with-referrer-policy"
+              fetchPriority="high"
+              referrerPolicy="no-referrer"
+            />
+          </body>
+        </html>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App />, {onHeaders});
+    });
+
+    expect(headers).toEqual({
+      Link: `<image-with-referrer-policy>; rel=preload; as="image"; fetchpriority="high"; referrerpolicy="no-referrer"`,
+    });
+  });
+
   it('emits nothing for headers if you pipe before work begins', async () => {
     let headers = null;
     function onHeaders(x) {
@@ -9807,6 +9836,43 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>hello</span>
+      </div>,
+    );
+  });
+
+  it('outlines boundaries based on UTF-8 byte size, not code unit count', async () => {
+    // Boundaries are outlined when byteSize > 500, which streams the fallback
+    // first. Content is 200 three-byte characters: 600 UTF-8 bytes but only 200
+    // code units. The fallback should be shown initially because the boundary is
+    // large enough to outline. A string.length shortcut for byte size would
+    // count 200, stay under the threshold, and inline the content with no
+    // fallback shown — which would be incorrect.
+    const multiByte = '✓'.repeat(200);
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Waiting">
+            <span>{multiByte}</span>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(async () => {
+      renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
+        writable,
+      );
+      await jest.runAllTimers();
+      const temp = document.createElement('body');
+      temp.innerHTML = buffer;
+      // Fallback is shown because the boundary is outlined by its UTF-8 size.
+      expect(getVisibleChildren(temp)).toEqual(<div>Waiting</div>);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>{multiByte}</span>
       </div>,
     );
   });

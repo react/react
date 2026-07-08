@@ -11,14 +11,14 @@
 //!
 //! Ported from TypeScript `src/Optimization/DeadCodeElimination.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::environment::{Environment, OutputMode};
 use react_compiler_hir::object_shape::HookKind;
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
-    ArrayPatternElement, BlockId, BlockKind, HirFunction, IdentifierId,
-    InstructionKind, InstructionValue, ObjectPropertyOrSpread, Pattern,
+    ArrayPatternElement, BlockId, BlockKind, HirFunction, IdentifierId, InstructionKind,
+    InstructionValue, ObjectPropertyOrSpread, Pattern,
 };
 
 /// Implements dead-code elimination, eliminating instructions whose values are unused.
@@ -36,9 +36,9 @@ pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
 
     for (_block_id, block) in &mut func.body.blocks {
         // Remove unused phi nodes
-        block.phis.retain(|phi| {
-            is_id_or_name_used(&state, &env.identifiers, phi.place.identifier)
-        });
+        block
+            .phis
+            .retain(|phi| is_id_or_name_used(&state, &env.identifiers, phi.place.identifier));
 
         // Remove instructions with unused lvalues
         block.instructions.retain(|instr_id| {
@@ -49,8 +49,7 @@ pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
         // Collect instructions that need rewriting (not the block value)
         let retained_count = block.instructions.len();
         for i in 0..retained_count {
-            let is_block_value =
-                block.kind != BlockKind::Block && i == retained_count - 1;
+            let is_block_value = block.kind != BlockKind::Block && i == retained_count - 1;
             if !is_block_value {
                 instructions_to_rewrite.push(block.instructions[i]);
             }
@@ -63,24 +62,23 @@ pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
     }
 
     // Remove unused context variables
-    func.context.retain(|ctx_var| {
-        is_id_or_name_used(&state, &env.identifiers, ctx_var.identifier)
-    });
+    func.context
+        .retain(|ctx_var| is_id_or_name_used(&state, &env.identifiers, ctx_var.identifier));
 }
 
 /// State for tracking referenced identifiers during mark phase.
 struct State {
     /// SSA-specific usages (by IdentifierId)
-    identifiers: HashSet<IdentifierId>,
+    identifiers: FxHashSet<IdentifierId>,
     /// Named variable usages (any version)
-    named: HashSet<String>,
+    named: FxHashSet<String>,
 }
 
 impl State {
     fn new() -> Self {
         State {
-            identifiers: HashSet::new(),
-            named: HashSet::new(),
+            identifiers: FxHashSet::default(),
+            named: FxHashSet::default(),
         }
     }
 
@@ -151,8 +149,7 @@ fn find_referenced_identifiers(func: &HirFunction, env: &Environment) -> State {
                 let instr_id = block.instructions[i];
                 let instr = &func.instructions[instr_id.0 as usize];
 
-                let is_block_value =
-                    block.kind != BlockKind::Block && i == instr_count - 1;
+                let is_block_value = block.kind != BlockKind::Block && i == instr_count - 1;
 
                 if is_block_value {
                     // Last instr of a value block is never eligible for pruning
@@ -224,7 +221,8 @@ fn rewrite_instruction(
                                 }
                             }
                             ArrayPatternElement::Spread(s) => {
-                                if !is_id_or_name_used(state, &env.identifiers, s.place.identifier) {
+                                if !is_id_or_name_used(state, &env.identifiers, s.place.identifier)
+                                {
                                     arr.items[i] = ArrayPatternElement::Hole;
                                 } else {
                                     last_entry_index = i;
@@ -289,11 +287,7 @@ fn rewrite_instruction(
 }
 
 /// Returns true if it is safe to prune an instruction with the given value.
-fn pruneable_value(
-    value: &InstructionValue,
-    state: &State,
-    env: &Environment,
-) -> bool {
+fn pruneable_value(value: &InstructionValue, state: &State, env: &Environment) -> bool {
     match value {
         InstructionValue::DeclareLocal { lvalue, .. } => {
             // Declarations are pruneable only if the named variable is never read later
@@ -415,7 +409,7 @@ fn pruneable_value(
 
 /// Check if the CFG has any back edges (indicating loops).
 fn has_back_edge(func: &HirFunction) -> bool {
-    let mut visited: HashSet<BlockId> = HashSet::new();
+    let mut visited: FxHashSet<BlockId> = FxHashSet::default();
     for (block_id, block) in &func.body.blocks {
         for pred_id in &block.preds {
             if !visited.contains(pred_id) {
@@ -426,4 +420,3 @@ fn has_back_edge(func: &HirFunction) -> bool {
     }
     false
 }
-

@@ -5,23 +5,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
-use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory,
-};
+use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{
-    Effect, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue,
-    Place, Type,
+use react_compiler_hir::visitors::{
+    each_instruction_lvalue_ids, each_instruction_value_operand, each_terminal_operand,
 };
-use react_compiler_hir::visitors::{each_instruction_lvalue_ids, each_instruction_value_operand, each_terminal_operand};
+use react_compiler_hir::{
+    Effect, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue, Place, Type,
+};
 
 /// Validates that local variables cannot be reassigned after render.
 /// This prevents a category of bugs in which a closure captures a
 /// binding from one render but does not update.
 pub fn validate_locals_not_reassigned_after_render(func: &HirFunction, env: &mut Environment) {
-    let mut context_variables: HashSet<IdentifierId> = HashSet::new();
+    let mut context_variables: FxHashSet<IdentifierId> = FxHashSet::default();
     let mut diagnostics: Vec<CompilerDiagnostic> = Vec::new();
 
     let reassignment = get_context_reassignment(
@@ -76,7 +75,6 @@ fn format_variable_name(place: &Place, identifiers: &[Identifier]) -> String {
     }
 }
 
-
 /// Recursively checks whether a function (or its dependencies) reassigns a
 /// context variable. Returns the reassigned place if found, or None.
 ///
@@ -87,13 +85,13 @@ fn get_context_reassignment(
     types: &[Type],
     functions: &[HirFunction],
     env: &Environment,
-    context_variables: &mut HashSet<IdentifierId>,
+    context_variables: &mut FxHashSet<IdentifierId>,
     is_function_expression: bool,
     is_async: bool,
     diagnostics: &mut Vec<CompilerDiagnostic>,
 ) -> Option<Place> {
     // Maps identifiers to the place that they reassign
-    let mut reassigning_functions: HashMap<IdentifierId, Place> = HashMap::new();
+    let mut reassigning_functions: FxHashMap<IdentifierId, Place> = FxHashMap::default();
 
     for (_block_id, block) in &func.body.blocks {
         for &instruction_id in &block.instructions {
@@ -148,14 +146,13 @@ fn get_context_reassignment(
                                             .to_string(),
                                     ),
                                 )
-                                .with_detail(CompilerDiagnosticDetail::Error {
-                                    loc: reassignment_place.loc,
-                                    message: Some(format!(
-                                        "Cannot reassign {}",
-                                        variable_name
-                                    )),
-                                    identifier_name: None,
-                                }),
+                                .with_detail(
+                                    CompilerDiagnosticDetail::Error {
+                                        loc: reassignment_place.loc,
+                                        message: Some(format!("Cannot reassign {}", variable_name)),
+                                        identifier_name: None,
+                                    },
+                                ),
                             );
                             // Return null (don't propagate further) — matches TS behavior
                             return None;
@@ -168,21 +165,16 @@ fn get_context_reassignment(
                 }
 
                 InstructionValue::StoreLocal { lvalue, value, .. } => {
-                    if let Some(reassignment_place) =
-                        reassigning_functions.get(&value.identifier)
-                    {
+                    if let Some(reassignment_place) = reassigning_functions.get(&value.identifier) {
                         let reassignment_place = reassignment_place.clone();
                         reassigning_functions
                             .insert(lvalue.place.identifier, reassignment_place.clone());
-                        reassigning_functions
-                            .insert(instr.lvalue.identifier, reassignment_place);
+                        reassigning_functions.insert(instr.lvalue.identifier, reassignment_place);
                     }
                 }
 
                 InstructionValue::LoadLocal { place, .. } => {
-                    if let Some(reassignment_place) =
-                        reassigning_functions.get(&place.identifier)
-                    {
+                    if let Some(reassignment_place) = reassigning_functions.get(&place.identifier) {
                         reassigning_functions
                             .insert(instr.lvalue.identifier, reassignment_place.clone());
                     }
@@ -209,14 +201,11 @@ fn get_context_reassignment(
                     }
 
                     // Propagate reassigning function info through StoreContext
-                    if let Some(reassignment_place) =
-                        reassigning_functions.get(&value.identifier)
-                    {
+                    if let Some(reassignment_place) = reassigning_functions.get(&value.identifier) {
                         let reassignment_place = reassignment_place.clone();
                         reassigning_functions
                             .insert(lvalue.place.identifier, reassignment_place.clone());
-                        reassigning_functions
-                            .insert(instr.lvalue.identifier, reassignment_place);
+                        reassigning_functions.insert(instr.lvalue.identifier, reassignment_place);
                     }
                 }
 
@@ -290,4 +279,3 @@ fn get_context_reassignment(
 
     None
 }
-

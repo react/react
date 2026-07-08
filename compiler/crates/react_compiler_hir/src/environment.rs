@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::CompilerDiagnostic;
 use react_compiler_diagnostics::CompilerError;
@@ -80,12 +79,12 @@ pub struct Environment {
     // Used by codegen to filter type annotation renames — only rename identifiers
     // whose node_id is in this set (type labels like ObjectTypeIndexer params
     // are NOT in this set and should keep their original names).
-    pub reference_node_ids: HashSet<u32>,
+    pub reference_node_ids: FxHashSet<u32>,
 
     // Hoisted identifiers: tracks which bindings have already been hoisted
     // via DeclareContext to avoid duplicate hoisting.
     // Uses u32 to avoid depending on react_compiler_ast types.
-    hoisted_identifiers: HashSet<u32>,
+    hoisted_identifiers: FxHashSet<u32>,
 
     // Config flags for validation passes (kept for backwards compat with existing pipeline code)
     pub validate_preserve_existing_memoization_guarantees: bool,
@@ -95,8 +94,8 @@ pub struct Environment {
     // Type system registries
     globals: GlobalRegistry,
     pub shapes: ShapeRegistry,
-    module_types: HashMap<String, Option<Global>>,
-    module_type_errors: HashMap<String, Vec<String>>,
+    module_types: FxHashMap<String, Option<Global>>,
+    module_type_errors: FxHashMap<String, Vec<String>>,
 
     // Environment configuration (feature flags, custom hooks, etc.)
     pub config: EnvironmentConfig,
@@ -111,7 +110,7 @@ pub struct Environment {
     // Known names for collision-aware UID generation. Lazily populated from
     // identifiers on first use, then updated with each generated name.
     // Matches Babel's generateUid behavior of checking hasBinding/hasReference.
-    uid_known_names: Option<HashSet<String>>,
+    uid_known_names: Option<FxHashSet<String>>,
 }
 
 /// An outlined function entry, stored on Environment during compilation.
@@ -164,7 +163,7 @@ impl Environment {
         }
 
         // Register reanimated module type when enabled
-        let mut module_types: HashMap<String, Option<Global>> = HashMap::new();
+        let mut module_types: FxHashMap<String, Option<Global>> = FxHashMap::default();
         if config.enable_custom_type_definition_for_reanimated {
             let reanimated_module_type = globals::get_reanimated_module_type(&mut shapes);
             module_types.insert(
@@ -190,8 +189,8 @@ impl Environment {
             instrument_gating_name: None,
             hook_guard_name: None,
             renames: Vec::new(),
-            reference_node_ids: HashSet::new(),
-            hoisted_identifiers: HashSet::new(),
+            reference_node_ids: FxHashSet::default(),
+            hoisted_identifiers: FxHashSet::default(),
             validate_preserve_existing_memoization_guarantees: config
                 .validate_preserve_existing_memoization_guarantees,
             validate_no_set_state_in_render: config.validate_no_set_state_in_render,
@@ -200,7 +199,7 @@ impl Environment {
             globals: global_registry,
             shapes,
             module_types,
-            module_type_errors: HashMap::new(),
+            module_type_errors: FxHashMap::default(),
             default_nonmutating_hook: None,
             default_mutating_hook: None,
             outlined_functions: Vec::new(),
@@ -237,8 +236,8 @@ impl Environment {
             instrument_gating_name: self.instrument_gating_name.clone(),
             hook_guard_name: self.hook_guard_name.clone(),
             renames: Vec::new(),
-            reference_node_ids: HashSet::new(),
-            hoisted_identifiers: HashSet::new(),
+            reference_node_ids: FxHashSet::default(),
+            hoisted_identifiers: FxHashSet::default(),
             validate_preserve_existing_memoization_guarantees: self
                 .validate_preserve_existing_memoization_guarantees,
             validate_no_set_state_in_render: self.validate_no_set_state_in_render,
@@ -265,7 +264,11 @@ impl Environment {
     /// Create a new MutableRange with a unique ID.
     /// Use this when creating a logically new range (not copying an existing one).
     /// To copy a range preserving its identity, use `.clone()` instead.
-    pub fn new_mutable_range(&mut self, start: EvaluationOrder, end: EvaluationOrder) -> MutableRange {
+    pub fn new_mutable_range(
+        &mut self,
+        start: EvaluationOrder,
+        end: EvaluationOrder,
+    ) -> MutableRange {
         let id = MutableRangeId(self.next_mutable_range_id_counter);
         self.next_mutable_range_id_counter += 1;
         MutableRange { id, start, end }
@@ -893,7 +896,7 @@ impl Environment {
         // Lazily build the set of known names from existing identifiers.
         // This approximates Babel's hasBinding/hasGlobal/hasReference checks.
         if self.uid_known_names.is_none() {
-            let mut known = HashSet::new();
+            let mut known = FxHashSet::default();
             for id in &self.identifiers {
                 if let Some(name) = &id.name {
                     known.insert(name.value().to_string());
@@ -925,7 +928,7 @@ impl Environment {
     /// Seed the UID known names set with external names (e.g. from ProgramContext).
     /// This ensures UID generation avoids names generated by previous function compilations,
     /// matching Babel's behavior where the program scope accumulates all generated UIDs.
-    pub fn seed_uid_known_names(&mut self, names: &HashSet<String>) {
+    pub fn seed_uid_known_names(&mut self, names: &FxHashSet<String>) {
         match &mut self.uid_known_names {
             Some(existing) => existing.extend(names.iter().cloned()),
             None => self.uid_known_names = Some(names.clone()),
@@ -933,7 +936,7 @@ impl Environment {
     }
 
     /// Return the UID known names accumulated during this compilation.
-    pub fn take_uid_known_names(&mut self) -> Option<HashSet<String>> {
+    pub fn take_uid_known_names(&mut self) -> Option<FxHashSet<String>> {
         self.uid_known_names.take()
     }
 

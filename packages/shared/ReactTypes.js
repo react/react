@@ -313,11 +313,21 @@ export type ViewTransitionProps = {
   exit?: ViewTransitionClass,
   share?: ViewTransitionClass,
   update?: ViewTransitionClass,
+  parentEnter?: ViewTransitionClass,
+  parentExit?: ViewTransitionClass,
   onEnter?: (
     instance: ViewTransitionInstance,
     types: Array<string>,
   ) => void | (() => void),
   onExit?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentEnter?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentExit?: (
     instance: ViewTransitionInstance,
     types: Array<string>,
   ) => void | (() => void),
@@ -336,6 +346,18 @@ export type ViewTransitionProps = {
     types: Array<string>,
   ) => void | (() => void),
   onGestureExit?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentEnter?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentExit?: (
     timeline: GestureProvider,
     options: GestureOptionsRequired,
     instance: ViewTransitionInstance,

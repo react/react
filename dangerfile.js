@@ -105,7 +105,7 @@ function row(result, baseSha, headSha) {
   // where the branches differ
 
   const upstreamRepo = danger.github.pr.base.repo.full_name;
-  if (upstreamRepo !== 'facebook/react') {
+  if (upstreamRepo !== 'react/react') {
     // Exit unless we're running in the main repo
     return;
   }

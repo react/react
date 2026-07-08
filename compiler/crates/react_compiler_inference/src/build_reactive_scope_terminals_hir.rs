@@ -11,10 +11,9 @@
 //!
 //! Ported from TypeScript `src/HIR/BuildReactiveScopeTerminalsHIR.ts`.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use indexmap::{IndexMap, IndexSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-use indexmap::IndexMap;
 use react_compiler_hir::BasicBlock;
 use react_compiler_hir::BlockId;
 use react_compiler_hir::EvaluationOrder;
@@ -38,7 +37,7 @@ use react_compiler_lowering::mark_predecessors;
 /// Collect all unique scopes from places in the function that have non-empty ranges.
 /// Corresponds to TS `getScopes(fn)`.
 fn get_scopes(func: &HirFunction, env: &Environment) -> Vec<ScopeId> {
-    let mut scope_ids: HashSet<ScopeId> = HashSet::new();
+    let mut scope_ids: FxHashSet<ScopeId> = FxHashSet::default();
 
     let mut visit_place = |identifier_id: IdentifierId| {
         if let Some(scope_id) = env.identifiers[identifier_id.0 as usize].scope {
@@ -117,7 +116,7 @@ fn collect_scope_rewrites(func: &HirFunction, env: &mut Environment) -> Vec<Term
     });
 
     let mut rewrites: Vec<TerminalRewriteInfo> = Vec::new();
-    let mut fallthroughs: HashMap<ScopeId, BlockId> = HashMap::new();
+    let mut fallthroughs: FxHashMap<ScopeId, BlockId> = FxHashMap::default();
     let mut active_items: Vec<ScopeId> = Vec::new();
 
     for i in 0..items.len() {
@@ -222,7 +221,7 @@ fn handle_rewrite(
     };
 
     let curr_block_id = context.next_block_id;
-    let mut preds = indexmap::IndexSet::new();
+    let mut preds = IndexSet::default();
     for &p in &context.next_preds {
         preds.insert(p);
     }
@@ -264,8 +263,8 @@ pub fn build_reactive_scope_terminals_hir(func: &mut HirFunction, env: &mut Envi
     let mut queued_rewrites = collect_scope_rewrites(func, env);
 
     // Step 2: Apply rewrites by splitting blocks
-    let mut rewritten_final_blocks: HashMap<BlockId, BlockId> = HashMap::new();
-    let mut next_blocks: IndexMap<BlockId, BasicBlock> = IndexMap::new();
+    let mut rewritten_final_blocks: FxHashMap<BlockId, BlockId> = FxHashMap::default();
+    let mut next_blocks: IndexMap<BlockId, BasicBlock, FxBuildHasher> = IndexMap::default();
 
     // Reverse so we can pop from the end while traversing in ascending order
     queued_rewrites.reverse();
@@ -300,7 +299,7 @@ pub fn build_reactive_scope_terminals_hir(func: &mut HirFunction, env: &mut Envi
         }
 
         if !context.rewrites.is_empty() {
-            let mut final_preds = indexmap::IndexSet::new();
+            let mut final_preds = IndexSet::default();
             for &p in &context.next_preds {
                 final_preds.insert(p);
             }
@@ -374,11 +373,8 @@ fn fix_scope_and_identifier_ranges(func: &HirFunction, env: &mut Environment) {
     // reference as scope.range see the update automatically. We simulate
     // this by only syncing identifiers whose mutableRange matches the
     // scope's pre-update range.
-    let original_scope_ranges: Vec<react_compiler_hir::MutableRange> = env
-        .scopes
-        .iter()
-        .map(|s| s.range.clone())
-        .collect();
+    let original_scope_ranges: Vec<react_compiler_hir::MutableRange> =
+        env.scopes.iter().map(|s| s.range.clone()).collect();
 
     for (_block_id, block) in &func.body.blocks {
         match &block.terminal {

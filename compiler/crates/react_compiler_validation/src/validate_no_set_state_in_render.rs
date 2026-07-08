@@ -7,19 +7,18 @@
 //!
 //! Port of ValidateNoSetStateInRender.ts.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
-use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory,
-};
+use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
 use react_compiler_hir::dominator::compute_unconditional_blocks;
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{
-    BlockId, HirFunction, Identifier, IdentifierId, InstructionValue, Type,
-};
+use react_compiler_hir::{BlockId, HirFunction, Identifier, IdentifierId, InstructionValue, Type};
 
-pub fn validate_no_set_state_in_render(func: &HirFunction, env: &mut Environment) -> Result<(), CompilerDiagnostic> {
-    let mut unconditional_set_state_functions: HashSet<IdentifierId> = HashSet::new();
+pub fn validate_no_set_state_in_render(
+    func: &HirFunction,
+    env: &mut Environment,
+) -> Result<(), CompilerDiagnostic> {
+    let mut unconditional_set_state_functions: FxHashSet<IdentifierId> = FxHashSet::default();
     let next_block_id = env.next_block_id().0;
     let diagnostics = validate_impl(
         func,
@@ -53,9 +52,9 @@ fn validate_impl(
     functions: &[HirFunction],
     next_block_id_counter: u32,
     enable_use_keyed_state: bool,
-    unconditional_set_state_functions: &mut HashSet<IdentifierId>,
+    unconditional_set_state_functions: &mut FxHashSet<IdentifierId>,
 ) -> Result<Vec<CompilerDiagnostic>, CompilerDiagnostic> {
-    let unconditional_blocks: HashSet<BlockId> =
+    let unconditional_blocks: FxHashSet<BlockId> =
         compute_unconditional_blocks(func, next_block_id_counter)?;
     let mut active_manual_memo_id: Option<u32> = None;
     let mut errors: Vec<CompilerDiagnostic> = Vec::new();
@@ -71,10 +70,8 @@ fn validate_impl(
                 }
                 InstructionValue::StoreLocal { lvalue, value, .. } => {
                     if unconditional_set_state_functions.contains(&value.identifier) {
-                        unconditional_set_state_functions
-                            .insert(lvalue.place.identifier);
-                        unconditional_set_state_functions
-                            .insert(instr.lvalue.identifier);
+                        unconditional_set_state_functions.insert(lvalue.place.identifier);
+                        unconditional_set_state_functions.insert(instr.lvalue.identifier);
                     }
                 }
                 InstructionValue::ObjectMethod { lowered_func, .. }
@@ -85,8 +82,7 @@ fn validate_impl(
                     // For FunctionExpression/ObjectMethod, operands are the context captures.
                     let has_set_state_operand = inner_func.context.iter().any(|ctx_place| {
                         is_set_state_id(ctx_place.identifier, identifiers, types)
-                            || unconditional_set_state_functions
-                                .contains(&ctx_place.identifier)
+                            || unconditional_set_state_functions.contains(&ctx_place.identifier)
                     });
 
                     if has_set_state_operand {
@@ -100,23 +96,18 @@ fn validate_impl(
                             unconditional_set_state_functions,
                         )?;
                         if !inner_errors.is_empty() {
-                            unconditional_set_state_functions
-                                .insert(instr.lvalue.identifier);
+                            unconditional_set_state_functions.insert(instr.lvalue.identifier);
                         }
                     }
                 }
-                InstructionValue::StartMemoize {
-                    manual_memo_id, ..
-                } => {
+                InstructionValue::StartMemoize { manual_memo_id, .. } => {
                     assert!(
                         active_manual_memo_id.is_none(),
                         "Unexpected nested StartMemoize instructions"
                     );
                     active_manual_memo_id = Some(*manual_memo_id);
                 }
-                InstructionValue::FinishMemoize {
-                    manual_memo_id, ..
-                } => {
+                InstructionValue::FinishMemoize { manual_memo_id, .. } => {
                     assert!(
                         active_manual_memo_id == Some(*manual_memo_id),
                         "Expected FinishMemoize to align with previous StartMemoize instruction"
@@ -125,8 +116,7 @@ fn validate_impl(
                 }
                 InstructionValue::CallExpression { callee, .. } => {
                     if is_set_state_id(callee.identifier, identifiers, types)
-                        || unconditional_set_state_functions
-                            .contains(&callee.identifier)
+                        || unconditional_set_state_functions.contains(&callee.identifier)
                     {
                         if active_manual_memo_id.is_some() {
                             errors.push(

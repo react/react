@@ -394,6 +394,15 @@ export opaque type Request = {
   completedBoundaries: Array<SuspenseBoundary>, // Completed but not yet fully flushed boundaries to show.
   partialBoundaries: Array<SuspenseBoundary>, // Partially completed boundaries that can flush its segments early.
   trackedPostpones: null | PostponedHoles, // Gets set to non-null while we want to track postponed holes. I.e. during a prerender.
+  // While prerendering a postponed request that produced a real shell, this
+  // holds the PostponedState returned by getPostponedState. getPostponedState
+  // snapshots nextSegmentId before the (pull-driven) prelude flush runs, but the
+  // flush outlines completed boundaries and advances nextSegmentId past that
+  // snapshot. We finalize the snapshot from flushCompletedQueues so the resumed
+  // render allocates segment ids strictly above the shell's; otherwise the shell
+  // and resume emit duplicate B:/S: ids once concatenated. Stays null for live
+  // renders and resumes.
+  postponedState: null | PostponedState,
   // onError is called when an error happens anywhere in the tree. It might recover.
   // The return string is used in production  primarily to avoid leaking internals, secondarily to save bytes.
   // Returning null/undefined will cause a default error message in production
@@ -553,6 +562,7 @@ function RequestInstance(
   this.completedBoundaries = [] as Array<SuspenseBoundary>;
   this.partialBoundaries = [] as Array<SuspenseBoundary>;
   this.trackedPostpones = null;
+  this.postponedState = null;
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady === undefined ? noop : onAllReady;
   this.onShellReady = onShellReady === undefined ? noop : onShellReady;
@@ -1368,11 +1378,19 @@ function fatalError(
   // It's also called if React itself or its host configs errors.
   const onShellError = request.onShellError;
   const onFatalError = request.onFatalError;
+  // Once the shell has completed it can't error anymore, so onShellError only
+  // fires while root tasks are still pending. onFatalError always fires because
+  // the error is always fatal to the request.
+  const shellComplete = request.pendingRootTasks === 0;
   if (__DEV__ && debugTask) {
-    debugTask.run(onShellError.bind(null, error));
+    if (!shellComplete) {
+      debugTask.run(onShellError.bind(null, error));
+    }
     debugTask.run(onFatalError.bind(null, error));
   } else {
-    onShellError(error);
+    if (!shellComplete) {
+      onShellError(error);
+    }
     onFatalError(error);
   }
   if (request.destination !== null) {
@@ -4495,6 +4513,11 @@ function erroredTask(
   const errorDigest = logRecoverableError(request, error, errorInfo, debugTask);
   if (boundary === null) {
     fatalError(request, error, errorInfo, debugTask);
+    // The shell fatally errored, so the render can never complete. Return before
+    // the completeAll check below so we don't fire onAllReady for a render that
+    // produced nothing. This mirrors finishAbortedTask, which also returns after
+    // a fatalError on the root.
+    return;
   } else {
     boundary.pendingTasks--;
     if (boundary.status !== CLIENT_RENDERED) {
@@ -4946,8 +4969,6 @@ function completeShell(request: Request) {
     preparePreamble(request);
   }
 
-  // We have completed the shell so the shell can't error anymore.
-  request.onShellError = noop;
   const onShellReady = request.onShellReady;
   onShellReady();
 }
@@ -6146,6 +6167,19 @@ function flushCompletedQueues(
     largeBoundaries.splice(0, i);
   } finally {
     flushingPartialBoundaries = false;
+    const postponedState = request.postponedState;
+    if (postponedState !== null) {
+      // The shell flush above may have outlined completed boundaries, advancing
+      // nextSegmentId past the value getPostponedState snapshotted before the
+      // flush. Re-sync the postponed state to the post-flush high-water mark so
+      // the resume allocates segment ids strictly above the shell's and can't
+      // emit duplicate B:/S: ids. nextSegmentId only increases, so later flush
+      // passes refine this monotonically.
+      // TODO: Could be too late if the postponed state was already serialized
+      // by API consumers. Accessing postponed state before the prelude has flushed
+      // should be forbidden in the API.
+      postponedState.nextSegmentId = request.nextSegmentId;
+    }
     if (
       request.allPendingTasks === 0 &&
       request.clientRenderedBoundaries.length === 0 &&
@@ -6423,13 +6457,16 @@ export function getPostponedState(request: Request): null | PostponedState {
   }
   let replaySlots: ResumeSlots;
   let nextSegmentId: number;
-  if (
-    request.completedRootSegment !== null &&
-    // The Root postponed
-    (request.completedRootSegment.status === POSTPONED ||
-      // Or the Preamble was not available
-      request.completedPreambleSegments === null)
-  ) {
+  // True only when we postponed with a real shell (as opposed to postponing the
+  // root itself). Only in that case does the prelude flush outline completed
+  // boundaries and advance nextSegmentId past the value we capture here.
+  const hasFlushableShell =
+    request.completedRootSegment === null ||
+    // The Root did not postpone
+    (request.completedRootSegment.status !== POSTPONED &&
+      // the Preamble was available
+      request.completedPreambleSegments !== null);
+  if (!hasFlushableShell) {
     nextSegmentId = 0;
     // We need to ensure that on resume we retry the root. We use a number
     // type for the replaySlots to signify this (see resumeRequest).
@@ -6443,7 +6480,7 @@ export function getPostponedState(request: Request): null | PostponedState {
     replaySlots = trackedPostpones.rootSlots;
     completeResumableState(request.resumableState);
   }
-  return {
+  const postponedState: PostponedState = {
     nextSegmentId,
     rootFormatContext: request.rootFormatContext,
     progressiveChunkSize: request.progressiveChunkSize,
@@ -6451,4 +6488,15 @@ export function getPostponedState(request: Request): null | PostponedState {
     replayNodes: trackedPostpones.rootNodes,
     replaySlots,
   };
+  if (hasFlushableShell) {
+    // The prelude hasn't flushed yet — it's pull-driven and runs after this
+    // (see completeAll -> onAllReady). Flushing the shell outlines completed
+    // boundaries, bumping request.nextSegmentId beyond the snapshot above. Hold
+    // a reference so flushCompletedQueues can finalize nextSegmentId to the
+    // post-flush high-water mark. Otherwise the resume reuses the shell's
+    // segment ids and the concatenated document has duplicate B:/S: ids, which
+    // cross-wires React's boundary-completion scripts ($RC).
+    request.postponedState = postponedState;
+  }
+  return postponedState;
 }

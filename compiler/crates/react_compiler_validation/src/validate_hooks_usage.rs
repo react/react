@@ -10,21 +10,20 @@
 //! and not called dynamically. Also validates that hooks are not
 //! called inside function expressions.
 
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use indexmap::IndexMap;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerError, CompilerErrorDetail, ErrorCategory, SourceLocation,
 };
-use react_compiler_hir::{
-    FunctionId, HirFunction, Identifier, IdentifierId,
-    InstructionValue, ParamPattern, Place, PropertyLiteral,
-    Type, visitors,
-};
-use react_compiler_hir::visitors::{each_pattern_operand, each_terminal_operand};
 use react_compiler_hir::dominator::compute_unconditional_blocks;
-use react_compiler_hir::environment::{is_hook_name, Environment};
+use react_compiler_hir::environment::{Environment, is_hook_name};
 use react_compiler_hir::object_shape::HookKind;
+use react_compiler_hir::visitors::{each_pattern_operand, each_terminal_operand};
+use react_compiler_hir::{
+    FunctionId, HirFunction, Identifier, IdentifierId, InstructionValue, ParamPattern, Place,
+    PropertyLiteral, Type, visitors,
+};
 
 /// Value classification for hook validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +51,7 @@ fn join_kinds(a: Kind, b: Kind) -> Kind {
 
 fn get_kind_for_place(
     place: &Place,
-    value_kinds: &HashMap<IdentifierId, Kind>,
+    value_kinds: &FxHashMap<IdentifierId, Kind>,
     identifiers: &[Identifier],
 ) -> Kind {
     let known_kind = value_kinds.get(&place.identifier).copied();
@@ -87,8 +86,8 @@ fn get_hook_kind_for_id<'a>(
 
 fn visit_place(
     place: &Place,
-    value_kinds: &HashMap<IdentifierId, Kind>,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    value_kinds: &FxHashMap<IdentifierId, Kind>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let kind = value_kinds.get(&place.identifier).copied();
@@ -100,8 +99,8 @@ fn visit_place(
 
 fn record_conditional_hook_error(
     place: &Place,
-    value_kinds: &mut HashMap<IdentifierId, Kind>,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    value_kinds: &mut FxHashMap<IdentifierId, Kind>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     value_kinds.insert(place.identifier, Kind::Error);
@@ -134,7 +133,7 @@ fn record_conditional_hook_error(
 
 fn record_invalid_hook_usage_error(
     place: &Place,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let reason = "Hooks may not be referenced as normal values, they must be called. See https://react.dev/reference/rules/react-calls-components-and-hooks#never-pass-around-hooks-as-regular-values".to_string();
@@ -165,7 +164,7 @@ fn record_invalid_hook_usage_error(
 
 fn record_dynamic_hook_usage_error(
     place: &Place,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let reason = "Hooks must be the same function on every render, but this value may change over time to a different function. See https://react.dev/reference/rules/react-calls-components-and-hooks#dont-dynamically-use-hooks".to_string();
@@ -195,10 +194,14 @@ fn record_dynamic_hook_usage_error(
 }
 
 /// Validates hooks usage rules for a function.
-pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result<(), react_compiler_diagnostics::CompilerDiagnostic> {
+pub fn validate_hooks_usage(
+    func: &HirFunction,
+    env: &mut Environment,
+) -> Result<(), react_compiler_diagnostics::CompilerDiagnostic> {
     let unconditional_blocks = compute_unconditional_blocks(func, env.next_block_id().0)?;
-    let mut errors_by_loc: IndexMap<SourceLocation, CompilerErrorDetail> = IndexMap::new();
-    let mut value_kinds: HashMap<IdentifierId, Kind> = HashMap::new();
+    let mut errors_by_loc: IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher> =
+        IndexMap::default();
+    let mut value_kinds: FxHashMap<IdentifierId, Kind> = FxHashMap::default();
 
     // Process params
     for param in &func.params {
@@ -267,8 +270,7 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
                 InstructionValue::PropertyLoad {
                     object, property, ..
                 } => {
-                    let object_kind =
-                        get_kind_for_place(object, &value_kinds, &env.identifiers);
+                    let object_kind = get_kind_for_place(object, &value_kinds, &env.identifiers);
                     let is_hook_property = match property {
                         PropertyLiteral::String(s) => is_hook_name(s),
                         PropertyLiteral::Number(_) => false,
@@ -301,8 +303,7 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
                     value_kinds.insert(lvalue_id, kind);
                 }
                 InstructionValue::CallExpression { callee, args, .. } => {
-                    let callee_kind =
-                        get_kind_for_place(callee, &value_kinds, &env.identifiers);
+                    let callee_kind = get_kind_for_place(callee, &value_kinds, &env.identifiers);
                     let is_hook_callee =
                         callee_kind == Kind::KnownHook || callee_kind == Kind::PotentialHook;
                     if is_hook_callee && !unconditional_blocks.contains(&block.id) {
@@ -330,8 +331,7 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
                     args,
                     ..
                 } => {
-                    let callee_kind =
-                        get_kind_for_place(property, &value_kinds, &env.identifiers);
+                    let callee_kind = get_kind_for_place(property, &value_kinds, &env.identifiers);
                     let is_hook_callee =
                         callee_kind == Kind::KnownHook || callee_kind == Kind::PotentialHook;
                     if is_hook_callee && !unconditional_blocks.contains(&block.id) {
@@ -342,11 +342,7 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
                             env,
                         )?;
                     } else if callee_kind == Kind::PotentialHook {
-                        record_dynamic_hook_usage_error(
-                            property,
-                            &mut errors_by_loc,
-                            env,
-                        )?;
+                        record_dynamic_hook_usage_error(property, &mut errors_by_loc, env)?;
                     }
                     // Visit receiver and args (not property)
                     visit_place(receiver, &value_kinds, &mut errors_by_loc, env)?;
@@ -360,12 +356,11 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
                 }
                 InstructionValue::Destructure { lvalue, value, .. } => {
                     visit_place(value, &value_kinds, &mut errors_by_loc, env)?;
-                    let object_kind =
-                        get_kind_for_place(value, &value_kinds, &env.identifiers);
+                    let object_kind = get_kind_for_place(value, &value_kinds, &env.identifiers);
                     // Process instr.lvalue and all pattern operands (matching TS eachInstructionLValue)
                     let pattern_places = each_pattern_operand(&lvalue.pattern);
-                    let all_lvalues = std::iter::once(instr.lvalue.clone())
-                        .chain(pattern_places.into_iter());
+                    let all_lvalues =
+                        std::iter::once(instr.lvalue.clone()).chain(pattern_places.into_iter());
                     for place in all_lvalues {
                         let is_hook_property =
                             ident_is_hook_name(place.identifier, &env.identifiers);
@@ -398,20 +393,13 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
                 _ => {
                     // For all other instructions: visit operands, set lvalue kinds
                     // Matches TS which uses eachInstructionOperand + eachInstructionLValue
-                    visit_all_operands(
-                        &instr.value,
-                        &value_kinds,
-                        &mut errors_by_loc,
-                        env,
-                    )?;
+                    visit_all_operands(&instr.value, &value_kinds, &mut errors_by_loc, env)?;
                     // Set kind for instr.lvalue
-                    let kind =
-                        get_kind_for_place(&instr.lvalue, &value_kinds, &env.identifiers);
+                    let kind = get_kind_for_place(&instr.lvalue, &value_kinds, &env.identifiers);
                     value_kinds.insert(lvalue_id, kind);
                     // Also set kind for value-level lvalues (e.g. DeclareLocal, PrefixUpdate, PostfixUpdate)
                     for lv in visitors::each_instruction_value_lvalue(&instr.value) {
-                        let lv_kind =
-                            get_kind_for_place(&lv, &value_kinds, &env.identifiers);
+                        let lv_kind = get_kind_for_place(&lv, &value_kinds, &env.identifiers);
                         value_kinds.insert(lv.identifier, lv_kind);
                     }
                 }
@@ -434,7 +422,10 @@ pub fn validate_hooks_usage(func: &HirFunction, env: &mut Environment) -> Result
 /// Visit a function expression to check for hook calls inside it.
 /// Processes instructions in order, visiting nested functions immediately
 /// (before processing subsequent calls) to match TS error ordering.
-fn visit_function_expression(env: &mut Environment, func_id: FunctionId) -> Result<(), CompilerError> {
+fn visit_function_expression(
+    env: &mut Environment,
+    func_id: FunctionId,
+) -> Result<(), CompilerError> {
     // Collect items in instruction order to process them sequentially.
     // Each item is either a call to check or a nested function to visit.
     enum Item {
@@ -522,8 +513,8 @@ fn hook_kind_display(kind: &HookKind) -> &'static str {
 /// Uses the canonical `each_instruction_value_operand` from visitors.
 fn visit_all_operands(
     value: &InstructionValue,
-    value_kinds: &HashMap<IdentifierId, Kind>,
-    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail>,
+    value_kinds: &FxHashMap<IdentifierId, Kind>,
+    errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     let operands = visitors::each_instruction_value_operand(value, &*env);
@@ -532,4 +523,3 @@ fn visit_all_operands(
     }
     Ok(())
 }
-

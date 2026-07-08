@@ -10,11 +10,11 @@
 //!
 //! Corresponds to `src/ReactiveScopes/CodegenReactiveFunction.ts` in the TS compiler.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::common::BaseNode;
 use react_compiler_ast::common::Position as AstPosition;
+use react_compiler_ast::common::RawNode;
 use react_compiler_ast::common::SourceLocation as AstSourceLocation;
 use react_compiler_ast::expressions::ArrowFunctionBody;
 use react_compiler_ast::expressions::Expression;
@@ -180,11 +180,22 @@ pub struct OutlinedFunction {
 }
 
 /// Top-level entry point: generates code for a reactive function.
+/// Computes the Fast Refresh source hash used to bust the memo cache when the
+/// source file changes. Matches the TS compiler's
+/// `createHmac('sha256', code).digest('hex')`: an HMAC-SHA256 keyed by the
+/// source code, hashing empty data.
+fn source_file_hash(code: &str) -> String {
+    hmac_sha256::HMAC::mac(b"", code.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 pub fn codegen_function(
     func: &ReactiveFunction,
     env: &mut Environment,
-    unique_identifiers: HashSet<String>,
-    fbt_operands: HashSet<IdentifierId>,
+    unique_identifiers: FxHashSet<String>,
+    fbt_operands: FxHashSet<IdentifierId>,
 ) -> Result<CodegenFunction, CompilerError> {
     let fn_name = func.id.as_deref().unwrap_or("[[ anonymous ]]");
     let mut cx = Context::new(env, fn_name.to_string(), unique_identifiers, fbt_operands);
@@ -193,15 +204,7 @@ pub fn codegen_function(
     let fast_refresh_state: Option<(u32, String)> =
         if cx.env.config.enable_reset_cache_on_source_file_changes == Some(true) {
             if let Some(ref code) = cx.env.code {
-                use hmac::Hmac;
-                use hmac::Mac;
-                use sha2::Sha256;
-                type HmacSha256 = Hmac<Sha256>;
-                // Match TS: createHmac('sha256', code).digest('hex')
-                // Node's createHmac uses the code as the HMAC key and hashes empty data.
-                let mac = HmacSha256::new_from_slice(code.as_bytes())
-                    .expect("HMAC can take key of any size");
-                let hash = format!("{:x}", mac.finalize().into_bytes());
+                let hash = source_file_hash(code);
                 let cache_index = cx.alloc_cache_index(); // Reserve slot 0 for the hash check
                 Some((cache_index, hash))
             } else {
@@ -281,7 +284,7 @@ pub fn codegen_function(
                     })),
                     right: Box::new(Expression::StringLiteral(StringLiteral {
                         base: BaseNode::typed("StringLiteral"),
-                        value: hash.clone(),
+                        value: hash.clone().into(),
                     })),
                 })),
                 consequent: Box::new(Statement::BlockStatement(BlockStatement {
@@ -381,7 +384,9 @@ pub fn codegen_function(
                                                     arguments: vec![Expression::StringLiteral(
                                                         StringLiteral {
                                                             base: BaseNode::typed("StringLiteral"),
-                                                            value: MEMO_CACHE_SENTINEL.to_string(),
+                                                            value: MEMO_CACHE_SENTINEL
+                                                                .to_string()
+                                                                .into(),
                                                         },
                                                     )],
                                                     type_parameters: None,
@@ -420,7 +425,7 @@ pub fn codegen_function(
                                     )),
                                     right: Box::new(Expression::StringLiteral(StringLiteral {
                                         base: BaseNode::typed("StringLiteral"),
-                                        value: hash.clone(),
+                                        value: hash.clone().into(),
                                     })),
                                 },
                             )),
@@ -492,11 +497,11 @@ pub fn codegen_function(
                         arguments: vec![
                             Expression::StringLiteral(StringLiteral {
                                 base: BaseNode::typed("StringLiteral"),
-                                value: fn_name_str.to_string(),
+                                value: fn_name_str.to_string().into(),
                             }),
                             Expression::StringLiteral(StringLiteral {
                                 base: BaseNode::typed("StringLiteral"),
-                                value: filename_str.to_string(),
+                                value: filename_str.to_string().into(),
                             }),
                         ],
                         type_parameters: None,
@@ -550,7 +555,7 @@ pub fn codegen_function(
 // Context
 // =============================================================================
 
-type Temporaries = HashMap<DeclarationId, Option<ExpressionOrJsxText>>;
+type Temporaries = FxHashMap<DeclarationId, Option<ExpressionOrJsxText>>;
 
 #[derive(Clone)]
 enum ExpressionOrJsxText {
@@ -563,37 +568,37 @@ struct Context<'env> {
     #[allow(dead_code)]
     fn_name: String,
     next_cache_index: u32,
-    declarations: HashSet<DeclarationId>,
+    declarations: FxHashSet<DeclarationId>,
     temp: Temporaries,
-    object_methods: HashMap<
+    object_methods: FxHashMap<
         IdentifierId,
         (
             InstructionValue,
             Option<react_compiler_diagnostics::SourceLocation>,
         ),
     >,
-    unique_identifiers: HashSet<String>,
-    fbt_operands: HashSet<IdentifierId>,
-    synthesized_names: HashMap<String, String>,
+    unique_identifiers: FxHashSet<String>,
+    fbt_operands: FxHashSet<IdentifierId>,
+    synthesized_names: FxHashMap<String, String>,
 }
 
 impl<'env> Context<'env> {
     fn new(
         env: &'env mut Environment,
         fn_name: String,
-        unique_identifiers: HashSet<String>,
-        fbt_operands: HashSet<IdentifierId>,
+        unique_identifiers: FxHashSet<String>,
+        fbt_operands: FxHashSet<IdentifierId>,
     ) -> Self {
         Context {
             env,
             fn_name,
             next_cache_index: 0,
-            declarations: HashSet::new(),
-            temp: HashMap::new(),
-            object_methods: HashMap::new(),
+            declarations: FxHashSet::default(),
+            temp: FxHashMap::default(),
+            object_methods: FxHashMap::default(),
             unique_identifiers,
             fbt_operands,
-            synthesized_names: HashMap::new(),
+            synthesized_names: FxHashMap::default(),
         }
     }
 
@@ -1593,7 +1598,7 @@ fn codegen_unsupported_original_node(
     {
         return Ok(UnsupportedOriginalNode::ExpressionCodegen);
     }
-    let unknown = UnknownStatement::from_raw(node.clone()).map_err(|e| {
+    let unknown = UnknownStatement::from_raw(RawNode::from_value(node)).map_err(|e| {
         invariant_err(
             &format!("Failed to read unsupported original AST node: {}", e),
             None,
@@ -2009,7 +2014,7 @@ fn codegen_instruction_value(
                         })?;
                         expressions.push(Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: format!("TODO handle declaration"),
+                            value: format!("TODO handle declaration").into(),
                         }));
                     }
                     _ => {
@@ -2024,7 +2029,7 @@ fn codegen_instruction_value(
                         })?;
                         expressions.push(Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: format!("TODO handle statement"),
+                            value: format!("TODO handle statement").into(),
                         }));
                     }
                 }
@@ -2526,7 +2531,7 @@ fn codegen_base_instruction_value(
                     Expression::TSSatisfiesExpression(ast_expr::TSSatisfiesExpression {
                         base: BaseNode::typed("TSSatisfiesExpression"),
                         expression: Box::new(expr),
-                        type_annotation: ta,
+                        type_annotation: RawNode::from_value(&ta),
                     })
                 }
                 (Some("as"), Some(ta)) => {
@@ -2535,7 +2540,7 @@ fn codegen_base_instruction_value(
                     Expression::TSAsExpression(ast_expr::TSAsExpression {
                         base: BaseNode::typed("TSAsExpression"),
                         expression: Box::new(expr),
-                        type_annotation: ta,
+                        type_annotation: RawNode::from_value(&ta),
                     })
                 }
                 (Some("cast"), Some(ta)) => {
@@ -2544,7 +2549,7 @@ fn codegen_base_instruction_value(
                     Expression::TypeCastExpression(ast_expr::TypeCastExpression {
                         base: BaseNode::typed("TypeCastExpression"),
                         expression: Box::new(expr),
-                        type_annotation: ta,
+                        type_annotation: RawNode::from_value(&ta),
                     })
                 }
                 _ => expr,
@@ -2713,7 +2718,7 @@ fn codegen_function_expression(
                         base: BaseNode::typed("ObjectProperty"),
                         key: Box::new(Expression::StringLiteral(StringLiteral {
                             base: BaseNode::typed("StringLiteral"),
-                            value: hint.clone(),
+                            value: hint.clone().into(),
                         })),
                         value: Box::new(value),
                         computed: false,
@@ -2725,7 +2730,7 @@ fn codegen_function_expression(
             })),
             property: Box::new(Expression::StringLiteral(StringLiteral {
                 base: BaseNode::typed("StringLiteral"),
-                value: hint.clone(),
+                value: hint.clone().into(),
             })),
             computed: true,
         });
@@ -2847,7 +2852,7 @@ fn codegen_object_property_key(
     match key {
         ObjectPropertyKey::String { name } => Ok(Expression::StringLiteral(StringLiteral {
             base: BaseNode::typed("StringLiteral"),
-            value: name.clone(),
+            value: name.clone().into(),
         })),
         ObjectPropertyKey::Identifier { name } => Ok(Expression::Identifier(make_identifier(name))),
         ObjectPropertyKey::Computed { name } => {
@@ -2891,7 +2896,7 @@ fn codegen_jsx_expression(
         JsxTag::Builtin(builtin) => (
             Expression::StringLiteral(StringLiteral {
                 base: BaseNode::typed("StringLiteral"),
-                value: builtin.name.clone(),
+                value: builtin.name.clone().into(),
             }),
             None,
         ),
@@ -2900,7 +2905,9 @@ fn codegen_jsx_expression(
     let jsx_tag = expression_to_jsx_tag(&tag_value, jsx_tag_loc(tag))?;
 
     let is_fbt_tag = if let Expression::StringLiteral(ref s) = tag_value {
-        SINGLE_CHILD_FBT_TAGS.contains(&s.value.as_str())
+        s.value
+            .as_str()
+            .is_some_and(|v| SINGLE_CHILD_FBT_TAGS.contains(&v))
     } else {
         false
     };
@@ -3001,7 +3008,7 @@ fn codegen_jsx_attribute(
             let inner_value = codegen_place_to_expression(cx, place)?;
             let attr_value = match &inner_value {
                 Expression::StringLiteral(s) => {
-                    if string_requires_expr_container(&s.value)
+                    if string_requires_expr_container(&s.value.to_marker_string())
                         && !cx.fbt_operands.contains(&place.identifier)
                     {
                         Some(JSXAttributeValue::JSXExpressionContainer(
@@ -3064,7 +3071,7 @@ fn codegen_jsx_element(cx: &mut Context, place: &Place) -> Result<JSXChild, Comp
                     expression: JSXExpressionContainerExpr::Expression(Box::new(
                         Expression::StringLiteral(StringLiteral {
                             base: base_node_with_loc("StringLiteral", loc),
-                            value: text.value.clone(),
+                            value: text.value.clone().into(),
                         }),
                     )),
                 }))
@@ -3120,8 +3127,11 @@ fn expression_to_jsx_tag(
             convert_member_expression_to_jsx(me)?,
         )),
         Expression::StringLiteral(s) => {
-            if s.value.contains(':') {
-                let parts: Vec<&str> = s.value.splitn(2, ':').collect();
+            // JSX tag names are identifier-shaped; the marker form preserves
+            // the pre-JsString behavior for pathological values.
+            let tag_text = s.value.to_marker_string();
+            if tag_text.contains(':') {
+                let parts: Vec<&str> = tag_text.splitn(2, ':').collect();
                 Ok(JSXElementName::JSXNamespacedName(JSXNamespacedName {
                     base: base_node_with_loc("JSXNamespacedName", loc),
                     namespace: JSXIdentifier {
@@ -3136,7 +3146,7 @@ fn expression_to_jsx_tag(
             } else {
                 Ok(JSXElementName::JSXIdentifier(JSXIdentifier {
                     base: base_node_with_loc("JSXIdentifier", loc),
-                    name: s.value.clone(),
+                    name: tag_text,
                 }))
             }
         }
@@ -3745,7 +3755,7 @@ fn symbol_for(name: &str) -> Expression {
         })),
         arguments: vec![Expression::StringLiteral(StringLiteral {
             base: BaseNode::typed("StringLiteral"),
-            value: name.to_string(),
+            value: name.to_string().into(),
         })],
         type_parameters: None,
         type_arguments: None,
@@ -3823,7 +3833,7 @@ fn convert_value_to_expression(value: ExpressionOrJsxText) -> Expression {
         ExpressionOrJsxText::Expression(e) => e,
         ExpressionOrJsxText::JsxText(text) => Expression::StringLiteral(StringLiteral {
             base: BaseNode::typed("StringLiteral"),
-            value: text.value,
+            value: text.value.into(),
         }),
     }
 }
@@ -4152,7 +4162,7 @@ fn create_function_body_hook_guard(
 fn apply_renames_to_json(
     value: &mut serde_json::Value,
     renames: &[react_compiler_hir::environment::BindingRename],
-    reference_node_ids: &std::collections::HashSet<u32>,
+    reference_node_ids: &rustc_hash::FxHashSet<u32>,
 ) {
     apply_renames_to_json_inner(value, renames, reference_node_ids, false);
 }
@@ -4160,7 +4170,7 @@ fn apply_renames_to_json(
 fn apply_renames_to_json_inner(
     value: &mut serde_json::Value,
     renames: &[react_compiler_hir::environment::BindingRename],
-    reference_node_ids: &std::collections::HashSet<u32>,
+    reference_node_ids: &rustc_hash::FxHashSet<u32>,
     is_property_key: bool,
 ) {
     if renames.is_empty() {
@@ -4233,6 +4243,27 @@ mod tests {
 
     use super::{UnsupportedOriginalNode, codegen_unsupported_original_node};
 
+    /// The Fast Refresh source hash must match Node's
+    /// `createHmac('sha256', code).digest('hex')` byte-for-byte, or hot-reload
+    /// cache invalidation would diverge from the TS compiler. Reference values
+    /// were computed with Node's `crypto` module.
+    #[test]
+    fn source_file_hash_matches_node_create_hmac() {
+        use super::source_file_hash;
+        assert_eq!(
+            source_file_hash("hello world"),
+            "0de8bee5d7f9c5d209f8c6fabed0ea84cb3fca1244e8ed38079a61b599a84c47"
+        );
+        assert_eq!(
+            source_file_hash(""),
+            "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
+        );
+        assert_eq!(
+            source_file_hash("function App(){}"),
+            "d637acb4985c789d6622c70197db2b62dda282f16f3276aa810b598d6e6cab7b"
+        );
+    }
+
     /// A modeled statement tag parses typed and is emitted directly.
     #[test]
     fn unsupported_original_node_modeled_statement_tag_emits_statement() {
@@ -4297,7 +4328,7 @@ mod tests {
         match codegen_unsupported_original_node(&node).unwrap() {
             UnsupportedOriginalNode::Statement(Statement::Unknown(unknown)) => {
                 assert_eq!(unknown.node_type(), "TSImportEqualsDeclaration");
-                assert_eq!(unknown.raw(), &node);
+                assert_eq!(unknown.raw().parse_value(), node);
             }
             UnsupportedOriginalNode::Statement(other) => {
                 panic!("expected Statement::Unknown, got {other:?}")

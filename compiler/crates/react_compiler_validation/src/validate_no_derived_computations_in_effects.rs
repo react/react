@@ -10,21 +10,21 @@
 //!
 //! Port of ValidateNoDerivedComputationsInEffects_exp.ts.
 
-use std::collections::{HashMap, HashSet};
+use indexmap::{IndexMap, IndexSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, CompilerErrorDetail, ErrorCategory,
 };
 use react_compiler_hir::environment::Environment;
-use react_compiler_hir::{
-    is_set_state_type, is_use_effect_hook_type, is_use_ref_type, is_use_state_type,
-    ArrayElement, BlockId, Effect, EvaluationOrder, FunctionId, HirFunction, Identifier,
-    IdentifierId, IdentifierName, InstructionValue, ParamPattern, PlaceOrSpread,
-    ReactFunctionType, ReturnVariant, SourceLocation, Type,
-};
 use react_compiler_hir::visitors::{
-    each_instruction_lvalue_ids,
-    each_instruction_operand as canonical_each_instruction_operand,
+    each_instruction_lvalue_ids, each_instruction_operand as canonical_each_instruction_operand,
+};
+use react_compiler_hir::{
+    ArrayElement, BlockId, Effect, EvaluationOrder, FunctionId, HirFunction, Identifier,
+    IdentifierId, IdentifierName, InstructionValue, ParamPattern, PlaceOrSpread, ReactFunctionType,
+    ReturnVariant, SourceLocation, Type, is_set_state_type, is_use_effect_hook_type,
+    is_use_ref_type, is_use_state_type,
 };
 
 /// Get the user-visible name for an identifier, matching Babel's
@@ -84,7 +84,11 @@ fn get_identifier_name_with_loc(
             }
             if let (Some(start), Some(end)) = (byte_start, byte_end) {
                 let slice = &code[start..end];
-                if !slice.is_empty() && slice.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') {
+                if !slice.is_empty()
+                    && slice
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+                {
                     return Some(slice.to_string());
                 }
             }
@@ -108,7 +112,7 @@ struct DerivationMetadata {
     type_of_value: TypeOfValue,
     place_identifier: IdentifierId,
     place_name: Option<IdentifierName>,
-    source_ids: indexmap::IndexSet<IdentifierId>,
+    source_ids: IndexSet<IdentifierId, FxBuildHasher>,
     is_state_source: bool,
 }
 
@@ -126,16 +130,16 @@ struct DepElement {
 
 struct ValidationContext {
     /// Map from lvalue identifier to the FunctionId of function expressions
-    functions: HashMap<IdentifierId, FunctionId>,
+    functions: FxHashMap<IdentifierId, FunctionId>,
     /// Map from lvalue identifier to ArrayExpression elements (candidate deps)
-    candidate_dependencies: HashMap<IdentifierId, Vec<DepElement>>,
+    candidate_dependencies: FxHashMap<IdentifierId, Vec<DepElement>>,
     derivation_cache: DerivationCache,
-    effects_cache: HashMap<IdentifierId, EffectMetadata>,
-    set_state_loads: HashMap<IdentifierId, Option<IdentifierId>>,
-    set_state_usages: HashMap<IdentifierId, HashSet<LocKey>>,
+    effects_cache: FxHashMap<IdentifierId, EffectMetadata>,
+    set_state_loads: FxHashMap<IdentifierId, Option<IdentifierId>>,
+    set_state_usages: FxHashMap<IdentifierId, FxHashSet<LocKey>>,
 }
 
-/// A hashable key for SourceLocation to use in HashSet
+/// A hashable key for SourceLocation to use in FxHashSet
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct LocKey {
     start_line: u32,
@@ -166,21 +170,21 @@ impl LocKey {
 #[derive(Debug, Clone)]
 struct DerivationCache {
     has_changes: bool,
-    cache: HashMap<IdentifierId, DerivationMetadata>,
-    previous_cache: Option<HashMap<IdentifierId, DerivationMetadata>>,
+    cache: FxHashMap<IdentifierId, DerivationMetadata>,
+    previous_cache: Option<FxHashMap<IdentifierId, DerivationMetadata>>,
 }
 
 impl DerivationCache {
     fn new() -> Self {
         DerivationCache {
             has_changes: false,
-            cache: HashMap::new(),
+            cache: FxHashMap::default(),
             previous_cache: None,
         }
     }
 
     fn take_snapshot(&mut self) {
-        let mut prev = HashMap::new();
+        let mut prev = FxHashMap::default();
         for (key, value) in &self.cache {
             prev.insert(
                 *key,
@@ -238,7 +242,7 @@ impl DerivationCache {
         &mut self,
         derived_id: IdentifierId,
         derived_name: Option<IdentifierName>,
-        source_ids: indexmap::IndexSet<IdentifierId>,
+        source_ids: IndexSet<IdentifierId, FxBuildHasher>,
         type_of_value: TypeOfValue,
         is_state_source: bool,
     ) {
@@ -299,8 +303,8 @@ fn join_value(lvalue_type: TypeOfValue, value_type: TypeOfValue) -> TypeOfValue 
 
 fn get_root_set_state(
     key: IdentifierId,
-    loads: &HashMap<IdentifierId, Option<IdentifierId>>,
-    visited: &mut HashSet<IdentifierId>,
+    loads: &FxHashMap<IdentifierId, Option<IdentifierId>>,
+    visited: &mut FxHashSet<IdentifierId>,
 ) -> Option<IdentifierId> {
     if visited.contains(&key) {
         return None;
@@ -317,8 +321,8 @@ fn get_root_set_state(
 fn maybe_record_set_state_for_instr(
     instr: &react_compiler_hir::Instruction,
     env: &Environment,
-    set_state_loads: &mut HashMap<IdentifierId, Option<IdentifierId>>,
-    set_state_usages: &mut HashMap<IdentifierId, HashSet<LocKey>>,
+    set_state_loads: &mut FxHashMap<IdentifierId, Option<IdentifierId>>,
+    set_state_usages: &mut FxHashMap<IdentifierId, FxHashSet<LocKey>>,
 ) {
     let identifiers = &env.identifiers;
     let types = &env.types;
@@ -346,21 +350,25 @@ fn maybe_record_set_state_for_instr(
             }
         }
 
-        let root = get_root_set_state(lvalue_id, set_state_loads, &mut HashSet::new());
+        let root = get_root_set_state(lvalue_id, set_state_loads, &mut FxHashSet::default());
         if let Some(root_id) = root {
-            set_state_usages
-                .entry(root_id)
-                .or_insert_with(|| {
-                    let mut set = HashSet::new();
-                    set.insert(LocKey::from_loc(&instr.lvalue.loc));
-                    set
-                });
+            set_state_usages.entry(root_id).or_insert_with(|| {
+                let mut set = FxHashSet::default();
+                set.insert(LocKey::from_loc(&instr.lvalue.loc));
+                set
+            });
         }
     }
 }
 
-fn is_mutable_at(env: &Environment, eval_order: EvaluationOrder, identifier_id: IdentifierId) -> bool {
-    env.identifiers[identifier_id.0 as usize].mutable_range.contains(eval_order)
+fn is_mutable_at(
+    env: &Environment,
+    eval_order: EvaluationOrder,
+    identifier_id: IdentifierId,
+) -> bool {
+    env.identifiers[identifier_id.0 as usize]
+        .mutable_range
+        .contains(eval_order)
 }
 
 pub fn validate_no_derived_computations_in_effects_exp(
@@ -370,12 +378,12 @@ pub fn validate_no_derived_computations_in_effects_exp(
     let identifiers = &env.identifiers;
 
     let mut context = ValidationContext {
-        functions: HashMap::new(),
-        candidate_dependencies: HashMap::new(),
+        functions: FxHashMap::default(),
+        candidate_dependencies: FxHashMap::default(),
         derivation_cache: DerivationCache::new(),
-        effects_cache: HashMap::new(),
-        set_state_loads: HashMap::new(),
-        set_state_usages: HashMap::new(),
+        effects_cache: FxHashMap::default(),
+        set_state_loads: FxHashMap::default(),
+        set_state_usages: FxHashMap::default(),
     };
 
     // Initialize derivation cache based on function type
@@ -388,7 +396,7 @@ pub fn validate_no_derived_computations_in_effects_exp(
                     DerivationMetadata {
                         place_identifier: place.identifier,
                         place_name: name,
-                        source_ids: indexmap::IndexSet::new(),
+                        source_ids: IndexSet::default(),
                         type_of_value: TypeOfValue::FromProps,
                         is_state_source: true,
                     },
@@ -404,7 +412,7 @@ pub fn validate_no_derived_computations_in_effects_exp(
                     DerivationMetadata {
                         place_identifier: place.identifier,
                         place_name: name,
-                        source_ids: indexmap::IndexSet::new(),
+                        source_ids: IndexSet::default(),
                         type_of_value: TypeOfValue::FromProps,
                         is_state_source: true,
                     },
@@ -470,10 +478,11 @@ fn record_phi_derivations(
     let identifiers = &env.identifiers;
     for phi in &block.phis {
         let mut type_of_value = TypeOfValue::Ignored;
-        let mut source_ids: indexmap::IndexSet<IdentifierId> = indexmap::IndexSet::new();
+        let mut source_ids: IndexSet<IdentifierId, FxBuildHasher> = IndexSet::default();
 
         for (_block_id, operand) in &phi.operands {
-            if let Some(operand_metadata) = context.derivation_cache.cache.get(&operand.identifier) {
+            if let Some(operand_metadata) = context.derivation_cache.cache.get(&operand.identifier)
+            {
                 type_of_value = join_value(type_of_value, operand_metadata.type_of_value);
                 source_ids.insert(operand.identifier);
             }
@@ -514,7 +523,7 @@ fn record_instruction_derivations(
 
     let mut type_of_value = TypeOfValue::Ignored;
     let is_source = false;
-    let mut sources: indexmap::IndexSet<IdentifierId> = indexmap::IndexSet::new();
+    let mut sources: IndexSet<IdentifierId, FxBuildHasher> = IndexSet::default();
 
     match &instr.value {
         InstructionValue::FunctionExpression { lowered_func, .. } => {
@@ -525,22 +534,29 @@ fn record_instruction_derivations(
                 record_phi_derivations(block, context, env);
                 for &inner_instr_id in &block.instructions {
                     let inner_instr = &inner_func.instructions[inner_instr_id.0 as usize];
-                    record_instruction_derivations(inner_instr, context, is_first_pass, inner_func, env)?;
+                    record_instruction_derivations(
+                        inner_instr,
+                        context,
+                        is_first_pass,
+                        inner_func,
+                        env,
+                    )?;
                 }
             }
         }
         InstructionValue::CallExpression { callee, args, .. } => {
             let callee_type = &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
-            if is_use_effect_hook_type(callee_type)
-                && args.len() == 2
-            {
+            if is_use_effect_hook_type(callee_type) && args.len() == 2 {
                 if let (
                     react_compiler_hir::PlaceOrSpread::Place(arg0),
                     react_compiler_hir::PlaceOrSpread::Place(arg1),
                 ) = (&args[0], &args[1])
                 {
                     let effect_function = context.functions.get(&arg0.identifier).copied();
-                    let deps = context.candidate_dependencies.get(&arg1.identifier).cloned();
+                    let deps = context
+                        .candidate_dependencies
+                        .get(&arg1.identifier)
+                        .cloned();
                     if let (Some(effect_func_id), Some(dep_elements)) = (effect_function, deps) {
                         context.effects_cache.insert(
                             arg0.identifier,
@@ -560,7 +576,7 @@ fn record_instruction_derivations(
                 context.derivation_cache.add_derivation_entry(
                     lvalue_id,
                     name,
-                    indexmap::IndexSet::new(),
+                    IndexSet::default(),
                     TypeOfValue::FromState,
                     true,
                 );
@@ -569,16 +585,17 @@ fn record_instruction_derivations(
         }
         InstructionValue::MethodCall { property, args, .. } => {
             let prop_type = &types[identifiers[property.identifier.0 as usize].type_.0 as usize];
-            if is_use_effect_hook_type(prop_type)
-                && args.len() == 2
-            {
+            if is_use_effect_hook_type(prop_type) && args.len() == 2 {
                 if let (
                     react_compiler_hir::PlaceOrSpread::Place(arg0),
                     react_compiler_hir::PlaceOrSpread::Place(arg1),
                 ) = (&args[0], &args[1])
                 {
                     let effect_function = context.functions.get(&arg0.identifier).copied();
-                    let deps = context.candidate_dependencies.get(&arg1.identifier).cloned();
+                    let deps = context
+                        .candidate_dependencies
+                        .get(&arg1.identifier)
+                        .cloned();
                     if let (Some(effect_func_id), Some(dep_elements)) = (effect_function, deps) {
                         context.effects_cache.insert(
                             arg0.identifier,
@@ -598,7 +615,7 @@ fn record_instruction_derivations(
                 context.derivation_cache.add_derivation_entry(
                     lvalue_id,
                     name,
-                    indexmap::IndexSet::new(),
+                    IndexSet::default(),
                     TypeOfValue::FromState,
                     true,
                 );
@@ -616,7 +633,9 @@ fn record_instruction_derivations(
                     _ => None,
                 })
                 .collect();
-            context.candidate_dependencies.insert(lvalue_id, dep_elements);
+            context
+                .candidate_dependencies
+                .insert(lvalue_id, dep_elements);
         }
         _ => {}
     }
@@ -625,7 +644,11 @@ fn record_instruction_derivations(
     for (operand_id, operand_loc) in each_instruction_operand(instr, env) {
         // Track setState usages
         if context.set_state_loads.contains_key(&operand_id) {
-            let root = get_root_set_state(operand_id, &context.set_state_loads, &mut HashSet::new());
+            let root = get_root_set_state(
+                operand_id,
+                &context.set_state_loads,
+                &mut FxHashSet::default(),
+            );
             if let Some(root_id) = root {
                 if let Some(usages) = context.set_state_usages.get_mut(&root_id) {
                     usages.insert(LocKey::from_loc(&operand_loc));
@@ -665,8 +688,7 @@ fn record_instruction_derivations(
         if operand.effect.is_mutable() {
             if is_mutable_at(env, instr.id, operand.id) {
                 if let Some(existing) = context.derivation_cache.cache.get_mut(&operand.id) {
-                    existing.type_of_value =
-                        join_value(type_of_value, existing.type_of_value);
+                    existing.type_of_value = join_value(type_of_value, existing.type_of_value);
                 } else {
                     let name = identifiers[operand.id.0 as usize].name.clone();
                     context.derivation_cache.add_derivation_entry(
@@ -736,7 +758,7 @@ struct TreeNode {
 fn build_tree_node(
     source_id: IdentifierId,
     context: &ValidationContext,
-    visited: &HashSet<String>,
+    visited: &FxHashSet<String>,
 ) -> Vec<TreeNode> {
     let source_metadata = match context.derivation_cache.cache.get(&source_id) {
         Some(m) => m,
@@ -755,7 +777,7 @@ fn build_tree_node(
     }
 
     let mut children: Vec<TreeNode> = Vec::new();
-    let mut named_siblings: indexmap::IndexSet<String> = indexmap::IndexSet::new();
+    let mut named_siblings: IndexSet<String, FxBuildHasher> = IndexSet::default();
 
     for child_id in &source_metadata.source_ids {
         assert_ne!(
@@ -795,10 +817,18 @@ fn render_tree(
     node: &TreeNode,
     indent: &str,
     is_last: bool,
-    props_set: &mut indexmap::IndexSet<String>,
-    state_set: &mut indexmap::IndexSet<String>,
+    props_set: &mut IndexSet<String, FxBuildHasher>,
+    state_set: &mut IndexSet<String, FxBuildHasher>,
 ) -> String {
-    let prefix = format!("{}{}", indent, if is_last { "\u{2514}\u{2500}\u{2500} " } else { "\u{251c}\u{2500}\u{2500} " });
+    let prefix = format!(
+        "{}{}",
+        indent,
+        if is_last {
+            "\u{2514}\u{2500}\u{2500} "
+        } else {
+            "\u{251c}\u{2500}\u{2500} "
+        }
+    );
     let child_indent = format!("{}{}", indent, if is_last { "    " } else { "\u{2502}   " });
 
     let mut result = format!("{}{}", prefix, node.name);
@@ -839,10 +869,10 @@ fn render_tree(
 fn get_fn_local_deps(
     func_id: Option<FunctionId>,
     env: &Environment,
-) -> Option<HashSet<IdentifierId>> {
+) -> Option<FxHashSet<IdentifierId>> {
     let func_id = func_id?;
     let inner = &env.functions[func_id.0 as usize];
-    let mut deps: HashSet<IdentifierId> = HashSet::new();
+    let mut deps: FxHashSet<IdentifierId> = FxHashSet::default();
 
     for (_block_id, block) in &inner.body.blocks {
         for &instr_id in &block.instructions {
@@ -868,30 +898,35 @@ fn validate_effect(
     let types = &env.types;
     let functions = &env.functions;
     let effect_function = &functions[effect_func_id.0 as usize];
-    let mut seen_blocks: HashSet<BlockId> = HashSet::new();
+    let mut seen_blocks: FxHashSet<BlockId> = FxHashSet::default();
 
     struct DerivedSetStateCall {
         callee_loc: Option<SourceLocation>,
         callee_id: IdentifierId,
         callee_identifier_name: Option<String>,
-        source_ids: indexmap::IndexSet<IdentifierId>,
+        source_ids: IndexSet<IdentifierId, FxBuildHasher>,
     }
 
     let mut effect_derived_set_state_calls: Vec<DerivedSetStateCall> = Vec::new();
-    let mut effect_set_state_usages: HashMap<IdentifierId, HashSet<LocKey>> = HashMap::new();
+    let mut effect_set_state_usages: FxHashMap<IdentifierId, FxHashSet<LocKey>> =
+        FxHashMap::default();
 
     // Consider setStates in the effect's dependency array as being part of effectSetStateUsages
     for dep in dependencies {
-        let root = get_root_set_state(dep.identifier, &context.set_state_loads, &mut HashSet::new());
+        let root = get_root_set_state(
+            dep.identifier,
+            &context.set_state_loads,
+            &mut FxHashSet::default(),
+        );
         if let Some(root_id) = root {
-            let mut set = HashSet::new();
+            let mut set = FxHashSet::default();
             set.insert(LocKey::from_loc(&dep.loc));
             effect_set_state_usages.insert(root_id, set);
         }
     }
 
-    let mut cleanup_function_deps: Option<HashSet<IdentifierId>> = None;
-    let mut globals: HashSet<IdentifierId> = HashSet::new();
+    let mut cleanup_function_deps: Option<FxHashSet<IdentifierId>> = None;
+    let mut globals: FxHashSet<IdentifierId> = FxHashSet::default();
 
     for (_block_id, block) in &effect_function.body.blocks {
         // Check for return -> cleanup function
@@ -915,7 +950,8 @@ fn validate_effect(
             let instr = &effect_function.instructions[instr_id.0 as usize];
 
             // Early return if any instruction derives from a ref
-            let lvalue_type = &types[identifiers[instr.lvalue.identifier.0 as usize].type_.0 as usize];
+            let lvalue_type =
+                &types[identifiers[instr.lvalue.identifier.0 as usize].type_.0 as usize];
             if is_use_ref_type(lvalue_type) {
                 return;
             }
@@ -934,7 +970,7 @@ fn validate_effect(
                     let root = get_root_set_state(
                         operand_id,
                         &context.set_state_loads,
-                        &mut HashSet::new(),
+                        &mut FxHashSet::default(),
                     );
                     if let Some(root_id) = root {
                         if let Some(usages) = effect_set_state_usages.get_mut(&root_id) {
@@ -948,9 +984,7 @@ fn validate_effect(
                 InstructionValue::CallExpression { callee, args, .. } => {
                     let callee_type =
                         &types[identifiers[callee.identifier.0 as usize].type_.0 as usize];
-                    if is_set_state_type(callee_type)
-                        && args.len() == 1
-                    {
+                    if is_set_state_type(callee_type) && args.len() == 1 {
                         if let react_compiler_hir::PlaceOrSpread::Place(arg0) = &args[0] {
                             let callee_metadata =
                                 context.derivation_cache.cache.get(&callee.identifier);
@@ -964,15 +998,17 @@ fn validate_effect(
                                 continue;
                             }
 
-                            let arg_metadata =
-                                context.derivation_cache.cache.get(&arg0.identifier);
+                            let arg_metadata = context.derivation_cache.cache.get(&arg0.identifier);
                             if let Some(am) = arg_metadata {
                                 // Get the user-visible identifier name, matching Babel's
                                 // loc.identifierName. Falls back to extracting from source code.
                                 let callee_ident_name = get_identifier_name_with_loc(
-                                    callee.identifier, identifiers, &callee.loc, env.code.as_deref(),
+                                    callee.identifier,
+                                    identifiers,
+                                    &callee.loc,
+                                    env.code.as_deref(),
                                 );
-                            effect_derived_set_state_calls.push(DerivedSetStateCall {
+                                effect_derived_set_state_calls.push(DerivedSetStateCall {
                                     callee_loc: callee.loc,
                                     callee_id: callee.identifier,
                                     callee_identifier_name: callee_ident_name,
@@ -1014,7 +1050,7 @@ fn validate_effect(
         let root_set_state_call = get_root_set_state(
             derived.callee_id,
             &context.set_state_loads,
-            &mut HashSet::new(),
+            &mut FxHashSet::default(),
         );
         if let Some(root_id) = root_set_state_call {
             let effect_usage_count = effect_set_state_usages
@@ -1030,13 +1066,13 @@ fn validate_effect(
                 && context.set_state_usages.contains_key(&root_id)
                 && effect_usage_count == total_usage_count - 1
             {
-                let mut props_set: indexmap::IndexSet<String> = indexmap::IndexSet::new();
-                let mut state_set: indexmap::IndexSet<String> = indexmap::IndexSet::new();
+                let mut props_set: IndexSet<String, FxBuildHasher> = IndexSet::default();
+                let mut state_set: IndexSet<String, FxBuildHasher> = IndexSet::default();
 
-                let mut root_nodes_map: indexmap::IndexMap<String, TreeNode> =
-                    indexmap::IndexMap::new();
+                let mut root_nodes_map: IndexMap<String, TreeNode, FxBuildHasher> =
+                    IndexMap::default();
                 for id in &derived.source_ids {
-                    let nodes = build_tree_node(*id, context, &HashSet::new());
+                    let nodes = build_tree_node(*id, context, &FxHashSet::default());
                     for node in nodes {
                         if !root_nodes_map.contains_key(&node.name) {
                             root_nodes_map.insert(node.name.clone(), node);
@@ -1061,7 +1097,10 @@ fn validate_effect(
 
                 // Check cleanup function dependencies
                 let should_skip = if let Some(ref cleanup_deps) = cleanup_function_deps {
-                    derived.source_ids.iter().any(|dep| cleanup_deps.contains(dep))
+                    derived
+                        .source_ids
+                        .iter()
+                        .any(|dep| cleanup_deps.contains(dep))
                 } else {
                     false
                 };
@@ -1128,9 +1167,9 @@ pub fn validate_no_derived_computations_in_effects(
     let effects_to_validate: Vec<(FunctionId, Vec<IdentifierId>)> = {
         let ids = &env.identifiers;
         let tys = &env.types;
-        let mut candidate_deps: HashMap<IdentifierId, Vec<IdentifierId>> = HashMap::new();
-        let mut functions_map: HashMap<IdentifierId, FunctionId> = HashMap::new();
-        let mut locals_map: HashMap<IdentifierId, IdentifierId> = HashMap::new();
+        let mut candidate_deps: FxHashMap<IdentifierId, Vec<IdentifierId>> = FxHashMap::default();
+        let mut functions_map: FxHashMap<IdentifierId, FunctionId> = FxHashMap::default();
+        let mut locals_map: FxHashMap<IdentifierId, IdentifierId> = FxHashMap::default();
         let mut result = Vec::new();
 
         for (_, block) in &func.body.blocks {
@@ -1161,9 +1200,10 @@ pub fn validate_no_derived_computations_in_effects(
                             if let (PlaceOrSpread::Place(arg0), PlaceOrSpread::Place(arg1)) =
                                 (&args[0], &args[1])
                             {
-                                if let (Some(&func_id), Some(dep_elements)) =
-                                    (functions_map.get(&arg0.identifier), candidate_deps.get(&arg1.identifier))
-                                {
+                                if let (Some(&func_id), Some(dep_elements)) = (
+                                    functions_map.get(&arg0.identifier),
+                                    candidate_deps.get(&arg1.identifier),
+                                ) {
                                     if !dep_elements.is_empty() {
                                         let resolved: Vec<IdentifierId> = dep_elements
                                             .iter()
@@ -1181,9 +1221,10 @@ pub fn validate_no_derived_computations_in_effects(
                             if let (PlaceOrSpread::Place(arg0), PlaceOrSpread::Place(arg1)) =
                                 (&args[0], &args[1])
                             {
-                                if let (Some(&func_id), Some(dep_elements)) =
-                                    (functions_map.get(&arg0.identifier), candidate_deps.get(&arg1.identifier))
-                                {
+                                if let (Some(&func_id), Some(dep_elements)) = (
+                                    functions_map.get(&arg0.identifier),
+                                    candidate_deps.get(&arg1.identifier),
+                                ) {
                                     if !dep_elements.is_empty() {
                                         let resolved: Vec<IdentifierId> = dep_elements
                                             .iter()
@@ -1244,8 +1285,8 @@ fn validate_effect_non_exp(
         }
     }
 
-    let mut seen_blocks: HashSet<BlockId> = HashSet::new();
-    let mut dep_values: HashMap<IdentifierId, Vec<IdentifierId>> = HashMap::new();
+    let mut seen_blocks: FxHashSet<BlockId> = FxHashSet::default();
+    let mut dep_values: FxHashMap<IdentifierId, Vec<IdentifierId>> = FxHashMap::default();
     for dep in effect_deps {
         dep_values.insert(*dep, vec![*dep]);
     }
@@ -1260,7 +1301,7 @@ fn validate_effect_non_exp(
         }
 
         for phi in &block.phis {
-            let mut aggregate: HashSet<IdentifierId> = HashSet::new();
+            let mut aggregate: FxHashSet<IdentifierId> = FxHashSet::default();
             for operand in phi.operands.values() {
                 if let Some(deps) = dep_values.get(&operand.identifier) {
                     for d in deps {
@@ -1290,7 +1331,7 @@ fn validate_effect_non_exp(
                 | InstructionValue::TemplateLiteral { .. }
                 | InstructionValue::CallExpression { .. }
                 | InstructionValue::MethodCall { .. } => {
-                    let mut aggregate: HashSet<IdentifierId> = HashSet::new();
+                    let mut aggregate: FxHashSet<IdentifierId> = FxHashSet::default();
                     for operand in non_exp_value_operands(&instr.value) {
                         if let Some(deps) = dep_values.get(&operand) {
                             for d in deps {
@@ -1299,10 +1340,7 @@ fn validate_effect_non_exp(
                         }
                     }
                     if !aggregate.is_empty() {
-                        dep_values.insert(
-                            instr.lvalue.identifier,
-                            aggregate.into_iter().collect(),
-                        );
+                        dep_values.insert(instr.lvalue.identifier, aggregate.into_iter().collect());
                     }
 
                     if let InstructionValue::CallExpression { callee, args, .. } = &instr.value {
@@ -1310,7 +1348,7 @@ fn validate_effect_non_exp(
                         if is_set_state_type(callee_ty) && args.len() == 1 {
                             if let PlaceOrSpread::Place(arg) = &args[0] {
                                 if let Some(deps) = dep_values.get(&arg.identifier) {
-                                    let dep_set: HashSet<_> = deps.iter().collect();
+                                    let dep_set: FxHashSet<_> = deps.iter().collect();
                                     if dep_set.len() == effect_deps.len() {
                                         if let Some(loc) = callee.loc {
                                             set_state_locs.push(loc);
@@ -1380,7 +1418,9 @@ fn validate_effect_non_exp(
 /// for resolving function expression context captures.
 fn non_exp_value_operands(value: &InstructionValue) -> Vec<IdentifierId> {
     match value {
-        InstructionValue::ComputedLoad { object, property, .. } => {
+        InstructionValue::ComputedLoad {
+            object, property, ..
+        } => {
             vec![object.identifier, property.identifier]
         }
         InstructionValue::PropertyLoad { object, .. } => vec![object.identifier],

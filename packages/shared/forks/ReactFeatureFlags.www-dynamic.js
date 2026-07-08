@@ -32,6 +32,7 @@ export const enableInfiniteRenderLoopDetectionForceThrow: boolean = __VARIANT__;
 export const enableFastAddPropertiesInDiffing: boolean = __VARIANT__;
 export const enableSuspenseyImages: boolean = __VARIANT__;
 export const enableViewTransition: boolean = __VARIANT__;
+export const enableViewTransitionParentEnterExit: boolean = __VARIANT__;
 export const enableScrollEndPolyfill: boolean = __VARIANT__;
 export const enableFragmentRefs: boolean = __VARIANT__;
 export const enableFragmentRefsScrollIntoView: boolean = __VARIANT__;

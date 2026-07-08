@@ -10,14 +10,12 @@
 //!
 //! Analogous to TS `Optimization/PruneMaybeThrows.ts`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
 };
-use react_compiler_hir::{
-    BlockId, HirFunction, Instruction, InstructionValue, Terminal,
-};
+use react_compiler_hir::{BlockId, HirFunction, Instruction, InstructionValue, Terminal};
 use react_compiler_lowering::{
     get_reverse_postordered_blocks, mark_instruction_ids, remove_dead_do_while_statements,
     remove_unnecessary_try_catch, remove_unreachable_for_updates,
@@ -84,13 +82,12 @@ pub fn prune_maybe_throws(
                 }
             }
         }
-
     }
     Ok(())
 }
 
-fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<HashMap<BlockId, BlockId>> {
-    let mut terminal_mapping: HashMap<BlockId, BlockId> = HashMap::new();
+fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, BlockId>> {
+    let mut terminal_mapping: FxHashMap<BlockId, BlockId> = FxHashMap::default();
     let instructions = &func.instructions;
 
     for block in func.body.blocks.values_mut() {

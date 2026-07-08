@@ -8,8 +8,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/PromoteUsedTemporaries.ts`.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::DeclarationId;
 use react_compiler_hir::FunctionId;
@@ -35,9 +34,9 @@ use react_compiler_hir::environment::Environment;
 // =============================================================================
 
 struct State {
-    tags: HashSet<DeclarationId>,
-    promoted: HashSet<DeclarationId>,
-    pruned: HashMap<DeclarationId, PrunedInfo>,
+    tags: FxHashSet<DeclarationId>,
+    promoted: FxHashSet<DeclarationId>,
+    pruned: FxHashMap<DeclarationId, PrunedInfo>,
 }
 
 struct PrunedInfo {
@@ -53,9 +52,9 @@ struct PrunedInfo {
 /// TS: `promoteUsedTemporaries`
 pub fn promote_used_temporaries(func: &mut ReactiveFunction, env: &mut Environment) {
     let mut state = State {
-        tags: HashSet::new(),
-        promoted: HashSet::new(),
-        pruned: HashMap::new(),
+        tags: FxHashSet::default(),
+        promoted: FxHashSet::default(),
+        pruned: FxHashMap::default(),
     };
 
     // Phase 1: collect promotable temporaries (jsx tags, pruned scope usage)
@@ -78,8 +77,8 @@ pub fn promote_used_temporaries(func: &mut ReactiveFunction, env: &mut Environme
     promote_temporaries_block(&func.body, &mut state, env);
 
     // Phase 3: promote interposed temporaries
-    let mut consts: HashSet<IdentifierId> = HashSet::new();
-    let mut globals: HashSet<IdentifierId> = HashSet::new();
+    let mut consts: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut globals: FxHashSet<IdentifierId> = FxHashSet::default();
     for param in &func.params {
         match param {
             ParamPattern::Place(p) => {
@@ -90,7 +89,7 @@ pub fn promote_used_temporaries(func: &mut ReactiveFunction, env: &mut Environme
             }
         }
     }
-    let mut inter_state: HashMap<IdentifierId, (IdentifierId, bool)> = HashMap::new();
+    let mut inter_state: FxHashMap<IdentifierId, (IdentifierId, bool)> = FxHashMap::default();
     promote_interposed_block(
         &func.body,
         &mut state,
@@ -133,8 +132,8 @@ fn collect_promotable_block(
                     state.pruned.insert(
                         identifier.declaration_id,
                         PrunedInfo {
-                        active_scopes: active_scopes.clone(),
-                        used_outside_scope: false,
+                            active_scopes: active_scopes.clone(),
+                            used_outside_scope: false,
                         },
                     );
                 }
@@ -555,9 +554,9 @@ fn visit_hir_function_for_promotion(func_id: FunctionId, state: &mut State, env:
 fn promote_interposed_block(
     block: &ReactiveBlock,
     state: &mut State,
-    inter_state: &mut HashMap<IdentifierId, (IdentifierId, bool)>,
-    consts: &mut HashSet<IdentifierId>,
-    globals: &mut HashSet<IdentifierId>,
+    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    consts: &mut FxHashSet<IdentifierId>,
+    globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
 ) {
     for stmt in block {
@@ -595,8 +594,8 @@ fn promote_interposed_block(
 fn promote_interposed_place(
     place: &Place,
     state: &mut State,
-    inter_state: &mut HashMap<IdentifierId, (IdentifierId, bool)>,
-    consts: &HashSet<IdentifierId>,
+    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    consts: &FxHashSet<IdentifierId>,
     env: &mut Environment,
 ) {
     if let Some(&(id, needs_promotion)) = inter_state.get(&place.identifier) {
@@ -610,9 +609,9 @@ fn promote_interposed_place(
 fn promote_interposed_instruction(
     instr: &ReactiveInstruction,
     state: &mut State,
-    inter_state: &mut HashMap<IdentifierId, (IdentifierId, bool)>,
-    consts: &mut HashSet<IdentifierId>,
-    globals: &mut HashSet<IdentifierId>,
+    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    consts: &mut FxHashSet<IdentifierId>,
+    globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
 ) {
     // Check instruction value lvalues (assignment targets)
@@ -803,9 +802,9 @@ fn promote_interposed_instruction(
 fn promote_interposed_value(
     value: &ReactiveValue,
     state: &mut State,
-    inter_state: &mut HashMap<IdentifierId, (IdentifierId, bool)>,
-    consts: &mut HashSet<IdentifierId>,
-    globals: &mut HashSet<IdentifierId>,
+    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    consts: &mut FxHashSet<IdentifierId>,
+    globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
 ) {
     match value {
@@ -847,9 +846,9 @@ fn promote_interposed_value(
 fn promote_interposed_terminal(
     stmt: &ReactiveTerminalStatement,
     state: &mut State,
-    inter_state: &mut HashMap<IdentifierId, (IdentifierId, bool)>,
-    consts: &mut HashSet<IdentifierId>,
-    globals: &mut HashSet<IdentifierId>,
+    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    consts: &mut FxHashSet<IdentifierId>,
+    globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
 ) {
     match &stmt.terminal {
@@ -1212,4 +1211,3 @@ fn promote_identifier(identifier_id: IdentifierId, state: &mut State, env: &mut 
     }
     state.promoted.insert(decl_id);
 }
-

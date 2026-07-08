@@ -9,27 +9,27 @@
 //! accurately preserved, and that no originally memoized values became
 //! unmemoized in the output.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
 };
-use react_compiler_hir::{
-    DeclarationId, DependencyPathEntry, IdentifierId, InstructionKind, InstructionValue,
-    ManualMemoDependency, ManualMemoDependencyRoot, Place, ReactiveBlock, ReactiveFunction,
-    ReactiveInstruction, ReactiveScopeBlock, ReactiveStatement, ReactiveValue, ScopeId,
-    IdentifierName, Identifier,
-};
 use react_compiler_hir::environment::Environment;
+use react_compiler_hir::{
+    DeclarationId, DependencyPathEntry, Identifier, IdentifierId, IdentifierName, InstructionKind,
+    InstructionValue, ManualMemoDependency, ManualMemoDependencyRoot, Place, ReactiveBlock,
+    ReactiveFunction, ReactiveInstruction, ReactiveScopeBlock, ReactiveStatement, ReactiveValue,
+    ScopeId,
+};
 
 /// State tracked during manual memo validation within a StartMemoize..FinishMemoize range.
 struct ManualMemoBlockState {
     /// Reassigned temporaries (declaration_id -> set of identifier ids that were reassigned to it).
-    reassignments: HashMap<DeclarationId, HashSet<IdentifierId>>,
+    reassignments: FxHashMap<DeclarationId, FxHashSet<IdentifierId>>,
     /// Source location of the StartMemoize instruction.
     loc: Option<SourceLocation>,
     /// Declarations produced within this manual memo block.
-    decls: HashSet<DeclarationId>,
+    decls: FxHashSet<DeclarationId>,
     /// Normalized deps from source (useMemo/useCallback dep array).
     deps_from_source: Option<Vec<ManualMemoDependency>>,
     /// Manual memo id from StartMemoize.
@@ -41,11 +41,11 @@ struct VisitorState<'a> {
     env: &'a mut Environment,
     manual_memo_state: Option<ManualMemoBlockState>,
     /// Completed (non-pruned) scope IDs.
-    scopes: HashSet<ScopeId>,
+    scopes: FxHashSet<ScopeId>,
     /// Completed pruned scope IDs.
-    pruned_scopes: HashSet<ScopeId>,
+    pruned_scopes: FxHashSet<ScopeId>,
     /// Map from identifier ID to its normalized manual memo dependency.
-    temporaries: HashMap<IdentifierId, ManualMemoDependency>,
+    temporaries: FxHashMap<IdentifierId, ManualMemoDependency>,
 }
 
 /// Validate that manual memoization (useMemo/useCallback) is preserved.
@@ -55,16 +55,13 @@ struct VisitorState<'a> {
 /// 1. Dependencies' scopes have completed before the memo block starts
 /// 2. Memoized values are actually within scopes (not unmemoized)
 /// 3. Inferred scope dependencies match the source dependencies
-pub fn validate_preserved_manual_memoization(
-    func: &ReactiveFunction,
-    env: &mut Environment,
-) {
+pub fn validate_preserved_manual_memoization(func: &ReactiveFunction, env: &mut Environment) {
     let mut state = VisitorState {
         env,
         manual_memo_state: None,
-        scopes: HashSet::new(),
-        pruned_scopes: HashSet::new(),
-        temporaries: HashMap::new(),
+        scopes: FxHashSet::default(),
+        pruned_scopes: FxHashSet::default(),
+        temporaries: FxHashMap::default(),
     };
     visit_block(&func.body, &mut state);
 }
@@ -129,9 +126,7 @@ fn visit_terminal(
         ReactiveTerminal::Label { block, .. } => {
             visit_block(block, state);
         }
-        ReactiveTerminal::Try {
-            block, handler, ..
-        } => {
+        ReactiveTerminal::Try { block, handler, .. } => {
             visit_block(block, state);
             visit_block(handler, state);
         }
@@ -208,10 +203,10 @@ fn visit_instruction(instr: &ReactiveInstruction, state: &mut VisitorState) {
 
             state.manual_memo_state = Some(ManualMemoBlockState {
                 loc: instr.loc,
-                decls: HashSet::new(),
+                decls: FxHashSet::default(),
                 deps_from_source,
                 manual_memo_id: *manual_memo_id,
-                reassignments: HashMap::new(),
+                reassignments: FxHashMap::default(),
             });
 
             // Check that each dependency's scope has completed before the memo
@@ -220,8 +215,7 @@ fn visit_instruction(instr: &ReactiveInstruction, state: &mut VisitorState) {
             for place in &operand_places {
                 let ident = &state.env.identifiers[place.identifier.0 as usize];
                 if let Some(scope_id) = ident.scope {
-                    if !state.scopes.contains(&scope_id)
-                        && !state.pruned_scopes.contains(&scope_id)
+                    if !state.scopes.contains(&scope_id) && !state.pruned_scopes.contains(&scope_id)
                     {
                         let diag = CompilerDiagnostic::new(
                             ErrorCategory::PreserveManualMemo,
@@ -255,7 +249,11 @@ fn visit_instruction(instr: &ReactiveInstruction, state: &mut VisitorState) {
             }
 
             // TS: CompilerError.invariant(state.manualMemoState.manualMemoId === value.manualMemoId, ...)
-            if state.manual_memo_state.as_ref().map_or(true, |s| s.manual_memo_id != *manual_memo_id) {
+            if state
+                .manual_memo_state
+                .as_ref()
+                .map_or(true, |s| s.manual_memo_id != *manual_memo_id)
+            {
                 state.manual_memo_state = None;
                 return;
             }
@@ -287,11 +285,7 @@ fn visit_instruction(instr: &ReactiveInstruction, state: &mut VisitorState) {
                 }
             }
         }
-        ReactiveValue::Instruction(InstructionValue::StoreLocal {
-            lvalue,
-            value,
-            ..
-        }) => {
+        ReactiveValue::Instruction(InstructionValue::StoreLocal { lvalue, value, .. }) => {
             // Track reassignments from inlining of manual memo
             if state.manual_memo_state.is_some() && lvalue.kind == InstructionKind::Reassign {
                 let decl_id =
@@ -431,8 +425,7 @@ fn record_deps_in_value(value: &ReactiveValue, state: &mut VisitorState) {
                 InstructionValue::StoreLocal { lvalue, .. }
                 | InstructionValue::StoreContext { lvalue, .. } => {
                     if let Some(ref mut memo_state) = state.manual_memo_state {
-                        let ident =
-                            &state.env.identifiers[lvalue.place.identifier.0 as usize];
+                        let ident = &state.env.identifiers[lvalue.place.identifier.0 as usize];
                         memo_state.decls.insert(ident.declaration_id);
                         if is_named(ident) {
                             state.temporaries.insert(
@@ -452,8 +445,7 @@ fn record_deps_in_value(value: &ReactiveValue, state: &mut VisitorState) {
                 InstructionValue::Destructure { lvalue, .. } => {
                     if let Some(ref mut memo_state) = state.manual_memo_state {
                         for place in destructure_lvalue_places(&lvalue.pattern) {
-                            let ident =
-                                &state.env.identifiers[place.identifier.0 as usize];
+                            let ident = &state.env.identifiers[place.identifier.0 as usize];
                             memo_state.decls.insert(ident.declaration_id);
                             if is_named(ident) {
                                 state.temporaries.insert(
@@ -526,7 +518,7 @@ fn destructure_lvalue_places(pattern: &react_compiler_hir::Pattern) -> Vec<&Plac
 /// Check if an identifier is unmemoized (has a scope that hasn't completed).
 fn is_unmemoized(
     id: IdentifierId,
-    completed_scopes: &HashSet<ScopeId>,
+    completed_scopes: &FxHashSet<ScopeId>,
     identifiers: &[Identifier],
 ) -> bool {
     let ident = &identifiers[id.0 as usize];
@@ -556,12 +548,8 @@ fn compare_deps(
 ) -> CompareDependencyResult {
     let roots_equal = match (&inferred.root, &source.root) {
         (
-            ManualMemoDependencyRoot::Global {
-                identifier_name: a,
-            },
-            ManualMemoDependencyRoot::Global {
-                identifier_name: b,
-            },
+            ManualMemoDependencyRoot::Global { identifier_name: a },
+            ManualMemoDependencyRoot::Global { identifier_name: b },
         ) => a == b,
         (
             ManualMemoDependencyRoot::NamedLocal { value: a, .. },
@@ -587,13 +575,17 @@ fn compare_deps(
     if is_subpath
         && (source.path.len() == inferred.path.len()
             || (inferred.path.len() >= source.path.len()
-                && !inferred.path.iter().any(|t| t.property == react_compiler_hir::PropertyLiteral::String("current".to_string()))))
+                && !inferred.path.iter().any(|t| {
+                    t.property == react_compiler_hir::PropertyLiteral::String("current".to_string())
+                })))
     {
         CompareDependencyResult::Ok
     } else if is_subpath {
-        if source.path.iter().any(|t| t.property == react_compiler_hir::PropertyLiteral::String("current".to_string()))
-            || inferred.path.iter().any(|t| t.property == react_compiler_hir::PropertyLiteral::String("current".to_string()))
-        {
+        if source.path.iter().any(|t| {
+            t.property == react_compiler_hir::PropertyLiteral::String("current".to_string())
+        }) || inferred.path.iter().any(|t| {
+            t.property == react_compiler_hir::PropertyLiteral::String("current".to_string())
+        }) {
             CompareDependencyResult::RefAccessDifference
         } else {
             CompareDependencyResult::Subpath
@@ -615,17 +607,20 @@ fn pretty_print_scope_dependency(
         Some(react_compiler_hir::IdentifierName::Promoted(n)) => n.clone(),
         None => "[unnamed]".to_string(),
     };
-    let path_str: String = dep_path.iter().map(|entry| {
-        let prop = match &entry.property {
-            react_compiler_hir::PropertyLiteral::String(s) => s.clone(),
-            react_compiler_hir::PropertyLiteral::Number(n) => format!("{}", n),
-        };
-        if entry.optional {
-            format!("?.{}", prop)
-        } else {
-            format!(".{}", prop)
-        }
-    }).collect();
+    let path_str: String = dep_path
+        .iter()
+        .map(|entry| {
+            let prop = match &entry.property {
+                react_compiler_hir::PropertyLiteral::String(s) => s.clone(),
+                react_compiler_hir::PropertyLiteral::Number(n) => format!("{}", n),
+            };
+            if entry.optional {
+                format!("?.{}", prop)
+            } else {
+                format!(".{}", prop)
+            }
+        })
+        .collect();
     format!("{}{}", root_str, path_str)
 }
 
@@ -646,23 +641,25 @@ fn print_manual_memo_dependency(
         }
         ManualMemoDependencyRoot::Global { identifier_name } => identifier_name.clone(),
     };
-    let path_str: String = dep.path.iter().map(|entry| {
-        let prop = match &entry.property {
-            react_compiler_hir::PropertyLiteral::String(s) => s.clone(),
-            react_compiler_hir::PropertyLiteral::Number(n) => format!("{}", n),
-        };
-        if with_optional && entry.optional {
-            format!("?.{}", prop)
-        } else {
-            format!(".{}", prop)
-        }
-    }).collect();
+    let path_str: String = dep
+        .path
+        .iter()
+        .map(|entry| {
+            let prop = match &entry.property {
+                react_compiler_hir::PropertyLiteral::String(s) => s.clone(),
+                react_compiler_hir::PropertyLiteral::Number(n) => format!("{}", n),
+            };
+            if with_optional && entry.optional {
+                format!("?.{}", prop)
+            } else {
+                format!(".{}", prop)
+            }
+        })
+        .collect();
     format!("{}{}", root_str, path_str)
 }
 
-fn get_compare_dependency_result_description(
-    result: CompareDependencyResult,
-) -> &'static str {
+fn get_compare_dependency_result_description(result: CompareDependencyResult) -> &'static str {
     match result {
         CompareDependencyResult::Ok => "Dependencies equal",
         CompareDependencyResult::RootDifference | CompareDependencyResult::PathDifference => {
@@ -678,8 +675,8 @@ fn get_compare_dependency_result_description(
 fn validate_inferred_dep(
     dep_id: IdentifierId,
     dep_path: &[DependencyPathEntry],
-    temporaries: &HashMap<IdentifierId, ManualMemoDependency>,
-    decls_within_memo_block: &HashSet<DeclarationId>,
+    temporaries: &FxHashMap<IdentifierId, ManualMemoDependency>,
+    decls_within_memo_block: &FxHashSet<DeclarationId>,
     valid_deps_in_memo_block: &[ManualMemoDependency],
     env: &mut Environment,
     memo_location: Option<SourceLocation>,
@@ -739,11 +736,7 @@ fn validate_inferred_dep(
 
     let extra = if is_named(ident) {
         // Use the original dep_id/dep_path (matching TS prettyPrintScopeDependency(dep))
-        let dep_str = pretty_print_scope_dependency(
-            dep_id,
-            dep_path,
-            &env.identifiers,
-        );
+        let dep_str = pretty_print_scope_dependency(dep_id, dep_path, &env.identifiers);
         let source_deps_str: String = valid_deps_in_memo_block
             .iter()
             .map(|d| print_manual_memo_dependency(d, &env.identifiers, true))

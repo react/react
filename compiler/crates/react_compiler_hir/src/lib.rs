@@ -9,14 +9,14 @@ pub mod reactive;
 pub mod type_config;
 pub mod visitors;
 
-use indexmap::IndexMap;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 pub use react_compiler_diagnostics::CompilerDiagnostic;
 pub use react_compiler_diagnostics::ErrorCategory;
 pub use react_compiler_diagnostics::GENERATED_SOURCE;
 pub use react_compiler_diagnostics::Position;
 pub use react_compiler_diagnostics::SourceLocation;
 pub use reactive::*;
+use rustc_hash::FxBuildHasher;
 
 // =============================================================================
 // ID newtypes
@@ -57,7 +57,7 @@ pub struct MutableRangeId(pub u32);
 // =============================================================================
 
 /// Wrapper around f64 that stores raw bytes for deterministic equality and hashing.
-/// This allows use in HashMap keys and ensures NaN == NaN (bitwise comparison).
+/// This allows use in FxHashMap keys and ensures NaN == NaN (bitwise comparison).
 #[derive(Debug, Clone, Copy)]
 pub struct FloatValue(u64);
 
@@ -190,7 +190,7 @@ pub enum ParamPattern {
 #[derive(Debug, Clone)]
 pub struct HIR {
     pub entry: BlockId,
-    pub blocks: IndexMap<BlockId, BasicBlock>,
+    pub blocks: IndexMap<BlockId, BasicBlock, FxBuildHasher>,
 }
 
 /// Block kinds
@@ -222,7 +222,7 @@ pub struct BasicBlock {
     pub id: BlockId,
     pub instructions: Vec<InstructionId>,
     pub terminal: Terminal,
-    pub preds: IndexSet<BlockId>,
+    pub preds: IndexSet<BlockId, FxBuildHasher>,
     pub phis: Vec<Phi>,
 }
 
@@ -230,7 +230,7 @@ pub struct BasicBlock {
 #[derive(Debug, Clone)]
 pub struct Phi {
     pub place: Place,
-    pub operands: IndexMap<BlockId, Place>,
+    pub operands: IndexMap<BlockId, Place, FxBuildHasher>,
 }
 
 // =============================================================================
@@ -845,7 +845,7 @@ pub enum PrimitiveValue {
     Undefined,
     Boolean(bool),
     Number(FloatValue),
-    String(String),
+    String(react_compiler_diagnostics::JsString),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1036,15 +1036,7 @@ impl IdentifierName {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Effect {
     #[serde(rename = "<unknown>")]
     Unknown,

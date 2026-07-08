@@ -1,3 +1,4 @@
+use react_compiler_ast::File;
 use react_compiler_ast::expressions::Identifier as AstIdentifier;
 use react_compiler_ast::patterns::PatternLike;
 use react_compiler_ast::statements::BlockStatement;
@@ -29,7 +30,12 @@ pub struct LoggerPosition {
 
 impl LoggerSourceLocation {
     /// Create from a diagnostics SourceLocation, adding index and filename.
-    pub fn from_loc(loc: &SourceLocation, filename: Option<&str>, start_index: Option<u32>, end_index: Option<u32>) -> Self {
+    pub fn from_loc(
+        loc: &SourceLocation,
+        filename: Option<&str>,
+        start_index: Option<u32>,
+        end_index: Option<u32>,
+    ) -> Self {
         Self {
             start: LoggerPosition {
                 line: loc.start.line,
@@ -81,10 +87,12 @@ pub struct BindingRenameInfo {
 pub enum CompileResult {
     /// Compilation succeeded (or no functions needed compilation).
     /// `ast` is None if no changes were made to the program.
-    /// The AST is stored as a pre-serialized JSON string (RawValue) to avoid
-    /// double-serialization: File→Value→String becomes File→String directly.
+    /// The compiled Babel AST is returned by value so in-process Rust consumers
+    /// (the oxc/swc frontends) use it directly instead of round-tripping through
+    /// JSON. CompileResult still derives Serialize, so the napi consumer
+    /// serializes the whole result (inlining the File) as before.
     Success {
-        ast: Option<Box<serde_json::value::RawValue>>,
+        ast: Option<File>,
         events: Vec<LoggerEvent>,
         /// Unified ordered log interleaving events and debug entries.
         /// Items appear in the order they were emitted during compilation.

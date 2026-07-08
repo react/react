@@ -11,7 +11,7 @@
 //!
 //! Analogous to TS `ValidateSourceLocations.ts`.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::common::SourceLocation as AstSourceLocation;
 use react_compiler_ast::expressions::{
@@ -19,10 +19,10 @@ use react_compiler_ast::expressions::{
     ObjectExpressionProperty,
 };
 use react_compiler_ast::patterns::PatternLike;
-use react_compiler_ast::statements::{ForInit, ForInOfLeft, Statement, VariableDeclaration};
+use react_compiler_ast::statements::{ForInOfLeft, ForInit, Statement, VariableDeclaration};
 use react_compiler_diagnostics::{
-    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory,
-    SourceLocation as DiagSourceLocation, Position as DiagPosition,
+    CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, Position as DiagPosition,
+    SourceLocation as DiagSourceLocation,
 };
 use react_compiler_hir::environment::Environment;
 use react_compiler_lowering::FunctionNode;
@@ -38,14 +38,14 @@ pub fn validate_source_locations(
     let important_original = collect_important_original_locations(func);
 
     // Step 2: Collect all locations from the generated AST
-    let mut generated = HashMap::<String, HashSet<String>>::new();
+    let mut generated = FxHashMap::<String, FxHashSet<String>>::default();
     collect_generated_from_block(&codegen.body.body, &mut generated);
     for outlined in &codegen.outlined {
         collect_generated_from_block(&outlined.func.body.body, &mut generated);
     }
 
     // Step 3: Validate that all important locations are preserved
-    let strict_node_types: HashSet<&str> =
+    let strict_node_types: FxHashSet<&str> =
         ["VariableDeclaration", "VariableDeclarator", "Identifier"]
             .into_iter()
             .collect();
@@ -54,7 +54,10 @@ pub fn validate_source_locations(
     // (JS Map preserves insertion order, which is AST traversal order = source order)
     let mut sorted_entries: Vec<&ImportantLocation> = important_original.values().collect();
     sorted_entries.sort_by(|a, b| {
-        a.loc.start.line.cmp(&b.loc.start.line)
+        a.loc
+            .start
+            .line
+            .cmp(&b.loc.start.line)
             .then(a.loc.start.column.cmp(&b.loc.start.column))
             // Outer nodes (larger spans) before inner nodes, matching depth-first traversal
             .then(b.loc.end.line.cmp(&a.loc.end.line))
@@ -85,12 +88,7 @@ pub fn validate_source_locations(
                     if has_valid_node_type {
                         report_missing_location(env, &entry.loc, node_type);
                     } else {
-                        report_wrong_node_type(
-                            env,
-                            &entry.loc,
-                            node_type,
-                            generated_node_types,
-                        );
+                        report_wrong_node_type(env, &entry.loc, node_type, generated_node_types);
                     }
                 }
             }
@@ -103,7 +101,7 @@ pub fn validate_source_locations(
 struct ImportantLocation {
     key: String,
     loc: AstSourceLocation,
-    node_types: HashSet<&'static str>,
+    node_types: FxHashSet<&'static str>,
 }
 
 // ---- Location key ----
@@ -159,7 +157,7 @@ fn report_wrong_node_type(
     env: &mut Environment,
     loc: &AstSourceLocation,
     expected_type: &str,
-    actual_types: &HashSet<String>,
+    actual_types: &FxHashSet<String>,
 ) {
     let diag_loc = ast_to_diag_loc(loc);
     let mut actual: Vec<&str> = actual_types.iter().map(|s| s.as_str()).collect();
@@ -228,15 +226,12 @@ fn important_expression_type(expr: &Expression) -> Option<&'static str> {
 fn is_manual_memoization(expr: &Expression) -> bool {
     if let Expression::CallExpression(call) = expr {
         match call.callee.as_ref() {
-            Expression::Identifier(id) => {
-                id.name == "useMemo" || id.name == "useCallback"
-            }
+            Expression::Identifier(id) => id.name == "useMemo" || id.name == "useCallback",
             Expression::MemberExpression(mem) => {
                 if let (Expression::Identifier(obj), Expression::Identifier(prop)) =
                     (mem.object.as_ref(), &*mem.property)
                 {
-                    obj.name == "React"
-                        && (prop.name == "useMemo" || prop.name == "useCallback")
+                    obj.name == "React" && (prop.name == "useMemo" || prop.name == "useCallback")
                 } else {
                     false
                 }
@@ -254,8 +249,8 @@ fn is_manual_memoization(expr: &Expression) -> bool {
 
 fn collect_important_original_locations(
     func: &FunctionNode<'_>,
-) -> HashMap<String, ImportantLocation> {
-    let mut locations = HashMap::new();
+) -> FxHashMap<String, ImportantLocation> {
+    let mut locations = FxHashMap::default();
 
     // Note: TS uses func.traverse() which visits DESCENDANTS only, not the root
     // function node itself. So we don't record the root function as important.
@@ -299,14 +294,14 @@ fn collect_important_original_locations(
 fn record_important(
     node_type: &'static str,
     loc: &Option<AstSourceLocation>,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     if let Some(loc) = loc {
         let key = location_key(loc);
         if let Some(existing) = locations.get_mut(&key) {
             existing.node_types.insert(node_type);
         } else {
-            let mut node_types = HashSet::new();
+            let mut node_types = FxHashSet::default();
             node_types.insert(node_type);
             locations.insert(
                 key.clone(),
@@ -323,7 +318,7 @@ fn record_important(
 fn collect_original_block(
     stmts: &[Statement],
     in_single_return_arrow: bool,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     for stmt in stmts {
         collect_original_statement(stmt, in_single_return_arrow, locations);
@@ -333,7 +328,7 @@ fn collect_original_block(
 fn collect_original_statement(
     stmt: &Statement,
     in_single_return_arrow: bool,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     // Record this statement if it's an important type
     if let Some(type_name) = important_statement_type(stmt) {
@@ -481,7 +476,7 @@ fn collect_original_statement(
 
 fn collect_original_var_declaration(
     decl: &VariableDeclaration,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     for declarator in &decl.declarations {
         // VariableDeclarator is an important type
@@ -495,7 +490,7 @@ fn collect_original_var_declaration(
 
 fn collect_original_expression(
     expr: &Expression,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     // Record this expression if it's an important type
     if let Some(type_name) = important_expression_type(expr) {
@@ -672,15 +667,14 @@ fn collect_original_expression(
 
 fn collect_original_arrow_children(
     arrow: &ArrowFunctionExpression,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     for param in &arrow.params {
         collect_original_pattern(param, locations);
     }
     match arrow.body.as_ref() {
         ArrowFunctionBody::BlockStatement(block) => {
-            let is_single_return =
-                block.body.len() == 1 && block.directives.is_empty();
+            let is_single_return = block.body.len() == 1 && block.directives.is_empty();
             collect_original_block(&block.body, is_single_return, locations);
         }
         ArrowFunctionBody::Expression(expr) => {
@@ -691,7 +685,7 @@ fn collect_original_arrow_children(
 
 fn collect_original_fn_expr_children(
     func: &FunctionExpression,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     if let Some(id) = &func.id {
         record_important("Identifier", &id.base.loc, locations);
@@ -704,7 +698,7 @@ fn collect_original_fn_expr_children(
 
 fn collect_original_pattern(
     pattern: &PatternLike,
-    locations: &mut HashMap<String, ImportantLocation>,
+    locations: &mut FxHashMap<String, ImportantLocation>,
 ) {
     match pattern {
         PatternLike::Identifier(id) => {
@@ -741,10 +735,7 @@ fn collect_original_pattern(
             collect_original_pattern(&r.argument, locations);
         }
         PatternLike::MemberExpression(m) => {
-            collect_original_expression(
-                &Expression::MemberExpression(m.clone()),
-                locations,
-            );
+            collect_original_expression(&Expression::MemberExpression(m.clone()), locations);
         }
         PatternLike::TSAsExpression(_)
         | PatternLike::TSSatisfiesExpression(_)
@@ -861,7 +852,7 @@ fn expression_loc(expr: &Expression) -> &Option<AstSourceLocation> {
 
 fn collect_generated_from_block(
     stmts: &[Statement],
-    locations: &mut HashMap<String, HashSet<String>>,
+    locations: &mut FxHashMap<String, FxHashSet<String>>,
 ) {
     for stmt in stmts {
         collect_generated_statement(stmt, locations);
@@ -871,7 +862,7 @@ fn collect_generated_from_block(
 fn record_generated(
     type_name: &str,
     loc: &Option<AstSourceLocation>,
-    locations: &mut HashMap<String, HashSet<String>>,
+    locations: &mut FxHashMap<String, FxHashSet<String>>,
 ) {
     if let Some(loc) = loc {
         let key = location_key(loc);
@@ -884,7 +875,7 @@ fn record_generated(
 
 fn collect_generated_statement(
     stmt: &Statement,
-    locations: &mut HashMap<String, HashSet<String>>,
+    locations: &mut FxHashMap<String, FxHashSet<String>>,
 ) {
     // Record this statement's location
     let type_name = statement_type_name(stmt);
@@ -1020,7 +1011,7 @@ fn collect_generated_statement(
 
 fn collect_generated_var_declaration(
     decl: &VariableDeclaration,
-    locations: &mut HashMap<String, HashSet<String>>,
+    locations: &mut FxHashMap<String, FxHashSet<String>>,
 ) {
     for declarator in &decl.declarations {
         record_generated("VariableDeclarator", &declarator.base.loc, locations);
@@ -1033,7 +1024,7 @@ fn collect_generated_var_declaration(
 
 fn collect_generated_expression(
     expr: &Expression,
-    locations: &mut HashMap<String, HashSet<String>>,
+    locations: &mut FxHashMap<String, FxHashSet<String>>,
 ) {
     let type_name = expression_type_name(expr);
     record_generated(type_name, expression_loc(expr), locations);
@@ -1200,7 +1191,7 @@ fn collect_generated_expression(
 
 fn collect_generated_pattern(
     pattern: &PatternLike,
-    locations: &mut HashMap<String, HashSet<String>>,
+    locations: &mut FxHashMap<String, FxHashSet<String>>,
 ) {
     match pattern {
         PatternLike::Identifier(id) => {

@@ -13,7 +13,7 @@
 //!
 //! Analogous to TS `HIR/MergeConsecutiveBlocks.ts`.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::visitors;
 use react_compiler_hir::{
@@ -47,16 +47,13 @@ pub fn merge_consecutive_blocks(func: &mut HirFunction, functions: &mut [HirFunc
     for func_id in inner_func_ids {
         // Use std::mem::replace to temporarily take the inner function out,
         // process it, then put it back (standard borrow checker workaround)
-        let mut inner_func = std::mem::replace(
-            &mut functions[func_id],
-            placeholder_function(),
-        );
+        let mut inner_func = std::mem::replace(&mut functions[func_id], placeholder_function());
         merge_consecutive_blocks(&mut inner_func, functions);
         functions[func_id] = inner_func;
     }
 
     // Build fallthrough set
-    let mut fallthrough_blocks: HashSet<BlockId> = HashSet::new();
+    let mut fallthrough_blocks: FxHashSet<BlockId> = FxHashSet::default();
     for block in func.body.blocks.values() {
         if let Some(ft) = visitors::terminal_fallthrough(&block.terminal) {
             fallthrough_blocks.insert(ft);
@@ -189,13 +186,13 @@ pub fn merge_consecutive_blocks(func: &mut HirFunction, functions: &mut [HirFunc
 
 /// Tracks which blocks have been merged and into which target.
 struct MergedBlocks {
-    map: HashMap<BlockId, BlockId>,
+    map: FxHashMap<BlockId, BlockId>,
 }
 
 impl MergedBlocks {
     fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: FxHashMap::default(),
         }
     }
 
