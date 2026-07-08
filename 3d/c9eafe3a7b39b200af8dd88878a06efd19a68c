@@ -1,0 +1,28 @@
+packages/react-reconciler/src/ReactFiber.js
+  s_d5e13cda7b40c0::t_a726f1415230fb 82,428
+  s_d5e13cda7b40c0::t_a8ad36142e51c1 564-572,575,597,645-646
+  s_d5e13cda7b40c0::t_462311018412ed 564-572,575,597,645-646
+packages/react-reconciler/src/ReactFiberBeginWork.js
+  s_d5e13cda7b40c0::t_e57474e063a95d 136,415-424,492,2113,2126,2143
+packages/react-reconciler/src/ReactFiberHotReloading.js
+  s_d5e13cda7b40c0::t_65ec5becb22e7f 64
+packages/react-refresh/src/__tests__/ReactFresh-test.js
+  s_d5e13cda7b40c0::t_0233c3ff97ac40 918-972
+  s_d5e13cda7b40c0::t_433ab5644073e5 918-972
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3dc9eafe3a7b39b200af8dd88878a06efd19a68c",
+  "prompts": {},
+  "sessions": {
+    "s_d5e13cda7b40c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "823dfc91-e21b-419a-96a7-c3559582d9f4",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Sophie Alpert <git@sophiebits.com>"
+    }
+  }
+}
