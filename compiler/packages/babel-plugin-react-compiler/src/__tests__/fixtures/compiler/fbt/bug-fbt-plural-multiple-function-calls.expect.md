@@ -59,8 +59,12 @@ function useFoo(t0) {
       {
         "*": {
           "*": "{number of apples} apples and {number of bananas} bananas",
+          _1: "{number of apples} apples and {number of bananas} banana",
         },
-        _1: { _1: "{number of apples} apple and {number of bananas} banana" },
+        _1: {
+          "*": "{number of apples} apple and {number of bananas} bananas",
+          _1: "{number of apples} apple and {number of bananas} banana",
+        },
       },
       [
         fbt._plural(apples),
@@ -68,7 +72,7 @@ function useFoo(t0) {
         fbt._param("number of apples", apples),
         fbt._param("number of bananas", bananas),
       ],
-      { hk: "3vKunl" },
+      { hk: "1mGnhr" },
     );
     $[0] = apples;
     $[1] = bananas;
