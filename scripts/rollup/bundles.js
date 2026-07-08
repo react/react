@@ -508,7 +508,7 @@ const bundles = [
     global: 'ReactServerDOMClient',
     minifyWithProdErrorCodes: false,
     wrapWithModuleBoundaries: false,
-    externals: ['react', 'react-dom', 'util', 'crypto'],
+    externals: ['react', 'react-dom', 'util', 'crypto', 'async_hooks'],
   },
   {
     bundleTypes: [NODE_DEV, NODE_PROD],
@@ -620,7 +620,7 @@ const bundles = [
     global: 'ReactServerDOMClient',
     minifyWithProdErrorCodes: false,
     wrapWithModuleBoundaries: false,
-    externals: ['react', 'react-dom', 'util'],
+    externals: ['react', 'react-dom', 'util', 'async_hooks'],
   },
   {
     bundleTypes: [NODE_DEV, NODE_PROD],

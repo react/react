@@ -29,9 +29,15 @@ type ServerConsumerManifest = {
 
 import type {Readable} from 'stream';
 
+import {AsyncLocalStorage} from 'async_hooks';
+
+import type {RenderResult} from 'react-client/src/ReactFlightClient';
+
 import {
   createResponse,
   createStreamState,
+  connectRenderResult,
+  provideDispatchScope,
   getRoot,
   reportGlobalError,
   processStringChunk,
@@ -281,4 +287,57 @@ function createInlineDataSource(stream: Readable): InlineDataSource {
   };
 }
 
-export {createFromNodeStream, createInlineDataSource};
+
+// Shadows the Edge implementation re-exported above with one that follows
+// this entry point's conventions: the manifest is positional, like
+// createFromNodeStream's.
+function createFromRender<T>(
+  result: RenderResult,
+  serverConsumerManifest: ServerConsumerManifest,
+  options?: Options,
+): Thenable<T> {
+  const response: Response = createResponse(
+    serverConsumerManifest.moduleMap,
+    serverConsumerManifest.serverModuleMap,
+    serverConsumerManifest.moduleLoading,
+    noServerCall,
+    options ? options.encodeFormAction : undefined,
+    options && typeof options.nonce === 'string' ? options.nonce : undefined,
+    undefined, // TODO: If encodeReply is supported, this should support temporaryReferences
+    options && options.unstable_allowPartialStream
+      ? options.unstable_allowPartialStream
+      : false,
+    __DEV__ && options && options.findSourceMapURL
+      ? options.findSourceMapURL
+      : undefined,
+    __DEV__ && options ? options.replayConsoleLogs === true : false, // defaults to false
+    __DEV__ && options && options.environmentName
+      ? options.environmentName
+      : undefined,
+    __DEV__ && options && options.startTime != null
+      ? options.startTime
+      : undefined,
+    __DEV__ && options && options.endTime != null ? options.endTime : undefined,
+    undefined, // debugChannel: debug rows arrive through the result itself
+  );
+  const streamState = createStreamState(response, result);
+  connectRenderResult(response, result, streamState);
+  const root = getRoot<T>(response);
+  let scopeCaptured = false;
+  return {
+    then(resolve: any, reject: any) {
+      if (!scopeCaptured) {
+        scopeCaptured = true;
+        // Module preinits and hints must land in whatever request consumes
+        // this response. A byte stream gets this implicitly: its
+        // subscription callbacks inherit the consumer's async scope. For an
+        // in-process render, capture the scope of the first read — the
+        // consuming renderer's — and route every dispatch through it.
+        provideDispatchScope(response, AsyncLocalStorage.snapshot());
+      }
+      return (root as any).then(resolve, reject);
+    },
+  } as any;
+}
+
+export {createFromNodeStream, createFromRender, createInlineDataSource};

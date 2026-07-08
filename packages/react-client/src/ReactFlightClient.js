@@ -42,6 +42,13 @@ import type {
 
 import type {TemporaryReferenceSet} from './ReactFlightTemporaryReferences';
 
+import type {RenderResult} from 'shared/ReactFlightRenderResult';
+
+export type {
+  RenderConsumer,
+  RenderResult,
+} from 'shared/ReactFlightRenderResult';
+
 import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
@@ -126,7 +133,10 @@ export type {CallServerCallback, EncodeFormActionCallback};
 
 interface FlightStreamController {
   enqueueValue(value: any): void;
-  enqueueModel(json: UninitializedModel): void;
+  enqueueModel(
+    json: UninitializedModel | Object,
+    status: 'resolved_model' | 'resolved_object',
+  ): void;
   close(json: UninitializedModel): void;
   error(error: Error): void;
 }
@@ -150,6 +160,11 @@ type RowParserState = 0 | 1 | 2 | 3 | 4;
 const PENDING = 'pending';
 const BLOCKED = 'blocked';
 const RESOLVED_MODEL = 'resolved_model';
+// Like RESOLVED_MODEL, but the value is the row's already parsed (not yet
+// revived) model rather than its JSON text. Rows received in object form
+// from an in-process render resolve to this state, so the two forms never
+// have to be told apart by inspecting the value.
+const RESOLVED_OBJECT = 'resolved_object';
 const RESOLVED_MODULE = 'resolved_module';
 const INITIALIZED = 'fulfilled';
 const ERRORED = 'rejected';
@@ -178,6 +193,15 @@ type BlockedChunk<T> = {
 type ResolvedModelChunk<T> = {
   status: 'resolved_model',
   value: UninitializedModel,
+  reason: Response,
+  _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
+  _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
+  _debugInfo: ReactDebugInfo, // DEV-only
+  then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
+};
+type ResolvedObjectChunk<T> = {
+  status: 'resolved_object',
+  value: Object,
   reason: Response,
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null | SomeChunk<ReactDebugInfoEntry>, // DEV-only
@@ -235,6 +259,7 @@ type SomeChunk<T> =
   | PendingChunk<T>
   | BlockedChunk<T>
   | ResolvedModelChunk<T>
+  | ResolvedObjectChunk<T>
   | ResolvedModuleChunk<T>
   | InitializedChunk<T>
   | ErroredChunk<T>
@@ -266,6 +291,7 @@ ReactPromise.prototype.then = function <T>(
   // might put us back into one of the other states.
   switch (chunk.status) {
     case RESOLVED_MODEL:
+    case RESOLVED_OBJECT:
       initializeModelChunk(chunk);
       break;
     case RESOLVED_MODULE:
@@ -347,6 +373,15 @@ type Response = {
   _callServer: CallServerCallback,
   _encodeFormAction: void | EncodeFormActionCallback,
   _nonce: ?string,
+  // Only used when this response consumes an in-process render. Rows are
+  // delivered inside the producing renderer's async scope, where the
+  // consuming renderer (and its request storage) isn't reachable, so hint
+  // and module-destination dispatches can't run at row-receipt time the way
+  // they do for a byte stream, whose subscription callbacks inherit the
+  // consumer's scope. Until the consumer's scope is captured (at its first
+  // read), dispatches buffer here; afterwards they run through it.
+  _deferredDispatches: null | Array<() => void>,
+  _dispatchScope: null | ((dispatch: () => void) => void),
   _chunks: Map<number, SomeChunk<any>>,
   _stringDecoder: StringDecoder,
   _closed: boolean,
@@ -423,6 +458,7 @@ function readChunk<T>(chunk: SomeChunk<T>): T {
   // might put us back into one of the other states.
   switch (chunk.status) {
     case RESOLVED_MODEL:
+    case RESOLVED_OBJECT:
       initializeModelChunk(chunk);
       break;
     case RESOLVED_MODULE:
@@ -802,6 +838,14 @@ function createResolvedModelChunk<T>(
   return new ReactPromise(RESOLVED_MODEL, value, response);
 }
 
+function createResolvedObjectChunk<T>(
+  response: Response,
+  value: Object,
+): ResolvedObjectChunk<T> {
+  // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
+  return new ReactPromise(RESOLVED_OBJECT, value, response);
+}
+
 function createResolvedModuleChunk<T>(
   response: Response,
   value: ClientReference<T>,
@@ -854,48 +898,72 @@ function createInitializedStreamChunk<
   return new ReactPromise(INITIALIZED, value, controller);
 }
 
+function wrapIteratorResultModel(
+  value: UninitializedModel | Object,
+  done: boolean,
+  status: 'resolved_model' | 'resolved_object',
+): UninitializedModel | Object {
+  // To reuse as much code as possible we add the wrapper element as part of
+  // the model. For JSON text we concatenate it into the JSON. For an already
+  // parsed model we wrap it in an equivalent parsed object.
+  if (status === RESOLVED_MODEL) {
+    return (
+      (done ? '{"done":true,"value":' : '{"done":false,"value":') +
+      (value as any) +
+      '}'
+    );
+  }
+  return {done: done, value: value};
+}
+
 function createResolvedIteratorResultChunk<T>(
   response: Response,
-  value: UninitializedModel,
+  value: UninitializedModel | Object,
   done: boolean,
+  status: 'resolved_model' | 'resolved_object',
 ): ResolvedModelChunk<IteratorResult<T, T>> {
-  // To reuse code as much code as possible we add the wrapper element as part of the JSON.
-  const iteratorResultJSON =
-    (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}';
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new ReactPromise(RESOLVED_MODEL, iteratorResultJSON, response);
+  return new ReactPromise(
+    status,
+    wrapIteratorResultModel(value, done, status),
+    response,
+  );
 }
 
 function resolveIteratorResultChunk<T>(
   response: Response,
   chunk: SomeChunk<IteratorResult<T, T>>,
-  value: UninitializedModel,
+  value: UninitializedModel | Object,
   done: boolean,
+  status: 'resolved_model' | 'resolved_object',
 ): void {
-  // To reuse code as much code as possible we add the wrapper element as part of the JSON.
-  const iteratorResultJSON =
-    (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}';
-  resolveModelChunk(response, chunk, iteratorResultJSON);
+  resolveModelChunk(
+    response,
+    chunk,
+    wrapIteratorResultModel(value, done, status),
+    status,
+  );
 }
 
 function resolveModelChunk<T>(
   response: Response,
   chunk: SomeChunk<T>,
-  value: UninitializedModel,
+  value: UninitializedModel | Object,
+  status: 'resolved_model' | 'resolved_object',
 ): void {
   if (chunk.status !== PENDING) {
     // If we get more data to an already resolved ID, we assume that it's
     // a stream chunk since any other row shouldn't have more than one entry.
     const streamChunk: InitializedStreamChunk<any> = chunk as any;
     const controller = streamChunk.reason;
-    controller.enqueueModel(value);
+    controller.enqueueModel(value, status);
     return;
   }
   releasePendingChunk(response, chunk);
   const resolveListeners = chunk.value;
   const rejectListeners = chunk.reason;
-  const resolvedChunk: ResolvedModelChunk<T> = chunk as any;
-  resolvedChunk.status = RESOLVED_MODEL;
+  const resolvedChunk = chunk as any;
+  resolvedChunk.status = status;
   resolvedChunk.value = value;
   resolvedChunk.reason = response;
   if (resolveListeners !== null) {
@@ -965,7 +1033,7 @@ let isInitializingDebugInfo: boolean = false;
 
 function initializeDebugChunk(
   response: Response,
-  chunk: ResolvedModelChunk<any> | PendingChunk<any>,
+  chunk: ResolvedModelChunk<any> | ResolvedObjectChunk<any> | PendingChunk<any>,
 ): void {
   const debugChunk = chunk._debugChunk;
   if (debugChunk !== null) {
@@ -1042,11 +1110,14 @@ function initializeDebugChunk(
   }
 }
 
-function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
+function initializeModelChunk<T>(
+  chunk: ResolvedModelChunk<T> | ResolvedObjectChunk<T>,
+): void {
   const prevHandler = initializingHandler;
   const prevChunk = initializingChunk;
   initializingHandler = null;
 
+  const isObjectForm = chunk.status === RESOLVED_OBJECT;
   const resolvedModel = chunk.value;
   const response = chunk.reason;
 
@@ -1071,7 +1142,11 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
   }
 
   try {
-    const value: T = parseModel(response, resolvedModel);
+    const value: T = isObjectForm
+      ? // The row arrived in object form from an in-process render: already
+        // parsed, not yet revived. See parseModel for the wrapper object.
+        reviveModel(response, resolvedModel as any, {'': resolvedModel}, '')
+      : parseModel(response, resolvedModel as any);
     // Invoke any listeners added while resolving this model. I.e. cyclic
     // references. This may or may not fully resolve the model depending on
     // if they were blocked.
@@ -1563,6 +1638,7 @@ function fulfillReference(
         } else {
           switch (referencedChunk.status) {
             case RESOLVED_MODEL:
+            case RESOLVED_OBJECT:
               initializeModelChunk(referencedChunk);
               break;
             case RESOLVED_MODULE:
@@ -1651,6 +1727,7 @@ function fulfillReference(
       } else {
         switch (referencedChunk.status) {
           case RESOLVED_MODEL:
+          case RESOLVED_OBJECT:
             initializeModelChunk(referencedChunk);
             break;
           case RESOLVED_MODULE:
@@ -2109,6 +2186,7 @@ function getOutlinedModel<T>(
   }
   switch (chunk.status) {
     case RESOLVED_MODEL:
+    case RESOLVED_OBJECT:
       initializeModelChunk(chunk);
       break;
     case RESOLVED_MODULE:
@@ -2128,6 +2206,7 @@ function getOutlinedModel<T>(
           const referencedChunk: SomeChunk<any> = value._payload;
           switch (referencedChunk.status) {
             case RESOLVED_MODEL:
+            case RESOLVED_OBJECT:
               initializeModelChunk(referencedChunk);
               break;
             case RESOLVED_MODULE:
@@ -2204,6 +2283,7 @@ function getOutlinedModel<T>(
         const referencedChunk: SomeChunk<any> = value._payload;
         switch (referencedChunk.status) {
           case RESOLVED_MODEL:
+          case RESOLVED_OBJECT:
             initializeModelChunk(referencedChunk);
             break;
           case RESOLVED_MODULE:
@@ -2337,7 +2417,10 @@ function defineLazyGetter<T>(
   if (key !== __PROTO__) {
     Object.defineProperty(parentObject, key, {
       get: function () {
-        if (chunk.status === RESOLVED_MODEL) {
+        if (
+          chunk.status === RESOLVED_MODEL ||
+          chunk.status === RESOLVED_OBJECT
+        ) {
           // If it was now resolved, then we initialize it. This may then discover
           // a new set of lazy references that are then asked for eagerly in case
           // we get that deep.
@@ -2767,6 +2850,8 @@ function ResponseInstance(
   this._callServer = callServer !== undefined ? callServer : missingCall;
   this._encodeFormAction = encodeFormAction;
   this._nonce = nonce;
+  this._deferredDispatches = null;
+  this._dispatchScope = null;
   this._chunks = chunks;
   this._stringDecoder = createStringDecoder();
   this._closed = false;
@@ -3080,7 +3165,34 @@ function resolveModel(
     if (__DEV__) {
       resolveChunkDebugInfo(response, streamState, chunk);
     }
-    resolveModelChunk(response, chunk, model);
+    resolveModelChunk(response, chunk, model, RESOLVED_MODEL);
+  }
+}
+
+// Like resolveModel, but for a row that arrived in object form from an
+// in-process render: already parsed, not yet revived.
+function resolveModelObject(
+  response: Response,
+  id: number,
+  model: Object,
+  streamState: StreamState,
+): void {
+  const chunks = response._chunks;
+  const chunk = chunks.get(id);
+  if (!chunk) {
+    const newChunk: ResolvedObjectChunk<any> = createResolvedObjectChunk(
+      response,
+      model,
+    );
+    if (__DEV__) {
+      resolveChunkDebugInfo(response, streamState, newChunk);
+    }
+    chunks.set(id, newChunk);
+  } else {
+    if (__DEV__) {
+      resolveChunkDebugInfo(response, streamState, chunk);
+    }
+    resolveModelChunk(response, chunk, model, RESOLVED_OBJECT);
   }
 }
 
@@ -3153,10 +3265,12 @@ function resolveModule(
     clientReferenceMetadata,
   );
 
-  prepareDestinationForModule(
-    response._moduleLoading,
-    response._nonce,
-    clientReferenceMetadata,
+  scheduleDispatch(response, () =>
+    prepareDestinationForModule(
+      response._moduleLoading,
+      response._nonce,
+      clientReferenceMetadata,
+    ),
   );
 
   // TODO: Add an option to encode modules that are lazy loaded.
@@ -3302,14 +3416,17 @@ function startReadableStream<T>(
         });
       }
     },
-    enqueueModel(json: UninitializedModel): void {
+    enqueueModel(
+      json: UninitializedModel | Object,
+      status: 'resolved_model' | 'resolved_object',
+    ): void {
       if (previousBlockedChunk === null) {
         // If we're not blocked on any other chunks, we can try to eagerly initialize
         // this as a fast-path to avoid awaiting them.
-        const chunk: ResolvedModelChunk<T> = createResolvedModelChunk(
-          response,
-          json,
-        );
+        const chunk: ResolvedModelChunk<T> | ResolvedObjectChunk<T> =
+          status === RESOLVED_MODEL
+            ? createResolvedModelChunk(response, json as any)
+            : createResolvedObjectChunk(response, json as any);
         initializeModelChunk(chunk);
         const initializedChunk: SomeChunk<T> = chunk;
         if (initializedChunk.status === INITIALIZED) {
@@ -3336,7 +3453,7 @@ function startReadableStream<T>(
             // to synchronous emitting.
             previousBlockedChunk = null;
           }
-          resolveModelChunk(response, chunk, json);
+          resolveModelChunk(response, chunk, json, status);
         });
       }
     },
@@ -3431,12 +3548,16 @@ function startAsyncIterable<T>(
       }
       nextWriteIndex++;
     },
-    enqueueModel(value: UninitializedModel): void {
+    enqueueModel(
+      value: UninitializedModel | Object,
+      status: 'resolved_model' | 'resolved_object',
+    ): void {
       if (nextWriteIndex === buffer.length) {
         buffer[nextWriteIndex] = createResolvedIteratorResultChunk(
           response,
           value,
           false,
+          status,
         );
       } else {
         resolveIteratorResultChunk(
@@ -3444,6 +3565,7 @@ function startAsyncIterable<T>(
           buffer[nextWriteIndex],
           value,
           false,
+          status,
         );
       }
       nextWriteIndex++;
@@ -3458,6 +3580,7 @@ function startAsyncIterable<T>(
           response,
           value,
           true,
+          RESOLVED_MODEL,
         );
       } else {
         resolveIteratorResultChunk(
@@ -3465,6 +3588,7 @@ function startAsyncIterable<T>(
           buffer[nextWriteIndex],
           value,
           true,
+          RESOLVED_MODEL,
         );
       }
       nextWriteIndex++;
@@ -3475,6 +3599,7 @@ function startAsyncIterable<T>(
           buffer[nextWriteIndex++],
           '"$undefined"',
           true,
+          RESOLVED_MODEL,
         );
       }
     },
@@ -3707,7 +3832,7 @@ function resolveHint<Code: HintCode>(
   model: UninitializedModel,
 ): void {
   const hintModel: HintModel<Code> = parseModel(response, model);
-  dispatchHint(code, hintModel);
+  scheduleDispatch(response, () => dispatchHint(code, hintModel));
 }
 
 const supportsCreateTask = __DEV__ && !!(console as any).createTask;
@@ -4334,7 +4459,7 @@ function resolveConsoleEntry(
         // to synchronous emitting.
         response._blockedConsole = null;
       }
-      resolveModelChunk(response, chunk, json);
+      resolveModelChunk(response, chunk, json, RESOLVED_MODEL);
     };
     blockedChunk.then(unblock, unblock);
   }
@@ -4393,7 +4518,7 @@ function resolveIOInfo(
       chunks.set(id, chunk);
       initializeModelChunk(chunk);
     } else {
-      resolveModelChunk(response, chunk, model);
+      resolveModelChunk(response, chunk, model, RESOLVED_MODEL);
       if (chunk.status === RESOLVED_MODEL) {
         initializeModelChunk(chunk);
       }
@@ -5469,6 +5594,143 @@ export function processStringChunk(
   streamState._rowLength = rowLength;
 }
 
+function scheduleDispatch(response: Response, dispatch: () => void): void {
+  const scope = response._dispatchScope;
+  if (scope !== null) {
+    // Run within the consumer's captured async scope so the dispatch can
+    // resolve the consuming renderer's request.
+    scope(dispatch);
+    return;
+  }
+  const deferred = response._deferredDispatches;
+  if (deferred !== null) {
+    // The consumer hasn't read anything yet; hold the dispatch until its
+    // scope is captured.
+    deferred.push(dispatch);
+    return;
+  }
+  dispatch();
+}
+
+// Captures the async scope of the consumer's first read. Everything
+// buffered so far flushes through it, and future dispatches run through it
+// the moment their row is delivered — the same timing a byte stream's
+// subscription gives them.
+export function provideDispatchScope(
+  weakResponse: WeakResponse,
+  runInScope: (dispatch: () => void) => void,
+): void {
+  if (hasGCedResponse(weakResponse)) {
+    return;
+  }
+  const response = unwrapWeakResponse(weakResponse);
+  if (response._dispatchScope !== null) {
+    return;
+  }
+  response._dispatchScope = runInScope;
+  const deferred = response._deferredDispatches;
+  response._deferredDispatches = null;
+  if (deferred !== null && deferred.length > 0) {
+    // Enter the captured scope once for the whole backlog.
+    runInScope(() => {
+      for (let i = 0; i < deferred.length; i++) {
+        deferred[i]();
+      }
+    });
+  }
+}
+
+export function connectRenderResult(
+  weakResponse: WeakResponse,
+  result: RenderResult,
+  streamState: StreamState,
+): void {
+  if (!hasGCedResponse(weakResponse)) {
+    unwrapWeakResponse(weakResponse)._deferredDispatches = [];
+  }
+  result._attach({
+    row: (id: number, tag: string, payload: mixed) =>
+      processModelRow(weakResponse, streamState, id, tag, payload),
+    close: () => close(weakResponse),
+    error: (reason: mixed) => reportGlobalError(weakResponse, reason as any),
+  });
+}
+
+export function processModelRow(
+  weakResponse: WeakResponse,
+  streamState: StreamState,
+  id: number,
+  tag: string,
+  payload: mixed,
+): void {
+  if (hasGCedResponse(weakResponse)) {
+    // Ignore more rows if we've already GC:ed all listeners.
+    return;
+  }
+  const response = unwrapWeakResponse(weakResponse);
+  switch (tag) {
+    case '': {
+      // An untagged model row. Objects arrive parsed but not yet revived;
+      // strings are always the row's JSON text; an empty payload marks a
+      // DEV-only halted row which intentionally never resolves.
+      if (payload === '' || payload === undefined) {
+        if (__DEV__) {
+          resolveDebugHalt(response, id);
+        }
+        return;
+      }
+      if (typeof payload === 'string') {
+        // The model's JSON text: primitives and DEV-only pre-serialized rows.
+        resolveModel(response, id, payload, streamState);
+      } else {
+        resolveModelObject(response, id, payload as any, streamState);
+      }
+      return;
+    }
+    case 'T': {
+      // Text rows skip the wire's byte-length framing entirely.
+      resolveText(response, id, payload as any, streamState);
+      return;
+    }
+    case 'A': {
+      // An ArrayBuffer, delivered as a view over exactly its bytes.
+      resolveBuffer(response, id, (payload as any).buffer, streamState);
+      return;
+    }
+    case 'O':
+    case 'o':
+    case 'U':
+    case 'S':
+    case 's':
+    case 'L':
+    case 'l':
+    case 'G':
+    case 'g':
+    case 'M':
+    case 'm':
+    case 'V':
+    case 'b': {
+      // Binary rows are delivered as a view that already has the row's
+      // type, so nothing needs to be reconstructed from raw bytes.
+      resolveBuffer(response, id, payload as any, streamState);
+      return;
+    }
+    default: {
+      // Everything else is delivered as the same text that frames the row
+      // on the wire, so it takes the exact same path a byte stream takes
+      // after it has parsed a row.
+      processFullStringRow(
+        response,
+        streamState,
+        id,
+        tag.charCodeAt(0),
+        payload as any,
+      );
+      return;
+    }
+  }
+}
+
 function parseModel<T>(response: Response, json: UninitializedModel): T {
   const rawModel = JSON.parse(json);
   // Pass a wrapper object as parentObject to match the original JSON.parse
@@ -5494,7 +5756,12 @@ function reviveModel(
   }
   if (isArray(value)) {
     for (let i = 0; i < value.length; i++) {
-      (value as any)[i] = reviveModel(response, value[i], value, '' + i);
+      const walked = reviveModel(response, value[i], value, '' + i);
+      if (walked !== value[i]) {
+        // Only write on change: unchanged values may be the producer's own
+        // objects, which can be frozen.
+        (value as any)[i] = walked;
+      }
     }
     // $FlowFixMe[invalid-compare]
     if (value[0] === REACT_ELEMENT_TYPE) {
@@ -5509,10 +5776,12 @@ function reviveModel(
       delete (value as any)[k];
     } else {
       const walked = reviveModel(response, (value as any)[k], value, k);
-      if (walked !== undefined) {
-        (value as any)[k] = walked;
-      } else {
+      if (walked === undefined) {
         delete (value as any)[k];
+      } else if (walked !== (value as any)[k]) {
+        // Only write on change: unchanged values may be the producer's own
+        // objects, which can be frozen.
+        (value as any)[k] = walked;
       }
     }
   }

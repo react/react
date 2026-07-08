@@ -24,7 +24,13 @@ import {Readable} from 'stream';
 
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
+import type {
+  RenderResult as FlightRenderResult,
+  RenderConsumer,
+} from 'react-server/src/ReactFlightServer';
+
 import {
+  createRenderResult,
   createRequest,
   createPrerenderRequest,
   startWork,
@@ -167,24 +173,8 @@ function renderToPipeableStream(
   options?: Options,
 ): PipeableStream {
   const debugChannel = __DEV__ && options ? options.debugChannel : undefined;
-  const debugChannelReadable: void | Readable | WebSocket =
-    __DEV__ &&
-    debugChannel !== undefined &&
-    // $FlowFixMe[method-unbinding]
-    (typeof debugChannel.read === 'function' ||
-      typeof debugChannel.readyState === 'number')
-      ? (debugChannel as any)
-      : undefined;
-  const debugChannelWritable: void | Writable =
-    __DEV__ && debugChannel !== undefined
-      ? // $FlowFixMe[method-unbinding]
-        typeof debugChannel.write === 'function'
-        ? (debugChannel as any)
-        : // $FlowFixMe[method-unbinding]
-          typeof debugChannel.send === 'function'
-          ? createFakeWritableFromWebSocket(debugChannel as any)
-          : undefined
-      : undefined;
+  const debugChannelReadable = getDebugChannelReadable(debugChannel);
+  const debugChannelWritable = getDebugChannelWritable(debugChannel);
   const request = createRequest(
     model,
     webpackMap,
@@ -196,7 +186,6 @@ function renderToPipeableStream(
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
   );
-  let hasStartedFlowing = false;
   startWork(request);
   if (debugChannelWritable !== undefined) {
     startFlowingDebug(request, debugChannelWritable);
@@ -204,6 +193,40 @@ function renderToPipeableStream(
   if (debugChannelReadable !== undefined) {
     startReadingFromDebugChannelReadable(request, debugChannelReadable);
   }
+  return createPipeableStream(request, debugChannelReadable);
+}
+
+function getDebugChannelReadable(
+  debugChannel: void | Readable | Writable | Duplex | WebSocket,
+): void | Readable | WebSocket {
+  return __DEV__ &&
+    debugChannel !== undefined &&
+    // $FlowFixMe[method-unbinding]
+    (typeof (debugChannel as any).read === 'function' ||
+      typeof (debugChannel as any).readyState === 'number')
+    ? (debugChannel as any)
+    : undefined;
+}
+
+function getDebugChannelWritable(
+  debugChannel: void | Readable | Writable | Duplex | WebSocket,
+): void | Writable {
+  return __DEV__ && debugChannel !== undefined
+    ? // $FlowFixMe[method-unbinding]
+      typeof (debugChannel as any).write === 'function'
+      ? (debugChannel as any)
+      : // $FlowFixMe[method-unbinding]
+        typeof (debugChannel as any).send === 'function'
+        ? createFakeWritableFromWebSocket(debugChannel as any)
+        : undefined
+    : undefined;
+}
+
+function createPipeableStream(
+  request: Request,
+  debugChannelReadable: void | Readable | WebSocket,
+): PipeableStream {
+  let hasStartedFlowing = false;
   return {
     pipe<T: Writable>(destination: T): T {
       if (hasStartedFlowing) {
@@ -776,7 +799,82 @@ function decodeReplyFromAsyncIterable<T>(
   return getRoot(response);
 }
 
+export type RenderOptions = {
+  identifierPrefix?: string,
+  signal?: AbortSignal,
+  onError?: (error: mixed) => void,
+  environmentName?: string | (() => string),
+  filterStackFrame?: (url: string, functionName: string) => boolean,
+  temporaryReferences?: TemporaryReferenceSet,
+  startTime?: number,
+  // DEV-only: debug rows leave on this channel instead of reaching either
+  // the byte stream or the in-process consumer.
+  debugChannel?: Readable | Writable | Duplex | WebSocket,
+};
+
+export type RenderResult = {
+  _attach: (consumer: RenderConsumer) => void,
+  pipe<T: Writable>(destination: T): T,
+  abort(reason: mixed): void,
+};
+
+// Renders the model without deciding how it will be consumed: pass the
+// result to a paired Flight Client's createFromRender to read the render
+// back in the same process without going through the wire format, pipe it
+// to get the byte stream, or both from the same render. A consumer has to
+// attach before the render starts emitting, so createFromRender must be
+// called synchronously after render().
+function render(
+  model: ReactClientValue,
+  webpackMap: ClientManifest,
+  options?: RenderOptions,
+): RenderResult {
+  const debugChannel = __DEV__ && options ? options.debugChannel : undefined;
+  const debugChannelReadable = getDebugChannelReadable(debugChannel);
+  const debugChannelWritable = getDebugChannelWritable(debugChannel);
+  const request = createRequest(
+    model,
+    webpackMap,
+    options ? options.onError : undefined,
+    options ? options.identifierPrefix : undefined,
+    options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
+    __DEV__ && options ? options.environmentName : undefined,
+    __DEV__ && options ? options.filterStackFrame : undefined,
+    debugChannelReadable !== undefined,
+  );
+  const result: FlightRenderResult = createRenderResult(request);
+  const pipeableStream = createPipeableStream(request, debugChannelReadable);
+  if (options && options.signal) {
+    const signal = options.signal;
+    if (signal.aborted) {
+      // Give the caller a chance to attach a consumer before the abort
+      // emits its error rows.
+      Promise.resolve().then(() => abort(request, (signal as any).reason));
+    } else {
+      const listener = () => {
+        abort(request, (signal as any).reason);
+        signal.removeEventListener('abort', listener);
+      };
+      signal.addEventListener('abort', listener);
+    }
+  }
+  startWork(request);
+  if (debugChannelWritable !== undefined) {
+    startFlowingDebug(request, debugChannelWritable);
+  }
+  if (debugChannelReadable !== undefined) {
+    startReadingFromDebugChannelReadable(request, debugChannelReadable);
+  }
+  return {
+    _attach: result._attach,
+    pipe: pipeableStream.pipe,
+    abort: pipeableStream.abort,
+  };
+}
+
 export {
+  render,
   renderToReadableStream,
   renderToPipeableStream,
   prerender,

@@ -7,6 +7,7 @@ if (process.env.NODE_ENV === 'production') {
   s = require('./cjs/react-server-dom-turbopack-server.node.development.js');
 }
 
+exports.render = s.render;
 exports.renderToReadableStream = s.renderToReadableStream;
 exports.renderToPipeableStream = s.renderToPipeableStream;
 exports.decodeReply = s.decodeReply;
