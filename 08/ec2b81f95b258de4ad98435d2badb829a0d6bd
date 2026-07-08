@@ -1,0 +1,47 @@
+packages/react-refresh/src/__tests__/ReactFresh-test.js
+  s_d5e13cda7b40c0::t_e63bec15972d5f 1083
+  s_d5e13cda7b40c0::t_ef4fae71d833f1 1109
+  s_d5e13cda7b40c0::t_32e1beb27c08c3 975-1044,1046-1048,1051,1053-1054,1057-1058,1061,1063,1066-1067,1070,1072-1073,1078-1079,1082,1084,1087-1088,1105,1107-1108,1114-1115
+  s_d5e13cda7b40c0::t_350a07916f1f78 1045
+  s_d5e13cda7b40c0::t_5f7b9bbf027dfb 1071
+  s_d5e13cda7b40c0::t_d1f06b11965a32 1085-1086
+  s_d5e13cda7b40c0::t_f0fb521a1eadca 1116
+  s_d5e13cda7b40c0::t_530829acc2bbd1 1059-1060
+  s_d5e13cda7b40c0::t_9bddb6f1322ec7 1092-1101
+  s_d5e13cda7b40c0::t_46ed4b08475045 918-974,1055-1056,1068,1074,1076-1077,1110-1113
+  s_d5e13cda7b40c0::t_bb45cc0c67aa0d 1062
+  s_d5e13cda7b40c0::t_7835ffdaa6a47f 1075
+  s_d5e13cda7b40c0::t_15dba6cc01a461 1106
+  s_d5e13cda7b40c0::t_23dda59c0ce8f3 1069
+  s_d5e13cda7b40c0::t_43ea01d46c7c24 1049-1050
+  s_d5e13cda7b40c0::t_073491560d75aa 1080-1081
+  s_d5e13cda7b40c0::t_c7617c0d1176f7 1052
+  s_d5e13cda7b40c0::t_70a92f225f8ca0 1089-1091,1102-1104
+  s_d5e13cda7b40c0::t_e9f94c7ed7004d 1064-1065
+packages/react-reconciler/src/ReactFiberHotReloading.js
+  s_d5e13cda7b40c0::t_7ca64f0b8f9146 199-201
+  s_d5e13cda7b40c0::t_8fade358efb786 202-204
+  s_d5e13cda7b40c0::t_898a779f114a60 205
+packages/react-refresh/src/ReactFreshRuntime.js
+  s_d5e13cda7b40c0::t_0bfe5e0b73e51a 200
+  s_d5e13cda7b40c0::t_ca2c0ac7a98491 161-170
+packages/react-reconciler/src/ReactFiber.js
+  s_d5e13cda7b40c0::t_240671ac4d1334 430-432
+  s_d5e13cda7b40c0::t_db6fb0b35f5ba0 677-682
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "08ec2b81f95b258de4ad98435d2badb829a0d6bd",
+  "prompts": {},
+  "sessions": {
+    "s_d5e13cda7b40c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "823dfc91-e21b-419a-96a7-c3559582d9f4",
+        "model": "unknown"
+      },
+      "human_author": "Sophie Alpert <git@sophiebits.com>"
+    }
+  }
+}
