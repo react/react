@@ -54,7 +54,7 @@ A dashboard with ~25 components (16 client components), rendering:
 
 ## Output
 
-Each variant reports render latency stats, GC pauses, and (when run with `--expose-gc`, which the `yarn bench*` scripts do) the heap retained after the run settles: the benchmark yields to the event loop and forces a GC before reading `heapUsed`, so this number reflects real cross-request retention rather than garbage that hasn't had a chance to be collected. The benchmark loops yield to the event loop between iterations for the same reason: React schedules a `setImmediate` per request, and a loop that never reaches the check phase would accumulate those immediates, each retaining its finished request graph — inflating memory numbers with what is actually a measurement artifact.
+Each variant reports render latency stats, GC pauses, and (when run with `--expose-gc`, which the `yarn bench*` scripts do) the heap retained after the run settles.
 
 The overhead tables show two comparisons:
 
