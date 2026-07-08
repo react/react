@@ -1259,10 +1259,6 @@ function processStyleName(styleName: string): string {
   return result;
 }
 
-const styleAttributeStart = stringToPrecomputedChunk(' style="');
-const styleAssign = stringToPrecomputedChunk(':');
-const styleSeparator = stringToPrecomputedChunk(';');
-
 function pushStyleAttribute(
   target: Array<Chunk | PrecomputedChunk>,
   style: Object,
@@ -1720,9 +1716,7 @@ function pushAttribute(
       // these aren't boolean attributes (they are coerced to strings).
       if (typeof value !== 'function' && typeof value !== 'symbol') {
         target.push(
-          stringToChunk(
-            ' ' + name + '="' + escapeTextForBrowser(value) + '"',
-          ),
+          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
         );
       }
       return;
@@ -1784,9 +1778,7 @@ function pushAttribute(
         // Ignored
       } else if (typeof value !== 'function' && typeof value !== 'symbol') {
         target.push(
-          stringToChunk(
-            ' ' + name + '="' + escapeTextForBrowser(value) + '"',
-          ),
+          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
         );
       }
       return;
@@ -1803,9 +1795,7 @@ function pushAttribute(
         (value as any) >= 1
       ) {
         target.push(
-          stringToChunk(
-            ' ' + name + '="' + escapeTextForBrowser(value) + '"',
-          ),
+          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
         );
       }
       return;
@@ -1819,9 +1809,7 @@ function pushAttribute(
         !isNaN(value)
       ) {
         target.push(
-          stringToChunk(
-            ' ' + name + '="' + escapeTextForBrowser(value) + '"',
-          ),
+          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
         );
       }
       return;
@@ -1880,11 +1868,7 @@ function pushAttribute(
         }
         target.push(
           stringToChunk(
-            ' ' +
-              attributeName +
-              '="' +
-              escapeTextForBrowser(value) +
-              '"',
+            ' ' + attributeName + '="' + escapeTextForBrowser(value) + '"',
           ),
         );
       }
@@ -2000,12 +1984,14 @@ function pushStartAnchor(
 
   pushViewTransitionAttributes(target, formatContext);
 
-  if (innerHTML == null && typeof children === 'string') {
-    target.push(stringToChunk('>' + encodeHTMLTextNode(children)));
-    return null;
-  }
   target.push(endOfStartTag);
   pushInnerHTML(target, innerHTML, children);
+  if (typeof children === 'string') {
+    // Special case children as a string to avoid the unnecessary comment.
+    // TODO: Remove this special case after the general optimization is in place.
+    target.push(stringToChunk(encodeHTMLTextNode(children)));
+    return null;
+  }
   return children;
 }
 
@@ -4005,13 +3991,14 @@ function pushStartGenericElement(
 
   pushViewTransitionAttributes(target, formatContext);
 
-  if (innerHTML == null && typeof children === 'string') {
-    // Fast path: close tag and emit text child in a single push.
-    target.push(stringToChunk('>' + encodeHTMLTextNode(children)));
-    return null;
-  }
   target.push(endOfStartTag);
   pushInnerHTML(target, innerHTML, children);
+  if (typeof children === 'string') {
+    // Special case children as a string to avoid the unnecessary comment.
+    // TODO: Remove this special case after the general optimization is in place.
+    target.push(stringToChunk(encodeHTMLTextNode(children)));
+    return null;
+  }
   return children;
 }
 
