@@ -561,18 +561,14 @@ export function createFiberFromTypeAndProps(
   let fiberTag: WorkTag = FunctionComponent;
   // The resolved type is set if we know what the final type will be. I.e. it's not lazy.
   let resolvedType = type;
-  if (typeof type === 'function') {
-    if (shouldConstruct(type)) {
+  if (__DEV__) {
+    resolvedType = resolveTypeForHotReloading(type);
+  }
+  if (typeof resolvedType === 'function') {
+    if (shouldConstruct(resolvedType)) {
       fiberTag = ClassComponent;
-      if (__DEV__) {
-        resolvedType = resolveTypeForHotReloading(resolvedType);
-      }
-    } else {
-      if (__DEV__) {
-        resolvedType = resolveTypeForHotReloading(resolvedType);
-      }
     }
-  } else if (typeof type === 'string') {
+  } else if (typeof resolvedType === 'string') {
     // $FlowFixMe[constant-condition]
     if (supportsResources && supportsSingletons) {
       const hostContext = getHostContext();
@@ -594,7 +590,7 @@ export function createFiberFromTypeAndProps(
       fiberTag = HostComponent;
     }
   } else {
-    getTag: switch (type) {
+    getTag: switch (resolvedType) {
       // $FlowFixMe[invalid-compare]
       case REACT_ACTIVITY_TYPE:
         return createFiberFromActivity(pendingProps, mode, lanes, key);
@@ -642,8 +638,8 @@ export function createFiberFromTypeAndProps(
       // Fall through
       default: {
         // $FlowFixMe[invalid-compare]
-        if (typeof type === 'object' && type !== null) {
-          switch (type.$$typeof) {
+        if (typeof resolvedType === 'object' && resolvedType !== null) {
+          switch (resolvedType.$$typeof) {
             // $FlowFixMe[invalid-compare]
             case REACT_CONTEXT_TYPE:
               fiberTag = ContextProvider;

@@ -2102,6 +2102,9 @@ function mountLazyComponent(
   const props = workInProgress.pendingProps;
   const lazyComponent: LazyComponentType<any, any> = elementType;
   let Component = resolveLazy(lazyComponent);
+  if (__DEV__) {
+    Component = resolveTypeForHotReloading(Component);
+  }
   // Store the unwrapped component in the type.
   workInProgress.type = Component;
 
@@ -2109,9 +2112,6 @@ function mountLazyComponent(
     if (isFunctionClassComponent(Component)) {
       const resolvedProps = resolveClassComponentProps(Component, props);
       workInProgress.tag = ClassComponent;
-      if (__DEV__) {
-        workInProgress.type = Component = resolveTypeForHotReloading(Component);
-      }
       return updateClassComponent(
         null,
         workInProgress,
@@ -2123,7 +2123,6 @@ function mountLazyComponent(
       workInProgress.tag = FunctionComponent;
       if (__DEV__) {
         validateFunctionComponentInDev(workInProgress, Component);
-        workInProgress.type = Component = resolveTypeForHotReloading(Component);
       }
       return updateFunctionComponent(
         null,
@@ -2139,9 +2138,6 @@ function mountLazyComponent(
     // $FlowFixMe[invalid-compare]
     if ($$typeof === REACT_FORWARD_REF_TYPE) {
       workInProgress.tag = ForwardRef;
-      if (__DEV__) {
-        workInProgress.type = Component = resolveTypeForHotReloading(Component);
-      }
       return updateForwardRef(
         null,
         workInProgress,

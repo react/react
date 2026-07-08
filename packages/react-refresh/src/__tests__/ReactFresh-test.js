@@ -915,6 +915,61 @@ describe('ReactFresh', () => {
     }
   });
 
+  it('can mount an element created before its type changed kinds', async () => {
+    if (__DEV__) {
+      let oldElement;
+      let currentChild = null;
+
+      await act(async () => {
+        await render(() => {
+          function Test() {
+            return <p>hi test</p>;
+          }
+          $RefreshReg$(Test, 'Test');
+          oldElement = <Test />;
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Change the component kind before it has ever mounted.
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Mount the element created before the edit. The fiber must be
+      // created from the latest type, with the tag matching its kind.
+      currentChild = oldElement;
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.textContent).toBe('hi memo');
+    }
+  });
+
   it('resets state when switching between different component types', async () => {
     if (__DEV__) {
       await act(async () => {
