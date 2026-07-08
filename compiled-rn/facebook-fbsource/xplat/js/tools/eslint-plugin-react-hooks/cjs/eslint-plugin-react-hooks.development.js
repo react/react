@@ -12,7 +12,7 @@
  * @lightSyntaxTransform
  * @preventMunge
  * @oncall react_core
- * @generated SignedSource<<09150f76ad08375f5c3fc1f4478e52e8>>
+ * @generated SignedSource<<d72e88535b74ff9c22c978a7411a2818>>
  */
 
 'use strict';
@@ -23303,7 +23303,9 @@ function lowerStatement(builder, stmtPath, label = null) {
         case 'VariableDeclaration': {
             const stmt = stmtPath;
             const nodeKind = stmt.node.kind;
-            if (nodeKind === 'var') {
+            if (nodeKind === 'var' ||
+                nodeKind === 'using' ||
+                nodeKind === 'await using') {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle ${nodeKind} kinds in VariableDeclaration`,
                     category: ErrorCategory.Todo,
