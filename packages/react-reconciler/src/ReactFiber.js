@@ -79,11 +79,7 @@ import {
 } from './ReactWorkTags';
 import {getComponentNameFromOwner} from 'react-reconciler/src/getComponentNameFromFiber';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
-import {
-  resolveClassForHotReloading,
-  resolveFunctionForHotReloading,
-  resolveForwardRefForHotReloading,
-} from './ReactFiberHotReloading';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
 import {
   NoMode,
@@ -427,13 +423,9 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     switch (workInProgress.tag) {
       case FunctionComponent:
       case SimpleMemoComponent:
-        workInProgress.type = resolveFunctionForHotReloading(current.type);
-        break;
       case ClassComponent:
-        workInProgress.type = resolveClassForHotReloading(current.type);
-        break;
       case ForwardRef:
-        workInProgress.type = resolveForwardRefForHotReloading(current.type);
+        workInProgress.type = resolveTypeForHotReloading(current.type);
         break;
       default:
         break;
@@ -573,11 +565,11 @@ export function createFiberFromTypeAndProps(
     if (shouldConstruct(type)) {
       fiberTag = ClassComponent;
       if (__DEV__) {
-        resolvedType = resolveClassForHotReloading(resolvedType);
+        resolvedType = resolveTypeForHotReloading(resolvedType);
       }
     } else {
       if (__DEV__) {
-        resolvedType = resolveFunctionForHotReloading(resolvedType);
+        resolvedType = resolveTypeForHotReloading(resolvedType);
       }
     }
   } else if (typeof type === 'string') {
@@ -664,9 +656,6 @@ export function createFiberFromTypeAndProps(
             // $FlowFixMe[invalid-compare]
             case REACT_FORWARD_REF_TYPE:
               fiberTag = ForwardRef;
-              if (__DEV__) {
-                resolvedType = resolveForwardRefForHotReloading(resolvedType);
-              }
               break getTag;
             // $FlowFixMe[invalid-compare]
             case REACT_MEMO_TYPE:
