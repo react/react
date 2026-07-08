@@ -1,0 +1,21 @@
+packages/react-reconciler/src/ReactFiberHotReloading.js
+  s_d5e13cda7b40c0::t_764eebd09497f4 133,138-140,142-161,369-387
+packages/react-refresh/src/__tests__/ReactFresh-test.js
+  s_d5e13cda7b40c0::t_a3b1a9e5f989d2 1172-1306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4ed20d7369d24007374ada695a9a273ec9b5953a",
+  "prompts": {},
+  "sessions": {
+    "s_d5e13cda7b40c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "823dfc91-e21b-419a-96a7-c3559582d9f4",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Sophie Alpert <git@sophiebits.com>"
+    }
+  }
+}
