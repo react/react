@@ -564,9 +564,49 @@ const PRERENDER = 21;
 
 // Marker pushed before a [headerChunk, contentChunk] pair in
 // completedRegularChunks / completedDebugChunks to signal that the next two
-// entries must be written atomically — see emitTextChunk and
-// emitTypedArrayChunk for why, and flushCompletedChunks for how it's read.
+// entries must be written atomically — see serializeRowToChunks for why, and
+// flushCompletedChunks for how it's read.
 const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
+
+// A completed row that hasn't been serialized into the wire format yet. The
+// emit functions push rows into the completed queues and they're serialized
+// just before they're written to the destination in flushCompletedChunks.
+// This keeps serialization off the render path, and lets a same-process
+// consumer observe the row payloads without parsing the wire format.
+//   [0] id: the row id, or 0 for id-less rows (hints, the time origin).
+//   [1] tag: the wire row tag ('' for untagged model rows), with two internal
+//       exceptions that never reach the wire verbatim: PRESERIALIZED_MODEL_ROW
+//       marks an untagged row whose payload is already JSON text, and 'H' tags
+//       carry the hint code as their second character.
+//   [2] payload: interpreted by tag. Model rows carry the resolved model and
+//       are JSON-serialized at flush time. Text rows carry the raw string.
+//       Binary rows carry the typed array view. DEV-only rows (D, W, J) carry
+//       pre-serialized JSON text.
+type Row = [number, string, mixed];
+
+// Internal tag for an untagged row whose payload is already serialized JSON
+// text. Used by DEV-only debug rows which are eagerly serialized because
+// their serialization has side effects (deferred objects, dedupe registries).
+const PRESERIALIZED_MODEL_ROW = 'P';
+
+function isRow(
+  entry: Chunk | BinaryChunk | Row | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
+): boolean {
+  // Chunks are strings or typed arrays depending on the stream config and
+  // the atomic marker is a symbol, so rows are the only plain arrays in the
+  // completed queues.
+  return isArray(entry);
+}
+
+// The completed queues hold rows from the moment they're emitted until the
+// next flush serializes them into wire chunks. Serialized Text and TypedArray
+// rows become a NEXT_TWO_CHUNKS_ARE_ATOMIC sentinel followed by their
+// [headerChunk, contentChunk] pair, so that flushCompletedChunks can write
+// the pair atomically and never strand the content chunk on a backpressure
+// break.
+type CompletedRowQueue = Array<
+  Chunk | BinaryChunk | Row | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
+>;
 
 export type Request = {
   status: 10 | 11 | 12 | 13 | 14,
@@ -582,16 +622,10 @@ export type Request = {
   hints: Hints,
   abortableTasks: Set<Task>,
   pingedTasks: Array<Task>,
-  completedImportChunks: Array<Chunk>,
-  completedHintChunks: Array<Chunk>,
-  // Text and TypedArray rows are pushed as a NEXT_TWO_CHUNKS_ARE_ATOMIC
-  // sentinel followed by their [headerChunk, contentChunk] pair, so that
-  // flushCompletedChunks can write the pair atomically and never strand the
-  // content chunk on a backpressure break.
-  completedRegularChunks: Array<
-    Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
-  >,
-  completedErrorChunks: Array<Chunk>,
+  completedImportChunks: CompletedRowQueue,
+  completedHintChunks: CompletedRowQueue,
+  completedRegularChunks: CompletedRowQueue,
+  completedErrorChunks: CompletedRowQueue,
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
@@ -608,11 +642,7 @@ export type Request = {
   abortTime: number,
   // DEV-only
   pendingDebugChunks: number,
-  // See completedRegularChunks for why some entries are preceded by the
-  // NEXT_TWO_CHUNKS_ARE_ATOMIC sentinel.
-  completedDebugChunks: Array<
-    Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
-  >,
+  completedDebugChunks: CompletedRowQueue,
   debugDestination: null | Destination,
   environmentName: () => string,
   filterStackFrame: (
@@ -711,12 +741,10 @@ function RequestInstance(
   this.hints = hints;
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
-  this.completedImportChunks = [] as Array<Chunk>;
-  this.completedHintChunks = [] as Array<Chunk>;
-  this.completedRegularChunks = [] as Array<
-    Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
-  >;
-  this.completedErrorChunks = [] as Array<Chunk>;
+  this.completedImportChunks = [] as CompletedRowQueue;
+  this.completedHintChunks = [] as CompletedRowQueue;
+  this.completedRegularChunks = [] as CompletedRowQueue;
+  this.completedErrorChunks = [] as CompletedRowQueue;
   this.writtenSymbols = new Map();
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
@@ -731,9 +759,7 @@ function RequestInstance(
 
   if (__DEV__) {
     this.pendingDebugChunks = 0;
-    this.completedDebugChunks = [] as Array<
-      Chunk | BinaryChunk | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
-    >;
+    this.completedDebugChunks = [] as CompletedRowQueue;
     this.debugDestination = null;
     this.environmentName =
       environmentName === undefined
@@ -1207,9 +1233,11 @@ function serializeReadableStream(
 
   // The task represents the Stop row. This adds a Start row.
   request.pendingChunks++;
-  const startStreamRow =
-    streamTask.id.toString(16) + ':' + (isByteStream ? 'r' : 'R') + '\n';
-  request.completedRegularChunks.push(stringToChunk(startStreamRow));
+  request.completedRegularChunks.push([
+    streamTask.id,
+    isByteStream ? 'r' : 'R',
+    null,
+  ]);
 
   function progress(entry: {done: boolean, value: ReactClientValue, ...}) {
     if (streamTask.status !== PENDING) {
@@ -1218,8 +1246,7 @@ function serializeReadableStream(
 
     if (entry.done) {
       streamTask.status = COMPLETED;
-      const endStreamRow = streamTask.id.toString(16) + ':C\n';
-      request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      request.completedRegularChunks.push([streamTask.id, 'C', undefined]);
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener('abort', abortStream);
       enqueueFlush(request);
@@ -1317,9 +1344,11 @@ function serializeAsyncIterable(
 
   // The task represents the Stop row. This adds a Start row.
   request.pendingChunks++;
-  const startStreamRow =
-    streamTask.id.toString(16) + ':' + (isIterator ? 'x' : 'X') + '\n';
-  request.completedRegularChunks.push(stringToChunk(startStreamRow));
+  request.completedRegularChunks.push([
+    streamTask.id,
+    isIterator ? 'x' : 'X',
+    null,
+  ]);
 
   function progress(
     entry:
@@ -1332,25 +1361,21 @@ function serializeAsyncIterable(
 
     if (entry.done) {
       streamTask.status = COMPLETED;
-      let endStreamRow;
+      let endStreamRow: Row;
       if (entry.value === undefined) {
-        endStreamRow = streamTask.id.toString(16) + ':C\n';
+        endStreamRow = [streamTask.id, 'C', undefined];
       } else {
         // Unlike streams, the last value may not be undefined. If it's not
         // we outline it and encode a reference to it in the closing instruction.
         try {
           const chunkId = outlineModel(request, entry.value);
-          endStreamRow =
-            streamTask.id.toString(16) +
-            ':C' +
-            stringify(serializeByValueID(chunkId)) +
-            '\n';
+          endStreamRow = [streamTask.id, 'C', serializeByValueID(chunkId)];
         } catch (x) {
           error(x);
           return;
         }
       }
-      request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      request.completedRegularChunks.push(endStreamRow);
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener(
         'abort',
@@ -2989,16 +3014,6 @@ function serializeRowHeader(tag: string, id: number) {
   return id.toString(16) + ':' + tag;
 }
 
-function encodeReferenceChunk(
-  request: Request,
-  id: number,
-  reference: string,
-): Chunk {
-  const json = stringify(reference);
-  const row = id.toString(16) + ':' + json + '\n';
-  return stringToChunk(row);
-}
-
 function serializeClientReference(
   request: Request,
   parent:
@@ -4418,12 +4433,11 @@ function emitErrorChunk(
   } else {
     errorInfo = {digest};
   }
-  const row = serializeRowHeader('E', id) + stringify(errorInfo) + '\n';
-  const processedChunk = stringToChunk(row);
+  const row: Row = [id, 'E', errorInfo];
   if (__DEV__ && debug) {
-    request.completedDebugChunks.push(processedChunk);
+    request.completedDebugChunks.push(row);
   } else {
-    request.completedErrorChunks.push(processedChunk);
+    request.completedErrorChunks.push(row);
   }
 }
 
@@ -4433,14 +4447,11 @@ function emitImportChunk(
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
-  // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
-  const row = serializeRowHeader('I', id) + json + '\n';
-  const processedChunk = stringToChunk(row);
+  const row: Row = [id, 'I', clientReferenceMetadata];
   if (__DEV__ && debug) {
-    request.completedDebugChunks.push(processedChunk);
+    request.completedDebugChunks.push(row);
   } else {
-    request.completedImportChunks.push(processedChunk);
+    request.completedImportChunks.push(row);
   }
 }
 
@@ -4449,22 +4460,22 @@ function emitHintChunk<Code: HintCode>(
   code: Code,
   model: HintModel<Code>,
 ): void {
-  const json: string = stringify(model);
-  const row = ':H' + code + json + '\n';
-  const processedChunk = stringToChunk(row);
-  request.completedHintChunks.push(processedChunk);
+  request.completedHintChunks.push([0, 'H' + code, model]);
 }
 
 function emitSymbolChunk(request: Request, id: number, name: string): void {
   const symbolReference = serializeSymbolReference(name);
-  const processedChunk = encodeReferenceChunk(request, id, symbolReference);
-  request.completedImportChunks.push(processedChunk);
+  request.completedImportChunks.push([id, '', symbolReference]);
 }
 
-function emitModelChunk(request: Request, id: number, json: string): void {
-  const row = id.toString(16) + ':' + json + '\n';
-  const processedChunk = stringToChunk(row);
-  request.completedRegularChunks.push(processedChunk);
+function emitModelChunk(
+  request: Request,
+  id: number,
+  model: ReactJSONValue,
+): void {
+  // The resolved model is serialized to JSON at flush time in
+  // serializeRowToChunks so that serialization stays off the render path.
+  request.completedRegularChunks.push([id, '', model]);
 }
 
 function emitDebugHaltChunk(request: Request, id: number): void {
@@ -4477,9 +4488,7 @@ function emitDebugHaltChunk(request: Request, id: number): void {
   }
   // This emits a marker that this row will never complete and should intentionally never resolve
   // even when the client stream is closed. We use just the lack of data to indicate this.
-  const row = id.toString(16) + ':\n';
-  const processedChunk = stringToChunk(row);
-  request.completedDebugChunks.push(processedChunk);
+  request.completedDebugChunks.push([id, '', undefined]);
 }
 
 function emitDebugChunk(
@@ -4500,21 +4509,24 @@ function emitDebugChunk(
     if (json[0] === '"' && json[1] === '$') {
       // This is already an outlined reference so we can just emit it directly,
       // without an unnecessary indirection.
-      const row = serializeRowHeader('D', id) + json + '\n';
-      request.completedRegularChunks.push(stringToChunk(row));
+      request.completedRegularChunks.push([id, 'D', json]);
     } else {
       // Outline the debug information to the debug channel.
       const outlinedId = request.nextChunkId++;
-      const debugRow = outlinedId.toString(16) + ':' + json + '\n';
       request.pendingDebugChunks++;
-      request.completedDebugChunks.push(stringToChunk(debugRow));
-      const row =
-        serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
-      request.completedRegularChunks.push(stringToChunk(row));
+      request.completedDebugChunks.push([
+        outlinedId,
+        PRESERIALIZED_MODEL_ROW,
+        json,
+      ]);
+      request.completedRegularChunks.push([
+        id,
+        'D',
+        '"$' + outlinedId.toString(16) + '"',
+      ]);
     }
   } else {
-    const row = serializeRowHeader('D', id) + json + '\n';
-    request.completedRegularChunks.push(stringToChunk(row));
+    request.completedRegularChunks.push([id, 'D', json]);
   }
 }
 
@@ -4639,9 +4651,7 @@ function emitIOInfoChunk(
     debugIOInfo.value = value;
   }
   const json: string = serializeDebugModel(request, objectLimit, debugIOInfo);
-  const row = id.toString(16) + ':J' + json + '\n';
-  const processedChunk = stringToChunk(row);
-  request.completedDebugChunks.push(processedChunk);
+  request.completedDebugChunks.push([id, 'J', json]);
 }
 
 function outlineIOInfo(request: Request, ioInfo: ReactIOInfo): void {
@@ -4793,30 +4803,16 @@ function emitTypedArrayChunk(
   } else {
     request.pendingChunks++; // Extra chunk for the header.
   }
+  // We convert the view eagerly because host configs that don't support
+  // binary data throw here, where the error is still attributed to the row
+  // that's being serialized. The conversion doesn't copy the bytes.
   // TODO: Convert to little endian if that's not the server default.
   const binaryChunk = typedArrayToBinaryChunk(typedArray);
-  const binaryLength = byteLengthOfBinaryChunk(binaryChunk);
-  const row = id.toString(16) + ':' + tag + binaryLength.toString(16) + ',';
-  const headerChunk = stringToChunk(row);
-  // Push a NEXT_TWO_CHUNKS_ARE_ATOMIC sentinel before the header so that
-  // flushCompletedChunks can write the header and binary chunks atomically.
-  // Otherwise, if the destination's backpressure flips between the two writes,
-  // the content chunk would be stranded at the front of the queue and the next
-  // drain would emit Import or Hint chunks between the header and the content —
-  // and the Flight Client would frame those intervening bytes as this row's
-  // content.
+  const row: Row = [id, tag, binaryChunk];
   if (__DEV__ && debug) {
-    request.completedDebugChunks.push(
-      NEXT_TWO_CHUNKS_ARE_ATOMIC,
-      headerChunk,
-      binaryChunk,
-    );
+    request.completedDebugChunks.push(row);
   } else {
-    request.completedRegularChunks.push(
-      NEXT_TWO_CHUNKS_ARE_ATOMIC,
-      headerChunk,
-      binaryChunk,
-    );
+    request.completedRegularChunks.push(row);
   }
 }
 
@@ -4838,23 +4834,11 @@ function emitTextChunk(
   } else {
     request.pendingChunks++; // Extra chunk for the header.
   }
-  const textChunk = stringToChunk(text);
-  const binaryLength = byteLengthOfChunk(textChunk);
-  const row = id.toString(16) + ':T' + binaryLength.toString(16) + ',';
-  const headerChunk = stringToChunk(row);
-  // See emitTypedArrayChunk for why the pair is preceded by a sentinel.
+  const row: Row = [id, 'T', text];
   if (__DEV__ && debug) {
-    request.completedDebugChunks.push(
-      NEXT_TWO_CHUNKS_ARE_ATOMIC,
-      headerChunk,
-      textChunk,
-    );
+    request.completedDebugChunks.push(row);
   } else {
-    request.completedRegularChunks.push(
-      NEXT_TWO_CHUNKS_ARE_ATOMIC,
-      headerChunk,
-      textChunk,
-    );
+    request.completedRegularChunks.push(row);
   }
 }
 
@@ -5329,8 +5313,7 @@ function renderDebugModel(
     );
     request.pendingDebugChunks++;
     const id = request.nextChunkId++;
-    const processedChunk = encodeReferenceChunk(request, id, serializedValue);
-    request.completedDebugChunks.push(processedChunk);
+    request.completedDebugChunks.push([id, '', serializedValue]);
     const reference = serializeByValueID(id);
     writtenDebugObjects.set(value, reference);
     return reference;
@@ -5469,9 +5452,7 @@ function emitOutlinedDebugModelChunk(
     debugModelRoot = prevModelRoot;
   }
 
-  const row = id.toString(16) + ':' + json + '\n';
-  const processedChunk = stringToChunk(row);
-  request.completedDebugChunks.push(processedChunk);
+  request.completedDebugChunks.push([id, PRESERIALIZED_MODEL_ROW, json]);
 }
 
 function outlineDebugModel(
@@ -5533,9 +5514,7 @@ function emitConsoleChunk(
       'Unknown Value: React could not send it from the server.',
     ]);
   }
-  const row = ':W' + json + '\n';
-  const processedChunk = stringToChunk(row);
-  request.completedDebugChunks.push(processedChunk);
+  request.completedDebugChunks.push([0, 'W', json]);
 }
 
 function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
@@ -5543,10 +5522,8 @@ function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
   // are relative to this time origin. This allows for more compact number encoding
   // and lower precision loss.
   request.pendingDebugChunks++;
-  const row = ':N' + timeOrigin + '\n';
-  const processedChunk = stringToChunk(row);
   // TODO: Move to its own priority queue.
-  request.completedDebugChunks.push(processedChunk);
+  request.completedDebugChunks.push([0, 'N', timeOrigin]);
 }
 
 function forwardDebugInfo(
@@ -5748,15 +5725,19 @@ function emitTimingChunk(
   if (request.debugDestination !== null) {
     // Outline the actual timing information to the debug channel.
     const outlinedId = request.nextChunkId++;
-    const debugRow = outlinedId.toString(16) + ':' + json + '\n';
     request.pendingDebugChunks++;
-    request.completedDebugChunks.push(stringToChunk(debugRow));
-    const row =
-      serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
-    request.completedRegularChunks.push(stringToChunk(row));
+    request.completedDebugChunks.push([
+      outlinedId,
+      PRESERIALIZED_MODEL_ROW,
+      json,
+    ]);
+    request.completedRegularChunks.push([
+      id,
+      'D',
+      '"$' + outlinedId.toString(16) + '"',
+    ]);
   } else {
-    const row = serializeRowHeader('D', id) + json + '\n';
-    request.completedRegularChunks.push(stringToChunk(row));
+    request.completedRegularChunks.push([id, 'D', json]);
   }
 }
 
@@ -5889,11 +5870,10 @@ function emitChunk(
   }
   // For anything else we need to try to serialize it using JSON.
   // We resolve the model tree first in pure JS to avoid the C++->JS boundary
-  // overhead of JSON.stringify's replacer callback.
+  // overhead of JSON.stringify's replacer callback. The resolved tree is
+  // serialized with a plain JSON.stringify at flush time.
   const resolvedModel = resolveModel(request, task, {'': value}, '', value);
-  // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
-  const json: string = stringify(resolvedModel);
-  emitModelChunk(request, task.id, json);
+  emitModelChunk(request, task.id, resolvedModel);
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
@@ -5999,9 +5979,7 @@ function retryTask(request: Request, task: Task): void {
     } else {
       // If the value is a string, it means it's a terminal value and we already escaped it.
       // We don't need to escape it again so it's not passed through resolveModel.
-      // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
-      const json: string = stringify(resolvedModel);
-      emitModelChunk(request, task.id, json);
+      emitModelChunk(request, task.id, resolvedModel);
     }
 
     task.status = COMPLETED;
@@ -6132,8 +6110,7 @@ function finishAbortedTask(
   // Instead of emitting an error per task.id, we emit a model that only
   // has a single value referencing the error.
   const ref = serializeByValueID(errorId);
-  const processedChunk = encodeReferenceChunk(request, task.id, ref);
-  request.completedErrorChunks.push(processedChunk);
+  request.completedErrorChunks.push([task.id, '', ref]);
 }
 
 function haltTask(task: Task, request: Request): void {
@@ -6155,7 +6132,170 @@ function finishHaltedTask(task: Task, request: Request): void {
   request.pendingChunks--;
 }
 
+function serializeRowToChunks(
+  request: Request,
+  row: Row,
+  target: CompletedRowQueue,
+): void {
+  const id = row[0];
+  const tag = row[1];
+  const payload = row[2];
+  switch (tag) {
+    case '': {
+      // An untagged model row. The payload is the resolved model. An
+      // undefined payload marks a halted row which intentionally never
+      // carries any data.
+      if (payload === undefined) {
+        target.push(stringToChunk(id.toString(16) + ':\n'));
+        return;
+      }
+      // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+      const json: string = stringify(payload);
+      target.push(stringToChunk(id.toString(16) + ':' + json + '\n'));
+      return;
+    }
+    case PRESERIALIZED_MODEL_ROW: {
+      // An untagged model row whose payload was eagerly serialized to JSON
+      // text because its serialization has side effects. DEV-only.
+      target.push(
+        stringToChunk(id.toString(16) + ':' + (payload as any) + '\n'),
+      );
+      return;
+    }
+    case 'T': {
+      const textChunk = stringToChunk(payload as any);
+      // $FlowFixMe[incompatible-use] byteLengthOfChunk is checked before Text rows are emitted
+      const binaryLength = byteLengthOfChunk(textChunk);
+      const headerChunk = stringToChunk(
+        id.toString(16) + ':T' + binaryLength.toString(16) + ',',
+      );
+      // Push a NEXT_TWO_CHUNKS_ARE_ATOMIC sentinel before the header so that
+      // flushCompletedChunks can write the header and content chunks
+      // atomically. Otherwise, if the destination's backpressure flips
+      // between the two writes, the content chunk would be stranded at the
+      // front of the queue and the next drain would emit Import or Hint
+      // chunks between the header and the content — and the Flight Client
+      // would frame those intervening bytes as this row's content.
+      target.push(NEXT_TWO_CHUNKS_ARE_ATOMIC, headerChunk, textChunk);
+      return;
+    }
+    case 'E': {
+      // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+      const json: string = stringify(payload);
+      target.push(stringToChunk(serializeRowHeader('E', id) + json + '\n'));
+      return;
+    }
+    case 'I': {
+      // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+      const json: string = stringify(payload);
+      target.push(stringToChunk(serializeRowHeader('I', id) + json + '\n'));
+      return;
+    }
+    case 'C': {
+      // A stream Stop row. The payload is an optional reference to the
+      // iterator's return value.
+      target.push(
+        stringToChunk(
+          id.toString(16) +
+            ':C' +
+            (payload === undefined ? '' : stringify(payload)) +
+            '\n',
+        ),
+      );
+      return;
+    }
+    case 'R':
+    case 'r':
+    case 'X':
+    case 'x': {
+      // A stream Start row. These carry no payload.
+      target.push(stringToChunk(id.toString(16) + ':' + tag + '\n'));
+      return;
+    }
+    case 'D':
+    case 'W':
+    case 'J': {
+      // DEV-only rows whose payloads are eagerly serialized to JSON text
+      // because their serialization has side effects.
+      const header = tag === 'W' ? ':W' : id.toString(16) + ':' + tag;
+      target.push(stringToChunk(header + (payload as any) + '\n'));
+      return;
+    }
+    case 'N': {
+      // The time origin. Emitted once at the start of a profiling render.
+      target.push(stringToChunk(':N' + (payload as any) + '\n'));
+      return;
+    }
+    default: {
+      if (tag.charCodeAt(0) === 72 /* "H" */) {
+        // A hint row. The hint code is carried in the tag.
+        // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+        const json: string = stringify(payload);
+        target.push(stringToChunk(':H' + tag.charAt(1) + json + '\n'));
+        return;
+      }
+      // A binary row. The payload is the already converted binary chunk.
+      const binaryChunk: BinaryChunk = payload as any;
+      const binaryLength = byteLengthOfBinaryChunk(binaryChunk);
+      const headerChunk = stringToChunk(
+        id.toString(16) + ':' + tag + binaryLength.toString(16) + ',',
+      );
+      // See the Text row case for why the pair is preceded by a sentinel.
+      target.push(NEXT_TWO_CHUNKS_ARE_ATOMIC, headerChunk, binaryChunk);
+      return;
+    }
+  }
+}
+
+function serializeRows(
+  request: Request,
+  queue: CompletedRowQueue,
+): CompletedRowQueue {
+  // Serialize any rows in the queue into wire chunks in emission order. This
+  // runs just before the queue is written so that rows never outlive a flush;
+  // whatever a flush can't write is buffered in its compact serialized form.
+  let serialized: null | CompletedRowQueue = null;
+  for (let i = 0; i < queue.length; i++) {
+    const entry = queue[i];
+    if (isRow(entry)) {
+      if (serialized === null) {
+        serialized = queue.slice(0, i);
+      }
+      serializeRowToChunks(request, entry as any, serialized);
+    } else if (serialized !== null) {
+      serialized.push(entry);
+    }
+  }
+  return serialized === null ? queue : serialized;
+}
+
 function flushCompletedChunks(request: Request): void {
+  // Serialize all completed rows into their wire format before writing. We do
+  // this even if we don't currently have a destination so that completed rows
+  // are always buffered in their compact serialized form rather than as
+  // retained model objects.
+  request.completedImportChunks = serializeRows(
+    request,
+    request.completedImportChunks,
+  );
+  request.completedHintChunks = serializeRows(
+    request,
+    request.completedHintChunks,
+  );
+  if (__DEV__) {
+    request.completedDebugChunks = serializeRows(
+      request,
+      request.completedDebugChunks,
+    );
+  }
+  request.completedRegularChunks = serializeRows(
+    request,
+    request.completedRegularChunks,
+  );
+  request.completedErrorChunks = serializeRows(
+    request,
+    request.completedErrorChunks,
+  );
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
     beginWriting(debugDestination);
