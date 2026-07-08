@@ -5,6 +5,9 @@ const Webpack = require('webpack');
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const __DEV__ = NODE_ENV === 'development';
+const HOST = process.env.HOST || '127.0.0.1';
+const PORT = Number(process.env.PORT || 8080);
+const isE2E = process.env.E2E === 'true' || process.env.CI === 'true';
 
 // React and the DevTools backend dependencies the facade pulls in are resolved
 // from the monorepo build output — the same approach react-devtools-shell uses,
@@ -81,8 +84,9 @@ module.exports = {
   },
   devServer: {
     hot: true,
-    open: true,
-    port: 8080,
+    host: HOST,
+    open: !isE2E,
+    port: PORT,
     static: {
       directory: __dirname,
       publicPath: '/',

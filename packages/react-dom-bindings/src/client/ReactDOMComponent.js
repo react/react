@@ -653,7 +653,11 @@ function setProp(
               'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
             );
           }
-          domElement.innerHTML = nextHtml;
+          const lastHtml: any =
+            prevValue != null ? (prevValue as any).__html : undefined;
+          if (lastHtml !== nextHtml) {
+            domElement.innerHTML = nextHtml;
+          }
         }
       }
       break;
@@ -1014,7 +1018,11 @@ function setPropOnCustomElement(
               'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
             );
           }
-          domElement.innerHTML = nextHtml;
+          const lastHtml: any =
+            prevValue != null ? (prevValue as any).__html : undefined;
+          if (lastHtml !== nextHtml) {
+            domElement.innerHTML = nextHtml;
+          }
         }
       }
       break;
