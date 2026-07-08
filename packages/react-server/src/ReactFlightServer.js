@@ -589,6 +589,20 @@ type Row = [number, string, mixed];
 // their serialization has side effects (deferred objects, dedupe registries).
 const PRESERIALIZED_MODEL_ROW = 'P';
 
+// A same-process consumer of the completed rows of this Request, avoiding the
+// serialize/parse roundtrip through the wire format. Rows are delivered as
+// they're serialized during a flush, in the same order that their wire chunks
+// are written. The channel is created by the paired Flight Client and only
+// consists of plain functions so that it can cross the boundary between the
+// react-server module graph and the client module graph. See
+// react-client/src/ReactFlightModelChannel.js for the payload contract.
+export type ModelChannel = {
+  +push: (id: number, tag: string, payload: mixed) => void,
+  +close: () => void,
+  +error: (reason: mixed) => void,
+  ...
+};
+
 function isRow(
   entry: Chunk | BinaryChunk | Row | typeof NEXT_TWO_CHUNKS_ARE_ATOMIC,
 ): boolean {
@@ -637,6 +651,7 @@ export type Request = {
   onError: (error: mixed) => ?string,
   onAllReady: () => void,
   onFatalError: mixed => void,
+  modelChannel: null | ModelChannel,
   // Profiling-only
   timeOrigin: number,
   abortTime: number,
@@ -704,6 +719,7 @@ function RequestInstance(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  modelChannel: void | ModelChannel,
 ) {
   if (
     ReactSharedInternals.A !== null &&
@@ -756,6 +772,7 @@ function RequestInstance(
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady;
   this.onFatalError = onFatalError;
+  this.modelChannel = modelChannel === undefined ? null : modelChannel;
 
   if (__DEV__) {
     this.pendingDebugChunks = 0;
@@ -837,6 +854,7 @@ export function createRequest(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  modelChannel: void | ModelChannel,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -856,6 +874,7 @@ export function createRequest(
     environmentName,
     filterStackFrame,
     keepDebugAlive,
+    modelChannel,
   );
 }
 
@@ -871,6 +890,7 @@ export function createPrerenderRequest(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  modelChannel: void | ModelChannel,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -890,6 +910,7 @@ export function createPrerenderRequest(
     environmentName,
     filterStackFrame,
     keepDebugAlive,
+    modelChannel,
   );
 }
 
@@ -4247,6 +4268,11 @@ function fatalError(request: Request, error: mixed): void {
   if (enableTaint) {
     cleanupTaintQueue(request);
   }
+  const modelChannel = request.modelChannel;
+  if (modelChannel !== null) {
+    request.modelChannel = null;
+    modelChannel.error(error);
+  }
   // This is called outside error handling code such as if an error happens in React internals.
   if (request.destination !== null) {
     request.status = CLOSED;
@@ -6247,9 +6273,51 @@ function serializeRowToChunks(
   }
 }
 
+function deliverRowToModelChannel(channel: ModelChannel, row: Row): void {
+  const tag = row[1];
+  let payload = row[2];
+  switch (tag) {
+    case '':
+    case 'C':
+      if (typeof payload === 'string') {
+        // String-valued models are encoded as JSON text so that a string
+        // payload of a model-valued row unambiguously means JSON text.
+        payload = stringify(payload);
+      }
+      break;
+    case PRESERIALIZED_MODEL_ROW:
+    case 'T':
+    case 'E':
+    case 'I':
+    case 'R':
+    case 'r':
+    case 'X':
+    case 'x':
+    case 'D':
+    case 'W':
+    case 'J':
+    case 'N':
+      break;
+    default:
+      if (tag.charCodeAt(0) === 72 /* "H" */) {
+        if (typeof payload === 'string') {
+          payload = stringify(payload);
+        }
+        break;
+      }
+      // A binary row. Clone the view because the wire copy of these bytes
+      // may be transferred or detached by the destination while the consumer
+      // reads them lazily.
+      payload = (payload as any).slice();
+      break;
+  }
+  channel.push(row[0], tag, payload);
+}
+
 function serializeRows(
   request: Request,
   queue: CompletedRowQueue,
+  channel: null | ModelChannel,
 ): CompletedRowQueue {
   // Serialize any rows in the queue into wire chunks in emission order. This
   // runs just before the queue is written so that rows never outlive a flush;
@@ -6261,7 +6329,12 @@ function serializeRows(
       if (serialized === null) {
         serialized = queue.slice(0, i);
       }
+      // Serialize before delivering: the consumer may initialize the model
+      // eagerly, which revives it in place.
       serializeRowToChunks(request, entry as any, serialized);
+      if (channel !== null) {
+        deliverRowToModelChannel(channel, entry as any);
+      }
     } else if (serialized !== null) {
       serialized.push(entry);
     }
@@ -6270,31 +6343,41 @@ function serializeRows(
 }
 
 function flushCompletedChunks(request: Request): void {
-  // Serialize all completed rows into their wire format before writing. We do
-  // this even if we don't currently have a destination so that completed rows
-  // are always buffered in their compact serialized form rather than as
-  // retained model objects.
+  // Serialize all completed rows into their wire format before writing, and
+  // deliver them to the model channel if one is attached. We do this even if
+  // we don't currently have a destination so that completed rows are always
+  // buffered in their compact serialized form rather than as retained model
+  // objects, and so that a same-process consumer doesn't wait on the wire.
+  const modelChannel = request.modelChannel;
   request.completedImportChunks = serializeRows(
     request,
     request.completedImportChunks,
+    modelChannel,
   );
   request.completedHintChunks = serializeRows(
     request,
     request.completedHintChunks,
+    modelChannel,
   );
   if (__DEV__) {
     request.completedDebugChunks = serializeRows(
       request,
       request.completedDebugChunks,
+      // When a debug channel is attached, debug rows flow through its own
+      // byte stream rather than the main destination, and the consumer reads
+      // that stream separately.
+      request.debugDestination === null ? modelChannel : null,
     );
   }
   request.completedRegularChunks = serializeRows(
     request,
     request.completedRegularChunks,
+    modelChannel,
   );
   request.completedErrorChunks = serializeRows(
     request,
     request.completedErrorChunks,
+    modelChannel,
   );
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
@@ -6465,6 +6548,13 @@ function flushCompletedChunks(request: Request): void {
     flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
+    const completedModelChannel = request.modelChannel;
+    if (completedModelChannel !== null) {
+      // All rows have been delivered. Note that any remaining DEV-only debug
+      // rows flow through the debug channel's own byte stream.
+      request.modelChannel = null;
+      completedModelChannel.close();
+    }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
       if (request.pendingDebugChunks === 0) {

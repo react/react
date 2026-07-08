@@ -131,7 +131,12 @@ interface FlightStreamController {
   error(error: Error): void;
 }
 
-type UninitializedModel = string;
+// A model that has been resolved but not yet initialized. Either the JSON
+// text of a row, or, when the row was received in object form over a model
+// channel, the already parsed but not yet revived model. A string always
+// holds JSON text: string-valued models are encoded as JSON text before they
+// reach here so that the two forms stay unambiguous.
+type UninitializedModel = string | Object;
 
 type ProfilingResult = {
   track: number,
@@ -854,16 +859,32 @@ function createInitializedStreamChunk<
   return new ReactPromise(INITIALIZED, value, controller);
 }
 
+function wrapIteratorResultModel(
+  value: UninitializedModel,
+  done: boolean,
+): UninitializedModel {
+  // To reuse as much code as possible we add the wrapper element as part of
+  // the model. For JSON text we concatenate it into the JSON. For an already
+  // parsed model we wrap it in an equivalent parsed object.
+  if (typeof value === 'string') {
+    return (
+      (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}'
+    );
+  }
+  return {done: done, value: value};
+}
+
 function createResolvedIteratorResultChunk<T>(
   response: Response,
   value: UninitializedModel,
   done: boolean,
 ): ResolvedModelChunk<IteratorResult<T, T>> {
-  // To reuse code as much code as possible we add the wrapper element as part of the JSON.
-  const iteratorResultJSON =
-    (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}';
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
-  return new ReactPromise(RESOLVED_MODEL, iteratorResultJSON, response);
+  return new ReactPromise(
+    RESOLVED_MODEL,
+    wrapIteratorResultModel(value, done),
+    response,
+  );
 }
 
 function resolveIteratorResultChunk<T>(
@@ -872,10 +893,7 @@ function resolveIteratorResultChunk<T>(
   value: UninitializedModel,
   done: boolean,
 ): void {
-  // To reuse code as much code as possible we add the wrapper element as part of the JSON.
-  const iteratorResultJSON =
-    (done ? '{"done":true,"value":' : '{"done":false,"value":') + value + '}';
-  resolveModelChunk(response, chunk, iteratorResultJSON);
+  resolveModelChunk(response, chunk, wrapIteratorResultModel(value, done));
 }
 
 function resolveModelChunk<T>(
@@ -3635,7 +3653,7 @@ function resolveErrorModel(
 ): void {
   const chunks = response._chunks;
   const chunk = chunks.get(id);
-  const errorInfo = JSON.parse(row);
+  const errorInfo = typeof row === 'string' ? JSON.parse(row) : row;
   let error;
   if (__DEV__) {
     error = resolveErrorDev(response, errorInfo);
@@ -5323,8 +5341,279 @@ export function processStringChunk(
   streamState._rowLength = rowLength;
 }
 
+export function processModelRow(
+  weakResponse: WeakResponse,
+  streamState: StreamState,
+  id: number,
+  tag: string,
+  payload: mixed,
+): void {
+  if (hasGCedResponse(weakResponse)) {
+    // Ignore more rows if we've already GC:ed all listeners.
+    return;
+  }
+  const response = unwrapWeakResponse(weakResponse);
+  // This mirrors processFullStringRow for rows received over a ModelChannel.
+  // Model payloads arrive parsed but not yet revived, except for string
+  // payloads which are always JSON text.
+  switch (tag) {
+    case '':
+    case 'P': {
+      // An untagged model row. 'P' marks a payload that is JSON text even
+      // though DEV-only halted rows of the '' tag carry no payload at all.
+      if (payload === undefined) {
+        if (__DEV__) {
+          resolveDebugHalt(response, id);
+          return;
+        }
+        // Fallthrough to error.
+      }
+      resolveModel(response, id, payload as any, streamState);
+      return;
+    }
+    case 'I': {
+      resolveModule(response, id, payload as any, streamState);
+      return;
+    }
+    case 'E': {
+      resolveErrorModel(response, id, payload as any, streamState);
+      return;
+    }
+    case 'T': {
+      resolveText(response, id, payload as any, streamState);
+      return;
+    }
+    case 'N': {
+      if (
+        enableProfilerTimer &&
+        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+      ) {
+        // Track the time origin for future debug info. We track it relative
+        // to the current environment's time space.
+        response._timeOrigin =
+          (payload as any) -
+          // $FlowFixMe[prop-missing]
+          performance.timeOrigin;
+        return;
+      }
+      // Fallthrough to share the error with Debug and Console entries.
+    }
+    case 'D': {
+      if (__DEV__) {
+        resolveDebugModel(response, id, payload as any);
+        return;
+      }
+      // Fallthrough to share the error with Console entries.
+    }
+    case 'J': {
+      if (enableProfilerTimer && enableAsyncDebugInfo) {
+        resolveIOInfo(response, id, payload as any);
+        return;
+      }
+      // Fallthrough to share the error with Console entries.
+    }
+    case 'W': {
+      if (__DEV__) {
+        resolveConsoleEntry(response, payload as any);
+        return;
+      }
+      throw new Error(
+        'Failed to read a RSC payload created by a development version of React ' +
+          'on the server while using a production version on the client. Always use ' +
+          'matching versions on the server and the client.',
+      );
+    }
+    case 'R': {
+      startReadableStream(response, id, undefined, streamState);
+      return;
+    }
+    case 'r': {
+      startReadableStream(response, id, 'bytes', streamState);
+      return;
+    }
+    case 'X': {
+      startAsyncIterable(response, id, false, streamState);
+      return;
+    }
+    case 'x': {
+      startAsyncIterable(response, id, true, streamState);
+      return;
+    }
+    case 'C': {
+      stopStream(response, id, payload === undefined ? '' : (payload as any));
+      return;
+    }
+    case 'b': {
+      // A chunk of a byte stream.
+      resolveBuffer(response, id, payload as any, streamState);
+      return;
+    }
+    case 'A': {
+      // An ArrayBuffer. The payload view is standalone but might not span
+      // its entire underlying buffer if the producer didn't clone it.
+      const view: Uint8Array = payload as any;
+      resolveBuffer(
+        response,
+        id,
+        view.byteOffset === 0 && view.byteLength === view.buffer.byteLength
+          ? view.buffer
+          : // $FlowFixMe[incompatible-call]
+            view.slice().buffer,
+        streamState,
+      );
+      return;
+    }
+    case 'O': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Int8Array,
+        1,
+        streamState,
+      );
+      return;
+    }
+    case 'o': {
+      resolveBuffer(response, id, payload as any, streamState);
+      return;
+    }
+    case 'U': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Uint8ClampedArray,
+        1,
+        streamState,
+      );
+      return;
+    }
+    case 'S': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Int16Array,
+        2,
+        streamState,
+      );
+      return;
+    }
+    case 's': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Uint16Array,
+        2,
+        streamState,
+      );
+      return;
+    }
+    case 'L': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Int32Array,
+        4,
+        streamState,
+      );
+      return;
+    }
+    case 'l': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Uint32Array,
+        4,
+        streamState,
+      );
+      return;
+    }
+    case 'G': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Float32Array,
+        4,
+        streamState,
+      );
+      return;
+    }
+    case 'g': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        Float64Array,
+        8,
+        streamState,
+      );
+      return;
+    }
+    case 'M': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        BigInt64Array,
+        8,
+        streamState,
+      );
+      return;
+    }
+    case 'm': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        BigUint64Array,
+        8,
+        streamState,
+      );
+      return;
+    }
+    case 'V': {
+      resolveTypedArray(
+        response,
+        id,
+        [],
+        payload as any,
+        DataView,
+        1,
+        streamState,
+      );
+      return;
+    }
+    default: {
+      if (tag.charCodeAt(0) === 72 /* "H" */) {
+        // A hint row. The hint code is carried in the tag.
+        resolveHint(response, tag.charAt(1) as any, payload as any);
+        return;
+      }
+      throw new Error(
+        'Unknown row tag. The ModelChannel was not wired up properly.',
+      );
+    }
+  }
+}
+
 function parseModel<T>(response: Response, json: UninitializedModel): T {
-  const rawModel = JSON.parse(json);
+  const rawModel = typeof json === 'string' ? JSON.parse(json) : json;
   // Pass a wrapper object as parentObject to match the original JSON.parse
   // reviver behavior, where the root value's reviver receives {"": rootValue}
   // as `this`. This ensures parentObject is never null when accessed downstream.
