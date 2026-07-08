@@ -158,6 +158,16 @@ function canPreserveStateBetween(prevType: any, nextType: any) {
     ) {
       return false;
     }
+    // Switching from SimpleMemoComponent to MemoComponent requires a remount;
+    // for symmetry, remount for the reverse too.
+    if (getProperty(prevType, '$$typeof') === REACT_MEMO_TYPE) {
+      if (
+        (getProperty(prevType, 'compare') === null) !==
+        (getProperty(nextType, 'compare') === null)
+      ) {
+        return false;
+      }
+    }
   }
   if (haveEqualSignatures(prevType, nextType)) {
     return true;
@@ -187,7 +197,7 @@ function cloneSet<T>(set: Set<T>): Set<T> {
 }
 
 // This is a safety mechanism to protect against rogue getters and Proxies.
-function getProperty(object: any, property: string) {
+function getProperty(object: any, property: string): any {
   try {
     return object[property];
   } catch (err) {

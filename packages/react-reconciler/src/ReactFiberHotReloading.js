@@ -196,9 +196,12 @@ export function isCompatibleFamilyForHotReloading(
       case MemoComponent:
       case SimpleMemoComponent: {
         if ($$typeofNextType === REACT_MEMO_TYPE) {
-          // TODO: if it was but can no longer be simple,
-          // we shouldn't set this.
-          needsCompareFamilies = true;
+          // A SimpleMemoComponent fiber can only host a memo with the
+          // default shallow comparison. If the next type has a custom
+          // one, the fiber tag has to change, so it isn't compatible.
+          if (fiber.tag !== SimpleMemoComponent || nextType.compare === null) {
+            needsCompareFamilies = true;
+          }
         } else if ($$typeofNextType === REACT_LAZY_TYPE) {
           needsCompareFamilies = true;
         }

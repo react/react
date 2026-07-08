@@ -915,6 +915,204 @@ describe('ReactFresh', () => {
     }
   });
 
+  it('can remount when adding or removing a memo comparison function', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('hi memo');
+
+      // Patch to add a custom comparison function.
+      // The fiber can no longer be a SimpleMemoComponent.
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo with compare</p>;
+          }
+          const Test = React.memo(Test2, (prevProps, nextProps) => false);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check remount
+      expect(container.firstChild).not.toBe(el);
+      const nextEl = container.firstChild;
+      expect(nextEl.textContent).toBe('hi memo with compare');
+
+      // Patch to remove the comparison function again
+      await act(async () => {
+        await patch(() => {
+          function Test2() {
+            return <p>hi memo</p>;
+          }
+          const Test = React.memo(Test2);
+          $RefreshReg$(Test2, 'Test$React.memo');
+          $RefreshReg$(Test, 'Test');
+          return Test;
+        });
+      });
+
+      // Check final remount
+      expect(container.firstChild).not.toBe(nextEl);
+      const newEl = container.firstChild;
+      expect(newEl.textContent).toBe('hi memo');
+    }
+  });
+
+  it('can update a memo comparison function in place', async () => {
+    if (__DEV__) {
+      await act(async () => {
+        await render(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner, (prevProps, nextProps) => true);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+
+          function App() {
+            const [n, setN] = React.useState(1);
+            return (
+              <div onClick={() => setN(c => c + 1)}>
+                <InnerMemo label={'n:' + n} />
+              </div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Check the initial render
+      const el = container.firstChild;
+      expect(el.textContent).toBe('n:1');
+
+      // The comparison function blocks the update.
+      await act(async () => {
+        el.click();
+      });
+      expect(el.textContent).toBe('n:1');
+
+      // Patch to change only the comparison function implementation.
+      await act(async () => {
+        await patch(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner, (prevProps, nextProps) => false);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+
+          function App() {
+            const [n, setN] = React.useState(1);
+            return (
+              <div onClick={() => setN(c => c + 1)}>
+                <InnerMemo label={'n:' + n} />
+              </div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // No remount, and the previously blocked update shows through
+      // because the new comparison function is used.
+      expect(container.firstChild).toBe(el);
+      expect(el.textContent).toBe('n:2');
+
+      // The new comparison function applies to future updates too.
+      await act(async () => {
+        el.click();
+      });
+      expect(el.textContent).toBe('n:3');
+    }
+  });
+
+  it('does not reuse a simple memo fiber for a memo with a comparison function', async () => {
+    if (__DEV__) {
+      let oldElement;
+      let newElement;
+      let currentChild = null;
+
+      await act(async () => {
+        await render(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+          oldElement = <InnerMemo label="hi" />;
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Patch to add a comparison function before the memo has ever mounted,
+      // so the refresh itself has nothing to remount.
+      await act(async () => {
+        await patch(() => {
+          function Inner({label}) {
+            return <p>{label}</p>;
+          }
+          const InnerMemo = React.memo(Inner, (prevProps, nextProps) => true);
+          $RefreshReg$(Inner, 'Inner$React.memo');
+          $RefreshReg$(InnerMemo, 'Inner');
+          newElement = <InnerMemo label="hi" />;
+
+          function App() {
+            const [, forceUpdate] = React.useState(0);
+            return (
+              <div onClick={() => forceUpdate(n => n + 1)}>{currentChild}</div>
+            );
+          }
+          $RefreshReg$(App, 'App');
+          return App;
+        });
+      });
+
+      // Mount the element created before the edit. Its type has no
+      // comparison function, so it mounts as a simple memo.
+      currentChild = oldElement;
+      await act(async () => {
+        container.firstChild.click();
+      });
+      const innerEl = container.firstChild.firstChild;
+      expect(innerEl.textContent).toBe('hi');
+
+      // Switch to the element created after the edit. It belongs to the same
+      // family, but a simple memo fiber cannot honor its comparison function,
+      // so the fiber must be recreated rather than reused.
+      currentChild = newElement;
+      await act(async () => {
+        container.firstChild.click();
+      });
+      expect(container.firstChild.firstChild).not.toBe(innerEl);
+      expect(container.firstChild.firstChild.textContent).toBe('hi');
+    }
+  });
+
   it('resets state when switching between different component types', async () => {
     if (__DEV__) {
       await act(async () => {

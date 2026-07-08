@@ -427,6 +427,9 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     switch (workInProgress.tag) {
       case FunctionComponent:
       case SimpleMemoComponent:
+      case MemoComponent:
+        // For MemoComponent, type is the memo object itself, so this picks
+        // up edits to the outer wrapper (e.g. its comparison function).
         workInProgress.type = resolveFunctionForHotReloading(current.type);
         break;
       case ClassComponent:
