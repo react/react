@@ -35,8 +35,15 @@ import {
   getRoot,
   reportGlobalError,
   processBinaryChunk,
+  processModelRow,
   close,
 } from 'react-client/src/ReactFlightClient';
+
+import type {ModelChannel} from 'react-client/src/ReactFlightModelChannel';
+import {connectModelChannel} from 'react-client/src/ReactFlightModelChannel';
+
+export {createModelChannel} from 'react-client/src/ReactFlightModelChannel';
+export type {ModelChannel};
 
 import {
   processReply,
@@ -184,6 +191,21 @@ function createFromReadableStream<T>(
   return getRoot(response);
 }
 
+function createFromModelChannel<T>(
+  channel: ModelChannel,
+  options: Options,
+): Thenable<T> {
+  const response: FlightResponse = createResponseFromOptions(options);
+  const streamState = createStreamState(response, channel);
+  connectModelChannel(channel, {
+    row: (id: number, tag: string, payload: mixed) =>
+      processModelRow(response, streamState, id, tag, payload),
+    close: () => close(response),
+    error: (reason: mixed) => reportGlobalError(response, reason),
+  });
+  return getRoot(response);
+}
+
 function createFromFetch<T>(
   promiseForResponse: Promise<Response>,
   options: Options,
@@ -256,4 +278,9 @@ function encodeReply(
   });
 }
 
-export {createFromFetch, createFromReadableStream, encodeReply};
+export {
+  createFromFetch,
+  createFromModelChannel,
+  createFromReadableStream,
+  encodeReply,
+};

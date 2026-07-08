@@ -24,6 +24,8 @@ import {Readable} from 'stream';
 
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
+import type {ModelChannel} from 'react-server/src/ReactFlightServer';
+
 import {
   createRequest,
   createPrerenderRequest,
@@ -154,6 +156,7 @@ type Options = {
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
   startTime?: number,
+  modelChannel?: ModelChannel,
 };
 
 type PipeableStream = {
@@ -195,6 +198,7 @@ function renderToPipeableStream(
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
+    options ? options.modelChannel : undefined,
   );
   let hasStartedFlowing = false;
   startWork(request);

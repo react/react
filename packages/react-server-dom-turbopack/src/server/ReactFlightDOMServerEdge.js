@@ -10,6 +10,7 @@
 import type {
   Request,
   ReactClientValue,
+  ModelChannel,
 } from 'react-server/src/ReactFlightServer';
 import type {Thenable} from 'shared/ReactTypes';
 import type {ClientManifest} from './ReactFlightServerConfigTurbopackBundler';
@@ -70,6 +71,7 @@ type Options = {
   temporaryReferences?: TemporaryReferenceSet,
   onError?: (error: mixed) => void,
   startTime?: number,
+  modelChannel?: ModelChannel,
 };
 
 function startReadingFromDebugChannelReadableStream(
@@ -136,6 +138,7 @@ function renderToReadableStream(
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
+    options ? options.modelChannel : undefined,
   );
   if (options && options.signal) {
     const signal = options.signal;
