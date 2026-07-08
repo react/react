@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<29787860205fd5cc776e9ce62ea5686e>>
+ * @generated SignedSource<<0efbb086d0297434442e69faca40e8fa>>
  */
 
 "use strict";
@@ -17434,6 +17434,7 @@ __DEV__ &&
       switch (workInProgress.tag) {
         case 0:
         case 15:
+        case 14:
         case 1:
         case 11:
           workInProgress.type = resolveTypeForHotReloading(current.type);
@@ -21242,10 +21243,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-3b9b59f7-20260708",
+        version: "19.3.0-native-fb-4400d6c8-20260708",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-3b9b59f7-20260708"
+        reconcilerVersion: "19.3.0-native-fb-4400d6c8-20260708"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
