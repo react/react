@@ -1,7 +1,9 @@
 packages/react-reconciler/src/ReactFiber.js
   s_d5e13cda7b40c0::t_a8ad36142e51c1 564-572,575,597,645-646
+  s_d5e13cda7b40c0::t_462311018412ed 564-572,575,597,645-646
 packages/react-refresh/src/__tests__/ReactFresh-test.js
   s_d5e13cda7b40c0::t_0233c3ff97ac40 918-972
+  s_d5e13cda7b40c0::t_433ab5644073e5 918-972
 ---
 {
   "schema_version": "authorship/3.0.0",
