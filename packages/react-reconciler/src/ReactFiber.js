@@ -423,6 +423,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     switch (workInProgress.tag) {
       case FunctionComponent:
       case SimpleMemoComponent:
+      case MemoComponent:
       case ClassComponent:
       case ForwardRef:
         workInProgress.type = resolveTypeForHotReloading(current.type);
