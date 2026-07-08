@@ -17858,6 +17858,7 @@ __DEV__ &&
       switch (workInProgress.tag) {
         case 0:
         case 15:
+        case 14:
         case 1:
         case 11:
           workInProgress.type = resolveTypeForHotReloading(current.type);
@@ -20544,10 +20545,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-3b9b59f7-20260708",
+        version: "19.3.0-www-classic-4400d6c8-20260708",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-3b9b59f7-20260708"
+        reconcilerVersion: "19.3.0-www-classic-4400d6c8-20260708"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20582,7 +20583,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-classic-3b9b59f7-20260708";
+    exports.version = "19.3.0-www-classic-4400d6c8-20260708";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

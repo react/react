@@ -21631,6 +21631,7 @@ __DEV__ &&
       switch (workInProgress.tag) {
         case 0:
         case 15:
+        case 14:
         case 1:
         case 11:
           workInProgress.type = resolveTypeForHotReloading(current.type);
@@ -33121,11 +33122,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-modern-3b9b59f7-20260708" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-modern-4400d6c8-20260708" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-modern-3b9b59f7-20260708\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-modern-4400d6c8-20260708\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -33168,10 +33169,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-modern-3b9b59f7-20260708",
+          version: "19.3.0-www-modern-4400d6c8-20260708",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-modern-3b9b59f7-20260708"
+          reconcilerVersion: "19.3.0-www-modern-4400d6c8-20260708"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -33793,7 +33794,7 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-modern-3b9b59f7-20260708";
+    exports.version = "19.3.0-www-modern-4400d6c8-20260708";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
