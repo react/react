@@ -12189,14 +12189,13 @@ __DEV__ &&
           a: if (
             ((family = workInProgress.pendingProps),
             (current = resolveLazy(workInProgress.elementType)),
+            (current = resolveTypeForHotReloading(current)),
             (workInProgress.type = current),
             "function" === typeof current)
           )
             shouldConstruct(current)
               ? ((family = resolveClassComponentProps(current, family)),
                 (workInProgress.tag = 1),
-                (workInProgress.type = current =
-                  resolveTypeForHotReloading(current)),
                 (workInProgress = updateClassComponent(
                   null,
                   workInProgress,
@@ -12206,8 +12205,6 @@ __DEV__ &&
                 )))
               : ((workInProgress.tag = 0),
                 validateFunctionComponentInDev(workInProgress, current),
-                (workInProgress.type = current =
-                  resolveTypeForHotReloading(current)),
                 (workInProgress = updateFunctionComponent(
                   null,
                   workInProgress,
@@ -12222,8 +12219,6 @@ __DEV__ &&
                 prevSibling === REACT_FORWARD_REF_TYPE)
               ) {
                 workInProgress.tag = 11;
-                workInProgress.type = current =
-                  resolveTypeForHotReloading(current);
                 workInProgress = updateForwardRef(
                   null,
                   workInProgress,
@@ -22116,12 +22111,11 @@ __DEV__ &&
       mode,
       lanes
     ) {
-      var fiberTag = 0,
-        resolvedType = type;
-      if ("function" === typeof type)
-        shouldConstruct(type) && (fiberTag = 1),
-          (resolvedType = resolveTypeForHotReloading(resolvedType));
-      else if ("string" === typeof type)
+      var fiberTag = 0;
+      var resolvedType = resolveTypeForHotReloading(type);
+      if ("function" === typeof resolvedType)
+        shouldConstruct(resolvedType) && (fiberTag = 1);
+      else if ("string" === typeof resolvedType)
         (fiberTag = getHostContext()),
           (fiberTag = isHostHoistableType(type, pendingProps, fiberTag)
             ? 26
@@ -22129,7 +22123,7 @@ __DEV__ &&
               ? 27
               : 5);
       else
-        a: switch (type) {
+        a: switch (resolvedType) {
           case REACT_ACTIVITY_TYPE:
             return (
               (key = createFiber(31, pendingProps, key, mode)),
@@ -22225,8 +22219,8 @@ __DEV__ &&
                 key
               );
           default:
-            if ("object" === typeof type && null !== type)
-              switch (type.$$typeof) {
+            if ("object" === typeof resolvedType && null !== resolvedType)
+              switch (resolvedType.$$typeof) {
                 case REACT_CONTEXT_TYPE:
                   fiberTag = 10;
                   break a;
@@ -33663,11 +33657,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-classic-df4bd1b4-20260708" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-classic-3b9b59f7-20260708" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-classic-df4bd1b4-20260708\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-classic-3b9b59f7-20260708\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -33710,10 +33704,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-classic-df4bd1b4-20260708",
+          version: "19.3.0-www-classic-3b9b59f7-20260708",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-classic-df4bd1b4-20260708"
+          reconcilerVersion: "19.3.0-www-classic-3b9b59f7-20260708"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34501,5 +34495,5 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-classic-df4bd1b4-20260708";
+    exports.version = "19.3.0-www-classic-3b9b59f7-20260708";
   })();

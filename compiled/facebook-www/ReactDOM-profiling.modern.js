@@ -16205,8 +16205,8 @@ function createFiberFromTypeAndProps(
 ) {
   var fiberTag = 0;
   owner = type;
-  if ("function" === typeof type) shouldConstruct(type) && (fiberTag = 1);
-  else if ("string" === typeof type)
+  if ("function" === typeof owner) shouldConstruct(owner) && (fiberTag = 1);
+  else if ("string" === typeof owner)
     fiberTag = isHostHoistableType(
       type,
       pendingProps,
@@ -16217,7 +16217,7 @@ function createFiberFromTypeAndProps(
         ? 27
         : 5;
   else
-    a: switch (type) {
+    a: switch (owner) {
       case REACT_ACTIVITY_TYPE:
         return (
           (type = createFiber(31, pendingProps, key, mode)),
@@ -16301,8 +16301,8 @@ function createFiberFromTypeAndProps(
             key
           );
       default:
-        if ("object" === typeof type && null !== type)
-          switch (type.$$typeof) {
+        if ("object" === typeof owner && null !== owner)
+          switch (owner.$$typeof) {
             case REACT_CONTEXT_TYPE:
               fiberTag = 10;
               break a;
@@ -22349,14 +22349,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2397 = React.version;
 if (
-  "19.3.0-www-modern-df4bd1b4-20260708" !==
+  "19.3.0-www-modern-3b9b59f7-20260708" !==
   isomorphicReactPackageVersion$jscomp$inline_2397
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2397,
-      "19.3.0-www-modern-df4bd1b4-20260708"
+      "19.3.0-www-modern-3b9b59f7-20260708"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -22374,10 +22374,10 @@ Internals.Events = [
 ];
 var internals$jscomp$inline_2399 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-df4bd1b4-20260708",
+  version: "19.3.0-www-modern-3b9b59f7-20260708",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-df4bd1b4-20260708"
+  reconcilerVersion: "19.3.0-www-modern-3b9b59f7-20260708"
 };
 enableSchedulingProfiler &&
   ((internals$jscomp$inline_2399.getLaneLabelMap = getLaneLabelMap),
@@ -22819,7 +22819,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-df4bd1b4-20260708";
+exports.version = "19.3.0-www-modern-3b9b59f7-20260708";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

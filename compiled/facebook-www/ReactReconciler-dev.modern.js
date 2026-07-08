@@ -10074,14 +10074,13 @@ __DEV__ &&
           a: if (
             ((family = workInProgress.pendingProps),
             (current = resolveLazy(workInProgress.elementType)),
+            (current = resolveTypeForHotReloading(current)),
             (workInProgress.type = current),
             "function" === typeof current)
           )
             shouldConstruct(current)
               ? ((family = resolveClassComponentProps(current, family)),
                 (workInProgress.tag = 1),
-                (workInProgress.type = current =
-                  resolveTypeForHotReloading(current)),
                 (workInProgress = updateClassComponent(
                   null,
                   workInProgress,
@@ -10091,8 +10090,6 @@ __DEV__ &&
                 )))
               : ((workInProgress.tag = 0),
                 validateFunctionComponentInDev(workInProgress, current),
-                (workInProgress.type = current =
-                  resolveTypeForHotReloading(current)),
                 (workInProgress = updateFunctionComponent(
                   null,
                   workInProgress,
@@ -10107,8 +10104,6 @@ __DEV__ &&
                 prevSibling === REACT_FORWARD_REF_TYPE)
               ) {
                 workInProgress.tag = 11;
-                workInProgress.type = current =
-                  resolveTypeForHotReloading(current);
                 workInProgress = updateForwardRef(
                   null,
                   workInProgress,
@@ -19788,12 +19783,11 @@ __DEV__ &&
       mode,
       lanes
     ) {
-      var fiberTag = 0,
-        resolvedType = type;
-      if ("function" === typeof type)
-        shouldConstruct(type) && (fiberTag = 1),
-          (resolvedType = resolveTypeForHotReloading(resolvedType));
-      else if ("string" === typeof type)
+      var fiberTag = 0;
+      var resolvedType = resolveTypeForHotReloading(type);
+      if ("function" === typeof resolvedType)
+        shouldConstruct(resolvedType) && (fiberTag = 1);
+      else if ("string" === typeof resolvedType)
         supportsResources && supportsSingletons
           ? ((fiberTag = getHostContext()),
             (fiberTag = isHostHoistableType(type, pendingProps, fiberTag)
@@ -19812,7 +19806,7 @@ __DEV__ &&
                   : 5
                 : 5);
       else
-        a: switch (type) {
+        a: switch (resolvedType) {
           case REACT_ACTIVITY_TYPE:
             return (
               (key = createFiber(31, pendingProps, key, mode)),
@@ -19907,8 +19901,8 @@ __DEV__ &&
                 key
               );
           default:
-            if ("object" === typeof type && null !== type)
-              switch (type.$$typeof) {
+            if ("object" === typeof resolvedType && null !== resolvedType)
+              switch (resolvedType.$$typeof) {
                 case REACT_CONTEXT_TYPE:
                   fiberTag = 10;
                   break a;
@@ -23023,7 +23017,7 @@ __DEV__ &&
         version: rendererVersion,
         rendererPackageName: rendererPackageName,
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-modern-df4bd1b4-20260708"
+        reconcilerVersion: "19.3.0-www-modern-3b9b59f7-20260708"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

@@ -11329,10 +11329,10 @@ function createFiberFromTypeAndProps(
 ) {
   var fiberTag = 0;
   owner = type;
-  if ("function" === typeof type) shouldConstruct(type) && (fiberTag = 1);
-  else if ("string" === typeof type) fiberTag = 5;
+  if ("function" === typeof owner) shouldConstruct(owner) && (fiberTag = 1);
+  else if ("string" === typeof owner) fiberTag = 5;
   else
-    a: switch (type) {
+    a: switch (owner) {
       case REACT_ACTIVITY_TYPE:
         return (
           (type = createFiber(31, pendingProps, key, mode)),
@@ -11415,8 +11415,8 @@ function createFiberFromTypeAndProps(
             key
           );
       default:
-        if ("object" === typeof type && null !== type)
-          switch (type.$$typeof) {
+        if ("object" === typeof owner && null !== owner)
+          switch (owner.$$typeof) {
             case REACT_CONTEXT_TYPE:
               fiberTag = 10;
               break a;
@@ -11710,10 +11710,10 @@ var slice = Array.prototype.slice,
   })(React.Component);
 var internals$jscomp$inline_1629 = {
   bundleType: 0,
-  version: "19.3.0-www-classic-df4bd1b4-20260708",
+  version: "19.3.0-www-classic-3b9b59f7-20260708",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-classic-df4bd1b4-20260708"
+  reconcilerVersion: "19.3.0-www-classic-3b9b59f7-20260708"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1630 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11739,4 +11739,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-classic-df4bd1b4-20260708";
+exports.version = "19.3.0-www-classic-3b9b59f7-20260708";
