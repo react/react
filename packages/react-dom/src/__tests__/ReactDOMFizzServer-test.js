@@ -7676,13 +7676,14 @@ describe('ReactDOMFizzServer', () => {
       return <span>hi</span>;
     }
 
-    // Recursively render a component tree deep enough to trigger stack overflow.
-    // Don't make this too short to not hit the limit but also not too deep to slow
-    // down the test.
+    // Recursively render a component tree deep enough to trigger stack overflow
+    // more than once. The first overflow is recovered by the renderNode
+    // trampoline; deeper trees must also recover when the retried task
+    // overflows again. Don't make this too deep to slow down the test.
     await act(() => {
       const {pipe} = renderToPipeableStream(
         <div>
-          <Recursive n={1000} />
+          <Recursive n={1200} />
         </div>,
       );
       pipe(writable);

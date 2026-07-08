@@ -5239,6 +5239,11 @@ function retryRenderTask(
 
   const childrenLength = segment.children.length;
   const chunkLength = segment.chunks.length;
+  // Remember which node we were about to render. renderNodeDestructive advances
+  // task.node as it walks down the tree, so we can detect whether we made
+  // forward progress if we hit a stack overflow and need to decide whether it's
+  // safe to reschedule the task versus fatally erroring.
+  const startNode = task.node;
   try {
     // We call the destructive form that mutates this task. That way if something
     // suspends again, we can reuse the same task instead of spawning a new one.
@@ -5301,6 +5306,25 @@ function retryRenderTask(
         const ping = task.ping;
         // We've asserted that x is a thenable above
         (x as any).then(ping.resolve, ping.reject);
+        return;
+      }
+      if (
+        x.message === 'Maximum call stack size exceeded' &&
+        task.node !== startNode
+      ) {
+        // We hit a stack overflow while retrying an extremely deep tree whose
+        // remaining depth still doesn't fit in a single fresh stack. Unlike the
+        // initial render, retryNode isn't wrapped in the renderNode trampoline,
+        // so the overflow surfaces here instead of being caught deeper.
+        // renderNodeDestructive stashes the deepest node we reached on the task;
+        // because task.node advanced past where we started this attempt, we know
+        // we made forward progress, so rescheduling the task lets it continue
+        // from a fresh stack rather than fatally erroring. If task.node had not
+        // advanced (e.g. a component that overflows within its own body) we fall
+        // through and treat it as a genuine, unrecoverable error.
+        segment.status = PENDING;
+        task.thenableState = null;
+        pingTask(request, task);
         return;
       }
     }
