@@ -803,6 +803,306 @@ describe('ReactFlightDOMEdge', () => {
     expect(html).toBe(html2);
   });
 
+  it('should pack deferred siblings into shared rows', async () => {
+    const paragraphs = [];
+    for (let i = 0; i < 200; i++) {
+      const text =
+        'This is paragraph number ' +
+        i +
+        ' with enough copy to accumulate serialized size along the way.';
+      paragraphs.push(
+        <p key={i} className="text">
+          {text}
+        </p>,
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(paragraphs),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // Deferred siblings are delivered by shared packed rows, referenced by
+    // index, instead of one row each.
+    expect(serializedContent).toMatch(/\$L[0-9a-f]+:\d/);
+    if (!__DEV__) {
+      expect(serializedContent.split('\n').length).toBeLessThan(30);
+      // ~150 deferred paragraphs at up to PACKED_SIBLINGS_LIMIT per row.
+      const packedRows = serializedContent.match(/\n[0-9a-f]+:\[\[/g);
+      expect(packedRows.length).toBeGreaterThanOrEqual(3);
+      expect(packedRows.length).toBeLessThanOrEqual(6);
+    }
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+
+    // Use the SSR render to resolve any lazy elements
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result),
+    );
+    const html = await readResult(ssrStream);
+
+    const ssrStream2 = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(paragraphs),
+    );
+    const html2 = await readResult(ssrStream2);
+
+    expect(html).toBe(html2);
+  });
+
+  it("should defer an oversized packed sibling's children through the regular size check", async () => {
+    // One deferred sibling whose own subtree crosses MAX_ROW_SIZE: its
+    // children defer again rather than growing the packed row unboundedly.
+    const paragraphs = [];
+    for (let i = 0; i < 60; i++) {
+      const text =
+        'This is paragraph number ' +
+        i +
+        ' with enough copy to accumulate serialized size along the way.';
+      paragraphs.push(<p key={i}>{text}</p>);
+    }
+    // Deep in the deferred tail, an item with a large subtree of its own.
+    const bigChildren = [];
+    for (let i = 0; i < 120; i++) {
+      const text = 'nested item inside the oversized sibling ' + i;
+      bigChildren.push(<li key={i}>{text}</li>);
+    }
+    paragraphs.push(<ul key="big">{bigChildren}</ul>);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(paragraphs),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    if (!__DEV__) {
+      // The oversized item's children were deferred and packed themselves
+      // rather than all being inlined into its packed row.
+      const packedRows = serializedContent.match(/\n[0-9a-f]+:\[\[/g);
+      expect(packedRows.length).toBeGreaterThanOrEqual(3);
+    }
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result),
+    );
+    const html = await readResult(ssrStream);
+    const ssrStream2 = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(paragraphs),
+    );
+    const html2 = await readResult(ssrStream2);
+    expect(html).toBe(html2);
+  });
+
+  it('should keep children flat with correct keys across packed rows', async () => {
+    const Inspector = clientExports(function Inspector({children}) {
+      const flat = Array.isArray(children);
+      const allNodes =
+        flat &&
+        children.every(
+          child =>
+            child != null &&
+            (typeof child === 'object' || typeof child === 'string'),
+        );
+      return (
+        <div
+          data-flat={String(flat)}
+          data-all={String(allNodes)}
+          data-count={String(flat ? children.length : -1)}>
+          {children}
+        </div>
+      );
+    });
+    const clientModuleMetadata = webpackMap[Inspector.$$id];
+
+    const items = [];
+    for (let i = 0; i < 150; i++) {
+      const text =
+        'Item body with some padding text to build up serialized size ' + i;
+      items.push(<span key={'k' + i}>{text}</span>);
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <Inspector>{items}</Inspector>,
+        webpackMap,
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: {
+          [clientModuleMetadata.id]: {
+            '*': clientModuleMetadata,
+          },
+        },
+        moduleLoading: webpackModuleLoading,
+      },
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    const html = await readResult(ssrStream);
+    expect(html).toContain('data-flat="true"');
+    expect(html).toContain('data-all="true"');
+    expect(html).toContain('data-count="150"');
+    expect(html).toContain(
+      'Item body with some padding text to build up serialized size 149</span>',
+    );
+  });
+
+  it('should recover when a packed sibling suspends', async () => {
+    let resolveData;
+    const dataPromise = new Promise(resolve => (resolveData = resolve));
+    async function AsyncItem() {
+      const text = await dataPromise;
+      return <b>{text}</b>;
+    }
+    const children = [];
+    for (let i = 0; i < 100; i++) {
+      const text =
+        'sync item with plenty of text to push the row over the limit ' + i;
+      children.push(<i key={i}>{text}</i>);
+    }
+    // An async item deep in the deferred tail.
+    children.push(<AsyncItem key="async" />);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <section>{children}</section>,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    await serverAct(() => resolveData('finally here'));
+
+    const serializedContent = await readResult(stream1);
+    // The packed row flushed before the suspended sibling resolved: its slot
+    // degraded to a reference and the sync siblings were not held back.
+    expect(serializedContent.indexOf('over the limit 99')).toBeLessThan(
+      serializedContent.indexOf('finally here'),
+    );
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result),
+    );
+    const html = await readResult(ssrStream);
+    expect(html).toContain(
+      'sync item with plenty of text to push the row over the limit 99</i>',
+    );
+    expect(html).toContain('<b>finally here</b>');
+  });
+
+  it('should error every packed sibling when the render is aborted', async () => {
+    const never = new Promise(() => {});
+    async function Hanging() {
+      await never;
+      return null;
+    }
+    const children = [];
+    for (let i = 0; i < 100; i++) {
+      const text =
+        'item text that adds serialized weight for deferral purposes ' + i;
+      children.push(<i key={i}>{text}</i>);
+    }
+    children.push(<Hanging key="hang" />);
+
+    const controller = new AbortController();
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <section>{children}</section>,
+        null,
+        {
+          signal: controller.signal,
+          onError(error) {
+            errors.push(error.message);
+            return 'digest';
+          },
+        },
+      ),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    await serverAct(() => controller.abort(new Error('goodbye')));
+
+    let error = null;
+    try {
+      const ssrStream = await serverAct(() =>
+        ReactDOMServer.renderToReadableStream(response),
+      );
+      await readResult(ssrStream);
+    } catch (x) {
+      error = x;
+    }
+    expect(error).not.toBe(null);
+    expect(error.digest).toBe('digest');
+    expect(errors).toContain('goodbye');
+    assertConsoleErrorDev(['[Server] Error: goodbye\n    in <stack>']);
+  });
+
+  it('should dedupe objects shared with packed siblings', async () => {
+    const shared = {shared: 'value'};
+    const items = [];
+    for (let i = 0; i < 100; i++) {
+      const text =
+        'padding text to accumulate row size for deferral to happen soon ' + i;
+      items.push(
+        <span key={i} data-index={i}>
+          {text}
+        </span>,
+      );
+    }
+    const model = {
+      tree: <section>{items}</section>,
+      a: shared,
+      b: shared,
+    };
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model),
+    );
+    const result = await ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    expect(result.a).toBe(result.b);
+  });
+
   it('regression: should not leak serialized size', async () => {
     const MAX_ROW_SIZE = 3200;
     // This test case is a bit convoluted and may no longer trigger the original bug.
