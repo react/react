@@ -2,6 +2,7 @@ packages/react-reconciler/src/ReactFiberHotReloading.js
   s_d5e13cda7b40c0::t_764eebd09497f4 133,138-140,142-161,369-387
 packages/react-refresh/src/__tests__/ReactFresh-test.js
   s_d5e13cda7b40c0::t_a3b1a9e5f989d2 1172-1306
+  s_d5e13cda7b40c0::t_2f1dcb83d9b7a0 1172-1306
 ---
 {
   "schema_version": "authorship/3.0.0",
