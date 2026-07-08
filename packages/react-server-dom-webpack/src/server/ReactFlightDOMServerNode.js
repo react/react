@@ -198,6 +198,7 @@ function renderToPipeableStream(
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
+    debugChannelWritable !== undefined,
     options ? options.modelChannel : undefined,
   );
   let hasStartedFlowing = false;

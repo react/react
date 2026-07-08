@@ -12,6 +12,9 @@
 
 import {patchSetImmediate} from '../../../../scripts/jest/patchSetImmediate';
 
+// Patch for Edge environments for global scope
+global.AsyncLocalStorage = require('async_hooks').AsyncLocalStorage;
+
 let clientExports;
 let webpackMap;
 let webpackModules;
@@ -570,5 +573,140 @@ describe('ReactFlightDOMModelChannel', () => {
       {serverConsumerManifest: {moduleMap: null, moduleLoading: null}},
     );
     expect((await channelResponse).greeting).toBe('buffered');
+  });
+});
+
+describe('ReactFlightDOMModelChannelEdge', () => {
+  beforeEach(() => {
+    jest.resetModules();
+
+    patchSetImmediate();
+    serverAct = require('internal-test-utils').serverAct;
+
+    // Simulate the condition resolution
+    jest.mock('react', () => require('react/react.react-server'));
+    jest.mock('react-server-dom-webpack/server', () =>
+      require('react-server-dom-webpack/server.edge'),
+    );
+    ReactServer = require('react');
+    ReactServerDOMServer = require('react-server-dom-webpack/server');
+
+    const WebpackMock = require('./utils/WebpackMock');
+    webpackMap = WebpackMock.webpackMap;
+
+    jest.resetModules();
+    __unmockReact();
+    jest.unmock('react-server-dom-webpack/server');
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.edge'),
+    );
+
+    React = require('react');
+    ReactServerDOMClient = require('react-server-dom-webpack/client');
+  });
+
+  // @gate __DEV__
+  it('does not duplicate debug rows when the debug channel starts flowing late', async () => {
+    function Greeting({name}) {
+      return ReactServer.createElement('span', null, 'hi ', name);
+    }
+    function App() {
+      return ReactServer.createElement(Greeting, {name: 'Seb'});
+    }
+
+    // The Edge binding only attaches the debug destination when the debug
+    // stream it pipes into the debug channel's writable is first pulled. In a
+    // spec-compliant pipe the first read waits for the writable to be ready,
+    // so a slow consumer can delay it past the render's flushes. Node's
+    // pipeTo reads eagerly, so simulate a late-pulled pipe by deferring the
+    // pipeTo the binding sets up until we release it. Debug rows must not be
+    // delivered over the model channel in the meantime: they'd arrive a
+    // second time as bytes once the debug stream starts flowing.
+    let debugController = null;
+    const clientDebugReadable = new ReadableStream({
+      start(controller) {
+        debugController = controller;
+      },
+    });
+    let debugText = '';
+    const textDecoder = new TextDecoder();
+    const serverDebugWritable = new WritableStream({
+      write(chunk) {
+        debugText += textDecoder.decode(chunk, {stream: true});
+        debugController.enqueue(chunk);
+      },
+      close() {
+        debugController.close();
+      },
+      abort(reason) {
+        debugController.error(reason);
+      },
+    });
+
+    const channel = ReactServerDOMClient.createModelChannel();
+    // Record every row the server delivers over the model channel so we can
+    // assert that none of the debug rows flow through it.
+    const channelPayloads = [];
+    const originalPush = channel.push;
+    channel.push = function (id, tag, payload) {
+      channelPayloads.push(payload);
+      return originalPush.apply(this, arguments);
+    };
+    const channelResponse = ReactServerDOMClient.createFromModelChannel(
+      channel,
+      {
+        serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+        debugChannel: {readable: clientDebugReadable},
+      },
+    );
+
+    const originalPipeTo = ReadableStream.prototype.pipeTo;
+    const deferredPipes = [];
+    ReadableStream.prototype.pipeTo = function (destination, options) {
+      const source = this;
+      return new Promise((resolve, reject) => {
+        deferredPipes.push(() =>
+          originalPipeTo
+            .call(source, destination, options)
+            .then(resolve, reject),
+        );
+      });
+    };
+    try {
+      await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(
+          ReactServer.createElement(App),
+          webpackMap,
+          {
+            modelChannel: channel,
+            debugChannel: {writable: serverDebugWritable},
+          },
+        ),
+      );
+    } finally {
+      ReadableStream.prototype.pipeTo = originalPipeTo;
+    }
+
+    // The render has fully flushed through the model channel while the debug
+    // stream was never pulled. Now let the debug channel start flowing.
+    await serverAct(() => {
+      deferredPipes.forEach(startPiping => startPiping());
+    });
+
+    const root = await channelResponse;
+    expect(root.type).toBe('span');
+    const names = root._debugInfo.map(info => info.name).filter(Boolean);
+    expect(names).toContain('App');
+    // Each debug info entry must appear exactly once. A duplicate means a
+    // debug row was delivered both over the model channel and as bytes.
+    expect(names).toEqual(Array.from(new Set(names)));
+    // The debug rows must have arrived through the debug channel's byte
+    // stream and must not also have been delivered over the model channel.
+    expect(debugText).toContain('"name":"App"');
+    const debugRowsOnModelChannel = channelPayloads.filter(
+      payload =>
+        typeof payload === 'string' && payload.includes('"name":"App"'),
+    );
+    expect(debugRowsOnModelChannel).toEqual([]);
   });
 });

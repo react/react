@@ -659,6 +659,11 @@ export type Request = {
   // DEV-only
   pendingDebugChunks: number,
   completedDebugChunks: CompletedRowQueue,
+  // Whether a debug channel was configured for this request. When it is,
+  // debug rows only ever flow through the debug channel's own byte stream.
+  // This is decided at request creation so that routing doesn't depend on
+  // when the debug destination starts flowing.
+  debugChannel: boolean,
   debugDestination: null | Destination,
   environmentName: () => string,
   filterStackFrame: (
@@ -720,6 +725,7 @@ function RequestInstance(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  debugChannel: void | boolean, // DEV-only
   modelChannel: void | ModelChannel,
 ) {
   if (
@@ -779,6 +785,7 @@ function RequestInstance(
   if (__DEV__) {
     this.pendingDebugChunks = 0;
     this.completedDebugChunks = [] as CompletedRowQueue;
+    this.debugChannel = debugChannel === true;
     this.debugDestination = null;
     this.environmentName =
       environmentName === undefined
@@ -856,6 +863,7 @@ export function createRequest(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  debugChannel: void | boolean, // DEV-only
   modelChannel: void | ModelChannel,
 ): Request {
   if (__DEV__) {
@@ -876,6 +884,7 @@ export function createRequest(
     environmentName,
     filterStackFrame,
     keepDebugAlive,
+    debugChannel,
     modelChannel,
   );
 }
@@ -892,6 +901,7 @@ export function createPrerenderRequest(
   environmentName: void | string | (() => string), // DEV-only
   filterStackFrame: void | ((url: string, functionName: string) => boolean), // DEV-only
   keepDebugAlive: boolean, // DEV-only
+  debugChannel: void | boolean, // DEV-only
   modelChannel: void | ModelChannel,
 ): Request {
   if (__DEV__) {
@@ -912,6 +922,7 @@ export function createPrerenderRequest(
     environmentName,
     filterStackFrame,
     keepDebugAlive,
+    debugChannel,
     modelChannel,
   );
 }
@@ -6405,10 +6416,14 @@ function flushCompletedChunksImpl(request: Request): void {
     request.completedDebugChunks = serializeRows(
       request,
       request.completedDebugChunks,
-      // When a debug channel is attached, debug rows flow through its own
+      // When a debug channel is configured, debug rows flow through its own
       // byte stream rather than the main destination, and the consumer reads
-      // that stream separately.
-      request.debugDestination === null,
+      // that stream separately. This is gated on whether the channel was
+      // configured rather than on whether its destination is attached yet:
+      // the debug destination can start flowing after rows have already been
+      // flushed, and rows delivered to the model channel in the meantime
+      // would arrive a second time through the byte stream.
+      !request.debugChannel,
     );
   }
   request.completedRegularChunks = serializeRows(
@@ -6492,7 +6507,9 @@ function flushCompletedChunksImpl(request: Request): void {
 
       // Debug meta data comes before the model data because it will often end up blocking the model from
       // completing since the JSX will reference the debug data.
-      if (__DEV__ && request.debugDestination === null) {
+      // When a debug channel is configured, debug rows are reserved for its
+      // byte stream even while its destination hasn't started flowing yet.
+      if (__DEV__ && !request.debugChannel) {
         const debugChunks = request.completedDebugChunks;
         i = 0;
         for (; i < debugChunks.length; i++) {
