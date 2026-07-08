@@ -23298,7 +23298,9 @@ function lowerStatement(builder, stmtPath, label = null) {
         case 'VariableDeclaration': {
             const stmt = stmtPath;
             const nodeKind = stmt.node.kind;
-            if (nodeKind === 'var') {
+            if (nodeKind === 'var' ||
+                nodeKind === 'using' ||
+                nodeKind === 'await using') {
                 builder.recordError(new CompilerErrorDetail({
                     reason: `(BuildHIR::lowerStatement) Handle ${nodeKind} kinds in VariableDeclaration`,
                     category: ErrorCategory.Todo,
