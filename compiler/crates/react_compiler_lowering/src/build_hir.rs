@@ -3058,22 +3058,30 @@ fn lower_statement(
         Statement::VariableDeclaration(var_decl) => {
             use react_compiler_ast::patterns::PatternLike;
             use react_compiler_ast::statements::VariableDeclarationKind;
-            if matches!(var_decl.kind, VariableDeclarationKind::Var) {
+            let unsupported_node_kind = match var_decl.kind {
+                VariableDeclarationKind::Var => Some("var"),
+                VariableDeclarationKind::Using => Some("using"),
+                VariableDeclarationKind::AwaitUsing => Some("await using"),
+                VariableDeclarationKind::Let | VariableDeclarationKind::Const => None,
+            };
+            if let Some(node_kind) = unsupported_node_kind {
                 builder.record_error(CompilerErrorDetail {
-                    reason: "(BuildHIR::lowerStatement) Handle var kinds in VariableDeclaration"
-                        .to_string(),
+                    reason: format!(
+                        "(BuildHIR::lowerStatement) Handle {node_kind} kinds in VariableDeclaration"
+                    ),
                     category: ErrorCategory::Todo,
                     loc: convert_opt_loc(&var_decl.base.loc),
                     description: None,
                     suggestions: None,
                 })?;
-                // Treat `var` as `let` so references to the variable don't break
+                // Treat `var` as `let` and `using`/`await using` as `const` so
+                // references to the variable don't break while the error unwinds
             }
             let kind = match var_decl.kind {
                 VariableDeclarationKind::Let | VariableDeclarationKind::Var => InstructionKind::Let,
-                VariableDeclarationKind::Const | VariableDeclarationKind::Using => {
-                    InstructionKind::Const
-                }
+                VariableDeclarationKind::Const
+                | VariableDeclarationKind::Using
+                | VariableDeclarationKind::AwaitUsing => InstructionKind::Const,
             };
             for declarator in &var_decl.declarations {
                 let stmt_loc = convert_opt_loc(&var_decl.base.loc);
@@ -6271,7 +6279,7 @@ fn lower_jsx_element_name(
             let tag = &id.name;
             let loc = convert_opt_loc(&id.base.loc);
             let start = id.base.start.unwrap_or(0);
-            if tag.starts_with(|c: char| c.is_ascii_uppercase()) {
+            if !tag.starts_with(|c: char| c.is_ascii_lowercase()) {
                 // Component tag: resolve as identifier and load
                 let place = lower_identifier(builder, tag, start, loc.clone(), id.base.node_id)?;
                 let load_value = if builder.is_context_identifier(tag, start, id.base.node_id) {

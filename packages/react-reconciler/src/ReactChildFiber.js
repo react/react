@@ -524,8 +524,10 @@ function createChildReconciler(
     if (current !== null) {
       const oldIndex = current.index;
       if (oldIndex < lastPlacedIndex) {
-        // This is a move.
-        newFiber.flags |= Placement | PlacementDEV;
+        // This is a move. The fiber already existed, so this is not a new
+        // mount; don't set PlacementDEV, which would cause StrictMode to
+        // re-run the effects in its subtree as if it had remounted.
+        newFiber.flags |= Placement;
         return lastPlacedIndex;
       } else {
         // This item can stay in place.
