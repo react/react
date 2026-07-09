@@ -27,6 +27,21 @@ import {queueChangeEvent} from '../events/ReactDOMEventReplaying';
 let didWarnValueDefaultValue = false;
 let didWarnCheckedDefaultChecked = false;
 
+// Input types whose UI provides a Reset/Clear button on iOS Safari and
+// Chrome. For these, the browser uses the `defaultValue` as the Reset
+// target, so we must not keep `defaultValue` in sync with `value` after
+// the initial mount.
+function isDateOrTimeInputType(type: ?string): boolean {
+  return (
+    type === 'date' ||
+    type === 'time' ||
+    type === 'datetime' ||
+    type === 'datetime-local' ||
+    type === 'month' ||
+    type === 'week'
+  );
+}
+
 /**
  * Implements an <input> host component that allows setting these optional
  * props: `checked`, `value`, `defaultChecked`, and `defaultValue`.
@@ -155,7 +170,17 @@ export function updateInput(
     //  2. The defaultValue React property
     //  3. Otherwise there should be no change
     if (value != null) {
-      setDefaultValue(node, type, getToStringValue(value));
+      // For date/time-style inputs we intentionally do not keep the
+      // `defaultValue` (i.e. the `value` HTML attribute) in sync with the
+      // current `value` property after the initial mount. iOS Safari/Chrome
+      // use the `defaultValue` as the Reset/Clear target; if we keep it in
+      // sync, pressing Reset becomes a no-op at the DOM level and the
+      // browser-fired native `change` event arrives with a value that
+      // matches the value tracker, causing React to suppress the synthetic
+      // `onChange`. See https://github.com/facebook/react/issues/23299.
+      if (!isDateOrTimeInputType(type)) {
+        setDefaultValue(node, type, getToStringValue(value));
+      }
     } else if (defaultValue != null) {
       setDefaultValue(node, type, getToStringValue(defaultValue));
     } else if (lastDefaultValue != null) {

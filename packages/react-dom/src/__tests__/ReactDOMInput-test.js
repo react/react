@@ -640,6 +640,66 @@ describe('ReactDOMInput', () => {
     });
   });
 
+  // Regression test for https://github.com/facebook/react/issues/23299.
+  // For controlled date/time-style inputs, React must not keep
+  // `node.defaultValue` in sync with `value` on every update. iOS Safari and
+  // Chrome use `defaultValue` as the target of the Reset/Clear button; if
+  // they stay in sync, pressing Reset becomes a DOM no-op and the synthetic
+  // `onChange` is suppressed because the value tracker sees no change.
+  it('should not sync defaultValue with value on controlled time inputs', async () => {
+    let lastChangeValue = null;
+    let changeCount = 0;
+    class Stub extends React.Component {
+      state = {value: '00:30'};
+      handleChange = e => {
+        changeCount++;
+        lastChangeValue = e.target.value;
+        this.setState({value: e.target.value});
+      };
+      render() {
+        return (
+          <input
+            type="time"
+            value={this.state.value}
+            onChange={this.handleChange}
+          />
+        );
+      }
+    }
+
+    await act(() => {
+      root.render(<Stub />);
+    });
+    const node = container.firstChild;
+
+    // Simulate the user editing the input to "00:31".
+    setUntrackedValue.call(node, '00:31');
+    await act(() => {
+      dispatchEventOnNode(node, 'input');
+    });
+    expect(changeCount).toBe(1);
+    expect(lastChangeValue).toBe('00:31');
+    expect(node.value).toBe('00:31');
+
+    // The Reset/Clear button on iOS reverts `node.value` to
+    // `node.defaultValue`. For the fix to be meaningful, React must NOT have
+    // synced `defaultValue` up to the new "00:31" — it should still be the
+    // initial value ("00:30") rendered at mount.
+    if (!disableInputAttributeSyncing) {
+      expect(node.defaultValue).toBe('00:30');
+    }
+
+    // Now simulate iOS dispatching a native `change` event after the Reset
+    // operation reverted the value.
+    setUntrackedValue.call(node, node.defaultValue);
+    await act(() => {
+      dispatchEventOnNode(node, 'change');
+    });
+
+    expect(changeCount).toBe(2);
+    expect(lastChangeValue).toBe('00:30');
+  });
+
   it('should take `defaultValue` when changing to uncontrolled input', async () => {
     await act(() => {
       root.render(<input type="text" value="0" readOnly={true} />);
