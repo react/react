@@ -589,12 +589,39 @@ const PRERENDER = 21;
 // emitTypedArrayChunk for why, and flushCompletedChunks for how it's read.
 const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
 
+import type {
+  RenderConsumer,
+  RenderResult,
+} from 'shared/ReactFlightRenderResult';
+
+export type {RenderConsumer, RenderResult};
+
 export type Request = {
   status: 10 | 11 | 12 | 13 | 14,
   type: 20 | 21,
   flushScheduled: boolean,
   fatalError: mixed,
   destination: null | Destination,
+  consumer: null | RenderConsumer,
+  // Rows delivered since the last flush, as flat [id, tag, payload] triples.
+  // Delivering at flush boundaries batches the consumer's wake-ups the same
+  // way flushing batches the destination's, which matters for tail latency:
+  // every extra wake-up is a task boundary on the request's critical path.
+  pendingDeliveries: Array<mixed>,
+  drainingDeliveries: boolean,
+  // The number of rows delivered to the consumer (or that would have been).
+  // Monotonic; used to enforce that consumers attach before emissions start.
+  emittedRows: number,
+  // How many of the chunks counted by pendingChunks/pendingDebugChunks have
+  // reached the completed queues. When these pairs are equal, every reserved
+  // row has been emitted (and therefore delivered): nothing more is coming.
+  queuedChunks: number,
+  queuedDebugChunks: number,
+  sentTimeOrigin: boolean,
+  // Whether anything has claimed this request's byte stream (piping it or
+  // reading its stream). If nothing has by the time an in-process consumer
+  // has received everything, the buffered wire chunks are released.
+  byteStreamClaimed: boolean,
   bundlerConfig: ClientManifest,
   cache: Map<Function, mixed>,
   cacheController: AbortController,
@@ -739,6 +766,14 @@ function RequestInstance(
   this.cacheController = new AbortController();
   this.nextChunkId = 0;
   this.pendingChunks = 0;
+  this.consumer = null;
+  this.pendingDeliveries = [];
+  this.drainingDeliveries = false;
+  this.emittedRows = 0;
+  this.queuedChunks = 0;
+  this.queuedDebugChunks = 0;
+  this.sentTimeOrigin = false;
+  this.byteStreamClaimed = false;
   this.hints = hints;
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
@@ -809,12 +844,10 @@ function RequestInstance(
     } else {
       timeOrigin = this.timeOrigin = performance.now();
     }
-    emitTimeOriginChunk(
-      this,
-      timeOrigin +
-        // $FlowFixMe[prop-missing]
-        performance.timeOrigin,
-    );
+    // The time origin row itself is emitted lazily by the first work (see
+    // ensureTimeOriginIsSent): nothing may emit while the request is being
+    // constructed, since an in-process consumer can only attach after
+    // construction and must observe every row.
     this.abortTime = -0.0;
   } else {
     timeOrigin = 0;
@@ -1244,6 +1277,7 @@ function serializeReadableStream(
   const startStreamRow =
     streamTask.id.toString(16) + ':' + (isByteStream ? 'r' : 'R') + '\n';
   request.completedRegularChunks.push(stringToChunk(startStreamRow));
+  deliverRow(request, streamTask.id, isByteStream ? 'r' : 'R', '', 1, false);
 
   function progress(entry: {done: boolean, value: ReactClientValue, ...}) {
     if (streamTask.status !== PENDING) {
@@ -1254,6 +1288,7 @@ function serializeReadableStream(
       streamTask.status = COMPLETED;
       const endStreamRow = streamTask.id.toString(16) + ':C\n';
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      deliverRow(request, streamTask.id, 'C', '', 1, false);
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener('abort', abortStream);
       enqueueFlush(request);
@@ -1354,6 +1389,7 @@ function serializeAsyncIterable(
   const startStreamRow =
     streamTask.id.toString(16) + ':' + (isIterator ? 'x' : 'X') + '\n';
   request.completedRegularChunks.push(stringToChunk(startStreamRow));
+  deliverRow(request, streamTask.id, isIterator ? 'x' : 'X', '', 1, false);
 
   function progress(
     entry:
@@ -1366,25 +1402,24 @@ function serializeAsyncIterable(
 
     if (entry.done) {
       streamTask.status = COMPLETED;
-      let endStreamRow;
+      let endStreamPayload;
       if (entry.value === undefined) {
-        endStreamRow = streamTask.id.toString(16) + ':C\n';
+        endStreamPayload = '';
       } else {
         // Unlike streams, the last value may not be undefined. If it's not
         // we outline it and encode a reference to it in the closing instruction.
         try {
           const chunkId = outlineModel(request, entry.value);
-          endStreamRow =
-            streamTask.id.toString(16) +
-            ':C' +
-            stringify(serializeByValueID(chunkId)) +
-            '\n';
+          endStreamPayload = stringify(serializeByValueID(chunkId));
         } catch (x) {
           error(x);
           return;
         }
       }
+      const endStreamRow =
+        streamTask.id.toString(16) + ':C' + endStreamPayload + '\n';
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      deliverRow(request, streamTask.id, 'C', endStreamPayload, 1, false);
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener(
         'abort',
@@ -3196,6 +3231,164 @@ function serializeBigInt(n: bigint): string {
   return '$n' + n.toString(10);
 }
 
+function deliverRow(
+  request: Request,
+  id: number,
+  tag: string,
+  // Call sites whose payload is expensive to prepare (clones, extra
+  // stringification) pass null when no consumer is attached; the payload is
+  // never read in that case, but the chunk accounting below still runs.
+  payload: mixed,
+  // How many chunks flushing this row will subtract from pendingChunks (or
+  // pendingDebugChunks for debug rows). Text and binary rows write an extra
+  // header chunk; hint rows are never reserved at all.
+  chunkCount: number,
+  debug: boolean,
+): void {
+  request.emittedRows++;
+  if (__DEV__ && debug) {
+    request.queuedDebugChunks += chunkCount;
+  } else {
+    request.queuedChunks += chunkCount;
+  }
+  if (request.consumer === null) {
+    return;
+  }
+  // Debug rows are delivered even when a debug channel carries their bytes:
+  // the rows on the main queue reference the outlined debug rows, so a
+  // consumer that skipped them would be left with dangling references. This
+  // matches a byte stream consumer that reads the debug channel alongside
+  // the main stream.
+  request.pendingDeliveries.push(id, tag, payload);
+}
+
+function drainDeliveries(request: Request): void {
+  if (request.drainingDeliveries) {
+    // The consumer called back into the request (e.g. started piping) and
+    // flushed reentrantly. The outer drain finishes the deliveries.
+    return;
+  }
+  const deliveries = request.pendingDeliveries;
+  request.drainingDeliveries = true;
+  try {
+    // The length is re-read on purpose: rows delivered while the consumer
+    // runs are appended and drained in the same pass.
+    for (let i = 0; i < deliveries.length; i += 3) {
+      const consumer = request.consumer;
+      if (consumer === null) {
+        // Detached (by an earlier throw) while draining.
+        break;
+      }
+      try {
+        consumer.row(
+          (deliveries[i] as any),
+          (deliveries[i + 1] as any),
+          deliveries[i + 2],
+        );
+      } catch (x) {
+        // The consumer threw. Detach it so it can't corrupt this render; the
+        // byte stream is unaffected. This mirrors how a byte stream
+        // consumer's errors don't propagate into the server.
+        request.consumer = null;
+        try {
+          consumer.error(x);
+        } catch (_) {
+          // If even the error handler throws there's nothing further we can
+          // do to notify this consumer.
+        }
+      }
+    }
+    deliveries.length = 0;
+  } finally {
+    request.drainingDeliveries = false;
+  }
+}
+
+function closeConsumerIfDone(request: Request): void {
+  const consumer = request.consumer;
+  if (
+    consumer !== null &&
+    !request.drainingDeliveries &&
+    request.pendingDeliveries.length === 0 &&
+    request.abortableTasks.size === 0 &&
+    // Every chunk that has ever been reserved has reached the completed
+    // queues, which means every row has also been delivered: nothing more
+    // will be emitted.
+    request.pendingChunks === request.queuedChunks &&
+    (!__DEV__ || request.pendingDebugChunks === request.queuedDebugChunks)
+  ) {
+    request.consumer = null;
+    try {
+      consumer.close();
+    } catch (x) {
+      // The consumer is already detached; there's no one to notify.
+    }
+    if (
+      !request.byteStreamClaimed &&
+      request.destination === null &&
+      (!__DEV__ || request.debugDestination === null) &&
+      request.status !== CLOSED
+    ) {
+      // The consumer has received everything and nothing has claimed the
+      // byte stream, so the buffered wire chunks would only sit in memory
+      // until the result is dropped. Release them, and refuse a late claim
+      // loudly rather than replay an empty stream.
+      request.status = CLOSING;
+      request.fatalError = new Error(
+        'The byte stream of this render was released because an in-process ' +
+          'consumer received the full render before anything claimed the ' +
+          'stream. To also read the byte stream, claim it before the render ' +
+          'finishes.',
+      );
+      request.completedImportChunks.length = 0;
+      request.completedHintChunks.length = 0;
+      request.completedRegularChunks.length = 0;
+      request.completedErrorChunks.length = 0;
+      if (__DEV__) {
+        request.completedDebugChunks.length = 0;
+      }
+    }
+  }
+}
+
+function cloneBinaryValue(value: $ArrayBufferView): $ArrayBufferView {
+  // The consumer may read this view lazily after the wire copy of these
+  // bytes has been written, and the destination is allowed to transfer or
+  // detach what we hand it, so the consumer gets its own copy.
+  if (typeof (value as any).slice === 'function') {
+    return (value as any).slice();
+  }
+  // DataView has no slice; copy the underlying range instead.
+  return new DataView(
+    value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
+  );
+}
+
+export function createRenderResult(request: Request): RenderResult {
+  return {
+    _attach(consumer: RenderConsumer): void {
+      if (request.consumer !== null) {
+        throw new Error('A render result can only have a single consumer.');
+      }
+      if (request.emittedRows > 0) {
+        // Nothing emits until the first scheduled work runs, so attaching
+        // synchronously after render() always precedes the first row.
+        throw new Error(
+          'Cannot attach a consumer to a render result that has already ' +
+            'started emitting. Attach the consumer synchronously after ' +
+            'render().',
+        );
+      }
+      if (request.status === CLOSING || request.status === CLOSED) {
+        // The request already failed fatally before the consumer attached.
+        consumer.error(request.fatalError);
+        return;
+      }
+      request.consumer = consumer;
+    },
+  };
+}
+
 function serializeRowHeader(tag: string, id: number) {
   return id.toString(16) + ':' + tag;
 }
@@ -4459,6 +4652,15 @@ function logRecoverableError(
 function fatalError(request: Request, error: mixed): void {
   const onFatalError = request.onFatalError;
   onFatalError(error);
+  const consumer = request.consumer;
+  if (consumer !== null) {
+    request.consumer = null;
+    try {
+      consumer.error(error);
+    } catch (x) {
+      // The consumer is already detached; there's no one to notify.
+    }
+  }
   if (enableTaint) {
     cleanupTaintQueue(request);
   }
@@ -4648,13 +4850,15 @@ function emitErrorChunk(
   } else {
     errorInfo = {digest};
   }
-  const row = serializeRowHeader('E', id) + stringify(errorInfo) + '\n';
+  const json: string = stringify(errorInfo);
+  const row = serializeRowHeader('E', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
     request.completedDebugChunks.push(processedChunk);
   } else {
     request.completedErrorChunks.push(processedChunk);
   }
+  deliverRow(request, id, 'E', json, 1, debug);
 }
 
 const chunkListJSONCache: WeakMap<
@@ -4712,6 +4916,7 @@ function emitImportChunk(
   } else {
     request.completedImportChunks.push(processedChunk);
   }
+  deliverRow(request, id, 'I', json, 1, debug);
 }
 
 function emitHintChunk<Code: HintCode>(
@@ -4723,18 +4928,51 @@ function emitHintChunk<Code: HintCode>(
   const row = ':H' + code + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedHintChunks.push(processedChunk);
+  deliverRow(
+    request,
+    0,
+    'H',
+    request.consumer === null ? null : code + json,
+    0,
+    false,
+  );
 }
 
 function emitSymbolChunk(request: Request, id: number, name: string): void {
   const symbolReference = serializeSymbolReference(name);
   const processedChunk = encodeReferenceChunk(request, id, symbolReference);
   request.completedImportChunks.push(processedChunk);
+  deliverRow(
+    request,
+    id,
+    '',
+    request.consumer === null ? null : stringify(symbolReference),
+    1,
+    false,
+  );
 }
 
-function emitModelChunk(request: Request, id: number, json: string): void {
+function emitModelChunk(
+  request: Request,
+  id: number,
+  json: string,
+  model: ReactJSONValue,
+): void {
   const row = id.toString(16) + ':' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedRegularChunks.push(processedChunk);
+  // Deliver the object form so an in-process consumer doesn't parse and
+  // re-allocate what we already have. Primitive models are delivered as
+  // their JSON text: a string payload of a model row always unambiguously
+  // means JSON text, never a model that happens to be a string.
+  deliverRow(
+    request,
+    id,
+    '',
+    typeof model === 'object' && model !== null ? model : json,
+    1,
+    false,
+  );
 }
 
 function emitDebugHaltChunk(request: Request, id: number): void {
@@ -4750,6 +4988,7 @@ function emitDebugHaltChunk(request: Request, id: number): void {
   const row = id.toString(16) + ':\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, id, '', '', 1, true);
 }
 
 function emitDebugChunk(
@@ -4772,19 +5011,23 @@ function emitDebugChunk(
       // without an unnecessary indirection.
       const row = serializeRowHeader('D', id) + json + '\n';
       request.completedRegularChunks.push(stringToChunk(row));
+      deliverRow(request, id, 'D', json, 1, false);
     } else {
       // Outline the debug information to the debug channel.
       const outlinedId = request.nextChunkId++;
       const debugRow = outlinedId.toString(16) + ':' + json + '\n';
       request.pendingDebugChunks++;
       request.completedDebugChunks.push(stringToChunk(debugRow));
-      const row =
-        serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
+      deliverRow(request, outlinedId, '', json, 1, true);
+      const refJSON = '"$' + outlinedId.toString(16) + '"';
+      const row = serializeRowHeader('D', id) + refJSON + '\n';
       request.completedRegularChunks.push(stringToChunk(row));
+      deliverRow(request, id, 'D', refJSON, 1, false);
     }
   } else {
     const row = serializeRowHeader('D', id) + json + '\n';
     request.completedRegularChunks.push(stringToChunk(row));
+    deliverRow(request, id, 'D', json, 1, false);
   }
 }
 
@@ -4912,6 +5155,7 @@ function emitIOInfoChunk(
   const row = id.toString(16) + ':J' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, id, 'J', json, 1, true);
 }
 
 function outlineIOInfo(request: Request, ioInfo: ReactIOInfo): void {
@@ -5088,6 +5332,15 @@ function emitTypedArrayChunk(
       binaryChunk,
     );
   }
+  deliverRow(
+    request,
+    id,
+    tag,
+    // Cloning is only for the consumer; don't pay for it otherwise.
+    request.consumer === null ? null : cloneBinaryValue(typedArray),
+    2,
+    debug,
+  );
 }
 
 function emitTextChunk(
@@ -5126,6 +5379,7 @@ function emitTextChunk(
       textChunk,
     );
   }
+  deliverRow(request, id, 'T', text, 2, debug);
 }
 
 function serializeEval(source: string): string {
@@ -5603,6 +5857,14 @@ function renderDebugModel(
     const id = request.nextChunkId++;
     const processedChunk = encodeReferenceChunk(request, id, serializedValue);
     request.completedDebugChunks.push(processedChunk);
+    deliverRow(
+      request,
+      id,
+      '',
+      request.consumer === null ? null : stringify(serializedValue),
+      1,
+      true,
+    );
     const reference = serializeByValueID(id);
     writtenDebugObjects.set(value, reference);
     return reference;
@@ -5744,6 +6006,7 @@ function emitOutlinedDebugModelChunk(
   const row = id.toString(16) + ':' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, id, '', json, 1, true);
 }
 
 function outlineDebugModel(
@@ -5808,6 +6071,7 @@ function emitConsoleChunk(
   const row = ':W' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, 0, 'W', json, 1, true);
 }
 
 function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
@@ -5819,6 +6083,28 @@ function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
   const processedChunk = stringToChunk(row);
   // TODO: Move to its own priority queue.
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, 0, 'N', timeOrigin.toString(), 1, true);
+}
+
+// Emits the time origin row exactly once, before the first row that could
+// carry a timestamp relative to it. This runs at the start of work rather
+// than during request construction so that no row predates an in-process
+// consumer, which can only attach after construction.
+function ensureTimeOriginIsSent(request: Request): void {
+  if (
+    enableProfilerTimer &&
+    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+  ) {
+    if (!request.sentTimeOrigin) {
+      request.sentTimeOrigin = true;
+      emitTimeOriginChunk(
+        request,
+        request.timeOrigin +
+          // $FlowFixMe[prop-missing]
+          performance.timeOrigin,
+      );
+    }
+  }
 }
 
 function forwardDebugInfo(
@@ -6023,12 +6309,15 @@ function emitTimingChunk(
     const debugRow = outlinedId.toString(16) + ':' + json + '\n';
     request.pendingDebugChunks++;
     request.completedDebugChunks.push(stringToChunk(debugRow));
-    const row =
-      serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
+    deliverRow(request, outlinedId, '', json, 1, true);
+    const refJSON = '"$' + outlinedId.toString(16) + '"';
+    const row = serializeRowHeader('D', id) + refJSON + '\n';
     request.completedRegularChunks.push(stringToChunk(row));
+    deliverRow(request, id, 'D', refJSON, 1, false);
   } else {
     const row = serializeRowHeader('D', id) + json + '\n';
     request.completedRegularChunks.push(stringToChunk(row));
+    deliverRow(request, id, 'D', json, 1, false);
   }
 }
 
@@ -6165,7 +6454,7 @@ function emitChunk(
   const resolvedModel = resolveModel(request, task, {'': value}, '', value);
   // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
   const json: string = stringify(resolvedModel);
-  emitModelChunk(request, task.id, json);
+  emitModelChunk(request, task.id, json, resolvedModel);
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
@@ -6328,7 +6617,7 @@ function retryTask(request: Request, task: Task): void {
       // We don't need to escape it again so it's not passed through resolveModel.
       // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
       const json: string = stringify(resolvedModel);
-      emitModelChunk(request, task.id, json);
+      emitModelChunk(request, task.id, json, resolvedModel);
     }
 
     task.status = COMPLETED;
@@ -6408,6 +6697,7 @@ function tryStreamTask(request: Request, task: Task): void {
 
 function performWork(request: Request): void {
   markAsyncSequenceRootTask();
+  ensureTimeOriginIsSent(request);
 
   const prevDispatcher = ReactSharedInternals.H;
   ReactSharedInternals.H = HooksDispatcher;
@@ -6465,6 +6755,14 @@ function finishAbortedTask(
   const ref = serializeByValueID(errorId);
   const processedChunk = encodeReferenceChunk(request, task.id, ref);
   request.completedErrorChunks.push(processedChunk);
+  deliverRow(
+    request,
+    task.id,
+    '',
+    request.consumer === null ? null : stringify(ref),
+    1,
+    false,
+  );
 }
 
 function haltTask(task: Task, request: Request): void {
@@ -6487,6 +6785,12 @@ function finishHaltedTask(task: Task, request: Request): void {
 }
 
 function flushCompletedChunks(request: Request): void {
+  drainDeliveries(request);
+  // Every path that finishes emitting ends in a flush, so this is where a
+  // consumer learns that nothing more is coming. (Flushing itself can't
+  // change the outcome: it decrements the reserved and queued counters in
+  // lockstep.)
+  closeConsumerIfDone(request);
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
     beginWriting(debugDestination);
@@ -6502,6 +6806,7 @@ function flushCompletedChunks(request: Request): void {
             );
           }
           request.pendingDebugChunks -= 2;
+          request.queuedDebugChunks -= 2;
           writeChunk(
             debugDestination,
             debugChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -6513,6 +6818,7 @@ function flushCompletedChunks(request: Request): void {
           i += 2;
         } else {
           request.pendingDebugChunks--;
+          request.queuedDebugChunks--;
           writeChunk(debugDestination, item as any as Chunk | BinaryChunk);
         }
       }
@@ -6532,6 +6838,7 @@ function flushCompletedChunks(request: Request): void {
       let i = 0;
       for (; i < importsChunks.length; i++) {
         request.pendingChunks--;
+        request.queuedChunks--;
         const chunk = importsChunks[i];
         const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
         if (!keepWriting) {
@@ -6571,6 +6878,7 @@ function flushCompletedChunks(request: Request): void {
               );
             }
             request.pendingDebugChunks -= 2;
+            request.queuedDebugChunks -= 2;
             writeChunk(
               destination,
               debugChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -6582,6 +6890,7 @@ function flushCompletedChunks(request: Request): void {
             i += 2;
           } else {
             request.pendingDebugChunks--;
+            request.queuedDebugChunks--;
             keepWriting = writeChunkAndReturn(
               destination,
               item as any as Chunk | BinaryChunk,
@@ -6609,6 +6918,7 @@ function flushCompletedChunks(request: Request): void {
             );
           }
           request.pendingChunks -= 2;
+          request.queuedChunks -= 2;
           writeChunk(
             destination,
             regularChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -6620,6 +6930,7 @@ function flushCompletedChunks(request: Request): void {
           i += 2;
         } else {
           request.pendingChunks--;
+          request.queuedChunks--;
           keepWriting = writeChunkAndReturn(
             destination,
             item as any as Chunk | BinaryChunk,
@@ -6640,6 +6951,7 @@ function flushCompletedChunks(request: Request): void {
       i = 0;
       for (; i < errorChunks.length; i++) {
         request.pendingChunks--;
+        request.queuedChunks--;
         const chunk = errorChunks[i];
         const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
         if (!keepWriting) {
@@ -6726,9 +7038,10 @@ function enqueueFlush(request: Request): void {
     request.flushScheduled === false &&
     // If there are pinged tasks we are going to flush anyway after work completes
     request.pingedTasks.length === 0 &&
-    // If there is no destination there is nothing we can flush to. A flush will
-    // happen when we start flowing again
+    // If there is no destination there is nothing we can flush to, but an
+    // in-process consumer still gets its deliveries on the flush schedule.
     (request.destination !== null ||
+      request.consumer !== null ||
       (__DEV__ && request.debugDestination !== null))
   ) {
     request.flushScheduled = true;
@@ -6748,7 +7061,12 @@ function callOnAllReadyIfReady(request: Request): void {
   }
 }
 
+export function claimByteStream(request: Request): void {
+  request.byteStreamClaimed = true;
+}
+
 export function startFlowing(request: Request, destination: Destination): void {
+  request.byteStreamClaimed = true;
   if (request.status === CLOSING) {
     request.status = CLOSED;
     closeWithError(destination, request.fatalError);
@@ -6838,6 +7156,7 @@ export function abort(request: Request, reason: mixed): void {
       enableProfilerTimer &&
       (enableComponentPerformanceTrack || enableAsyncDebugInfo)
     ) {
+      ensureTimeOriginIsSent(request);
       request.abortTime = performance.now();
     }
     request.cacheController.abort(reason);
