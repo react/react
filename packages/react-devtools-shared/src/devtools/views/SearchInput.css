@@ -28,6 +28,35 @@
   white-space: pre;
 }
 
+.IndexInput {
+  color: var(--color-text);
+  font-size: var(--font-size-sans-normal);
+  font-family: inherit;
+  text-align: center;
+  background: none;
+  /* A visible border so it's clear this number can be edited. */
+  border: 1px solid var(--color-border);
+  border-radius: 0.125rem;
+  outline: none;
+  padding: 0 0.25rem;
+  margin: 0;
+  /* Keep a floor so the box doesn't shrink/jitter as the digit count changes. */
+  min-width: 1.5ch;
+}
+
+/* AutoSizeInput sizes the element width to fit the text exactly (assuming no
+   padding/border). content-box makes our padding + border add around that
+   width rather than eating into it and clipping digits. The descendant
+   selector raises specificity above the global `.DevTools *` border-box rule,
+   which otherwise wins by source order at equal specificity. */
+.IndexLabel .IndexInput {
+  box-sizing: content-box;
+}
+
+.IndexInput:focus {
+  background-color: var(--color-button-background-focus);
+}
+
 .LeftVRule{
   height: 20px;
   width: 1px;

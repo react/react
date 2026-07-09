@@ -132,11 +132,7 @@ import {
   REACT_CONTEXT_TYPE,
 } from 'shared/ReactSymbols';
 import {setCurrentFiber} from './ReactCurrentFiber';
-import {
-  resolveFunctionForHotReloading,
-  resolveForwardRefForHotReloading,
-  resolveClassForHotReloading,
-} from './ReactFiberHotReloading';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 
 import {
   mountChildFibers,
@@ -413,7 +409,16 @@ function updateForwardRef(
   // TODO: current can be non-null here even if the component
   // hasn't yet mounted. This happens after the first render suspends.
   // We'll need to figure out if this is fine or can cause issues.
-  const render = Component.render;
+  let render = Component.render;
+  if (__DEV__) {
+    const resolvedRender = resolveTypeForHotReloading(render);
+    if (resolvedRender !== render) {
+      render = resolvedRender;
+      if (current !== null) {
+        didReceiveUpdate = true;
+      }
+    }
+  }
   const ref = workInProgress.ref;
 
   let propsWithoutRef;
@@ -481,7 +486,7 @@ function updateMemoComponent(
     if (isSimpleFunctionComponent(type) && Component.compare === null) {
       let resolvedType = type;
       if (__DEV__) {
-        resolvedType = resolveFunctionForHotReloading(type);
+        resolvedType = resolveTypeForHotReloading(type);
       }
       // If this is a plain function component without default props,
       // and with only the default shallow comparison, we upgrade it
@@ -2094,6 +2099,9 @@ function mountLazyComponent(
   const props = workInProgress.pendingProps;
   const lazyComponent: LazyComponentType<any, any> = elementType;
   let Component = resolveLazy(lazyComponent);
+  if (__DEV__) {
+    Component = resolveTypeForHotReloading(Component);
+  }
   // Store the unwrapped component in the type.
   workInProgress.type = Component;
 
@@ -2101,10 +2109,6 @@ function mountLazyComponent(
     if (isFunctionClassComponent(Component)) {
       const resolvedProps = resolveClassComponentProps(Component, props);
       workInProgress.tag = ClassComponent;
-      if (__DEV__) {
-        workInProgress.type = Component =
-          resolveClassForHotReloading(Component);
-      }
       return updateClassComponent(
         null,
         workInProgress,
@@ -2116,8 +2120,6 @@ function mountLazyComponent(
       workInProgress.tag = FunctionComponent;
       if (__DEV__) {
         validateFunctionComponentInDev(workInProgress, Component);
-        workInProgress.type = Component =
-          resolveFunctionForHotReloading(Component);
       }
       return updateFunctionComponent(
         null,
@@ -2133,10 +2135,6 @@ function mountLazyComponent(
     // $FlowFixMe[invalid-compare]
     if ($$typeof === REACT_FORWARD_REF_TYPE) {
       workInProgress.tag = ForwardRef;
-      if (__DEV__) {
-        workInProgress.type = Component =
-          resolveForwardRefForHotReloading(Component);
-      }
       return updateForwardRef(
         null,
         workInProgress,
@@ -4195,7 +4193,9 @@ function beginWork(
     if (workInProgress._debugNeedsRemount && current !== null) {
       // This will restart the begin phase with a new fiber.
       const copiedFiber = createFiberFromTypeAndProps(
-        workInProgress.type,
+        // Remount from the fiber's outermost identity; mounting resolves
+        // any inner types to their latest implementations.
+        resolveTypeForHotReloading(workInProgress.elementType),
         workInProgress.key,
         workInProgress.pendingProps,
         workInProgress._debugOwner || null,

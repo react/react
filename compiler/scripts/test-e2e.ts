@@ -148,7 +148,7 @@ async function formatCode(code: string, isFlow: boolean): Promise<string> {
   try {
     const parserPlugins: string[] = isFlow
       ? ['flow', 'jsx']
-      : ['typescript', 'jsx'];
+      : ['typescript', 'jsx', 'explicitResourceManagement'];
     const ast = babel.parseSync(code, {
       sourceType: 'module',
       parserOpts: {plugins: parserPlugins},
@@ -183,7 +183,7 @@ function compileBabel(
   const isScript = firstLine.includes('@script');
   const parserPlugins: string[] = isFlow
     ? ['flow', 'jsx']
-    : ['typescript', 'jsx'];
+    : ['typescript', 'jsx', 'explicitResourceManagement'];
 
   const pragmaOpts = parseConfigPragmaForTests(firstLine, {
     compilationMode: 'all',
