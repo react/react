@@ -35,17 +35,16 @@ function Test() {
   const $ = _c(1);
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    const context = {
-      testFn() {
-        return _temp;
-      },
-    };
+    const context = { testFn: _temp2 };
     t0 = <Stringify value={context} shouldInvokeFns={true} />;
     $[0] = t0;
   } else {
     t0 = $[0];
   }
   return t0;
+}
+function _temp2() {
+  return _temp;
 }
 function _temp() {
   return "test";
