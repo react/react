@@ -45,7 +45,7 @@ import {
   ReactFiberErrorDialog,
   createPublicRootInstance,
   type PublicRootInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 import {
   disableLegacyMode,
   enableDefaultTransitionIndicator,

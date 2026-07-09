@@ -39,7 +39,7 @@ import {
   type PublicInstance as ReactNativePublicInstance,
   type PublicTextInstance,
   type PublicRootInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 import {
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,

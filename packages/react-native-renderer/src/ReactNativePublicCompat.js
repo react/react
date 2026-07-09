@@ -9,14 +9,14 @@
 
 import type {Node} from './ReactNativeTypes';
 import type {ElementRef, ElementType} from 'react';
-import type {PublicInstance} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import type {PublicInstance} from 'react-native/react-private-interface';
 
 // Modules provided by RN:
 import {
   getNodeFromPublicInstance,
   getNativeTagFromPublicInstance,
   getInternalInstanceHandleFromPublicInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 
 import {
   findHostInstance,
