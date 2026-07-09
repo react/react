@@ -576,6 +576,75 @@ describe('ReactFlightDOMEdge', () => {
     ); // two random items are the same instance
   });
 
+  it('should dedupe a chunk URL list shared by identity across client references', async () => {
+    // Bundlers merge a page's client modules into shared chunk groups, so it's
+    // common for many client references to point at the exact same chunks
+    // array by identity. Each client reference should still get its own "I"
+    // row, but the shared array should only be embedded in the payload once.
+    function ComponentA() {
+      return <span>A</span>;
+    }
+    function ComponentB() {
+      return <span>B</span>;
+    }
+    const ClientComponentA = clientExports(
+      ComponentA,
+      'shared-chunk-id',
+      'shared-chunk-filename.js',
+      Promise.resolve(),
+    );
+    const ClientComponentB = clientExports(
+      ComponentB,
+      'shared-chunk-id',
+      'shared-chunk-filename.js',
+    );
+    // clientExports() always allocates a fresh chunks array per call. Make
+    // the two client references share one array by identity, the way a real
+    // bundler's manifest would for modules in the same chunk group.
+    webpackMap[ClientComponentB.$$id].chunks =
+      webpackMap[ClientComponentA.$$id].chunks;
+
+    function App() {
+      return (
+        <>
+          <ClientComponentA />
+          <ClientComponentB />
+        </>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<App />, webpackMap),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // Two client references, each with their own "I" row...
+    expect((serializedContent.match(/:I\[/g) || []).length).toBe(2);
+    // ...but the shared chunk filename text should only appear once.
+    expect(serializedContent.split('shared-chunk-filename.js').length - 1).toBe(
+      1,
+    );
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream2, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: webpackModuleLoading,
+      },
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    const result = await readResult(ssrStream);
+    expect(result).toContain('<span>A</span>');
+    expect(result).toContain('<span>B</span>');
+  });
+
   it('should execute repeated server components only once', async () => {
     const str = 'this is a long return value';
     let timesRendered = 0;

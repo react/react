@@ -3018,6 +3018,44 @@ function encodeReferenceChunk(
   return stringToChunk(row);
 }
 
+// Bundlers merge a page's client modules into shared chunk groups, so the
+// chunk URL list (the second element of the [id, chunks, name] tuple that
+// resolveClientReferenceMetadata returns) is frequently the exact same
+// array, by identity, across many client references on the same page. If we
+// inline it on every "I" row we pay for it repeatedly even though it's
+// already deduped upstream. Instead, the first time we see a given chunks
+// array we outline it into its own row and remember a reference to it; every
+// later client reference that shares the array just points at that row.
+//
+// The outlined row is queued into completedImportChunks (not
+// completedRegularChunks) specifically so that it is guaranteed to reach the
+// client before any "I" row that references it: import rows are always
+// flushed ahead of regular model rows (see flushCompletedChunks), and
+// resolveModule() on the client resolves client reference metadata
+// synchronously, so a forward reference would break it.
+function dedupeClientReferenceMetadataChunks(
+  request: Request,
+  clientReferenceMetadata: ClientReferenceMetadata,
+): ClientReferenceMetadata {
+  const chunks = (clientReferenceMetadata as $FlowFixMe)[1];
+  if (!isArray(chunks) || chunks.length < 2) {
+    // Not worth outlining a short or malformed chunk list into its own row.
+    return clientReferenceMetadata;
+  }
+  const writtenObjects = request.writtenObjects;
+  let chunksRef = writtenObjects.get(chunks);
+  if (chunksRef === undefined) {
+    request.pendingChunks++;
+    const chunksId = request.nextChunkId++;
+    emitChunkListChunk(request, chunksId, chunks);
+    chunksRef = serializeByValueID(chunksId);
+    writtenObjects.set(chunks, chunksRef);
+  }
+  const deduped = clientReferenceMetadata.slice(0);
+  (deduped as $FlowFixMe)[1] = chunksRef;
+  return deduped as $FlowFixMe as ClientReferenceMetadata;
+}
+
 function serializeClientReference(
   request: Request,
   parent:
@@ -3043,7 +3081,10 @@ function serializeClientReference(
   }
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
-      resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+      dedupeClientReferenceMetadataChunks(
+        request,
+        resolveClientReferenceMetadata(request.bundlerConfig, clientReference),
+      );
     request.pendingChunks++;
     const importId = request.nextChunkId++;
     emitImportChunk(request, importId, clientReferenceMetadata, false);
@@ -4461,6 +4502,22 @@ function emitImportChunk(
   } else {
     request.completedImportChunks.push(processedChunk);
   }
+}
+
+function emitChunkListChunk(
+  request: Request,
+  id: number,
+  chunks: $ReadOnlyArray<string>,
+): void {
+  // Encoded exactly like a regular model row (id:json\n) so the client
+  // resolves a "$id" reference to it with no protocol changes required.
+  // Queued into completedImportChunks -- see dedupeClientReferenceMetadataChunks
+  // for why this needs to flush ahead of the "I" rows that reference it.
+  // $FlowFixMe[incompatible-type] stringify can return null
+  const json: string = stringify(chunks);
+  const row = id.toString(16) + ':' + json + '\n';
+  const processedChunk = stringToChunk(row);
+  request.completedImportChunks.push(processedChunk);
 }
 
 function emitHintChunk<Code: HintCode>(
