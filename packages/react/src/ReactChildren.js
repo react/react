@@ -410,7 +410,7 @@ type ForEachFunc = (child: ?React$Node) => void;
  *
  * @param {?*} children Children tree container.
  * @param {function(*, int)} forEachFunc
- * @param {*} forEachContext Context for forEachContext.
+ * @param {*} forEachContext Context for forEachFunc.
  */
 function forEachChildren(
   children: ?ReactNodeList,
