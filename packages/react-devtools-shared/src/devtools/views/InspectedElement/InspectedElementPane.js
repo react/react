@@ -32,4 +32,4 @@ function InspectedElementPane() {
     </SettingsModalContextController>
   );
 }
-export default (portaledContent(InspectedElementPane): component());
+export default portaledContent(InspectedElementPane) as component();

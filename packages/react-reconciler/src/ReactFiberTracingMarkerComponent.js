@@ -63,6 +63,7 @@ export function processTransitionCallbacks(
   callbacks: TransitionTracingCallbacks,
 ): void {
   if (enableTransitionTracing) {
+    // $FlowFixMe[invalid-compare]
     if (pendingTransitions !== null) {
       const transitionStart = pendingTransitions.transitionStart;
       const onTransitionStart = callbacks.onTransitionStart;
@@ -78,9 +79,11 @@ export function processTransitionCallbacks(
       const onMarkerProgress = callbacks.onMarkerProgress;
       if (onMarkerProgress != null && markerProgress !== null) {
         markerProgress.forEach((markerInstance, markerName) => {
+          // $FlowFixMe[invalid-compare]
           if (markerInstance.transitions !== null) {
             // TODO: Clone the suspense object so users can't modify it
             const pending =
+              // $FlowFixMe[invalid-compare]
               markerInstance.pendingBoundaries !== null
                 ? Array.from(markerInstance.pendingBoundaries.values())
                 : [];

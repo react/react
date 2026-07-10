@@ -24,7 +24,7 @@ export function getTextWidth(
     cachedTextWidths.set(text, measuredWidth);
   }
 
-  return ((measuredWidth: any): number);
+  return measuredWidth as any as number;
 }
 
 export function trimText(

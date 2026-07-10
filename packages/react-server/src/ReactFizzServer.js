@@ -276,11 +276,16 @@ type SuspenseBoundary = {
   errorComponentStack?: null | string, // the error component stack if it errors
 };
 
+type Ping = {
+  resolve: () => void,
+  reject: (error: mixed) => void,
+};
+
 type RenderTask = {
   replay: null,
   node: ReactNodeList,
   childIndex: number,
-  ping: () => void,
+  ping: Ping,
   blockedBoundary: Root | SuspenseBoundary,
   blockedSegment: Segment, // the segment we'll write to
   blockedPreamble: null | PreambleState,
@@ -311,7 +316,7 @@ type ReplayTask = {
   replay: ReplaySet,
   node: ReactNodeList,
   childIndex: number,
-  ping: () => void,
+  ping: Ping,
   blockedBoundary: Root | SuspenseBoundary,
   blockedSegment: null, // we don't write to anything when we replay
   blockedPreamble: null,
@@ -389,6 +394,15 @@ export opaque type Request = {
   completedBoundaries: Array<SuspenseBoundary>, // Completed but not yet fully flushed boundaries to show.
   partialBoundaries: Array<SuspenseBoundary>, // Partially completed boundaries that can flush its segments early.
   trackedPostpones: null | PostponedHoles, // Gets set to non-null while we want to track postponed holes. I.e. during a prerender.
+  // While prerendering a postponed request that produced a real shell, this
+  // holds the PostponedState returned by getPostponedState. getPostponedState
+  // snapshots nextSegmentId before the (pull-driven) prelude flush runs, but the
+  // flush outlines completed boundaries and advances nextSegmentId past that
+  // snapshot. We finalize the snapshot from flushCompletedQueues so the resumed
+  // render allocates segment ids strictly above the shell's; otherwise the shell
+  // and resume emit duplicate B:/S: ids once concatenated. Stays null for live
+  // renders and resumes.
+  postponedState: null | PostponedState,
   // onError is called when an error happens anywhere in the tree. It might recover.
   // The return string is used in production  primarily to avoid leaking internals, secondarily to save bytes.
   // Returning null/undefined will cause a default error message in production
@@ -531,6 +545,7 @@ function RequestInstance(
     progressiveChunkSize === undefined
       ? DEFAULT_PROGRESSIVE_CHUNK_SIZE
       : progressiveChunkSize;
+  // $FlowFixMe[constant-condition]
   this.status = isWorkLoopExternallyDriven ? OPEN : OPENING;
   this.fatalError = null;
   this.aborted = false;
@@ -543,10 +558,11 @@ function RequestInstance(
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
   this.currentTask = null;
-  this.clientRenderedBoundaries = ([]: Array<SuspenseBoundary>);
-  this.completedBoundaries = ([]: Array<SuspenseBoundary>);
-  this.partialBoundaries = ([]: Array<SuspenseBoundary>);
+  this.clientRenderedBoundaries = [] as Array<SuspenseBoundary>;
+  this.completedBoundaries = [] as Array<SuspenseBoundary>;
+  this.partialBoundaries = [] as Array<SuspenseBoundary>;
   this.trackedPostpones = null;
+  this.postponedState = null;
   this.onError = onError === undefined ? defaultErrorHandler : onError;
   this.onAllReady = onAllReady === undefined ? noop : onAllReady;
   this.onShellReady = onShellReady === undefined ? noop : onShellReady;
@@ -786,6 +802,7 @@ let currentRequest: null | Request = null;
 
 export function resolveRequest(): null | Request {
   if (currentRequest) return currentRequest;
+  // $FlowFixMe[constant-condition]
   if (supportsRequestStorage) {
     const store = requestStorage.getStore();
     if (store) return store;
@@ -796,6 +813,7 @@ export function resolveRequest(): null | Request {
 function pingTask(request: Request, task: Task): void {
   const pingedTasks = request.pingedTasks;
   pingedTasks.push(task);
+  // $FlowFixMe[constant-condition]
   if (isWorkLoopExternallyDriven) {
     return;
   } else {
@@ -807,6 +825,27 @@ function pingTask(request: Request, task: Task): void {
         scheduleWork(() => performWork(request));
       }
     }
+  }
+}
+
+function pingRejectedTask(request: Request, task: Task, error: mixed): void {
+  if (!request.aborted) {
+    // Replaying the task is what gives ordinary render errors their complete
+    // component stack.
+    pingTask(request, task);
+    return;
+  }
+  if (!task.abortSet.delete(task)) {
+    // finishAbort already completed this task with the request's abort reason.
+    return;
+  }
+  // abortTask synchronously claimed this task before abort listeners could
+  // reject its wakeable. Finish it with the more specific reason before the
+  // scheduled final abort uses the reason for the whole request.
+  if (__DEV__) {
+    finishAbortedTaskDEV(task, request, error);
+  } else {
+    finishAbortedTask(task, request, error);
   }
 }
 
@@ -885,11 +924,14 @@ function createRenderTask(
   if (row !== null) {
     row.pendingTasks++;
   }
-  const task: RenderTask = ({
+  const task: RenderTask = {
     replay: null,
     node,
     childIndex,
-    ping: () => pingTask(request, task),
+    ping: {
+      resolve: () => pingTask(request, task),
+      reject: error => pingRejectedTask(request, task, error),
+    },
     blockedBoundary,
     blockedSegment,
     blockedPreamble,
@@ -902,7 +944,7 @@ function createRenderTask(
     row,
     componentStack,
     thenableState,
-  }: any);
+  } as any;
   if (!disableLegacyContext) {
     task.legacyContext = legacyContext;
   }
@@ -941,11 +983,14 @@ function createReplayTask(
     row.pendingTasks++;
   }
   replay.pendingTasks++;
-  const task: ReplayTask = ({
+  const task: ReplayTask = {
     replay,
     node,
     childIndex,
-    ping: () => pingTask(request, task),
+    ping: {
+      resolve: () => pingTask(request, task),
+      reject: error => pingRejectedTask(request, task, error),
+    },
     blockedBoundary,
     blockedSegment: null,
     blockedPreamble: null,
@@ -958,7 +1003,7 @@ function createReplayTask(
     row,
     componentStack,
     thenableState,
-  }: any);
+  } as any;
   if (!disableLegacyContext) {
     task.legacyContext = legacyContext;
   }
@@ -1022,7 +1067,7 @@ function pushHaltedAwaitOnComponentStack(
     for (let i = debugInfo.length - 1; i >= 0; i--) {
       const info = debugInfo[i];
       if (info.awaited != null) {
-        const asyncInfo: ReactAsyncInfo = (info: any);
+        const asyncInfo: ReactAsyncInfo = info as any;
         const bestStack =
           asyncInfo.debugStack == null ? asyncInfo.awaited : asyncInfo;
         if (bestStack.debugStack !== undefined) {
@@ -1032,7 +1077,7 @@ function pushHaltedAwaitOnComponentStack(
             owner: bestStack.owner,
             stack: bestStack.debugStack,
           };
-          task.debugTask = (bestStack.debugTask: any);
+          task.debugTask = bestStack.debugTask as any;
           break;
         }
       }
@@ -1102,7 +1147,7 @@ function pushSuspendedCallSiteOnComponentStack(
   setCaptureSuspendedCallSiteDEV(true);
   const restoreThenableState = ensureSuspendableThenableStateDEV(
     // refined at the callsite
-    ((task.thenableState: any): ThenableState),
+    task.thenableState as any as ThenableState,
   );
   try {
     rerenderStalledTask(request, task);
@@ -1142,7 +1187,7 @@ function pushServerComponentStack(
   if (debugInfo != null) {
     const stack: ReactDebugInfo = debugInfo;
     for (let i = 0; i < stack.length; i++) {
-      const componentInfo: ReactComponentInfo = (stack[i]: any);
+      const componentInfo: ReactComponentInfo = stack[i] as any;
       if (typeof componentInfo.name !== 'string') {
         continue;
       }
@@ -1155,7 +1200,7 @@ function pushServerComponentStack(
         owner: componentInfo.owner,
         stack: componentInfo.debugStack,
       };
-      task.debugTask = (componentInfo.debugTask: any);
+      task.debugTask = componentInfo.debugTask as any;
     }
   }
 }
@@ -1166,7 +1211,7 @@ function pushComponentStack(task: Task): void {
   // It's unfortunate that we need to do this refinement twice. Once for
   // the stack frame and then once again while actually
   if (typeof node === 'object' && node !== null) {
-    switch ((node: any).$$typeof) {
+    switch ((node as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
         const element: any = node;
         const type = element.type;
@@ -1186,7 +1231,7 @@ function pushComponentStack(task: Task): void {
       }
       case REACT_LAZY_TYPE: {
         if (__DEV__) {
-          const lazyNode: LazyComponentType<any, any> = (node: any);
+          const lazyNode: LazyComponentType<any, any> = node as any;
           pushServerComponentStack(task, lazyNode._debugInfo);
         }
         break;
@@ -1195,7 +1240,7 @@ function pushComponentStack(task: Task): void {
         if (__DEV__) {
           const maybeUsable: Object = node;
           if (typeof maybeUsable.then === 'function') {
-            const thenable: Thenable<ReactNodeList> = (maybeUsable: any);
+            const thenable: Thenable<ReactNodeList> = maybeUsable as any;
             pushServerComponentStack(task, thenable._debugInfo);
           }
         }
@@ -1333,11 +1378,19 @@ function fatalError(
   // It's also called if React itself or its host configs errors.
   const onShellError = request.onShellError;
   const onFatalError = request.onFatalError;
+  // Once the shell has completed it can't error anymore, so onShellError only
+  // fires while root tasks are still pending. onFatalError always fires because
+  // the error is always fatal to the request.
+  const shellComplete = request.pendingRootTasks === 0;
   if (__DEV__ && debugTask) {
-    debugTask.run(onShellError.bind(null, error));
+    if (!shellComplete) {
+      debugTask.run(onShellError.bind(null, error));
+    }
     debugTask.run(onFatalError.bind(null, error));
   } else {
-    onShellError(error);
+    if (!shellComplete) {
+      onShellError(error);
+    }
     onFatalError(error);
   }
   if (request.destination !== null) {
@@ -1378,7 +1431,7 @@ function renderSuspenseBoundary(
     }
     return;
   }
-  // $FlowFixMe: Refined.
+  // $FlowFixMe[incompatible-type]: Refined.
   const task: RenderTask = someTask;
 
   const prevKeyPath = task.keyPath;
@@ -1453,7 +1506,7 @@ function renderSuspenseBoundary(
       const fallbackReplayNode: ReplayNode = [
         fallbackKeyPath[1],
         fallbackKeyPath[2],
-        ([]: Array<ReplayNode>),
+        [] as Array<ReplayNode>,
         null,
       ];
       trackedPostpones.workingMap.set(fallbackKeyPath, fallbackReplayNode);
@@ -1952,7 +2005,10 @@ function renderSuspenseListRows(
     previousDebugTask = task.debugTask;
     // We read debugInfo from task.node.props.children instead of rows because it
     // might have been an unwrapped iterable so we read from the original node.
-    pushServerComponentStack(task, (task.node: any).props.children._debugInfo);
+    pushServerComponentStack(
+      task,
+      (task.node as any).props.children._debugInfo,
+    );
   }
 
   task.keyPath = keyPath;
@@ -2017,7 +2073,7 @@ function renderSuspenseListRows(
       }
     }
   } else {
-    task = ((task: any): RenderTask); // Refined
+    task = task as any as RenderTask; // Refined
     if (
       revealOrder !== 'backwards' &&
       revealOrder !== 'unstable_legacy-backwards'
@@ -2160,14 +2216,14 @@ function renderSuspenseList(
     }
     if (
       enableAsyncIterableChildren &&
-      typeof (children: any)[ASYNC_ITERATOR] === 'function'
+      typeof (children as any)[ASYNC_ITERATOR] === 'function'
     ) {
-      const iterator: AsyncIterator<ReactNodeList> = (children: any)[
+      const iterator: AsyncIterator<ReactNodeList> = (children as any)[
         ASYNC_ITERATOR
       ]();
       if (iterator) {
         if (__DEV__) {
-          validateAsyncIterable(task, (children: any), -1, iterator);
+          validateAsyncIterable(task, children as any, -1, iterator);
         }
         // TODO: Update the task.children to be the iterator to avoid asking
         // for new iterators, but we currently warn for rendering these
@@ -2188,11 +2244,12 @@ function renderSuspenseList(
 
         let done = false;
 
+        // $FlowFixMe[invalid-compare]
         if (iterator === children) {
           // If it's an iterator we need to continue reading where we left
           // off. We can do that by reading the first few rows from the previous
           // thenable state.
-          // $FlowFixMe
+          // $FlowFixMe[underconstrained-implicit-instantiation]
           let step = readPreviousThenableFromState();
           while (step !== undefined) {
             if (step.done) {
@@ -2328,8 +2385,8 @@ function renderHostElement(
       props,
     ));
     if (isPreambleContext(newContext)) {
-      // $FlowFixMe: Refined
-      renderPreamble(request, (task: RenderTask), segment, children);
+      // $FlowFixMe[incompatible-type]: Refined
+      renderPreamble(request, task as RenderTask, segment, children);
     } else {
       // We use the non-destructive form because if something suspends, we still
       // need to pop back up and finish this subtree of HTML.
@@ -2395,7 +2452,7 @@ function finishClassComponent(
 ): ReactNodeList {
   let nextChildren;
   if (__DEV__) {
-    nextChildren = (callRenderInDEV(instance): any);
+    nextChildren = callRenderInDEV(instance) as any;
   } else {
     nextChildren = instance.render();
   }
@@ -2448,7 +2505,7 @@ export function resolveClassComponentProps(
 
   // Remove ref from the props object, if it exists.
   if ('ref' in baseProps) {
-    newProps = ({}: any);
+    newProps = {} as any;
     for (const propName in baseProps) {
       if (propName !== 'ref') {
         newProps[propName] = baseProps[propName];
@@ -2705,7 +2762,7 @@ function renderForwardRef(
     // `ref` is just a prop now, but `forwardRef` expects it to not appear in
     // the props object. This used to happen in the JSX runtime, but now we do
     // it here.
-    propsWithoutRef = ({}: {[string]: any});
+    propsWithoutRef = {} as {[string]: any};
     for (const key in props) {
       // Since `ref` should only appear in props via the JSX transform, we can
       // assume that this is a plain object. So we don't need a
@@ -2953,9 +3010,13 @@ function renderElement(
     // TODO: Delete in LegacyHidden. It's an unstable API only used in the
     // www build. As a migration step, we could add a special prop to Offscreen
     // that simulates the old behavior (no hiding, no change to effects).
+    // $FlowFixMe[invalid-compare]
     case REACT_LEGACY_HIDDEN_TYPE:
+    // $FlowFixMe[invalid-compare] -- falls through
     case REACT_STRICT_MODE_TYPE:
+    // $FlowFixMe[invalid-compare] -- falls through
     case REACT_PROFILER_TYPE:
+    // $FlowFixMe[invalid-compare] -- falls through
     case REACT_FRAGMENT_TYPE: {
       const prevKeyPath = task.keyPath;
       task.keyPath = keyPath;
@@ -2963,14 +3024,17 @@ function renderElement(
       task.keyPath = prevKeyPath;
       return;
     }
+    // $FlowFixMe[invalid-compare]
     case REACT_ACTIVITY_TYPE: {
       renderActivity(request, task, keyPath, props);
       return;
     }
+    // $FlowFixMe[invalid-compare]
     case REACT_SUSPENSE_LIST_TYPE: {
       renderSuspenseList(request, task, keyPath, props);
       return;
     }
+    // $FlowFixMe[invalid-compare]
     case REACT_VIEW_TRANSITION_TYPE: {
       if (enableViewTransition) {
         renderViewTransition(request, task, keyPath, props);
@@ -2978,6 +3042,7 @@ function renderElement(
       }
       // Fallthrough
     }
+    // $FlowFixMe[invalid-compare]
     case REACT_SCOPE_TYPE: {
       if (enableScopeAPI) {
         const prevKeyPath = task.keyPath;
@@ -2988,33 +3053,40 @@ function renderElement(
       }
       throw new Error('ReactDOMServer does not yet support scope components.');
     }
+    // $FlowFixMe[invalid-compare]
     case REACT_SUSPENSE_TYPE: {
       renderSuspenseBoundary(request, task, keyPath, props);
       return;
     }
   }
 
+  // $FlowFixMe[invalid-compare]
   if (typeof type === 'object' && type !== null) {
     switch (type.$$typeof) {
+      // $FlowFixMe[invalid-compare]
       case REACT_FORWARD_REF_TYPE: {
         renderForwardRef(request, task, keyPath, type, props, ref);
         return;
       }
+      // $FlowFixMe[invalid-compare]
       case REACT_MEMO_TYPE: {
         renderMemo(request, task, keyPath, type, props, ref);
         return;
       }
+      // $FlowFixMe[invalid-compare]
       case REACT_CONTEXT_TYPE: {
         const context = type;
         renderContextProvider(request, task, keyPath, context, props);
         return;
       }
+      // $FlowFixMe[invalid-compare]
       case REACT_CONSUMER_TYPE: {
-        const context: ReactContext<any> = (type: ReactConsumerType<any>)
+        const context: ReactContext<any> = (type as ReactConsumerType<any>)
           ._context;
         renderContextConsumer(request, task, keyPath, context, props);
         return;
       }
+      // $FlowFixMe[invalid-compare]
       case REACT_LAZY_TYPE: {
         renderLazyComponent(request, task, keyPath, type, props, ref);
         return;
@@ -3027,6 +3099,7 @@ function renderElement(
     if (
       type === undefined ||
       (typeof type === 'object' &&
+        // $FlowFixMe[invalid-compare]
         type !== null &&
         Object.keys(type).length === 0)
     ) {
@@ -3065,7 +3138,7 @@ function resumeNode(
   resumedSegment.parentFlushed = true;
   try {
     // Convert the current ReplayTask to a RenderTask.
-    const renderTask: RenderTask = (task: any);
+    const renderTask: RenderTask = task as any;
     renderTask.replay = null;
     renderTask.blockedSegment = resumedSegment;
     renderNode(request, task, node, childIndex);
@@ -3112,7 +3185,7 @@ function replayElement(
       if (name !== null && name !== node[0]) {
         throw new Error(
           'Expected the resume to render <' +
-            (node[0]: any) +
+            (node[0] as any) +
             '> in this slot but instead it rendered <' +
             name +
             '>. ' +
@@ -3240,7 +3313,7 @@ function validateIterable(
         }
         didWarnAboutGenerators = true;
       }
-    } else if ((iterable: any).entries === iteratorFn) {
+    } else if ((iterable as any).entries === iteratorFn) {
       // Warn about using Maps as children
       if (!didWarnAboutMaps) {
         console.error(
@@ -3353,7 +3426,7 @@ function retryNode(request: Request, task: Task): void {
 
   // Handle object types
   if (typeof node === 'object') {
-    switch ((node: any).$$typeof) {
+    switch ((node as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
         const element: any = node;
         const type = element.type;
@@ -3434,7 +3507,7 @@ function retryNode(request: Request, task: Task): void {
             'Render them conditionally so that they only appear on the client render.',
         );
       case REACT_LAZY_TYPE: {
-        const lazyNode: LazyComponentType<any, any> = (node: any);
+        const lazyNode: LazyComponentType<any, any> = node as any;
         let resolvedNode;
         if (__DEV__) {
           resolvedNode = callLazyInitInDEV(lazyNode);
@@ -3485,14 +3558,14 @@ function retryNode(request: Request, task: Task): void {
 
     if (
       enableAsyncIterableChildren &&
-      typeof (node: any)[ASYNC_ITERATOR] === 'function'
+      typeof (node as any)[ASYNC_ITERATOR] === 'function'
     ) {
-      const iterator: AsyncIterator<ReactNodeList> = (node: any)[
+      const iterator: AsyncIterator<ReactNodeList> = (node as any)[
         ASYNC_ITERATOR
       ]();
       if (iterator) {
         if (__DEV__) {
-          validateAsyncIterable(task, (node: any), childIndex, iterator);
+          validateAsyncIterable(task, node as any, childIndex, iterator);
         }
         // TODO: Update the task.node to be the iterator to avoid asking
         // for new iterators, but we currently warn for rendering these
@@ -3512,11 +3585,12 @@ function retryNode(request: Request, task: Task): void {
 
         let done = false;
 
+        // $FlowFixMe[invalid-compare]
         if (iterator === node) {
           // If it's an iterator we need to continue reading where we left
           // off. We can do that by reading the first few rows from the previous
           // thenable state.
-          // $FlowFixMe
+          // $FlowFixMe[underconstrained-implicit-instantiation]
           let step = readPreviousThenableFromState();
           while (step !== undefined) {
             if (step.done) {
@@ -3553,7 +3627,7 @@ function retryNode(request: Request, task: Task): void {
     if (typeof maybeUsable.then === 'function') {
       // Clear any previous thenable state that was created by the unwrapping.
       task.thenableState = null;
-      const thenable: Thenable<ReactNodeList> = (maybeUsable: any);
+      const thenable: Thenable<ReactNodeList> = maybeUsable as any;
       const result = renderNodeDestructive(
         request,
         task,
@@ -3564,7 +3638,7 @@ function retryNode(request: Request, task: Task): void {
     }
 
     if (maybeUsable.$$typeof === REACT_CONTEXT_TYPE) {
-      const context: ReactContext<ReactNodeList> = (maybeUsable: any);
+      const context: ReactContext<ReactNodeList> = maybeUsable as any;
       return renderNodeDestructive(
         request,
         task,
@@ -3771,9 +3845,9 @@ function warnForMissingKey(request: Request, task: Task, child: mixed): void {
     const previousComponentStack = task.componentStack;
     const stackFrame = createComponentStackFromType(
       task.componentStack,
-      (child: any).type,
-      (child: any)._owner,
-      (child: any)._debugStack,
+      (child as any).type,
+      (child as any)._owner,
+      (child as any)._debugStack,
     );
     task.componentStack = stackFrame;
     console.error(
@@ -3799,14 +3873,14 @@ function renderChildrenArray(
     previousDebugTask = task.debugTask;
     // We read debugInfo from task.node instead of children because it might have been an
     // unwrapped iterable so we read from the original node.
-    pushServerComponentStack(task, (task.node: any)._debugInfo);
+    pushServerComponentStack(task, (task.node as any)._debugInfo);
   }
   if (childIndex !== -1) {
     task.keyPath = [task.keyPath, 'Fragment', childIndex];
     if (task.replay !== null) {
       replayFragment(
         request,
-        // $FlowFixMe: Refined.
+        // $FlowFixMe[incompatible-type]: Refined.
         task,
         children,
         childIndex,
@@ -3918,7 +3992,7 @@ function trackPostponedBoundary(
     return suspenseBoundary;
   } else {
     // Upgrade to ReplaySuspenseBoundary.
-    const suspenseBoundary: ReplaySuspenseBoundary = (boundaryNode: any);
+    const suspenseBoundary: ReplaySuspenseBoundary = boundaryNode as any;
     suspenseBoundary[4] = fallbackReplayNode;
     suspenseBoundary[5] = boundary.rootSegmentID;
     return suspenseBoundary;
@@ -3946,6 +4020,7 @@ function trackPostpone(
     return;
   }
 
+  // $FlowFixMe[invalid-compare]
   if (boundary !== null && boundary.status === PENDING) {
     const boundaryNode = trackPostponedBoundary(
       request,
@@ -3977,6 +4052,7 @@ function trackPostpone(
   // We know that this will leave a hole so we might as well assign an ID now.
   // We might have one already if we had a parent that gave us its ID.
   if (segment.id === -1) {
+    // $FlowFixMe[invalid-compare]
     if (segment.parentFlushed && boundary !== null) {
       // If this segment's parent was already flushed, it means we really just
       // skipped the parent and this segment is now the root.
@@ -3997,7 +4073,7 @@ function trackPostpone(
         resumableNode = [
           keyPath[1],
           keyPath[2],
-          ([]: Array<ReplayNode>),
+          [] as Array<ReplayNode>,
           segment.id,
         ];
         addToReplayParent(resumableNode, keyPath[0], trackedPostpones);
@@ -4010,7 +4086,7 @@ function trackPostpone(
     if (keyPath === null) {
       slots = trackedPostpones.rootSlots;
       if (slots === null) {
-        slots = trackedPostpones.rootSlots = ({}: {[index: number]: number});
+        slots = trackedPostpones.rootSlots = {} as {[index: number]: number};
       } else if (typeof slots === 'number') {
         throw new Error(
           'It should not be possible to postpone both at the root of an element ' +
@@ -4021,19 +4097,19 @@ function trackPostpone(
       const workingMap = trackedPostpones.workingMap;
       let resumableNode = workingMap.get(keyPath);
       if (resumableNode === undefined) {
-        slots = ({}: {[index: number]: number});
-        resumableNode = ([
+        slots = {} as {[index: number]: number};
+        resumableNode = [
           keyPath[1],
           keyPath[2],
-          ([]: Array<ReplayNode>),
+          [] as Array<ReplayNode>,
           slots,
-        ]: ReplayNode);
+        ] as ReplayNode;
         workingMap.set(keyPath, resumableNode);
         addToReplayParent(resumableNode, keyPath[0], trackedPostpones);
       } else {
         slots = resumableNode[3];
         if (slots === null) {
-          slots = resumableNode[3] = ({}: {[index: number]: number});
+          slots = resumableNode[3] = {} as {[index: number]: number};
         } else if (typeof slots === 'number') {
           throw new Error(
             'It should not be possible to postpone both at the root of an element ' +
@@ -4170,7 +4246,7 @@ function renderNode(
   const segment = task.blockedSegment;
   if (segment === null) {
     // Replay
-    task = ((task: any): ReplayTask); // Refined
+    task = task as any as ReplayTask; // Refined
     const previousReplaySet: ReplaySet = task.replay;
     try {
       return renderNodeDestructive(request, task, node, childIndex);
@@ -4189,22 +4265,23 @@ function renderNode(
 
       if (request.aborted) {
         // We are aborting so we can just bubble up to the task by falling through
+        // $FlowFixMe[invalid-compare]
       } else if (typeof x === 'object' && x !== null) {
         // $FlowFixMe[method-unbinding]
         if (typeof x.then === 'function') {
-          const wakeable: Wakeable = (x: any);
+          const wakeable: Wakeable = x as any;
           const thenableState =
             thrownValue === SuspenseException
               ? getThenableStateAfterSuspending()
               : null;
           const newTask = spawnNewSuspendedReplayTask(
             request,
-            // $FlowFixMe: Refined.
+            // $FlowFixMe[incompatible-type]: Refined.
             task,
             thenableState,
           );
           const ping = newTask.ping;
-          wakeable.then(ping, ping);
+          wakeable.then(ping.resolve, ping.reject);
 
           // Restore the context. We assume that this will be restored by the inner
           // functions in case nothing throws so we don't use "finally" here.
@@ -4235,7 +4312,7 @@ function renderNode(
               : null;
           const newTask = spawnNewSuspendedReplayTask(
             request,
-            // $FlowFixMe: Refined.
+            // $FlowFixMe[incompatible-type]: Refined.
             task,
             thenableState,
           );
@@ -4290,22 +4367,23 @@ function renderNode(
 
       if (request.aborted) {
         // We are aborting so we can just bubble up to the task by falling through
+        // $FlowFixMe[invalid-compare]
       } else if (typeof x === 'object' && x !== null) {
         // $FlowFixMe[method-unbinding]
         if (typeof x.then === 'function') {
-          const wakeable: Wakeable = (x: any);
+          const wakeable: Wakeable = x as any;
           const thenableState =
             thrownValue === SuspenseException
               ? getThenableStateAfterSuspending()
               : null;
           const newTask = spawnNewSuspendedRenderTask(
             request,
-            // $FlowFixMe: Refined.
+            // $FlowFixMe[incompatible-type]: Refined.
             task,
             thenableState,
           );
           const ping = newTask.ping;
-          wakeable.then(ping, ping);
+          wakeable.then(ping.resolve, ping.reject);
 
           // Restore the context. We assume that this will be restored by the inner
           // functions in case nothing throws so we don't use "finally" here.
@@ -4335,7 +4413,7 @@ function renderNode(
               : null;
           const newTask = spawnNewSuspendedRenderTask(
             request,
-            // $FlowFixMe: Refined.
+            // $FlowFixMe[incompatible-type]: Refined.
             task,
             thenableState,
           );
@@ -4435,6 +4513,11 @@ function erroredTask(
   const errorDigest = logRecoverableError(request, error, errorInfo, debugTask);
   if (boundary === null) {
     fatalError(request, error, errorInfo, debugTask);
+    // The shell fatally errored, so the render can never complete. Return before
+    // the completeAll check below so we don't fire onAllReady for a render that
+    // produced nothing. This mirrors finishAbortedTask, which also returns after
+    // a fatalError on the root.
+    return;
   } else {
     boundary.pendingTasks--;
     if (boundary.status !== CLIENT_RENDERED) {
@@ -4588,7 +4671,7 @@ function abortRemainingReplayNodes(
     // Empty the set
     if (typeof slots === 'object') {
       for (const index in slots) {
-        delete slots[(index: any)];
+        delete slots[index as any];
       }
     }
   }
@@ -4631,7 +4714,9 @@ function abortTask(task: Task, request: Request): void {
         node !== null &&
         (isArray(node) ||
           typeof node[ASYNC_ITERATOR] === 'function' ||
+          // $FlowFixMe[invalid-compare]
           node.$$typeof === REACT_ELEMENT_TYPE ||
+          // $FlowFixMe[invalid-compare]
           node.$$typeof === REACT_LAZY_TYPE) &&
         isArray(node._debugInfo)
       ) {
@@ -4884,8 +4969,6 @@ function completeShell(request: Request) {
     preparePreamble(request);
   }
 
-  // We have completed the shell so the shell can't error anymore.
-  request.onShellError = noop;
   const onShellReady = request.onShellReady;
   onShellReady();
 }
@@ -4948,6 +5031,7 @@ function finishedSegment(
   boundary: Root | SuspenseBoundary,
   segment: Segment,
 ) {
+  // $FlowFixMe[invalid-compare]
   if (byteLengthOfChunk !== null) {
     // Count the bytes of all the chunks of this segment.
     const chunks = segment.chunks;
@@ -5117,13 +5201,13 @@ function retryTask(request: Request, task: Task): void {
   if (segment === null) {
     retryReplayTask(
       request,
-      // $FlowFixMe: Refined.
+      // $FlowFixMe[incompatible-type]: Refined.
       task,
     );
   } else {
     retryRenderTask(
       request,
-      // $FlowFixMe: Refined.
+      // $FlowFixMe[incompatible-type]: Refined.
       task,
       segment,
     );
@@ -5216,7 +5300,7 @@ function retryRenderTask(
             : null;
         const ping = task.ping;
         // We've asserted that x is a thenable above
-        (x: any).then(ping, ping);
+        (x as any).then(ping.resolve, ping.reject);
         return;
       }
     }
@@ -5311,12 +5395,13 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
       return;
     }
 
+    // $FlowFixMe[invalid-compare]
     if (typeof x === 'object' && x !== null) {
       // $FlowFixMe[method-unbinding]
       if (typeof x.then === 'function') {
         // Something suspended again, let's pick it back up later.
         const ping = task.ping;
-        x.then(ping, ping);
+        x.then(ping.resolve, ping.reject);
         task.thenableState =
           thrownValue === SuspenseException
             ? getThenableStateAfterSuspending()
@@ -6082,6 +6167,19 @@ function flushCompletedQueues(
     largeBoundaries.splice(0, i);
   } finally {
     flushingPartialBoundaries = false;
+    const postponedState = request.postponedState;
+    if (postponedState !== null) {
+      // The shell flush above may have outlined completed boundaries, advancing
+      // nextSegmentId past the value getPostponedState snapshotted before the
+      // flush. Re-sync the postponed state to the post-flush high-water mark so
+      // the resume allocates segment ids strictly above the shell's and can't
+      // emit duplicate B:/S: ids. nextSegmentId only increases, so later flush
+      // passes refine this monotonically.
+      // TODO: Could be too late if the postponed state was already serialized
+      // by API consumers. Accessing postponed state before the prelude has flushed
+      // should be forbidden in the API.
+      postponedState.nextSegmentId = request.nextSegmentId;
+    }
     if (
       request.allPendingTasks === 0 &&
       request.clientRenderedBoundaries.length === 0 &&
@@ -6116,11 +6214,13 @@ function flushCompletedQueues(
 }
 
 export function startWork(request: Request): void {
+  // $FlowFixMe[constant-condition]
   if (isWorkLoopExternallyDriven) {
     return;
   } else {
     request.flushScheduled = request.destination !== null;
     // When prerendering we use microtasks for pinging work
+    // $FlowFixMe[constant-condition]
     if (supportsRequestStorage) {
       scheduleMicrotask(() =>
         requestStorage.run(request, performWork, request),
@@ -6143,6 +6243,7 @@ export function startWork(request: Request): void {
         // During a prerender we don't want to be too aggressive in emitting early preloads
         // because we aren't responding to a live request and we can wait for the prerender to
         // postpone before we emit anything.
+        // $FlowFixMe[constant-condition]
         if (supportsRequestStorage) {
           requestStorage.run(
             request,
@@ -6320,12 +6421,12 @@ function addToReplayParent(
     const workingMap = trackedPostpones.workingMap;
     let parentNode = workingMap.get(parentKeyPath);
     if (parentNode === undefined) {
-      parentNode = ([
+      parentNode = [
         parentKeyPath[1],
         parentKeyPath[2],
-        ([]: Array<ReplayNode>),
+        [] as Array<ReplayNode>,
         null,
-      ]: ReplayNode);
+      ] as ReplayNode;
       workingMap.set(parentKeyPath, parentNode);
       addToReplayParent(parentNode, parentKeyPath[0], trackedPostpones);
     }
@@ -6356,13 +6457,16 @@ export function getPostponedState(request: Request): null | PostponedState {
   }
   let replaySlots: ResumeSlots;
   let nextSegmentId: number;
-  if (
-    request.completedRootSegment !== null &&
-    // The Root postponed
-    (request.completedRootSegment.status === POSTPONED ||
-      // Or the Preamble was not available
-      request.completedPreambleSegments === null)
-  ) {
+  // True only when we postponed with a real shell (as opposed to postponing the
+  // root itself). Only in that case does the prelude flush outline completed
+  // boundaries and advance nextSegmentId past the value we capture here.
+  const hasFlushableShell =
+    request.completedRootSegment === null ||
+    // The Root did not postpone
+    (request.completedRootSegment.status !== POSTPONED &&
+      // the Preamble was available
+      request.completedPreambleSegments !== null);
+  if (!hasFlushableShell) {
     nextSegmentId = 0;
     // We need to ensure that on resume we retry the root. We use a number
     // type for the replaySlots to signify this (see resumeRequest).
@@ -6376,7 +6480,7 @@ export function getPostponedState(request: Request): null | PostponedState {
     replaySlots = trackedPostpones.rootSlots;
     completeResumableState(request.resumableState);
   }
-  return {
+  const postponedState: PostponedState = {
     nextSegmentId,
     rootFormatContext: request.rootFormatContext,
     progressiveChunkSize: request.progressiveChunkSize,
@@ -6384,4 +6488,15 @@ export function getPostponedState(request: Request): null | PostponedState {
     replayNodes: trackedPostpones.rootNodes,
     replaySlots,
   };
+  if (hasFlushableShell) {
+    // The prelude hasn't flushed yet — it's pull-driven and runs after this
+    // (see completeAll -> onAllReady). Flushing the shell outlines completed
+    // boundaries, bumping request.nextSegmentId beyond the snapshot above. Hold
+    // a reference so flushCompletedQueues can finalize nextSegmentId to the
+    // post-flush high-water mark. Otherwise the resume reuses the shell's
+    // segment ids and the concatenated document has duplicate B:/S: ids, which
+    // cross-wires React's boundary-completion scripts ($RC).
+    request.postponedState = postponedState;
+  }
+  return postponedState;
 }

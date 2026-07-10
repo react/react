@@ -125,7 +125,7 @@ export function useCanvasInteraction(
     }
 
     function localToCanvasCoordinates(localCoordinates: Point): Point {
-      // $FlowFixMe[incompatible-call] found when upgrading Flow
+      // $FlowFixMe[incompatible-type] found when upgrading Flow
       const canvasRect = cacheFirstGetCanvasBoundingRect(canvas);
       return {
         x: localCoordinates.x - canvasRect.left,

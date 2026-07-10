@@ -17,4 +17,4 @@ export const isWorkLoopExternallyDriven = false;
 // For now, we get this from the global scope, but this will likely move to a module.
 export const supportsRequestStorage = typeof AsyncLocalStorage === 'function';
 export const requestStorage: AsyncLocalStorage<Request | void> =
-  supportsRequestStorage ? new AsyncLocalStorage() : (null: any);
+  supportsRequestStorage ? new AsyncLocalStorage() : (null as any);

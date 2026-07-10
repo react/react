@@ -560,7 +560,7 @@ export function addTransitionStartCallbackToPendingTransition(
 
     if (currentPendingTransitionCallbacks.transitionStart === null) {
       currentPendingTransitionCallbacks.transitionStart =
-        ([]: Array<Transition>);
+        [] as Array<Transition>;
     }
 
     currentPendingTransitionCallbacks.transitionStart.push(transition);
@@ -574,14 +574,14 @@ export function addMarkerProgressCallbackToPendingTransition(
 ) {
   if (enableTransitionTracing) {
     if (currentPendingTransitionCallbacks === null) {
-      currentPendingTransitionCallbacks = ({
+      currentPendingTransitionCallbacks = {
         transitionStart: null,
         transitionProgress: null,
         transitionComplete: null,
         markerProgress: new Map(),
         markerIncomplete: null,
         markerComplete: null,
-      }: PendingTransitionCallbacks);
+      } as PendingTransitionCallbacks;
     }
 
     if (currentPendingTransitionCallbacks.markerProgress === null) {
@@ -694,7 +694,7 @@ export function addTransitionCompleteCallbackToPendingTransition(
 
     if (currentPendingTransitionCallbacks.transitionComplete === null) {
       currentPendingTransitionCallbacks.transitionComplete =
-        ([]: Array<Transition>);
+        [] as Array<Transition>;
     }
 
     currentPendingTransitionCallbacks.transitionComplete.push(transition);
@@ -728,8 +728,8 @@ const PENDING_PASSIVE_PHASE = 5;
 const PENDING_GESTURE_MUTATION_PHASE = 6;
 const PENDING_GESTURE_ANIMATION_PHASE = 7;
 let pendingEffectsStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 = 0;
-let pendingEffectsRoot: FiberRoot = (null: any);
-let pendingFinishedWork: Fiber = (null: any);
+let pendingEffectsRoot: FiberRoot = null as any;
+let pendingFinishedWork: Fiber = null as any;
 let pendingEffectsLanes: Lanes = NoLanes;
 let pendingEffectsRemainingLanes: Lanes = NoLanes;
 let pendingEffectsRenderEndTime: number = -0; // Profiling-only
@@ -811,7 +811,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
   const mode = fiber.mode;
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return (SyncLane: Lane);
+    return SyncLane as Lane;
   } else if (
     (executionContext & RenderContext) !== NoContext &&
     workInProgressRootRenderLanes !== NoLanes
@@ -861,7 +861,7 @@ function requestRetryLane(fiber: Fiber) {
   // Special cases
   const mode = fiber.mode;
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return (SyncLane: Lane);
+    return SyncLane as Lane;
   }
 
   return claimNextRetryLane();
@@ -1205,7 +1205,7 @@ export function performWorkOnRoot(
       // TODO: It's possible that even a concurrent render may never have yielded
       // to the main thread, if it was fast enough, or if it expired. We could
       // skip the consistency check in that case, too.
-      const finishedWork: Fiber = (root.current.alternate: any);
+      const finishedWork: Fiber = root.current.alternate as any;
       if (
         renderWasConcurrent &&
         !isRenderConsistentWithExternalStores(finishedWork)
@@ -1321,7 +1321,9 @@ function recoverFromConcurrentError(
   // Before rendering again, save the errors from the previous attempt.
   const errorsFromFirstAttempt = workInProgressRootConcurrentErrors;
 
+  // $FlowFixMe[constant-condition]
   const wasRootDehydrated = supportsHydration && isRootDehydrated(root);
+  // $FlowFixMe[constant-condition]
   if (wasRootDehydrated) {
     // The shell failed to hydrate. Set a flag to force a client rendering
     // during the next attempt. To do this, we call prepareFreshStack now
@@ -1339,7 +1341,12 @@ function recoverFromConcurrentError(
   }
 
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
-  if (exitStatus !== RootErrored) {
+  // A status of RootSuspendedAtTheShell means the retry unwound to the root
+  // without completing (e.g. something suspended in the shell), so the tree is
+  // incomplete and must not be treated as recovered — committing it would
+  // corrupt the current tree. Fall through and return the status as-is so the
+  // root stays suspended.
+  if (exitStatus !== RootErrored && exitStatus !== RootSuspendedAtTheShell) {
     // Successfully finished rendering on retry
 
     if (workInProgressRootDidAttachPingListener && !wasRootDehydrated) {
@@ -1693,7 +1700,7 @@ function isRenderConsistentWithExternalStores(finishedWork: Fiber): boolean {
       node.flags & StoreConsistency
     ) {
       const updateQueue: FunctionComponentUpdateQueue | null =
-        (node.updateQueue: any);
+        node.updateQueue as any;
       if (updateQueue !== null) {
         const checks = updateQueue.stores;
         if (checks !== null) {
@@ -2382,7 +2389,7 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
       case SuspendedOnImmediate:
       case SuspendedOnDeprecatedThrowPromise:
       case SuspendedAndReadyToContinue: {
-        const wakeable: Wakeable = (thrownValue: any);
+        const wakeable: Wakeable = thrownValue as any;
         markComponentSuspended(
           erroredWork,
           wakeable,
@@ -2821,7 +2828,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
           }
           case SuspendedOnData:
           case SuspendedOnAction: {
-            const thenable: Thenable<mixed> = (thrownValue: any);
+            const thenable: Thenable<mixed> = thrownValue as any;
             if (isThenableResolved(thenable)) {
               // The data resolved. Try rendering the component again.
               workInProgressSuspendedReason = NotSuspended;
@@ -2866,7 +2873,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
             break outer;
           }
           case SuspendedAndReadyToContinue: {
-            const thenable: Thenable<mixed> = (thrownValue: any);
+            const thenable: Thenable<mixed> = thrownValue as any;
             if (isThenableResolved(thenable)) {
               // The data resolved. Try rendering the component again.
               workInProgressSuspendedReason = NotSuspended;
@@ -3042,7 +3049,7 @@ function workLoopConcurrent(nonIdle: boolean) {
   if (workInProgress !== null) {
     const yieldAfter = now() + (nonIdle ? 25 : 5);
     do {
-      // $FlowFixMe[incompatible-call] flow doesn't know that now() is side-effect free
+      // $FlowFixMe[incompatible-type] flow doesn't know that now() is side-effect free
       performUnitOfWork(workInProgress);
     } while (workInProgress !== null && now() < yieldAfter);
   }
@@ -3052,7 +3059,7 @@ function workLoopConcurrent(nonIdle: boolean) {
 function workLoopConcurrentByScheduler() {
   // Perform work until Scheduler asks us to yield
   while (workInProgress !== null && !shouldYield()) {
-    // $FlowFixMe[incompatible-call] flow doesn't know that shouldYield() is side-effect free
+    // $FlowFixMe[incompatible-type] flow doesn't know that shouldYield() is side-effect free
     performUnitOfWork(workInProgress);
   }
 }
@@ -3545,7 +3552,7 @@ function completeRoot(
       const hydrationFailed =
         finishedWork !== null &&
         finishedWork.alternate !== null &&
-        (finishedWork.alternate.memoizedState: RootState).isDehydrated &&
+        (finishedWork.alternate.memoizedState as RootState).isDehydrated &&
         (finishedWork.flags & ForceClientRender) !== NoFlags;
       logRecoveredRenderPhase(
         completedRenderStartTime,
@@ -3657,8 +3664,8 @@ function completeRoot(
           finalizeRender(lanes, completedRenderEndTime);
         }
         // We are no longer committing.
-        pendingEffectsRoot = (null: any); // Clear for GC purposes.
-        pendingFinishedWork = (null: any); // Clear for GC purposes.
+        pendingEffectsRoot = null as any; // Clear for GC purposes.
+        pendingFinishedWork = null as any; // Clear for GC purposes.
         pendingEffectsLanes = NoLanes;
       }
       // Schedule the root to be committed when the gesture completes.
@@ -3885,11 +3892,11 @@ function commitRoot(
       flushSpawnedWork,
       flushPassiveEffects,
       reportViewTransitionError,
-      enableProfilerTimer ? suspendedViewTransition : (null: any),
+      enableProfilerTimer ? suspendedViewTransition : (null as any),
       enableProfilerTimer
         ? // This callback fires after "pendingEffects" so we need to snapshot the arguments.
           finishedViewTransition.bind(null, lanes)
-        : (null: any),
+        : (null as any),
     );
   } else {
     // Flush synchronously.
@@ -4188,8 +4195,8 @@ function flushSpawnedWork(): void {
     pendingEffectsStatus = PENDING_PASSIVE_PHASE;
   } else {
     pendingEffectsStatus = NO_PENDING_EFFECTS;
-    pendingEffectsRoot = (null: any); // Clear for GC purposes.
-    pendingFinishedWork = (null: any); // Clear for GC purposes.
+    pendingEffectsRoot = null as any; // Clear for GC purposes.
+    pendingFinishedWork = null as any; // Clear for GC purposes.
     // There were no passive effects, so we can immediately release the cache
     // pool for this render.
     releaseRootPooledCache(root, root.pendingLanes);
@@ -4371,6 +4378,7 @@ function flushSpawnedWork(): void {
 
   // Eagerly flush any event replaying that we unblocked within this commit.
   // This ensures that those are observed before we render any new changes.
+  // $FlowFixMe[constant-condition]
   if (supportsHydration) {
     flushHydrationEvents();
   }
@@ -4466,7 +4474,7 @@ function applyGestureOnRoot(
     enableProfilerTimer
       ? // This callback fires after "pendingEffects" so we need to snapshot the arguments.
         finishedViewTransition.bind(null, pendingEffectsLanes)
-      : (null: any),
+      : (null as any),
   );
 }
 
@@ -4539,8 +4547,8 @@ function flushGestureAnimations(): void {
   pendingEffectsStatus = NO_PENDING_EFFECTS;
   const root = pendingEffectsRoot;
   const finishedWork = pendingFinishedWork;
-  pendingEffectsRoot = (null: any); // Clear for GC purposes.
-  pendingFinishedWork = (null: any); // Clear for GC purposes.
+  pendingEffectsRoot = null as any; // Clear for GC purposes.
+  pendingFinishedWork = null as any; // Clear for GC purposes.
   pendingEffectsLanes = NoLanes;
 
   pendingViewTransition = null; // The view transition has now fully started.
@@ -4602,7 +4610,7 @@ function makeErrorInfo(componentStack: ?string) {
     componentStack,
   };
   if (__DEV__) {
-    Object.defineProperty((errorInfo: any), 'digest', {
+    Object.defineProperty(errorInfo as any, 'digest', {
       get() {
         console.error(
           'You are accessing "digest" from the errorInfo object passed to onRecoverableError.' +
@@ -4711,8 +4719,8 @@ function flushPassiveEffectsImpl() {
   const root = pendingEffectsRoot;
   const lanes = pendingEffectsLanes;
   pendingEffectsStatus = NO_PENDING_EFFECTS;
-  pendingEffectsRoot = (null: any); // Clear for GC purposes.
-  pendingFinishedWork = (null: any); // Clear for GC purposes.
+  pendingEffectsRoot = null as any; // Clear for GC purposes.
+  pendingFinishedWork = null as any; // Clear for GC purposes.
   // TODO: This is sometimes out of sync with pendingEffectsRoot.
   // Figure out why and fix it. It's not causing any known issues (probably
   // because it's only used for profiling), but it's a refactor hazard.
@@ -4879,9 +4887,9 @@ function captureCommitPhaseErrorOnRoot(
   const update = createRootErrorUpdate(
     rootFiber.stateNode,
     errorInfo,
-    (SyncLane: Lane),
+    SyncLane as Lane,
   );
-  const root = enqueueUpdate(rootFiber, update, (SyncLane: Lane));
+  const root = enqueueUpdate(rootFiber, update, SyncLane as Lane);
   if (root !== null) {
     markRootUpdated(root, SyncLane);
     ensureRootIsScheduled(root);
@@ -4920,8 +4928,8 @@ export function captureCommitPhaseError(
         if (enableProfilerTimer && enableComponentPerformanceTrack) {
           recordEffectError(errorInfo);
         }
-        const update = createClassErrorUpdate((SyncLane: Lane));
-        const root = enqueueUpdate(fiber, update, (SyncLane: Lane));
+        const update = createClassErrorUpdate(SyncLane as Lane);
+        const root = enqueueUpdate(fiber, update, SyncLane as Lane);
         if (root !== null) {
           initializeClassErrorUpdate(update, root, fiber, errorInfo);
           markRootUpdated(root, SyncLane);

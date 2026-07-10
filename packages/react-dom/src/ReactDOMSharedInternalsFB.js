@@ -36,7 +36,7 @@ const DefaultDispatcher: HostDispatcher = {
 };
 
 const Internals: ReactDOMInternals = {
-  Events: (null: any),
+  Events: null as any,
   d /* ReactDOMCurrentDispatcher */: DefaultDispatcher,
   p /* currentUpdatePriority */: NoEventPriority,
   findDOMNode: null,

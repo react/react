@@ -12,7 +12,7 @@ import {isEnabled} from 'react-dom-bindings/src/events/ReactDOMEventListener';
 import Internals from './ReactDOMSharedInternalsFB';
 
 // For classic WWW builds, include a few internals that are already in use.
-Object.assign((Internals: any), {
+Object.assign(Internals as any, {
   ReactBrowserEventEmitter: {
     isEnabled,
   },

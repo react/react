@@ -527,7 +527,7 @@ describe('ReactDOMFizzStaticBrowser', () => {
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });
 
-  it('currently uses the abort reason when an abort listener synchronously rejects pending work', async () => {
+  it('uses a rejection reason when an abort listener rejects pending work before the abort finishes', async () => {
     let reject;
     const rejectedPromise = new Promise((resolve, rejectPromise) => {
       reject = rejectPromise;
@@ -572,7 +572,7 @@ describe('ReactDOMFizzStaticBrowser', () => {
     });
     await resultPromise;
 
-    expect(errors).toEqual(['abort reason', 'abort reason']);
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
   });
 
   it('logs an error if onHeaders throws but continues the prerender', async () => {
@@ -1102,6 +1102,95 @@ describe('ReactDOMFizzStaticBrowser', () => {
           <span>hello error</span>
         </body>
       </html>,
+    );
+  });
+
+  it('reveals a resumed boundary even when the shell outlined a completed boundary', async () => {
+    // Regression test for a segment-id collision between the prerendered shell
+    // and the resume. The prelude flush outlines a large *completed* boundary
+    // into the shell, advancing request.nextSegmentId past the value
+    // getPostponedState snapshotted before the flush. If that snapshot isn't
+    // finalized after the flush, the resume re-allocates ids the shell already
+    // used; in the served document $RC (getElementById, first match) then
+    // reveals the wrong element and the resumed boundary stays on its fallback.
+    // Asserts on the rendered output rather than the segment ids.
+    let prerendering = true;
+    const shellText = 'a'.repeat(800); // > 500 bytes => eligible for outlining
+    const resumeText = 'b'.repeat(800);
+
+    // Completes during the prerender; large enough that the prelude flush
+    // outlines it into the shell.
+    function ShellBoundary() {
+      return <div>{shellText}</div>;
+    }
+
+    // Suspends during the prerender so its boundary becomes a hole the resume
+    // fills. On resume it renders a nested large boundary that itself outlines,
+    // so the resume allocates fresh segment ids from the postponed seed.
+    function Hole() {
+      if (prerendering) {
+        return React.use(theInfinitePromise);
+      }
+      return (
+        <Suspense fallback="LoadingC">
+          <div>{resumeText}</div>
+        </Suspense>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="LoadingA">
+            <ShellBoundary />
+          </Suspense>
+          <Suspense fallback="LoadingB">
+            <Hole />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const controller = new AbortController();
+    let pendingResult;
+    await serverAct(() => {
+      pendingResult = ReactDOMFizzStatic.prerender(<App />, {
+        signal: controller.signal,
+        progressiveChunkSize: 100, // force the completed boundary to outline
+        onError() {},
+      });
+    });
+    await serverAct(() => controller.abort());
+    const prerendered = await pendingResult;
+    expect(prerendered.postponed).not.toBe(null);
+
+    const shellHTML = await readContent(prerendered.prelude);
+
+    prerendering = false;
+    const resumed = await serverAct(() =>
+      ReactDOMFizzServer.resume(
+        <App />,
+        JSON.parse(JSON.stringify(prerendered.postponed)),
+        {onError() {}},
+      ),
+    );
+    const resumeHTML = await readContent(resumed);
+
+    // Run the shell and the resume as one served document so the completion
+    // instructions ($RC) execute against both together, the way a browser does.
+    const temp = document.createElement('div');
+    temp.innerHTML = shellHTML + resumeHTML;
+    await insertNodesAndExecuteScripts(temp, container, null);
+    jest.runAllTimers();
+
+    // Both boundaries reveal their own content. Without the fix the resumed
+    // boundary reuses the shell's ids, so its $RC resolves to the shell's
+    // element and it stays on its "LoadingC" fallback.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div>{shellText}</div>
+        <div>{resumeText}</div>
+      </div>,
     );
   });
 

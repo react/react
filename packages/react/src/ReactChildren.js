@@ -115,19 +115,19 @@ function resolveThenable<T>(thenable: Thenable<T>): T {
 
         // TODO: Detect infinite ping loops caused by uncached promises.
 
-        const pendingThenable: PendingThenable<T> = (thenable: any);
+        const pendingThenable: PendingThenable<T> = thenable as any;
         pendingThenable.status = 'pending';
         pendingThenable.then(
           fulfilledValue => {
             if (thenable.status === 'pending') {
-              const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+              const fulfilledThenable: FulfilledThenable<T> = thenable as any;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = fulfilledValue;
             }
           },
           (error: mixed) => {
             if (thenable.status === 'pending') {
-              const rejectedThenable: RejectedThenable<T> = (thenable: any);
+              const rejectedThenable: RejectedThenable<T> = thenable as any;
               rejectedThenable.status = 'rejected';
               rejectedThenable.reason = error;
             }
@@ -136,13 +136,13 @@ function resolveThenable<T>(thenable: Thenable<T>): T {
       }
 
       // Check one more time in case the thenable resolved synchronously.
-      switch ((thenable: Thenable<T>).status) {
+      switch ((thenable as Thenable<T>).status) {
         case 'fulfilled': {
-          const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+          const fulfilledThenable: FulfilledThenable<T> = thenable as any;
           return fulfilledThenable.value;
         }
         case 'rejected': {
-          const rejectedThenable: RejectedThenable<T> = (thenable: any);
+          const rejectedThenable: RejectedThenable<T> = thenable as any;
           const rejectedError = rejectedThenable.reason;
           throw rejectedError;
         }
@@ -178,14 +178,14 @@ function mapIntoArray(
         invokeCallback = true;
         break;
       case 'object':
-        switch ((children: any).$$typeof) {
+        switch ((children as any).$$typeof) {
           case REACT_ELEMENT_TYPE:
           case REACT_PORTAL_TYPE:
             invokeCallback = true;
             break;
           case REACT_LAZY_TYPE:
-            const payload = (children: any)._payload;
-            const init = (children: any)._init;
+            const payload = (children as any)._payload;
+            const init = (children as any)._init;
             return mapIntoArray(
               init(payload),
               array,
@@ -287,7 +287,7 @@ function mapIntoArray(
     if (typeof iteratorFn === 'function') {
       const iterableChildren: Iterable<React$Node> & {
         entries: any,
-      } = (children: any);
+      } = children as any;
 
       if (__DEV__) {
         // Warn about using Maps as children
@@ -318,9 +318,9 @@ function mapIntoArray(
         );
       }
     } else if (type === 'object') {
-      if (typeof (children: any).then === 'function') {
+      if (typeof (children as any).then === 'function') {
         return mapIntoArray(
-          resolveThenable((children: any)),
+          resolveThenable(children as any),
           array,
           escapedPrefix,
           nameSoFar,
@@ -329,13 +329,13 @@ function mapIntoArray(
       }
 
       // eslint-disable-next-line react-internal/safe-string-coercion
-      const childrenString = String((children: any));
+      const childrenString = String(children as any);
 
       throw new Error(
         `Objects are not valid as a React child (found: ${
           childrenString === '[object Object]'
             ? 'object with keys {' +
-              Object.keys((children: any)).join(', ') +
+              Object.keys(children as any).join(', ') +
               '}'
             : childrenString
         }). ` +
@@ -369,7 +369,7 @@ function mapChildren(
   context: mixed,
 ): ?Array<React$Node> {
   if (children == null) {
-    // $FlowFixMe limitation refining abstract types in Flow
+    // $FlowFixMe[incompatible-type] limitation refining abstract types in Flow
     return children;
   }
   const result: Array<React$Node> = [];

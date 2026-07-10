@@ -93,12 +93,31 @@ function renderFlightFizzEdge(renderRSCEdge, AppComponent, itemCount) {
 
 const canGC = typeof globalThis.gc === 'function';
 
+// Yield to the event loop's check phase between renders. React schedules a
+// setImmediate per request, but a fully in-process render completes entirely
+// in microtasks/nextTicks, so a tight benchmark loop never lets those
+// immediates run. They then pile up in Node's immediate queue, each one
+// retaining its (otherwise finished) request graph, which inflates any memory
+// measurement. A real server yields to the event loop on every request, so
+// draining between iterations is both correct and more representative.
+function tick() {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+async function settledHeapUsed() {
+  await tick();
+  if (canGC) globalThis.gc();
+  return process.memoryUsage().heapUsed;
+}
+
 async function runBenchmark(name, fn, iterations, warmup) {
   if (canGC) globalThis.gc();
+  const heapBefore = await settledHeapUsed();
 
   // Warmup
   for (let i = 0; i < warmup; i++) {
     await fn();
+    await tick();
   }
 
   // Collect GC pauses during timed iterations.
@@ -112,14 +131,17 @@ async function runBenchmark(name, fn, iterations, warmup) {
   });
   gcObs.observe({entryTypes: ['gc']});
 
-  // Timed iterations
+  // Timed iterations. The tick between iterations is excluded from the
+  // timed window.
   const times = [];
   for (let i = 0; i < iterations; i++) {
     const start = performance.now();
     await fn();
     times.push(performance.now() - start);
+    await tick();
   }
   gcObs.disconnect();
+  const heapAfter = await settledHeapUsed();
 
   // Trim top/bottom 5% to remove outliers
   const sorted = [...times].sort((a, b) => a - b);
@@ -146,6 +168,8 @@ async function runBenchmark(name, fn, iterations, warmup) {
     iterations,
     gcCount,
     gcTotalMs,
+    heapBefore,
+    heapAfter,
   };
 }
 
@@ -163,13 +187,28 @@ function printResult(result) {
     result.gcTotalMs.toFixed(1),
     (result.gcTotalMs / result.iterations).toFixed(2)
   );
+  printHeap(result);
+}
+
+function printHeap(result) {
+  if (!canGC) return;
+  const mb = b => (b / 1048576).toFixed(1);
+  const delta = result.heapAfter - result.heapBefore;
+  console.log(
+    '    Heap:   %s MB retained after run (%s%s MB vs before)',
+    mb(result.heapAfter),
+    delta >= 0 ? '+' : '',
+    mb(delta)
+  );
 }
 
 async function runConcurrent(name, fn, total, concurrency, warmup) {
   if (canGC) globalThis.gc();
+  const heapBefore = await settledHeapUsed();
 
   for (let i = 0; i < warmup; i++) {
     await fn();
+    await tick();
   }
 
   let gcCount = 0;
@@ -192,21 +231,27 @@ async function runConcurrent(name, fn, total, concurrency, warmup) {
       while (launched < total && launched - completed < concurrency) {
         const idx = launched++;
         const t0 = performance.now();
-        fn().then(() => {
-          latencies[idx] = performance.now() - t0;
-          completed++;
-          if (completed === total) {
-            resolve();
-          } else {
-            launch();
-          }
-        });
+        fn()
+          .then(() => {
+            latencies[idx] = performance.now() - t0;
+            // Drain immediates before freeing the slot (see tick()).
+            return tick();
+          })
+          .then(() => {
+            completed++;
+            if (completed === total) {
+              resolve();
+            } else {
+              launch();
+            }
+          });
       }
     }
     launch();
   });
   const elapsed = performance.now() - start;
   gcObs.disconnect();
+  const heapAfter = await settledHeapUsed();
 
   const sorted = [...latencies].sort((a, b) => a - b);
   const mean = sorted.reduce((s, t) => s + t, 0) / sorted.length;
@@ -221,6 +266,8 @@ async function runConcurrent(name, fn, total, concurrency, warmup) {
     concurrency,
     gcCount,
     gcTotalMs,
+    heapBefore,
+    heapAfter,
   };
 }
 
@@ -235,6 +282,7 @@ function printConcurrentResult(result) {
     result.gcTotalMs.toFixed(1),
     (result.gcTotalMs / result.total).toFixed(2)
   );
+  printHeap(result);
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +355,7 @@ async function profileRun(name, fn, warmup, iterations, outputPath) {
   // Warmup (unprofiled)
   for (let i = 0; i < warmup; i++) {
     await fn();
+    await tick();
   }
 
   // Collect GC pauses during the profiled run.
@@ -324,6 +373,7 @@ async function profileRun(name, fn, warmup, iterations, outputPath) {
   const session = await startProfiler();
   for (let i = 0; i < iterations; i++) {
     await fn();
+    await tick();
   }
   const profile = await stopProfiler(session, outputPath);
   gcObs.disconnect();

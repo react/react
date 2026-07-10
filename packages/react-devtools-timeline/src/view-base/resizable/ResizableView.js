@@ -107,9 +107,9 @@ export class ResizableView extends View {
     if (
       this._viewState.viewToMutableViewStateMap.has(this._mutableViewStateKey)
     ) {
-      this._layoutState = ((this._viewState.viewToMutableViewStateMap.get(
+      this._layoutState = this._viewState.viewToMutableViewStateMap.get(
         this._mutableViewStateKey,
-      ): any): LayoutState);
+      ) as any as LayoutState;
 
       this._updateLayoutStateAndResizeBar(this._layoutState.barOffsetY);
     } else {

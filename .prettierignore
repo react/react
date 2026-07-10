@@ -22,6 +22,12 @@ compiler/**/.next
 
 # contains invalid graphql`...` which results in a promise rejection error from `yarn prettier-all`.
 compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/error.todo-kitchensink.js
+# contains invalid const reassignment; the fixture asserts the compiler diagnostic.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/error.invalid-reassign-const.js
+# preserves the exact sequence-expression source shape used by the fixture.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/memoize-value-block-value-sequence.js
+# preserves minimized production input; formatting changes the reduced repro shape.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/todo-round3_promote_used_temps.js
 
 compiler/crates
 compiler/target

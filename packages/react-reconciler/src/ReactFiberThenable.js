@@ -38,10 +38,10 @@ export opaque type ThenableState = ThenableStateDev | ThenableStateProd;
 
 function getThenablesFromState(state: ThenableState): Array<Thenable<any>> {
   if (__DEV__) {
-    const devState: ThenableStateDev = (state: any);
+    const devState: ThenableStateDev = state as any;
     return devState.thenables;
   } else {
-    const prodState = (state: any);
+    const prodState = state as any;
     return prodState;
   }
 }
@@ -122,7 +122,7 @@ export function trackUsedThenable<T>(
       // they represent the same value, because components are idempotent.
 
       if (__DEV__) {
-        const thenableStateDev: ThenableStateDev = (thenableState: any);
+        const thenableStateDev: ThenableStateDev = thenableState as any;
         if (!thenableStateDev.didWarnAboutUncachedPromise) {
           // We should only warn the first time an uncached thenable is
           // discovered per component, because if there are multiple, the
@@ -168,7 +168,7 @@ export function trackUsedThenable<T>(
       name: typeof displayName === 'string' ? displayName : 'Promise',
       start: startTime,
       end: startTime,
-      value: (thenable: any),
+      value: thenable as any,
       // We don't know the requesting owner nor stack.
     };
     // We can infer the await owner/stack lazily from where this promise ends up
@@ -254,19 +254,19 @@ export function trackUsedThenable<T>(
           );
         }
 
-        const pendingThenable: PendingThenable<T> = (thenable: any);
+        const pendingThenable: PendingThenable<T> = thenable as any;
         pendingThenable.status = 'pending';
         pendingThenable.then(
           fulfilledValue => {
             if (thenable.status === 'pending') {
-              const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+              const fulfilledThenable: FulfilledThenable<T> = thenable as any;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = fulfilledValue;
             }
           },
           (error: mixed) => {
             if (thenable.status === 'pending') {
-              const rejectedThenable: RejectedThenable<T> = (thenable: any);
+              const rejectedThenable: RejectedThenable<T> = thenable as any;
               rejectedThenable.status = 'rejected';
               rejectedThenable.reason = error;
             }
@@ -275,13 +275,13 @@ export function trackUsedThenable<T>(
       }
 
       // Check one more time in case the thenable resolved synchronously.
-      switch ((thenable: Thenable<T>).status) {
+      switch ((thenable as Thenable<T>).status) {
         case 'fulfilled': {
-          const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+          const fulfilledThenable: FulfilledThenable<T> = thenable as any;
           return fulfilledThenable.value;
         }
         case 'rejected': {
-          const rejectedThenable: RejectedThenable<T> = (thenable: any);
+          const rejectedThenable: RejectedThenable<T> = thenable as any;
           const rejectedError = rejectedThenable.reason;
           checkIfUseWrappedInAsyncCatch(rejectedError);
           throw rejectedError;
@@ -308,6 +308,7 @@ export function suspendCommit(): void {
   // This extra indirection only exists so it can handle passing
   // noopSuspenseyCommitThenable through to throwException.
   // TODO: Factor the thenable check out of throwException
+  // $FlowFixMe[incompatible-type]
   suspendedThenable = noopSuspenseyCommitThenable;
   throw SuspenseyCommitException;
 }
