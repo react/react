@@ -23,10 +23,8 @@ import getEventTarget from '../getEventTarget';
 import isEventSupported from '../isEventSupported';
 import {getNodeFromInstance} from '../../client/ReactDOMComponentTree';
 import {updateValueIfChanged} from '../../client/inputValueTracking';
-import {setDefaultValue} from '../../client/ReactDOMInput';
 import {enqueueStateRestore} from '../ReactDOMControlledComponent';
 
-import {disableInputAttributeSyncing} from 'shared/ReactFeatureFlags';
 import {batchedUpdates} from '../ReactDOMUpdateBatching';
 import {
   processDispatchQueue,
@@ -260,20 +258,6 @@ function getTargetInstForInputOrChangeEvent(
   }
 }
 
-function handleControlledInputBlur(node: HTMLInputElement, props: any) {
-  if (node.type !== 'number') {
-    return;
-  }
-
-  if (!disableInputAttributeSyncing) {
-    const isControlled = props.value != null;
-    if (isControlled) {
-      // If controlled, assign the value attribute to the current value on blur
-      setDefaultValue(node as any, 'number', (node as any).value);
-    }
-  }
-}
-
 /**
  * This plugin creates an `onChange` event that normalizes change events
  * across form elements. This event fires at a time when it's possible to
@@ -329,15 +313,6 @@ function extractEvents(
 
   if (handleEventFunc) {
     handleEventFunc(domEventName, targetNode, targetInst);
-  }
-
-  // When blurring, set the value attribute for number inputs
-  if (domEventName === 'focusout' && targetInst) {
-    // These props aren't necessarily the most current but we warn for changing
-    // between controlled and uncontrolled, so it doesn't matter and the previous
-    // code was also broken for changes.
-    const props = targetInst.memoizedProps;
-    handleControlledInputBlur(targetNode as any as HTMLInputElement, props);
   }
 }
 
