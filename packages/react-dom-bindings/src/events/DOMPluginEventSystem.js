@@ -430,8 +430,8 @@ export function listenToNativeEventForNonManagedEventTarget(
 const listeningMarker = '_reactListening' + Math.random().toString(36).slice(2);
 
 export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
-  if (!(rootContainerElement: any)[listeningMarker]) {
-    (rootContainerElement: any)[listeningMarker] = true;
+  if (!(rootContainerElement as any)[listeningMarker]) {
+    (rootContainerElement as any)[listeningMarker] = true;
     allNativeEvents.forEach(domEventName => {
       // We handle selectionchange separately because it
       // doesn't bubble and needs to be on the document.
@@ -443,14 +443,15 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
       }
     });
     const ownerDocument =
-      (rootContainerElement: any).nodeType === DOCUMENT_NODE
+      (rootContainerElement as any).nodeType === DOCUMENT_NODE
         ? rootContainerElement
-        : (rootContainerElement: any).ownerDocument;
+        : (rootContainerElement as any).ownerDocument;
+    // $FlowFixMe[invalid-compare]
     if (ownerDocument !== null) {
       // The selectionchange event also needs deduplication
       // but it is attached to the document.
-      if (!(ownerDocument: any)[listeningMarker]) {
-        (ownerDocument: any)[listeningMarker] = true;
+      if (!(ownerDocument as any)[listeningMarker]) {
+        (ownerDocument as any)[listeningMarker] = true;
         listenToNativeEvent('selectionchange', false, ownerDocument);
       }
     }
@@ -490,7 +491,7 @@ function addTrappedEventListener(
 
   targetContainer =
     enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport
-      ? (targetContainer: any).ownerDocument
+      ? (targetContainer as any).ownerDocument
       : targetContainer;
 
   let unsubscribeListener;
@@ -593,7 +594,7 @@ export function dispatchEventForPluginEventSystem(
     (eventSystemFlags & IS_EVENT_HANDLE_NON_MANAGED_NODE) === 0 &&
     (eventSystemFlags & IS_NON_DELEGATED) === 0
   ) {
-    const targetContainerNode = ((targetContainer: any): Node);
+    const targetContainerNode = targetContainer as any as Node;
 
     // If we are using the legacy FB support flag, we
     // defer the event to the null with a one
@@ -750,7 +751,7 @@ export function accumulateSinglePhaseListeners(
                 createDispatchListener(
                   instance,
                   entry.callback,
-                  (lastHostComponent: any),
+                  lastHostComponent as any,
                 ),
               );
             }
@@ -788,7 +789,7 @@ export function accumulateSinglePhaseListeners(
               createDispatchListener(
                 instance,
                 entry.callback,
-                (lastHostComponent: any),
+                lastHostComponent as any,
               ),
             );
           }
@@ -925,6 +926,7 @@ function accumulateEnterLeaveListenersForEvent(
             createDispatchListener(instance, captureListener, currentTarget),
           );
         }
+        // $FlowFixMe[constant-condition]
       } else if (!inCapturePhase) {
         const bubbleListener = getListener(instance, registrationName);
         if (bubbleListener != null) {

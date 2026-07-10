@@ -57,7 +57,7 @@ export function Timeline(_: {}): React.Node {
   const [key, setKey] = useState<string>(theme);
   useLayoutEffect(() => {
     const pollForTheme = () => {
-      if (updateColorsToMatchTheme(((ref.current: any): HTMLDivElement))) {
+      if (updateColorsToMatchTheme(ref.current as any as HTMLDivElement)) {
         clearInterval(intervalID);
         setKey(deferredTheme);
       }

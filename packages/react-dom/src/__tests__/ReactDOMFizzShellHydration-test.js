@@ -101,6 +101,56 @@ describe('ReactDOMFizzShellHydration', () => {
     }
   }
 
+  async function hydrateRootAndCollectErrors(reactNode) {
+    const errors = [];
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, reactNode, {
+        onCaughtError(error) {
+          Scheduler.log('onCaughtError: ' + error.message);
+          errors.push('caught: ' + error.message);
+        },
+        onUncaughtError(error) {
+          Scheduler.log('onUncaughtError: ' + error.message);
+          errors.push('uncaught: ' + error.message);
+        },
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + error.message);
+          errors.push('recoverable: ' + error.message);
+        },
+      });
+    });
+    return errors;
+  }
+
+  function createErrorBoundaryAndBomb() {
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = {error: null};
+      }
+
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+
+      componentDidCatch() {}
+
+      render() {
+        if (this.state.error) {
+          return 'Something went wrong: ' + this.state.error.message;
+        }
+
+        return this.props.children;
+      }
+    }
+
+    function Bomb() {
+      throw new Error('boom');
+    }
+
+    return {ErrorBoundary, Bomb};
+  }
+
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -655,4 +705,134 @@ describe('ReactDOMFizzShellHydration', () => {
       expect(container.innerHTML).toBe('Client');
     },
   );
+
+  it(
+    'does not corrupt hooks during hydration when conditional use suspends ' +
+      'after a cascading update (#33580)',
+    async () => {
+      const {ErrorBoundary, Bomb} = createErrorBoundaryAndBomb();
+
+      function Updater({setPromise}) {
+        const [state, setState] = React.useState(false);
+
+        React.useEffect(() => {
+          setState(true);
+          startTransition(() => {
+            setPromise(Promise.resolve('resolved'));
+          });
+        }, [state]);
+
+        return null;
+      }
+
+      function Page() {
+        const [promise, setPromise] = React.useState(null);
+        const value = promise ? React.use(promise) : promise;
+
+        React.useMemo(() => {}, []);
+
+        return (
+          <>
+            <Updater setPromise={setPromise} />
+            <React.Suspense fallback="Loading...">
+              <ErrorBoundary>
+                <Bomb />
+              </ErrorBoundary>
+            </React.Suspense>
+            {value !== null ? value : 'hello world'}
+          </>
+        );
+      }
+
+      function App() {
+        return <Page />;
+      }
+
+      await serverAct(async () => {
+        const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />, {
+          onError(error) {
+            Scheduler.log('onError: ' + error.message);
+          },
+        });
+        pipe(writable);
+      });
+      assertLog(['onError: boom']);
+
+      const errors = await hydrateRootAndCollectErrors(<App />);
+      assertLog(['onCaughtError: boom']);
+
+      expect(
+        errors.find(error => error.includes('Rendered more hooks')),
+      ).toBeUndefined();
+      expect(container.textContent).toBe('Something went wrong: boomresolved');
+    },
+  );
+
+  it('preserves hooks when suspension happens before the first tracked hook', async () => {
+    const {ErrorBoundary, Bomb} = createErrorBoundaryAndBomb();
+    let setReady;
+
+    function Updater({setPromise}) {
+      React.useEffect(() => {
+        setReady(true);
+        startTransition(() => {
+          setPromise(Promise.resolve('resolved'));
+        });
+      }, []);
+
+      return null;
+    }
+
+    function Page({promise}) {
+      const value = promise ? React.use(promise) : promise;
+
+      const [ready, _setReady] = React.useState(false);
+      setReady = _setReady;
+
+      React.useMemo(() => {}, []);
+
+      return (
+        <>
+          <React.Suspense fallback="Loading...">
+            <ErrorBoundary>
+              <Bomb />
+            </ErrorBoundary>
+          </React.Suspense>
+          <span>{ready ? 'ready' : 'not-ready'}</span>
+          <span>{value !== null ? value : 'hello world'}</span>
+        </>
+      );
+    }
+
+    function App() {
+      const [promise, setPromise] = React.useState(null);
+
+      return (
+        <>
+          <Updater setPromise={setPromise} />
+          <Page promise={promise} />
+        </>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />, {
+        onError(error) {
+          Scheduler.log('onError: ' + error.message);
+        },
+      });
+      pipe(writable);
+    });
+    assertLog(['onError: boom']);
+
+    const errors = await hydrateRootAndCollectErrors(<App />);
+    assertLog(['onCaughtError: boom']);
+
+    expect(
+      errors.find(error => error.includes('Rendered more hooks')),
+    ).toBeUndefined();
+    expect(container.textContent).toBe(
+      'Something went wrong: boomreadyresolved',
+    );
+  });
 });

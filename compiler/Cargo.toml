@@ -1,0 +1,16 @@
+[workspace]
+members = [
+  "crates/*",
+  "packages/babel-plugin-react-compiler-rust/native",
+]
+resolver = "3"
+
+# Sizes the shipped napi binary (index.node). Measured on arm64 macOS:
+# default release is 11.2MB; fat LTO + one codegen unit + stripping symbols
+# lands at 7.2MB with no runtime cost. Release builds get slower; debug
+# builds (snap --rust, the e2e harness) are unaffected.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+

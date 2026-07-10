@@ -80,6 +80,8 @@ export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
 
+export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
+
 export const enableViewTransitionForPersistenceMode: boolean = false;
 
 export const enableGestureTransition = __EXPERIMENTAL__;
@@ -128,8 +130,6 @@ export const alwaysThrottleRetries: boolean = true;
 export const enableEffectEventMutationPhase: boolean = false;
 
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
-
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
 
 /**
  * Enables an expiration time for retry lanes to avoid starvation.

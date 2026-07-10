@@ -102,7 +102,7 @@ export function getActivityInstanceFromFiber(
 
 export function getContainerFromFiber(fiber: Fiber): null | Container {
   return fiber.tag === HostRoot
-    ? (fiber.stateNode.containerInfo: Container)
+    ? (fiber.stateNode.containerInfo as Container)
     : null;
 }
 

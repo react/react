@@ -22,9 +22,9 @@ export default function createDataResourceFromImportedFile(
   return createResource(
     () => {
       return new Promise<TimelineData | Error>((resolve, reject) => {
-        const promise = ((importFile(
+        const promise = importFile(
           file,
-        ): any): Promise<ImportWorkerOutputData>);
+        ) as any as Promise<ImportWorkerOutputData>;
         promise.then(data => {
           switch (data.status) {
             case 'SUCCESS':

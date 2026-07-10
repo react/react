@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enableOptimizeForSSR
+// @outputMode:"ssr"
 function Component() {
   const [, startTransition] = useTransition();
   const [state, setState] = useState(0);
@@ -25,43 +25,14 @@ function Component() {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enableOptimizeForSSR
+// @outputMode:"ssr"
 function Component() {
-  const $ = _c(4);
-  const [, startTransition] = useTransition();
-  const [state, setState] = useState(0);
+  useTransition();
+  const state = 0;
   const ref = useRef(null);
-  let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = (e) => {
-      startTransition(() => {
-        setState.call(null, e.target.value);
-      });
-    };
-    $[0] = t0;
-  } else {
-    t0 = $[0];
-  }
-  const onChange = t0;
-  let t1;
-  if ($[1] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = () => {
-      log(ref.current.value);
-    };
-    $[1] = t1;
-  } else {
-    t1 = $[1];
-  }
-  useEffect(t1);
-  let t2;
-  if ($[2] !== state) {
-    t2 = <CustomInput value={state} onChange={onChange} ref={ref} />;
-    $[2] = state;
-    $[3] = t2;
-  } else {
-    t2 = $[3];
-  }
-  return t2;
+  const onChange = undefined;
+
+  return <CustomInput value={state} onChange={onChange} ref={ref} />;
 }
 
 ```

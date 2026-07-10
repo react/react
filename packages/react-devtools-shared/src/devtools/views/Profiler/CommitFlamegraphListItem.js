@@ -132,6 +132,6 @@ function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
   );
 }
 
-export default (memo(CommitFlamegraphListItem, areEqual): component(
+export default memo(CommitFlamegraphListItem, areEqual) as component(
   ...props: Props
-));
+);
