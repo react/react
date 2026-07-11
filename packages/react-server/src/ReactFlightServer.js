@@ -624,6 +624,7 @@ export type Request = {
   // doubles through tens of thousands of slots.
   deferredBlocks: Array<Array<string | DeferredReference>>,
   deferredCount: number,
+  writtenChunkLists: Map<string, string>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -751,6 +752,7 @@ function RequestInstance(
   this.writtenObjects = new WeakMap();
   this.deferredBlocks = [];
   this.deferredCount = 0;
+  this.writtenChunkLists = new Map();
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -4533,14 +4535,54 @@ function emitErrorChunk(
   }
 }
 
+const chunkListJSONCache: WeakMap<
+  $ReadOnlyArray<mixed>,
+  string,
+> = new WeakMap();
+
 function emitImportChunk(
   request: Request,
   id: number,
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
+  let metadata: mixed = clientReferenceMetadata;
+  if (
+    !(__DEV__ && debug) &&
+    isArray(metadata) &&
+    isArray(metadata[1]) &&
+    metadata[1].length > 0
+  ) {
+    // Bundlers put the chunk list at index 1 and modules commonly share
+    // it by value. Outline each distinct list into its own row and refer to
+    // it: import rows are parsed with the regular model reviver, so the
+    // reference resolves like any other. The row goes into the import queue
+    // so it always arrives before the import rows that refer to it. The
+    // manifest is parsed once per server, so each list is stringified once
+    // per process and the request map keys on the cached string, whose hash
+    // V8 also computes only once.
+    const chunks: $ReadOnlyArray<mixed> = metadata[1] as any;
+    let chunksJSON = chunkListJSONCache.get(chunks);
+    if (chunksJSON === undefined) {
+      // $FlowFixMe[incompatible-type] stringify can return null
+      chunksJSON = stringify(chunks) as any;
+      chunkListJSONCache.set(chunks, chunksJSON);
+    }
+    const writtenChunkLists = request.writtenChunkLists;
+    let ref = writtenChunkLists.get(chunksJSON);
+    if (ref === undefined) {
+      request.pendingChunks++;
+      const chunkListId = request.nextChunkId++;
+      const chunkListRow = chunkListId.toString(16) + ':' + chunksJSON + '\n';
+      request.completedImportChunks.push(stringToChunk(chunkListRow));
+      ref = serializeByValueID(chunkListId);
+      writtenChunkLists.set(chunksJSON, ref);
+    }
+    metadata = metadata.slice(0);
+    (metadata as any)[1] = ref;
+  }
   // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
+  const json: string = stringify(metadata);
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
