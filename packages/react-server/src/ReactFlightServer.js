@@ -614,7 +614,16 @@ export type Request = {
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
-  writtenObjects: WeakMap<Reference, string>,
+  writtenObjects: WeakMap<Reference, string | DeferredReference>,
+  // Fixed-size blocks encoding deferred references: entry i holds the
+  // property key at [i] and the parent's entry at [i + 1] within its
+  // block. Leaf values in flat blocks instead of per-object pair records:
+  // registration is the hot path, records would each be a traced
+  // allocation that survives every young collection for the request's
+  // lifetime, and one growable array would recopy its backing store as it
+  // doubles through tens of thousands of slots.
+  deferredBlocks: Array<Array<string | DeferredReference>>,
+  deferredCount: number,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -740,6 +749,8 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.deferredBlocks = [];
+  this.deferredCount = 0;
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -2928,6 +2939,67 @@ function resolveModel(
   return resolved;
 }
 
+// A reference to an object that hasn't needed its path yet: the path
+// string copies the whole parent path, so it's only materialized (and
+// memoized) if the object is actually seen again. The index points into
+// the request's deferred arrays, whose entry holds the property key and
+// the parent's own entry as captured at registration time - so the
+// materialized path is exactly the string that would have been built
+// eagerly, even if the parent's map entry is later replaced (for example
+// when the parent is outlined into its own row).
+type DeferredReference = number;
+
+// Block capacity in slots (two slots per entry). A shift and a mask keep
+// index math on Smis.
+const DEFERRED_BLOCK_SLOTS = 4096;
+
+function registerDeferredReference(
+  request: Request,
+  parentEntry: string | DeferredReference,
+  key: string,
+): DeferredReference {
+  const index = request.deferredCount;
+  request.deferredCount = index + 2;
+  const blockIndex = index >> 12;
+  const offset = index & (DEFERRED_BLOCK_SLOTS - 1);
+  let block = request.deferredBlocks[blockIndex];
+  if (block === undefined) {
+    block = new Array(DEFERRED_BLOCK_SLOTS);
+    request.deferredBlocks.push(block);
+  }
+  block[offset] = key;
+  block[offset + 1] = parentEntry;
+  return index;
+}
+
+function resolveWrittenReference(
+  request: Request,
+  value: Reference,
+  entry: string | DeferredReference,
+): string {
+  if (typeof entry === 'string') {
+    return entry;
+  }
+  // Walk the captured chain iteratively: it can be as long as the model is
+  // deep, and it always ends at a string by construction.
+  const deferredBlocks = request.deferredBlocks;
+  const keys: Array<string> = [];
+  let node: string | DeferredReference = entry;
+  while (typeof node !== 'string') {
+    const block = deferredBlocks[node >> 12];
+    const offset = node & (DEFERRED_BLOCK_SLOTS - 1);
+    keys.push(block[offset] as any);
+    node = block[offset + 1] as any;
+  }
+  let reference: string = node;
+  for (let i = keys.length - 1; i >= 0; i--) {
+    reference = reference + ':' + keys[i];
+  }
+  // Memoize so the next hit on this object is a plain string read.
+  request.writtenObjects.set(value, reference);
+  return reference;
+}
+
 function serializeByValueID(id: number): string {
   return '$' + id.toString(16);
 }
@@ -3617,7 +3689,7 @@ function renderModelDestructive(
   if (typeof value === 'object') {
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        let elementReference = null;
+        let elementReference: null | DeferredReference = null;
         const writtenObjects = request.writtenObjects;
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
@@ -3638,15 +3710,21 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              return typeof existingReference === 'string'
+                ? existingReference
+                : resolveWrittenReference(request, value, existingReference);
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-            const parentReference = writtenObjects.get(parent);
-            if (parentReference !== undefined) {
+            const parentEntry = writtenObjects.get(parent);
+            if (parentEntry !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              elementReference = parentReference + ':' + parentPropertyName;
+              elementReference = registerDeferredReference(
+                request,
+                parentEntry,
+                parentPropertyName,
+              );
               writtenObjects.set(value, elementReference);
             }
           }
@@ -3852,10 +3930,14 @@ function renderModelDestructive(
 
     if (existingReference !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        const materialized =
+          typeof existingReference === 'string'
+            ? existingReference
+            : resolveWrittenReference(request, value, existingReference);
+        if (materialized !== serializeByValueID(task.id)) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          return materialized;
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -3863,12 +3945,14 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        return typeof existingReference === 'string'
+          ? existingReference
+          : resolveWrittenReference(request, value, existingReference);
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-      const parentReference = writtenObjects.get(parent);
-      if (parentReference !== undefined) {
+      const parentEntry = writtenObjects.get(parent);
+      if (parentEntry !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
         // through the property name inside that parent.
         let propertyName = parentPropertyName;
@@ -3891,7 +3975,10 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        writtenObjects.set(
+          value,
+          registerDeferredReference(request, parentEntry, propertyName),
+        );
       }
     }
 
@@ -5009,7 +5096,9 @@ function renderDebugModel(
     if (existingReference !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      return typeof existingReference === 'string'
+        ? existingReference
+        : resolveWrittenReference(request, value, existingReference);
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
