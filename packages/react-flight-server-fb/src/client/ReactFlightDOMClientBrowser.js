@@ -173,7 +173,7 @@ function startReadingFromStream(
     if (done) {
       return onDone();
     }
-    const buffer: Uint8Array = (value: any);
+    const buffer: Uint8Array = value as any;
     processBinaryChunk(response, streamState, buffer);
     return reader.read().then(progress).catch(error);
   }
@@ -240,11 +240,11 @@ function createFromFetch<T>(
           options.debugChannel.readable,
           handleDone,
         );
-        startReadingFromStream(response, (r.body: any), handleDone, r);
+        startReadingFromStream(response, r.body as any, handleDone, r);
       } else {
         startReadingFromStream(
           response,
-          (r.body: any),
+          r.body as any,
           close.bind(null, response),
           r,
         );
@@ -276,10 +276,10 @@ function encodeReply(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort((signal: any).reason);
+        abort((signal as any).reason);
       } else {
         const listener = () => {
-          abort((signal: any).reason);
+          abort((signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

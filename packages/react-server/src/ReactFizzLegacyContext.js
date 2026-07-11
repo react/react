@@ -13,7 +13,7 @@ import getComponentNameFromType from 'shared/getComponentNameFromType';
 let warnedAboutMissingGetChildContext;
 
 if (__DEV__) {
-  warnedAboutMissingGetChildContext = ({}: {[string]: boolean});
+  warnedAboutMissingGetChildContext = {} as {[string]: boolean};
 }
 
 export const emptyContextObject: {} = {};

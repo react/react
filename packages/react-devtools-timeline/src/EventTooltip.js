@@ -293,7 +293,7 @@ const TooltipSchedulingEvent = ({
     case 'schedule-force-update':
       lanes = schedulingEvent.lanes;
       laneLabels = lanes.map(
-        lane => ((data.laneToLabelMap.get(lane): any): string),
+        lane => data.laneToLabelMap.get(lane) as any as string,
       );
       break;
   }
@@ -441,7 +441,7 @@ const TooltipReactMeasure = ({
   const [startTime, stopTime] = getBatchRange(batchUID, data);
 
   const laneLabels = lanes.map(
-    lane => ((data.laneToLabelMap.get(lane): any): string),
+    lane => data.laneToLabelMap.get(lane) as any as string,
   );
 
   return (

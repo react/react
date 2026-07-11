@@ -1266,7 +1266,6 @@ describe('useEffectEvent', () => {
     assertLog(['ContextReader (Effect event): second']);
   });
 
-  // @gate enableActivity
   it('effect events are fresh inside Activity', async () => {
     function Child({value}) {
       const getValue = useEffectEvent(() => {

@@ -20,6 +20,7 @@ import './Page.css';
 
 import transitions from './Transitions.module.css';
 import NestedReveal from './NestedReveal.js';
+import NestedParentExit from './NestedParentExit.js';
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -322,6 +323,7 @@ export default function Page({url, navigate}) {
         </ViewTransition>
       </SwipeRecognizer>
       <NestedReveal />
+      <NestedParentExit />
     </div>
   );
 }

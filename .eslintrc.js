@@ -336,6 +336,7 @@ module.exports = {
         'packages/react-test-renderer/**/*.js',
         'packages/react-debug-tools/**/*.js',
         'packages/react-devtools-extensions/**/*.js',
+        'packages/react-devtools-facade/**/*.js',
         'packages/react-devtools-timeline/**/*.js',
         'packages/react-native-renderer/**/*.js',
         'packages/eslint-plugin-react-hooks/**/*.js',
@@ -567,6 +568,7 @@ module.exports = {
     $Shape: 'readonly',
     CallSite: 'readonly',
     ConsoleTask: 'readonly', // TOOD: Figure out what the official name of this will be.
+    Readonly: 'readonly',
     ReturnType: 'readonly',
     AggregateError: 'readonly',
     AnimationFrameID: 'readonly',
@@ -582,6 +584,8 @@ module.exports = {
     CopyInspectedElementPath: 'readonly',
     DOMHighResTimeStamp: 'readonly',
     EventListener: 'readonly',
+    // Flow type
+    FormDataEntryValue: 'readonly',
     Iterable: 'readonly',
     AsyncIterable: 'readonly',
     $AsyncIterable: 'readonly',
@@ -618,6 +622,7 @@ module.exports = {
     ReadableStreamReader: 'readonly',
     RequestInfo: 'readonly',
     RequestOptions: 'readonly',
+    Required: 'readonly',
     StoreAsGlobal: 'readonly',
     symbol: 'readonly',
     SyntheticEvent: 'readonly',

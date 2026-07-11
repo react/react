@@ -59,7 +59,7 @@ export function findHostInstance_DEPRECATED<TElementType: ElementType>(
     componentOrHandle.canonical &&
     componentOrHandle.canonical.publicInstance
   ) {
-    // $FlowExpectedError[incompatible-return] Can't refine componentOrHandle as a Fabric instance
+    // $FlowExpectedError[incompatible-type] Can't refine componentOrHandle as a Fabric instance
     return componentOrHandle.canonical.publicInstance;
   }
 
@@ -75,7 +75,7 @@ export function findHostInstance_DEPRECATED<TElementType: ElementType>(
 
   // findHostInstance handles legacy vs. Fabric differences correctly
   // $FlowFixMe[incompatible-exact] we need to fix the definition of `HostComponent` to use NativeMethods as an interface, not as a type.
-  // $FlowFixMe[incompatible-return]
+  // $FlowFixMe[incompatible-type]
   return hostInstance;
 }
 
@@ -132,11 +132,11 @@ export function findNodeHandle(componentOrHandle: any): ?number {
   }
 
   if (hostInstance == null) {
-    // $FlowFixMe[incompatible-return] Flow limitation in refining an opaque type
+    // $FlowFixMe[incompatible-type] Flow limitation in refining an opaque type
     return hostInstance;
   }
 
-  // $FlowFixMe[incompatible-call] Necessary when running Flow on the legacy renderer
+  // $FlowFixMe[incompatible-type] Necessary when running Flow on the legacy renderer
   return getNativeTagFromPublicInstance(hostInstance);
 }
 
@@ -178,9 +178,9 @@ export function getNodeFromInternalInstanceHandle(
   internalInstanceHandle: mixed,
 ): ?Node {
   return (
-    // $FlowExpectedError[incompatible-return] internalInstanceHandle is opaque but we need to make an exception here.
+    // $FlowExpectedError[incompatible-type] internalInstanceHandle is opaque but we need to make an exception here.
     internalInstanceHandle &&
-    // $FlowExpectedError[incompatible-return]
+    // $FlowExpectedError[incompatible-type]
     internalInstanceHandle.stateNode &&
     // $FlowExpectedError[incompatible-use]
     internalInstanceHandle.stateNode.node

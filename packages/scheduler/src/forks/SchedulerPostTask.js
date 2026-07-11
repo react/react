@@ -96,6 +96,7 @@ export function unstable_scheduleCallback<T>(
 
   const controller = new TaskController({priority: postTaskPriority});
   const postTaskOptions = {
+    // $FlowFixMe[invalid-compare]
     delay: typeof options === 'object' && options !== null ? options.delay : 0,
     signal: controller.signal,
   };
@@ -127,7 +128,7 @@ function runTask<T>(
     const result = callback(didTimeout_DEPRECATED);
     if (typeof result === 'function') {
       // Assume this is a continuation
-      const continuation: SchedulerCallback<T> = (result: any);
+      const continuation: SchedulerCallback<T> = result as any;
       const continuationOptions = {
         signal: node._controller.signal,
       };

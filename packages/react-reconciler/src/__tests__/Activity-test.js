@@ -1527,7 +1527,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span prop={2} />);
   });
 
-  // @gate enableActivity
   it('getSnapshotBeforeUpdate does not run in hidden trees', async () => {
     let setState;
 
@@ -1607,7 +1606,6 @@ describe('Activity', () => {
     ]);
   });
 
-  // @gate enableActivity
   it('warns if you pass a hidden prop', async () => {
     function App() {
       return (

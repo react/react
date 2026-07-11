@@ -65,13 +65,13 @@ export default function CommitFlamegraphAutoSizer(_: {}): React.Node {
   if (selectedCommitIndex !== null) {
     commitTree = profilingCache.getCommitTree({
       commitIndex: selectedCommitIndex,
-      rootID: ((rootID: any): number),
+      rootID: rootID as any as number,
     });
 
     chartData = profilingCache.getFlamegraphChartData({
       commitIndex: selectedCommitIndex,
       commitTree,
-      rootID: ((rootID: any): number),
+      rootID: rootID as any as number,
     });
   }
 
@@ -83,8 +83,8 @@ export default function CommitFlamegraphAutoSizer(_: {}): React.Node {
             // Force Flow types to avoid checking for `null` here because there's no static proof that
             // by the time this render prop function is called, the values of the `let` variables have not changed.
             <CommitFlamegraph
-              chartData={((chartData: any): ChartData)}
-              commitTree={((commitTree: any): CommitTree)}
+              chartData={chartData as any as ChartData}
+              commitTree={commitTree as any as CommitTree}
               height={height}
               width={width}
             />

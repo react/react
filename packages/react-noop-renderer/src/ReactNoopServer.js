@@ -69,7 +69,7 @@ function write(destination: Destination, buffer: Uint8Array): void {
     return;
   }
   // We assume one chunk is one instance.
-  const instance = JSON.parse(Buffer.from((buffer: any)).toString('utf8'));
+  const instance = JSON.parse(Buffer.from(buffer as any).toString('utf8'));
   if (stack.length === 0) {
     destination.root = instance;
   } else {
@@ -80,6 +80,7 @@ function write(destination: Destination, buffer: Uint8Array): void {
 }
 
 // $FlowFixMe[prop-missing]
+// $FlowFixMe[incompatible-type]
 const ReactNoopServer = ReactFizzServer({
   scheduleMicrotask(callback: () => void) {
     callback();
@@ -176,7 +177,7 @@ const ReactNoopServer = ReactFizzServer({
     destination: Destination,
     renderState: RenderState,
     id: number,
-    // $FlowFixMe[incompatible-return]
+    // $FlowFixMe[incompatible-type]
   ): boolean {
     const parent = destination.stack[destination.stack.length - 1];
     destination.placeholders.set(id, {
@@ -361,6 +362,7 @@ type Options = {
 
 function render(children: React$Element<any>, options?: Options): Destination {
   // $FlowFixMe[prop-missing]
+  // $FlowFixMe[incompatible-type]
   const destination: Destination = {
     root: null,
     placeholders: new Map(),
@@ -371,12 +373,13 @@ function render(children: React$Element<any>, options?: Options): Destination {
     },
   };
   const request = ReactNoopServer.createRequest(
+    // $FlowFixMe[incompatible-type]
     children,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     null,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     null,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     null,
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
@@ -384,7 +387,7 @@ function render(children: React$Element<any>, options?: Options): Destination {
     options ? options.onShellReady : undefined,
   );
   ReactNoopServer.startWork(request);
-  // $FlowFixMe[incompatible-call]
+  // $FlowFixMe[incompatible-type]
   ReactNoopServer.startFlowing(request, destination);
   return destination;
 }

@@ -50,6 +50,7 @@ const internalEventHandlesSetKey = '__reactHandles$' + randomKey;
 const internalRootNodeResourcesKey = '__reactResources$' + randomKey;
 const internalHoistableMarker = '__reactMarker$' + randomKey;
 const internalScrollTimer = '__reactScroll$' + randomKey;
+const internalLoadPendingKey = '__reactLoad$' + randomKey;
 
 type InstanceUnion =
   | Instance
@@ -71,22 +72,22 @@ export function detachDeletedInstance(node: Instance): void {
   if (enableInternalInstanceMap) {
     internalInstanceMap.delete(node);
     internalPropsMap.delete(node);
-    delete (node: any)[internalEventHandlersKey];
-    delete (node: any)[internalEventHandlerListenersKey];
-    delete (node: any)[internalEventHandlesSetKey];
-    delete (node: any)[internalRootNodeResourcesKey];
+    delete (node as any)[internalEventHandlersKey];
+    delete (node as any)[internalEventHandlerListenersKey];
+    delete (node as any)[internalEventHandlesSetKey];
+    delete (node as any)[internalRootNodeResourcesKey];
     if (__DEV__) {
-      delete (node: any)[internalInstanceKey];
+      delete (node as any)[internalInstanceKey];
     }
     return;
   }
   // TODO: This function is only called on host components. I don't think all of
   // these fields are relevant.
-  delete (node: any)[internalInstanceKey];
-  delete (node: any)[internalPropsKey];
-  delete (node: any)[internalEventHandlersKey];
-  delete (node: any)[internalEventHandlerListenersKey];
-  delete (node: any)[internalEventHandlesSetKey];
+  delete (node as any)[internalInstanceKey];
+  delete (node as any)[internalPropsKey];
+  delete (node as any)[internalEventHandlersKey];
+  delete (node as any)[internalEventHandlerListenersKey];
+  delete (node as any)[internalEventHandlesSetKey];
 }
 
 export function precacheFiberNode(
@@ -101,11 +102,11 @@ export function precacheFiberNode(
   if (enableInternalInstanceMap) {
     internalInstanceMap.set(node, hostInst);
     if (__DEV__) {
-      (node: any)[internalInstanceKey] = hostInst;
+      (node as any)[internalInstanceKey] = hostInst;
     }
     return;
   }
-  (node: any)[internalInstanceKey] = hostInst;
+  (node as any)[internalInstanceKey] = hostInst;
 }
 
 export function markContainerAsRoot(hostRoot: Fiber, node: Container): void {
@@ -134,9 +135,9 @@ export function isContainerMarkedAsRoot(node: Container): boolean {
 export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
   let targetInst: void | Fiber;
   if (enableInternalInstanceMap) {
-    targetInst = internalInstanceMap.get(((targetNode: any): InstanceUnion));
+    targetInst = internalInstanceMap.get(targetNode as any as InstanceUnion);
   } else {
-    targetInst = (targetNode: any)[internalInstanceKey];
+    targetInst = (targetNode as any)[internalInstanceKey];
   }
   if (targetInst) {
     // Don't return HostRoot, SuspenseComponent or ActivityComponent here.
@@ -156,12 +157,12 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
     // If it's not a container, we check if it's an instance.
     if (enableInternalInstanceMap) {
       targetInst =
-        (parentNode: any)[internalContainerInstanceKey] ||
-        internalInstanceMap.get(((parentNode: any): InstanceUnion));
+        (parentNode as any)[internalContainerInstanceKey] ||
+        internalInstanceMap.get(parentNode as any as InstanceUnion);
     } else {
       targetInst =
-        (parentNode: any)[internalContainerInstanceKey] ||
-        (parentNode: any)[internalInstanceKey];
+        (parentNode as any)[internalContainerInstanceKey] ||
+        (parentNode as any)[internalInstanceKey];
     }
     if (targetInst) {
       // Since this wasn't the direct target of the event, we might have
@@ -228,12 +229,12 @@ export function getInstanceFromNode(node: Node): Fiber | null {
   let inst: void | null | Fiber;
   if (enableInternalInstanceMap) {
     inst =
-      internalInstanceMap.get(((node: any): InstanceUnion)) ||
-      (node: any)[internalContainerInstanceKey];
+      internalInstanceMap.get(node as any as InstanceUnion) ||
+      (node as any)[internalContainerInstanceKey];
   } else {
     inst =
-      (node: any)[internalInstanceKey] ||
-      (node: any)[internalContainerInstanceKey];
+      (node as any)[internalInstanceKey] ||
+      (node as any)[internalContainerInstanceKey];
   }
   if (inst) {
     const tag = inst.tag;
@@ -287,7 +288,7 @@ export function getFiberCurrentPropsFromNode(
   if (enableInternalInstanceMap) {
     return internalPropsMap.get(node) || null;
   }
-  return (node: any)[internalPropsKey] || null;
+  return (node as any)[internalPropsKey] || null;
 }
 
 export function updateFiberProps(node: Instance, props: Props): void {
@@ -295,15 +296,15 @@ export function updateFiberProps(node: Instance, props: Props): void {
     internalPropsMap.set(node, props);
     return;
   }
-  (node: any)[internalPropsKey] = props;
+  (node as any)[internalPropsKey] = props;
 }
 
 export function getEventListenerSet(node: EventTarget): Set<string> {
-  let elementListenerSet: Set<string> | void = (node: any)[
+  let elementListenerSet: Set<string> | void = (node as any)[
     internalEventHandlersKey
   ];
   if (elementListenerSet === undefined) {
-    elementListenerSet = (node: any)[internalEventHandlersKey] = new Set();
+    elementListenerSet = (node as any)[internalEventHandlersKey] = new Set();
   }
   return elementListenerSet;
 }
@@ -313,9 +314,9 @@ export function getFiberFromScopeInstance(
 ): null | Fiber {
   if (enableScopeAPI) {
     if (enableInternalInstanceMap) {
-      return internalInstanceMap.get(((scope: any): InstanceUnion)) || null;
+      return internalInstanceMap.get(scope as any as InstanceUnion) || null;
     }
-    return (scope: any)[internalInstanceKey] || null;
+    return (scope as any)[internalInstanceKey] || null;
   }
   return null;
 }
@@ -324,22 +325,22 @@ export function setEventHandlerListeners(
   scope: EventTarget | ReactScopeInstance,
   listeners: Set<ReactDOMEventHandleListener>,
 ): void {
-  (scope: any)[internalEventHandlerListenersKey] = listeners;
+  (scope as any)[internalEventHandlerListenersKey] = listeners;
 }
 
 export function getEventHandlerListeners(
   scope: EventTarget | ReactScopeInstance,
 ): null | Set<ReactDOMEventHandleListener> {
-  return (scope: any)[internalEventHandlerListenersKey] || null;
+  return (scope as any)[internalEventHandlerListenersKey] || null;
 }
 
 export function addEventHandleToTarget(
   target: EventTarget | ReactScopeInstance,
   eventHandle: ReactDOMEventHandle,
 ): void {
-  let eventHandles = (target: any)[internalEventHandlesSetKey];
+  let eventHandles = (target as any)[internalEventHandlesSetKey];
   if (eventHandles === undefined) {
-    eventHandles = (target: any)[internalEventHandlesSetKey] = new Set();
+    eventHandles = (target as any)[internalEventHandlesSetKey] = new Set();
   }
   eventHandles.add(eventHandle);
 }
@@ -348,7 +349,7 @@ export function doesTargetHaveEventHandle(
   target: EventTarget | ReactScopeInstance,
   eventHandle: ReactDOMEventHandle,
 ): boolean {
-  const eventHandles = (target: any)[internalEventHandlesSetKey];
+  const eventHandles = (target as any)[internalEventHandlesSetKey];
   if (eventHandles === undefined) {
     return false;
   }
@@ -356,9 +357,9 @@ export function doesTargetHaveEventHandle(
 }
 
 export function getResourcesFromRoot(root: HoistableRoot): RootResources {
-  let resources = (root: any)[internalRootNodeResourcesKey];
+  let resources = (root as any)[internalRootNodeResourcesKey];
   if (!resources) {
-    resources = (root: any)[internalRootNodeResourcesKey] = {
+    resources = (root as any)[internalRootNodeResourcesKey] = {
       hoistableStyles: new Map(),
       hoistableScripts: new Map(),
     };
@@ -367,33 +368,45 @@ export function getResourcesFromRoot(root: HoistableRoot): RootResources {
 }
 
 export function isMarkedHoistable(node: Node): boolean {
-  return !!(node: any)[internalHoistableMarker];
+  return !!(node as any)[internalHoistableMarker];
 }
 
 export function markNodeAsHoistable(node: Node) {
-  (node: any)[internalHoistableMarker] = true;
+  (node as any)[internalHoistableMarker] = true;
 }
 
 export function getScrollEndTimer(node: EventTarget): ?TimeoutID {
-  return (node: any)[internalScrollTimer];
+  return (node as any)[internalScrollTimer];
 }
 
 export function setScrollEndTimer(node: EventTarget, timer: TimeoutID): void {
-  (node: any)[internalScrollTimer] = timer;
+  (node as any)[internalScrollTimer] = timer;
 }
 
 export function clearScrollEndTimer(node: EventTarget): void {
-  (node: any)[internalScrollTimer] = undefined;
+  (node as any)[internalScrollTimer] = undefined;
+}
+
+export function markNodeAsPendingLoad(node: Node): void {
+  (node as any)[internalLoadPendingKey] = true;
+}
+
+export function clearPendingLoadOnNode(node: Node): void {
+  (node as any)[internalLoadPendingKey] = undefined;
+}
+
+export function isNodePendingLoad(node: Node): boolean {
+  return (node as any)[internalLoadPendingKey] === true;
 }
 
 export function isOwnedInstance(node: Node): boolean {
   if (enableInternalInstanceMap) {
     return !!(
-      (node: any)[internalHoistableMarker] ||
-      internalInstanceMap.has((node: any))
+      (node as any)[internalHoistableMarker] ||
+      internalInstanceMap.has(node as any)
     );
   }
   return !!(
-    (node: any)[internalHoistableMarker] || (node: any)[internalInstanceKey]
+    (node as any)[internalHoistableMarker] || (node as any)[internalInstanceKey]
   );
 }

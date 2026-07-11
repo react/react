@@ -7,11 +7,17 @@
  * @flow
  */
 
+import typeof {
+  SyntheticEvent,
+  SyntheticKeyboardEvent,
+} from 'react-dom-bindings/src/events/SyntheticEvent';
+
 import * as React from 'react';
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import Button from './Button';
 import ButtonIcon from './ButtonIcon';
 import Icon from './Icon';
+import AutoSizeInput from './Components/NativeStyleEditor/AutoSizeInput';
 
 import styles from './SearchInput.css';
 
@@ -20,6 +26,7 @@ type Props = {
   goToNextResult: () => void,
   goToPreviousResult: () => void,
   onClose?: () => void,
+  goToResult: (index: number) => void,
   placeholder: string,
   search: (text: string) => void,
   searchIndex: number,
@@ -33,6 +40,7 @@ export default function SearchInput({
   goToNextResult,
   goToPreviousResult,
   onClose,
+  goToResult,
   placeholder,
   search,
   searchIndex,
@@ -41,6 +49,37 @@ export default function SearchInput({
   testName,
 }: Props): React.Node {
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const [indexDraft, setIndexDraft] = useState<string | null>(null);
+  const currentResultNumber = Math.min(searchIndex + 1, searchResultsCount);
+  const indexValue =
+    indexDraft !== null ? indexDraft : String(currentResultNumber);
+
+  const handleIndexChange = (event: SyntheticEvent) => {
+    // Only digits are meaningful here; strip anything else as it's typed.
+    const raw = event.currentTarget.value.replace(/[^0-9]/g, '');
+
+    if (raw === '' || searchResultsCount === 0) {
+      setIndexDraft(raw);
+      return;
+    }
+
+    // Clamp into [1, searchResultsCount] so the field never displays an
+    // out-of-range value, then live-preview by scrolling to that result.
+    const clamped = Math.max(
+      1,
+      Math.min(parseInt(raw, 10), searchResultsCount),
+    );
+    setIndexDraft(String(clamped));
+    goToResult(clamped - 1);
+  };
+  const handleIndexBlur = () => setIndexDraft(null);
+  const handleIndexKeyDown = (event: SyntheticKeyboardEvent) => {
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  };
 
   const resetSearch = () => search('');
 
@@ -111,7 +150,21 @@ export default function SearchInput({
           <span
             className={styles.IndexLabel}
             data-testname={testName ? `${testName}-ResultsCount` : undefined}>
-            {Math.min(searchIndex + 1, searchResultsCount)} |{' '}
+            <AutoSizeInput
+              className={styles.IndexInput}
+              testName={testName ? `${testName}-ResultIndexInput` : undefined}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              aria-label="Go to search result number"
+              title="Go to search result number"
+              disabled={searchResultsCount === 0}
+              onBlur={handleIndexBlur}
+              onChange={handleIndexChange}
+              onKeyDown={handleIndexKeyDown}
+              value={indexValue}
+            />
+            {' | '}
             {searchResultsCount}
           </span>
           <div className={styles.LeftVRule} />

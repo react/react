@@ -99,7 +99,7 @@ export type Context = {
 };
 
 const ProfilerContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 ProfilerContext.displayName = 'ProfilerContext';
 
@@ -250,12 +250,12 @@ function ProfilerContextController({children}: Props): React.Node {
   // Always check didRecordCommits before using commitData or filteredCommitIndices.
   const commitData = useMemo(() => {
     if (!didRecordCommits || rootID === null || profilingData === null) {
-      return ([]: Array<CommitDataFrontend>);
+      return [] as Array<CommitDataFrontend>;
     }
     const dataForRoot = profilingData.dataForRoots.get(rootID);
     return dataForRoot
       ? dataForRoot.commitData
-      : ([]: Array<CommitDataFrontend>);
+      : ([] as Array<CommitDataFrontend>);
   }, [didRecordCommits, rootID, profilingData]);
 
   // Commit filtering and navigation

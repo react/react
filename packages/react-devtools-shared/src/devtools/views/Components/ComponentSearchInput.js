@@ -36,11 +36,17 @@ export default function ComponentSearchInput(): React.Node {
     () => transitionDispatch({type: 'GO_TO_PREVIOUS_SEARCH_RESULT'}),
     [transitionDispatch],
   );
+  const goToResult = useCallback(
+    (index: number) =>
+      transitionDispatch({type: 'GO_TO_SEARCH_RESULT', payload: index}),
+    [transitionDispatch],
+  );
 
   return (
     <SearchInput
       goToNextResult={goToNextResult}
       goToPreviousResult={goToPreviousResult}
+      goToResult={goToResult}
       placeholder="Search (text or /regex/)"
       search={search}
       searchIndex={searchIndex}

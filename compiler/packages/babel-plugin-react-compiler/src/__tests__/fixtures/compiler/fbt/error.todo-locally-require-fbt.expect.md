@@ -16,15 +16,17 @@ function Component(props) {
 ```
 Found 1 error:
 
-Invariant: <fbt> tags should be module-level imports
+Todo: Support local variables named `fbt`
 
-error.todo-locally-require-fbt.ts:4:10
-  2 |   const fbt = require('fbt');
+Local variables named `fbt` may conflict with the fbt plugin and are not yet supported.
+
+error.todo-locally-require-fbt.ts:2:8
+  1 | function Component(props) {
+> 2 |   const fbt = require('fbt');
+    |         ^^^ Support local variables named `fbt`
   3 |
-> 4 |   return <fbt desc="Description">{'Text'}</fbt>;
-    |           ^^^ <fbt> tags should be module-level imports
+  4 |   return <fbt desc="Description">{'Text'}</fbt>;
   5 | }
-  6 |
 ```
           
       
