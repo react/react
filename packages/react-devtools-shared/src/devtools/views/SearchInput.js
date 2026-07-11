@@ -100,30 +100,28 @@ export default function SearchInput({
 
   // Auto-focus search input
   useEffect(() => {
-    if (inputRef.current === null) {
+    const input = inputRef.current;
+    if (input === null) {
       return () => {};
     }
 
     if (autoFocus) {
-      inputRef.current.focus();
+      input.focus();
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const {key, metaKey} = event;
       if (key === 'f' && metaKey) {
-        const inputElement = inputRef.current;
-        if (inputElement !== null) {
-          inputElement.focus();
-          event.preventDefault();
-          event.stopPropagation();
-        }
+        input.focus();
+        event.preventDefault();
+        event.stopPropagation();
       }
     };
 
     // It's important to listen to the ownerDocument to support the browser extension.
     // Here we use portals to render individual tabs (e.g. Profiler),
     // and the root document might belong to a different window.
-    const ownerDocumentElement = inputRef.current.ownerDocument.documentElement;
+    const ownerDocumentElement = input.ownerDocument.documentElement;
     if (ownerDocumentElement === null) {
       return;
     }
