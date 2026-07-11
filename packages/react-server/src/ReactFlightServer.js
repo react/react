@@ -587,6 +587,15 @@ const PRERENDER = 21;
 // emitTypedArrayChunk for why, and flushCompletedChunks for how it's read.
 const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
 
+// An object registered for dedupe whose path string hasn't been needed
+// yet: an index into the request's lazy reference arrays, holding the
+// property key and the parent's entry as captured at registration time.
+// Capturing the entry (not the parent object) means the materialized path
+// is exactly the string eager construction would have produced, even if
+// the parent's map entry is later replaced (for example when the parent
+// is outlined into its own row).
+type LazyReference = number;
+
 export type Request = {
   status: 10 | 11 | 12 | 13 | 14,
   type: 20 | 21,
@@ -614,7 +623,12 @@ export type Request = {
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
-  writtenObjects: WeakMap<Reference, string>,
+  writtenObjects: WeakMap<Reference, string | LazyReference>,
+  // Parallel arrays encoding lazy references: entry i holds the property
+  // key in lazyReferenceKeys[i] and the parent's entry in
+  // lazyReferenceParents[i].
+  lazyReferenceKeys: Array<string>,
+  lazyReferenceParents: Array<string | LazyReference>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -740,6 +754,8 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.lazyReferenceKeys = [];
+  this.lazyReferenceParents = [];
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -2928,6 +2944,44 @@ function resolveModel(
   return resolved;
 }
 
+function registerLazyReference(
+  request: Request,
+  parentEntry: string | LazyReference,
+  key: string,
+): LazyReference {
+  const index = request.lazyReferenceKeys.length;
+  request.lazyReferenceKeys.push(key);
+  request.lazyReferenceParents.push(parentEntry);
+  return index;
+}
+
+function resolveWrittenReference(
+  request: Request,
+  value: Reference,
+  entry: string | LazyReference,
+): string {
+  if (typeof entry === 'string') {
+    return entry;
+  }
+  // Walk the captured chain iteratively: it can be as long as the model is
+  // deep, and it always ends at a string by construction.
+  const lazyReferenceKeys = request.lazyReferenceKeys;
+  const lazyReferenceParents = request.lazyReferenceParents;
+  const keys: Array<string> = [];
+  let node: string | LazyReference = entry;
+  while (typeof node !== 'string') {
+    keys.push(lazyReferenceKeys[node]);
+    node = lazyReferenceParents[node];
+  }
+  let reference: string = node;
+  for (let i = keys.length - 1; i >= 0; i--) {
+    reference = reference + ':' + keys[i];
+  }
+  // Memoize so the next hit on this object is a plain string read.
+  request.writtenObjects.set(value, reference);
+  return reference;
+}
+
 function serializeByValueID(id: number): string {
   return '$' + id.toString(16);
 }
@@ -3617,7 +3671,7 @@ function renderModelDestructive(
   if (typeof value === 'object') {
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        let elementReference = null;
+        let elementReference: null | LazyReference = null;
         const writtenObjects = request.writtenObjects;
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
@@ -3638,15 +3692,19 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              return resolveWrittenReference(request, value, existingReference);
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-            const parentReference = writtenObjects.get(parent);
-            if (parentReference !== undefined) {
+            const parentEntry = writtenObjects.get(parent);
+            if (parentEntry !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              elementReference = parentReference + ':' + parentPropertyName;
+              elementReference = registerLazyReference(
+                request,
+                parentEntry,
+                parentPropertyName,
+              );
               writtenObjects.set(value, elementReference);
             }
           }
@@ -3839,7 +3897,7 @@ function renderModelDestructive(
           modelRoot = null;
         } else {
           // We've seen this promise before, so we can just refer to the same result.
-          return existingReference;
+          return resolveWrittenReference(request, value, existingReference);
         }
       }
       // We assume that any object with a .then property is a "Thenable" type,
@@ -3852,10 +3910,15 @@ function renderModelDestructive(
 
     if (existingReference !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        const materialized = resolveWrittenReference(
+          request,
+          value,
+          existingReference,
+        );
+        if (materialized !== serializeByValueID(task.id)) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          return materialized;
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -3863,12 +3926,14 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        return typeof existingReference === 'string'
+          ? existingReference
+          : resolveWrittenReference(request, value, existingReference);
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-      const parentReference = writtenObjects.get(parent);
-      if (parentReference !== undefined) {
+      const parentEntry = writtenObjects.get(parent);
+      if (parentEntry !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
         // through the property name inside that parent.
         let propertyName = parentPropertyName;
@@ -3891,7 +3956,10 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        writtenObjects.set(
+          value,
+          registerLazyReference(request, parentEntry, propertyName),
+        );
       }
     }
 
@@ -5009,7 +5077,7 @@ function renderDebugModel(
     if (existingReference !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      return resolveWrittenReference(request, value, existingReference);
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
