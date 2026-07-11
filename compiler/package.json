@@ -23,6 +23,7 @@
     "eslint-docs": "yarn workspace babel-plugin-react-compiler build && node scripts/build-eslint-docs.js"
   },
   "dependencies": {
+    "form-data": "4.0.4",
     "fs-extra": "^4.0.2",
     "react-is": "0.0.0-experimental-4beb1fd8-20241118"
   },
@@ -46,7 +47,8 @@
     "yargs": "^17.7.2"
   },
   "resolutions": {
-    "@babel/types": "7.26.3"
+    "@babel/types": "7.26.3",
+    "form-data": "4.0.4"
   },
   "packageManager": "yarn@1.22.22"
 }
