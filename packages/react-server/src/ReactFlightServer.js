@@ -2892,40 +2892,90 @@ function resolveModel(
     return rendered;
   }
 
-  if (isArray(rendered)) {
-    const resolved: Array<ReactJSONValue> = [];
-    for (let i = 0; i < rendered.length; i++) {
-      resolved[i] = resolveModel(request, task, rendered, '' + i, rendered[i]);
-    }
-    return resolved;
-  }
+  // The resolved tree is copy-on-write: a copy is allocated only if a child
+  // resolves to something different.
 
-  // Use `{}` for fast properties; `__proto__` is handled below because simple
-  // assignment would hit Object.prototype's setter instead of creating a key.
-  const resolved: {[key: string]: ReactJSONValue} = {} as any;
-  for (const key in rendered) {
-    if (hasOwnProperty.call(rendered, key)) {
+  if (isArray(rendered)) {
+    if (rendered[0] === REACT_ELEMENT_TYPE) {
+      // An element tuple always diverges: the tag slot serializes to '$'.
+      // Skip the identity walk and copy directly.
+      serializedSize += 1;
+      const resolved: Array<ReactJSONValue> = new Array(rendered.length);
+      resolved[0] = '$';
+      for (let idx = 1; idx < rendered.length; idx++) {
+        resolved[idx] = resolveModel(
+          request,
+          task,
+          rendered,
+          '' + idx,
+          rendered[idx],
+        );
+      }
+      return resolved;
+    }
+    for (let i = 0; i < rendered.length; i++) {
+      const child = rendered[i];
       const resolvedValue = resolveModel(
         request,
         task,
         rendered,
-        key,
-        rendered[key],
+        '' + i,
+        child,
       );
-      if (key === __PROTO__) {
-        // Match JSON's ordinary data-property semantics for this legacy key.
-        Object.defineProperty(resolved, key, {
-          value: resolvedValue,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-      } else {
-        resolved[key] = resolvedValue;
+      if (resolvedValue !== child) {
+        const resolved: Array<ReactJSONValue> = rendered.slice() as any;
+        resolved[i] = resolvedValue;
+        for (let idx = i + 1; idx < rendered.length; idx++) {
+          resolved[idx] = resolveModel(
+            request,
+            task,
+            rendered,
+            '' + idx,
+            rendered[idx],
+          );
+        }
+        return resolved;
       }
     }
+    return rendered;
   }
-  return resolved;
+
+  // Object.keys instead of for-in: V8 deopt-cycles the enumerated keyed
+  // loads when the loop body doesn't store to every key.
+  const keys = Object.keys(rendered);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const child = rendered[key];
+    const resolvedValue = resolveModel(request, task, rendered, key, child);
+    if (resolvedValue !== child) {
+      // Use `{}` for fast properties; `__proto__` is handled below because
+      // simple assignment would hit Object.prototype's setter instead of
+      // creating a key.
+      const resolved: {[key: string]: ReactJSONValue} = {} as any;
+      for (let j = 0; j < keys.length; j++) {
+        const k = keys[j];
+        const childValue =
+          j < i
+            ? (rendered[k] as any)
+            : j === i
+              ? resolvedValue
+              : resolveModel(request, task, rendered, k, rendered[k]);
+        if (k === __PROTO__) {
+          // Match JSON's ordinary data-property semantics for this legacy key.
+          Object.defineProperty(resolved, k, {
+            value: childValue,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        } else {
+          resolved[k] = childValue;
+        }
+      }
+      return resolved;
+    }
+  }
+  return rendered;
 }
 
 function serializeByValueID(id: number): string {
