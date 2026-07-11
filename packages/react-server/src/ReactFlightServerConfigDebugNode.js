@@ -334,6 +334,19 @@ export function initAsyncDebugInfo(): void {
       destroy(asyncId: number): void {
         // If we needed the meta data from this operation we should have already
         // extracted it or it should be part of a chain of triggers.
+        const node = pendingOperations.get(asyncId);
+        if (node !== undefined) {
+          // Sever the outgoing references to allow GC of the old ancestry chain.
+          // The node itself may still be alive if referenced by newer nodes via
+          // their previous/awaited fields, but once this async resource is
+          // destroyed, its own ancestors are no longer needed. Without this,
+          // long-lived async workloads (streaming SSR, WebSocket connections,
+          // etc.) would retain an ever-growing linked list of ancestor nodes
+          // through these strong references, causing unbounded memory growth.
+          const n: any = node;
+          n.previous = null;
+          n.awaited = null;
+        }
         pendingOperations.delete(asyncId);
       },
     }).enable();
@@ -345,7 +358,16 @@ export function markAsyncSequenceRootTask(): void {
     // Whatever Task we're running now is spawned by React itself to perform render work.
     // Don't track any cause beyond this task. We may still track I/O that was started outside
     // React but just not the cause of entering the render.
-    pendingOperations.delete(executionAsyncId());
+    const asyncId = executionAsyncId();
+    const node = pendingOperations.get(asyncId);
+    if (node !== undefined) {
+      // Sever outgoing references to allow GC of any ancestry that is no longer
+      // reachable from live nodes.  Same rationale as in the destroy hook.
+      const n: any = node;
+      n.previous = null;
+      n.awaited = null;
+    }
+    pendingOperations.delete(asyncId);
   }
 }
 
