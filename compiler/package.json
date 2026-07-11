@@ -23,6 +23,7 @@
     "eslint-docs": "yarn workspace babel-plugin-react-compiler build && node scripts/build-eslint-docs.js"
   },
   "dependencies": {
+    "basic-ftp": "5.2.0",
     "fs-extra": "^4.0.2",
     "react-is": "0.0.0-experimental-4beb1fd8-20241118"
   },
