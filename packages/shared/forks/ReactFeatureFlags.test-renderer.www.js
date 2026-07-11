@@ -25,6 +25,7 @@ export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
 export const enableScopeAPI: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableEventAPIActivityFix: boolean = false;
 export const enableSuspenseCallback: boolean = true;
 export const disableLegacyContext: boolean = false;
 export const disableLegacyContextForFunctionComponents: boolean = false;

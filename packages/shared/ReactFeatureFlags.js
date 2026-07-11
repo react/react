@@ -55,6 +55,9 @@ export const enableScopeAPI: boolean = false;
 // Experimental Create Event Handle API.
 export const enableCreateEventHandleAPI: boolean = false;
 
+// Fix for Activity blur events in the Event Handle API.
+export const enableEventAPIActivityFix: boolean = false;
+
 // Support legacy Primer support on internal FB www
 export const enableLegacyFBSupport: boolean = false;
 

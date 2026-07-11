@@ -28,6 +28,7 @@ export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableCPUSuspense: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableEventAPIActivityFix: boolean = false;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;

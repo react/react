@@ -41,6 +41,7 @@ export const enableInternalInstanceMap: boolean = __VARIANT__;
 export const enableParallelTransitions: boolean = __VARIANT__;
 
 export const enableEffectEventMutationPhase: boolean = __VARIANT__;
+export const enableEventAPIActivityFix: boolean = __VARIANT__;
 
 // TODO: These flags are hard-coded to the default values used in open source.
 // Update the tests so that they pass in either mode, then set these

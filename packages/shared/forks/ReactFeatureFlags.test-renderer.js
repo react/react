@@ -25,6 +25,7 @@ export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
 export const enableScopeAPI: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableEventAPIActivityFix: boolean = false;
 export const enableSuspenseCallback: boolean = false;
 export const enableTrustedTypesIntegration: boolean = true;
 export const disableTextareaChildren: boolean = false;

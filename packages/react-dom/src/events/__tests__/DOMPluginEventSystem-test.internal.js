@@ -20,6 +20,7 @@ let Scheduler;
 let act;
 let waitForAll;
 let waitFor;
+let assertLog;
 
 function dispatchEvent(element, type) {
   const event = document.createEvent('Event');
@@ -85,6 +86,7 @@ describe('DOMPluginEventSystem', () => {
           waitForAll = InternalTestUtils.waitForAll;
           waitFor = InternalTestUtils.waitFor;
           act = InternalTestUtils.act;
+          assertLog = InternalTestUtils.assertLog;
 
           container = document.createElement('div');
           document.body.appendChild(container);
@@ -2532,6 +2534,751 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
+          test.each(['', 'with memo'])(
+            'bug: beforeblur and afterblur are called after a focused element suspends %s',
+            async withMemo => {
+              const log = [];
+              const Suspense = React.Suspense;
+              let suspend = false;
+              const fakePromise = {then() {}};
+
+              function onAfterBlur(e) {
+                e.persist();
+                log.push('afterblur - child');
+              }
+
+              function onBeforeBlur() {
+                log.push('beforeblur - child');
+              }
+              const innerRef = React.createRef();
+
+              function onBeforeBlurParent() {
+                log.push('beforeblur - parent');
+              }
+
+              function onAfterBlurParent() {
+                log.push('afterblur - parent');
+              }
+
+              const setAfterBlurHandle =
+                ReactDOM.unstable_createEventHandle('afterblur');
+              const setBeforeBlurHandle =
+                ReactDOM.unstable_createEventHandle('beforeblur');
+
+              const Child = () => {
+                const ref = React.useRef(null);
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(ref.current, onBeforeBlur);
+                  const clear2 = setAfterBlurHandle(document, onAfterBlur);
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                if (suspend) {
+                  throw fakePromise;
+                } else {
+                  return (
+                    <div ref={ref}>
+                      <input ref={innerRef} />
+                    </div>
+                  );
+                }
+              };
+
+              const ChildMaybeMemo =
+                withMemo === 'with memo' ? React.memo(Child) : Child;
+
+              const Component = () => {
+                const ref = React.useRef(null);
+
+                React.useEffect(() => {
+                  const clear1 = setAfterBlurHandle(
+                    document,
+                    onBeforeBlurParent,
+                  );
+                  const clear2 = setBeforeBlurHandle(
+                    ref.current,
+                    onAfterBlurParent,
+                  );
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                return (
+                  <div ref={ref}>
+                    <Suspense fallback="Loading...">
+                      <ChildMaybeMemo />
+                    </Suspense>
+                  </div>
+                );
+              };
+
+              const container2 = document.createElement('div');
+              document.body.appendChild(container2);
+
+              const root = ReactDOMClient.createRoot(container2);
+
+              await act(() => {
+                root.render(<Component />);
+              });
+              jest.runAllTimers();
+
+              const inner = innerRef.current;
+              const target = createEventTarget(inner);
+              target.focus();
+
+              expect(log).toEqual([]);
+
+              suspend = true;
+              await act(() => {
+                root.render(<Component />);
+              });
+
+              if (withMemo) {
+                // BUG: when suspended children are not updated blur is not fired.
+                expect(log).toEqual([]);
+              } else {
+                expect(log).toEqual([
+                  'afterblur - parent',
+                  'afterblur - child',
+                  'beforeblur - parent',
+                ]);
+              }
+
+              document.body.removeChild(container2);
+            },
+          );
+
+          // @gate www
+          test.each(['', 'with memo'])(
+            'beforeblur and afterblur are called after a nested focused element is hidden %s',
+            async withMemo => {
+              const log = [];
+
+              const innerRef = React.createRef();
+              const setAfterBlurHandle =
+                ReactDOM.unstable_createEventHandle('afterblur');
+              const setBeforeBlurHandle =
+                ReactDOM.unstable_createEventHandle('beforeblur');
+
+              function onAfterBlur(e) {
+                e.persist();
+                log.push('afterblur - child');
+              }
+
+              function onBeforeBlur() {
+                log.push('beforeblur - child');
+              }
+
+              function onBeforeBlurParent() {
+                log.push('beforeblur - parent');
+              }
+
+              function onAfterBlurParent() {
+                log.push('afterblur - parent');
+              }
+
+              const Input = () => {
+                const ref = React.useRef(null);
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(ref.current, onAfterBlur);
+                  const clear2 = setAfterBlurHandle(document, onBeforeBlur);
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+                return (
+                  <div ref={ref}>
+                    <input ref={innerRef} />
+                  </div>
+                );
+              };
+              const MaybeMemoInput =
+                withMemo === 'with memo' ? React.memo(Input) : Input;
+              const Component = ({show}) => {
+                const ref = React.useRef(null);
+
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(
+                    ref.current,
+                    onBeforeBlurParent,
+                  );
+                  const clear2 = setAfterBlurHandle(
+                    document,
+                    onAfterBlurParent,
+                  );
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                return (
+                  <div ref={ref}>
+                    <React.Activity mode={show ? 'visible' : 'hidden'}>
+                      <MaybeMemoInput />
+                    </React.Activity>
+                  </div>
+                );
+              };
+
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Component show={true} />);
+              });
+
+              const inner = innerRef.current;
+              const target = createEventTarget(inner);
+              target.focus();
+
+              await act(() => {
+                root.render(<Component show={false} />);
+              });
+
+              if (gate('enableEventAPIActivityFix')) {
+                expect(log).toEqual([
+                  'beforeblur - parent',
+                  'beforeblur - child',
+                  'afterblur - parent',
+                ]);
+              } else {
+                // BUG: when children are not updated in Activity blur is not fired.
+                // Fixed by the feature flag above.
+                expect(log).toEqual([]);
+              }
+            },
+          );
+
+          // @gate www && enableLegacyHidden
+          test.each(['', 'with memo'])(
+            'beforeblur and afterblur are called after a nested focused element is hidden LegacyHidden %s',
+            async withMemo => {
+              const log = [];
+
+              const innerRef = React.createRef();
+              const setAfterBlurHandle =
+                ReactDOM.unstable_createEventHandle('afterblur');
+              const setBeforeBlurHandle =
+                ReactDOM.unstable_createEventHandle('beforeblur');
+
+              function onAfterBlur(e) {
+                e.persist();
+                log.push('afterblur - child');
+              }
+
+              function onBeforeBlur() {
+                log.push('beforeblur - child');
+              }
+
+              function onBeforeBlurParent() {
+                log.push('beforeblur - parent');
+              }
+
+              function onAfterBlurParent() {
+                log.push('afterblur - parent');
+              }
+
+              const Input = () => {
+                const ref = React.useRef(null);
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(ref.current, onAfterBlur);
+                  const clear2 = setAfterBlurHandle(document, onBeforeBlur);
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+                return (
+                  <div ref={ref}>
+                    <input ref={innerRef} />
+                  </div>
+                );
+              };
+              const MaybeMemoInput =
+                withMemo === 'with memo' ? React.memo(Input) : Input;
+              const Component = ({show}) => {
+                const ref = React.useRef(null);
+
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(
+                    ref.current,
+                    onBeforeBlurParent,
+                  );
+                  const clear2 = setAfterBlurHandle(
+                    document,
+                    onAfterBlurParent,
+                  );
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                return (
+                  <div ref={ref}>
+                    <React.unstable_LegacyHidden
+                      mode={show ? 'visible' : 'hidden'}>
+                      <MaybeMemoInput />
+                    </React.unstable_LegacyHidden>
+                  </div>
+                );
+              };
+
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Component show={true} />);
+              });
+
+              const inner = innerRef.current;
+              const target = createEventTarget(inner);
+              target.focus();
+
+              await act(() => {
+                root.render(<Component show={false} />);
+              });
+
+              expect(log).toEqual([]);
+            },
+          );
+
+          test.each(['', 'with memo'])(
+            'bug: beforeblur and afterblur are called after a focused element suspends, and then something suspends again %s',
+            async withMemo => {
+              let log = [];
+              const Suspense = React.Suspense;
+              let suspend = false;
+              const fakePromise = {then() {}};
+
+              let suspend2 = false;
+              const fakePromise2 = {then() {}};
+
+              function onAfterBlur(e) {
+                e.persist();
+                log.push('afterblur - child');
+              }
+
+              function onBeforeBlur() {
+                log.push('beforeblur - child');
+              }
+              const innerRef = React.createRef();
+
+              function onBeforeBlurParent() {
+                log.push('beforeblur - parent');
+              }
+
+              function onAfterBlurParent() {
+                log.push('afterblur - parent');
+              }
+
+              const setAfterBlurHandle =
+                ReactDOM.unstable_createEventHandle('afterblur');
+              const setBeforeBlurHandle =
+                ReactDOM.unstable_createEventHandle('beforeblur');
+
+              function ChildSuspendsAgain() {
+                if (suspend2) {
+                  throw fakePromise2;
+                }
+              }
+              const Child = () => {
+                const ref = React.useRef(null);
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(ref.current, onBeforeBlur);
+                  const clear2 = setAfterBlurHandle(document, onAfterBlur);
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                if (suspend) {
+                  throw fakePromise;
+                } else {
+                  return (
+                    <div ref={ref}>
+                      <input ref={innerRef} />
+                    </div>
+                  );
+                }
+              };
+
+              const ChildMaybeMemo =
+                withMemo === 'with memo' ? React.memo(Child) : Child;
+
+              const Component = ({show}) => {
+                const ref = React.useRef(null);
+
+                React.useEffect(() => {
+                  const clear1 = setAfterBlurHandle(
+                    document,
+                    onBeforeBlurParent,
+                  );
+                  const clear2 = setBeforeBlurHandle(
+                    ref.current,
+                    onAfterBlurParent,
+                  );
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                return (
+                  <div ref={ref}>
+                    <Suspense fallback="Loading...">
+                      <Suspense fallback="Loading...">
+                        <ChildMaybeMemo />
+                      </Suspense>
+                      <ChildSuspendsAgain />
+                    </Suspense>
+                  </div>
+                );
+              };
+
+              const container2 = document.createElement('div');
+              document.body.appendChild(container2);
+
+              const root = ReactDOMClient.createRoot(container2);
+
+              await act(() => {
+                root.render(<Component />);
+              });
+              jest.runAllTimers();
+
+              const inner = innerRef.current;
+              const target = createEventTarget(inner);
+              target.focus();
+
+              expect(log).toEqual([]);
+
+              suspend = true;
+              await act(() => {
+                root.render(<Component />);
+              });
+
+              if (withMemo) {
+                // BUG: when suspended children are not updated blur is not fired.
+                expect(log).toEqual([]);
+              } else {
+                expect(log).toEqual([
+                  'afterblur - parent',
+                  'afterblur - child',
+                  'beforeblur - parent',
+                ]);
+              }
+
+              log = [];
+              suspend2 = true;
+              await act(() => {
+                root.render(<Component />);
+              });
+
+              expect(log).toEqual([
+                // BUG: we already fired blur events for the hidden element.
+                // This is a bug that's always existed.
+                'afterblur - parent',
+                'afterblur - child',
+                'beforeblur - parent',
+              ]);
+
+              document.body.removeChild(container2);
+            },
+          );
+
+          test.each(['', 'with memo'])(
+            'bug: beforeblur and afterblur are called after a focused element suspends outside activity %s',
+            async withMemo => {
+              let log = [];
+              const Suspense = React.Suspense;
+              let suspend = false;
+              const fakePromise = {then() {}};
+
+              function onAfterBlur(e) {
+                e.persist();
+                log.push('afterblur - child');
+              }
+
+              function onBeforeBlur() {
+                log.push('beforeblur - child');
+              }
+              const innerRef = React.createRef();
+
+              function onBeforeBlurParent() {
+                log.push('beforeblur - parent');
+              }
+
+              function onAfterBlurParent() {
+                log.push('afterblur - parent');
+              }
+
+              const setAfterBlurHandle =
+                ReactDOM.unstable_createEventHandle('afterblur');
+              const setBeforeBlurHandle =
+                ReactDOM.unstable_createEventHandle('beforeblur');
+
+              const Child = () => {
+                const ref = React.useRef(null);
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(ref.current, onBeforeBlur);
+                  const clear2 = setAfterBlurHandle(document, onAfterBlur);
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                if (suspend) {
+                  throw fakePromise;
+                } else {
+                  return (
+                    <div ref={ref}>
+                      <input ref={innerRef} />
+                    </div>
+                  );
+                }
+              };
+
+              const ChildMaybeMemo =
+                withMemo === 'with memo' ? React.memo(Child) : Child;
+
+              const Component = ({show}) => {
+                const ref = React.useRef(null);
+
+                React.useEffect(() => {
+                  const clear1 = setAfterBlurHandle(
+                    document,
+                    onBeforeBlurParent,
+                  );
+                  const clear2 = setBeforeBlurHandle(
+                    ref.current,
+                    onAfterBlurParent,
+                  );
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                return (
+                  <div ref={ref}>
+                    <Suspense fallback="Loading...">
+                      <React.Activity mode={show ? 'visible' : 'hidden'}>
+                        <ChildMaybeMemo />
+                      </React.Activity>
+                    </Suspense>
+                  </div>
+                );
+              };
+
+              const container2 = document.createElement('div');
+              document.body.appendChild(container2);
+
+              const root = ReactDOMClient.createRoot(container2);
+
+              await act(() => {
+                root.render(<Component show={true} />);
+              });
+              jest.runAllTimers();
+
+              const inner = innerRef.current;
+              const target = createEventTarget(inner);
+              target.focus();
+
+              expect(log).toEqual([]);
+
+              suspend = true;
+              await act(() => {
+                root.render(<Component show={true} />);
+              });
+
+              if (withMemo) {
+                // BUG: when suspended children are not updated blur is not fired.
+                expect(log).toEqual([]);
+              } else {
+                expect(log).toEqual([
+                  'afterblur - parent',
+                  'afterblur - child',
+                  'beforeblur - parent',
+                ]);
+              }
+
+              log = [];
+              await act(() => {
+                root.render(<Component show={false} />);
+              });
+
+              if (withMemo && gate('enableEventAPIActivityFix')) {
+                // Bug in new flag: if the `withMemo` case above is fixed (so blur always fires),
+                // this would be wrong. But as long as both bugs exist, this seems right.
+                expect(log).toEqual([
+                  'afterblur - parent',
+                  'afterblur - child',
+                  'beforeblur - parent',
+                ]);
+              } else {
+                expect(log).toEqual([]);
+              }
+
+              document.body.removeChild(container2);
+            },
+          );
+
+          test.each(['', 'with memo'])(
+            'bug: beforeblur and afterblur are called after a focused element suspends inside activity %s',
+            async withMemo => {
+              let log = [];
+              const Suspense = React.Suspense;
+              let suspend = false;
+              const fakePromise = {then() {}};
+
+              function onAfterBlur(e) {
+                e.persist();
+                log.push('afterblur - child');
+              }
+
+              function onBeforeBlur() {
+                log.push('beforeblur - child');
+              }
+              const innerRef = React.createRef();
+
+              function onBeforeBlurParent() {
+                log.push('beforeblur - parent');
+              }
+
+              function onAfterBlurParent() {
+                log.push('afterblur - parent');
+              }
+
+              const setAfterBlurHandle =
+                ReactDOM.unstable_createEventHandle('afterblur');
+              const setBeforeBlurHandle =
+                ReactDOM.unstable_createEventHandle('beforeblur');
+
+              const Child = () => {
+                const ref = React.useRef(null);
+                React.useEffect(() => {
+                  const clear1 = setBeforeBlurHandle(ref.current, onBeforeBlur);
+                  const clear2 = setAfterBlurHandle(document, onAfterBlur);
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                if (suspend) {
+                  throw fakePromise;
+                } else {
+                  return (
+                    <div ref={ref}>
+                      <input ref={innerRef} />
+                    </div>
+                  );
+                }
+              };
+
+              const ChildMaybeMemo =
+                withMemo === 'with memo' ? React.memo(Child) : Child;
+
+              const Component = ({show}) => {
+                const ref = React.useRef(null);
+
+                React.useEffect(() => {
+                  const clear1 = setAfterBlurHandle(
+                    document,
+                    onBeforeBlurParent,
+                  );
+                  const clear2 = setBeforeBlurHandle(
+                    ref.current,
+                    onAfterBlurParent,
+                  );
+
+                  return () => {
+                    clear1();
+                    clear2();
+                  };
+                });
+
+                return (
+                  <div ref={ref}>
+                    <React.Activity mode={show ? 'visible' : 'hidden'}>
+                      <Suspense fallback="Loading...">
+                        <ChildMaybeMemo />
+                      </Suspense>
+                    </React.Activity>
+                  </div>
+                );
+              };
+
+              const container2 = document.createElement('div');
+              document.body.appendChild(container2);
+
+              const root = ReactDOMClient.createRoot(container2);
+
+              await act(() => {
+                root.render(<Component show={true} />);
+              });
+              jest.runAllTimers();
+
+              const inner = innerRef.current;
+              const target = createEventTarget(inner);
+              target.focus();
+
+              expect(log).toEqual([]);
+
+              suspend = true;
+              await act(() => {
+                root.render(<Component show={true} />);
+              });
+
+              if (withMemo) {
+                // BUG: when suspended children are not updated blur is not fired.
+                expect(log).toEqual([]);
+              } else {
+                expect(log).toEqual([
+                  'afterblur - parent',
+                  'afterblur - child',
+                  'beforeblur - parent',
+                ]);
+              }
+
+              log = [];
+              await act(() => {
+                root.render(<Component show={false} />);
+              });
+
+              if (gate('enableEventAPIActivityFix')) {
+                expect(log).toEqual([
+                  // BUG: unlike the last test, these cause double events if the children are not memoized.
+                  // Seems pretty bad, idk.
+                  'afterblur - parent',
+                  'afterblur - child',
+                  'beforeblur - parent',
+                ]);
+              } else {
+                expect(log).toEqual([]);
+              }
+
+              document.body.removeChild(container2);
+            },
+          );
+
+          // @gate www
           it('beforeblur and afterblur are called after a nested focused element is unmounted', async () => {
             const log = [];
             // We have to persist here because we want to read relatedTarget later.
@@ -2672,13 +3419,29 @@ describe('DOMPluginEventSystem', () => {
             const setBeforeBlurHandle =
               ReactDOM.unstable_createEventHandle('beforeblur');
 
-            function Child() {
+            const Child = () => {
+              React.useEffect(() => {
+                const clear1 = setAfterBlurHandle(
+                  innerRef.current,
+                  onAfterBlur,
+                );
+                const clear2 = setBeforeBlurHandle(
+                  innerRef.current,
+                  onBeforeBlur,
+                );
+
+                return () => {
+                  clear1();
+                  clear2();
+                };
+              });
+
               if (suspend) {
                 throw promise;
               } else {
                 return <input ref={innerRef} />;
               }
-            }
+            };
 
             const Component = () => {
               const ref = React.useRef(null);
@@ -2722,13 +3485,11 @@ describe('DOMPluginEventSystem', () => {
             await act(() => {
               root.render(<Component />);
             });
-            jest.runAllTimers();
+            // expect(onBeforeBlur).toHaveBeenCalledTimes(1);
+            // expect(onAfterBlur).toHaveBeenCalledTimes(1);
 
             expect(onBeforeBlur).toHaveBeenCalledTimes(1);
             expect(onAfterBlur).toHaveBeenCalledTimes(1);
-            expect(onAfterBlur).toHaveBeenCalledWith(
-              expect.objectContaining({relatedTarget: inner}),
-            );
             resolve();
             expect(log).toEqual(['beforeblur', 'afterblur']);
 

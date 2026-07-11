@@ -47,6 +47,7 @@ import type {ViewTransitionState} from './ReactFiberViewTransitionComponent';
 import {
   alwaysThrottleRetries,
   enableCreateEventHandleAPI,
+  enableEventAPIActivityFix,
   enableEffectEventMutationPhase,
   enableProfilerTimer,
   enableProfilerCommitHooks,
@@ -482,7 +483,6 @@ function commitBeforeMutationEffectsOnFiber(
     if (!shouldFireAfterActiveInstanceBlur && focusedInstanceHandle !== null) {
       // Check to see if the focused element was inside of a hidden (Suspense) subtree.
       // TODO: Move this out of the hot path using a dedicated effect tag.
-      // TODO: This should consider Offscreen in general and not just SuspenseComponent.
       if (
         finishedWork.tag === SuspenseComponent &&
         isSuspenseBoundaryBeingHidden(current, finishedWork) &&
@@ -491,6 +491,21 @@ function commitBeforeMutationEffectsOnFiber(
       ) {
         shouldFireAfterActiveInstanceBlur = true;
         beforeActiveInstanceBlur(finishedWork);
+      }
+
+      // Check if an OffscreenComponent (Activity) is being hidden with focus inside.
+      if (enableEventAPIActivityFix) {
+        if (
+          finishedWork.tag === OffscreenComponent &&
+          current !== null &&
+          current.memoizedState === null && // was visible
+          finishedWork.memoizedState !== null && // now hidden
+          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          doesFiberContain(finishedWork, focusedInstanceHandle)
+        ) {
+          shouldFireAfterActiveInstanceBlur = true;
+          beforeActiveInstanceBlur(finishedWork);
+        }
       }
     }
   }
