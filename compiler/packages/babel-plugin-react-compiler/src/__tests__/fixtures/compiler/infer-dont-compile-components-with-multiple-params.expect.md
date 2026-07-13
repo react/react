@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 // Takes multiple parameters - not a component!
 function Component(foo, bar) {
   return <div />;
@@ -18,7 +18,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 // Takes multiple parameters - not a component!
 function Component(foo, bar) {
   return <div />;

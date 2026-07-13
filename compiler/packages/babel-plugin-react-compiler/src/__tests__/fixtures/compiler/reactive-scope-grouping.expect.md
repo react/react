@@ -37,6 +37,7 @@ function foo() {
   } else {
     x = $[0];
   }
+
   return x;
 }
 

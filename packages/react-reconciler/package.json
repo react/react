@@ -1,12 +1,12 @@
 {
   "name": "react-reconciler",
   "description": "React package for creating custom renderers.",
-  "version": "0.32.0",
+  "version": "0.34.0",
   "keywords": [
     "react"
   ],
   "homepage": "https://react.dev/",
-  "bugs": "https://github.com/facebook/react/issues",
+  "bugs": "https://github.com/react/react/issues",
   "license": "MIT",
   "files": [
     "LICENSE",
@@ -19,16 +19,16 @@
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-reconciler"
   },
   "engines": {
     "node": ">=0.10.0"
   },
   "peerDependencies": {
-    "react": "^19.1.0"
+    "react": "^19.3.0"
   },
   "dependencies": {
-    "scheduler": "^0.26.0"
+    "scheduler": "^0.28.0"
   }
 }

@@ -39,14 +39,11 @@ function hoisting() {
     const onClick = function onClick() {
       return bar.baz;
     };
-
     const onClick2 = function onClick2() {
       return bar[baz];
     };
-
     const baz = "baz";
     const bar = { baz: 1 };
-
     t0 = (
       <Stringify onClick={onClick} onClick2={onClick2} shouldInvokeFns={true} />
     );

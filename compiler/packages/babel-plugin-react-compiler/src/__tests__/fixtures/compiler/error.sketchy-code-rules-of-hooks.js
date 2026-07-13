@@ -1,3 +1,4 @@
+// @validateExhaustiveMemoizationDependencies:false
 /* eslint-disable react-hooks/rules-of-hooks */
 function lowercasecomponent() {
   const x = [];

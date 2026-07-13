@@ -1,5 +1,4 @@
-import { c as _c } from "react/compiler-runtime"; // 
-@compilationMode:"all"
+import { c as _c } from "react/compiler-runtime"; // @compilationMode:"all"
 function nonReactFn() {
   const $ = _c(1);
   let t0;

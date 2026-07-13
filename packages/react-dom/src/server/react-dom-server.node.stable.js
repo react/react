@@ -10,6 +10,13 @@
 export {
   renderToPipeableStream,
   renderToReadableStream,
+  resume,
+  resumeToPipeableStream,
   version,
 } from './ReactDOMFizzServerNode.js';
-export {prerenderToNodeStream, prerender} from './ReactDOMFizzStaticNode.js';
+export {
+  prerenderToNodeStream,
+  prerender,
+  resumeAndPrerender,
+  resumeAndPrerenderToNodeStream,
+} from './ReactDOMFizzStaticNode.js';

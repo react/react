@@ -17,6 +17,7 @@ let TogglingComponent;
 let act;
 let Scheduler;
 let assertLog;
+let assertConsoleErrorDev;
 
 let container;
 
@@ -34,6 +35,7 @@ describe('ReactEmptyComponent', () => {
     const InternalTestUtils = require('internal-test-utils');
     act = InternalTestUtils.act;
     assertLog = InternalTestUtils.assertLog;
+    assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
 
     container = document.createElement('div');
 
@@ -175,6 +177,17 @@ describe('ReactEmptyComponent', () => {
         });
       }).not.toThrow();
 
+      expect(container.innerHTML).toBe('<script></script>');
+      if (gate('enableTrustedTypesIntegration')) {
+        assertConsoleErrorDev([
+          'Encountered a script tag while rendering React component. ' +
+            'Scripts inside React components are never executed when rendering on the client. ' +
+            'Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).\n' +
+            '     in script (at **)\n' +
+            '     in TogglingComponent (at **)',
+        ]);
+      }
+
       const container2 = document.createElement('div');
       const root2 = ReactDOMClient.createRoot(container2);
       expect(() => {
@@ -189,6 +202,7 @@ describe('ReactEmptyComponent', () => {
         'mount SCRIPT',
         'update undefined',
       ]);
+      expect(container2.innerHTML).toBe('');
     });
 
     it(

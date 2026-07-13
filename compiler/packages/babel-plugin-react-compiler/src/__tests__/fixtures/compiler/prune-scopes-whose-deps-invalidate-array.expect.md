@@ -32,6 +32,7 @@ function Component(props) {
   x.push(props.value);
 
   const y = [x];
+
   return [y];
 }
 

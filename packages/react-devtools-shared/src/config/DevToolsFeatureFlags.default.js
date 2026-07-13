@@ -13,6 +13,7 @@
  * It should always be imported from "react-devtools-feature-flags".
  ************************************************************************/
 
+export const enableActivitySlices: boolean = __DEV__;
 export const enableLogger: boolean = false;
 export const enableStyleXFeatures: boolean = false;
 export const isInternalFacebookBuild: boolean = false;

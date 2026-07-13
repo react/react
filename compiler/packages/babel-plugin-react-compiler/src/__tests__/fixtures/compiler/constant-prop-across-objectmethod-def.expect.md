@@ -37,6 +37,7 @@ function Component() {
   const obj = { method() {} };
 
   identity(obj);
+
   return 4;
 }
 

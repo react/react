@@ -12,6 +12,28 @@ import {Err, Ok, Result} from './Utils/Result';
 import {assertExhaustive} from './Utils/utils';
 import invariant from 'invariant';
 
+// Number of context lines to display above the source of an error
+const CODEFRAME_LINES_ABOVE = 2;
+// Number of context lines to display below the source of an error
+const CODEFRAME_LINES_BELOW = 3;
+/*
+ * Max number of lines for the _source_ of an error, before we abbreviate
+ * the display of the source portion
+ */
+const CODEFRAME_MAX_LINES = 10;
+/*
+ * When the error source exceeds the above threshold, how many lines of
+ * the source should be displayed? We show:
+ * - CODEFRAME_LINES_ABOVE context lines
+ * - CODEFRAME_ABBREVIATED_SOURCE_LINES of the error
+ * - '...' ellipsis
+ * - CODEFRAME_ABBREVIATED_SOURCE_LINES of the error
+ * - CODEFRAME_LINES_BELOW context lines
+ *
+ * This value must be at least 2 or else we'll cut off important parts of the error message
+ */
+const CODEFRAME_ABBREVIATED_SOURCE_LINES = 5;
+
 export enum ErrorSeverity {
   /**
    * An actionable error that the developer can fix. For example, product code errors should be
@@ -284,16 +306,25 @@ export class CompilerError extends Error {
 
   static invariant(
     condition: unknown,
-    options: Omit<CompilerDiagnosticOptions, 'category'>,
+    options: {
+      reason: CompilerDiagnosticOptions['reason'];
+      description?: CompilerDiagnosticOptions['description'];
+      message?: string | null;
+      loc: SourceLocation;
+    },
   ): asserts condition {
     if (!condition) {
       const errors = new CompilerError();
       errors.pushDiagnostic(
         CompilerDiagnostic.create({
           reason: options.reason,
-          description: options.description,
+          description: options.description ?? null,
           category: ErrorCategory.Invariant,
-        }).withDetails(...options.details),
+        }).withDetails({
+          kind: 'error',
+          loc: options.loc,
+          message: options.message ?? options.reason,
+        }),
       );
       throw errors;
     }
@@ -491,12 +522,12 @@ export class CompilerError extends Error {
   }
 }
 
-function printCodeFrame(
+export function printCodeFrame(
   source: string,
   loc: t.SourceLocation,
   message: string,
 ): string {
-  return codeFrameColumns(
+  const printed = codeFrameColumns(
     source,
     {
       start: {
@@ -510,22 +541,36 @@ function printCodeFrame(
     },
     {
       message,
+      linesAbove: CODEFRAME_LINES_ABOVE,
+      linesBelow: CODEFRAME_LINES_BELOW,
     },
   );
+  const lines = printed.split(/\r?\n/);
+  if (loc.end.line - loc.start.line < CODEFRAME_MAX_LINES) {
+    return printed;
+  }
+  const pipeIndex = lines[0].indexOf('|');
+  return [
+    ...lines.slice(
+      0,
+      CODEFRAME_LINES_ABOVE + CODEFRAME_ABBREVIATED_SOURCE_LINES,
+    ),
+    ' '.repeat(pipeIndex) + '…',
+    ...lines.slice(
+      -(CODEFRAME_LINES_BELOW + CODEFRAME_ABBREVIATED_SOURCE_LINES),
+    ),
+  ].join('\n');
 }
 
 function printErrorSummary(category: ErrorCategory, message: string): string {
   let heading: string;
   switch (category) {
-    case ErrorCategory.AutomaticEffectDependencies:
     case ErrorCategory.CapitalizedCalls:
     case ErrorCategory.Config:
     case ErrorCategory.EffectDerivationsOfState:
     case ErrorCategory.EffectSetState:
     case ErrorCategory.ErrorBoundaries:
-    case ErrorCategory.Factories:
     case ErrorCategory.FBT:
-    case ErrorCategory.Fire:
     case ErrorCategory.Gating:
     case ErrorCategory.Globals:
     case ErrorCategory.Hooks:
@@ -536,7 +581,10 @@ function printErrorSummary(category: ErrorCategory, message: string): string {
     case ErrorCategory.StaticComponents:
     case ErrorCategory.Suppression:
     case ErrorCategory.Syntax:
-    case ErrorCategory.UseMemo: {
+    case ErrorCategory.UseMemo:
+    case ErrorCategory.VoidUseMemo:
+    case ErrorCategory.MemoDependencies:
+    case ErrorCategory.EffectExhaustiveDependencies: {
       heading = 'Error';
       break;
     }
@@ -583,13 +631,17 @@ export enum ErrorCategory {
    */
   UseMemo = 'UseMemo',
   /**
-   * Checking for higher order functions acting as factories for components/hooks
+   * Checking that useMemos always return a value
    */
-  Factories = 'Factories',
+  VoidUseMemo = 'VoidUseMemo',
   /**
    * Checks that manual memoization is preserved
    */
   PreserveManualMemo = 'PreserveManualMemo',
+  /**
+   * Checks for exhaustive useMemo/useCallback dependencies without extraneous values
+   */
+  MemoDependencies = 'MemoDependencies',
   /**
    * Checks for known incompatible libraries
    */
@@ -610,6 +662,10 @@ export enum ErrorCategory {
    * Checks for memoized effect deps
    */
   EffectDependencies = 'EffectDependencies',
+  /**
+   * Checks for exhaustive and extraneous effect dependencies
+   */
+  EffectExhaustiveDependencies = 'EffectExhaustiveDependencies',
   /**
    * Checks for no setState in effect bodies
    */
@@ -656,17 +712,24 @@ export enum ErrorCategory {
    */
   Suppression = 'Suppression',
   /**
-   * Issues with auto deps
-   */
-  AutomaticEffectDependencies = 'AutomaticEffectDependencies',
-  /**
-   * Issues with `fire`
-   */
-  Fire = 'Fire',
-  /**
    * fbt-specific issues
    */
   FBT = 'FBT',
+}
+
+export enum LintRulePreset {
+  /**
+   * Rules that are stable and included in the `recommended` preset.
+   */
+  Recommended = 'recommended',
+  /**
+   * Rules that are more experimental and only included in the `recommended-latest` preset.
+   */
+  RecommendedLatest = 'recommended-latest',
+  /**
+   * Rules that are disabled.
+   */
+  Off = 'off',
 }
 
 export type LintRule = {
@@ -689,15 +752,14 @@ export type LintRule = {
   description: string;
 
   /**
-   * If true, this rule will automatically appear in the default, "recommended" ESLint
-   * rule set. Otherwise it will be part of an `allRules` export that developers can
-   * use to opt-in to showing output of all possible rules.
+   * Configures the preset in which the rule is enabled. If 'off', the rule will not be included in
+   * any preset.
    *
    * NOTE: not all validations are enabled by default! Setting this flag only affects
    * whether a given rule is part of the recommended set. The corresponding validation
    * also should be enabled by default if you want the error to actually show up!
    */
-  recommended: boolean;
+  preset: LintRulePreset;
 };
 
 const RULE_NAME_PATTERN = /^[a-z]+(-[a-z]+)*$/;
@@ -713,16 +775,6 @@ export function getRuleForCategory(category: ErrorCategory): LintRule {
 
 function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
   switch (category) {
-    case ErrorCategory.AutomaticEffectDependencies: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'automatic-effect-dependencies',
-        description:
-          'Verifies that automatic effect dependencies are compiled if opted-in',
-        recommended: false,
-      };
-    }
     case ErrorCategory.CapitalizedCalls: {
       return {
         category,
@@ -730,7 +782,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'capitalized-calls',
         description:
           'Validates against calling capitalized functions/methods instead of using JSX',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.Config: {
@@ -739,7 +791,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'config',
         description: 'Validates the compiler configuration options',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.EffectDependencies: {
@@ -748,7 +800,17 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'memoized-effect-dependencies',
         description: 'Validates that effect dependencies are memoized',
-        recommended: false,
+        preset: LintRulePreset.Off,
+      };
+    }
+    case ErrorCategory.EffectExhaustiveDependencies: {
+      return {
+        category,
+        severity: ErrorSeverity.Error,
+        name: 'exhaustive-effect-dependencies',
+        description:
+          'Validates that effect dependencies are exhaustive and without extraneous values',
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.EffectDerivationsOfState: {
@@ -758,7 +820,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'no-deriving-state-in-effects',
         description:
           'Validates against deriving values from state in an effect',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.EffectSetState: {
@@ -767,8 +829,10 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'set-state-in-effect',
         description:
-          'Validates against calling setState synchronously in an effect, which can lead to re-renders that degrade performance',
-        recommended: true,
+          'Validates against calling setState synchronously in an effect. ' +
+          'This can indicate non-local derived data, a derived event pattern, or ' +
+          'improper external data synchronization.',
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.ErrorBoundaries: {
@@ -778,18 +842,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'error-boundaries',
         description:
           'Validates usage of error boundaries instead of try/catch for errors in child components',
-        recommended: true,
-      };
-    }
-    case ErrorCategory.Factories: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'component-hook-factories',
-        description:
-          'Validates against higher order functions defining nested components or hooks. ' +
-          'Components and hooks should be defined at the module level',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.FBT: {
@@ -798,16 +851,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'fbt',
         description: 'Validates usage of fbt',
-        recommended: false,
-      };
-    }
-    case ErrorCategory.Fire: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'fire',
-        description: 'Validates usage of `fire`',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.Gating: {
@@ -817,7 +861,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'gating',
         description:
           'Validates configuration of [gating mode](https://react.dev/reference/react-compiler/gating)',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.Globals: {
@@ -828,7 +872,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         description:
           'Validates against assignment/mutation of globals during render, part of ensuring that ' +
           '[side effects must render outside of render](https://react.dev/reference/rules/components-and-hooks-must-be-pure#side-effects-must-run-outside-of-render)',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.Hooks: {
@@ -842,7 +886,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
          * We need to dedeupe these (moving the remaining bits into the compiler) and then enable
          * this rule.
          */
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.Immutability: {
@@ -852,7 +896,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'immutability',
         description:
           'Validates against mutating props, state, and other values that [are immutable](https://react.dev/reference/rules/components-and-hooks-must-be-pure#props-and-state-are-immutable)',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.Invariant: {
@@ -861,7 +905,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'invariant',
         description: 'Internal invariants',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.PreserveManualMemo: {
@@ -873,7 +917,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
           'Validates that existing manual memoized is preserved by the compiler. ' +
           'React Compiler will only compile components and hooks if its inference ' +
           '[matches or exceeds the existing manual memoization](https://react.dev/learn/react-compiler/introduction#what-should-i-do-about-usememo-usecallback-and-reactmemo)',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.Purity: {
@@ -883,7 +927,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'purity',
         description:
           'Validates that [components/hooks are pure](https://react.dev/reference/rules/components-and-hooks-must-be-pure) by checking that they do not call known-impure functions',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.Refs: {
@@ -893,7 +937,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'refs',
         description:
           'Validates correct usage of refs, not reading/writing during render. See the "pitfalls" section in [`useRef()` usage](https://react.dev/reference/react/useRef#usage)',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.RenderSetState: {
@@ -903,7 +947,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'set-state-in-render',
         description:
           'Validates against setting state during render, which can trigger additional renders and potential infinite render loops',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.StaticComponents: {
@@ -913,7 +957,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'static-components',
         description:
           'Validates that components are static, not recreated every render. Components that are recreated dynamically can reset state and trigger excessive re-rendering',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.Suppression: {
@@ -922,7 +966,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'rule-suppression',
         description: 'Validates against suppression of other rules',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.Syntax: {
@@ -931,7 +975,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Error,
         name: 'syntax',
         description: 'Validates against invalid syntax',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.Todo: {
@@ -940,7 +984,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         severity: ErrorSeverity.Hint,
         name: 'todo',
         description: 'Unimplemented features',
-        recommended: false,
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.UnsupportedSyntax: {
@@ -950,7 +994,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'unsupported-syntax',
         description:
           'Validates against syntax that we do not plan to support in React Compiler',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     case ErrorCategory.UseMemo: {
@@ -960,7 +1004,35 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'use-memo',
         description:
           'Validates usage of the useMemo() hook against common mistakes. See [`useMemo()` docs](https://react.dev/reference/react/useMemo) for more information.',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
+      };
+    }
+    case ErrorCategory.VoidUseMemo: {
+      return {
+        category,
+        severity: ErrorSeverity.Error,
+        name: 'void-use-memo',
+        description:
+          'Validates that useMemos always return a value and that the result of the useMemo is used by the component/hook. See [`useMemo()` docs](https://react.dev/reference/react/useMemo) for more information.',
+        preset: LintRulePreset.RecommendedLatest,
+      };
+    }
+    case ErrorCategory.MemoDependencies: {
+      return {
+        category,
+        severity: ErrorSeverity.Error,
+        name: 'memo-dependencies',
+        description:
+          'Validates that useMemo() and useCallback() specify comprehensive dependencies without extraneous values. See [`useMemo()` docs](https://react.dev/reference/react/useMemo) for more information.',
+        /**
+         * TODO: the "MemoDependencies" rule largely reimplements the "exhaustive-deps" non-compiler rule,
+         * allowing the compiler to ensure it does not regress change behavior due to different dependencies.
+         * We previously relied on the source having ESLint suppressions for any exhaustive-deps violations,
+         * but it's more reliable to verify it within the compiler.
+         *
+         * Long-term we should de-duplicate these implementations.
+         */
+        preset: LintRulePreset.Off,
       };
     }
     case ErrorCategory.IncompatibleLibrary: {
@@ -970,7 +1042,7 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         name: 'incompatible-library',
         description:
           'Validates against usage of libraries which are incompatible with memoization (manual or automatic)',
-        recommended: true,
+        preset: LintRulePreset.Recommended,
       };
     }
     default: {

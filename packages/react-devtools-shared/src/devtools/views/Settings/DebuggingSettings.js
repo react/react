@@ -36,6 +36,10 @@ export default function DebuggingSettings({
     useState(usedHookSettings.hideConsoleLogsInStrictMode);
   const [showInlineWarningsAndErrors, setShowInlineWarningsAndErrors] =
     useState(usedHookSettings.showInlineWarningsAndErrors);
+  const [
+    disableSecondConsoleLogDimmingInStrictMode,
+    setDisableSecondConsoleLogDimmingInStrictMode,
+  ] = useState(usedHookSettings.disableSecondConsoleLogDimmingInStrictMode);
 
   useEffect(() => {
     store.setShouldShowWarningsAndErrors(showInlineWarningsAndErrors);
@@ -47,6 +51,7 @@ export default function DebuggingSettings({
       breakOnConsoleErrors,
       showInlineWarningsAndErrors,
       hideConsoleLogsInStrictMode,
+      disableSecondConsoleLogDimmingInStrictMode,
     });
   }, [
     store,
@@ -54,6 +59,7 @@ export default function DebuggingSettings({
     breakOnConsoleErrors,
     showInlineWarningsAndErrors,
     hideConsoleLogsInStrictMode,
+    disableSecondConsoleLogDimmingInStrictMode,
   ]);
 
   return (
@@ -105,12 +111,49 @@ export default function DebuggingSettings({
           <input
             type="checkbox"
             checked={hideConsoleLogsInStrictMode}
-            onChange={({currentTarget}) =>
-              setHideConsoleLogsInStrictMode(currentTarget.checked)
-            }
+            onChange={({currentTarget}) => {
+              setHideConsoleLogsInStrictMode(currentTarget.checked);
+              if (currentTarget.checked) {
+                setDisableSecondConsoleLogDimmingInStrictMode(false);
+              }
+            }}
             className={styles.SettingRowCheckbox}
           />
           Hide logs during additional invocations in&nbsp;
+          <a
+            className={styles.StrictModeLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            href="https://react.dev/reference/react/StrictMode">
+            Strict Mode
+          </a>
+        </label>
+      </div>
+
+      <div
+        className={
+          hideConsoleLogsInStrictMode
+            ? `${styles.SettingDisabled} ${styles.SettingWrapper}`
+            : styles.SettingWrapper
+        }>
+        <label
+          className={
+            hideConsoleLogsInStrictMode
+              ? `${styles.SettingDisabled} ${styles.SettingRow}`
+              : styles.SettingRow
+          }>
+          <input
+            type="checkbox"
+            checked={disableSecondConsoleLogDimmingInStrictMode}
+            disabled={hideConsoleLogsInStrictMode}
+            onChange={({currentTarget}) =>
+              setDisableSecondConsoleLogDimmingInStrictMode(
+                currentTarget.checked,
+              )
+            }
+            className={styles.SettingRowCheckbox}
+          />
+          Disable log dimming during additional invocations in&nbsp;
           <a
             className={styles.StrictModeLink}
             target="_blank"

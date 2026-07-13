@@ -4,15 +4,19 @@
 ```javascript
 // @enableNameAnonymousFunctions
 
-import {useEffect} from 'react';
+import {useCallback, useEffect} from 'react';
 import {identity, Stringify, useIdentity} from 'shared-runtime';
 import * as SharedRuntime from 'shared-runtime';
 
 function Component(props) {
   function named() {
     const inner = () => props.named;
-    return inner();
+    const innerIdentity = identity(() => props.named);
+    return inner(innerIdentity());
   }
+  const callback = useCallback(() => {
+    return 'ok';
+  }, []);
   const namedVariable = function () {
     return props.namedVariable;
   };
@@ -30,6 +34,7 @@ function Component(props) {
   return (
     <>
       {named()}
+      {callback()}
       {namedVariable()}
       {methodCall()}
       {call()}
@@ -63,7 +68,7 @@ export const TODO_FIXTURE_ENTRYPOINT = {
 ```javascript
 import { c as _c } from "react/compiler-runtime"; // @enableNameAnonymousFunctions
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { identity, Stringify, useIdentity } from "shared-runtime";
 import * as SharedRuntime from "shared-runtime";
 
@@ -75,7 +80,12 @@ function Component(props) {
       const inner = { "Component[named > inner]": () => props.named }[
         "Component[named > inner]"
       ];
-      return inner();
+      const innerIdentity = identity(
+        { "Component[named > identity()]": () => props.named }[
+          "Component[named > identity()]"
+        ],
+      );
+      return inner(innerIdentity());
     };
     $[0] = props.named;
     $[1] = t0;
@@ -83,6 +93,8 @@ function Component(props) {
     t0 = $[1];
   }
   const named = t0;
+
+  const callback = _ComponentCallback;
   let t1;
   if ($[2] !== props.namedVariable) {
     t1 = {
@@ -197,57 +209,62 @@ function Component(props) {
   } else {
     t9 = $[18];
   }
-  let t10;
+  const t10 = callback();
+  let t11;
   if ($[19] !== namedVariable) {
-    t10 = namedVariable();
+    t11 = namedVariable();
     $[19] = namedVariable;
-    $[20] = t10;
+    $[20] = t11;
   } else {
-    t10 = $[20];
+    t11 = $[20];
   }
-  const t11 = methodCall();
-  const t12 = call();
-  let t13;
-  if ($[21] !== hookArgument) {
-    t13 = hookArgument();
-    $[21] = hookArgument;
-    $[22] = t13;
-  } else {
-    t13 = $[22];
-  }
+  const t12 = methodCall();
+  const t13 = call();
   let t14;
+  if ($[21] !== hookArgument) {
+    t14 = hookArgument();
+    $[21] = hookArgument;
+    $[22] = t14;
+  } else {
+    t14 = $[22];
+  }
+  let t15;
   if (
     $[23] !== builtinElementAttr ||
     $[24] !== namedElementAttr ||
-    $[25] !== t10 ||
-    $[26] !== t11 ||
-    $[27] !== t12 ||
-    $[28] !== t13 ||
+    $[25] !== t11 ||
+    $[26] !== t12 ||
+    $[27] !== t13 ||
+    $[28] !== t14 ||
     $[29] !== t9
   ) {
-    t14 = (
+    t15 = (
       <>
         {t9}
         {t10}
         {t11}
         {t12}
+        {t13}
         {builtinElementAttr}
         {namedElementAttr}
-        {t13}
+        {t14}
       </>
     );
     $[23] = builtinElementAttr;
     $[24] = namedElementAttr;
-    $[25] = t10;
-    $[26] = t11;
-    $[27] = t12;
-    $[28] = t13;
+    $[25] = t11;
+    $[26] = t12;
+    $[27] = t13;
+    $[28] = t14;
     $[29] = t9;
-    $[30] = t14;
+    $[30] = t15;
   } else {
-    t14 = $[30];
+    t15 = $[30];
   }
-  return t14;
+  return t15;
+}
+function _ComponentCallback() {
+  return "ok";
 }
 
 export const TODO_FIXTURE_ENTRYPOINT = {

@@ -17,15 +17,8 @@ import {
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import {HostComponent} from 'react-reconciler/src/ReactWorkTags';
 // Module provided by RN:
-import {
-  UIManager,
-  getNodeFromPublicInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
-import {getClosestInstanceFromNode} from './ReactNativeComponentTree';
-import {
-  getNodeFromInternalInstanceHandle,
-  findNodeHandle,
-} from './ReactNativePublicCompat';
+import {getNodeFromPublicInstance} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import {getNodeFromInternalInstanceHandle} from './ReactNativePublicCompat';
 import {getStackByFiberInDevAndProd} from 'react-reconciler/src/ReactFiberComponentStack';
 
 let getInspectorDataForInstance: (
@@ -43,7 +36,6 @@ if (__DEV__) {
         return {
           props: getHostProps(fiber),
           measure: callback => {
-            // If this is Fabric, we'll find a shadow node and use that to measure.
             const hostFiber = findCurrentHostFiber(fiber);
             const node =
               hostFiber != null &&
@@ -52,29 +44,11 @@ if (__DEV__) {
 
             if (node) {
               nativeFabricUIManager.measure(node, callback);
-            } else {
-              return UIManager.measure(getHostNode(fiber), callback);
             }
           },
         };
       },
     }));
-  };
-
-  const getHostNode = function (fiber: Fiber | null) {
-    let hostNode;
-    // look for children first for the hostNode
-    // as composite fibers do not have a hostNode
-    while (fiber) {
-      if (fiber.stateNode !== null && fiber.tag === HostComponent) {
-        hostNode = findNodeHandle(fiber.stateNode);
-      }
-      if (hostNode) {
-        return hostNode;
-      }
-      fiber = fiber.child;
-    }
-    return null;
   };
 
   const getHostProps = function (fiber: Fiber) {
@@ -149,22 +123,11 @@ if (__DEV__) {
     hierarchy.unshift(instance);
     const owner = instance._debugOwner;
     if (owner != null && typeof owner.tag === 'number') {
-      traverseOwnerTreeUp(hierarchy, (owner: any));
+      traverseOwnerTreeUp(hierarchy, owner as any);
     } else {
       // TODO: Traverse Server Components owners.
     }
   };
-}
-
-function getInspectorDataForViewTag(viewTag: number): InspectorData {
-  if (__DEV__) {
-    const closestInstance = getClosestInstanceFromNode(viewTag);
-    return getInspectorDataForInstance(closestInstance);
-  } else {
-    throw new Error(
-      'getInspectorDataForViewTag() is not available in production',
-    );
-  }
 }
 
 function getInspectorDataForViewAtPoint(
@@ -222,25 +185,6 @@ function getInspectorDataForViewAtPoint(
           );
         },
       );
-    } else if (inspectedView._internalFiberInstanceHandleDEV != null) {
-      // For Paper we fall back to the old strategy using the React tag.
-      UIManager.findSubviewIn(
-        findNodeHandle(inspectedView),
-        [locationX, locationY],
-        (nativeViewTag, left, top, width, height) => {
-          const inspectorData = getInspectorDataForInstance(
-            getClosestInstanceFromNode(nativeViewTag),
-          );
-          callback({
-            ...inspectorData,
-            pointerY: locationY,
-            frame: {left, top, width, height},
-            touchedViewTag: nativeViewTag,
-            // $FlowExpectedError[incompatible-call]
-            closestPublicInstance: nativeViewTag,
-          });
-        },
-      );
     } else {
       console.error(
         'getInspectorDataForViewAtPoint expects to receive a host component',
@@ -255,8 +199,4 @@ function getInspectorDataForViewAtPoint(
   }
 }
 
-export {
-  getInspectorDataForInstance,
-  getInspectorDataForViewAtPoint,
-  getInspectorDataForViewTag,
-};
+export {getInspectorDataForInstance, getInspectorDataForViewAtPoint};

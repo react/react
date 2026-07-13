@@ -72,12 +72,18 @@ function intersect(files, patterns) {
   return [...new Set(intersection)];
 }
 
-async function runESLint({onlyChanged, ...options}) {
+async function runESLint({onlyChanged, paths, ...options}) {
   if (typeof onlyChanged !== 'boolean') {
     throw new Error('Pass options.onlyChanged as a boolean.');
   }
+  if (onlyChanged && paths !== undefined) {
+    throw new Error('Cannot specify paths when onlyChanged is true.');
+  }
+  if (paths === undefined || paths.length === 0) {
+    paths = allPaths;
+  }
   const {errorCount, warningCount, output} = await runESLintOnFilesWithOptions(
-    allPaths,
+    paths,
     onlyChanged,
     options
   );

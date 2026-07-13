@@ -131,13 +131,7 @@ export function recursivelyTraverseItems<T, TContext>(
       CompilerError.invariant(disjoint || nested, {
         reason: 'Invalid nesting in program blocks or scopes',
         description: `Items overlap but are not nested: ${maybeParentRange.start}:${maybeParentRange.end}(${currRange.start}:${currRange.end})`,
-        details: [
-          {
-            kind: 'error',
-            loc: GeneratedSource,
-            message: null,
-          },
-        ],
+        loc: GeneratedSource,
       });
       if (disjoint) {
         exit(maybeParent, context);

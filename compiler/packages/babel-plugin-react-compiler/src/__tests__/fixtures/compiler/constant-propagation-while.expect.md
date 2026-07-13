@@ -27,6 +27,7 @@ function foo() {
   while (false) {
     y = y + 1;
   }
+
   return y;
 }
 

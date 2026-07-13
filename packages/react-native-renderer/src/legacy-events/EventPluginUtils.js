@@ -67,6 +67,9 @@ function validateEventDispatches(event) {
  */
 export function executeDispatch(event, listener, inst) {
   event.currentTarget = getNodeFromInstance(inst);
+  const currentEvent = global.event;
+  global.event = event;
+
   try {
     listener(event);
   } catch (error) {
@@ -77,6 +80,8 @@ export function executeDispatch(event, listener, inst) {
       // TODO: Make sure this error gets logged somehow.
     }
   }
+
+  global.event = currentEvent;
   event.currentTarget = null;
 }
 

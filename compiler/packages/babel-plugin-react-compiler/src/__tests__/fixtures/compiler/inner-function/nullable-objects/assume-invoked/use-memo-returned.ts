@@ -1,3 +1,4 @@
+// @validateExhaustiveMemoizationDependencies:false
 import {useState, useMemo} from 'react';
 import {useIdentity} from 'shared-runtime';
 

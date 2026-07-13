@@ -7,7 +7,12 @@
 
 import {Binding, NodePath} from '@babel/traverse';
 import * as t from '@babel/types';
-import {CompilerError, ErrorCategory} from '../CompilerError';
+import {
+  CompilerError,
+  CompilerDiagnostic,
+  CompilerErrorDetail,
+  ErrorCategory,
+} from '../CompilerError';
 import {Environment} from './Environment';
 import {
   BasicBlock,
@@ -110,7 +115,6 @@ export default class HIRBuilder {
   #bindings: Bindings;
   #env: Environment;
   #exceptionHandlerStack: Array<BlockId> = [];
-  errors: CompilerError = new CompilerError();
   /**
    * Traversal context: counts the number of `fbt` tag parents
    * of the current babel node.
@@ -146,6 +150,10 @@ export default class HIRBuilder {
     this.#context = options?.context ?? new Map();
     this.#entry = makeBlockId(env.nextBlockId);
     this.#current = newBlock(this.#entry, options?.entryBlockKind ?? 'block');
+  }
+
+  recordError(error: CompilerDiagnostic | CompilerErrorDetail): void {
+    this.#env.recordError(error);
   }
 
   currentBlockKind(): BlockKind {
@@ -308,34 +316,28 @@ export default class HIRBuilder {
 
   resolveBinding(node: t.Identifier): Identifier {
     if (node.name === 'fbt') {
-      CompilerError.throwDiagnostic({
-        category: ErrorCategory.Todo,
-        reason: 'Support local variables named `fbt`',
-        description:
-          'Local variables named `fbt` may conflict with the fbt plugin and are not yet supported',
-        details: [
-          {
-            kind: 'error',
-            message: 'Rename to avoid conflict with fbt plugin',
-            loc: node.loc ?? GeneratedSource,
-          },
-        ],
-      });
+      this.recordError(
+        new CompilerErrorDetail({
+          category: ErrorCategory.Todo,
+          reason: 'Support local variables named `fbt`',
+          description:
+            'Local variables named `fbt` may conflict with the fbt plugin and are not yet supported',
+          loc: node.loc ?? GeneratedSource,
+          suggestions: null,
+        }),
+      );
     }
     if (node.name === 'this') {
-      CompilerError.throwDiagnostic({
-        category: ErrorCategory.UnsupportedSyntax,
-        reason: '`this` is not supported syntax',
-        description:
-          'React Compiler does not support compiling functions that use `this`',
-        details: [
-          {
-            kind: 'error',
-            message: '`this` was used here',
-            loc: node.loc ?? GeneratedSource,
-          },
-        ],
-      });
+      this.recordError(
+        new CompilerErrorDetail({
+          category: ErrorCategory.UnsupportedSyntax,
+          reason: '`this` is not supported syntax',
+          description:
+            'React Compiler does not support compiling functions that use `this`',
+          loc: node.loc ?? GeneratedSource,
+          suggestions: null,
+        }),
+      );
     }
     const originalName = node.name;
     let name = originalName;
@@ -381,12 +383,15 @@ export default class HIRBuilder {
           instr => instr.value.kind === 'FunctionExpression',
         )
       ) {
-        CompilerError.throwTodo({
-          reason: `Support functions with unreachable code that may contain hoisted declarations`,
-          loc: block.instructions[0]?.loc ?? block.terminal.loc,
-          description: null,
-          suggestions: null,
-        });
+        this.recordError(
+          new CompilerErrorDetail({
+            reason: `Support functions with unreachable code that may contain hoisted declarations`,
+            loc: block.instructions[0]?.loc ?? block.terminal.loc,
+            description: null,
+            suggestions: null,
+            category: ErrorCategory.Todo,
+          }),
+        );
       }
     }
     ir.blocks = rpoBlocks;
@@ -506,15 +511,7 @@ export default class HIRBuilder {
         last.breakBlock === breakBlock,
       {
         reason: 'Mismatched label',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       },
     );
     return value;
@@ -535,15 +532,7 @@ export default class HIRBuilder {
         last.breakBlock === breakBlock,
       {
         reason: 'Mismatched label',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       },
     );
     return value;
@@ -577,15 +566,7 @@ export default class HIRBuilder {
         last.breakBlock === breakBlock,
       {
         reason: 'Mismatched loops',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       },
     );
     return value;
@@ -608,15 +589,7 @@ export default class HIRBuilder {
     }
     CompilerError.invariant(false, {
       reason: 'Expected a loop or switch to be in scope',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
   }
 
@@ -635,29 +608,13 @@ export default class HIRBuilder {
       } else if (label !== null && scope.label === label) {
         CompilerError.invariant(false, {
           reason: 'Continue may only refer to a labeled loop',
-          description: null,
-          details: [
-            {
-              kind: 'error',
-              loc: null,
-              message: null,
-            },
-          ],
-          suggestions: null,
+          loc: GeneratedSource,
         });
       }
     }
     CompilerError.invariant(false, {
       reason: 'Expected a loop to be in scope',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
   }
 }
@@ -678,15 +635,7 @@ function _shrink(func: HIR): void {
     const block = func.blocks.get(blockId);
     CompilerError.invariant(block != null, {
       reason: `expected block ${blockId} to exist`,
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     target = getTargetIfIndirection(block);
     if (target !== null) {
@@ -817,13 +766,7 @@ function getReversePostorderedBlocks(func: HIR): HIR['blocks'] {
     CompilerError.invariant(block != null, {
       reason: '[HIRBuilder] Unexpected null block',
       description: `expected block ${blockId} to exist`,
-      details: [
-        {
-          kind: 'error',
-          loc: GeneratedSource,
-          message: null,
-        },
-      ],
+      loc: GeneratedSource,
     });
     const successors = [...eachTerminalSuccessor(block.terminal)].reverse();
     const fallthrough = terminalFallthrough(block.terminal);
@@ -878,15 +821,7 @@ export function markInstructionIds(func: HIR): void {
     for (const instr of block.instructions) {
       CompilerError.invariant(!visited.has(instr), {
         reason: `${printInstruction(instr)} already visited!`,
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: instr.loc,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: instr.loc,
       });
       visited.add(instr);
       instr.id = makeInstructionId(++id);
@@ -908,13 +843,7 @@ export function markPredecessors(func: HIR): void {
     CompilerError.invariant(block != null, {
       reason: 'unexpected missing block',
       description: `block ${blockId}`,
-      details: [
-        {
-          kind: 'error',
-          loc: GeneratedSource,
-          message: null,
-        },
-      ],
+      loc: GeneratedSource,
     });
     if (prevBlock) {
       block.preds.add(prevBlock.id);

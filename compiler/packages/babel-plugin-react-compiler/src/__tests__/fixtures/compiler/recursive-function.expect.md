@@ -23,6 +23,7 @@ function foo(x) {
   if (x <= 0) {
     return 0;
   }
+
   return x + foo(x - 1) + foo(x - 2);
 }
 

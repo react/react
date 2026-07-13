@@ -47,6 +47,7 @@ function Foo() {
     } else {
       thing = $[0];
     }
+
     return thing;
   } catch {}
 }

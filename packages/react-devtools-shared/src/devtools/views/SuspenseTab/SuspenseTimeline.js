@@ -8,104 +8,35 @@
  */
 
 import * as React from 'react';
-import {useContext, useLayoutEffect, useRef} from 'react';
+import {useContext, useEffect} from 'react';
 import {BridgeContext, StoreContext} from '../context';
 import {TreeDispatcherContext} from '../Components/TreeContext';
-import Tooltip from '../Components/reach-ui/tooltip';
-import {useHighlightHostInstance} from '../hooks';
+import {useScrollToHostInstance} from '../hooks';
 import {
   SuspenseTreeDispatcherContext,
   SuspenseTreeStateContext,
 } from './SuspenseTreeContext';
 import styles from './SuspenseTimeline.css';
-import typeof {
-  SyntheticEvent,
-  SyntheticPointerEvent,
-} from 'react-dom-bindings/src/events/SyntheticEvent';
+import SuspenseScrubber from './SuspenseScrubber';
+import Button from '../Button';
+import ButtonIcon from '../ButtonIcon';
+import type {SuspenseNode} from '../../../frontend/types';
 
 function SuspenseTimelineInput() {
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
   const treeDispatch = useContext(TreeDispatcherContext);
   const suspenseTreeDispatch = useContext(SuspenseTreeDispatcherContext);
-  const {highlightHostInstance, clearHighlightHostInstance} =
-    useHighlightHostInstance();
+  const scrollToHostInstance = useScrollToHostInstance();
 
-  const {
-    selectedRootID: rootID,
-    timeline,
-    timelineIndex,
-    uniqueSuspendersOnly,
-  } = useContext(SuspenseTreeStateContext);
-
-  function handleToggleUniqueSuspenders(event: SyntheticEvent) {
-    const nextUniqueSuspendersOnly = (event.currentTarget as HTMLInputElement)
-      .checked;
-    const nextTimeline =
-      rootID === null
-        ? []
-        : // TODO: Handle different timeline modes (e.g. random order)
-          store.getSuspendableDocumentOrderSuspense(
-            rootID,
-            nextUniqueSuspendersOnly,
-          );
-    suspenseTreeDispatch({
-      type: 'SET_SUSPENSE_TIMELINE',
-      payload: [nextTimeline, null, nextUniqueSuspendersOnly],
-    });
-  }
-
-  const inputRef = useRef<HTMLElement | null>(null);
-  const inputBBox = useRef<ClientRect | null>(null);
-  useLayoutEffect(() => {
-    if (timeline.length === 0) {
-      return;
-    }
-
-    const input = inputRef.current;
-    if (input === null) {
-      throw new Error('Expected an input HTML element to be present.');
-    }
-
-    inputBBox.current = input.getBoundingClientRect();
-    const observer = new ResizeObserver(entries => {
-      inputBBox.current = input.getBoundingClientRect();
-    });
-    observer.observe(input);
-    return () => {
-      inputBBox.current = null;
-      observer.disconnect();
-    };
-  }, [timeline.length]);
+  const {timeline, timelineIndex, hoveredTimelineIndex, playing, autoScroll} =
+    useContext(SuspenseTreeStateContext);
 
   const min = 0;
   const max = timeline.length > 0 ? timeline.length - 1 : 0;
 
-  if (rootID === null) {
-    return (
-      <div className={styles.SuspenseTimelineInput}>No root selected.</div>
-    );
-  }
-
-  if (!store.supportsTogglingSuspense(rootID)) {
-    return (
-      <div className={styles.SuspenseTimelineInput}>
-        Can't step through Suspense in production apps.
-      </div>
-    );
-  }
-
-  if (timeline.length === 0) {
-    return (
-      <div className={styles.SuspenseTimelineInput}>
-        Root contains no Suspense nodes.
-      </div>
-    );
-  }
-
   function switchSuspenseNode(nextTimelineIndex: number) {
-    const nextSelectedSuspenseID = timeline[nextTimelineIndex];
-    highlightHostInstance(nextSelectedSuspenseID);
+    const nextSelectedSuspenseID = timeline[nextTimelineIndex].id;
     treeDispatch({
       type: 'SELECT_ELEMENT_BY_ID',
       payload: nextSelectedSuspenseID,
@@ -116,140 +47,179 @@ function SuspenseTimelineInput() {
     });
   }
 
-  function handleChange(event: SyntheticEvent) {
-    if (rootID === null) {
-      return;
-    }
-    const rendererID = store.getRendererIDForElement(rootID);
-    if (rendererID === null) {
-      console.error(
-        `No renderer ID found for root element ${rootID} in suspense timeline.`,
-      );
-      return;
-    }
-
-    const pendingTimelineIndex = +event.currentTarget.value;
-    const suspendedSet = timeline.slice(pendingTimelineIndex);
-
-    bridge.send('overrideSuspenseMilestone', {
-      rendererID,
-      rootID,
-      suspendedSet,
-    });
-
+  function handleChange(pendingTimelineIndex: number) {
     switchSuspenseNode(pendingTimelineIndex);
-  }
-
-  function handleBlur() {
-    clearHighlightHostInstance();
   }
 
   function handleFocus() {
     switchSuspenseNode(timelineIndex);
   }
 
-  function handlePointerMove(event: SyntheticPointerEvent) {
-    const bbox = inputBBox.current;
-    if (bbox === null) {
-      throw new Error('Bounding box of slider is unknown.');
+  function handleHoverSegment(hoveredIndex: number) {
+    const nextSelectedSuspenseID = timeline[hoveredIndex].id;
+    suspenseTreeDispatch({
+      type: 'HOVER_TIMELINE_FOR_ID',
+      payload: nextSelectedSuspenseID,
+    });
+  }
+  function handleUnhoverSegment() {
+    suspenseTreeDispatch({
+      type: 'HOVER_TIMELINE_FOR_ID',
+      payload: -1,
+    });
+  }
+
+  function skipPrevious() {
+    const nextSelectedSuspenseID = timeline[timelineIndex - 1].id;
+    treeDispatch({
+      type: 'SELECT_ELEMENT_BY_ID',
+      payload: nextSelectedSuspenseID,
+    });
+    suspenseTreeDispatch({
+      type: 'SUSPENSE_SKIP_TIMELINE_INDEX',
+      payload: false,
+    });
+  }
+
+  function skipForward() {
+    const nextSelectedSuspenseID = timeline[timelineIndex + 1].id;
+    treeDispatch({
+      type: 'SELECT_ELEMENT_BY_ID',
+      payload: nextSelectedSuspenseID,
+    });
+    suspenseTreeDispatch({
+      type: 'SUSPENSE_SKIP_TIMELINE_INDEX',
+      payload: true,
+    });
+  }
+
+  function togglePlaying() {
+    suspenseTreeDispatch({
+      type: 'SUSPENSE_PLAY_PAUSE',
+      payload: 'toggle',
+    });
+  }
+
+  // TODO: useEffectEvent here once it's supported in all versions DevTools supports.
+  // For now we just exclude it from deps since we don't lint those anyway.
+  function changeTimelineIndex(newIndex: number) {
+    const suspendedSetByRendererID = new Map<
+      number,
+      Array<SuspenseNode['id']>,
+    >();
+    // Unsuspend everything by default.
+    // We might not encounter every renderer after the milestone e.g.
+    // if we clicked at the end of the timeline.
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const rendererID of store.rootIDToRendererID.values()) {
+      suspendedSetByRendererID.set(rendererID, []);
     }
 
-    const hoveredValue = Math.max(
-      min,
-      Math.min(
-        Math.round(
-          min + ((event.clientX - bbox.left) / bbox.width) * (max - min),
-        ),
-        max,
-      ),
-    );
-    const suspenseID = timeline[hoveredValue];
-    if (suspenseID === undefined) {
-      throw new Error(
-        `Suspense node not found for value ${hoveredValue} in timeline when on ${event.clientX} in bounding box ${JSON.stringify(bbox)}.`,
-      );
+    // Synchronize timeline index with what is resuspended.
+    // We suspend everything after the current selection. The root isn't showing
+    // anything suspended in the root. The step after that should have one less
+    // thing suspended. I.e. the first suspense boundary should be unsuspended
+    // when it's selected. This also lets you show everything in the last step.
+    for (let i = timelineIndex + 1; i < timeline.length; i++) {
+      const step = timeline[i];
+      const {rendererID} = step;
+      const suspendedSetForRendererID =
+        suspendedSetByRendererID.get(rendererID);
+      if (suspendedSetForRendererID === undefined) {
+        throw new Error(
+          `Should have initialized suspended set for renderer ID "${rendererID}" earlier. This is a bug in React DevTools.`,
+        );
+      }
+      suspendedSetForRendererID.push(step.id);
     }
-    highlightHostInstance(suspenseID);
+
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const [rendererID, suspendedSet] of suspendedSetByRendererID) {
+      bridge.send('overrideSuspenseMilestone', {
+        rendererID,
+        suspendedSet,
+      });
+    }
+  }
+
+  useEffect(() => {
+    changeTimelineIndex(timelineIndex);
+  }, [timelineIndex]);
+
+  useEffect(() => {
+    if (autoScroll.id > 0) {
+      const scrollToId = autoScroll.id;
+      // Consume the scroll ref so that we only trigger this scroll once.
+      autoScroll.id = 0;
+      scrollToHostInstance(scrollToId);
+    }
+  }, [autoScroll]);
+
+  useEffect(() => {
+    if (!playing) {
+      return undefined;
+    }
+    // While playing, advance one step every second.
+    const PLAY_SPEED_INTERVAL = 1000;
+    const timer = setInterval(() => {
+      suspenseTreeDispatch({
+        type: 'SUSPENSE_PLAY_TICK',
+      });
+    }, PLAY_SPEED_INTERVAL);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [playing]);
+
+  if (timeline.length === 0) {
+    return (
+      <div className={styles.SuspenseTimelineInput}>
+        Root contains no Suspense nodes.
+      </div>
+    );
   }
 
   return (
     <>
-      {timelineIndex}/{max}
+      <Button
+        disabled={timelineIndex === 0}
+        title={'Previous'}
+        onClick={skipPrevious}>
+        <ButtonIcon type={'skip-previous'} />
+      </Button>
+      <Button
+        disabled={max === 0 && !playing}
+        title={playing ? 'Pause' : 'Play'}
+        onClick={togglePlaying}>
+        <ButtonIcon type={playing ? 'pause' : 'play'} />
+      </Button>
+      <Button
+        disabled={timelineIndex === max}
+        title={'Next'}
+        onClick={skipForward}>
+        <ButtonIcon type={'skip-next'} />
+      </Button>
       <div className={styles.SuspenseTimelineInput}>
-        <input
-          className={styles.SuspenseTimelineSlider}
-          type="range"
+        <SuspenseScrubber
           min={min}
           max={max}
+          timeline={timeline}
           value={timelineIndex}
-          onBlur={handleBlur}
+          highlight={hoveredTimelineIndex}
           onChange={handleChange}
           onFocus={handleFocus}
-          onPointerMove={handlePointerMove}
-          onPointerUp={clearHighlightHostInstance}
-          ref={inputRef}
+          onHoverSegment={handleHoverSegment}
+          onHoverLeave={handleUnhoverSegment}
         />
       </div>
-      <Tooltip label="Only include boundaries with unique suspenders">
-        <input
-          checked={uniqueSuspendersOnly}
-          type="checkbox"
-          onChange={handleToggleUniqueSuspenders}
-        />
-      </Tooltip>
     </>
   );
 }
 
 export default function SuspenseTimeline(): React$Node {
-  const store = useContext(StoreContext);
-  const {roots, selectedRootID, uniqueSuspendersOnly} = useContext(
-    SuspenseTreeStateContext,
-  );
-  const treeDispatch = useContext(TreeDispatcherContext);
-  const suspenseTreeDispatch = useContext(SuspenseTreeDispatcherContext);
-
-  function handleChange(event: SyntheticEvent) {
-    const newRootID = +event.currentTarget.value;
-    // TODO: scrollIntoView both suspense rects and host instance.
-    const nextTimeline = store.getSuspendableDocumentOrderSuspense(
-      newRootID,
-      uniqueSuspendersOnly,
-    );
-    suspenseTreeDispatch({
-      type: 'SET_SUSPENSE_TIMELINE',
-      payload: [nextTimeline, newRootID, uniqueSuspendersOnly],
-    });
-    if (nextTimeline.length > 0) {
-      const milestone = nextTimeline[nextTimeline.length - 1];
-      treeDispatch({type: 'SELECT_ELEMENT_BY_ID', payload: milestone});
-    }
-  }
-
   return (
     <div className={styles.SuspenseTimelineContainer}>
-      <SuspenseTimelineInput key={selectedRootID} />
-      {roots.length > 0 && (
-        <select
-          aria-label="Select Suspense Root"
-          className={styles.SuspenseTimelineRootSwitcher}
-          onChange={handleChange}
-          value={selectedRootID === null ? -1 : selectedRootID}>
-          <option disabled={true} value={-1}>
-            ----
-          </option>
-          {roots.map(rootID => {
-            // TODO: Use name
-            const name = '#' + rootID;
-            // TODO: Highlight host on hover
-            return (
-              <option key={rootID} value={rootID}>
-                {name}
-              </option>
-            );
-          })}
-        </select>
-      )}
+      <SuspenseTimelineInput />
     </div>
   );
 }

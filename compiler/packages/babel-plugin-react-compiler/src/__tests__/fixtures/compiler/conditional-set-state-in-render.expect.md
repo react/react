@@ -39,6 +39,7 @@ function Component(props) {
     setX(2);
     foo();
   }
+
   return x;
 }
 

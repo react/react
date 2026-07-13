@@ -34,7 +34,6 @@ function useTest() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const w = {};
-
     const t1 = (w.x = 42);
     const t2 = w.x;
 

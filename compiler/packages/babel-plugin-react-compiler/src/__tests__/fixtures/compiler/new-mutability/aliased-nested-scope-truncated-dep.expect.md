@@ -182,12 +182,9 @@ function Component(t0) {
   if ($[0] !== prop) {
     const obj = shallowCopy(prop);
     const aliasedObj = identity(obj);
-
     const id = [obj.id];
-
     mutate(aliasedObj);
     setPropertyByKey(aliasedObj, "id", prop.id + 1);
-
     t1 = <Stringify id={id} />;
     $[0] = prop;
     $[1] = t1;

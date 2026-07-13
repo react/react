@@ -75,6 +75,7 @@ function Component(t0) {
 
         0,
       );
+
       return () => {
         if (!cleanedUp) {
           cleanedUp = true;

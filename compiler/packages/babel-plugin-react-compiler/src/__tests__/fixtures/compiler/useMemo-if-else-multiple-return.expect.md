@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const x = useMemo(() => {
     if (props.cond) {
@@ -17,7 +18,7 @@ function Component(props) {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const $ = _c(4);
   let t0;
@@ -45,6 +46,7 @@ function Component(props) {
     t0 = t1;
   }
   const x = t0;
+
   return x;
 }
 

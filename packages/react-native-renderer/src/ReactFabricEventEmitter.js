@@ -28,8 +28,12 @@ import accumulateInto from './legacy-events/accumulateInto';
 import getListener from './ReactNativeGetListener';
 import {runEventsInBatch} from './legacy-events/EventBatching';
 
-import {RawEventEmitter} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import {
+  RawEventEmitter,
+  dispatchNativeEvent,
+} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
 import {getPublicInstance} from './ReactFiberConfigFabric';
+import {enableNativeEventTargetEventDispatching} from './ReactNativeFeatureFlags';
 
 export {getListener, registrationNameModules as registrationNames};
 
@@ -47,10 +51,12 @@ function extractPluginEvents(
   nativeEventTarget: null | EventTarget,
 ): Array<ReactSyntheticEvent> | ReactSyntheticEvent | null {
   let events: Array<ReactSyntheticEvent> | ReactSyntheticEvent | null = null;
-  const legacyPlugins = ((plugins: any): Array<LegacyPluginModule<Event>>);
+  const legacyPlugins = plugins as any as Array<
+    LegacyPluginModule<AnyNativeEvent>,
+  >;
   for (let i = 0; i < legacyPlugins.length; i++) {
     // Not every plugin in the ordering may be loaded at runtime.
-    const possiblePlugin: LegacyPluginModule<AnyNativeEvent> = legacyPlugins[i];
+    const possiblePlugin = legacyPlugins[i];
     if (possiblePlugin) {
       const extractedEvents = possiblePlugin.extractEvents(
         topLevelType,
@@ -84,17 +90,21 @@ function runExtractedPluginEventsInBatch(
 export function dispatchEvent(
   target: null | Object,
   topLevelType: RNTopLevelEventType,
-  nativeEvent: AnyNativeEvent,
+  nativeEventParam: mixed,
 ) {
-  const targetFiber = (target: null | Fiber);
+  const nativeEvent: AnyNativeEvent =
+    nativeEventParam != null && typeof nativeEventParam === 'object'
+      ? (nativeEventParam as any)
+      : {};
+  const targetFiber = target as null | Fiber;
 
   let eventTarget = null;
   if (targetFiber != null) {
     const stateNode = targetFiber.stateNode;
     // Guard against Fiber being unmounted
     if (stateNode != null) {
-      // $FlowExpectedError[incompatible-cast] public instances in Fabric do not implement `EventTarget` yet.
-      eventTarget = (getPublicInstance(stateNode): EventTarget);
+      // $FlowExpectedError[incompatible-type] public instances in Fabric do not implement `EventTarget` yet.
+      eventTarget = getPublicInstance(stateNode) as EventTarget;
     }
   }
 
@@ -121,18 +131,22 @@ export function dispatchEvent(
     // Note that extracted events are *not* emitted,
     // only events that have a 1:1 mapping with a native event, at least for now.
     const event = {eventName: topLevelType, nativeEvent};
-    // $FlowFixMe[class-object-subtyping] found when upgrading Flow
     RawEventEmitter.emit(topLevelType, event);
-    // $FlowFixMe[class-object-subtyping] found when upgrading Flow
     RawEventEmitter.emit('*', event);
 
-    // Heritage plugin event system
-    runExtractedPluginEventsInBatch(
-      topLevelType,
-      targetFiber,
-      nativeEvent,
-      eventTarget,
-    );
+    if (enableNativeEventTargetEventDispatching()) {
+      if (eventTarget != null) {
+        dispatchNativeEvent(eventTarget, topLevelType, nativeEvent);
+      }
+    } else {
+      // Heritage plugin event system
+      runExtractedPluginEventsInBatch(
+        topLevelType,
+        targetFiber,
+        nativeEvent,
+        eventTarget,
+      );
+    }
   });
   // React Native doesn't use ReactControlledComponent but if it did, here's
   // where it would do it.

@@ -91,7 +91,6 @@ module.exports = {
       __IS_FIREFOX__: false,
       __IS_CHROME__: false,
       __IS_EDGE__: false,
-      __IS_INTERNAL_MCP_BUILD__: false,
       'process.env.DEVTOOLS_PACKAGE': `"react-devtools-core"`,
       'process.env.DEVTOOLS_VERSION': `"${DEVTOOLS_VERSION}"`,
       'process.env.EDITOR_URL': EDITOR_URL != null ? `"${EDITOR_URL}"` : null,
@@ -108,6 +107,7 @@ module.exports = {
           {
             loader: 'workerize-loader',
             options: {
+              // Workers would have to be exposed on a public path in order to outline them.
               inline: true,
               name: '[name]',
             },

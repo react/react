@@ -734,7 +734,11 @@ describe('ReactHooksInspection', () => {
     });
     const results = normalizeSourceLoc(tree);
     expect(results).toHaveLength(1);
-    expect(results[0]).toMatchInlineSnapshot(`
+    expect(results[0]).toMatchInlineSnapshot(
+      {
+        subHooks: [{value: expect.any(Promise)}],
+      },
+      `
       {
         "debugInfo": null,
         "hookSource": {
@@ -759,12 +763,13 @@ describe('ReactHooksInspection', () => {
             "isStateEditable": false,
             "name": "Use",
             "subHooks": [],
-            "value": Promise {},
+            "value": Any<Promise>,
           },
         ],
         "value": undefined,
       }
-    `);
+    `,
+    );
   });
 
   describe('useDebugValue', () => {

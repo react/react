@@ -2,6 +2,7 @@
 
 module.exports = {
   globalSetup: require.resolve('./setupGlobal.js'),
+  testSequencer: require.resolve('./sizeBalancedSequencer.js'),
   modulePathIgnorePatterns: [
     '<rootDir>/scripts/rollup/shims/',
     '<rootDir>/scripts/bench/',

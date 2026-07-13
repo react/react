@@ -1,0 +1,34 @@
+{
+  "name": "flight-ssr-bench",
+  "version": "0.1.0",
+  "private": true,
+  "devEngines": {
+    "node": "20.x || 22.x"
+  },
+  "dependencies": {
+    "@babel/core": "^7.16.0",
+    "@babel/preset-react": "^7.22.5",
+    "@babel/register": "^7.28.6",
+    "babel-loader": "^8.2.3",
+    "react": "experimental",
+    "react-dom": "experimental",
+    "react-server-dom-webpack": "experimental",
+    "autocannon": "^8.0.0",
+    "webpack": "^5.64.4"
+  },
+  "scripts": {
+    "copy-modules": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "prebench": "yarn copy-modules",
+    "prebench:bare": "yarn copy-modules",
+    "prebench:profile": "yarn copy-modules",
+    "prebench:concurrent": "yarn copy-modules",
+    "prebench:server": "yarn copy-modules",
+    "prestart": "yarn copy-modules",
+    "start": "NODE_ENV=production node bench-server.js",
+    "bench": "NODE_ENV=production node --expose-gc bench.js",
+    "bench:profile": "NODE_ENV=production node --expose-gc bench.js --profile",
+    "bench:bare": "NODE_ENV=production node --expose-gc bench.js --no-injection",
+    "bench:concurrent": "NODE_ENV=production node --expose-gc bench.js --concurrent",
+    "bench:server": "NODE_ENV=production node bench-server.js --bench"
+  }
+}

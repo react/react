@@ -1,0 +1,132 @@
+
+## Input
+
+```javascript
+function Component({obj, arg}) {
+  try {
+    // arg.value is accessed WITHIN the optional call expression as an argument
+    // When obj is non-null but arg is null, arg.value throws inside the optional chain
+    const result = obj?.method?.(arg.value);
+    return <span>{result ?? 'no result'}</span>;
+  } catch {
+    return <span>error</span>;
+  }
+}
+
+export const FIXTURE_ENTRYPOINT = {
+  fn: Component,
+  params: [{obj: {method: x => 'called:' + x}, arg: {value: 1}}],
+  sequentialRenders: [
+    {obj: {method: x => 'called:' + x}, arg: {value: 1}},
+    {obj: {method: x => 'called:' + x}, arg: {value: 1}},
+    {obj: {method: x => 'different:' + x}, arg: {value: 2}},
+    {obj: {method: null}, arg: {value: 3}},
+    {obj: {notMethod: true}, arg: {value: 4}},
+    {obj: null, arg: {value: 5}}, // obj is null, short-circuits so arg.value is NOT evaluated
+    {obj: {method: x => 'test:' + x}, arg: null}, // errors because arg.value throws WITHIN the optional call
+  ],
+};
+
+```
+
+## Code
+
+```javascript
+import { c as _c } from "react/compiler-runtime";
+function Component(t0) {
+  const $ = _c(6);
+  const { obj, arg } = t0;
+  try {
+    let t1;
+    if ($[0] !== arg || $[1] !== obj) {
+      t1 = obj?.method?.(arg.value);
+      $[0] = arg;
+      $[1] = obj;
+      $[2] = t1;
+    } else {
+      t1 = $[2];
+    }
+    const result = t1;
+    const t2 = result ?? "no result";
+    let t3;
+    if ($[3] !== t2) {
+      t3 = <span>{t2}</span>;
+      $[3] = t2;
+      $[4] = t3;
+    } else {
+      t3 = $[4];
+    }
+    return t3;
+  } catch {
+    let t1;
+    if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
+      t1 = <span>error</span>;
+      $[5] = t1;
+    } else {
+      t1 = $[5];
+    }
+    return t1;
+  }
+}
+
+export const FIXTURE_ENTRYPOINT = {
+  fn: Component,
+  params: [
+    {
+      obj: {
+        method: (x) => {
+          return "called:" + x;
+        },
+      },
+      arg: { value: 1 },
+    },
+  ],
+  sequentialRenders: [
+    {
+      obj: {
+        method: (x) => {
+          return "called:" + x;
+        },
+      },
+      arg: { value: 1 },
+    },
+    {
+      obj: {
+        method: (x) => {
+          return "called:" + x;
+        },
+      },
+      arg: { value: 1 },
+    },
+    {
+      obj: {
+        method: (x) => {
+          return "different:" + x;
+        },
+      },
+      arg: { value: 2 },
+    },
+    { obj: { method: null }, arg: { value: 3 } },
+    { obj: { notMethod: true }, arg: { value: 4 } },
+    { obj: null, arg: { value: 5 } }, // obj is null, short-circuits so arg.value is NOT evaluated
+    {
+      obj: {
+        method: (x) => {
+          return "test:" + x;
+        },
+      },
+      arg: null,
+    }, // errors because arg.value throws WITHIN the optional call
+  ],
+};
+
+```
+      
+### Eval output
+(kind: ok) <span>called:1</span>
+<span>called:1</span>
+<span>different:2</span>
+<span>no result</span>
+<span>no result</span>
+<span>no result</span>
+<span>error</span>

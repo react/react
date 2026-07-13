@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 
 /**
  * Repro from https://github.com/facebook/react/issues/34262

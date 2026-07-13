@@ -62,6 +62,7 @@ import {
 } from 'react-client/src/ReactFlightClientStreamConfigNode';
 
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
+import type {FileHandle} from 'react-server/src/ReactFlightReplyServer';
 
 export {createTemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 
@@ -93,7 +94,7 @@ function startReadingFromDebugChannelReadable(
       }
       stringBuffer += chunk;
     } else {
-      const buffer: Uint8Array = (chunk: any);
+      const buffer: Uint8Array = chunk as any;
       stringBuffer += readPartialStringChunk(stringDecoder, buffer);
       lastWasPartial = true;
     }
@@ -120,19 +121,19 @@ function startReadingFromDebugChannelReadable(
     // $FlowFixMe[method-unbinding]
     typeof stream.binaryType === 'string'
   ) {
-    const ws: WebSocket = (stream: any);
+    const ws: WebSocket = stream as any;
     ws.binaryType = 'arraybuffer';
     ws.addEventListener('message', event => {
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       onData(event.data);
     });
     ws.addEventListener('error', event => {
-      // $FlowFixMe
+      // $FlowFixMe[prop-missing]
       onError(event.error);
     });
     ws.addEventListener('close', onClose);
   } else {
-    const readable: Readable = (stream: any);
+    const readable: Readable = stream as any;
     readable.on('data', onData);
     readable.on('error', onError);
     readable.on('end', onClose);
@@ -144,9 +145,9 @@ type Options = {
   environmentName?: string | (() => string),
   filterStackFrame?: (url: string, functionName: string) => boolean,
   onError?: (error: mixed) => void,
-  onPostpone?: (reason: string) => void,
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
+  startTime?: number,
 };
 
 type PipeableStream = {
@@ -166,16 +167,16 @@ function renderToPipeableStream(
     // $FlowFixMe[method-unbinding]
     (typeof debugChannel.read === 'function' ||
       typeof debugChannel.readyState === 'number')
-      ? (debugChannel: any)
+      ? (debugChannel as any)
       : undefined;
   const debugChannelWritable: void | Writable =
     __DEV__ && debugChannel !== undefined
       ? // $FlowFixMe[method-unbinding]
         typeof debugChannel.write === 'function'
-        ? (debugChannel: any)
+        ? (debugChannel as any)
         : // $FlowFixMe[method-unbinding]
           typeof debugChannel.send === 'function'
-          ? createFakeWritableFromWebSocket((debugChannel: any))
+          ? createFakeWritableFromWebSocket(debugChannel as any)
           : undefined
       : undefined;
   const request = createRequest(
@@ -183,11 +184,11 @@ function renderToPipeableStream(
     moduleBasePath,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
-    options ? options.onPostpone : undefined,
     options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
-    debugChannel !== undefined,
+    debugChannelReadable !== undefined,
   );
   let hasStartedFlowing = false;
   startWork(request);
@@ -230,9 +231,9 @@ function renderToPipeableStream(
 }
 
 function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
-      webSocket.send((chunk: any));
+      webSocket.send(chunk as any);
       return true;
     },
     end() {
@@ -248,13 +249,13 @@ function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
         webSocket.close(1011);
       }
     },
-  }: any);
+  } as any;
 }
 
 function createFakeWritable(readable: any): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       return readable.push(chunk);
     },
@@ -264,17 +265,17 @@ function createFakeWritable(readable: any): Writable {
     destroy(error) {
       readable.destroy(error);
     },
-  }: any);
+  } as any;
 }
 
 type PrerenderOptions = {
   environmentName?: string | (() => string),
   filterStackFrame?: (url: string, functionName: string) => boolean,
   onError?: (error: mixed) => void,
-  onPostpone?: (reason: string) => void,
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
   signal?: AbortSignal,
+  startTime?: number,
 };
 
 type StaticResult = {
@@ -305,8 +306,8 @@ function prerenderToNodeStream(
       onFatalError,
       options ? options.onError : undefined,
       options ? options.identifierPrefix : undefined,
-      options ? options.onPostpone : undefined,
       options ? options.temporaryReferences : undefined,
+      options ? options.startTime : undefined,
       __DEV__ && options ? options.environmentName : undefined,
       __DEV__ && options ? options.filterStackFrame : undefined,
       false,
@@ -314,11 +315,11 @@ function prerenderToNodeStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        const reason = (signal: any).reason;
+        const reason = (signal as any).reason;
         abort(request, reason);
       } else {
         const listener = () => {
-          const reason = (signal: any).reason;
+          const reason = (signal as any).reason;
           abort(request, reason);
           signal.removeEventListener('abort', listener);
         };
@@ -329,60 +330,145 @@ function prerenderToNodeStream(
   });
 }
 
+type PendingFile = {
+  name: string,
+  file: FileHandle,
+  complete: boolean,
+  // Lazily allocated when a text field arrives after this file's 'file'
+  // event but before its (deferred) 'end' event. Stored as flat
+  // [name1, value1, name2, value2, ...] pairs.
+  queuedFields: null | Array<string>,
+  next: null | PendingFile,
+};
+
 function decodeReplyFromBusboy<T>(
   busboyStream: Busboy,
   moduleBasePath: ServerManifest,
-  options?: {temporaryReferences?: TemporaryReferenceSet},
+  options?: {
+    temporaryReferences?: TemporaryReferenceSet,
+    arraySizeLimit?: number,
+  },
 ): Thenable<T> {
   const response = createResponse(
     moduleBasePath,
     '',
     options ? options.temporaryReferences : undefined,
+    undefined,
+    options ? options.arraySizeLimit : undefined,
   );
-  let pendingFiles = 0;
-  const queuedFields: Array<string> = [];
+
+  // Linked list of pending files in arrival (payload) order. Text fields that
+  // arrive while a file is in flight are queued on the tail file's
+  // `queuedFields` so they can be resolved together when that file completes.
+  // Fields that arrive while the list is empty bypass it and resolve
+  // immediately. This makes the backing FormData's insertion order match the
+  // payload's entry order.
+  let head: null | PendingFile = null;
+  let tail: null | PendingFile = null;
+  let bodyFinished = false;
+  let closed = false;
+
+  function flush() {
+    while (head !== null) {
+      const current = head;
+      if (!current.complete) {
+        // This file is still streaming. Hold later files and fields until it
+        // completes so the backing FormData reflects payload order.
+        return;
+      }
+      try {
+        resolveFileComplete(response, current.name, current.file);
+        const queuedFields = current.queuedFields;
+        if (queuedFields !== null) {
+          for (let i = 0; i < queuedFields.length; i += 2) {
+            resolveField(response, queuedFields[i], queuedFields[i + 1]);
+          }
+        }
+      } catch (error) {
+        busboyStream.destroy(error);
+        return;
+      }
+      head = current.next;
+    }
+    tail = null;
+    if (bodyFinished && !closed) {
+      closed = true;
+      close(response);
+    }
+  }
+
   busboyStream.on('field', (name, value) => {
-    if (pendingFiles > 0) {
-      // Because the 'end' event fires two microtasks after the next 'field'
-      // we would resolve files and fields out of order. To handle this properly
-      // we queue any fields we receive until the previous file is done.
-      queuedFields.push(name, value);
+    if (tail !== null) {
+      // A file is in flight; queue the field on the tail (most recent) pending
+      // file so it resolves after that file, preserving payload order.
+      if (tail.queuedFields === null) {
+        tail.queuedFields = [];
+      }
+      tail.queuedFields.push(name, value);
     } else {
-      resolveField(response, name, value);
+      try {
+        resolveField(response, name, value);
+      } catch (error) {
+        busboyStream.destroy(error);
+      }
     }
   });
   busboyStream.on('file', (name, value, {filename, encoding, mimeType}) => {
     if (encoding.toLowerCase() === 'base64') {
-      throw new Error(
-        "React doesn't accept base64 encoded file uploads because we don't expect " +
-          "form data passed from a browser to ever encode data that way. If that's " +
-          'the wrong assumption, we can easily fix it.',
+      busboyStream.destroy(
+        new Error(
+          "React doesn't accept base64 encoded file uploads because we don't expect " +
+            "form data passed from a browser to ever encode data that way. If that's " +
+            'the wrong assumption, we can easily fix it.',
+        ),
       );
+      return;
     }
-    pendingFiles++;
     const file = resolveFileInfo(response, name, filename, mimeType);
+    const pendingFile: PendingFile = {
+      name,
+      file,
+      complete: false,
+      queuedFields: null,
+      next: null,
+    };
+    if (tail === null) {
+      head = pendingFile;
+    } else {
+      tail.next = pendingFile;
+    }
+    tail = pendingFile;
     value.on('data', chunk => {
-      resolveFileChunk(response, file, chunk);
+      try {
+        resolveFileChunk(response, file, chunk);
+      } catch (error) {
+        busboyStream.destroy(error);
+      }
+    });
+    value.on('error', error => {
+      busboyStream.destroy(error);
     });
     value.on('end', () => {
-      resolveFileComplete(response, name, file);
-      pendingFiles--;
-      if (pendingFiles === 0) {
-        // Release any queued fields
-        for (let i = 0; i < queuedFields.length; i += 2) {
-          resolveField(response, queuedFields[i], queuedFields[i + 1]);
-        }
-        queuedFields.length = 0;
-      }
+      pendingFile.complete = true;
+      flush();
     });
   });
   busboyStream.on('finish', () => {
-    close(response);
+    bodyFinished = true;
+    flush();
+    if (!closed) {
+      // Invariant: busboy delays 'finish' until every file's 'end' event has
+      // fired, so the flush above should always close the response.
+      reportGlobalError(
+        response,
+        new Error('Reply finished with incomplete file part.'),
+      );
+    }
   });
   busboyStream.on('error', err => {
     reportGlobalError(
       response,
-      // $FlowFixMe[incompatible-call] types Error and mixed are incompatible
+      // $FlowFixMe[incompatible-type] types Error and mixed are incompatible
       err,
     );
   });
@@ -392,7 +478,10 @@ function decodeReplyFromBusboy<T>(
 function decodeReply<T>(
   body: string | FormData,
   moduleBasePath: ServerManifest,
-  options?: {temporaryReferences?: TemporaryReferenceSet},
+  options?: {
+    temporaryReferences?: TemporaryReferenceSet,
+    arraySizeLimit?: number,
+  },
 ): Thenable<T> {
   if (typeof body === 'string') {
     const form = new FormData();
@@ -404,6 +493,7 @@ function decodeReply<T>(
     '',
     options ? options.temporaryReferences : undefined,
     body,
+    options ? options.arraySizeLimit : undefined,
   );
   const root = getRoot<T>(response);
   close(response);

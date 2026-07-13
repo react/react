@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 
 import {identity, Stringify, useHook} from 'shared-runtime';
 

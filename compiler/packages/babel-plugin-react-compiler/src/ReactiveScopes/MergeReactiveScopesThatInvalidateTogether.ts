@@ -8,6 +8,7 @@
 import {CompilerError} from '..';
 import {
   DeclarationId,
+  GeneratedSource,
   InstructionId,
   InstructionKind,
   Place,
@@ -161,15 +162,7 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
       CompilerError.invariant(current !== null, {
         reason:
           'MergeConsecutiveScopes: expected current scope to be non-null if reset()',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       });
       if (current.to > current.from + 1) {
         merged.push(current);
@@ -383,15 +376,7 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
       CompilerError.invariant(mergedScope.kind === 'scope', {
         reason:
           'MergeConsecutiveScopes: Expected scope starting index to be a scope',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       });
       nextInstructions.push(mergedScope);
       index++;
@@ -485,6 +470,7 @@ function canMergeScopes(
           identifier: declaration.identifier,
           reactive: true,
           path: [],
+          loc: GeneratedSource,
         })),
       ),
       next.scope.dependencies,

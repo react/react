@@ -30,6 +30,7 @@ function Component() {
   const fn = _temp;
 
   invoke(fn);
+
   return 3;
 }
 function _temp() {

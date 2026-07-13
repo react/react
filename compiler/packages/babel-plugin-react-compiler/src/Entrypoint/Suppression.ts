@@ -78,7 +78,7 @@ export function filterSuppressionsThatAffectFunction(
 
 export function findProgramSuppressions(
   programComments: Array<t.Comment>,
-  ruleNames: Array<string>,
+  ruleNames: Array<string> | null,
   flowSuppressions: boolean,
 ): Array<SuppressionRange> {
   const suppressionRanges: Array<SuppressionRange> = [];
@@ -89,7 +89,7 @@ export function findProgramSuppressions(
   let disableNextLinePattern: RegExp | null = null;
   let disablePattern: RegExp | null = null;
   let enablePattern: RegExp | null = null;
-  if (ruleNames.length !== 0) {
+  if (ruleNames != null && ruleNames.length !== 0) {
     const rulePattern = `(${ruleNames.join('|')})`;
     disableNextLinePattern = new RegExp(
       `eslint-disable-next-line ${rulePattern}`,
@@ -163,14 +163,7 @@ export function suppressionsToCompilerError(
 ): CompilerError {
   CompilerError.invariant(suppressionRanges.length !== 0, {
     reason: `Expected at least suppression comment source range`,
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: GeneratedSource,
-        message: null,
-      },
-    ],
+    loc: GeneratedSource,
   });
   const error = new CompilerError();
   for (const suppressionRange of suppressionRanges) {

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer" @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees
+// @expectNothingCompiled @compilationMode:"infer" @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees
 import {useMemo} from 'react';
 import {makeObject_Primitives, ValidateMemoization} from 'shared-runtime';
 
@@ -37,7 +37,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @compilationMode:"infer" @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees
+// @expectNothingCompiled @compilationMode:"infer" @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees
 import { useMemo } from "react";
 import { makeObject_Primitives, ValidateMemoization } from "shared-runtime";
 

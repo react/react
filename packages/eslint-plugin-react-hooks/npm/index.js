@@ -14,3 +14,13 @@ if (process.env.NODE_ENV === 'production') {
 } else {
   module.exports = require('./cjs/eslint-plugin-react-hooks.development.js');
 }
+
+// Hint to Node’s cjs-module-lexer to make named imports work
+// https://github.com/facebook/react/issues/34801#issuecomment-3433478810
+// eslint-disable-next-line ft-flow/no-unused-expressions
+0 &&
+  (module.exports = {
+    meta: true,
+    rules: true,
+    configs: true,
+  });

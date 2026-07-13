@@ -64,6 +64,7 @@ function useFoo(t0) {
   } else {
     x = $[2];
   }
+
   return x[0];
 }
 

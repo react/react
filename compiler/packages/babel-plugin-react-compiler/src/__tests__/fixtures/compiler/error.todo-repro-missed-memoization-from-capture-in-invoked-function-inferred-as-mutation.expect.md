@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @flow @validatePreserveExistingMemoizationGuarantees
+// @flow @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 import {useMemo} from 'react';
 import {logValue, useFragment, useHook, typedLog} from 'shared-runtime';
 

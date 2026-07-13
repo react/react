@@ -40,8 +40,10 @@ export const isPrimaryRenderer = false;
 
 export const supportsClientAPIs = true;
 
+export const isWorkLoopExternallyDriven =
+  $$$config.isWorkLoopExternallyDriven === true;
 export const supportsRequestStorage = false;
-export const requestStorage: AsyncLocalStorage<Request | void> = (null: any);
+export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const bindToConsole = $$$config.bindToConsole;
 
@@ -104,4 +106,5 @@ export const writeHoistablesForBoundary = $$$config.writeHoistablesForBoundary;
 export const writePostamble = $$$config.writePostamble;
 export const hoistHoistables = $$$config.hoistHoistables;
 export const createHoistableState = $$$config.createHoistableState;
+export const hasSuspenseyContent = $$$config.hasSuspenseyContent;
 export const emitEarlyPreloads = $$$config.emitEarlyPreloads;

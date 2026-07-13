@@ -18,50 +18,12 @@ if (typeof File === 'undefined' || typeof FormData === 'undefined') {
   global.FormData = require('undici').FormData;
 }
 
-function formatV8Stack(stack) {
-  let v8StyleStack = '';
-  if (stack) {
-    for (let i = 0; i < stack.length; i++) {
-      const [name] = stack[i];
-      if (v8StyleStack !== '') {
-        v8StyleStack += '\n';
-      }
-      v8StyleStack += '    in ' + name + ' (at **)';
-    }
-  }
-  return v8StyleStack;
-}
-
-function normalizeComponentInfo(debugInfo) {
-  if (Array.isArray(debugInfo.stack)) {
-    const {debugTask, debugStack, ...copy} = debugInfo;
-    copy.stack = formatV8Stack(debugInfo.stack);
-    if (debugInfo.owner) {
-      copy.owner = normalizeComponentInfo(debugInfo.owner);
-    }
-    return copy;
-  } else {
-    return debugInfo;
-  }
-}
-
-function getDebugInfo(obj) {
-  const debugInfo = obj._debugInfo;
-  if (debugInfo) {
-    const copy = [];
-    for (let i = 0; i < debugInfo.length; i++) {
-      copy.push(normalizeComponentInfo(debugInfo[i]));
-    }
-    return copy;
-  }
-  return debugInfo;
-}
-
 let act;
 let React;
 let ReactNoop;
 let ReactNoopFlightServer;
 let ReactNoopFlightClient;
+let getDebugInfo;
 
 describe('ReactFlight', () => {
   beforeEach(() => {
@@ -91,6 +53,11 @@ describe('ReactFlight', () => {
     ReactNoop = require('react-noop-renderer');
     ReactNoopFlightClient = require('react-noop-renderer/flight-client');
     act = require('internal-test-utils').act;
+
+    getDebugInfo = require('internal-test-utils').getDebugInfo.bind(null, {
+      useV8Stack: true,
+      ignoreRscStreamInfo: true,
+    });
   });
 
   afterEach(() => {

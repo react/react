@@ -75,6 +75,7 @@ function Foo(props, ref) {
     }
     return t2;
   }
+
   return value;
 }
 

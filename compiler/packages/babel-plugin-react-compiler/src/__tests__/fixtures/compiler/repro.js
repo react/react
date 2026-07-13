@@ -1,3 +1,4 @@
+// @validateNoVoidUseMemo:false @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const item = props.item;
   const thumbnails = [];

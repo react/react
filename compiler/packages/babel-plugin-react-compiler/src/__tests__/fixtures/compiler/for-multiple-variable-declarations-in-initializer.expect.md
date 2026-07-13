@@ -37,6 +37,7 @@ function Component(props) {
   } else {
     items = $[1];
   }
+
   return items;
 }
 

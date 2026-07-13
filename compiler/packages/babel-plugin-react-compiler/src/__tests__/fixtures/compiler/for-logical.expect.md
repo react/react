@@ -36,6 +36,7 @@ function foo(props) {
     x = x * 2;
     y = y + x;
   }
+
   return y;
 }
 

@@ -53,7 +53,6 @@ function Component(t0) {
   let z;
   if ($[0] !== prop1 || $[1] !== prop2) {
     let x = [{ value: prop1 }];
-
     while (x.length < 2) {
       arrayPush(x, { value: prop2 });
 

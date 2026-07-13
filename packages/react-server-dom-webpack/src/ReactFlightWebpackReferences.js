@@ -63,7 +63,7 @@ const FunctionBind = Function.prototype.bind;
 // $FlowFixMe[method-unbinding]
 const ArraySlice = Array.prototype.slice;
 function bind(this: ServerReference<any>): any {
-  // $FlowFixMe[incompatible-call]
+  // $FlowFixMe[incompatible-type]
   const newFn = FunctionBind.apply(this, arguments);
   if (this.$$typeof === SERVER_REFERENCE_TAG) {
     if (__DEV__) {
@@ -79,7 +79,7 @@ function bind(this: ServerReference<any>): any {
     const $$id = {value: this.$$id};
     const $$bound = {value: this.$$bound ? this.$$bound.concat(args) : args};
     return Object.defineProperties(
-      (newFn: any),
+      newFn as any,
       (__DEV__
         ? {
             $$typeof,
@@ -102,6 +102,12 @@ function bind(this: ServerReference<any>): any {
   return newFn;
 }
 
+const serverReferenceToString = {
+  value: () => 'function () { [omitted code] }',
+  configurable: true,
+  writable: true,
+};
+
 export function registerServerReference<T: Function>(
   reference: T,
   id: string,
@@ -114,7 +120,7 @@ export function registerServerReference<T: Function>(
   };
   const $$bound = {value: null, configurable: true};
   return Object.defineProperties(
-    (reference: any),
+    reference as any,
     __DEV__
       ? ({
           $$typeof,
@@ -125,12 +131,14 @@ export function registerServerReference<T: Function>(
             configurable: true,
           },
           bind: {value: bind, configurable: true},
+          toString: serverReferenceToString,
         } as PropertyDescriptorMap)
       : ({
           $$typeof,
           $$id,
           $$bound,
           bind: {value: bind, configurable: true},
+          toString: serverReferenceToString,
         } as PropertyDescriptorMap),
   );
 }
@@ -174,11 +182,10 @@ const deepProxyHandlers: Proxy$traps<mixed> = {
         // $FlowFixMe[prop-missing]
         return Object.prototype[Symbol.toStringTag];
       case 'Provider':
-        throw new Error(
-          `Cannot render a Client Context Provider on the Server. ` +
-            `Instead, you can export a Client Component wrapper ` +
-            `that itself renders a Client Context Provider.`,
-        );
+        // Context.Provider === Context in React, so return the same reference.
+        // This allows server components to render <ClientContext.Provider>
+        // which will be serialized and executed on the client.
+        return receiver;
       case 'then':
         throw new Error(
           `Cannot await or return from a thenable. ` +
@@ -230,14 +237,14 @@ function getReference(target: Function, name: string | symbol): $FlowFixMe {
       // an ESM compat module but then we'll check again on the client.
       const moduleId = target.$$id;
       target.default = registerClientReferenceImpl(
-        (function () {
+        function () {
           throw new Error(
             `Attempted to call the default export of ${moduleId} from the server ` +
               `but it's on the client. It's not possible to invoke a client function from ` +
               `the server, it can only be rendered as a Component or passed to props of a ` +
               `Client Component.`,
           );
-        }: any),
+        } as any,
         target.$$id + '#',
         target.$$async,
       );
@@ -253,7 +260,9 @@ function getReference(target: Function, name: string | symbol): $FlowFixMe {
         // the client.
 
         const clientReference: ClientReference<any> =
-          registerClientReferenceImpl(({}: any), target.$$id, true);
+          registerClientReferenceImpl({} as any, target.$$id, true);
+        // $FlowFixMe[incompatible-variance]
+        // $FlowFixMe[incompatible-type]
         const proxy = new Proxy(clientReference, proxyHandlers);
 
         // Treat this as a resolved Promise for React's use()
@@ -261,10 +270,10 @@ function getReference(target: Function, name: string | symbol): $FlowFixMe {
         target.value = proxy;
 
         const then = (target.then = registerClientReferenceImpl(
-          (function then(resolve, reject: any) {
+          function then(resolve, reject: any) {
             // Expose to React.
             return Promise.resolve(resolve(proxy));
-          }: any),
+          } as any,
           // If this is not used as a Promise but is treated as a reference to a `.then`
           // export then we should treat it as a reference to that name.
           target.$$id + '#then',
@@ -287,20 +296,18 @@ function getReference(target: Function, name: string | symbol): $FlowFixMe {
   let cachedReference = target[name];
   if (!cachedReference) {
     const reference: ClientReference<any> = registerClientReferenceImpl(
-      (function () {
+      function () {
         throw new Error(
           // eslint-disable-next-line react-internal/safe-string-coercion
-          `Attempted to call ${String(name)}() from the server but ${String(
-            name,
-          )} is on the client. ` +
+          `Attempted to call ${String(name)}() from the server but ${String(name)} is on the client. ` +
             `It's not possible to invoke a client function from the server, it can ` +
             `only be rendered as a Component or passed to props of a Client Component.`,
         );
-      }: any),
+      } as any,
       target.$$id + '#' + name,
       target.$$async,
     );
-    Object.defineProperty((reference: any), 'name', {value: name});
+    Object.defineProperty(reference as any, 'name', {value: name});
     cachedReference = target[name] = new Proxy(reference, deepProxyHandlers);
   }
   return cachedReference;
@@ -343,10 +350,13 @@ export function createClientModuleProxy<T>(
   moduleId: string,
 ): ClientReference<T> {
   const clientReference: ClientReference<T> = registerClientReferenceImpl(
-    ({}: any),
+    {} as any,
     // Represents the whole Module object instead of a particular import.
     moduleId,
     false,
   );
+  // $FlowFixMe[incompatible-variance]
+  // $FlowFixMe[incompatible-type]
+  // $FlowFixMe[incompatible-exact]
   return new Proxy(clientReference, proxyHandlers);
 }

@@ -77,7 +77,6 @@ function Component(t0) {
         hasLogged.current = true;
       }
     };
-
     t3 = <Stringify log={log} shouldInvokeFns={true} />;
     $[4] = logA;
     $[5] = logB;

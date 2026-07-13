@@ -32,16 +32,9 @@ function Component(props) {
   if ($[0] !== props.name) {
     const element = fbt._(
       "Hello {user name}",
-      [
-        fbt._param(
-          "user name",
-
-          props.name,
-        ),
-      ],
+      [fbt._param("user name", props.name)],
       { hk: "2zEDKF" },
     );
-
     t0 = element.toString();
     $[0] = props.name;
     $[1] = t0;

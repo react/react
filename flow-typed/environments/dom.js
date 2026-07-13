@@ -151,7 +151,7 @@ type TransitionEventHandler = (event: TransitionEvent) => mixed;
 type TransitionEventListener =
   | {handleEvent: TransitionEventHandler, ...}
   | TransitionEventHandler;
-type MessageEventHandler = (event: MessageEvent) => mixed;
+type MessageEventHandler = (event: MessageEvent<>) => mixed;
 type MessageEventListener =
   | {handleEvent: MessageEventHandler, ...}
   | MessageEventHandler;
@@ -845,8 +845,8 @@ declare class PageTransitionEvent extends Event {
 // https://www.w3.org/TR/2008/WD-html5-20080610/comms.html
 // and
 // https://html.spec.whatwg.org/multipage/comms.html#the-messageevent-interfaces
-declare class MessageEvent extends Event {
-  data: mixed;
+declare class MessageEvent<Data = mixed> extends Event {
+  data: Data;
   origin: string;
   lastEventId: string;
   source: WindowProxy;
@@ -1263,6 +1263,7 @@ declare class HTMLCollection<+Elem: Element> {
   length: number;
   item(nameOrIndex?: any, optionalIndex?: any): Elem | null;
   namedItem(name: string): Elem | null;
+  // $FlowFixMe[incompatible-variance]
   [index: number | string]: Elem;
 }
 
@@ -1415,6 +1416,8 @@ declare class Document extends Node {
   links: HTMLCollection<HTMLLinkElement>;
   media: string;
   open(url?: string, name?: string, features?: string, replace?: boolean): any;
+  /** @see {@link https://developer.mozilla.org/en-US/docs/Web/API/Document/prerendering} */
+  prerendering: boolean;
   readyState: string;
   referrer: string;
   scripts: HTMLCollection<HTMLScriptElement>;

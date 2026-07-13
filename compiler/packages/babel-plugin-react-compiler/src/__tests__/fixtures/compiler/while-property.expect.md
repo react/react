@@ -26,6 +26,7 @@ function foo(a, b) {
   while (a.b.c) {
     x = x + b;
   }
+
   return x;
 }
 

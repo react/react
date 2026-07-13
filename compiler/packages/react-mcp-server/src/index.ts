@@ -7,7 +7,7 @@
 
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
-import {z} from 'zod';
+import {z} from 'zod/v4';
 import {compile, type PrintedCompilerPipelineValue} from './compiler';
 import {
   CompilerPipelineValue,
@@ -145,7 +145,7 @@ server.tool(
       }
     };
     const errors: Array<{message: string; loc: SourceLocation | null}> = [];
-    const compilerOptions: Partial<PluginOptions> = {
+    const compilerOptions: PluginOptions = {
       panicThreshold: 'none',
       logger: {
         debugLogIRs: logIR,

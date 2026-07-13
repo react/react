@@ -7,7 +7,7 @@
  * @flow
  */
 import {withSyncPerfMeasurements} from 'react-devtools-shared/src/PerformanceLoggingUtils';
-import {decode} from 'sourcemap-codec';
+import {decode} from '@jridgewell/sourcemap-codec';
 
 import type {
   IndexSourceMap,
@@ -39,15 +39,15 @@ export default function SourceMapConsumer(
   sourceMapJSON: MixedSourceMap | IndexSourceMapSection,
 ): SourceMapConsumerType {
   if (sourceMapJSON.sections != null) {
-    return IndexedSourceMapConsumer(((sourceMapJSON: any): IndexSourceMap));
+    return IndexedSourceMapConsumer(sourceMapJSON as any as IndexSourceMap);
   } else {
-    return BasicSourceMapConsumer(((sourceMapJSON: any): BasicSourceMap));
+    return BasicSourceMapConsumer(sourceMapJSON as any as BasicSourceMap);
   }
 }
 
 function BasicSourceMapConsumer(sourceMapJSON: BasicSourceMap) {
   const decodedMappings: Mappings = withSyncPerfMeasurements(
-    'Decoding source map mappings with sourcemap-codec',
+    'Decoding source map mappings with @jridgewell/sourcemap-codec',
     () => decode(sourceMapJSON.mappings),
   );
 
@@ -124,15 +124,15 @@ function BasicSourceMapConsumer(sourceMapJSON: BasicSourceMap) {
     return {
       column,
       line,
-      sourceContent: ((sourceContent: any): string | null),
-      sourceURL: ((sourceURL: any): string | null),
+      sourceContent: sourceContent as any as string | null,
+      sourceURL: sourceURL as any as string | null,
       ignored,
     };
   }
 
-  return (({
+  return {
     originalPositionFor,
-  }: any): SourceMapConsumerType);
+  } as any as SourceMapConsumerType;
 }
 
 type Section = {
@@ -231,7 +231,7 @@ function IndexedSourceMapConsumer(sourceMapJSON: IndexSourceMap) {
     });
   }
 
-  return (({
+  return {
     originalPositionFor,
-  }: any): SourceMapConsumerType);
+  } as any as SourceMapConsumerType;
 }

@@ -12,6 +12,7 @@ export const rendererPackageName = 'not-used';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigWeb';
 export * from 'react-client/src/ReactClientConsoleConfigBrowser';
+export * from 'react-client/src/ReactClientDebugConfigBrowser';
 
 export type Response = any;
 export opaque type ModuleLoading = mixed;

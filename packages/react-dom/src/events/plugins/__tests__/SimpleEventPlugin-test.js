@@ -591,4 +591,36 @@ describe('SimpleEventPlugin', function () {
       );
     });
   });
+
+  it('includes the submitter in submit events', async function () {
+    container = document.createElement('div');
+
+    const onSubmit = jest.fn(event => {
+      event.preventDefault();
+    });
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onSubmit={onSubmit}>
+          <button type="submit" id="submitter">
+            Submit
+          </button>
+        </form>,
+      );
+    });
+
+    const submitter = container.querySelector('#submitter');
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+      submitter: submitter,
+    });
+    await act(() => {
+      submitter.dispatchEvent(submitEvent);
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const event = onSubmit.mock.calls[0][0];
+    expect(event.submitter).toBe(submitter);
+  });
 });

@@ -26,6 +26,11 @@
   margin: 0.125rem 0.25rem 0.125rem 0;
 }
 
+.SettingDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .OptionGroup {
   display: inline-flex;
   flex-direction: row;

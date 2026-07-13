@@ -9,8 +9,8 @@ import {render} from '@testing-library/react';
 import {JSDOM} from 'jsdom';
 import React, {MutableRefObject} from 'react';
 import util from 'util';
-import {z} from 'zod';
-import {fromZodError} from 'zod-validation-error';
+import {z} from 'zod/v4';
+import {fromZodError} from 'zod-validation-error/v4';
 import {initFbt, toJSON} from './shared-runtime';
 
 /**
@@ -298,7 +298,10 @@ export function doEval(source: string): EvaluatorResult {
     return {
       kind: 'UnexpectedError',
       value:
-        'Unexpected error during eval, possible syntax error?\n' + e.message,
+        'Unexpected error during eval, possible syntax error?\n' +
+        e.message +
+        '\n\nsource:\n' +
+        source,
       logs,
     };
   } finally {

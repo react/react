@@ -125,6 +125,7 @@ describe(`onRender`, () => {
     expect(callback).toHaveBeenCalledTimes(1);
   });
 
+  // @gate !__DEV__
   it('does not record times for components outside of Profiler tree', async () => {
     // Mock the Scheduler module so we can track how many times the current
     // time is read
@@ -163,6 +164,7 @@ describe(`onRender`, () => {
 
     if (gate(flags => flags.enableComponentPerformanceTrack)) {
       assertLog([
+        'read current time',
         'read current time',
         'read current time',
         'read current time',

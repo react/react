@@ -1,11 +1,11 @@
 {
   "name": "react-dom",
-  "version": "19.1.0",
+  "version": "19.3.0",
   "description": "React package for working with the DOM.",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-dom"
   },
   "keywords": [
@@ -13,14 +13,14 @@
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/facebook/react/issues"
+    "url": "https://github.com/react/react/issues"
   },
   "homepage": "https://react.dev/",
   "dependencies": {
-    "scheduler": "^0.26.0"
+    "scheduler": "^0.28.0"
   },
   "peerDependencies": {
-    "react": "^19.1.0"
+    "react": "^19.3.0"
   },
   "files": [
     "LICENSE",
@@ -61,7 +61,7 @@
       "react-server": "./server.react-server.js",
       "workerd": "./server.edge.js",
       "bun": "./server.bun.js",
-      "deno": "./server.browser.js",
+      "deno": "./server.node.js",
       "worker": "./server.browser.js",
       "node": "./server.node.js",
       "edge-light": "./server.edge.js",

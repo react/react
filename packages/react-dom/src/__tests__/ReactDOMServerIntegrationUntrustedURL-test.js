@@ -212,6 +212,11 @@ describe('ReactDOMServerIntegration - Untrusted URLs', () => {
       expectedToStringCalls *= 2;
     }
 
+    if (gate('enableTrustedTypesIntegration') && render === clientCleanRender) {
+      // Trusted types does another toString.
+      expectedToStringCalls += 1;
+    }
+
     let toStringCalls = 0;
     const firstIsSafe = {
       toString() {

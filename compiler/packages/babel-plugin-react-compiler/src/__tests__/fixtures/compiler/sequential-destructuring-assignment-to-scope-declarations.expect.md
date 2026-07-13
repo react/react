@@ -50,7 +50,6 @@ function Component(statusName) {
     const { status, text: t2 } = foo(statusName);
     text = t2;
     const { bg, color } = getStyles(status);
-
     t1 = identity(bg);
     t0 = identity(color);
     $[0] = statusName;

@@ -26,6 +26,7 @@ function foo() {
   for (const x = 100; false; 100) {
     y = y + 1;
   }
+
   return y;
 }
 

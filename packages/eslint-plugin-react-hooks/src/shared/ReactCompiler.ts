@@ -8,13 +8,15 @@
 
 import type {SourceLocation as BabelSourceLocation} from '@babel/types';
 import {
-  type CompilerDiagnosticOptions,
-  type CompilerErrorDetailOptions,
+  type CompilerSuggestion,
   CompilerSuggestionOperation,
   LintRules,
   type LintRule,
   ErrorSeverity,
+  LintRulePreset,
 } from 'babel-plugin-react-compiler';
+import type {CompileErrorDetail} from 'babel-plugin-react-compiler/src/Entrypoint';
+import {printCodeFrame} from 'babel-plugin-react-compiler/src/CompilerError';
 import {type Linter, type Rule} from 'eslint';
 import runReactCompiler, {RunCacheEntry} from './RunReactCompiler';
 
@@ -22,12 +24,75 @@ function assertExhaustive(_: never, errorMsg: string): never {
   throw new Error(errorMsg);
 }
 
+/**
+ * Get the primary source location from a CompileErrorDetail.
+ * Handles both the new format (details array) and legacy format (flat loc).
+ */
+function primaryLocation(
+  detail: CompileErrorDetail,
+): BabelSourceLocation | null {
+  if (detail.details != null) {
+    const firstError = detail.details.find(d => d.kind === 'error');
+    if (firstError != null) {
+      return firstError.loc ?? null;
+    }
+  }
+  return detail.loc ?? null;
+}
+
+/**
+ * Format an error message from a CompileErrorDetail.
+ */
+function printErrorMessage(source: string, error: CompileErrorDetail): string {
+  const buffer = [`[ReactCompilerError] ${error.reason}`];
+  if (error.description != null) {
+    buffer.push(`\n\n${error.description}.`);
+  }
+  /*
+   * A CompileError's source location(s) may be provided either as a `details`
+   * array (CompilerDiagnostic and the Rust compiler) or as a single flat `loc`
+   * (legacy CompilerErrorDetail). Normalize to a list so both shapes render
+   * code frames identically.
+   */
+  const details =
+    error.details ??
+    (error.loc != null
+      ? [{kind: 'error' as const, loc: error.loc, message: error.reason}]
+      : []);
+  for (const detail of details) {
+    if (detail.kind === 'error') {
+      const loc = detail.loc;
+      if (loc == null || typeof loc === 'symbol') {
+        continue;
+      }
+      let codeFrame: string;
+      try {
+        codeFrame = printCodeFrame(source, loc, detail.message ?? '');
+      } catch {
+        codeFrame = detail.message ?? '';
+      }
+      buffer.push('\n\n');
+      if (loc.filename != null) {
+        // ESLint uses 1-indexed columns
+        buffer.push(
+          `${loc.filename}:${loc.start.line}:${loc.start.column + 1}\n`,
+        );
+      }
+      buffer.push(codeFrame);
+    } else if (detail.kind === 'hint') {
+      buffer.push('\n\n');
+      buffer.push(detail.message ?? '');
+    }
+  }
+  return buffer.join('');
+}
+
 function makeSuggestions(
-  detail: CompilerErrorDetailOptions | CompilerDiagnosticOptions,
+  detail: CompileErrorDetail,
 ): Array<Rule.SuggestionReportDescriptor> {
   const suggest: Array<Rule.SuggestionReportDescriptor> = [];
   if (Array.isArray(detail.suggestions)) {
-    for (const suggestion of detail.suggestions) {
+    for (const suggestion of detail.suggestions as Array<CompilerSuggestion>) {
       switch (suggestion.op) {
         case CompilerSuggestionOperation.InsertBefore:
           suggest.push({
@@ -114,8 +179,8 @@ function makeRule(rule: LintRule): Rule.RuleModule {
       if (event.kind === 'CompileError') {
         const detail = event.detail;
         if (detail.category === rule.category) {
-          const loc = detail.primaryLocation();
-          if (loc == null || typeof loc === 'symbol') {
+          const loc = primaryLocation(detail);
+          if (loc == null) {
             continue;
           }
           if (
@@ -132,11 +197,9 @@ function makeRule(rule: LintRule): Rule.RuleModule {
            * we should deduplicate them with a "reported" set
            */
           context.report({
-            message: detail.printErrorMessage(result.sourceCode, {
-              eslint: true,
-            }),
+            message: printErrorMessage(result.sourceCode, detail),
             loc,
-            suggest: makeSuggestions(detail.options),
+            suggest: makeSuggestions(detail),
           });
         }
       }
@@ -149,7 +212,8 @@ function makeRule(rule: LintRule): Rule.RuleModule {
       type: 'problem',
       docs: {
         description: rule.description,
-        recommended: rule.recommended,
+        recommended: rule.preset === LintRulePreset.Recommended,
+        url: `https://react.dev/reference/eslint-plugin-react-hooks/lints/${rule.name}`,
       },
       fixable: 'code',
       hasSuggestions: true,
@@ -160,69 +224,30 @@ function makeRule(rule: LintRule): Rule.RuleModule {
   };
 }
 
-export const NoUnusedDirectivesRule: Rule.RuleModule = {
-  meta: {
-    type: 'suggestion',
-    docs: {
-      recommended: true,
-    },
-    fixable: 'code',
-    hasSuggestions: true,
-    // validation is done at runtime with zod
-    schema: [{type: 'object', additionalProperties: true}],
-  },
-  create(context: Rule.RuleContext): Rule.RuleListener {
-    const results = getReactCompilerResult(context);
-
-    for (const directive of results.unusedOptOutDirectives) {
-      context.report({
-        message: `Unused '${directive.directive}' directive`,
-        loc: directive.loc,
-        suggest: [
-          {
-            desc: 'Remove the directive',
-            fix(fixer): Rule.Fix {
-              return fixer.removeRange(directive.range);
-            },
-          },
-        ],
-      });
-    }
-    return {};
-  },
-};
-
 type RulesConfig = {
   [name: string]: {rule: Rule.RuleModule; severity: ErrorSeverity};
 };
 
-export const allRules: RulesConfig = LintRules.reduce(
-  (acc, rule) => {
-    acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
-    return acc;
-  },
-  {
-    'no-unused-directives': {
-      rule: NoUnusedDirectivesRule,
-      severity: ErrorSeverity.Error,
-    },
-  } as RulesConfig,
-);
+export const allRules: RulesConfig = LintRules.reduce((acc, rule) => {
+  acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
+  return acc;
+}, {} as RulesConfig);
 
 export const recommendedRules: RulesConfig = LintRules.filter(
-  rule => rule.recommended,
-).reduce(
-  (acc, rule) => {
-    acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
-    return acc;
-  },
-  {
-    'no-unused-directives': {
-      rule: NoUnusedDirectivesRule,
-      severity: ErrorSeverity.Error,
-    },
-  } as RulesConfig,
-);
+  rule => rule.preset === LintRulePreset.Recommended,
+).reduce((acc, rule) => {
+  acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
+  return acc;
+}, {} as RulesConfig);
+
+export const recommendedLatestRules: RulesConfig = LintRules.filter(
+  rule =>
+    rule.preset === LintRulePreset.Recommended ||
+    rule.preset === LintRulePreset.RecommendedLatest,
+).reduce((acc, rule) => {
+  acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
+  return acc;
+}, {} as RulesConfig);
 
 export function mapErrorSeverityToESlint(
   severity: ErrorSeverity,

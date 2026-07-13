@@ -48,6 +48,7 @@ function bar(a, b) {
   } else {
     y = $[2];
   }
+
   return y;
 }
 

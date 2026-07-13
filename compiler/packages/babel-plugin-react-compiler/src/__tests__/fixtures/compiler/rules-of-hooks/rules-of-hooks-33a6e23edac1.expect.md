@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 // Valid because hooks can use hooks.
 function createHook() {
   return function useHookWithHook() {
@@ -15,7 +15,7 @@ function createHook() {
 ## Code
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 // Valid because hooks can use hooks.
 function createHook() {
   return function useHookWithHook() {

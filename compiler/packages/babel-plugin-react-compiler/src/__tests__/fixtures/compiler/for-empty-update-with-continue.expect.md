@@ -29,6 +29,7 @@ function Component(props) {
     x = x + i;
     i = i + 1;
   }
+
   return x;
 }
 

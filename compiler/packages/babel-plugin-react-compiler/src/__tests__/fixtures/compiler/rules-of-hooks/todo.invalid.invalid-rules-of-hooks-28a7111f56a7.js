@@ -1,4 +1,4 @@
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // Technically this is a false positive.

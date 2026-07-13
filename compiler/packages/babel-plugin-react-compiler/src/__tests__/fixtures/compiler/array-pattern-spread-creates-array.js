@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 import {makeObject_Primitives, ValidateMemoization} from 'shared-runtime';
 

@@ -9,7 +9,11 @@
 
 import {REACT_STRICT_MODE_TYPE} from 'shared/ReactSymbols';
 
-import type {Wakeable, Thenable} from 'shared/ReactTypes';
+import type {
+  Wakeable,
+  Thenable,
+  GestureOptionsRequired,
+} from 'shared/ReactTypes';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 import type {Lanes, Lane} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
@@ -26,6 +30,8 @@ import type {
   Resource,
   ViewTransitionInstance,
   RunningViewTransition,
+  GestureTimeline,
+  SuspendedState,
 } from './ReactFiberConfig';
 import type {RootState} from './ReactFiberRoot';
 import {
@@ -45,6 +51,7 @@ import {
   disableLegacyContext,
   alwaysThrottleRetries,
   enableInfiniteRenderLoopDetection,
+  enableInfiniteRenderLoopDetectionForceThrow,
   disableLegacyMode,
   enableComponentPerformanceTrack,
   enableYieldingBeforePassive,
@@ -52,6 +59,7 @@ import {
   enableViewTransition,
   enableGestureTransition,
   enableDefaultTransitionIndicator,
+  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
@@ -70,6 +78,7 @@ import {
 } from './Scheduler';
 import {
   logBlockingStart,
+  logGestureStart,
   logTransitionStart,
   logRenderPhase,
   logInterruptedRenderPhase,
@@ -78,16 +87,19 @@ import {
   logErroredRenderPhase,
   logInconsistentRender,
   logSuspendedWithDelayPhase,
-  logSuspenseThrottlePhase,
   logSuspendedCommitPhase,
+  logSuspendedViewTransitionPhase,
   logCommitPhase,
   logPaintYieldPhase,
+  logStartViewTransitionYieldPhase,
+  logAnimatingPhase,
   logPassiveCommitPhase,
   logYieldTime,
   logActionYieldTime,
   logSuspendedYieldTime,
   setCurrentTrackFromLanes,
   markAllLanesInOrder,
+  logApplyGesturePhase,
 } from './ReactFiberPerformanceTrack';
 
 import {
@@ -99,6 +111,7 @@ import {
   startSuspendingCommit,
   suspendOnActiveViewTransition,
   waitForCommitToBeReady,
+  getSuspendedCommitReason,
   preloadInstance,
   preloadResource,
   supportsHydration,
@@ -109,13 +122,17 @@ import {
   startViewTransition,
   startGestureTransition,
   stopViewTransition,
+  addViewTransitionFinishedListener,
   createViewTransitionInstance,
   flushHydrationEvents,
 } from './ReactFiberConfig';
 
 import {createWorkInProgress, resetWorkInProgress} from './ReactFiber';
 import {isRootDehydrated} from './ReactFiberShellHydration';
-import {getIsHydrating} from './ReactFiberHydrationContext';
+import {
+  getIsHydrating,
+  popHydrationStateOnInterruptedWork,
+} from './ReactFiberHydrationContext';
 import {
   NoMode,
   ProfileMode,
@@ -175,6 +192,8 @@ import {
   includesOnlyTransitions,
   includesBlockingLane,
   includesTransitionLane,
+  includesRetryLane,
+  includesIdleGroupLanes,
   includesExpiredLane,
   getNextLanes,
   getEntangledLanes,
@@ -197,6 +216,9 @@ import {
   includesOnlyViewTransitionEligibleLanes,
   isGestureRender,
   GestureLane,
+  SomeTransitionLane,
+  SomeRetryLane,
+  IdleLane,
 } from './ReactFiberLane';
 import {
   DiscreteEventPriority,
@@ -267,23 +289,42 @@ import {
   blockingUpdateTime,
   blockingUpdateTask,
   blockingUpdateType,
+  blockingUpdateMethodName,
+  blockingUpdateComponentName,
   blockingEventTime,
   blockingEventType,
-  blockingEventIsRepeat,
+  blockingEventRepeatTime,
   blockingSuspendedTime,
+  gestureClampTime,
+  gestureUpdateTime,
+  gestureUpdateTask,
+  gestureUpdateType,
+  gestureUpdateMethodName,
+  gestureUpdateComponentName,
+  gestureEventTime,
+  gestureEventType,
+  gestureEventRepeatTime,
+  gestureSuspendedTime,
   transitionClampTime,
   transitionStartTime,
   transitionUpdateTime,
   transitionUpdateTask,
   transitionUpdateType,
+  transitionUpdateMethodName,
+  transitionUpdateComponentName,
   transitionEventTime,
   transitionEventType,
-  transitionEventIsRepeat,
+  transitionEventRepeatTime,
   transitionSuspendedTime,
   clearBlockingTimers,
+  clearGestureTimers,
+  clearGestureUpdates,
   clearTransitionTimers,
   clampBlockingTimers,
+  clampGestureTimers,
   clampTransitionTimers,
+  clampRetryTimers,
+  clampIdleTimers,
   markNestedUpdateScheduled,
   renderStartTime,
   commitStartTime,
@@ -304,6 +345,12 @@ import {
   resetCommitErrors,
   PINGED_UPDATE,
   SPAWNED_UPDATE,
+  startAnimating,
+  stopAnimating,
+  animatingLanes,
+  retryClampTime,
+  idleClampTime,
+  animatingTask,
 } from './ReactProfilerTimer';
 
 // DEV stuff
@@ -361,8 +408,8 @@ import {
 import {getMaskedContext, getUnmaskedContext} from './ReactFiberLegacyContext';
 import {logUncaughtError} from './ReactFiberErrorLogger';
 import {
-  deleteScheduledGesture,
-  stopCompletedGestures,
+  scheduleGestureCommit,
+  stopCommittedGesture,
 } from './ReactFiberGestureScheduler';
 import {claimQueuedTransitionTypes} from './ReactFiberTransitionTypes';
 
@@ -471,6 +518,11 @@ let didIncludeCommitPhaseUpdate: boolean = false;
 // content as it streams in, to minimize jank.
 // TODO: Think of a better name for this variable?
 let globalMostRecentFallbackTime: number = 0;
+// Track the most recent time we started a new Transition. This lets us apply
+// heuristics like the suspensey image timeout based on how long we've waited
+// already.
+let globalMostRecentTransitionTime: number = 0;
+
 const FALLBACK_THROTTLE_MS: number = 300;
 
 // The absolute time for when we should start giving up on rendering
@@ -508,7 +560,7 @@ export function addTransitionStartCallbackToPendingTransition(
 
     if (currentPendingTransitionCallbacks.transitionStart === null) {
       currentPendingTransitionCallbacks.transitionStart =
-        ([]: Array<Transition>);
+        [] as Array<Transition>;
     }
 
     currentPendingTransitionCallbacks.transitionStart.push(transition);
@@ -522,14 +574,14 @@ export function addMarkerProgressCallbackToPendingTransition(
 ) {
   if (enableTransitionTracing) {
     if (currentPendingTransitionCallbacks === null) {
-      currentPendingTransitionCallbacks = ({
+      currentPendingTransitionCallbacks = {
         transitionStart: null,
         transitionProgress: null,
         transitionComplete: null,
         markerProgress: new Map(),
         markerIncomplete: null,
         markerComplete: null,
-      }: PendingTransitionCallbacks);
+      } as PendingTransitionCallbacks;
     }
 
     if (currentPendingTransitionCallbacks.markerProgress === null) {
@@ -642,7 +694,7 @@ export function addTransitionCompleteCallbackToPendingTransition(
 
     if (currentPendingTransitionCallbacks.transitionComplete === null) {
       currentPendingTransitionCallbacks.transitionComplete =
-        ([]: Array<Transition>);
+        [] as Array<Transition>;
     }
 
     currentPendingTransitionCallbacks.transitionComplete.push(transition);
@@ -659,10 +711,13 @@ export function getRenderTargetTime(): number {
 
 let legacyErrorBoundariesThatAlreadyFailed: Set<mixed> | null = null;
 
-type SuspendedCommitReason = 0 | 1 | 2;
+type SuspendedCommitReason = null | string;
+
+type DelayedCommitReason = 0 | 1 | 2 | 3;
 const IMMEDIATE_COMMIT = 0;
-const SUSPENDED_COMMIT = 1;
-const THROTTLED_COMMIT = 2;
+const ABORTED_VIEW_TRANSITION_COMMIT = 1;
+const DELAYED_PASSIVE_COMMIT = 2;
+const ANIMATION_STARTED_COMMIT = 3;
 
 const NO_PENDING_EFFECTS = 0;
 const PENDING_MUTATION_PHASE = 1;
@@ -673,19 +728,22 @@ const PENDING_PASSIVE_PHASE = 5;
 const PENDING_GESTURE_MUTATION_PHASE = 6;
 const PENDING_GESTURE_ANIMATION_PHASE = 7;
 let pendingEffectsStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 = 0;
-let pendingEffectsRoot: FiberRoot = (null: any);
-let pendingFinishedWork: Fiber = (null: any);
+let pendingEffectsRoot: FiberRoot = null as any;
+let pendingFinishedWork: Fiber = null as any;
 let pendingEffectsLanes: Lanes = NoLanes;
 let pendingEffectsRemainingLanes: Lanes = NoLanes;
 let pendingEffectsRenderEndTime: number = -0; // Profiling-only
 let pendingPassiveTransitions: Array<Transition> | null = null;
 let pendingRecoverableErrors: null | Array<CapturedValue<mixed>> = null;
 let pendingViewTransition: null | RunningViewTransition = null;
-let pendingViewTransitionEvents: Array<(types: Array<string>) => void> | null =
-  null;
+let pendingViewTransitionEvents: Array<
+  (types: Array<string>) => void | (() => void),
+> | null = null;
 let pendingTransitionTypes: null | TransitionTypes = null;
 let pendingDidIncludeRenderPhaseUpdate: boolean = false;
-let pendingSuspendedCommitReason: SuspendedCommitReason = IMMEDIATE_COMMIT; // Profiling-only
+let pendingSuspendedCommitReason: SuspendedCommitReason = null; // Profiling-only
+let pendingDelayedCommitReason: DelayedCommitReason = IMMEDIATE_COMMIT; // Profiling-only
+let pendingSuspendedViewTransitionReason: null | string = null; // Profiling-only
 
 // Use these to prevent an infinite loop of nested updates
 const NESTED_UPDATE_LIMIT = 50;
@@ -693,6 +751,11 @@ let nestedUpdateCount: number = 0;
 let rootWithNestedUpdates: FiberRoot | null = null;
 let isFlushingPassiveEffects = false;
 let didScheduleUpdateDuringPassiveEffects = false;
+
+const NO_NESTED_UPDATE = 0;
+const NESTED_UPDATE_SYNC_LANE = 1;
+const NESTED_UPDATE_PHASE_SPAWN = 2;
+let nestedUpdateKind: 0 | 1 | 2 = NO_NESTED_UPDATE;
 
 const NESTED_PASSIVE_UPDATE_LIMIT = 50;
 let nestedPassiveUpdateCount: number = 0;
@@ -748,7 +811,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
   const mode = fiber.mode;
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return (SyncLane: Lane);
+    return SyncLane as Lane;
   } else if (
     (executionContext & RenderContext) !== NoContext &&
     workInProgressRootRenderLanes !== NoLanes
@@ -798,7 +861,7 @@ function requestRetryLane(fiber: Fiber) {
   // Special cases
   const mode = fiber.mode;
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
-    return (SyncLane: Lane);
+    return SyncLane as Lane;
   }
 
   return claimNextRetryLane();
@@ -845,7 +908,10 @@ export function requestDeferredLane(): Lane {
 
 export function scheduleViewTransitionEvent(
   fiber: Fiber,
-  callback: ?(instance: ViewTransitionInstance, types: Array<string>) => void,
+  callback: ?(
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
 ): void {
   if (enableViewTransition) {
     if (callback != null) {
@@ -860,6 +926,42 @@ export function scheduleViewTransitionEvent(
         pendingViewTransitionEvents = [];
       }
       pendingViewTransitionEvents.push(callback.bind(null, instance));
+    }
+  }
+}
+
+export function scheduleGestureTransitionEvent(
+  fiber: Fiber,
+  callback: ?(
+    timeline: GestureTimeline,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+): void {
+  if (enableGestureTransition) {
+    if (callback != null) {
+      const applyingGesture = pendingEffectsRoot.pendingGestures;
+      if (applyingGesture !== null) {
+        const state: ViewTransitionState = fiber.stateNode;
+        let instance = state.ref;
+        if (instance === null) {
+          instance = state.ref = createViewTransitionInstance(
+            getViewTransitionName(fiber.memoizedProps, state),
+          );
+        }
+        const timeline = applyingGesture.provider;
+        const options = {
+          rangeStart: applyingGesture.rangeStart,
+          rangeEnd: applyingGesture.rangeEnd,
+        };
+        if (pendingViewTransitionEvents === null) {
+          pendingViewTransitionEvents = [];
+        }
+        pendingViewTransitionEvents.push(
+          callback.bind(null, timeline, options, instance),
+        );
+      }
     }
   }
 }
@@ -1103,7 +1205,7 @@ export function performWorkOnRoot(
       // TODO: It's possible that even a concurrent render may never have yielded
       // to the main thread, if it was fast enough, or if it expired. We could
       // skip the consistency check in that case, too.
-      const finishedWork: Fiber = (root.current.alternate: any);
+      const finishedWork: Fiber = root.current.alternate as any;
       if (
         renderWasConcurrent &&
         !isRenderConsistentWithExternalStores(finishedWork)
@@ -1219,7 +1321,9 @@ function recoverFromConcurrentError(
   // Before rendering again, save the errors from the previous attempt.
   const errorsFromFirstAttempt = workInProgressRootConcurrentErrors;
 
+  // $FlowFixMe[constant-condition]
   const wasRootDehydrated = supportsHydration && isRootDehydrated(root);
+  // $FlowFixMe[constant-condition]
   if (wasRootDehydrated) {
     // The shell failed to hydrate. Set a flag to force a client rendering
     // during the next attempt. To do this, we call prepareFreshStack now
@@ -1237,7 +1341,12 @@ function recoverFromConcurrentError(
   }
 
   const exitStatus = renderRootSync(root, errorRetryLanes, false);
-  if (exitStatus !== RootErrored) {
+  // A status of RootSuspendedAtTheShell means the retry unwound to the root
+  // without completing (e.g. something suspended in the shell), so the tree is
+  // incomplete and must not be treated as recovered — committing it would
+  // corrupt the current tree. Fall through and return the status as-is so the
+  // root stays suspended.
+  if (exitStatus !== RootErrored && exitStatus !== RootSuspendedAtTheShell) {
     // Successfully finished rendering on retry
 
     if (workInProgressRootDidAttachPingListener && !wasRootDehydrated) {
@@ -1310,7 +1419,7 @@ function finishConcurrentRender(
       throw new Error('Root did not complete. This is a bug in React.');
     }
     case RootSuspendedWithDelay: {
-      if (!includesOnlyTransitions(lanes)) {
+      if (!includesOnlyTransitions(lanes) && !includesOnlyRetries(lanes)) {
         // Commit the placeholder.
         break;
       }
@@ -1359,7 +1468,7 @@ function finishConcurrentRender(
 
   if (shouldForceFlushFallbacksInDEV()) {
     // We're inside an `act` scope. Commit immediately.
-    commitRoot(
+    completeRoot(
       root,
       finishedWork,
       lanes,
@@ -1369,8 +1478,10 @@ function finishConcurrentRender(
       workInProgressDeferredLane,
       workInProgressRootInterleavedUpdatedLanes,
       workInProgressSuspendedRetryLanes,
+      workInProgressRootDidSkipSuspendedSiblings,
       exitStatus,
-      IMMEDIATE_COMMIT,
+      null,
+      null,
       renderStartTime,
       renderEndTime,
     );
@@ -1407,8 +1518,9 @@ function finishConcurrentRender(
         // immediately, wait for more data to arrive.
         // TODO: Combine retry throttling with Suspensey commits. Right now they
         // run one after the other.
+        pendingEffectsLanes = lanes;
         root.timeoutHandle = scheduleTimeout(
-          commitRootWhenReady.bind(
+          completeRootWhenReady.bind(
             null,
             root,
             finishedWork,
@@ -1421,7 +1533,7 @@ function finishConcurrentRender(
             workInProgressSuspendedRetryLanes,
             workInProgressRootDidSkipSuspendedSiblings,
             exitStatus,
-            THROTTLED_COMMIT,
+            'Throttled',
             renderStartTime,
             renderEndTime,
           ),
@@ -1430,7 +1542,7 @@ function finishConcurrentRender(
         return;
       }
     }
-    commitRootWhenReady(
+    completeRootWhenReady(
       root,
       finishedWork,
       workInProgressRootRecoverableErrors,
@@ -1442,14 +1554,14 @@ function finishConcurrentRender(
       workInProgressSuspendedRetryLanes,
       workInProgressRootDidSkipSuspendedSiblings,
       exitStatus,
-      IMMEDIATE_COMMIT,
+      null,
       renderStartTime,
       renderEndTime,
     );
   }
 }
 
-function commitRootWhenReady(
+function completeRootWhenReady(
   root: FiberRoot,
   finishedWork: Fiber,
   recoverableErrors: Array<CapturedValue<mixed>> | null,
@@ -1478,28 +1590,45 @@ function commitRootWhenReady(
     subtreeFlags & ShouldSuspendCommit ||
     (subtreeFlags & BothVisibilityAndMaySuspendCommit) ===
       BothVisibilityAndMaySuspendCommit;
+  let suspendedState: null | SuspendedState = null;
   if (isViewTransitionEligible || maySuspendCommit || isGestureTransition) {
     // Before committing, ask the renderer whether the host tree is ready.
     // If it's not, we'll wait until it notifies us.
-    startSuspendingCommit();
+    suspendedState = startSuspendingCommit();
     // This will walk the completed fiber tree and attach listeners to all
     // the suspensey resources. The renderer is responsible for accumulating
     // all the load events. This all happens in a single synchronous
     // transaction, so it track state in its own module scope.
     // This will also track any newly added or appearing ViewTransition
     // components for the purposes of forming pairs.
-    accumulateSuspenseyCommit(finishedWork, lanes);
-    if (isViewTransitionEligible || isGestureTransition) {
-      // If we're stopping gestures we don't have to wait for any pending
-      // view transition. We'll stop it when we commit.
-      if (!enableGestureTransition || root.stoppingGestures === null) {
-        suspendOnActiveViewTransition(root.containerInfo);
-      }
+    accumulateSuspenseyCommit(finishedWork, lanes, suspendedState);
+    if (
+      isViewTransitionEligible ||
+      (isGestureTransition &&
+        root.pendingGestures !== null &&
+        // If this gesture already has a View Transition running then we don't
+        // have to wait on that one before proceeding. We may hold the commit
+        // on the gesture committing later on in completeRoot.
+        root.pendingGestures.running === null)
+    ) {
+      // Wait for any pending View Transition (including gestures) to finish.
+      suspendOnActiveViewTransition(suspendedState, root.containerInfo);
     }
+    // For timeouts we use the previous fallback commit for retries and
+    // the start time of the transition for transitions. This offset
+    // represents the time already passed.
+    const timeoutOffset = includesOnlyRetries(lanes)
+      ? globalMostRecentFallbackTime - now()
+      : includesOnlyTransitions(lanes)
+        ? globalMostRecentTransitionTime - now()
+        : 0;
     // At the end, ask the renderer if it's ready to commit, or if we should
     // suspend. If it's not ready, it will return a callback to subscribe to
     // a ready event.
-    const schedulePendingCommit = waitForCommitToBeReady();
+    const schedulePendingCommit = waitForCommitToBeReady(
+      suspendedState,
+      timeoutOffset,
+    );
     if (schedulePendingCommit !== null) {
       // NOTE: waitForCommitToBeReady returns a subscribe function so that we
       // only allocate a function if the commit isn't ready yet. The other
@@ -1508,8 +1637,9 @@ function commitRootWhenReady(
       // Not yet ready to commit. Delay the commit until the renderer notifies
       // us that it's ready. This will be canceled if we start work on the
       // root again.
+      pendingEffectsLanes = lanes;
       root.cancelPendingCommit = schedulePendingCommit(
-        commitRoot.bind(
+        completeRoot.bind(
           null,
           root,
           finishedWork,
@@ -1520,8 +1650,12 @@ function commitRootWhenReady(
           spawnedLane,
           updatedLanes,
           suspendedRetryLanes,
+          didSkipSuspendedSiblings,
           exitStatus,
-          SUSPENDED_COMMIT,
+          suspendedState,
+          enableProfilerTimer
+            ? getSuspendedCommitReason(suspendedState, root.containerInfo)
+            : null,
           completedRenderStartTime,
           completedRenderEndTime,
         ),
@@ -1533,7 +1667,7 @@ function commitRootWhenReady(
   }
 
   // Otherwise, commit immediately.;
-  commitRoot(
+  completeRoot(
     root,
     finishedWork,
     lanes,
@@ -1543,7 +1677,9 @@ function commitRootWhenReady(
     spawnedLane,
     updatedLanes,
     suspendedRetryLanes,
+    didSkipSuspendedSiblings,
     exitStatus,
+    suspendedState,
     suspendedCommitReason,
     completedRenderStartTime,
     completedRenderEndTime,
@@ -1564,7 +1700,7 @@ function isRenderConsistentWithExternalStores(finishedWork: Fiber): boolean {
       node.flags & StoreConsistency
     ) {
       const updateQueue: FunctionComponentUpdateQueue | null =
-        (node.updateQueue: any);
+        node.updateQueue as any;
       if (updateQueue !== null) {
         const checks = updateQueue.stores;
         if (checks !== null) {
@@ -1626,7 +1762,7 @@ function markRootUpdated(root: FiberRoot, updatedLanes: Lanes) {
       didIncludeCommitPhaseUpdate = true;
     }
 
-    throwIfInfiniteUpdateLoopDetected();
+    throwIfInfiniteUpdateLoopDetected(true);
   }
 }
 
@@ -1645,7 +1781,7 @@ function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
       didIncludeCommitPhaseUpdate = true;
     }
 
-    throwIfInfiniteUpdateLoopDetected();
+    throwIfInfiniteUpdateLoopDetected(true);
   }
 }
 
@@ -1655,6 +1791,11 @@ function markRootSuspended(
   spawnedLane: Lane,
   didAttemptEntireTree: boolean,
 ) {
+  if (enableParallelTransitions) {
+    // When suspending, we should always mark the entangled lanes as suspended.
+    suspendedLanes = getEntangledLanes(root, suspendedLanes);
+  }
+
   // When suspending, we should always exclude lanes that were pinged or (more
   // rarely, since we try to avoid it) updated during the render phase.
   suspendedLanes = removeLanes(suspendedLanes, workInProgressRootPingedLanes);
@@ -1848,11 +1989,19 @@ function resetWorkInProgressStack() {
 
 function finalizeRender(lanes: Lanes, finalizationTime: number): void {
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
-    if (includesSyncLane(lanes) || includesBlockingLane(lanes)) {
+    if (isGestureRender(lanes)) {
+      clampGestureTimers(finalizationTime);
+    } else if (includesBlockingLane(lanes)) {
       clampBlockingTimers(finalizationTime);
     }
     if (includesTransitionLane(lanes)) {
       clampTransitionTimers(finalizationTime);
+    }
+    if (includesRetryLane(lanes)) {
+      clampRetryTimers(finalizationTime);
+    }
+    if (includesIdleGroupLanes(lanes)) {
+      clampIdleTimers(finalizationTime);
     }
   }
 }
@@ -1904,9 +2053,56 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
       }
       finalizeRender(workInProgressRootRenderLanes, renderStartTime);
     }
+    const previousUpdateTask = workInProgressUpdateTask;
 
     workInProgressUpdateTask = null;
-    if (includesSyncLane(lanes) || includesBlockingLane(lanes)) {
+    if (isGestureRender(lanes)) {
+      workInProgressUpdateTask = gestureUpdateTask;
+      const clampedUpdateTime =
+        gestureUpdateTime >= 0 && gestureUpdateTime < gestureClampTime
+          ? gestureClampTime
+          : gestureUpdateTime;
+      const clampedEventTime =
+        gestureEventTime >= 0 && gestureEventTime < gestureClampTime
+          ? gestureClampTime
+          : gestureEventTime;
+      const clampedRenderStartTime =
+        // Clamp the suspended time to the first event/update.
+        clampedEventTime >= 0
+          ? clampedEventTime
+          : clampedUpdateTime >= 0
+            ? clampedUpdateTime
+            : renderStartTime;
+      if (gestureSuspendedTime >= 0) {
+        setCurrentTrackFromLanes(GestureLane);
+        logSuspendedWithDelayPhase(
+          gestureSuspendedTime,
+          clampedRenderStartTime,
+          lanes,
+          workInProgressUpdateTask,
+        );
+      } else if (isGestureRender(animatingLanes)) {
+        // If this lane is still animating, log the time from previous render finishing to now as animating.
+        setCurrentTrackFromLanes(GestureLane);
+        logAnimatingPhase(
+          gestureClampTime,
+          clampedRenderStartTime,
+          animatingTask,
+        );
+      }
+      logGestureStart(
+        clampedUpdateTime,
+        clampedEventTime,
+        gestureEventType,
+        gestureEventRepeatTime > 0,
+        gestureUpdateType === PINGED_UPDATE,
+        renderStartTime,
+        gestureUpdateTask,
+        gestureUpdateMethodName,
+        gestureUpdateComponentName,
+      );
+      clearGestureTimers();
+    } else if (includesBlockingLane(lanes)) {
       workInProgressUpdateTask = blockingUpdateTask;
       const clampedUpdateTime =
         blockingUpdateTime >= 0 && blockingUpdateTime < blockingClampTime
@@ -1916,30 +2112,44 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
         blockingEventTime >= 0 && blockingEventTime < blockingClampTime
           ? blockingClampTime
           : blockingEventTime;
+      const clampedRenderStartTime = // Clamp the suspended time to the first event/update.
+        clampedEventTime >= 0
+          ? clampedEventTime
+          : clampedUpdateTime >= 0
+            ? clampedUpdateTime
+            : renderStartTime;
       if (blockingSuspendedTime >= 0) {
-        setCurrentTrackFromLanes(lanes);
+        setCurrentTrackFromLanes(SyncLane);
         logSuspendedWithDelayPhase(
           blockingSuspendedTime,
-          // Clamp the suspended time to the first event/update.
-          clampedEventTime >= 0
-            ? clampedEventTime
-            : clampedUpdateTime >= 0
-              ? clampedUpdateTime
-              : renderStartTime,
+          clampedRenderStartTime,
           lanes,
-          workInProgressUpdateTask,
+          previousUpdateTask,
+        );
+      } else if (
+        !isGestureRender(animatingLanes) &&
+        includesBlockingLane(animatingLanes)
+      ) {
+        // If this lane is still animating, log the time from previous render finishing to now as animating.
+        setCurrentTrackFromLanes(SyncLane);
+        logAnimatingPhase(
+          blockingClampTime,
+          clampedRenderStartTime,
+          animatingTask,
         );
       }
       logBlockingStart(
         clampedUpdateTime,
         clampedEventTime,
         blockingEventType,
-        blockingEventIsRepeat,
+        blockingEventRepeatTime > 0,
         blockingUpdateType === SPAWNED_UPDATE,
         blockingUpdateType === PINGED_UPDATE,
         renderStartTime,
         lanes,
         blockingUpdateTask,
+        blockingUpdateMethodName,
+        blockingUpdateComponentName,
       );
       clearBlockingTimers();
     }
@@ -1957,18 +2167,28 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
         transitionEventTime >= 0 && transitionEventTime < transitionClampTime
           ? transitionClampTime
           : transitionEventTime;
+      const clampedRenderStartTime =
+        // Clamp the suspended time to the first event/update.
+        clampedEventTime >= 0
+          ? clampedEventTime
+          : clampedUpdateTime >= 0
+            ? clampedUpdateTime
+            : renderStartTime;
       if (transitionSuspendedTime >= 0) {
-        setCurrentTrackFromLanes(lanes);
+        setCurrentTrackFromLanes(SomeTransitionLane);
         logSuspendedWithDelayPhase(
           transitionSuspendedTime,
-          // Clamp the suspended time to the first event/update.
-          clampedEventTime >= 0
-            ? clampedEventTime
-            : clampedUpdateTime >= 0
-              ? clampedUpdateTime
-              : renderStartTime,
+          clampedRenderStartTime,
           lanes,
           workInProgressUpdateTask,
+        );
+      } else if (includesTransitionLane(animatingLanes)) {
+        // If this lane is still animating, log the time from previous render finishing to now as animating.
+        setCurrentTrackFromLanes(SomeTransitionLane);
+        logAnimatingPhase(
+          transitionClampTime,
+          clampedRenderStartTime,
+          animatingTask,
         );
       }
       logTransitionStart(
@@ -1976,12 +2196,28 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
         clampedUpdateTime,
         clampedEventTime,
         transitionEventType,
-        transitionEventIsRepeat,
+        transitionEventRepeatTime > 0,
         transitionUpdateType === PINGED_UPDATE,
         renderStartTime,
         transitionUpdateTask,
+        transitionUpdateMethodName,
+        transitionUpdateComponentName,
       );
       clearTransitionTimers();
+    }
+    if (includesRetryLane(lanes)) {
+      if (includesRetryLane(animatingLanes)) {
+        // If this lane is still animating, log the time from previous render finishing to now as animating.
+        setCurrentTrackFromLanes(SomeRetryLane);
+        logAnimatingPhase(retryClampTime, renderStartTime, animatingTask);
+      }
+    }
+    if (includesIdleGroupLanes(lanes)) {
+      if (includesIdleGroupLanes(animatingLanes)) {
+        // If this lane is still animating, log the time from previous render finishing to now as animating.
+        setCurrentTrackFromLanes(IdleLane);
+        logAnimatingPhase(idleClampTime, renderStartTime, animatingTask);
+      }
     }
   }
 
@@ -1998,6 +2234,8 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
     root.cancelPendingCommit = null;
     cancelPendingCommit();
   }
+
+  pendingEffectsLanes = NoLanes;
 
   resetWorkInProgressStack();
   workInProgressRoot = root;
@@ -2151,7 +2389,7 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
       case SuspendedOnImmediate:
       case SuspendedOnDeprecatedThrowPromise:
       case SuspendedAndReadyToContinue: {
-        const wakeable: Wakeable = (thrownValue: any);
+        const wakeable: Wakeable = thrownValue as any;
         markComponentSuspended(
           erroredWork,
           wakeable,
@@ -2274,6 +2512,10 @@ export function markRenderDerivedCause(fiber: Fiber): void {
       }
     }
   }
+}
+
+export function markTransitionStarted() {
+  globalMostRecentTransitionTime = now();
 }
 
 export function markCommitTimeOfFallback() {
@@ -2586,7 +2828,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
           }
           case SuspendedOnData:
           case SuspendedOnAction: {
-            const thenable: Thenable<mixed> = (thrownValue: any);
+            const thenable: Thenable<mixed> = thrownValue as any;
             if (isThenableResolved(thenable)) {
               // The data resolved. Try rendering the component again.
               workInProgressSuspendedReason = NotSuspended;
@@ -2631,7 +2873,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
             break outer;
           }
           case SuspendedAndReadyToContinue: {
-            const thenable: Thenable<mixed> = (thrownValue: any);
+            const thenable: Thenable<mixed> = thrownValue as any;
             if (isThenableResolved(thenable)) {
               // The data resolved. Try rendering the component again.
               workInProgressSuspendedReason = NotSuspended;
@@ -2800,14 +3042,14 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
 function workLoopConcurrent(nonIdle: boolean) {
   // We yield every other "frame" when rendering Transition or Retries. Those are blocking
   // revealing new content. The purpose of this yield is not to avoid the overhead of yielding,
-  // which is very low, but rather to intentionally block any frequently occuring other main
+  // which is very low, but rather to intentionally block any frequently occurring other main
   // thread work like animations from starving our work. In other words, the purpose of this
   // is to reduce the framerate of animations to 30 frames per second.
   // For Idle work we yield every 5ms to keep animations going smooth.
   if (workInProgress !== null) {
     const yieldAfter = now() + (nonIdle ? 25 : 5);
     do {
-      // $FlowFixMe[incompatible-call] flow doesn't know that now() is side-effect free
+      // $FlowFixMe[incompatible-type] flow doesn't know that now() is side-effect free
       performUnitOfWork(workInProgress);
     } while (workInProgress !== null && now() < yieldAfter);
   }
@@ -2817,7 +3059,7 @@ function workLoopConcurrent(nonIdle: boolean) {
 function workLoopConcurrentByScheduler() {
   // Perform work until Scheduler asks us to yield
   while (workInProgress !== null && !shouldYield()) {
-    // $FlowFixMe[incompatible-call] flow doesn't know that shouldYield() is side-effect free
+    // $FlowFixMe[incompatible-type] flow doesn't know that shouldYield() is side-effect free
     performUnitOfWork(workInProgress);
   }
 }
@@ -2944,6 +3186,10 @@ function replayBeginWork(unitOfWork: Fiber): null | Fiber {
       // promises that a host component might suspend on are definitely cached
       // because they are controlled by us. So don't bother.
       resetHooksOnUnwind(unitOfWork);
+      // We are about to retry this host component and need to ensure the hydration
+      // state is appropriate for hydrating this unit. Other fiber types hydrate differently
+      // and aren't reliant on the cursor positioning so this function is only for HostComponent
+      popHydrationStateOnInterruptedWork(unitOfWork);
       // Fallthrough to the next branch.
     }
     default: {
@@ -3248,7 +3494,7 @@ function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
   workInProgress = null;
 }
 
-function commitRoot(
+function completeRoot(
   root: FiberRoot,
   finishedWork: null | Fiber,
   lanes: Lanes,
@@ -3258,7 +3504,9 @@ function commitRoot(
   spawnedLane: Lane,
   updatedLanes: Lanes,
   suspendedRetryLanes: Lanes,
+  didSkipSuspendedSiblings: boolean,
   exitStatus: RootExitStatus,
+  suspendedState: null | SuspendedState,
   suspendedCommitReason: SuspendedCommitReason, // Profiling-only
   completedRenderStartTime: number, // Profiling-only
   completedRenderEndTime: number, // Profiling-only
@@ -3283,6 +3531,16 @@ function commitRoot(
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     // Log the previous render phase once we commit. I.e. we weren't interrupted.
     setCurrentTrackFromLanes(lanes);
+    if (isGestureRender(lanes)) {
+      // Clamp the render start time in case if something else on this lane was committed
+      // (such as this same tree before).
+      if (completedRenderStartTime < gestureClampTime) {
+        completedRenderStartTime = gestureClampTime;
+      }
+      if (completedRenderEndTime < gestureClampTime) {
+        completedRenderEndTime = gestureClampTime;
+      }
+    }
     if (exitStatus === RootErrored) {
       logErroredRenderPhase(
         completedRenderStartTime,
@@ -3294,7 +3552,7 @@ function commitRoot(
       const hydrationFailed =
         finishedWork !== null &&
         finishedWork.alternate !== null &&
-        (finishedWork.alternate.memoizedState: RootState).isDehydrated &&
+        (finishedWork.alternate.memoizedState as RootState).isDehydrated &&
         (finishedWork.flags & ForceClientRender) !== NoFlags;
       logRecoveredRenderPhase(
         completedRenderStartTime,
@@ -3323,9 +3581,9 @@ function commitRoot(
       markCommitStopped();
     }
     if (enableGestureTransition) {
-      // Stop any gestures that were completed and is now being reverted.
-      if (root.stoppingGestures !== null) {
-        stopCompletedGestures(root);
+      // Stop any gestures that were committed.
+      if (isGestureRender(lanes)) {
+        stopCommittedGesture(root);
       }
     }
     return;
@@ -3347,9 +3605,125 @@ function commitRoot(
     );
   }
 
+  if (root === workInProgressRoot) {
+    // We can reset these now that they are finished.
+    workInProgressRoot = null;
+    workInProgress = null;
+    workInProgressRootRenderLanes = NoLanes;
+  } else {
+    // This indicates that the last root we worked on is not the same one that
+    // we're committing now. This most commonly happens when a suspended root
+    // times out.
+  }
+
+  // workInProgressX might be overwritten, so we want
+  // to store it in pendingPassiveX until they get processed
+  // We need to pass this through as an argument to completeRoot
+  // because workInProgressX might have changed between
+  // the previous render and commit if we throttle the commit
+  // with setTimeout
+  pendingFinishedWork = finishedWork;
+  pendingEffectsRoot = root;
+  pendingEffectsLanes = lanes;
+  pendingPassiveTransitions = transitions;
+  pendingRecoverableErrors = recoverableErrors;
+  pendingDidIncludeRenderPhaseUpdate = didIncludeRenderPhaseUpdate;
+  if (enableProfilerTimer) {
+    pendingEffectsRenderEndTime = completedRenderEndTime;
+    pendingSuspendedCommitReason = suspendedCommitReason;
+    pendingDelayedCommitReason = IMMEDIATE_COMMIT;
+    pendingSuspendedViewTransitionReason = null;
+  }
+
+  if (enableGestureTransition && isGestureRender(lanes)) {
+    const committingGesture = root.pendingGestures;
+    if (committingGesture !== null && !committingGesture.committing) {
+      // This gesture is not ready to commit yet. We'll mark it as suspended and
+      // start a gesture transition which isn't really a side-effect. Then later
+      // we might come back around to actually committing the root.
+      const didAttemptEntireTree = !didSkipSuspendedSiblings;
+      markRootSuspended(root, lanes, spawnedLane, didAttemptEntireTree);
+      if (committingGesture.running === null) {
+        applyGestureOnRoot(
+          root,
+          finishedWork,
+          recoverableErrors,
+          suspendedState,
+          enableProfilerTimer
+            ? suspendedCommitReason === null
+              ? completedRenderEndTime
+              : commitStartTime
+            : 0,
+        );
+      } else {
+        // If we already have a gesture running, we don't update it in place
+        // even if we have a new tree. Instead we wait until we can commit.
+        if (enableProfilerTimer && enableComponentPerformanceTrack) {
+          // Clamp at the render time since we're not going to finish the rest
+          // of this commit or apply yet.
+          finalizeRender(lanes, completedRenderEndTime);
+        }
+        // We are no longer committing.
+        pendingEffectsRoot = null as any; // Clear for GC purposes.
+        pendingFinishedWork = null as any; // Clear for GC purposes.
+        pendingEffectsLanes = NoLanes;
+      }
+      // Schedule the root to be committed when the gesture completes.
+      root.cancelPendingCommit = scheduleGestureCommit(
+        committingGesture,
+        completeRoot.bind(
+          null,
+          root,
+          finishedWork,
+          lanes,
+          recoverableErrors,
+          transitions,
+          didIncludeRenderPhaseUpdate,
+          spawnedLane,
+          updatedLanes,
+          suspendedRetryLanes,
+          didSkipSuspendedSiblings,
+          exitStatus,
+          suspendedState,
+          'Waiting for the Gesture to finish' /* suspendedCommitReason */,
+          completedRenderStartTime,
+          completedRenderEndTime,
+        ),
+      );
+      return;
+    }
+  }
+
+  // If we're not starting a gesture we now actually commit the root.
+  commitRoot(
+    root,
+    finishedWork,
+    lanes,
+    spawnedLane,
+    updatedLanes,
+    suspendedRetryLanes,
+    suspendedState,
+    suspendedCommitReason,
+    completedRenderEndTime,
+  );
+}
+
+function commitRoot(
+  root: FiberRoot,
+  finishedWork: Fiber,
+  lanes: Lanes,
+  spawnedLane: Lane,
+  updatedLanes: Lanes,
+  suspendedRetryLanes: Lanes,
+  suspendedState: null | SuspendedState,
+  suspendedCommitReason: SuspendedCommitReason, // Profiling-only
+  completedRenderEndTime: number, // Profiling-only
+) {
   // Check which lanes no longer have any work scheduled on them, and mark
   // those as finished.
   let remainingLanes = mergeLanes(finishedWork.lanes, finishedWork.childLanes);
+
+  pendingEffectsRemainingLanes = remainingLanes;
 
   // Make sure to account for lanes that were updated by a concurrent event
   // during the render phase; don't mark them as finished.
@@ -3360,6 +3734,11 @@ function commitRoot(
     // Gestures don't clear their lanes while the gesture is still active but it
     // might not be scheduled to do any more renders and so we shouldn't schedule
     // any more gesture lane work until a new gesture is scheduled.
+    if (enableProfilerTimer && (remainingLanes & GestureLane) !== NoLanes) {
+      // We need to clear any updates scheduled so that we can treat future updates
+      // as the cause of the render.
+      clearGestureUpdates();
+    }
     remainingLanes &= ~GestureLane;
   }
 
@@ -3374,50 +3753,6 @@ function commitRoot(
 
   // Reset this before firing side effects so we can detect recursive updates.
   didIncludeCommitPhaseUpdate = false;
-
-  if (root === workInProgressRoot) {
-    // We can reset these now that they are finished.
-    workInProgressRoot = null;
-    workInProgress = null;
-    workInProgressRootRenderLanes = NoLanes;
-  } else {
-    // This indicates that the last root we worked on is not the same one that
-    // we're committing now. This most commonly happens when a suspended root
-    // times out.
-  }
-
-  // workInProgressX might be overwritten, so we want
-  // to store it in pendingPassiveX until they get processed
-  // We need to pass this through as an argument to commitRoot
-  // because workInProgressX might have changed between
-  // the previous render and commit if we throttle the commit
-  // with setTimeout
-  pendingFinishedWork = finishedWork;
-  pendingEffectsRoot = root;
-  pendingEffectsLanes = lanes;
-  pendingEffectsRemainingLanes = remainingLanes;
-  pendingPassiveTransitions = transitions;
-  pendingRecoverableErrors = recoverableErrors;
-  pendingDidIncludeRenderPhaseUpdate = didIncludeRenderPhaseUpdate;
-  if (enableProfilerTimer) {
-    pendingEffectsRenderEndTime = completedRenderEndTime;
-    pendingSuspendedCommitReason = suspendedCommitReason;
-  }
-
-  if (enableGestureTransition && isGestureRender(lanes)) {
-    // This is a special kind of render that doesn't commit regular effects.
-    commitGestureOnRoot(
-      root,
-      finishedWork,
-      recoverableErrors,
-      enableProfilerTimer
-        ? suspendedCommitReason === IMMEDIATE_COMMIT
-          ? completedRenderEndTime
-          : commitStartTime
-        : 0,
-    );
-    return;
-  }
 
   // If there are pending passive effects, schedule a callback to process them.
   // Do this as early as possible, so it is queued before anything else that
@@ -3460,7 +3795,10 @@ function commitRoot(
           // event when logging events.
           trackSchedulerEvent();
         }
-        flushPassiveEffects(true);
+        if (pendingDelayedCommitReason === IMMEDIATE_COMMIT) {
+          pendingDelayedCommitReason = DELAYED_PASSIVE_COMMIT;
+        }
+        flushPassiveEffects();
         // This render triggered passive effects: release the root cache pool
         // *after* passive effects fire to avoid freeing a cache pool that may
         // be referenced by a node in the tree (HostRoot, Cache boundary etc)
@@ -3480,16 +3818,11 @@ function commitRoot(
     resetCommitErrors();
     recordCommitTime();
     if (enableComponentPerformanceTrack) {
-      if (suspendedCommitReason === SUSPENDED_COMMIT) {
+      if (suspendedCommitReason !== null) {
         logSuspendedCommitPhase(
           completedRenderEndTime,
           commitStartTime,
-          workInProgressUpdateTask,
-        );
-      } else if (suspendedCommitReason === THROTTLED_COMMIT) {
-        logSuspenseThrottlePhase(
-          completedRenderEndTime,
-          commitStartTime,
+          suspendedCommitReason,
           workInProgressUpdateTask,
         );
       }
@@ -3533,21 +3866,24 @@ function commitRoot(
     }
   }
 
-  let willStartViewTransition = shouldStartViewTransition;
   if (enableGestureTransition) {
-    // Stop any gestures that were completed and is now being committed.
-    if (root.stoppingGestures !== null) {
-      stopCompletedGestures(root);
-      // If we are in the process of stopping some gesture we shouldn't start
-      // a View Transition because that would start from the previous state to
-      // the next state.
-      willStartViewTransition = false;
+    // Stop any gestures that were committed.
+    if (isGestureRender(lanes)) {
+      stopCommittedGesture(root);
+      // Note that shouldStartViewTransition should always be false here because
+      // committing a gesture never starts a new View Transition itself since it's
+      // not a View Transition eligible lane. Only follow up Transition commits can
+      // cause animate.
     }
   }
 
   pendingEffectsStatus = PENDING_MUTATION_PHASE;
-  if (enableViewTransition && willStartViewTransition) {
+  if (enableViewTransition && shouldStartViewTransition) {
+    if (enableProfilerTimer && enableComponentPerformanceTrack) {
+      startAnimating(lanes);
+    }
     pendingViewTransition = startViewTransition(
+      suspendedState,
       root.containerInfo,
       pendingTransitionTypes,
       flushMutationEffects,
@@ -3556,6 +3892,11 @@ function commitRoot(
       flushSpawnedWork,
       flushPassiveEffects,
       reportViewTransitionError,
+      enableProfilerTimer ? suspendedViewTransition : (null as any),
+      enableProfilerTimer
+        ? // This callback fires after "pendingEffects" so we need to snapshot the arguments.
+          finishedViewTransition.bind(null, lanes)
+        : (null as any),
     );
   } else {
     // Flush synchronously.
@@ -3574,6 +3915,69 @@ function reportViewTransitionError(error: mixed) {
   const root = pendingEffectsRoot;
   const onRecoverableError = root.onRecoverableError;
   onRecoverableError(error, makeErrorInfo(null));
+}
+
+function suspendedViewTransition(reason: string): void {
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    // We'll split the commit into two phases, because we're suspended in the middle.
+    recordCommitEndTime();
+    logCommitPhase(
+      pendingSuspendedCommitReason === null
+        ? pendingEffectsRenderEndTime
+        : commitStartTime,
+      commitEndTime,
+      commitErrors,
+      pendingDelayedCommitReason === ABORTED_VIEW_TRANSITION_COMMIT,
+      workInProgressUpdateTask, // TODO: Use a ViewTransition Task and this is not safe to read in this phase.
+    );
+    pendingSuspendedViewTransitionReason = reason;
+    pendingSuspendedCommitReason = reason;
+  }
+}
+
+function finishedViewTransition(lanes: Lanes): void {
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    if ((animatingLanes & lanes) === NoLanes) {
+      // Was already stopped by some other action or maybe other root.
+      return;
+    }
+    const task = animatingTask;
+    stopAnimating(lanes);
+    // If an affected track isn't in the middle of rendering or committing, log from the previous
+    // finished render until the end of the animation.
+    if (
+      isGestureRender(lanes) &&
+      !isGestureRender(workInProgressRootRenderLanes) &&
+      !isGestureRender(pendingEffectsLanes)
+    ) {
+      setCurrentTrackFromLanes(GestureLane);
+      logAnimatingPhase(gestureClampTime, now(), task);
+    }
+    if (
+      includesTransitionLane(lanes) &&
+      !includesTransitionLane(workInProgressRootRenderLanes) &&
+      !includesTransitionLane(pendingEffectsLanes)
+    ) {
+      setCurrentTrackFromLanes(SomeTransitionLane);
+      logAnimatingPhase(transitionClampTime, now(), task);
+    }
+    if (
+      includesRetryLane(lanes) &&
+      !includesRetryLane(workInProgressRootRenderLanes) &&
+      !includesRetryLane(pendingEffectsLanes)
+    ) {
+      setCurrentTrackFromLanes(SomeRetryLane);
+      logAnimatingPhase(retryClampTime, now(), task);
+    }
+    if (
+      includesIdleGroupLanes(lanes) &&
+      !includesIdleGroupLanes(workInProgressRootRenderLanes) &&
+      !includesIdleGroupLanes(pendingEffectsLanes)
+    ) {
+      setCurrentTrackFromLanes(IdleLane);
+      logAnimatingPhase(idleClampTime, now(), task);
+    }
+  }
 }
 
 function flushAfterMutationEffects(): void {
@@ -3640,6 +4044,21 @@ function flushLayoutEffects(): void {
   }
   pendingEffectsStatus = NO_PENDING_EFFECTS;
 
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    const suspendedViewTransitionReason = pendingSuspendedViewTransitionReason;
+    if (suspendedViewTransitionReason !== null) {
+      // We suspended in the middle of the commit for the view transition.
+      // We'll start a new commit track now.
+      recordCommitTime();
+      logSuspendedViewTransitionPhase(
+        commitEndTime, // The start is the end of the first commit part.
+        commitStartTime, // The end is the start of the second commit part.
+        suspendedViewTransitionReason,
+        animatingTask,
+      );
+    }
+  }
+
   const root = pendingEffectsRoot;
   const finishedWork = pendingFinishedWork;
   const lanes = pendingEffectsLanes;
@@ -3700,6 +4119,21 @@ function flushLayoutEffects(): void {
       ReactSharedInternals.T = prevTransition;
     }
   }
+
+  const completedRenderEndTime = pendingEffectsRenderEndTime;
+  const suspendedCommitReason = pendingSuspendedCommitReason;
+
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    recordCommitEndTime();
+    logCommitPhase(
+      suspendedCommitReason === null ? completedRenderEndTime : commitStartTime,
+      commitEndTime,
+      commitErrors,
+      pendingDelayedCommitReason === ABORTED_VIEW_TRANSITION_COMMIT,
+      workInProgressUpdateTask,
+    );
+  }
+
   pendingEffectsStatus = PENDING_AFTER_MUTATION_PHASE;
 }
 
@@ -3712,8 +4146,28 @@ function flushSpawnedWork(): void {
   ) {
     return;
   }
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    // If we didn't skip the after mutation phase, when is means we started an animation.
+    const startedAnimation = pendingEffectsStatus === PENDING_SPAWNED_WORK;
+    if (startedAnimation) {
+      const startViewTransitionStartTime = commitEndTime;
+      // Update the new commitEndTime to when we started the animation.
+      recordCommitEndTime();
+      logStartViewTransitionYieldPhase(
+        startViewTransitionStartTime,
+        commitEndTime,
+        pendingDelayedCommitReason === ABORTED_VIEW_TRANSITION_COMMIT,
+        animatingTask,
+      );
+      if (pendingDelayedCommitReason !== ABORTED_VIEW_TRANSITION_COMMIT) {
+        pendingDelayedCommitReason = ANIMATION_STARTED_COMMIT;
+      }
+    }
+  }
+
   pendingEffectsStatus = NO_PENDING_EFFECTS;
 
+  const committedViewTransition = pendingViewTransition;
   pendingViewTransition = null; // The view transition has now fully started.
 
   // Tell Scheduler to yield at the end of the frame, so the browser has an
@@ -3723,22 +4177,8 @@ function flushSpawnedWork(): void {
   const root = pendingEffectsRoot;
   const finishedWork = pendingFinishedWork;
   const lanes = pendingEffectsLanes;
-  const completedRenderEndTime = pendingEffectsRenderEndTime;
   const recoverableErrors = pendingRecoverableErrors;
   const didIncludeRenderPhaseUpdate = pendingDidIncludeRenderPhaseUpdate;
-  const suspendedCommitReason = pendingSuspendedCommitReason;
-
-  if (enableProfilerTimer && enableComponentPerformanceTrack) {
-    recordCommitEndTime();
-    logCommitPhase(
-      suspendedCommitReason === IMMEDIATE_COMMIT
-        ? completedRenderEndTime
-        : commitStartTime,
-      commitEndTime,
-      commitErrors,
-      workInProgressUpdateTask,
-    );
-  }
 
   const passiveSubtreeMask =
     enableViewTransition && includesOnlyViewTransitionEligibleLanes(lanes)
@@ -3755,8 +4195,8 @@ function flushSpawnedWork(): void {
     pendingEffectsStatus = PENDING_PASSIVE_PHASE;
   } else {
     pendingEffectsStatus = NO_PENDING_EFFECTS;
-    pendingEffectsRoot = (null: any); // Clear for GC purposes.
-    pendingFinishedWork = (null: any); // Clear for GC purposes.
+    pendingEffectsRoot = null as any; // Clear for GC purposes.
+    pendingFinishedWork = null as any; // Clear for GC purposes.
     // There were no passive effects, so we can immediately release the cache
     // pool for this render.
     releaseRootPooledCache(root, root.pendingLanes);
@@ -3847,9 +4287,14 @@ function flushSpawnedWork(): void {
         // Normalize the type. This is lazily created only for events.
         pendingTypes = [];
       }
-      for (let i = 0; i < pendingEvents.length; i++) {
-        const viewTransitionEvent = pendingEvents[i];
-        viewTransitionEvent(pendingTypes);
+      if (committedViewTransition !== null) {
+        for (let i = 0; i < pendingEvents.length; i++) {
+          const viewTransitionEvent = pendingEvents[i];
+          const cleanup = viewTransitionEvent(pendingTypes);
+          if (cleanup !== undefined) {
+            addViewTransitionFinishedListener(committedViewTransition, cleanup);
+          }
+        }
       }
     }
   }
@@ -3869,7 +4314,7 @@ function flushSpawnedWork(): void {
     flushPendingEffects();
   }
 
-  // Always call this before exiting `commitRoot`, to ensure that any
+  // Always call this before exiting `completeRoot`, to ensure that any
   // additional work on this root is scheduled.
   ensureRootIsScheduled(root);
 
@@ -3881,15 +4326,10 @@ function flushSpawnedWork(): void {
   // hydration lanes in this check, because render triggered by selective
   // hydration is conceptually not an update.
   if (
-    // Check if there was a recursive update spawned by this render, in either
-    // the render phase or the commit phase. We track these explicitly because
-    // we can't infer from the remaining lanes alone.
-    (enableInfiniteRenderLoopDetection &&
-      (didIncludeRenderPhaseUpdate || didIncludeCommitPhaseUpdate)) ||
     // Was the finished render the result of an update (not hydration)?
-    (includesSomeLane(lanes, UpdateLanes) &&
-      // Did it schedule a sync update?
-      includesSomeLane(remainingLanes, SyncUpdateLanes))
+    includesSomeLane(lanes, UpdateLanes) &&
+    // Did it schedule a sync update?
+    includesSomeLane(remainingLanes, SyncUpdateLanes)
   ) {
     if (enableProfilerTimer && enableProfilerNestedUpdatePhase) {
       markNestedUpdateScheduled();
@@ -3903,8 +4343,31 @@ function flushSpawnedWork(): void {
       nestedUpdateCount = 0;
       rootWithNestedUpdates = root;
     }
+    nestedUpdateKind = NESTED_UPDATE_SYNC_LANE;
+  } else if (
+    // Check if there was a recursive update spawned by this render, in either
+    // the render phase or the commit phase. We track these explicitly because
+    // we can't infer from the remaining lanes alone.
+    enableInfiniteRenderLoopDetection &&
+    (didIncludeRenderPhaseUpdate || didIncludeCommitPhaseUpdate)
+  ) {
+    if (enableProfilerTimer && enableProfilerNestedUpdatePhase) {
+      markNestedUpdateScheduled();
+    }
+
+    // Count the number of times the root synchronously re-renders without
+    // finishing. If there are too many, it indicates an infinite update loop.
+    if (root === rootWithNestedUpdates) {
+      nestedUpdateCount++;
+    } else {
+      nestedUpdateCount = 0;
+      rootWithNestedUpdates = root;
+    }
+    nestedUpdateKind = NESTED_UPDATE_PHASE_SPAWN;
   } else {
     nestedUpdateCount = 0;
+    rootWithNestedUpdates = null;
+    nestedUpdateKind = NO_NESTED_UPDATE;
   }
 
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
@@ -3915,6 +4378,7 @@ function flushSpawnedWork(): void {
 
   // Eagerly flush any event replaying that we unblocked within this commit.
   // This ensures that those are observed before we render any new changes.
+  // $FlowFixMe[constant-condition]
   if (supportsHydration) {
     flushHydrationEvents();
   }
@@ -3958,10 +4422,11 @@ function flushSpawnedWork(): void {
   }
 }
 
-function commitGestureOnRoot(
+function applyGestureOnRoot(
   root: FiberRoot,
   finishedWork: Fiber,
   recoverableErrors: null | Array<CapturedValue<mixed>>,
+  suspendedState: null | SuspendedState,
   renderEndTime: number, // Profiling-only
 ): void {
   // We assume that the gesture we just rendered was the first one in the queue.
@@ -3972,7 +4437,12 @@ function commitGestureOnRoot(
     ensureRootIsScheduled(root);
     return;
   }
-  deleteScheduledGesture(root, finishedGesture);
+
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    startAnimating(pendingEffectsLanes);
+  }
+
+  pendingViewTransitionEvents = null;
 
   const prevTransition = ReactSharedInternals.T;
   ReactSharedInternals.T = null;
@@ -3992,6 +4462,7 @@ function commitGestureOnRoot(
   pendingEffectsStatus = PENDING_GESTURE_MUTATION_PHASE;
 
   pendingViewTransition = finishedGesture.running = startGestureTransition(
+    suspendedState,
     root.containerInfo,
     finishedGesture.provider,
     finishedGesture.rangeStart,
@@ -4000,6 +4471,10 @@ function commitGestureOnRoot(
     flushGestureMutations,
     flushGestureAnimations,
     reportViewTransitionError,
+    enableProfilerTimer
+      ? // This callback fires after "pendingEffects" so we need to snapshot the arguments.
+        finishedViewTransition.bind(null, pendingEffectsLanes)
+      : (null as any),
   );
 }
 
@@ -4029,6 +4504,15 @@ function flushGestureMutations(): void {
     ReactSharedInternals.T = prevTransition;
   }
 
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    recordCommitEndTime();
+    logApplyGesturePhase(
+      pendingEffectsRenderEndTime,
+      commitEndTime,
+      animatingTask,
+    );
+  }
+
   pendingEffectsStatus = PENDING_GESTURE_ANIMATION_PHASE;
 }
 
@@ -4042,11 +4526,29 @@ function flushGestureAnimations(): void {
   if (pendingEffectsStatus !== PENDING_GESTURE_ANIMATION_PHASE) {
     return;
   }
+
+  const lanes = pendingEffectsLanes;
+
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    const startViewTransitionStartTime = commitEndTime;
+    // Update the new commitEndTime to when we started the animation.
+    recordCommitEndTime();
+    logStartViewTransitionYieldPhase(
+      startViewTransitionStartTime,
+      commitEndTime,
+      pendingDelayedCommitReason === ABORTED_VIEW_TRANSITION_COMMIT,
+      animatingTask,
+    );
+    if (pendingDelayedCommitReason !== ABORTED_VIEW_TRANSITION_COMMIT) {
+      pendingDelayedCommitReason = ANIMATION_STARTED_COMMIT;
+    }
+  }
+
   pendingEffectsStatus = NO_PENDING_EFFECTS;
   const root = pendingEffectsRoot;
   const finishedWork = pendingFinishedWork;
-  pendingEffectsRoot = (null: any); // Clear for GC purposes.
-  pendingFinishedWork = (null: any); // Clear for GC purposes.
+  pendingEffectsRoot = null as any; // Clear for GC purposes.
+  pendingFinishedWork = null as any; // Clear for GC purposes.
   pendingEffectsLanes = NoLanes;
 
   pendingViewTransition = null; // The view transition has now fully started.
@@ -4066,6 +4568,39 @@ function flushGestureAnimations(): void {
     ReactSharedInternals.T = prevTransition;
   }
 
+  if (enableViewTransition) {
+    // We should now be after the startGestureTransition's .ready call which is late enough
+    // to start animating any pseudo-elements. We have also already applied any adjustments
+    // we do to the built-in animations which can now be read by the refs.
+    const pendingEvents = pendingViewTransitionEvents;
+    let pendingTypes = pendingTransitionTypes;
+    pendingTransitionTypes = null;
+    if (pendingEvents !== null) {
+      pendingViewTransitionEvents = null;
+      if (pendingTypes === null) {
+        // Normalize the type. This is lazily created only for events.
+        pendingTypes = [];
+      }
+      const appliedGesture = root.pendingGestures;
+      if (appliedGesture !== null) {
+        const runningTransition = appliedGesture.running;
+        if (runningTransition !== null) {
+          for (let i = 0; i < pendingEvents.length; i++) {
+            const viewTransitionEvent = pendingEvents[i];
+            const cleanup = viewTransitionEvent(pendingTypes);
+            if (cleanup !== undefined) {
+              addViewTransitionFinishedListener(runningTransition, cleanup);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    finalizeRender(lanes, commitEndTime);
+  }
+
   // Now that we've rendered this lane. Start working on the next lane.
   ensureRootIsScheduled(root);
 }
@@ -4075,7 +4610,7 @@ function makeErrorInfo(componentStack: ?string) {
     componentStack,
   };
   if (__DEV__) {
-    Object.defineProperty((errorInfo: any), 'digest', {
+    Object.defineProperty(errorInfo as any, 'digest', {
       get() {
         console.error(
           'You are accessing "digest" from the errorInfo object passed to onRecoverableError.' +
@@ -4103,7 +4638,14 @@ function releaseRootPooledCache(root: FiberRoot, remainingLanes: Lanes) {
 
 let didWarnAboutInterruptedViewTransitions = false;
 
-export function flushPendingEffects(wasDelayedCommit?: boolean): boolean {
+export function flushPendingEffectsDelayed(): boolean {
+  if (pendingDelayedCommitReason === IMMEDIATE_COMMIT) {
+    pendingDelayedCommitReason = DELAYED_PASSIVE_COMMIT;
+  }
+  return flushPendingEffects();
+}
+
+export function flushPendingEffects(): boolean {
   // Returns whether passive effects were flushed.
   if (enableViewTransition && pendingViewTransition !== null) {
     // If we forced a flush before the View Transition full started then we skip it.
@@ -4121,6 +4663,7 @@ export function flushPendingEffects(wasDelayedCommit?: boolean): boolean {
       }
     }
     pendingViewTransition = null;
+    pendingDelayedCommitReason = ABORTED_VIEW_TRANSITION_COMMIT;
   }
   flushGestureMutations();
   flushGestureAnimations();
@@ -4128,10 +4671,10 @@ export function flushPendingEffects(wasDelayedCommit?: boolean): boolean {
   flushLayoutEffects();
   // Skip flushAfterMutation if we're forcing this early.
   flushSpawnedWork();
-  return flushPassiveEffects(wasDelayedCommit);
+  return flushPassiveEffects();
 }
 
-function flushPassiveEffects(wasDelayedCommit?: boolean): boolean {
+function flushPassiveEffects(): boolean {
   if (pendingEffectsStatus !== PENDING_PASSIVE_PHASE) {
     return false;
   }
@@ -4143,7 +4686,7 @@ function flushPassiveEffects(wasDelayedCommit?: boolean): boolean {
   // flushPassiveEffectsImpl
   const root = pendingEffectsRoot;
   // Cache and clear the remaining lanes flag; it must be reset since this
-  // method can be called from various places, not always from commitRoot
+  // method can be called from various places, not always from completeRoot
   // where the remaining lanes are known
   const remainingLanes = pendingEffectsRemainingLanes;
   pendingEffectsRemainingLanes = NoLanes;
@@ -4156,7 +4699,7 @@ function flushPassiveEffects(wasDelayedCommit?: boolean): boolean {
   try {
     setCurrentUpdatePriority(priority);
     ReactSharedInternals.T = null;
-    return flushPassiveEffectsImpl(wasDelayedCommit);
+    return flushPassiveEffectsImpl();
   } finally {
     setCurrentUpdatePriority(previousPriority);
     ReactSharedInternals.T = prevTransition;
@@ -4168,7 +4711,7 @@ function flushPassiveEffects(wasDelayedCommit?: boolean): boolean {
   }
 }
 
-function flushPassiveEffectsImpl(wasDelayedCommit: void | boolean) {
+function flushPassiveEffectsImpl() {
   // Cache and clear the transitions flag
   const transitions = pendingPassiveTransitions;
   pendingPassiveTransitions = null;
@@ -4176,8 +4719,8 @@ function flushPassiveEffectsImpl(wasDelayedCommit: void | boolean) {
   const root = pendingEffectsRoot;
   const lanes = pendingEffectsLanes;
   pendingEffectsStatus = NO_PENDING_EFFECTS;
-  pendingEffectsRoot = (null: any); // Clear for GC purposes.
-  pendingFinishedWork = (null: any); // Clear for GC purposes.
+  pendingEffectsRoot = null as any; // Clear for GC purposes.
+  pendingFinishedWork = null as any; // Clear for GC purposes.
   // TODO: This is sometimes out of sync with pendingEffectsRoot.
   // Figure out why and fix it. It's not causing any known issues (probably
   // because it's only used for profiling), but it's a refactor hazard.
@@ -4208,12 +4751,17 @@ function flushPassiveEffectsImpl(wasDelayedCommit: void | boolean) {
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     resetCommitErrors();
     passiveEffectStartTime = now();
-    logPaintYieldPhase(
-      commitEndTime,
-      passiveEffectStartTime,
-      !!wasDelayedCommit,
-      workInProgressUpdateTask,
-    );
+    if (pendingDelayedCommitReason === ANIMATION_STARTED_COMMIT) {
+      // The animation was started, so we've been animating since that happened.
+      logAnimatingPhase(commitEndTime, passiveEffectStartTime, animatingTask);
+    } else {
+      logPaintYieldPhase(
+        commitEndTime,
+        passiveEffectStartTime,
+        pendingDelayedCommitReason === DELAYED_PASSIVE_COMMIT,
+        workInProgressUpdateTask,
+      );
+    }
   }
 
   if (enableSchedulingProfiler) {
@@ -4339,9 +4887,9 @@ function captureCommitPhaseErrorOnRoot(
   const update = createRootErrorUpdate(
     rootFiber.stateNode,
     errorInfo,
-    (SyncLane: Lane),
+    SyncLane as Lane,
   );
-  const root = enqueueUpdate(rootFiber, update, (SyncLane: Lane));
+  const root = enqueueUpdate(rootFiber, update, SyncLane as Lane);
   if (root !== null) {
     markRootUpdated(root, SyncLane);
     ensureRootIsScheduled(root);
@@ -4380,8 +4928,8 @@ export function captureCommitPhaseError(
         if (enableProfilerTimer && enableComponentPerformanceTrack) {
           recordEffectError(errorInfo);
         }
-        const update = createClassErrorUpdate((SyncLane: Lane));
-        const root = enqueueUpdate(fiber, update, (SyncLane: Lane));
+        const update = createClassErrorUpdate(SyncLane as Lane);
+        const root = enqueueUpdate(fiber, update, SyncLane as Lane);
         if (root !== null) {
           initializeClassErrorUpdate(update, root, fiber, errorInfo);
           markRootUpdated(root, SyncLane);
@@ -4501,6 +5049,13 @@ function pingSuspendedRoot(
         // the special internal exception that we use to interrupt the stack for
         // selective hydration. That was temporarily reverted but we once we add
         // it back we can use it here.
+        //
+        // In the meantime, record the pinged lanes so markRootSuspended won't
+        // mark them as suspended, allowing a retry.
+        workInProgressRootPingedLanes = mergeLanes(
+          workInProgressRootPingedLanes,
+          pingedLanes,
+        );
       }
     } else {
       // Even though we can't restart right now, we might get an
@@ -4523,6 +5078,45 @@ function pingSuspendedRoot(
     }
   }
 
+  ensureRootIsScheduled(root);
+}
+
+export function pingGestureRoot(root: FiberRoot): void {
+  const gesture = root.pendingGestures;
+  if (gesture === null) {
+    return;
+  }
+  // Ping it for rerender and commit.
+  markRootPinged(root, GestureLane);
+  ensureRootIsScheduled(root);
+}
+
+export function restartGestureRoot(root: FiberRoot): void {
+  if (
+    workInProgressRoot === root &&
+    isGestureRender(workInProgressRootRenderLanes)
+  ) {
+    // The current render was a gesture but it's now defunct. We need to restart the render.
+    if ((executionContext & RenderContext) === NoContext) {
+      prepareFreshStack(root, NoLanes);
+    } else {
+      // TODO: Throw interruption when supported again.
+    }
+  } else if (
+    root.cancelPendingCommit !== null &&
+    isGestureRender(pendingEffectsLanes)
+  ) {
+    // We have a suspended commit which we'll discard.
+    const cancelPendingCommit = root.cancelPendingCommit;
+    if (cancelPendingCommit !== null) {
+      root.cancelPendingCommit = null;
+      cancelPendingCommit();
+    }
+  }
+  if (root.pendingGestures !== null) {
+    // We still have gestures to work on. Let's schedule a restart.
+    markRootPinged(root, GestureLane);
+  }
   ensureRootIsScheduled(root);
 }
 
@@ -4590,32 +5184,91 @@ export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
   retryTimedOutBoundary(boundaryFiber, retryLane);
 }
 
-export function throwIfInfiniteUpdateLoopDetected() {
+function throwForcedInfiniteRenderLoopError(
+  root: FiberRoot | null,
+  renderLanes: Lanes,
+): empty {
+  if (root !== null) {
+    // Disable concurrent error recovery for the in-progress render so the thrown
+    // error reaches the nearest error boundary and breaks the infinite update
+    // loop instead of being silently retried by the recovery mechanism.
+    root.errorRecoveryDisabledLanes = mergeLanes(
+      root.errorRecoveryDisabledLanes,
+      renderLanes,
+    );
+  }
+  throw new Error(
+    'Maximum update depth exceeded. This could be an infinite loop. This can happen when a component ' +
+      'repeatedly calls setState during render phase or inside useLayoutEffect, ' +
+      'causing infinite render loop. React limits the number of nested updates to ' +
+      'prevent infinite loops.',
+  );
+}
+
+export function throwIfInfiniteUpdateLoopDetected(
+  isFromInfiniteRenderLoopDetectionInstrumentation: boolean,
+) {
   if (nestedUpdateCount > NESTED_UPDATE_LIMIT) {
     nestedUpdateCount = 0;
     nestedPassiveUpdateCount = 0;
     rootWithNestedUpdates = null;
     rootWithPassiveNestedUpdates = null;
 
-    if (enableInfiniteRenderLoopDetection) {
-      if (executionContext & RenderContext && workInProgressRoot !== null) {
-        // We're in the render phase. Disable the concurrent error recovery
-        // mechanism to ensure that the error we're about to throw gets handled.
-        // We need it to trigger the nearest error boundary so that the infinite
-        // update loop is broken.
-        workInProgressRoot.errorRecoveryDisabledLanes = mergeLanes(
-          workInProgressRoot.errorRecoveryDisabledLanes,
-          workInProgressRootRenderLanes,
-        );
-      }
-    }
+    const updateKind = nestedUpdateKind;
+    nestedUpdateKind = NO_NESTED_UPDATE;
 
-    throw new Error(
-      'Maximum update depth exceeded. This can happen when a component ' +
-        'repeatedly calls setState inside componentWillUpdate or ' +
-        'componentDidUpdate. React limits the number of nested updates to ' +
-        'prevent infinite loops.',
-    );
+    if (enableInfiniteRenderLoopDetection) {
+      if (updateKind === NESTED_UPDATE_SYNC_LANE) {
+        if (
+          isFromInfiniteRenderLoopDetectionInstrumentation ||
+          (executionContext & RenderContext) !== NoContext
+        ) {
+          // This loop was identified only because of the instrumentation gated with enableInfiniteRenderLoopDetection,
+          // warn instead of throwing, unless enableInfiniteRenderLoopDetectionForceThrow.
+          if (enableInfiniteRenderLoopDetectionForceThrow) {
+            throwForcedInfiniteRenderLoopError(
+              workInProgressRoot,
+              workInProgressRootRenderLanes,
+            );
+          } else if (__DEV__) {
+            console.error(
+              'Maximum update depth exceeded. This could be an infinite loop. This can happen when a component ' +
+                'repeatedly calls setState during render phase or inside useLayoutEffect, ' +
+                'causing infinite render loop. React limits the number of nested updates to ' +
+                'prevent infinite loops.',
+            );
+          }
+        } else {
+          throw new Error(
+            'Maximum update depth exceeded. This can happen when a component ' +
+              'repeatedly calls setState inside componentWillUpdate or ' +
+              'componentDidUpdate. React limits the number of nested updates to ' +
+              'prevent infinite loops.',
+          );
+        }
+      } else if (updateKind === NESTED_UPDATE_PHASE_SPAWN) {
+        if (enableInfiniteRenderLoopDetectionForceThrow) {
+          throwForcedInfiniteRenderLoopError(
+            workInProgressRoot,
+            workInProgressRootRenderLanes,
+          );
+        } else if (__DEV__) {
+          console.error(
+            'Maximum update depth exceeded. This could be an infinite loop. This can happen when a component ' +
+              'repeatedly calls setState during render phase or inside useLayoutEffect, ' +
+              'causing infinite render loop. React limits the number of nested updates to ' +
+              'prevent infinite loops.',
+          );
+        }
+      }
+    } else {
+      throw new Error(
+        'Maximum update depth exceeded. This can happen when a component ' +
+          'repeatedly calls setState inside componentWillUpdate or ' +
+          'componentDidUpdate. React limits the number of nested updates to ' +
+          'prevent infinite loops.',
+      );
+    }
   }
 
   if (__DEV__) {
@@ -4700,9 +5353,11 @@ function doubleInvokeEffectsInDEVIfNecessary(
   if (fiber.memoizedState === null) {
     // Only consider Offscreen that is visible.
     // TODO (Offscreen) Handle manual mode.
-    if (isInStrictMode && fiber.flags & Visibility) {
-      // Double invoke effects on Offscreen's subtree only
+    if (isInStrictMode && fiber.flags & (Visibility | PlacementDEV)) {
+      // Double invoke effects on Offscreen's subtree
       // if it is visible and its visibility has changed.
+      // However, we also need to consider newly hydrated Offscreen because their
+      // visibility flags might not have changed.
       runWithFiberInDEV(fiber, doubleInvokeEffectsOnFiber, root, fiber);
     } else if (fiber.subtreeFlags & PlacementDEV) {
       // Something in the subtree could have been suspended.

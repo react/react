@@ -1,14 +1,18 @@
 // @enableNameAnonymousFunctions
 
-import {useEffect} from 'react';
+import {useCallback, useEffect} from 'react';
 import {identity, Stringify, useIdentity} from 'shared-runtime';
 import * as SharedRuntime from 'shared-runtime';
 
 function Component(props) {
   function named() {
     const inner = () => props.named;
-    return inner();
+    const innerIdentity = identity(() => props.named);
+    return inner(innerIdentity());
   }
+  const callback = useCallback(() => {
+    return 'ok';
+  }, []);
   const namedVariable = function () {
     return props.namedVariable;
   };
@@ -26,6 +30,7 @@ function Component(props) {
   return (
     <>
       {named()}
+      {callback()}
       {namedVariable()}
       {methodCall()}
       {call()}

@@ -53,9 +53,7 @@ function Component(props) {
   let t0;
   if ($[0] !== buttons) {
     const [, ...nonPrimaryButtons] = buttons;
-
     const renderedNonPrimaryButtons = nonPrimaryButtons.map(_temp);
-
     t0 = <StaticText1>{renderedNonPrimaryButtons}</StaticText1>;
     $[0] = buttons;
     $[1] = t0;

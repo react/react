@@ -90,6 +90,7 @@ function MyApp(t0) {
   if (thing[1] !== z) {
     invariant(false, "oh no!");
   }
+
   return thing;
 }
 

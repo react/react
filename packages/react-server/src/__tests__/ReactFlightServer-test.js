@@ -189,14 +189,12 @@ describe('ReactFlight', () => {
     );
 
     assertConsoleErrorDev([
-      [
-        'Attempted to render <span key="one"> without development properties. This is not supported. It can happen if:' +
-          '\n- The element is created with a production version of React but rendered in development.' +
-          '\n- The element was cloned with a custom function instead of `React.cloneElement`.\n' +
-          "The props of this element may help locate this element: { children: 'Free!', [key]: [Getter] }",
-        {withoutStack: true},
-      ],
-      "TypeError: Cannot read properties of undefined (reading 'stack')",
+      'Attempted to render <span key="one"> without development properties. This is not supported. It can happen if:' +
+        '\n- The element is created with a production version of React but rendered in development.' +
+        '\n- The element was cloned with a custom function instead of `React.cloneElement`.\n' +
+        "The props of this element may help locate this element: { children: 'Free!', [key]: [Getter] }",
+      "TypeError: Cannot read properties of undefined (reading 'stack')" +
+        '\n    in <stack>',
     ]);
   });
 });

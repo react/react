@@ -29,6 +29,7 @@ import { getNumber } from "shared-runtime";
 
 function Component(props) {
   const x = getNumber();
+
   return x;
 }
 

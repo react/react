@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// Note: Everything below this is sketchy
+// Note: Everything below this is sketchy @validateExhaustiveMemoizationDependencies:false
 /* eslint-disable react-hooks/rules-of-hooks */
 function lowercasecomponent() {
   'use forget';
@@ -43,7 +43,7 @@ Error: React Compiler has skipped optimizing this component because one or more 
 React Compiler only works when your components follow all the rules of React, disabling them may result in unexpected or incorrect behavior. Found suppression `eslint-disable react-hooks/rules-of-hooks`.
 
 error.invalid-unclosed-eslint-suppression.ts:2:0
-  1 | // Note: Everything below this is sketchy
+  1 | // Note: Everything below this is sketchy @validateExhaustiveMemoizationDependencies:false
 > 2 | /* eslint-disable react-hooks/rules-of-hooks */
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Found React rule suppression
   3 | function lowercasecomponent() {

@@ -1,4 +1,4 @@
-// @validateNoSetStateInEffects
+// @validateNoSetStateInEffects @outputMode:"lint"
 import {useEffect, useState} from 'react';
 
 function Component() {

@@ -8,8 +8,9 @@
  */
 
 import * as React from 'react';
-import {Fragment, useContext, useMemo, useState} from 'react';
+import {Fragment, startTransition, useContext, useMemo, useState} from 'react';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {ElementTypeActivity} from 'react-devtools-shared/src/frontend/types';
 import ButtonIcon from '../ButtonIcon';
 import {TreeDispatcherContext, TreeStateContext} from './TreeContext';
 import {StoreContext} from '../context';
@@ -25,6 +26,7 @@ import styles from './Element.css';
 import Icon from '../Icon';
 import {useChangeOwnerAction} from './OwnersListContext';
 import Tooltip from './reach-ui/tooltip';
+import {useChangeActivitySliceAction} from '../SuspenseTab/ActivityList';
 
 type Props = {
   data: ItemData,
@@ -65,6 +67,7 @@ export default function Element({data, index, style}: Props): React.Node {
   }>(errorsAndWarningsSubscription);
 
   const changeOwnerAction = useChangeOwnerAction();
+  const changeActivitySliceAction = useChangeActivitySliceAction();
 
   // Handle elements that are removed from the tree while an async render is in progress.
   if (element == null) {
@@ -75,13 +78,18 @@ export default function Element({data, index, style}: Props): React.Node {
   }
 
   const handleDoubleClick = () => {
-    if (id !== null) {
-      changeOwnerAction(id);
-    }
+    startTransition(() => {
+      if (element.type === ElementTypeActivity) {
+        changeActivitySliceAction(element.id);
+      } else {
+        changeOwnerAction(element.id);
+      }
+    });
   };
 
   // $FlowFixMe[missing-local-annot]
   const handleClick = ({metaKey, button}) => {
+    // $FlowFixMe[invalid-compare]
     if (id !== null && button === 0) {
       logEvent({
         event_name: 'select-element',
@@ -96,6 +104,7 @@ export default function Element({data, index, style}: Props): React.Node {
 
   const handleMouseEnter = () => {
     setIsHovered(true);
+    // $FlowFixMe[invalid-compare]
     if (id !== null) {
       onElementMouseEnter(id);
     }
@@ -119,6 +128,8 @@ export default function Element({data, index, style}: Props): React.Node {
     displayName,
     hocDisplayNames,
     isStrictModeNonCompliant,
+    isActivityHidden,
+    isInsideHiddenActivity,
     key,
     nameProp,
     compiledWithForget,
@@ -161,9 +172,15 @@ export default function Element({data, index, style}: Props): React.Node {
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleClick}
       onDoubleClick={handleDoubleClick}
+      title={
+        isInsideHiddenActivity
+          ? 'This component is inside a hidden Activity subtree.'
+          : undefined
+      }
       style={{
         ...style,
         paddingLeft: elementOffset,
+        opacity: isInsideHiddenActivity ? 0.75 : 1,
       }}
       data-testname="ComponentTreeListItem">
       {/* This wrapper is used by Tree for measurement purposes. */}
@@ -181,9 +198,7 @@ export default function Element({data, index, style}: Props): React.Node {
               className={styles.KeyValue}
               title={key}
               onDoubleClick={handleKeyDoubleClick}>
-              <pre>
-                <IndexableDisplayName displayName={key} id={id} />
-              </pre>
+              <IndexableDisplayName displayName={key} id={id} />
             </span>
             "
           </Fragment>
@@ -196,9 +211,19 @@ export default function Element({data, index, style}: Props): React.Node {
               className={styles.KeyValue}
               title={nameProp}
               onDoubleClick={handleKeyDoubleClick}>
-              <pre>
-                <IndexableDisplayName displayName={nameProp} id={id} />
-              </pre>
+              <IndexableDisplayName displayName={nameProp} id={id} />
+            </span>
+            "
+          </Fragment>
+        )}
+
+        {element.type === ElementTypeActivity && (
+          <Fragment>
+            &nbsp;<span className={styles.KeyName}>mode</span>="
+            <span
+              className={styles.KeyValue}
+              title={isActivityHidden ? 'hidden' : 'visible'}>
+              {isActivityHidden ? 'hidden' : 'visible'}
             </span>
             "
           </Fragment>

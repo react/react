@@ -1,4 +1,4 @@
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 function Component(props) {
   const result = f(props);
   function helper() {

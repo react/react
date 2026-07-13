@@ -51,7 +51,6 @@ export default function Component(props) {
         i++;
       }
     }
-
     t0 = <>{items}</>;
     $[0] = b;
     $[1] = t0;

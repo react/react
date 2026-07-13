@@ -291,7 +291,9 @@ export function printTerminal(terminal: Terminal): Array<string> | string {
       break;
     }
     case 'maybe-throw': {
-      value = `[${terminal.id}] MaybeThrow continuation=bb${terminal.continuation} handler=bb${terminal.handler}`;
+      const handlerStr =
+        terminal.handler !== null ? `bb${terminal.handler}` : '(none)';
+      value = `[${terminal.id}] MaybeThrow continuation=bb${terminal.continuation} handler=${handlerStr}`;
       if (terminal.effects != null) {
         value += `\n    ${terminal.effects.map(printAliasingEffect).join('\n    ')}`;
       }
@@ -598,15 +600,7 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
         instrValue.subexprs.length === instrValue.quasis.length - 1,
         {
           reason: 'Bad assumption about quasi length.',
-          description: null,
-          details: [
-            {
-              kind: 'error',
-              loc: instrValue.loc,
-              message: null,
-            },
-          ],
-          suggestions: null,
+          loc: instrValue.loc,
         },
       );
       for (let i = 0; i < instrValue.subexprs.length; i++) {
@@ -874,15 +868,7 @@ export function printManualMemoDependency(
   } else {
     CompilerError.invariant(val.root.value.identifier.name?.kind === 'named', {
       reason: 'DepsValidation: expected named local variable in depslist',
-      description: null,
-      suggestions: null,
-      details: [
-        {
-          kind: 'error',
-          loc: val.root.value.loc,
-          message: null,
-        },
-      ],
+      loc: val.root.value.loc,
     });
     rootStr = nameOnly
       ? val.root.value.identifier.name.value

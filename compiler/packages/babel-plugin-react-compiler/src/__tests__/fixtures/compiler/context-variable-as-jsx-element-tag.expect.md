@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 import {useMemo} from 'react';
 import {Stringify} from 'shared-runtime';
 
@@ -10,7 +11,7 @@ function Component(props) {
 
   Component = useMemo(() => {
     return Component;
-  });
+  }, [Component]);
 
   return <Component {...props} />;
 }
@@ -25,7 +26,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
 import { useMemo } from "react";
 import { Stringify } from "shared-runtime";
 
@@ -35,6 +36,7 @@ function Component(props) {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     Component = Stringify;
 
+    Component;
     Component = Component;
     $[0] = Component;
   } else {

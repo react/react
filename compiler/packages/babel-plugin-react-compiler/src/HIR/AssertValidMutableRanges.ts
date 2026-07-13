@@ -57,13 +57,7 @@ function validateMutableRange(
     {
       reason: `Invalid mutable range: [${range.start}:${range.end}]`,
       description: `${printPlace(place)} in ${description}`,
-      details: [
-        {
-          kind: 'error',
-          loc: place.loc,
-          message: null,
-        },
-      ],
+      loc: place.loc,
     },
   );
 }

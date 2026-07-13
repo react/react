@@ -32,6 +32,7 @@ function Foo(props) {
     t0 = $[1];
   }
   const onFoo = t0;
+
   return onFoo;
 }
 

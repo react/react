@@ -1,4 +1,4 @@
-// @dynamicGating:{"source":"shared-runtime"} @validatePreserveExistingMemoizationGuarantees @panicThreshold:"none" @loggerTestOnly
+// @dynamicGating:{"source":"shared-runtime"} @validatePreserveExistingMemoizationGuarantees @panicThreshold:"none" @loggerTestOnly @validateExhaustiveMemoizationDependencies:false
 
 import {useMemo} from 'react';
 import {identity} from 'shared-runtime';

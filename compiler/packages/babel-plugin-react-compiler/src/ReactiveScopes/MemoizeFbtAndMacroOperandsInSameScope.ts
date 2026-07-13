@@ -8,13 +8,41 @@
 import {
   HIRFunction,
   IdentifierId,
+  InstructionValue,
   makeInstructionId,
   MutableRange,
   Place,
-  ReactiveValue,
+  ReactiveScope,
 } from '../HIR';
-import {Macro, MacroMethod} from '../HIR/Environment';
-import {eachReactiveValueOperand} from './visitors';
+import {Macro} from '../HIR/Environment';
+import {eachInstructionValueOperand} from '../HIR/visitors';
+
+/**
+ * Whether a macro requires its arguments to be transitively inlined (eg fbt)
+ * or just avoid having the top-level values be converted to variables (eg fbt.param)
+ */
+enum InlineLevel {
+  Transitive = 'Transitive',
+  Shallow = 'Shallow',
+}
+type MacroDefinition = {
+  level: InlineLevel;
+  properties: Map<string, MacroDefinition> | null;
+};
+
+const SHALLOW_MACRO: MacroDefinition = {
+  level: InlineLevel.Shallow,
+  properties: null,
+};
+const TRANSITIVE_MACRO: MacroDefinition = {
+  level: InlineLevel.Transitive,
+  properties: null,
+};
+const FBT_MACRO: MacroDefinition = {
+  level: InlineLevel.Transitive,
+  properties: new Map([['*', SHALLOW_MACRO]]),
+};
+FBT_MACRO.properties!.set('enum', FBT_MACRO);
 
 /**
  * This pass supports the `fbt` translation system (https://facebook.github.io/fbt/)
@@ -39,230 +67,210 @@ import {eachReactiveValueOperand} from './visitors';
  * ## User-defined macro-like function
  *
  * Users can also specify their own functions to be treated similarly to fbt via the
- * `customMacros` environment configuration.
+ * `customMacros` environment configuration. By default, user-supplied custom macros
+ * have their arguments transitively inlined.
  */
 export function memoizeFbtAndMacroOperandsInSameScope(
   fn: HIRFunction,
 ): Set<IdentifierId> {
-  const fbtMacroTags = new Set<Macro>([
-    ...Array.from(FBT_TAGS).map((tag): Macro => [tag, []]),
-    ...(fn.env.config.customMacros ?? []),
+  const macroKinds = new Map<Macro, MacroDefinition>([
+    ...Array.from(FBT_TAGS.entries()),
+    ...(fn.env.config.customMacros ?? []).map(
+      name => [name, TRANSITIVE_MACRO] as [Macro, MacroDefinition],
+    ),
   ]);
-  const fbtValues: Set<IdentifierId> = new Set();
-  const macroMethods = new Map<IdentifierId, Array<Array<MacroMethod>>>();
-  while (true) {
-    let vsize = fbtValues.size;
-    let msize = macroMethods.size;
-    visit(fn, fbtMacroTags, fbtValues, macroMethods);
-    if (vsize === fbtValues.size && msize === macroMethods.size) {
-      break;
-    }
-  }
-  return fbtValues;
+  /**
+   * Forward data-flow analysis to identify all macro tags, including
+   * things like `fbt.foo.bar(...)`
+   */
+  const macroTags = populateMacroTags(fn, macroKinds);
+
+  /**
+   * Reverse data-flow analysis to merge arguments to macro *invocations*
+   * based on the kind of the macro
+   */
+  const macroValues = mergeMacroArguments(fn, macroTags, macroKinds);
+
+  return macroValues;
 }
 
-export const FBT_TAGS: Set<string> = new Set([
-  'fbt',
-  'fbt:param',
-  'fbs',
-  'fbs:param',
+const FBT_TAGS: Map<string, MacroDefinition> = new Map([
+  ['fbt', FBT_MACRO],
+  ['fbt:param', SHALLOW_MACRO],
+  ['fbt:enum', FBT_MACRO],
+  ['fbt:plural', SHALLOW_MACRO],
+  ['fbs', FBT_MACRO],
+  ['fbs:param', SHALLOW_MACRO],
+  ['fbs:enum', FBT_MACRO],
+  ['fbs:plural', SHALLOW_MACRO],
 ]);
 export const SINGLE_CHILD_FBT_TAGS: Set<string> = new Set([
   'fbt:param',
   'fbs:param',
 ]);
 
-function visit(
+function populateMacroTags(
   fn: HIRFunction,
-  fbtMacroTags: Set<Macro>,
-  fbtValues: Set<IdentifierId>,
-  macroMethods: Map<IdentifierId, Array<Array<MacroMethod>>>,
-): void {
-  for (const [, block] of fn.body.blocks) {
-    for (const instruction of block.instructions) {
-      const {lvalue, value} = instruction;
-      if (lvalue === null) {
-        continue;
-      }
-      if (
-        value.kind === 'Primitive' &&
-        typeof value.value === 'string' &&
-        matchesExactTag(value.value, fbtMacroTags)
-      ) {
-        /*
-         * We don't distinguish between tag names and strings, so record
-         * all `fbt` string literals in case they are used as a jsx tag.
-         */
-        fbtValues.add(lvalue.identifier.id);
-      } else if (
-        value.kind === 'LoadGlobal' &&
-        matchesExactTag(value.binding.name, fbtMacroTags)
-      ) {
-        // Record references to `fbt` as a global
-        fbtValues.add(lvalue.identifier.id);
-      } else if (
-        value.kind === 'LoadGlobal' &&
-        matchTagRoot(value.binding.name, fbtMacroTags) !== null
-      ) {
-        const methods = matchTagRoot(value.binding.name, fbtMacroTags)!;
-        macroMethods.set(lvalue.identifier.id, methods);
-      } else if (
-        value.kind === 'PropertyLoad' &&
-        macroMethods.has(value.object.identifier.id)
-      ) {
-        const methods = macroMethods.get(value.object.identifier.id)!;
-        const newMethods = [];
-        for (const method of methods) {
-          if (
-            method.length > 0 &&
-            (method[0].type === 'wildcard' ||
-              (method[0].type === 'name' && method[0].name === value.property))
-          ) {
-            if (method.length > 1) {
-              newMethods.push(method.slice(1));
-            } else {
-              fbtValues.add(lvalue.identifier.id);
+  macroKinds: Map<Macro, MacroDefinition>,
+): Map<IdentifierId, MacroDefinition> {
+  const macroTags = new Map<IdentifierId, MacroDefinition>();
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      const {lvalue, value} = instr;
+      switch (value.kind) {
+        case 'Primitive': {
+          if (typeof value.value === 'string') {
+            const macroDefinition = macroKinds.get(value.value);
+            if (macroDefinition != null) {
+              /*
+               * We don't distinguish between tag names and strings, so record
+               * all `fbt` string literals in case they are used as a jsx tag.
+               */
+              macroTags.set(lvalue.identifier.id, macroDefinition);
             }
           }
+          break;
         }
-        if (newMethods.length > 0) {
-          macroMethods.set(lvalue.identifier.id, newMethods);
-        }
-      } else if (isFbtCallExpression(fbtValues, value)) {
-        const fbtScope = lvalue.identifier.scope;
-        if (fbtScope === null) {
-          continue;
-        }
-
-        /*
-         * if the JSX element's tag was `fbt`, mark all its operands
-         * to ensure that they end up in the same scope as the jsx element
-         * itself.
-         */
-        for (const operand of eachReactiveValueOperand(value)) {
-          operand.identifier.scope = fbtScope;
-
-          // Expand the jsx element's range to account for its operands
-          expandFbtScopeRange(fbtScope.range, operand.identifier.mutableRange);
-          fbtValues.add(operand.identifier.id);
-        }
-      } else if (
-        isFbtJsxExpression(fbtMacroTags, fbtValues, value) ||
-        isFbtJsxChild(fbtValues, lvalue, value)
-      ) {
-        const fbtScope = lvalue.identifier.scope;
-        if (fbtScope === null) {
-          continue;
-        }
-
-        /*
-         * if the JSX element's tag was `fbt`, mark all its operands
-         * to ensure that they end up in the same scope as the jsx element
-         * itself.
-         */
-        for (const operand of eachReactiveValueOperand(value)) {
-          operand.identifier.scope = fbtScope;
-
-          // Expand the jsx element's range to account for its operands
-          expandFbtScopeRange(fbtScope.range, operand.identifier.mutableRange);
-
-          /*
-           * NOTE: we add the operands as fbt values so that they are also
-           * grouped with this expression
-           */
-          fbtValues.add(operand.identifier.id);
-        }
-      } else if (fbtValues.has(lvalue.identifier.id)) {
-        const fbtScope = lvalue.identifier.scope;
-        if (fbtScope === null) {
-          return;
-        }
-
-        for (const operand of eachReactiveValueOperand(value)) {
-          if (
-            operand.identifier.name !== null &&
-            operand.identifier.name.kind === 'named'
-          ) {
-            /*
-             * named identifiers were already locals, we only have to force temporaries
-             * into the same scope
-             */
-            continue;
+        case 'LoadGlobal': {
+          let macroDefinition = macroKinds.get(value.binding.name);
+          if (macroDefinition != null) {
+            macroTags.set(lvalue.identifier.id, macroDefinition);
           }
-          operand.identifier.scope = fbtScope;
-
-          // Expand the jsx element's range to account for its operands
-          expandFbtScopeRange(fbtScope.range, operand.identifier.mutableRange);
+          break;
+        }
+        case 'PropertyLoad': {
+          if (typeof value.property === 'string') {
+            const macroDefinition = macroTags.get(value.object.identifier.id);
+            if (macroDefinition != null) {
+              const propertyDefinition =
+                macroDefinition.properties != null
+                  ? (macroDefinition.properties.get(value.property) ??
+                    macroDefinition.properties.get('*'))
+                  : null;
+              const propertyMacro = propertyDefinition ?? macroDefinition;
+              macroTags.set(lvalue.identifier.id, propertyMacro);
+            }
+          }
+          break;
         }
       }
     }
   }
+  return macroTags;
 }
 
-function matchesExactTag(s: string, tags: Set<Macro>): boolean {
-  return Array.from(tags).some(macro =>
-    typeof macro === 'string'
-      ? s === macro
-      : macro[1].length === 0 && macro[0] === s,
-  );
-}
-
-function matchTagRoot(
-  s: string,
-  tags: Set<Macro>,
-): Array<Array<MacroMethod>> | null {
-  const methods: Array<Array<MacroMethod>> = [];
-  for (const macro of tags) {
-    if (typeof macro === 'string') {
-      continue;
+function mergeMacroArguments(
+  fn: HIRFunction,
+  macroTags: Map<IdentifierId, MacroDefinition>,
+  macroKinds: Map<Macro, MacroDefinition>,
+): Set<IdentifierId> {
+  const macroValues = new Set<IdentifierId>(macroTags.keys());
+  for (const block of Array.from(fn.body.blocks.values()).reverse()) {
+    for (let i = block.instructions.length - 1; i >= 0; i--) {
+      const instr = block.instructions[i]!;
+      const {lvalue, value} = instr;
+      switch (value.kind) {
+        case 'DeclareContext':
+        case 'DeclareLocal':
+        case 'Destructure':
+        case 'LoadContext':
+        case 'LoadLocal':
+        case 'PostfixUpdate':
+        case 'PrefixUpdate':
+        case 'StoreContext':
+        case 'StoreLocal': {
+          // Instructions that never need to be merged
+          break;
+        }
+        case 'CallExpression':
+        case 'MethodCall': {
+          const scope = lvalue.identifier.scope;
+          if (scope == null) {
+            continue;
+          }
+          const callee =
+            value.kind === 'CallExpression' ? value.callee : value.property;
+          const macroDefinition =
+            macroTags.get(callee.identifier.id) ??
+            macroTags.get(lvalue.identifier.id);
+          if (macroDefinition != null) {
+            visitOperands(
+              macroDefinition,
+              scope,
+              lvalue,
+              value,
+              macroValues,
+              macroTags,
+            );
+          }
+          break;
+        }
+        case 'JsxExpression': {
+          const scope = lvalue.identifier.scope;
+          if (scope == null) {
+            continue;
+          }
+          let macroDefinition;
+          if (value.tag.kind === 'Identifier') {
+            macroDefinition = macroTags.get(value.tag.identifier.id);
+          } else {
+            macroDefinition = macroKinds.get(value.tag.name);
+          }
+          macroDefinition ??= macroTags.get(lvalue.identifier.id);
+          if (macroDefinition != null) {
+            visitOperands(
+              macroDefinition,
+              scope,
+              lvalue,
+              value,
+              macroValues,
+              macroTags,
+            );
+          }
+          break;
+        }
+        default: {
+          const scope = lvalue.identifier.scope;
+          if (scope == null) {
+            continue;
+          }
+          const macroDefinition = macroTags.get(lvalue.identifier.id);
+          if (macroDefinition != null) {
+            visitOperands(
+              macroDefinition,
+              scope,
+              lvalue,
+              value,
+              macroValues,
+              macroTags,
+            );
+          }
+          break;
+        }
+      }
     }
-    const [tag, rest] = macro;
-    if (tag === s && rest.length > 0) {
-      methods.push(rest);
+    for (const phi of block.phis) {
+      const scope = phi.place.identifier.scope;
+      if (scope == null) {
+        continue;
+      }
+      const macroDefinition = macroTags.get(phi.place.identifier.id);
+      if (
+        macroDefinition == null ||
+        macroDefinition.level === InlineLevel.Shallow
+      ) {
+        continue;
+      }
+      macroValues.add(phi.place.identifier.id);
+      for (const operand of phi.operands.values()) {
+        operand.identifier.scope = scope;
+        expandFbtScopeRange(scope.range, operand.identifier.mutableRange);
+        macroTags.set(operand.identifier.id, macroDefinition);
+        macroValues.add(operand.identifier.id);
+      }
     }
   }
-  if (methods.length > 0) {
-    return methods;
-  } else {
-    return null;
-  }
-}
-
-function isFbtCallExpression(
-  fbtValues: Set<IdentifierId>,
-  value: ReactiveValue,
-): boolean {
-  return (
-    (value.kind === 'CallExpression' &&
-      fbtValues.has(value.callee.identifier.id)) ||
-    (value.kind === 'MethodCall' && fbtValues.has(value.property.identifier.id))
-  );
-}
-
-function isFbtJsxExpression(
-  fbtMacroTags: Set<Macro>,
-  fbtValues: Set<IdentifierId>,
-  value: ReactiveValue,
-): boolean {
-  return (
-    value.kind === 'JsxExpression' &&
-    ((value.tag.kind === 'Identifier' &&
-      fbtValues.has(value.tag.identifier.id)) ||
-      (value.tag.kind === 'BuiltinTag' &&
-        matchesExactTag(value.tag.name, fbtMacroTags)))
-  );
-}
-
-function isFbtJsxChild(
-  fbtValues: Set<IdentifierId>,
-  lvalue: Place | null,
-  value: ReactiveValue,
-): boolean {
-  return (
-    (value.kind === 'JsxExpression' || value.kind === 'JsxFragment') &&
-    lvalue !== null &&
-    fbtValues.has(lvalue.identifier.id)
-  );
+  return macroValues;
 }
 
 function expandFbtScopeRange(
@@ -273,5 +281,24 @@ function expandFbtScopeRange(
     fbtRange.start = makeInstructionId(
       Math.min(fbtRange.start, extendWith.start),
     );
+  }
+}
+
+function visitOperands(
+  macroDefinition: MacroDefinition,
+  scope: ReactiveScope,
+  lvalue: Place,
+  value: InstructionValue,
+  macroValues: Set<IdentifierId>,
+  macroTags: Map<IdentifierId, MacroDefinition>,
+): void {
+  macroValues.add(lvalue.identifier.id);
+  for (const operand of eachInstructionValueOperand(value)) {
+    if (macroDefinition.level === InlineLevel.Transitive) {
+      operand.identifier.scope = scope;
+      expandFbtScopeRange(scope.range, operand.identifier.mutableRange);
+      macroTags.set(operand.identifier.id, macroDefinition);
+    }
+    macroValues.add(operand.identifier.id);
   }
 }

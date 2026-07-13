@@ -97,6 +97,58 @@ export function handleDevToolsPageMessage(message) {
 
       break;
     }
+
+    case 'eval-in-inspected-window': {
+      const {
+        payload: {tabId, requestId, scriptId, args},
+      } = message;
+
+      chrome.tabs
+        .sendMessage(tabId, {
+          source: 'devtools-page-eval',
+          payload: {
+            scriptId,
+            args,
+          },
+        })
+        .then(response => {
+          if (!response) {
+            chrome.runtime.sendMessage({
+              source: 'react-devtools-background',
+              payload: {
+                type: 'eval-in-inspected-window-response',
+                requestId,
+                result: null,
+                error: 'No response from content script',
+              },
+            });
+            return;
+          }
+          const {result, error} = response;
+          chrome.runtime.sendMessage({
+            source: 'react-devtools-background',
+            payload: {
+              type: 'eval-in-inspected-window-response',
+              requestId,
+              result,
+              error,
+            },
+          });
+        })
+        .catch(error => {
+          chrome.runtime.sendMessage({
+            source: 'react-devtools-background',
+            payload: {
+              type: 'eval-in-inspected-window-response',
+              requestId,
+              result: null,
+              error: error?.message || String(error),
+            },
+          });
+        });
+
+      break;
+    }
   }
 }
 

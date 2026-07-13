@@ -12,6 +12,7 @@ export const rendererPackageName = 'react-server-dom-webpack';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigWeb';
 export * from 'react-client/src/ReactClientConsoleConfigBrowser';
+export * from 'react-client/src/ReactClientDebugConfigBrowser';
 export * from 'react-server-dom-webpack/src/client/ReactFlightClientConfigBundlerWebpack';
 export * from 'react-server-dom-webpack/src/client/ReactFlightClientConfigBundlerWebpackBrowser';
 export * from 'react-server-dom-webpack/src/client/ReactFlightClientConfigTargetWebpackBrowser';

@@ -498,7 +498,6 @@ describe('ReactComponent', () => {
     );
   });
 
-  // @gate renameElementSymbol
   it('throws if a legacy element is used as a child', async () => {
     const inlinedElement = {
       $$typeof: Symbol.for('react.element'),

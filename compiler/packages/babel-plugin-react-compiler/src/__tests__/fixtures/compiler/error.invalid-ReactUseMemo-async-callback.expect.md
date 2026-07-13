@@ -15,7 +15,7 @@ function component(a, b) {
 ## Error
 
 ```
-Found 1 error:
+Found 2 errors:
 
 Error: useMemo() callbacks may not be async or generator functions
 
@@ -32,6 +32,21 @@ error.invalid-ReactUseMemo-async-callback.ts:2:24
   5 |   return x;
   6 | }
   7 |
+
+Error: Found missing memoization dependencies
+
+Missing dependencies can cause a value to update less often than it should, resulting in stale UI.
+
+error.invalid-ReactUseMemo-async-callback.ts:3:10
+  1 | function component(a, b) {
+  2 |   let x = React.useMemo(async () => {
+> 3 |     await a;
+    |           ^ Missing dependency `a`
+  4 |   }, []);
+  5 |   return x;
+  6 | }
+
+Inferred dependencies: `[a]`
 ```
           
       

@@ -7,6 +7,7 @@
 
 import {CompilerError} from '../CompilerError';
 import {
+  GeneratedSource,
   PrunedReactiveScopeBlock,
   ReactiveFunction,
   ReactiveScope,
@@ -21,6 +22,7 @@ import {
   printIdentifier,
   printInstructionValue,
   printPlace,
+  printSourceLocation,
   printType,
 } from '../HIR/PrintHIR';
 import {assertExhaustive} from '../Utils/utils';
@@ -113,7 +115,7 @@ export function printDependency(dependency: ReactiveScopeDependency): string {
   const identifier =
     printIdentifier(dependency.identifier) +
     printType(dependency.identifier.type);
-  return `${identifier}${dependency.path.map(token => `${token.optional ? '?.' : '.'}${token.property}`).join('')}`;
+  return `${identifier}${dependency.path.map(token => `${token.optional ? '?.' : '.'}${token.property}`).join('')}_${printSourceLocation(dependency.loc)}`;
 }
 
 export function printReactiveInstructions(
@@ -322,15 +324,7 @@ function writeTerminal(writer: Writer, terminal: ReactiveTerminal): void {
             const block = case_.block;
             CompilerError.invariant(block != null, {
               reason: 'Expected case to have a block',
-              description: null,
-              details: [
-                {
-                  kind: 'error',
-                  loc: case_.test?.loc ?? null,
-                  message: null,
-                },
-              ],
-              suggestions: null,
+              loc: case_.test?.loc ?? GeneratedSource,
             });
             writeReactiveInstructions(writer, block);
           });

@@ -33,11 +33,8 @@ function Example() {
   let t0;
   if ($[0] !== data) {
     const { a, b } = identity(data);
-
     const el = <Stringify tooltip={b} />;
-
     identity(a.at(0));
-
     t0 = <Stringify icon={el} />;
     $[0] = data;
     $[1] = t0;

@@ -1,4 +1,4 @@
-// @validateNoSetStateInEffects
+// @validateNoSetStateInEffects @outputMode:"lint"
 import {useState, useRef, useEffect} from 'react';
 
 function Tooltip() {

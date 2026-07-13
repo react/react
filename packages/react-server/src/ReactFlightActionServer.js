@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {Thenable, ReactFormState} from 'shared/ReactTypes';
+import type {ReactFormState} from 'shared/ReactTypes';
 
 import type {
   ServerManifest,
@@ -20,27 +20,49 @@ import {
   requireModule,
 } from 'react-client/src/ReactFlightClientConfig';
 
-import {createResponse, close, getRoot} from './ReactFlightReplyServer';
+import {
+  createResponse,
+  close,
+  getRoot,
+  MAX_BOUND_ARGS,
+} from './ReactFlightReplyServer';
 
 type ServerReferenceId = any;
 
 function bindArgs(fn: any, args: any) {
+  if (args.length > MAX_BOUND_ARGS) {
+    throw new Error(
+      'Server Function has too many bound arguments. Received ' +
+        args.length +
+        ' but the limit is ' +
+        MAX_BOUND_ARGS +
+        '.',
+    );
+  }
+
   return fn.bind.apply(fn, [null].concat(args));
 }
 
 function loadServerReference<T>(
   bundlerConfig: ServerManifest,
-  id: ServerReferenceId,
-  bound: null | Thenable<Array<any>>,
+  metaData: {
+    id: ServerReferenceId,
+    bound: null | Promise<Array<any>>,
+  },
 ): Promise<T> {
+  const id: ServerReferenceId = metaData.id;
+  if (typeof id !== 'string') {
+    return null as any;
+  }
   const serverReference: ServerReference<T> =
     resolveServerReference<$FlowFixMe>(bundlerConfig, id);
   // We expect most servers to not really need this because you'd just have all
   // the relevant modules already loaded but it allows for lazy loading of code
   // if needed.
   const preloadPromise = preloadModule(serverReference);
-  if (bound) {
-    return Promise.all([(bound: any), preloadPromise]).then(
+  const bound = metaData.bound;
+  if (bound instanceof Promise) {
+    return Promise.all([bound as any, preloadPromise]).then(
       ([args]: Array<any>) => bindArgs(requireModule(serverReference), args),
     );
   } else if (preloadPromise) {
@@ -57,6 +79,7 @@ function decodeBoundActionMetaData(
   body: FormData,
   serverManifest: ServerManifest,
   formFieldPrefix: string,
+  arraySizeLimit: void | number,
 ): {id: ServerReferenceId, bound: null | Promise<Array<any>>} {
   // The data for this reference is encoded in multiple fields under this prefix.
   const actionResponse = createResponse(
@@ -64,6 +87,7 @@ function decodeBoundActionMetaData(
     formFieldPrefix,
     undefined,
     body,
+    arraySizeLimit,
   );
   close(actionResponse);
   const refPromise = getRoot<{
@@ -71,10 +95,10 @@ function decodeBoundActionMetaData(
     bound: null | Promise<Array<any>>,
   }>(actionResponse);
   // Force it to initialize
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   refPromise.then(() => {});
   if (refPromise.status !== 'fulfilled') {
-    // $FlowFixMe
+    // $FlowFixMe[prop-missing]
     throw refPromise.reason;
   }
   return refPromise.value;
@@ -89,29 +113,45 @@ export function decodeAction<T>(
   const formData = new FormData();
 
   let action: Promise<(formData: FormData) => T> | null = null;
+  const seenActions = new Set<string>();
 
   // $FlowFixMe[prop-missing]
   body.forEach((value: string | File, key: string) => {
     if (!key.startsWith('$ACTION_')) {
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       formData.append(key, value);
       return;
     }
-    // Later actions may override earlier actions if a button is used to override the default
-    // form action.
+    // Later actions may override earlier actions if a button is used to
+    // override the default form action. However, we don't expect the same
+    // action ref field to be sent multiple times in legitimate form data.
     if (key.startsWith('$ACTION_REF_')) {
+      if (seenActions.has(key)) {
+        return;
+      }
+      seenActions.add(key);
       const formFieldPrefix = '$ACTION_' + key.slice(12) + ':';
       const metaData = decodeBoundActionMetaData(
         body,
         serverManifest,
         formFieldPrefix,
       );
-      action = loadServerReference(serverManifest, metaData.id, metaData.bound);
+      action = loadServerReference(serverManifest, metaData);
       return;
     }
+    // A simple action with no bound arguments may appear twice in the form data
+    // if a button specifies the same action as the default form action. We only
+    // load the first one, as they're guaranteed to be identical.
     if (key.startsWith('$ACTION_ID_')) {
+      if (seenActions.has(key)) {
+        return;
+      }
+      seenActions.add(key);
       const id = key.slice(11);
-      action = loadServerReference(serverManifest, id, null);
+      action = loadServerReference(serverManifest, {
+        id,
+        bound: null,
+      });
       return;
     }
   });

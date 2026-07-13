@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git",
+    "url": "git+https://github.com/react/react.git",
     "directory": "compiler/packages/react-forgive"
   },
   "dependencies": {
@@ -18,7 +18,6 @@
     "@babel/parser": "^7.26.0",
     "@babel/plugin-syntax-typescript": "^7.25.9",
     "@babel/types": "^7.26.0",
-    "cosmiconfig": "^9.0.0",
     "prettier": "^3.3.3",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12"

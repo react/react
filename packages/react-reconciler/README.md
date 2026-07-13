@@ -59,7 +59,7 @@ The examples in the React repository are declared a bit differently than a third
 
 * [React ART](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactART.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactFiberConfigART.js)
 * [React DOM](https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOM.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js)
-* [React Native](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactNativeRenderer.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFiberConfigNative.js)
+* [React Native](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFabric.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFiberConfigFabric.js)
 
 If these links break please file an issue and we’ll fix them. They intentionally link to the latest versions since the API is still evolving. If you have more questions please file an issue and we’ll try to help!
 

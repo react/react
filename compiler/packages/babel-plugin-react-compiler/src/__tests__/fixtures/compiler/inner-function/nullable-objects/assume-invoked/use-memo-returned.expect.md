@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @validateExhaustiveMemoizationDependencies:false
 import {useState, useMemo} from 'react';
 import {useIdentity} from 'shared-runtime';
 
@@ -36,7 +37,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @validateExhaustiveMemoizationDependencies:false
 import { useState, useMemo } from "react";
 import { useIdentity } from "shared-runtime";
 
@@ -47,7 +48,6 @@ import { useIdentity } from "shared-runtime";
 function useMakeCallback(t0) {
   const $ = _c(2);
   const { obj, shouldSynchronizeState } = t0;
-
   const [, setState] = useState(0);
   let t1;
   if ($[0] !== obj.value) {

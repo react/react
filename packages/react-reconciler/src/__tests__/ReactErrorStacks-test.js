@@ -28,8 +28,8 @@ describe('ReactFragment', () => {
 
     React = require('react');
     Suspense = React.Suspense;
-    Activity = React.unstable_Activity;
-    ViewTransition = React.unstable_ViewTransition;
+    Activity = React.Activity;
+    ViewTransition = React.ViewTransition;
     ReactNoop = require('react-noop-renderer');
     const InternalTestUtils = require('internal-test-utils');
     waitForAll = InternalTestUtils.waitForAll;
@@ -202,7 +202,6 @@ describe('ReactFragment', () => {
     ]);
   });
 
-  // @gate enableActivity
   it('includes built-in for Activity', async () => {
     ReactNoop.createRoot({
       onCaughtError,
@@ -342,5 +341,42 @@ describe('ReactFragment', () => {
       ]),
       __DEV__ ? componentStack(['SomethingThatErrors']) : null,
     ]);
+  });
+
+  it('captures class component stacks via the no-Reflect.construct fallback', async () => {
+    class FailingClassComponent extends React.Component {
+      render() {
+        throw new Error('uh oh');
+      }
+    }
+
+    const root = ReactNoop.createRoot({onCaughtError});
+
+    const originalReflectConstruct = Reflect.construct;
+    delete Reflect.construct;
+
+    try {
+      root.render(
+        <CatchingBoundary>
+          <FailingClassComponent />
+        </CatchingBoundary>,
+      );
+      await waitForAll([]);
+    } finally {
+      Object.defineProperty(Reflect, 'construct', {
+        value: originalReflectConstruct,
+      });
+    }
+
+    expect(rootCaughtErrors).toEqual([
+      'uh oh',
+      componentStack(['FailingClassComponent', 'CatchingBoundary']),
+      __DEV__ ? componentStack(['FailingClassComponent']) : null,
+    ]);
+
+    // The throwing trap should be reset, we use props object for it
+    expect(
+      Object.getOwnPropertyDescriptor(FailingClassComponent.prototype, 'props'),
+    ).toBeUndefined();
   });
 });

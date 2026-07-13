@@ -64,6 +64,7 @@ function Component() {
   if (boxedInner[0] !== obj?.inner) {
     throw new Error("invariant broken");
   }
+
   return <Stringify obj={obj} inner={boxedInner} />;
 }
 

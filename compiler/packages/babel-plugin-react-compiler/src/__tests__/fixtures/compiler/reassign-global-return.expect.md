@@ -25,6 +25,7 @@ let b = 1;
 
 export default function useMyHook() {
   const fn = _temp;
+
   return fn;
 }
 function _temp() {

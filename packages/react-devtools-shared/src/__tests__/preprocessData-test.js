@@ -24,21 +24,8 @@ let utils;
 let assertLog;
 let waitFor;
 
-// This flag is on experimental which disables timeline profiler.
-const enableComponentPerformanceTrack =
-  React.version.startsWith('19') && React.version.includes('experimental');
-
 describe('Timeline profiler', () => {
-  if (enableComponentPerformanceTrack) {
-    test('no tests', () => {});
-    // Ignore all tests.
-    return;
-  }
-
   describe('User Timing API', () => {
-    if (enableComponentPerformanceTrack) {
-      return;
-    }
     let currentlyNotClearedMarks;
     let registeredMarks;
     let featureDetectionMarkName = null;
@@ -111,9 +98,31 @@ describe('Timeline profiler', () => {
       ReactDOMClient = require('react-dom/client');
       Scheduler = require('scheduler');
 
-      const InternalTestUtils = require('internal-test-utils');
-      assertLog = InternalTestUtils.assertLog;
-      waitFor = InternalTestUtils.waitFor;
+      if (typeof Scheduler.log !== 'function') {
+        // backwards compat for older scheduler versions
+        Scheduler.log = Scheduler.unstable_yieldValue;
+        Scheduler.unstable_clearLog = Scheduler.unstable_clearYields;
+        const InternalTestUtils = require('internal-test-utils');
+        assertLog = InternalTestUtils.assertLog;
+
+        // polyfill waitFor as Scheduler.toFlushAndYieldThrough
+        waitFor = expectedYields => {
+          let actualYields = Scheduler.unstable_clearYields();
+          if (actualYields.length !== 0) {
+            throw new Error(
+              'Log of yielded values is not empty. ' +
+                'Call expect(Scheduler).toHaveYielded(...) first.',
+            );
+          }
+          Scheduler.unstable_flushNumberOfYields(expectedYields.length);
+          actualYields = Scheduler.unstable_clearYields();
+          expect(actualYields).toEqual(expectedYields);
+        };
+      } else {
+        const InternalTestUtils = require('internal-test-utils');
+        assertLog = InternalTestUtils.assertLog;
+        waitFor = InternalTestUtils.waitFor;
+      }
 
       setPerformanceMock =
         require('react-devtools-shared/src/backend/profilingHooks').setPerformanceMock_ONLY_FOR_TESTING;
@@ -146,6 +155,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should return array of lane numbers from bitmask string', () => {
         expect(getLanesFromTransportDecimalBitmask('1')).toEqual([0]);
         expect(getLanesFromTransportDecimalBitmask('512')).toEqual([9]);
@@ -162,6 +172,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should return empty array if laneBitmaskString is not a bitmask', () => {
         expect(getLanesFromTransportDecimalBitmask('')).toEqual([]);
         expect(getLanesFromTransportDecimalBitmask('hello')).toEqual([]);
@@ -170,6 +181,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should ignore lanes outside REACT_TOTAL_NUM_LANES', () => {
         const REACT_TOTAL_NUM_LANES =
           require('react-devtools-timeline/src/constants').REACT_TOTAL_NUM_LANES;
@@ -295,11 +307,13 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should throw given an empty timeline', async () => {
         await expect(async () => preprocessData([])).rejects.toThrow();
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should throw given a timeline with no Profile event', async () => {
         const randomSample = createUserTimingEntry({
           dur: 100,
@@ -316,6 +330,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should throw given a timeline without an explicit profiler version mark nor any other React marks', async () => {
         const cpuProfilerSample = creactCpuProfilerSample();
 
@@ -327,6 +342,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should throw given a timeline with React scheduling marks, but without an explicit profiler version mark', async () => {
         const cpuProfilerSample = creactCpuProfilerSample();
         const scheduleRenderSample = createUserTimingEntry({
@@ -341,6 +357,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should return empty data given a timeline with no React scheduling profiling marks', async () => {
         const cpuProfilerSample = creactCpuProfilerSample();
         const randomSample = createUserTimingEntry({
@@ -445,6 +462,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should process legacy data format (before lane labels were added)', async () => {
         const cpuProfilerSample = creactCpuProfilerSample();
 
@@ -832,6 +850,8 @@ describe('Timeline profiler', () => {
         `);
       });
 
+      // @reactVersion >= 19.1
+      // @reactVersion < 19.2
       it('should process a sample createRoot render sequence', async () => {
         function App() {
           const [didMount, setDidMount] = React.useState(false);
@@ -1168,6 +1188,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should populate other user timing marks', async () => {
         const userTimingData = createUserTimingData([]);
         userTimingData.push(
@@ -1218,6 +1239,7 @@ describe('Timeline profiler', () => {
       });
 
       // @reactVersion >= 18.0
+      // @reactVersion < 19.2
       it('should include a suspended resource "displayName" if one is set', async () => {
         let promise = null;
         let resolvedValue = null;
@@ -1359,6 +1381,7 @@ describe('Timeline profiler', () => {
           });
 
           // @reactVersion >= 18.2
+          // @reactVersion < 19.2
           it('should not warn when React finishes a previously long (async) update with a short (sync) update inside of an event', async () => {
             function Yield({id, value}) {
               Scheduler.log(`${id}:${value}`);
@@ -1421,6 +1444,7 @@ describe('Timeline profiler', () => {
 
         describe('nested updates', () => {
           // @reactVersion >= 18.2
+          // @reactVersion < 19.2
           it('should not warn about short nested (state) updates during layout effects', async () => {
             function Component() {
               const [didMount, setDidMount] = React.useState(false);
@@ -1452,6 +1476,7 @@ describe('Timeline profiler', () => {
           });
 
           // @reactVersion >= 18.2
+          // @reactVersion < 19.2
           it('should not warn about short (forced) updates during layout effects', async () => {
             class Component extends React.Component {
               _didMount: boolean = false;
@@ -1607,6 +1632,7 @@ describe('Timeline profiler', () => {
           });
 
           // @reactVersion >= 18.2
+          // @reactVersion < 19.2
           it('should not warn about transition updates scheduled during commit phase', async () => {
             function Component() {
               const [value, setValue] = React.useState(0);
@@ -1748,6 +1774,7 @@ describe('Timeline profiler', () => {
 
         describe('errors thrown while rendering', () => {
           // @reactVersion >= 18.0
+          // @reactVersion < 19.2
           it('shoult parse Errors thrown during render', async () => {
             jest.spyOn(console, 'error');
 
@@ -1796,6 +1823,7 @@ describe('Timeline profiler', () => {
           // This also tests an edge case where a component suspends while profiling
           // before the first commit is logged (so the lane-to-labels map will not yet exist).
           // @reactVersion >= 18.2
+          // @reactVersion < 19.2
           it('should warn about suspending during an update', async () => {
             let promise = null;
             let resolvedValue = null;
@@ -1862,6 +1890,7 @@ describe('Timeline profiler', () => {
           });
 
           // @reactVersion >= 18.2
+          // @reactVersion < 19.2
           it('should not warn about suspending during an transition', async () => {
             let promise = null;
             let resolvedValue = null;
@@ -2130,6 +2159,8 @@ describe('Timeline profiler', () => {
       `);
     });
 
+    // @reactVersion >= 19.1
+    // @reactVersion < 19.2
     it('should process a sample createRoot render sequence', async () => {
       function App() {
         const [didMount, setDidMount] = React.useState(false);

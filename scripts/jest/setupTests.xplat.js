@@ -28,9 +28,5 @@ jest.mock('shared/ReactFeatureFlags', () => {
   return actual;
 });
 
-jest.mock('react-noop-renderer', () =>
-  jest.requireActual('react-noop-renderer/persistent')
-);
-
 global.__PERSISTENT__ = true;
 global.__XPLAT__ = true;

@@ -24,6 +24,7 @@ function Component(props) {
   if (props.cond) {
     return;
   }
+
   return props.value;
 }
 

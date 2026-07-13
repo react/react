@@ -549,6 +549,13 @@ export function startGestureTransition() {
 
 export function stopViewTransition(transition: RunningViewTransition) {}
 
+export function addViewTransitionFinishedListener(
+  transition: RunningViewTransition,
+  callback: () => void,
+) {
+  callback();
+}
+
 export type ViewTransitionInstance = null | {name: string, ...};
 
 export function createViewTransitionInstance(
@@ -609,13 +616,19 @@ export function preloadInstance(type, props) {
   return true;
 }
 
-export function startSuspendingCommit() {}
+export function startSuspendingCommit() {
+  return null;
+}
 
-export function suspendInstance(instance, type, props) {}
+export function suspendInstance(state, instance, type, props) {}
 
-export function suspendOnActiveViewTransition(container) {}
+export function suspendOnActiveViewTransition(state, container) {}
 
-export function waitForCommitToBeReady() {
+export function waitForCommitToBeReady(timeoutOffset) {
+  return null;
+}
+
+export function getSuspendedCommitReason(state, rootContainer) {
   return null;
 }
 

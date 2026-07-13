@@ -89,8 +89,12 @@ export function experimental_renderToHTML(
       noServerCallOrFormAction,
       undefined,
       undefined,
+      false,
       undefined,
       false,
+      undefined,
+      undefined,
+      undefined,
     );
     const streamState = createFlightStreamState(flightResponse, null);
     const flightDestination = {
@@ -175,7 +179,7 @@ export function experimental_renderToHTML(
       }
     }
     const flightRequest = createFlightRequest(
-      // $FlowFixMe: This should be a subtype but not everything is typed covariant.
+      // $FlowFixMe[incompatible-type]: This should be a subtype but not everything is typed covariant.
       children,
       null,
       handleFlightError,
@@ -192,7 +196,7 @@ export function experimental_renderToHTML(
     );
     const root = getFlightRoot<ReactNodeList>(flightResponse);
     const fizzRequest = createFizzRequest(
-      // $FlowFixMe: Thenables as children are supported.
+      // $FlowFixMe[incompatible-type]: Thenables as children are supported.
       root,
       resumableState,
       createRenderState(
@@ -211,17 +215,16 @@ export function experimental_renderToHTML(
       undefined,
       undefined,
       undefined,
-      undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abortFlight(flightRequest, (signal: any).reason);
-        abortFizz(fizzRequest, (signal: any).reason);
+        abortFlight(flightRequest, (signal as any).reason);
+        abortFizz(fizzRequest, (signal as any).reason);
       } else {
         const listener = () => {
-          abortFlight(flightRequest, (signal: any).reason);
-          abortFizz(fizzRequest, (signal: any).reason);
+          abortFlight(flightRequest, (signal as any).reason);
+          abortFizz(fizzRequest, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

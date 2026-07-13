@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validateNoSetStateInEffects
+// @validateNoSetStateInEffects @outputMode:"lint"
 import {useEffect, useState} from 'react';
 
 function Component() {
@@ -23,22 +23,14 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @validateNoSetStateInEffects
+// @validateNoSetStateInEffects @outputMode:"lint"
 import { useEffect, useState } from "react";
 
 function Component() {
-  const $ = _c(1);
   const [state, setState] = useState(0);
-  let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = () => {
-      setTimeout(setState, 10);
-    };
-    $[0] = t0;
-  } else {
-    t0 = $[0];
-  }
-  useEffect(t0);
+  useEffect(() => {
+    setTimeout(setState, 10);
+  });
   return state;
 }
 

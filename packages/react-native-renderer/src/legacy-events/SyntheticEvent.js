@@ -11,6 +11,21 @@ import assign from 'shared/assign';
 
 const EVENT_POOL_SIZE = 10;
 
+let currentTimeStamp = () => {
+  // Lazily define the function based on the existence of performance.now()
+  if (
+    typeof performance === 'object' &&
+    performance !== null &&
+    typeof performance.now === 'function'
+  ) {
+    currentTimeStamp = () => performance.now();
+  } else {
+    currentTimeStamp = () => Date.now();
+  }
+
+  return currentTimeStamp();
+};
+
 /**
  * @interface Event
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
@@ -26,7 +41,7 @@ const EventInterface = {
   bubbles: null,
   cancelable: null,
   timeStamp: function (event) {
-    return event.timeStamp || Date.now();
+    return event.timeStamp || event.timestamp || currentTimeStamp();
   },
   defaultPrevented: null,
   isTrusted: null,

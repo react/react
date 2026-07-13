@@ -53,14 +53,7 @@ export function pruneUnusedLabelsHIR(fn: HIRFunction): void {
       next.phis.size === 0 && fallthrough.phis.size === 0,
       {
         reason: 'Unexpected phis when merging label blocks',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: label.terminal.loc,
-            message: null,
-          },
-        ],
+        loc: label.terminal.loc,
       },
     );
 
@@ -71,14 +64,7 @@ export function pruneUnusedLabelsHIR(fn: HIRFunction): void {
         fallthrough.preds.has(nextId),
       {
         reason: 'Unexpected block predecessors when merging label blocks',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: label.terminal.loc,
-            message: null,
-          },
-        ],
+        loc: label.terminal.loc,
       },
     );
 

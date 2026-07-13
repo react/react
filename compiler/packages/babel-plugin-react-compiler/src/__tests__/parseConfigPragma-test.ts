@@ -14,12 +14,12 @@ describe('parseConfigPragmaForTests()', () => {
 
     // Validate defaults first to make sure that the parser is getting the value from the pragma,
     // and not just missing it and getting the default value
-    expect(defaultConfig.enableUseTypeAnnotations).toBe(false);
+    expect(defaultConfig.enableForest).toBe(false);
     expect(defaultConfig.validateNoSetStateInEffects).toBe(false);
     expect(defaultConfig.validateNoSetStateInRender).toBe(true);
 
     const config = parseConfigPragmaForTests(
-      '@enableUseTypeAnnotations @validateNoSetStateInEffects:true @validateNoSetStateInRender:false',
+      '@enableForest @validateNoSetStateInEffects:true @validateNoSetStateInRender:false',
       {compilationMode: defaultOptions.compilationMode},
     );
     expect(config).toEqual({
@@ -27,7 +27,7 @@ describe('parseConfigPragmaForTests()', () => {
       panicThreshold: 'all_errors',
       environment: {
         ...defaultOptions.environment,
-        enableUseTypeAnnotations: true,
+        enableForest: true,
         validateNoSetStateInEffects: true,
         validateNoSetStateInRender: false,
         enableResetCacheOnSourceFileChanges: false,

@@ -60,7 +60,7 @@ function getWrappedName(
 ): string {
   const functionName = innerType.displayName || innerType.name || '';
   return (
-    (outerType: any).displayName ||
+    (outerType as any).displayName ||
     (functionName !== '' ? `${wrapperName}(${functionName})` : wrapperName)
   );
 }
@@ -74,7 +74,7 @@ export function getComponentNameFromOwner(
   owner: Fiber | ReactComponentInfo,
 ): string | null {
   if (typeof owner.tag === 'number') {
-    return getComponentNameFromFiber((owner: any));
+    return getComponentNameFromFiber(owner as any);
   }
   if (typeof owner.name === 'string') {
     return owner.name;
@@ -90,10 +90,10 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
     case CacheComponent:
       return 'Cache';
     case ContextConsumer:
-      const consumer: ReactConsumerType<any> = (type: any);
+      const consumer: ReactConsumerType<any> = type as any;
       return getContextName(consumer._context) + '.Consumer';
     case ContextProvider:
-      const context: ReactContext<any> = (type: any);
+      const context: ReactContext<any> = type as any;
       return getContextName(context);
     case DehydratedFragment:
       return 'DehydratedFragment';
@@ -122,7 +122,10 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
       }
       return 'Mode';
     case OffscreenComponent:
-      return 'Offscreen';
+      if (fiber.return !== null) {
+        return getComponentNameFromFiber(fiber.return);
+      }
+      return null;
     case Profiler:
       return 'Profiler';
     case ScopeComponent:
@@ -150,7 +153,7 @@ export default function getComponentNameFromFiber(fiber: Fiber): string | null {
     case MemoComponent:
     case SimpleMemoComponent:
       if (typeof type === 'function') {
-        return (type: any).displayName || type.name || null;
+        return (type as any).displayName || type.name || null;
       }
       if (typeof type === 'string') {
         return type;

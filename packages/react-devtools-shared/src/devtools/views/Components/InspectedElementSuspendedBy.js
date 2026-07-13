@@ -9,24 +9,31 @@
 
 import {copy} from 'clipboard-js';
 import * as React from 'react';
-import {useState} from 'react';
+import {use, useContext, useState, useTransition} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import KeyValue from './KeyValue';
-import {serializeDataForCopy} from '../utils';
+import {serializeDataForCopy, pluralize} from '../utils';
 import Store from '../../store';
 import styles from './InspectedElementSharedStyles.css';
 import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
-import StackTraceView from './StackTraceView';
+import FetchFileWithCachingContext from './FetchFileWithCachingContext';
+import StackTraceView, {IgnoreListToggleButton} from './StackTraceView';
 import OwnerView from './OwnerView';
 import {meta} from '../../../hydration';
+import Skeleton from './Skeleton';
 import useInferredName from '../useInferredName';
+import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+
+import {getClassNameForEnvironment} from '../SuspenseTab/SuspenseEnvironmentColors.js';
 
 import type {
   InspectedElement,
   SerializedAsyncInfo,
 } from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
+import type {ReactStackTrace} from 'shared/ReactTypes';
+import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
 
 import {
   UNKNOWN_SUSPENDERS_NONE,
@@ -34,6 +41,7 @@ import {
   UNKNOWN_SUSPENDERS_REASON_OLD_VERSION,
   UNKNOWN_SUSPENDERS_REASON_THROWN_PROMISE,
 } from '../../../constants';
+import {ElementTypeRoot} from 'react-devtools-shared/src/frontend/types';
 
 type RowProps = {
   bridge: FrontendBridge,
@@ -44,6 +52,7 @@ type RowProps = {
   index: number,
   minTime: number,
   maxTime: number,
+  skipName?: boolean,
 };
 
 function getShortDescription(name: string, description: string): string {
@@ -90,6 +99,78 @@ function formatBytes(bytes: number) {
   return (bytes / 1_000_000_000).toFixed(1) + ' gB';
 }
 
+type StackTraceGroupProps = {
+  children: (showIgnoreList: boolean) => React.Node,
+  ioStack: null | ReactStackTrace,
+  asyncInfoStack: null | ReactStackTrace,
+};
+
+function StackTraceGroup({
+  children,
+  ioStack,
+  asyncInfoStack,
+}: StackTraceGroupProps): React.Node {
+  const [showIgnoreList, setShowIgnoreList] = useState(false);
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const ioStackHasIgnoredFrames =
+    ioStack !== null &&
+    ioStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const asyncInfoStackHasIgnoredFrames =
+    asyncInfoStack !== null &&
+    asyncInfoStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const hasIgnoredFrames =
+    ioStackHasIgnoredFrames || asyncInfoStackHasIgnoredFrames;
+
+  return (
+    <>
+      {children(showIgnoreList)}
+      {hasIgnoredFrames && (
+        <IgnoreListToggleButton
+          onClick={() => setShowIgnoreList(prev => !prev)}
+          showIgnoreList={showIgnoreList}
+        />
+      )}
+    </>
+  );
+}
+
 function SuspendedByRow({
   bridge,
   element,
@@ -99,8 +180,10 @@ function SuspendedByRow({
   index,
   minTime,
   maxTime,
+  skipName,
 }: RowProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openIsPending, startOpenTransition] = useTransition();
   const ioInfo = asyncInfo.awaited;
   const name = useInferredName(asyncInfo);
   const description = ioInfo.description;
@@ -144,7 +227,16 @@ function SuspendedByRow({
     <div className={styles.CollapsableRow}>
       <Button
         className={styles.CollapsableHeader}
-        onClick={() => setIsOpen(prevIsOpen => !prevIsOpen)}
+        // TODO: May be better to leave to React's default Transition indicator.
+        // Though no apps implement this option at the moment.
+        data-pending={openIsPending}
+        onClick={() => {
+          startOpenTransition(() => {
+            setIsOpen(prevIsOpen => !prevIsOpen);
+          });
+        }}
+        // Changing the title on pending transition will not be visible since
+        // (Reach?) tooltips are dismissed on activation.
         title={
           longName +
           ' — ' +
@@ -156,8 +248,10 @@ function SuspendedByRow({
           className={styles.CollapsableHeaderIcon}
           type={isOpen ? 'expanded' : 'collapsed'}
         />
-        <span className={styles.CollapsableHeaderTitle}>{name}</span>
-        {shortDescription === '' ? null : (
+        <span className={styles.CollapsableHeaderTitle}>
+          {skipName && shortDescription !== '' ? shortDescription : name}
+        </span>
+        {skipName || shortDescription === '' ? null : (
           <>
             <span className={styles.CollapsableHeaderSeparator}>{' ('}</span>
             <span className={styles.CollapsableHeaderTitle}>
@@ -167,7 +261,12 @@ function SuspendedByRow({
           </>
         )}
         <div className={styles.CollapsableHeaderFiller} />
-        <div className={styles.TimeBarContainer}>
+        <div
+          className={
+            styles.TimeBarContainer +
+            ' ' +
+            getClassNameForEnvironment(ioInfo.env)
+          }>
           <div
             className={
               !isRejected ? styles.TimeBarSpan : styles.TimeBarSpanErrored
@@ -181,102 +280,126 @@ function SuspendedByRow({
       </Button>
       {isOpen && (
         <div className={styles.CollapsableContent}>
-          {showIOStack && (
-            <StackTraceView
-              stack={ioInfo.stack}
-              environmentName={
-                ioOwner !== null && ioOwner.env === ioInfo.env
-                  ? null
-                  : ioInfo.env
-              }
-            />
-          )}
-          {ioOwner !== null &&
-          ioOwner.id !== inspectedElement.id &&
-          (showIOStack ||
-            !showAwaitStack ||
-            asyncOwner === null ||
-            ioOwner.id !== asyncOwner.id) ? (
-            <OwnerView
-              key={ioOwner.id}
-              displayName={ioOwner.displayName || 'Anonymous'}
-              environmentName={
-                ioOwner.env === inspectedElement.env &&
-                ioOwner.env === ioInfo.env
-                  ? null
-                  : ioOwner.env
-              }
-              hocDisplayNames={ioOwner.hocDisplayNames}
-              compiledWithForget={ioOwner.compiledWithForget}
-              id={ioOwner.id}
-              isInStore={store.containsElement(ioOwner.id)}
-              type={ioOwner.type}
-            />
-          ) : null}
-          {showAwaitStack ? (
-            <>
-              <div className={styles.SmallHeader}>awaited at:</div>
-              {asyncInfo.stack !== null && asyncInfo.stack.length > 0 && (
-                <StackTraceView
-                  stack={asyncInfo.stack}
-                  environmentName={
-                    asyncOwner !== null && asyncOwner.env === asyncInfo.env
-                      ? null
-                      : asyncInfo.env
-                  }
-                />
+          <React.Suspense
+            fallback={
+              <div className={styles.SuspendedBySkeleton}>
+                <Skeleton height={16} width="40%" />
+              </div>
+            }>
+            <StackTraceGroup
+              ioStack={showIOStack ? ioInfo.stack : null}
+              asyncInfoStack={showAwaitStack ? asyncInfo.stack : null}>
+              {(showIgnoreList: boolean) => (
+                <>
+                  {showIOStack && (
+                    <StackTraceView
+                      stack={ioInfo.stack}
+                      environmentName={
+                        ioOwner !== null && ioOwner.env === ioInfo.env
+                          ? null
+                          : ioInfo.env
+                      }
+                      showIgnoreList={showIgnoreList}
+                    />
+                  )}
+                  {ioOwner !== null &&
+                  ioOwner.id !== inspectedElement.id &&
+                  (showIOStack ||
+                    !showAwaitStack ||
+                    asyncOwner === null ||
+                    ioOwner.id !== asyncOwner.id) ? (
+                    <OwnerView
+                      key={ioOwner.id}
+                      displayName={ioOwner.displayName || 'Anonymous'}
+                      environmentName={
+                        ioOwner.env === inspectedElement.env &&
+                        ioOwner.env === ioInfo.env
+                          ? null
+                          : ioOwner.env
+                      }
+                      hocDisplayNames={ioOwner.hocDisplayNames}
+                      compiledWithForget={ioOwner.compiledWithForget}
+                      id={ioOwner.id}
+                      isInStore={store.containsElement(ioOwner.id)}
+                      type={ioOwner.type}
+                    />
+                  ) : null}
+                  {showAwaitStack ? (
+                    <>
+                      <div className={styles.SmallHeader}>awaited at:</div>
+                      {asyncInfo.stack !== null &&
+                        asyncInfo.stack.length > 0 && (
+                          <StackTraceView
+                            stack={asyncInfo.stack}
+                            environmentName={
+                              asyncOwner !== null &&
+                              asyncOwner.env === asyncInfo.env
+                                ? null
+                                : asyncInfo.env
+                            }
+                            showIgnoreList={showIgnoreList}
+                          />
+                        )}
+                      {asyncOwner !== null &&
+                      asyncOwner.id !== inspectedElement.id ? (
+                        <OwnerView
+                          key={asyncOwner.id}
+                          displayName={asyncOwner.displayName || 'Anonymous'}
+                          environmentName={
+                            asyncOwner.env === inspectedElement.env &&
+                            asyncOwner.env === asyncInfo.env
+                              ? null
+                              : asyncOwner.env
+                          }
+                          hocDisplayNames={asyncOwner.hocDisplayNames}
+                          compiledWithForget={asyncOwner.compiledWithForget}
+                          id={asyncOwner.id}
+                          isInStore={store.containsElement(asyncOwner.id)}
+                          type={asyncOwner.type}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+                  <div className={styles.PreviewContainer}>
+                    <KeyValue
+                      alphaSort={true}
+                      bridge={bridge}
+                      canDeletePaths={false}
+                      canEditValues={false}
+                      canRenamePaths={false}
+                      depth={1}
+                      element={element}
+                      hidden={false}
+                      inspectedElement={inspectedElement}
+                      name={
+                        isFulfilled
+                          ? 'awaited value'
+                          : isRejected
+                            ? 'rejected with'
+                            : 'pending value'
+                      }
+                      path={
+                        isFulfilled
+                          ? [index, 'awaited', 'value', 'value']
+                          : isRejected
+                            ? [index, 'awaited', 'value', 'reason']
+                            : [index, 'awaited', 'value']
+                      }
+                      pathRoot="suspendedBy"
+                      store={store}
+                      value={
+                        isFulfilled
+                          ? value.value
+                          : isRejected
+                            ? value.reason
+                            : value
+                      }
+                    />
+                  </div>
+                </>
               )}
-              {asyncOwner !== null && asyncOwner.id !== inspectedElement.id ? (
-                <OwnerView
-                  key={asyncOwner.id}
-                  displayName={asyncOwner.displayName || 'Anonymous'}
-                  environmentName={
-                    asyncOwner.env === inspectedElement.env &&
-                    asyncOwner.env === asyncInfo.env
-                      ? null
-                      : asyncOwner.env
-                  }
-                  hocDisplayNames={asyncOwner.hocDisplayNames}
-                  compiledWithForget={asyncOwner.compiledWithForget}
-                  id={asyncOwner.id}
-                  isInStore={store.containsElement(asyncOwner.id)}
-                  type={asyncOwner.type}
-                />
-              ) : null}
-            </>
-          ) : null}
-          <div className={styles.PreviewContainer}>
-            <KeyValue
-              alphaSort={true}
-              bridge={bridge}
-              canDeletePaths={false}
-              canEditValues={false}
-              canRenamePaths={false}
-              depth={1}
-              element={element}
-              hidden={false}
-              inspectedElement={inspectedElement}
-              name={
-                isFulfilled
-                  ? 'awaited value'
-                  : isRejected
-                    ? 'rejected with'
-                    : 'pending value'
-              }
-              path={
-                isFulfilled
-                  ? [index, 'awaited', 'value', 'value']
-                  : isRejected
-                    ? [index, 'awaited', 'value', 'reason']
-                    : [index, 'awaited', 'value']
-              }
-              pathRoot="suspendedBy"
-              store={store}
-              value={
-                isFulfilled ? value.value : isRejected ? value.reason : value
-              }
-            />
-          </div>
+            </StackTraceGroup>
+          </React.Suspense>
         </div>
       )}
     </div>
@@ -290,13 +413,146 @@ type Props = {
   store: Store,
 };
 
-function compareTime(a: SerializedAsyncInfo, b: SerializedAsyncInfo): number {
-  const ioA = a.awaited;
-  const ioB = b.awaited;
+function withIndex(
+  value: SerializedAsyncInfo,
+  index: number,
+): {
+  index: number,
+  value: SerializedAsyncInfo,
+} {
+  return {
+    index,
+    value,
+  };
+}
+
+function compareTime(
+  a: {
+    index: number,
+    value: SerializedAsyncInfo,
+  },
+  b: {
+    index: number,
+    value: SerializedAsyncInfo,
+  },
+): number {
+  const ioA = a.value.awaited;
+  const ioB = b.value.awaited;
   if (ioA.start === ioB.start) {
     return ioA.end - ioB.end;
   }
   return ioA.start - ioB.start;
+}
+
+type GroupProps = {
+  bridge: FrontendBridge,
+  element: Element,
+  inspectedElement: InspectedElement,
+  store: Store,
+  name: string,
+  environment: null | string,
+  suspendedBy: Array<{
+    index: number,
+    value: SerializedAsyncInfo,
+  }>,
+  minTime: number,
+  maxTime: number,
+};
+
+function SuspendedByGroup({
+  bridge,
+  element,
+  inspectedElement,
+  store,
+  name,
+  environment,
+  suspendedBy,
+  minTime,
+  maxTime,
+}: GroupProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  let start = Infinity;
+  let end = -Infinity;
+  let isRejected = false;
+  for (let i = 0; i < suspendedBy.length; i++) {
+    const asyncInfo: SerializedAsyncInfo = suspendedBy[i].value;
+    const ioInfo = asyncInfo.awaited;
+    if (ioInfo.start < start) {
+      start = ioInfo.start;
+    }
+    if (ioInfo.end > end) {
+      end = ioInfo.end;
+    }
+    const value: any = ioInfo.value;
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      value[meta.name] === 'rejected Thenable'
+    ) {
+      isRejected = true;
+    }
+  }
+  const timeScale = 100 / (maxTime - minTime);
+  let left = (start - minTime) * timeScale;
+  let width = (end - start) * timeScale;
+  if (width < 5) {
+    // Use at least a 5% width to avoid showing too small indicators.
+    width = 5;
+    if (left > 95) {
+      left = 95;
+    }
+  }
+  const pluralizedName = pluralize(name);
+  return (
+    <div className={styles.CollapsableRow}>
+      <Button
+        className={styles.CollapsableHeader}
+        onClick={() => {
+          setIsOpen(prevIsOpen => !prevIsOpen);
+        }}
+        title={pluralizedName}>
+        <ButtonIcon
+          className={styles.CollapsableHeaderIcon}
+          type={isOpen ? 'expanded' : 'collapsed'}
+        />
+        <span className={styles.CollapsableHeaderTitle}>{pluralizedName}</span>
+        <div className={styles.CollapsableHeaderFiller} />
+        {isOpen ? null : (
+          <div
+            className={
+              styles.TimeBarContainer +
+              ' ' +
+              getClassNameForEnvironment(environment)
+            }>
+            <div
+              className={
+                !isRejected ? styles.TimeBarSpan : styles.TimeBarSpanErrored
+              }
+              style={{
+                left: left.toFixed(2) + '%',
+                width: width.toFixed(2) + '%',
+              }}
+            />
+          </div>
+        )}
+      </Button>
+      {isOpen &&
+        suspendedBy.map(({value, index}) => (
+          <SuspendedByRow
+            key={index}
+            index={index}
+            asyncInfo={value}
+            bridge={bridge}
+            element={element}
+            inspectedElement={inspectedElement}
+            store={store}
+            minTime={minTime}
+            maxTime={maxTime}
+            skipName={true}
+          />
+        ))}
+    </div>
+  );
 }
 
 export default function InspectedElementSuspendedBy({
@@ -312,7 +568,32 @@ export default function InspectedElementSuspendedBy({
     (suspendedBy == null || suspendedBy.length === 0) &&
     inspectedElement.unknownSuspenders === UNKNOWN_SUSPENDERS_NONE
   ) {
-    return null;
+    if (inspectedElement.isSuspended) {
+      // If we're still suspended, show a place holder until the data loads.
+      // We don't know what we're suspended by until it has loaded.
+      return (
+        <div>
+          <div className={styles.HeaderRow}>
+            <div className={styles.Header}>suspended...</div>
+          </div>
+        </div>
+      );
+    }
+    // For roots, show an empty state since there's nothing else to show for
+    // these elements.
+    // This can happen for older versions of React without Suspense, older versions
+    // of React with less sources for Suspense, or simple UIs that don't have any suspenders.
+    if (inspectedElement.type === ElementTypeRoot) {
+      return (
+        <div>
+          <div className={styles.HeaderRow}>
+            <div className={`${styles.Header} ${styles.Empty}`}>
+              Nothing suspended the initial paint.
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 
   const handleCopy = withPermissionsCheck(
@@ -343,8 +624,34 @@ export default function InspectedElementSuspendedBy({
     minTime = maxTime - 25;
   }
 
-  const sortedSuspendedBy = suspendedBy === null ? [] : suspendedBy.slice(0);
+  const sortedSuspendedBy =
+    suspendedBy === null ? [] : suspendedBy.map(withIndex);
   sortedSuspendedBy.sort(compareTime);
+
+  // Organize into groups of consecutive entries with the same name.
+  const groups = [];
+  let currentGroup = null;
+  let currentGroupName = null;
+  let currentGroupEnv = null;
+  for (let i = 0; i < sortedSuspendedBy.length; i++) {
+    const entry = sortedSuspendedBy[i];
+    const name = entry.value.awaited.name;
+    const env = entry.value.awaited.env;
+    if (
+      currentGroupName !== name ||
+      currentGroupEnv !== env ||
+      !name ||
+      name === 'Promise' ||
+      currentGroup === null
+    ) {
+      // Create a new group.
+      currentGroupName = name;
+      currentGroupEnv = env;
+      currentGroup = [];
+      groups.push(currentGroup);
+    }
+    currentGroup.push(entry);
+  }
 
   let unknownSuspenders = null;
   switch (inspectedElement.unknownSuspenders) {
@@ -378,6 +685,9 @@ export default function InspectedElementSuspendedBy({
       break;
   }
 
+  if (groups.length === 0) {
+    return null;
+  }
   return (
     <div>
       <div className={styles.HeaderRow}>
@@ -386,19 +696,49 @@ export default function InspectedElementSuspendedBy({
           <ButtonIcon type="copy" />
         </Button>
       </div>
-      {sortedSuspendedBy.map((asyncInfo, index) => (
-        <SuspendedByRow
-          key={index}
-          index={index}
-          asyncInfo={asyncInfo}
-          bridge={bridge}
-          element={element}
-          inspectedElement={inspectedElement}
-          store={store}
-          minTime={minTime}
-          maxTime={maxTime}
-        />
-      ))}
+      {groups.length === 1
+        ? // If it's only one type of suspender we can flatten it.
+          groups[0].map(entry => (
+            <SuspendedByRow
+              key={entry.index}
+              index={entry.index}
+              asyncInfo={entry.value}
+              bridge={bridge}
+              element={element}
+              inspectedElement={inspectedElement}
+              store={store}
+              minTime={minTime}
+              maxTime={maxTime}
+            />
+          ))
+        : groups.map((entries, index) =>
+            entries.length === 1 ? (
+              <SuspendedByRow
+                key={entries[0].index}
+                index={entries[0].index}
+                asyncInfo={entries[0].value}
+                bridge={bridge}
+                element={element}
+                inspectedElement={inspectedElement}
+                store={store}
+                minTime={minTime}
+                maxTime={maxTime}
+              />
+            ) : (
+              <SuspendedByGroup
+                key={entries[0].index}
+                name={entries[0].value.awaited.name}
+                environment={entries[0].value.awaited.env}
+                suspendedBy={entries}
+                bridge={bridge}
+                element={element}
+                inspectedElement={inspectedElement}
+                store={store}
+                minTime={minTime}
+                maxTime={maxTime}
+              />
+            ),
+          )}
       {unknownSuspenders}
     </div>
   );

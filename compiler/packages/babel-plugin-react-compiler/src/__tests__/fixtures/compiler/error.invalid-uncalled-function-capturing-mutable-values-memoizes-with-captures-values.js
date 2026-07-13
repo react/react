@@ -1,4 +1,4 @@
-// @flow @enableNewMutationAliasingModel
+// @flow @enableNewMutationAliasingModel @enablePreserveExistingMemoizationGuarantees:false
 /**
  * This hook returns a function that when called with an input object,
  * will return the result of mapping that input with the supplied map

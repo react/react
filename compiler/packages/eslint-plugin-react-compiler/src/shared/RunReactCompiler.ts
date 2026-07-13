@@ -5,27 +5,51 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {transformFromAstSync, traverse} from '@babel/core';
+import {transformFromAstSync} from '@babel/core';
 import {parse as babelParse} from '@babel/parser';
-import {Directive, File} from '@babel/types';
-// @ts-expect-error: no types available
-import PluginProposalPrivateMethods from '@babel/plugin-proposal-private-methods';
+import {File} from '@babel/types';
 import BabelPluginReactCompiler, {
   parsePluginOptions,
   validateEnvironmentConfig,
-  OPT_OUT_DIRECTIVES,
   type PluginOptions,
 } from 'babel-plugin-react-compiler/src';
 import {Logger, LoggerEvent} from 'babel-plugin-react-compiler/src/Entrypoint';
 import type {SourceCode} from 'eslint';
-import {SourceLocation} from 'estree';
 // @ts-expect-error: no types available
 import * as HermesParser from 'hermes-parser';
 import {isDeepStrictEqual} from 'util';
 import type {ParseResult} from '@babel/parser';
 
-const COMPILER_OPTIONS: Partial<PluginOptions> = {
-  noEmit: true,
+/**
+ * Lazy-loaded Rust compiler Babel plugin.
+ * Only loaded when __unstable_useRustCompiler is enabled.
+ */
+let _rustPluginLoaded = false;
+let _rustPlugin: ((babel: any) => any) | null = null;
+
+function getRustPlugin(): (babel: any) => any {
+  if (!_rustPluginLoaded) {
+    _rustPluginLoaded = true;
+    try {
+      _rustPlugin =
+        // eslint-disable-next-line no-restricted-syntax
+        require('babel-plugin-react-compiler-rust').default;
+    } catch {
+      _rustPlugin = null;
+    }
+  }
+  if (_rustPlugin == null) {
+    throw new Error(
+      'eslint-plugin-react-compiler: __unstable_useRustCompiler is enabled but ' +
+        'babel-plugin-react-compiler-rust is not available. ' +
+        'Make sure the package is installed and its native module is built.',
+    );
+  }
+  return _rustPlugin;
+}
+
+const COMPILER_OPTIONS: PluginOptions = {
+  outputMode: 'lint',
   panicThreshold: 'none',
   // Don't emit errors on Flow suppressions--Flow already gave a signal
   flowSuppressions: false,
@@ -45,17 +69,11 @@ const COMPILER_OPTIONS: Partial<PluginOptions> = {
   }),
 };
 
-export type UnusedOptOutDirective = {
-  loc: SourceLocation;
-  range: [number, number];
-  directive: string;
-};
 export type RunCacheEntry = {
   sourceCode: string;
   filename: string;
   userOpts: PluginOptions;
   flowSuppressions: Array<{line: number; code: string}>;
-  unusedOptOutDirectives: Array<UnusedOptOutDirective>;
   events: Array<LoggerEvent>;
 };
 
@@ -87,30 +105,14 @@ function getFlowSuppressions(
   return results;
 }
 
-function filterUnusedOptOutDirectives(
-  directives: ReadonlyArray<Directive>,
-): Array<UnusedOptOutDirective> {
-  const results: Array<UnusedOptOutDirective> = [];
-  for (const directive of directives) {
-    if (
-      OPT_OUT_DIRECTIVES.has(directive.value.value) &&
-      directive.loc != null
-    ) {
-      results.push({
-        loc: directive.loc,
-        directive: directive.value.value,
-        range: [directive.start!, directive.end!],
-      });
-    }
-  }
-  return results;
-}
-
 function runReactCompilerImpl({
   sourceCode,
   filename,
   userOpts,
 }: RunParams): RunCacheEntry {
+  const useRustCompiler =
+    (userOpts as Record<string, unknown>).__unstable_useRustCompiler === true;
+
   // Compat with older versions of eslint
   const options: PluginOptions = parsePluginOptions({
     ...COMPILER_OPTIONS,
@@ -125,7 +127,6 @@ function runReactCompilerImpl({
     filename,
     userOpts,
     flowSuppressions: [],
-    unusedOptOutDirectives: [],
     events: [],
   };
   const userLogger: Logger | null = options.logger;
@@ -168,44 +169,60 @@ function runReactCompilerImpl({
 
   if (babelAST != null) {
     results.flowSuppressions = getFlowSuppressions(sourceCode);
-    try {
-      transformFromAstSync(babelAST, sourceCode.text, {
-        filename,
-        highlightCode: false,
-        retainLines: true,
-        plugins: [
-          [PluginProposalPrivateMethods, {loose: true}],
-          [BabelPluginReactCompiler, options],
-        ],
-        sourceType: 'module',
-        configFile: false,
-        babelrc: false,
-      });
 
-      if (results.events.filter(e => e.kind === 'CompileError').length === 0) {
-        traverse(babelAST, {
-          FunctionDeclaration(path) {
-            path.node;
-            results.unusedOptOutDirectives.push(
-              ...filterUnusedOptOutDirectives(path.node.body.directives),
-            );
+    if (useRustCompiler) {
+      // Rust compiler path: use the Rust NAPI Babel plugin instead of the
+      // TS compiler. The Rust plugin handles scope extraction, compilation,
+      // and event forwarding internally via its own resolveOptions +
+      // compileWithRust pipeline.
+      const RustPlugin = getRustPlugin();
+      const rustOpts: Record<string, unknown> = {
+        ...COMPILER_OPTIONS,
+        ...userOpts,
+        environment: {
+          ...(COMPILER_OPTIONS.environment as Record<string, unknown>),
+          ...((userOpts.environment as Record<string, unknown>) ?? {}),
+        },
+        logger: {
+          logEvent: (
+            eventFilename: string | null,
+            event: LoggerEvent,
+          ): void => {
+            userLogger?.logEvent(eventFilename ?? '', event);
+            results.events.push(event);
           },
-          ArrowFunctionExpression(path) {
-            if (path.node.body.type === 'BlockStatement') {
-              results.unusedOptOutDirectives.push(
-                ...filterUnusedOptOutDirectives(path.node.body.directives),
-              );
-            }
-          },
-          FunctionExpression(path) {
-            results.unusedOptOutDirectives.push(
-              ...filterUnusedOptOutDirectives(path.node.body.directives),
-            );
-          },
+        },
+      };
+      // Don't pass the ESLint-only flag to the compiler
+      delete rustOpts.__unstable_useRustCompiler;
+
+      try {
+        transformFromAstSync(babelAST, sourceCode.text, {
+          filename,
+          highlightCode: false,
+          retainLines: true,
+          plugins: [[RustPlugin, rustOpts]],
+          sourceType: 'module',
+          configFile: false,
+          babelrc: false,
         });
+      } catch {
+        /* errors handled by injected logger */
       }
-    } catch (err) {
-      /* errors handled by injected logger */
+    } else {
+      try {
+        transformFromAstSync(babelAST, sourceCode.text, {
+          filename,
+          highlightCode: false,
+          retainLines: true,
+          plugins: [[BabelPluginReactCompiler, options]],
+          sourceType: 'module',
+          configFile: false,
+          babelrc: false,
+        });
+      } catch (err) {
+        /* errors handled by injected logger */
+      }
     }
   }
 

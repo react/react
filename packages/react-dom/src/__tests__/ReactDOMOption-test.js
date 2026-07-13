@@ -138,12 +138,11 @@ describe('ReactDOMOption', () => {
     }).rejects.toThrow('Objects are not valid as a React child');
   });
 
-  // @gate www && !renameElementSymbol
   it('should support element-ish child', async () => {
     // This is similar to <fbt>.
     // We don't toString it because you must instead provide a value prop.
     const obj = {
-      $$typeof: Symbol.for('react.element'),
+      $$typeof: Symbol.for('react.transitional.element'),
       type: props => props.content,
       ref: null,
       key: null,

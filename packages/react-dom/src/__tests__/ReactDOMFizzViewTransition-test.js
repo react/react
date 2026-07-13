@@ -40,7 +40,7 @@ describe('ReactDOMFizzViewTransition', () => {
     Stream = require('stream');
 
     Suspense = React.Suspense;
-    ViewTransition = React.unstable_ViewTransition;
+    ViewTransition = React.ViewTransition;
 
     // Test Environment
     const jsdom = new JSDOM(

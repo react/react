@@ -242,5 +242,13 @@ export function writeCompletedRoot(
   return true;
 }
 
+export function hasSuspenseyContent(
+  hoistableState: HoistableState,
+  flushingInShell: boolean,
+): boolean {
+  // Never outline.
+  return false;
+}
+
 export type TransitionStatus = FormStatus;
 export const NotPendingTransition: TransitionStatus = NotPending;

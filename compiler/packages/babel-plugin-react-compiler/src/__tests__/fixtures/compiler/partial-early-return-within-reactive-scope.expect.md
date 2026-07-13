@@ -68,6 +68,7 @@ function Component(props) {
   if (t0 !== Symbol.for("react.early_return_sentinel")) {
     return t0;
   }
+
   return y;
 }
 

@@ -864,6 +864,7 @@ describe('ReactChildren', () => {
   });
 
   it('warns for mapped list children without keys', async () => {
+    spyOnDev(console, 'error').mockImplementation(() => {});
     function ComponentRenderingMappedChildren({children}) {
       return (
         <div>
@@ -883,13 +884,14 @@ describe('ReactChildren', () => {
         </ComponentRenderingMappedChildren>,
       );
     });
-    assertConsoleErrorDev([
-      'Each child in a list should have a unique "key" prop.\n\n' +
-        'Check the render method of `ComponentRenderingMappedChildren`.' +
-        ' See https://react.dev/link/warning-keys for more information.\n' +
-        '    in div (at **)\n' +
-        '    in **/ReactChildren-test.js:**:** (at **)',
-    ]);
+    if (__DEV__) {
+      const calls = console.error.mock.calls;
+      console.error.mockRestore();
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toEqual(
+        'Each child in a list should have a unique "key" prop.%s%s See https://react.dev/link/warning-keys for more information.',
+      );
+    }
   });
 
   it('does not warn for mapped static children without keys', async () => {

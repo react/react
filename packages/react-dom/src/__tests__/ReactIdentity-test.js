@@ -323,12 +323,9 @@ describe('ReactIdentity', () => {
         </div>,
       );
     }).toThrowError(new TypeError('prod message'));
-    assertConsoleErrorDev(
-      [
-        'The provided key is an unsupported type TemporalLike.' +
-          ' This value must be coerced to a string before using it here.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'The provided key is an unsupported type TemporalLike.' +
+        ' This value must be coerced to a string before using it here.',
+    ]);
   });
 });

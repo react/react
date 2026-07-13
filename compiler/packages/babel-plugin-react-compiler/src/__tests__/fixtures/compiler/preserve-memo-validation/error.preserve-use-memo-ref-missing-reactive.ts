@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 import {useCallback, useRef} from 'react';
 
 function useFoo({cond}) {

@@ -5,33 +5,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {CompilerError, EnvironmentConfig} from '..';
+import {CompilerErrorDetail, EnvironmentConfig} from '..';
 import {ErrorCategory} from '../CompilerError';
 import {HIRFunction, IdentifierId} from '../HIR';
 import {DEFAULT_GLOBALS} from '../HIR/Globals';
-import {Result} from '../Utils/Result';
 
-export function validateNoCapitalizedCalls(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
+export function validateNoCapitalizedCalls(fn: HIRFunction): void {
   const envConfig: EnvironmentConfig = fn.env.config;
   const ALLOW_LIST = new Set([
     ...DEFAULT_GLOBALS.keys(),
     ...(envConfig.validateNoCapitalizedCalls ?? []),
   ]);
-  /*
-   * The hook pattern may allow uppercase names, like React$useState, so we need to be sure that we
-   * do not error in those cases
-   */
-  const hookPattern =
-    envConfig.hookPattern != null ? new RegExp(envConfig.hookPattern) : null;
   const isAllowed = (name: string): boolean => {
-    return (
-      ALLOW_LIST.has(name) || (hookPattern != null && hookPattern.test(name))
-    );
+    return ALLOW_LIST.has(name);
   };
 
-  const errors = new CompilerError();
   const capitalLoadGlobals = new Map<IdentifierId, string>();
   const capitalizedProperties = new Map<IdentifierId, string>();
   const reason =
@@ -56,13 +44,16 @@ export function validateNoCapitalizedCalls(
           const calleeIdentifier = value.callee.identifier.id;
           const calleeName = capitalLoadGlobals.get(calleeIdentifier);
           if (calleeName != null) {
-            CompilerError.throwInvalidReact({
-              category: ErrorCategory.CapitalizedCalls,
-              reason,
-              description: `${calleeName} may be a component`,
-              loc: value.loc,
-              suggestions: null,
-            });
+            fn.env.recordError(
+              new CompilerErrorDetail({
+                category: ErrorCategory.CapitalizedCalls,
+                reason,
+                description: `${calleeName} may be a component`,
+                loc: value.loc,
+                suggestions: null,
+              }),
+            );
+            continue;
           }
           break;
         }
@@ -80,18 +71,19 @@ export function validateNoCapitalizedCalls(
           const propertyIdentifier = value.property.identifier.id;
           const propertyName = capitalizedProperties.get(propertyIdentifier);
           if (propertyName != null) {
-            errors.push({
-              category: ErrorCategory.CapitalizedCalls,
-              reason,
-              description: `${propertyName} may be a component`,
-              loc: value.loc,
-              suggestions: null,
-            });
+            fn.env.recordError(
+              new CompilerErrorDetail({
+                category: ErrorCategory.CapitalizedCalls,
+                reason,
+                description: `${propertyName} may be a component`,
+                loc: value.loc,
+                suggestions: null,
+              }),
+            );
           }
           break;
         }
       }
     }
   }
-  return errors.asResult();
 }

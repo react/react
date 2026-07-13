@@ -52,6 +52,9 @@ export async function symbolicateSource(
   lineNumber: number, // 1-based
   columnNumber: number, // 1-based
 ): Promise<SourceMappedLocation | null> {
+  if (!sourceURL || sourceURL.startsWith('<anonymous')) {
+    return null;
+  }
   const resource = await fetchFileWithCaching(sourceURL).catch(() => null);
   if (resource == null) {
     return null;

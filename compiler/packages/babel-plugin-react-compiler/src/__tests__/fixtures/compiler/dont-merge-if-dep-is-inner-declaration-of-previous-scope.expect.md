@@ -57,7 +57,6 @@ function Component(t0) {
   let y;
   if ($[0] !== a || $[1] !== b || $[2] !== c) {
     x = [];
-
     if (a) {
       let t1;
       if ($[5] !== b) {

@@ -1,5 +1,3 @@
-import * as React from 'react';
-
 import {createCanvas} from 'canvas';
 
 export async function GenerateImage({message}) {

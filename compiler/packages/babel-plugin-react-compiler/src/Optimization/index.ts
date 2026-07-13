@@ -8,4 +8,3 @@
 export {constantPropagation} from './ConstantPropagation';
 export {deadCodeElimination} from './DeadCodeElimination';
 export {pruneMaybeThrows} from './PruneMaybeThrows';
-export {inlineJsxTransform} from './InlineJsxTransform';

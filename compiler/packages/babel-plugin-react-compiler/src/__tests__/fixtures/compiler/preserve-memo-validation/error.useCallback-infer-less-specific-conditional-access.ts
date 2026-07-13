@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 import {useCallback} from 'react';
 import {mutate} from 'shared-runtime';
 

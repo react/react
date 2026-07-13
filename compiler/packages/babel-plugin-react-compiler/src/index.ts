@@ -11,9 +11,11 @@ export {
   CompilerErrorDetail,
   CompilerDiagnostic,
   CompilerSuggestionOperation,
+  type CompilerSuggestion,
   ErrorSeverity,
   ErrorCategory,
   LintRules,
+  LintRulePreset,
   type CompilerErrorDetailOptions,
   type CompilerDiagnosticOptions,
   type CompilerDiagnosticDetail,
@@ -28,10 +30,12 @@ export {
   ProgramContext,
   tryFindDirectiveEnablingMemoization as findDirectiveEnablingMemoization,
   findDirectiveDisablingMemoization,
+  defaultOptions,
   type CompilerPipelineValue,
   type Logger,
   type LoggerEvent,
   type PluginOptions,
+  type CompileSuccessEvent,
 } from './Entrypoint';
 export {
   Effect,
@@ -51,6 +55,7 @@ export {
 } from './ReactiveScopes';
 export {parseConfigPragmaForTests} from './Utils/TestUtils';
 declare global {
+  // @internal
   let __DEV__: boolean | null | undefined;
 }
 

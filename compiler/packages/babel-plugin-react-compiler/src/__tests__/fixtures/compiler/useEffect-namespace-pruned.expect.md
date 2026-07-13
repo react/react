@@ -52,6 +52,7 @@ function useFoo() {
     t1 = $[1];
   }
   React.useEffect(t0, t1);
+
   return null;
 }
 function _temp() {

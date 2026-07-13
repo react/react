@@ -862,14 +862,9 @@ describe('ReactNewContext', () => {
       );
 
       await waitForAll([]);
-      assertConsoleErrorDev(
-        [
-          'The `value` prop is required for the `<Context.Provider>`. Did you misspell it or forget to pass it?',
-        ],
-        {
-          withoutStack: true,
-        },
-      );
+      assertConsoleErrorDev([
+        'The `value` prop is required for the `<Context.Provider>`. Did you misspell it or forget to pass it?',
+      ]);
     });
 
     it('warns if multiple renderers concurrently render the same context', async () => {

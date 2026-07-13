@@ -8,6 +8,7 @@
 import {NodePath} from '@babel/core';
 import * as t from '@babel/types';
 import {CompilerError} from '../CompilerError';
+import {GeneratedSource} from '../HIR';
 import {ProgramContext} from './Imports';
 import {ExternalFunction} from '..';
 
@@ -51,26 +52,12 @@ function insertAdditionalFunctionDeclaration(
   CompilerError.invariant(originalFnName != null && compiled.id != null, {
     reason:
       'Expected function declarations that are referenced elsewhere to have a named identifier',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: fnPath.node.loc ?? null,
-        message: null,
-      },
-    ],
+    loc: fnPath.node.loc ?? GeneratedSource,
   });
   CompilerError.invariant(originalFnParams.length === compiledParams.length, {
     reason:
       'Expected React Compiler optimized function declarations to have the same number of parameters as source',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: fnPath.node.loc ?? null,
-        message: null,
-      },
-    ],
+    loc: fnPath.node.loc ?? GeneratedSource,
   });
 
   const gatingCondition = t.identifier(
@@ -154,13 +141,7 @@ export function insertGatedFunctionDeclaration(
     CompilerError.invariant(compiled.type === 'FunctionDeclaration', {
       reason: 'Expected compiled node type to match input type',
       description: `Got ${compiled.type} but expected FunctionDeclaration`,
-      details: [
-        {
-          kind: 'error',
-          loc: fnPath.node.loc ?? null,
-          message: null,
-        },
-      ],
+      loc: fnPath.node.loc ?? GeneratedSource,
     });
     insertAdditionalFunctionDeclaration(
       fnPath,

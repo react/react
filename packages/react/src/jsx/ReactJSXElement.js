@@ -13,10 +13,11 @@ import {
   REACT_ELEMENT_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_LAZY_TYPE,
+  REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
 import {checkKeyStringCoercion} from 'shared/CheckStringCoercion';
 import isArray from 'shared/isArray';
-import {ownerStackLimit} from 'shared/ReactFeatureFlags';
+import {ownerStackLimit, enableOptimisticKey} from 'shared/ReactFeatureFlags';
 
 const createTask =
   // eslint-disable-next-line react-internal/no-production-logging
@@ -56,6 +57,14 @@ function getOwner() {
   }
   return null;
 }
+
+// v8 (Chromium, Node.js) defaults to 10
+// SpiderMonkey (Firefox) does not support Error.stackTraceLimit
+// JSC (Safari) defaults to 100
+// The lower the limit, the more likely we'll not reach react_stack_bottom_frame
+// The higher the limit, the slower Error() is when not inspecting with a debugger.
+// When inspecting with a debugger, Error.stackTraceLimit has no impact on Error() performance (in v8).
+const ownerStackTraceLimit = 10;
 
 /** @noinline */
 function UnknownOwner() {
@@ -289,17 +298,25 @@ export function jsxProd(type, config, maybeKey) {
   // <div {...props} key="Hi" />, because we aren't currently able to tell if
   // key is explicitly declared to be undefined or not.
   if (maybeKey !== undefined) {
-    if (__DEV__) {
-      checkKeyStringCoercion(maybeKey);
+    if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+      key = REACT_OPTIMISTIC_KEY;
+    } else {
+      if (__DEV__) {
+        checkKeyStringCoercion(maybeKey);
+      }
+      key = '' + maybeKey;
     }
-    key = '' + maybeKey;
   }
 
   if (hasValidKey(config)) {
-    if (__DEV__) {
-      checkKeyStringCoercion(config.key);
+    if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+      key = REACT_OPTIMISTIC_KEY;
+    } else {
+      if (__DEV__) {
+        checkKeyStringCoercion(config.key);
+      }
+      key = '' + config.key;
     }
-    key = '' + config.key;
   }
 
   let props;
@@ -352,15 +369,24 @@ export function jsxProdSignatureRunningInDevWithDynamicChildren(
     const trackActualOwner =
       __DEV__ &&
       ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+    let debugStackDEV = false;
+    if (__DEV__) {
+      if (trackActualOwner) {
+        const previousStackTraceLimit = Error.stackTraceLimit;
+        Error.stackTraceLimit = ownerStackTraceLimit;
+        debugStackDEV = Error('react-stack-top-frame');
+        Error.stackTraceLimit = previousStackTraceLimit;
+      } else {
+        debugStackDEV = unknownOwnerDebugStack;
+      }
+    }
+
     return jsxDEVImpl(
       type,
       config,
       maybeKey,
       isStaticChildren,
-      __DEV__ &&
-        (trackActualOwner
-          ? Error('react-stack-top-frame')
-          : unknownOwnerDebugStack),
+      debugStackDEV,
       __DEV__ &&
         (trackActualOwner
           ? createTask(getTaskName(type))
@@ -379,15 +405,23 @@ export function jsxProdSignatureRunningInDevWithStaticChildren(
     const trackActualOwner =
       __DEV__ &&
       ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+    let debugStackDEV = false;
+    if (__DEV__) {
+      if (trackActualOwner) {
+        const previousStackTraceLimit = Error.stackTraceLimit;
+        Error.stackTraceLimit = ownerStackTraceLimit;
+        debugStackDEV = Error('react-stack-top-frame');
+        Error.stackTraceLimit = previousStackTraceLimit;
+      } else {
+        debugStackDEV = unknownOwnerDebugStack;
+      }
+    }
     return jsxDEVImpl(
       type,
       config,
       maybeKey,
       isStaticChildren,
-      __DEV__ &&
-        (trackActualOwner
-          ? Error('react-stack-top-frame')
-          : unknownOwnerDebugStack),
+      debugStackDEV,
       __DEV__ &&
         (trackActualOwner
           ? createTask(getTaskName(type))
@@ -408,15 +442,23 @@ export function jsxDEV(type, config, maybeKey, isStaticChildren) {
   const trackActualOwner =
     __DEV__ &&
     ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+  let debugStackDEV = false;
+  if (__DEV__) {
+    if (trackActualOwner) {
+      const previousStackTraceLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = ownerStackTraceLimit;
+      debugStackDEV = Error('react-stack-top-frame');
+      Error.stackTraceLimit = previousStackTraceLimit;
+    } else {
+      debugStackDEV = unknownOwnerDebugStack;
+    }
+  }
   return jsxDEVImpl(
     type,
     config,
     maybeKey,
     isStaticChildren,
-    __DEV__ &&
-      (trackActualOwner
-        ? Error('react-stack-top-frame')
-        : unknownOwnerDebugStack),
+    debugStackDEV,
     __DEV__ &&
       (trackActualOwner
         ? createTask(getTaskName(type))
@@ -503,17 +545,25 @@ function jsxDEVImpl(
     // <div {...props} key="Hi" />, because we aren't currently able to tell if
     // key is explicitly declared to be undefined or not.
     if (maybeKey !== undefined) {
-      if (__DEV__) {
-        checkKeyStringCoercion(maybeKey);
+      if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(maybeKey);
+        }
+        key = '' + maybeKey;
       }
-      key = '' + maybeKey;
     }
 
     if (hasValidKey(config)) {
-      if (__DEV__) {
-        checkKeyStringCoercion(config.key);
+      if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(config.key);
+        }
+        key = '' + config.key;
       }
-      key = '' + config.key;
     }
 
     let props;
@@ -604,10 +654,14 @@ export function createElement(type, config, children) {
     }
 
     if (hasValidKey(config)) {
-      if (__DEV__) {
-        checkKeyStringCoercion(config.key);
+      if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(config.key);
+        }
+        key = '' + config.key;
       }
-      key = '' + config.key;
     }
 
     // Remaining properties are added to a new props object
@@ -667,15 +721,23 @@ export function createElement(type, config, children) {
   const trackActualOwner =
     __DEV__ &&
     ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+  let debugStackDEV = false;
+  if (__DEV__) {
+    if (trackActualOwner) {
+      const previousStackTraceLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = ownerStackTraceLimit;
+      debugStackDEV = Error('react-stack-top-frame');
+      Error.stackTraceLimit = previousStackTraceLimit;
+    } else {
+      debugStackDEV = unknownOwnerDebugStack;
+    }
+  }
   return ReactElement(
     type,
     key,
     props,
     getOwner(),
-    __DEV__ &&
-      (trackActualOwner
-        ? Error('react-stack-top-frame')
-        : unknownOwnerDebugStack),
+    debugStackDEV,
     __DEV__ &&
       (trackActualOwner
         ? createTask(getTaskName(type))
@@ -728,10 +790,14 @@ export function cloneElement(element, config, children) {
       owner = __DEV__ ? getOwner() : undefined;
     }
     if (hasValidKey(config)) {
-      if (__DEV__) {
-        checkKeyStringCoercion(config.key);
+      if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(config.key);
+        }
+        key = '' + config.key;
       }
-      key = '' + config.key;
     }
 
     // Remaining properties override existing props
@@ -794,7 +860,6 @@ export function cloneElement(element, config, children) {
  *
  * @internal
  * @param {ReactNode} node Statically passed child of any type.
- * @param {*} parentType node's parent's type.
  */
 function validateChildKeys(node) {
   if (__DEV__) {

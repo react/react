@@ -12,11 +12,13 @@ export type ElementType = React$ElementType;
 export type Element<+C> = React$Element<C>;
 export type Key = React$Key;
 export type Node = React$Node;
-export type Context<T> = React$Context<T>;
+// eslint-disable-next-line no-undef
+export type Context<T> = React.Context<T>;
 export type Portal = React$Portal;
-export type ElementProps<C> = React$ElementProps<C>;
+export type ElementProps<C> = React$ElementConfig<C>;
 export type ElementConfig<C> = React$ElementConfig<C>;
-export type ElementRef<C> = React$ElementRef<C>;
+// eslint-disable-next-line no-undef
+export type ElementRef<C> = React.ElementRef<C>;
 export type ChildrenArray<+T> = $ReadOnlyArray<ChildrenArray<T>> | T;
 
 // Export all exports so that they're available in tests.
@@ -44,7 +46,9 @@ export {
   cacheSignal,
   startTransition,
   unstable_LegacyHidden,
-  unstable_Activity,
+  Activity,
+  ViewTransition,
+  addTransitionType,
   unstable_Scope,
   unstable_SuspenseList,
   unstable_TracingMarker,
@@ -56,7 +60,7 @@ export {
   useDebugValue,
   useDeferredValue,
   useEffect,
-  experimental_useEffectEvent,
+  useEffectEvent,
   useImperativeHandle,
   useInsertionEffect,
   useLayoutEffect,

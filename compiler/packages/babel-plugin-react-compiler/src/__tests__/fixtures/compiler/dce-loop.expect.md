@@ -28,6 +28,7 @@ function foo(props) {
   while (y < props.max) {
     y++;
   }
+
   return y;
 }
 

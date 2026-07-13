@@ -109,8 +109,8 @@ declare class ErrorEvent extends Event {
 // https://html.spec.whatwg.org/multipage/web-messaging.html#broadcasting-to-other-browsing-contexts
 declare class BroadcastChannel extends EventTarget {
   name: string;
-  onmessage: ?(event: MessageEvent) => void;
-  onmessageerror: ?(event: MessageEvent) => void;
+  onmessage: ?(event: MessageEvent<>) => void;
+  onmessageerror: ?(event: MessageEvent<>) => void;
 
   constructor(name: string): void;
   postMessage(msg: mixed): void;

@@ -11,7 +11,7 @@ function Component(props) {
     const x = makeObject_Primitives();
     x.value = props.value;
     mutate(x, free, part);
-  }, [props.value]);
+  }, [props.value, free, part]);
   mutate(free, part);
   return callback;
 }

@@ -184,8 +184,12 @@ function EmptySuspense() {
 // $FlowFixMe[missing-local-annot]
 function PrimaryFallbackTest({initialSuspend}) {
   const [suspend, setSuspend] = useState(initialSuspend);
-  const fallbackStep = useTestSequence('fallback', Fallback1, Fallback2);
-  const primaryStep = useTestSequence('primary', Primary1, Primary2);
+  const [fallbackStepIndex, fallbackStep] = useTestSequence(
+    'fallback',
+    Fallback1,
+    Fallback2,
+  );
+  const [, primaryStep] = useTestSequence('primary', Primary1, Primary2);
   return (
     <Fragment>
       <label>
@@ -198,7 +202,11 @@ function PrimaryFallbackTest({initialSuspend}) {
       </label>
       <br />
       <Suspense fallback={fallbackStep}>
-        {suspend ? <Never /> : primaryStep}
+        {suspend ? (
+          <Never id={`primary-fallback-test-${fallbackStepIndex}`} />
+        ) : (
+          primaryStep
+        )}
       </Suspense>
     </Fragment>
   );
@@ -227,7 +235,7 @@ function useTestSequence(label: string, T1: any => any, T2: any => any) {
       {next} <T2 prop={step}>goodbye</T2>
     </Fragment>,
   ];
-  return allSteps[step];
+  return [step, allSteps[step]];
 }
 
 function NestedSuspenseTest() {
@@ -252,7 +260,7 @@ function Parent() {
       </Suspense>
       <br />
       <Suspense fallback={<Fallback1>This will never load</Fallback1>}>
-        <Never />
+        <Never id="parent-never" />
       </Suspense>
       <br />
       <b>
@@ -298,14 +306,49 @@ function LoadLater() {
           Loaded! Click to suspend again.
         </Primary1>
       ) : (
-        <Never />
+        <Never id="load-later" />
       )}
     </Suspense>
   );
 }
 
-function Never() {
-  throw new Promise(resolve => {});
+function readRecord(promise: any): any {
+  if (typeof React.use === 'function') {
+    // eslint-disable-next-line react-hooks-published/rules-of-hooks
+    return React.use(promise);
+  }
+  switch (promise.status) {
+    case 'pending':
+      throw promise;
+    case 'rejected':
+      throw promise.reason;
+    case 'fulfilled':
+      return promise.value;
+    default:
+      promise.status = 'pending';
+      promise.then(
+        value => {
+          promise.status = 'fulfilled';
+          promise.value = value;
+        },
+        reason => {
+          promise.status = 'rejected';
+          promise.reason = reason;
+        },
+      );
+      throw promise;
+  }
+}
+
+const nevers = new Map<string, Promise<empty>>();
+function Never({id}: {id: string}) {
+  let promise = nevers.get(id);
+  if (!promise) {
+    promise = new Promise(() => {});
+    (promise as any).displayName = id;
+    nevers.set(id, promise);
+  }
+  readRecord(promise);
 }
 
 function Fallback1({prop, ...rest}: any) {

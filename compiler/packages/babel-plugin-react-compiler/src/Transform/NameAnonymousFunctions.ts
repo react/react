@@ -19,7 +19,7 @@ export function nameAnonymousFunctions(fn: HIRFunction): void {
   const parentName = fn.id;
   const functions = nameAnonymousFunctionsImpl(fn);
   function visit(node: Node, prefix: string): void {
-    if (node.generatedName != null) {
+    if (node.generatedName != null && node.fn.nameHint == null) {
       /**
        * Note that we don't generate a name for functions that already had one,
        * so we'll only add the prefix to anonymous functions regardless of
@@ -70,6 +70,10 @@ function nameAnonymousFunctionsImpl(fn: HIRFunction): Array<Node> {
           if (name != null && name.kind === 'named') {
             names.set(lvalue.identifier.id, name.value);
           }
+          const func = functions.get(value.place.identifier.id);
+          if (func != null) {
+            functions.set(lvalue.identifier.id, func);
+          }
           break;
         }
         case 'PropertyLoad': {
@@ -106,6 +110,7 @@ function nameAnonymousFunctionsImpl(fn: HIRFunction): Array<Node> {
           const variableName = value.lvalue.place.identifier.name;
           if (
             node != null &&
+            node.generatedName == null &&
             variableName != null &&
             variableName.kind === 'named'
           ) {
@@ -137,7 +142,7 @@ function nameAnonymousFunctionsImpl(fn: HIRFunction): Array<Node> {
               continue;
             }
             const node = functions.get(arg.identifier.id);
-            if (node != null) {
+            if (node != null && node.generatedName == null) {
               const generatedName =
                 fnArgCount > 1 ? `${calleeName}(arg${i})` : `${calleeName}()`;
               node.generatedName = generatedName;
@@ -152,7 +157,7 @@ function nameAnonymousFunctionsImpl(fn: HIRFunction): Array<Node> {
               continue;
             }
             const node = functions.get(attr.place.identifier.id);
-            if (node != null) {
+            if (node != null && node.generatedName == null) {
               const elementName =
                 value.tag.kind === 'BuiltinTag'
                   ? value.tag.name

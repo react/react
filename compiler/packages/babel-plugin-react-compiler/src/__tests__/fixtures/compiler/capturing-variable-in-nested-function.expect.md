@@ -40,6 +40,7 @@ function component(a) {
     t0 = $[1];
   }
   const x = t0;
+
   return x;
 }
 

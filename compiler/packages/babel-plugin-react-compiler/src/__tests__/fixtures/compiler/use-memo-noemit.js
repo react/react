@@ -1,4 +1,4 @@
-// @noEmit
+// @outputMode:"lint"
 
 function Foo() {
   'use memo';

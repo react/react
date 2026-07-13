@@ -569,36 +569,6 @@ describe('ReactInternalTestUtils console assertions', () => {
     });
 
     // @gate __DEV__
-    it('fails if local withoutStack passed to assertConsoleLogDev', () => {
-      const message = expectToThrowFailure(() => {
-        console.log('Hello');
-        assertConsoleLogDev([['Hello', {withoutStack: true}]]);
-      });
-
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleLogDev(expected)
-
-        Do not pass withoutStack to assertConsoleLogDev logs, console.log does not have component stacks."
-      `);
-    });
-
-    // @gate __DEV__
-    it('fails if global withoutStack passed to assertConsoleLogDev', () => {
-      const message = expectToThrowFailure(() => {
-        console.log('Hello');
-        assertConsoleLogDev(['Hello'], {withoutStack: true});
-      });
-
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleLogDev(expected)
-
-        Do not pass withoutStack to assertConsoleLogDev, console.log does not have component stacks."
-      `);
-
-      assertConsoleLogDev(['Hello']);
-    });
-
-    // @gate __DEV__
     it('fails if the args is greater than %s argument number', () => {
       const message = expectToThrowFailure(() => {
         console.log('Hi %s', 'Sara', 'extra');
@@ -879,7 +849,7 @@ describe('ReactInternalTestUtils console assertions', () => {
       if (__DEV__) {
         console.warn('Hello\n    in div');
       }
-      assertConsoleWarnDev(['Hello']);
+      assertConsoleWarnDev(['Hello\n    in div']);
     });
 
     it('passes if all warnings contain a stack', () => {
@@ -888,7 +858,11 @@ describe('ReactInternalTestUtils console assertions', () => {
         console.warn('Good day\n    in div');
         console.warn('Bye\n    in div');
       }
-      assertConsoleWarnDev(['Hello', 'Good day', 'Bye']);
+      assertConsoleWarnDev([
+        'Hello\n    in div',
+        'Good day\n    in div',
+        'Bye\n    in div',
+      ]);
     });
 
     it('fails if act is called without assertConsoleWarnDev', async () => {
@@ -1075,7 +1049,11 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi \n    in div');
         console.warn('Wow \n    in div');
-        assertConsoleWarnDev(['Hi', 'Wow', 'Bye']);
+        assertConsoleWarnDev([
+          'Hi \n    in div',
+          'Wow \n    in div',
+          'Bye \n    in div',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -1085,9 +1063,9 @@ describe('ReactInternalTestUtils console assertions', () => {
         - Expected warnings
         + Received warnings
 
-        - Hi
-        - Wow
-        - Bye
+        - Hi      in div
+        - Wow      in div
+        - Bye      in div
         + Hi      in div (at **)
         + Wow      in div (at **)"
       `);
@@ -1166,38 +1144,31 @@ describe('ReactInternalTestUtils console assertions', () => {
     });
 
     // @gate __DEV__
-    it('fails if only warning does not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.warn('Hello');
-        assertConsoleWarnDev(['Hello']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleWarnDev(expected)
-
-        Missing component stack for:
-          "Hello"
-
-        If this warning should omit a component stack, pass [log, {withoutStack: true}].
-        If all warnings should omit the component stack, add {withoutStack: true} to the assertConsoleWarnDev call."
-      `);
-    });
-
-    // @gate __DEV__
     it('fails if first warning does not contain a stack', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hello');
         console.warn('Good day\n    in div');
         console.warn('Bye\n    in div');
-        assertConsoleWarnDev(['Hello', 'Good day', 'Bye']);
+        assertConsoleWarnDev([
+          'Hello\n    in div',
+          'Good day\n    in div',
+          'Bye\n    in div',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
 
-        Missing component stack for:
-          "Hello"
+        Unexpected warning(s) recorded.
 
-        If this warning should omit a component stack, pass [log, {withoutStack: true}].
-        If all warnings should omit the component stack, add {withoutStack: true} to the assertConsoleWarnDev call."
+        - Expected warnings
+        + Received warnings
+
+        - Hello     in div
+        - Good day     in div
+        - Bye     in div
+        + Hello
+        + Good day     in div (at **)
+        + Bye     in div (at **)"
       `);
     });
 
@@ -1207,16 +1178,26 @@ describe('ReactInternalTestUtils console assertions', () => {
         console.warn('Hello\n    in div');
         console.warn('Good day');
         console.warn('Bye\n    in div');
-        assertConsoleWarnDev(['Hello', 'Good day', 'Bye']);
+        assertConsoleWarnDev([
+          'Hello\n    in div',
+          'Good day\n    in div',
+          'Bye\n    in div',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
 
-        Missing component stack for:
-          "Good day"
+        Unexpected warning(s) recorded.
 
-        If this warning should omit a component stack, pass [log, {withoutStack: true}].
-        If all warnings should omit the component stack, add {withoutStack: true} to the assertConsoleWarnDev call."
+        - Expected warnings
+        + Received warnings
+
+        - Hello     in div
+        - Good day     in div
+        - Bye     in div
+        + Hello     in div (at **)
+        + Good day
+        + Bye     in div (at **)"
       `);
     });
 
@@ -1226,323 +1207,34 @@ describe('ReactInternalTestUtils console assertions', () => {
         console.warn('Hello\n    in div');
         console.warn('Good day\n    in div');
         console.warn('Bye');
-        assertConsoleWarnDev(['Hello', 'Good day', 'Bye']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleWarnDev(expected)
-
-        Missing component stack for:
-          "Bye"
-
-        If this warning should omit a component stack, pass [log, {withoutStack: true}].
-        If all warnings should omit the component stack, add {withoutStack: true} to the assertConsoleWarnDev call."
-      `);
-    });
-
-    // @gate __DEV__
-    it('fails if all warnings do not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.warn('Hello');
-        console.warn('Good day');
-        console.warn('Bye');
-        assertConsoleWarnDev(['Hello', 'Good day', 'Bye']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleWarnDev(expected)
-
-        Missing component stack for:
-          "Hello"
-
-        Missing component stack for:
-          "Good day"
-
-        Missing component stack for:
-          "Bye"
-
-        If this warning should omit a component stack, pass [log, {withoutStack: true}].
-        If all warnings should omit the component stack, add {withoutStack: true} to the assertConsoleWarnDev call."
-      `);
-    });
-
-    describe('global withoutStack', () => {
-      it('passes if warnings without stack explicitly opt out', () => {
-        if (__DEV__) {
-          console.warn('Hello');
-        }
-        assertConsoleWarnDev(['Hello'], {withoutStack: true});
-
-        if (__DEV__) {
-          console.warn('Hello');
-          console.warn('Good day');
-          console.warn('Bye');
-        }
-
-        assertConsoleWarnDev(['Hello', 'Good day', 'Bye'], {
-          withoutStack: true,
-        });
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid null value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev(['Hi'], {withoutStack: null});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          The second argument must be {withoutStack: true}.
-
-          Instead received {"withoutStack":null}."
-        `);
-        assertConsoleWarnDev(['Hi'], {withoutStack: true});
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid {} value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev(['Hi'], {withoutStack: {}});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          The second argument must be {withoutStack: true}.
-
-          Instead received {"withoutStack":{}}."
-        `);
-        assertConsoleWarnDev(['Hi'], {withoutStack: true});
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid string value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev(['Hi'], {withoutStack: 'haha'});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          The second argument must be {withoutStack: true}.
-
-          Instead received {"withoutStack":"haha"}."
-        `);
-        assertConsoleWarnDev(['Hi'], {withoutStack: true});
-      });
-
-      // @gate __DEV__
-      it('fails if only warning is not expected to have a stack, but does', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hello\n    in div');
-          assertConsoleWarnDev(['Hello'], {withoutStack: true});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          If this warning should include a component stack, remove {withoutStack: true} from this warning.
-          If all warnings should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleWarnDev call."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if warnings are not expected to have a stack, but some do', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hello\n    in div');
-          console.warn('Good day');
-          console.warn('Bye\n    in div');
-          assertConsoleWarnDev(['Hello', 'Good day', 'Bye'], {
-            withoutStack: true,
-          });
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          Unexpected component stack for:
-            "Bye
-              in div (at **)"
-
-          If this warning should include a component stack, remove {withoutStack: true} from this warning.
-          If all warnings should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleWarnDev call."
-        `);
-      });
-    });
-    describe('local withoutStack', () => {
-      it('passes when expected withoutStack logs matches the actual logs', () => {
-        if (__DEV__) {
-          console.warn('Hello\n    in div');
-          console.warn('Good day');
-          console.warn('Bye\n    in div');
-        }
         assertConsoleWarnDev([
-          'Hello',
-          ['Good day', {withoutStack: true}],
-          'Bye',
+          'Hello\n    in div',
+          'Good day\n    in div',
+          'Bye\n    in div',
         ]);
       });
+      expect(message).toMatchInlineSnapshot(`
+        "assertConsoleWarnDev(expected)
 
-      // @gate __DEV__
-      it('fails if withoutStack is invalid null value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev([['Hi', {withoutStack: null}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
+        Unexpected warning(s) recorded.
 
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
+        - Expected warnings
+        + Received warnings
 
-          Instead received [string, {"withoutStack":null}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid {} value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev([['Hi', {withoutStack: {}}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":{}}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid string value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev([['Hi', {withoutStack: 'haha'}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":"haha"}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid number value', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hi');
-          assertConsoleWarnDev([['Hi', {withoutStack: 4}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":4}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if you forget to wrap local withoutStack in array', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hello\n    in div');
-          console.warn('Bye\n    in div');
-          assertConsoleWarnDev(['Hello', {withoutStack: true}, 'Bye']);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Did you forget to wrap a log with withoutStack in an array?
-
-          The expected message for assertConsoleWarnDev() must be a string or an array of length 2.
-
-          Instead received {"withoutStack":true}."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if you wrap in an array unnecessarily', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hello');
-          assertConsoleWarnDev([['Hello']]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Did you forget to remove the array around the log?
-
-          The expected message for assertConsoleWarnDev() must be a string or an array of length 2, but there's only one item in the array. If this is intentional, remove the extra array."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if only warning is not expected to have a stack, but does', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hello\n    in div');
-          assertConsoleWarnDev([['Hello', {withoutStack: true}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          If this warning should include a component stack, remove {withoutStack: true} from this warning.
-          If all warnings should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleWarnDev call."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if warnings are not expected to have a stack, but some do', () => {
-        const message = expectToThrowFailure(() => {
-          console.warn('Hello\n    in div');
-          console.warn('Good day');
-          console.warn('Bye\n    in div');
-          assertConsoleWarnDev([
-            [
-              'Hello',
-              {
-                withoutStack: true,
-              },
-            ],
-            'Good day',
-            [
-              'Bye',
-              {
-                withoutStack: true,
-              },
-            ],
-          ]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleWarnDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          Unexpected component stack for:
-            "Bye
-              in div (at **)"
-
-          If this warning should include a component stack, remove {withoutStack: true} from this warning.
-          If all warnings should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleWarnDev call."
-        `);
-      });
+        - Hello     in div
+        - Good day     in div
+        - Bye     in div
+        + Hello     in div (at **)
+        + Good day     in div (at **)
+        + Bye"
+      `);
     });
 
     // @gate __DEV__
     it('fails if the args is greater than %s argument number', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s', 'Sara', 'extra');
-        assertConsoleWarnDev(['Hi'], {withoutStack: true});
+        assertConsoleWarnDev(['Hi']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -1557,7 +1249,7 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s', 'Sara', 'extra');
         console.warn('Bye %s', 'Sara', 'extra');
-        assertConsoleWarnDev(['Hi', 'Bye'], {withoutStack: true});
+        assertConsoleWarnDev(['Hi', 'Bye']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -1574,7 +1266,7 @@ describe('ReactInternalTestUtils console assertions', () => {
     it('fails if the %s argument number is greater than args', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s');
-        assertConsoleWarnDev(['Hi'], {withoutStack: true});
+        assertConsoleWarnDev(['Hi']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -1589,7 +1281,7 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s');
         console.warn('Bye %s');
-        assertConsoleWarnDev(['Hi', 'Bye'], {withoutStack: true});
+        assertConsoleWarnDev(['Hi', 'Bye']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
@@ -1606,13 +1298,18 @@ describe('ReactInternalTestUtils console assertions', () => {
     it('fails if component stack is passed twice', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s%s', '\n    in div', '\n    in div');
-        assertConsoleWarnDev(['Hi']);
+        assertConsoleWarnDev(['Hi \n    in div (at **)']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
 
-        Received more than one component stack for a warning:
-          "Hi %s%s""
+        Unexpected warning(s) recorded.
+
+        - Expected warnings
+        + Received warnings
+
+          Hi      in div (at **)
+        +     in div (at **)"
       `);
     });
 
@@ -1621,16 +1318,23 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.warn('Hi %s%s', '\n    in div', '\n    in div');
         console.warn('Bye %s%s', '\n    in div', '\n    in div');
-        assertConsoleWarnDev(['Hi', 'Bye']);
+        assertConsoleWarnDev([
+          'Hi \n    in div (at **)',
+          'Bye \n    in div (at **)',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleWarnDev(expected)
 
-        Received more than one component stack for a warning:
-          "Hi %s%s"
+        Unexpected warning(s) recorded.
 
-        Received more than one component stack for a warning:
-          "Bye %s%s""
+        - Expected warnings
+        + Received warnings
+
+          Hi      in div (at **)
+        +     in div (at **)
+          Bye      in div (at **)
+        +     in div (at **)"
       `);
     });
 
@@ -1646,7 +1350,7 @@ describe('ReactInternalTestUtils console assertions', () => {
 
         Expected messages should be an array of strings but was given type "string"."
       `);
-      assertConsoleWarnDev(['Hi', 'Bye']);
+      assertConsoleWarnDev(['Hi \n    in div', 'Bye \n    in div']);
     });
 
     // @gate __DEV__
@@ -1661,7 +1365,7 @@ describe('ReactInternalTestUtils console assertions', () => {
 
         Expected messages should be an array of strings but was given type "string"."
       `);
-      assertConsoleWarnDev(['Hi', 'Bye']);
+      assertConsoleWarnDev(['Hi \n    in div', 'Bye \n    in div']);
     });
 
     // @gate __DEV__
@@ -1677,7 +1381,11 @@ describe('ReactInternalTestUtils console assertions', () => {
 
         Expected messages should be an array of strings but was given type "string"."
       `);
-      assertConsoleWarnDev(['Hi', 'Wow', 'Bye']);
+      assertConsoleWarnDev([
+        'Hi \n    in div',
+        'Wow \n    in div',
+        'Bye \n    in div',
+      ]);
     });
 
     it('should fail if waitFor is called before asserting', async () => {
@@ -1884,7 +1592,7 @@ describe('ReactInternalTestUtils console assertions', () => {
       if (__DEV__) {
         console.error('Hello\n    in div');
       }
-      assertConsoleErrorDev(['Hello']);
+      assertConsoleErrorDev(['Hello\n    in div']);
     });
 
     it('passes if all errors contain a stack', () => {
@@ -1893,7 +1601,11 @@ describe('ReactInternalTestUtils console assertions', () => {
         console.error('Good day\n    in div');
         console.error('Bye\n    in div');
       }
-      assertConsoleErrorDev(['Hello', 'Good day', 'Bye']);
+      assertConsoleErrorDev([
+        'Hello\n    in div',
+        'Good day\n    in div',
+        'Bye\n    in div',
+      ]);
     });
 
     it('fails if act is called without assertConsoleErrorDev', async () => {
@@ -2080,7 +1792,11 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi \n    in div');
         console.error('Wow \n    in div');
-        assertConsoleErrorDev(['Hi', 'Wow', 'Bye']);
+        assertConsoleErrorDev([
+          'Hi \n    in div',
+          'Wow \n    in div',
+          'Bye \n    in div',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2090,9 +1806,9 @@ describe('ReactInternalTestUtils console assertions', () => {
         - Expected errors
         + Received errors
 
-        - Hi
-        - Wow
-        - Bye
+        - Hi      in div
+        - Wow      in div
+        - Bye      in div
         + Hi      in div (at **)
         + Wow      in div (at **)"
       `);
@@ -2178,7 +1894,7 @@ describe('ReactInternalTestUtils console assertions', () => {
           "TypeError: Cannot read properties of undefined (reading 'stack')\n" +
             '    in Foo (at **)'
         );
-        assertConsoleErrorDev([['Hi', {withoutStack: true}]]);
+        assertConsoleErrorDev(['Hi']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2190,101 +1906,6 @@ describe('ReactInternalTestUtils console assertions', () => {
 
           Hi
         + TypeError: Cannot read properties of undefined (reading 'stack')     in Foo (at **)"
-      `);
-    });
-    // @gate __DEV__
-    it('fails if only error does not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.error('Hello');
-        assertConsoleErrorDev(['Hello']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleErrorDev(expected)
-
-        Missing component stack for:
-          "Hello"
-
-        If this error should omit a component stack, pass [log, {withoutStack: true}].
-        If all errors should omit the component stack, add {withoutStack: true} to the assertConsoleErrorDev call."
-      `);
-    });
-
-    // @gate __DEV__
-    it('fails if first error does not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.error('Hello\n    in div');
-        console.error('Good day\n    in div');
-        console.error('Bye');
-        assertConsoleErrorDev(['Hello', 'Good day', 'Bye']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleErrorDev(expected)
-
-        Missing component stack for:
-          "Bye"
-
-        If this error should omit a component stack, pass [log, {withoutStack: true}].
-        If all errors should omit the component stack, add {withoutStack: true} to the assertConsoleErrorDev call."
-      `);
-    });
-    // @gate __DEV__
-    it('fails if last error does not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.error('Hello');
-        console.error('Good day\n    in div');
-        console.error('Bye\n    in div');
-        assertConsoleErrorDev(['Hello', 'Good day', 'Bye']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleErrorDev(expected)
-
-        Missing component stack for:
-          "Hello"
-
-        If this error should omit a component stack, pass [log, {withoutStack: true}].
-        If all errors should omit the component stack, add {withoutStack: true} to the assertConsoleErrorDev call."
-      `);
-    });
-    // @gate __DEV__
-    it('fails if middle error does not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.error('Hello\n    in div');
-        console.error('Good day');
-        console.error('Bye\n    in div');
-        assertConsoleErrorDev(['Hello', 'Good day', 'Bye']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleErrorDev(expected)
-
-        Missing component stack for:
-          "Good day"
-
-        If this error should omit a component stack, pass [log, {withoutStack: true}].
-        If all errors should omit the component stack, add {withoutStack: true} to the assertConsoleErrorDev call."
-      `);
-    });
-    // @gate __DEV__
-    it('fails if all errors do not contain a stack', () => {
-      const message = expectToThrowFailure(() => {
-        console.error('Hello');
-        console.error('Good day');
-        console.error('Bye');
-        assertConsoleErrorDev(['Hello', 'Good day', 'Bye']);
-      });
-      expect(message).toMatchInlineSnapshot(`
-        "assertConsoleErrorDev(expected)
-
-        Missing component stack for:
-          "Hello"
-
-        Missing component stack for:
-          "Good day"
-
-        Missing component stack for:
-          "Bye"
-
-        If this error should omit a component stack, pass [log, {withoutStack: true}].
-        If all errors should omit the component stack, add {withoutStack: true} to the assertConsoleErrorDev call."
       `);
     });
 
@@ -2310,311 +1931,11 @@ describe('ReactInternalTestUtils console assertions', () => {
       `);
     });
 
-    describe('global withoutStack', () => {
-      it('passes if errors without stack explicitly opt out', () => {
-        if (__DEV__) {
-          console.error('Hello');
-        }
-        assertConsoleErrorDev(['Hello'], {withoutStack: true});
-
-        if (__DEV__) {
-          console.error('Hello');
-          console.error('Good day');
-          console.error('Bye');
-        }
-
-        assertConsoleErrorDev(['Hello', 'Good day', 'Bye'], {
-          withoutStack: true,
-        });
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid null value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev(['Hi'], {withoutStack: null});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          The second argument must be {withoutStack: true}.
-
-          Instead received {"withoutStack":null}."
-        `);
-        assertConsoleErrorDev(['Hi'], {withoutStack: true});
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid {} value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev(['Hi'], {withoutStack: {}});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          The second argument must be {withoutStack: true}.
-
-          Instead received {"withoutStack":{}}."
-        `);
-        assertConsoleErrorDev(['Hi'], {withoutStack: true});
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid string value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev(['Hi'], {withoutStack: 'haha'});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          The second argument must be {withoutStack: true}.
-
-          Instead received {"withoutStack":"haha"}."
-        `);
-        assertConsoleErrorDev(['Hi'], {withoutStack: true});
-      });
-
-      // @gate __DEV__
-      it('fails if only error is not expected to have a stack, but does', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hello\n    in div');
-          assertConsoleErrorDev(['Hello'], {withoutStack: true});
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          If this error should include a component stack, remove {withoutStack: true} from this error.
-          If all errors should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleErrorDev call."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if errors are not expected to have a stack, but some do', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hello\n    in div');
-          console.error('Good day');
-          console.error('Bye\n    in div');
-          assertConsoleErrorDev(['Hello', 'Good day', 'Bye'], {
-            withoutStack: true,
-          });
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          Unexpected component stack for:
-            "Bye
-              in div (at **)"
-
-          If this error should include a component stack, remove {withoutStack: true} from this error.
-          If all errors should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleErrorDev call."
-        `);
-      });
-    });
-    describe('local withoutStack', () => {
-      it('passes when expected withoutStack logs matches the actual logs', () => {
-        if (__DEV__) {
-          console.error('Hello\n    in div');
-          console.error('Good day');
-          console.error('Bye\n    in div');
-        }
-        assertConsoleErrorDev([
-          'Hello',
-          ['Good day', {withoutStack: true}],
-          'Bye',
-        ]);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid null value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev([['Hi', {withoutStack: null}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":null}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid {} value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev([['Hi', {withoutStack: {}}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":{}}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid string value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev([['Hi', {withoutStack: 'haha'}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":"haha"}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if withoutStack is invalid number value', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hi');
-          assertConsoleErrorDev([['Hi', {withoutStack: 4}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Log entries that are arrays must be of the form [string, {withoutStack: true}]
-
-          Instead received [string, {"withoutStack":4}]."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if you forget to wrap local withoutStack in array', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hello\n    in div');
-          console.error('Bye\n    in div');
-          assertConsoleErrorDev(['Hello', {withoutStack: true}, 'Bye']);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Did you forget to wrap a log with withoutStack in an array?
-
-          The expected message for assertConsoleErrorDev() must be a string or an array of length 2.
-
-          Instead received {"withoutStack":true}."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if you wrap in an array unnecessarily', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hello');
-          assertConsoleErrorDev([['Hello']]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Did you forget to remove the array around the log?
-
-          The expected message for assertConsoleErrorDev() must be a string or an array of length 2, but there's only one item in the array. If this is intentional, remove the extra array."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if only error is not expected to have a stack, but does', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hello\n    in div');
-          assertConsoleErrorDev([['Hello', {withoutStack: true}]]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          If this error should include a component stack, remove {withoutStack: true} from this error.
-          If all errors should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleErrorDev call."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails if errors are not expected to have a stack, but some do', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Hello\n    in div');
-          console.error('Good day');
-          console.error('Bye\n    in div');
-          assertConsoleErrorDev([
-            [
-              'Hello',
-              {
-                withoutStack: true,
-              },
-            ],
-            'Good day',
-            [
-              'Bye',
-              {
-                withoutStack: true,
-              },
-            ],
-          ]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Unexpected component stack for:
-            "Hello
-              in div (at **)"
-
-          Unexpected component stack for:
-            "Bye
-              in div (at **)"
-
-          If this error should include a component stack, remove {withoutStack: true} from this error.
-          If all errors should include the component stack, you may need to remove {withoutStack: true} from the assertConsoleErrorDev call."
-        `);
-      });
-
-      // @gate __DEV__
-      it('fails with a helpful error message if the expected error message mismatches', () => {
-        const message = expectToThrowFailure(() => {
-          console.error('Bye\n    in div');
-          assertConsoleErrorDev([
-            [
-              'Hello',
-              {
-                withoutStack: true,
-              },
-            ],
-          ]);
-        });
-        expect(message).toMatchInlineSnapshot(`
-          "assertConsoleErrorDev(expected)
-
-          Unexpected error(s) recorded.
-
-          - Expected errors
-          + Received errors
-
-          - Hello
-          + Bye     in div (at **)"
-        `);
-      });
-    });
-
     // @gate __DEV__
     it('fails if the args is greater than %s argument number', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s', 'Sara', 'extra');
-        assertConsoleErrorDev(['Hi'], {withoutStack: true});
+        assertConsoleErrorDev(['Hi']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2629,7 +1950,7 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s', 'Sara', 'extra');
         console.error('Bye %s', 'Sara', 'extra');
-        assertConsoleErrorDev(['Hi', 'Bye'], {withoutStack: true});
+        assertConsoleErrorDev(['Hi', 'Bye']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2646,7 +1967,7 @@ describe('ReactInternalTestUtils console assertions', () => {
     it('fails if the %s argument number is greater than args', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s');
-        assertConsoleErrorDev(['Hi'], {withoutStack: true});
+        assertConsoleErrorDev(['Hi']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2661,7 +1982,7 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s');
         console.error('Bye %s');
-        assertConsoleErrorDev(['Hi', 'Bye'], {withoutStack: true});
+        assertConsoleErrorDev(['Hi', 'Bye']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
@@ -2678,13 +1999,18 @@ describe('ReactInternalTestUtils console assertions', () => {
     it('fails if component stack is passed twice', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s%s', '\n    in div', '\n    in div');
-        assertConsoleErrorDev(['Hi']);
+        assertConsoleErrorDev(['Hi \n    in div (at **)']);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
 
-        Received more than one component stack for a warning:
-          "Hi %s%s""
+        Unexpected error(s) recorded.
+
+        - Expected errors
+        + Received errors
+
+          Hi      in div (at **)
+        +     in div (at **)"
       `);
     });
 
@@ -2693,16 +2019,23 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi %s%s', '\n    in div', '\n    in div');
         console.error('Bye %s%s', '\n    in div', '\n    in div');
-        assertConsoleErrorDev(['Hi', 'Bye']);
+        assertConsoleErrorDev([
+          'Hi \n    in div (at **)',
+          'Bye \n    in div (at **)',
+        ]);
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
 
-        Received more than one component stack for a warning:
-          "Hi %s%s"
+        Unexpected error(s) recorded.
 
-        Received more than one component stack for a warning:
-          "Bye %s%s""
+        - Expected errors
+        + Received errors
+
+          Hi      in div (at **)
+        +     in div (at **)
+          Bye      in div (at **)
+        +     in div (at **)"
       `);
     });
 
@@ -2711,14 +2044,14 @@ describe('ReactInternalTestUtils console assertions', () => {
       const message = expectToThrowFailure(() => {
         console.error('Hi \n    in div');
         console.error('Bye \n    in div');
-        assertConsoleErrorDev('Hi', 'Bye');
+        assertConsoleErrorDev('Hi \n    in div', 'Bye \n    in div');
       });
       expect(message).toMatchInlineSnapshot(`
         "assertConsoleErrorDev(expected)
 
         Expected messages should be an array of strings but was given type "string"."
       `);
-      assertConsoleErrorDev(['Hi', 'Bye']);
+      assertConsoleErrorDev(['Hi \n    in div', 'Bye \n    in div']);
     });
 
     // @gate __DEV__
@@ -2733,7 +2066,7 @@ describe('ReactInternalTestUtils console assertions', () => {
 
         Expected messages should be an array of strings but was given type "string"."
       `);
-      assertConsoleErrorDev(['Hi', 'Bye']);
+      assertConsoleErrorDev(['Hi \n    in div', 'Bye \n    in div']);
     });
 
     // @gate __DEV__
@@ -2749,7 +2082,127 @@ describe('ReactInternalTestUtils console assertions', () => {
 
         Expected messages should be an array of strings but was given type "string"."
       `);
-      assertConsoleErrorDev(['Hi', 'Wow', 'Bye']);
+      assertConsoleErrorDev([
+        'Hi \n    in div',
+        'Wow \n    in div',
+        'Bye \n    in div',
+      ]);
+    });
+
+    describe('in <stack> placeholder', () => {
+      // @gate __DEV__
+      it('fails if `in <stack>` is used for a component stack instead of an error stack', () => {
+        const message = expectToThrowFailure(() => {
+          console.error('Warning message\n    in div');
+          assertConsoleErrorDev(['Warning message\n    in <stack>']);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Incorrect use of \\n    in <stack> placeholder. The placeholder is for JavaScript Error stack traces (messages starting with "Error:"), not for React component stacks.
+
+          Expected: "Warning message
+              in <stack>"
+          Received: "Warning message
+              in div (at **)"
+
+          If this error has a component stack, include the full component stack in your expected message (e.g., "Warning message\\n    in ComponentName (at **)")."
+        `);
+      });
+
+      // @gate __DEV__
+      it('fails if `in <stack>` is used for multiple component stacks', () => {
+        const message = expectToThrowFailure(() => {
+          console.error('First warning\n    in span');
+          console.error('Second warning\n    in div');
+          assertConsoleErrorDev([
+            'First warning\n    in <stack>',
+            'Second warning\n    in <stack>',
+          ]);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Incorrect use of \\n    in <stack> placeholder. The placeholder is for JavaScript Error stack traces (messages starting with "Error:"), not for React component stacks.
+
+          Expected: "First warning
+              in <stack>"
+          Received: "First warning
+              in span (at **)"
+
+          If this error has a component stack, include the full component stack in your expected message (e.g., "Warning message\\n    in ComponentName (at **)").
+
+          Incorrect use of \\n    in <stack> placeholder. The placeholder is for JavaScript Error stack traces (messages starting with "Error:"), not for React component stacks.
+
+          Expected: "Second warning
+              in <stack>"
+          Received: "Second warning
+              in div (at **)"
+
+          If this error has a component stack, include the full component stack in your expected message (e.g., "Warning message\\n    in ComponentName (at **)")."
+        `);
+      });
+
+      it('allows `in <stack>` for actual error stack traces', () => {
+        // This should pass - \n    in <stack> is correctly used for an error stack
+        console.error(new Error('Something went wrong'));
+        assertConsoleErrorDev(['Error: Something went wrong\n    in <stack>']);
+      });
+
+      // @gate __DEV__
+      it('fails if error stack trace is present but \\n    in <stack> is not expected', () => {
+        const message = expectToThrowFailure(() => {
+          console.error(new Error('Something went wrong'));
+          assertConsoleErrorDev(['Error: Something went wrong']);
+        });
+        expect(message).toMatch(`Unexpected error stack trace for:`);
+        expect(message).toMatch(`Error: Something went wrong`);
+        expect(message).toMatch(
+          'If this error should include an error stack trace, add \\n    in <stack> to your expected message'
+        );
+      });
+
+      // @gate __DEV__
+      it('fails if `in <stack>` is expected but no stack is present', () => {
+        const message = expectToThrowFailure(() => {
+          console.error('Error: Something went wrong');
+          assertConsoleErrorDev([
+            'Error: Something went wrong\n    in <stack>',
+          ]);
+        });
+        expect(message).toMatchInlineSnapshot(`
+          "assertConsoleErrorDev(expected)
+
+          Missing error stack trace for:
+            "Error: Something went wrong"
+
+          The expected message uses \\n    in <stack> but the actual error doesn't include an error stack trace.
+          If this error should not have an error stack trace, remove \\n    in <stack> from your expected message."
+        `);
+      });
+    });
+
+    describe('[Environment] placeholder', () => {
+      // @gate __DEV__
+      it('expands [Server] to ANSI escape sequence for server badge', () => {
+        const badge = '\u001b[0m\u001b[7m Server \u001b[0m';
+        console.error(badge + 'Error: something went wrong');
+        assertConsoleErrorDev(['[Server] Error: something went wrong']);
+      });
+
+      // @gate __DEV__
+      it('expands [Prerender] to ANSI escape sequence for server badge', () => {
+        const badge = '\u001b[0m\u001b[7m Prerender \u001b[0m';
+        console.error(badge + 'Error: something went wrong');
+        assertConsoleErrorDev(['[Prerender] Error: something went wrong']);
+      });
+
+      // @gate __DEV__
+      it('expands [Cache] to ANSI escape sequence for server badge', () => {
+        const badge = '\u001b[0m\u001b[7m Cache \u001b[0m';
+        console.error(badge + 'Error: something went wrong');
+        assertConsoleErrorDev(['[Cache] Error: something went wrong']);
+      });
     });
 
     it('should fail if waitFor is called before asserting', async () => {

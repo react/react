@@ -1,4 +1,12 @@
-/* global chrome */
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
+/* global chrome, ExtensionRuntimePort */
 
 'use strict';
 
@@ -12,20 +20,19 @@ import {
   handleFetchResourceContentScriptMessage,
 } from './messageHandlers';
 
-/*
-  {
-    [tabId]: {
-      extension: ExtensionPort,
-      proxy: ProxyPort,
-      disconnectPipe: Function,
-    },
-    ...
-   }
- */
-const ports = {};
+const ports: {
+  // TODO: Check why we convert tab IDs to strings, and if we can avoid it
+  [tabId: string]: {
+    extension: ExtensionRuntimePort | null,
+    proxy: ExtensionRuntimePort | null,
+    disconnectPipe: Function | null,
+  },
+} = {};
 
-function registerTab(tabId) {
+function registerTab(tabId: number) {
+  // $FlowFixMe[incompatible-type]
   if (!ports[tabId]) {
+    // $FlowFixMe[incompatible-type]
     ports[tabId] = {
       extension: null,
       proxy: null,
@@ -34,18 +41,21 @@ function registerTab(tabId) {
   }
 }
 
-function registerExtensionPort(port, tabId) {
+function registerExtensionPort(port: ExtensionRuntimePort, tabId: number) {
+  // $FlowFixMe[incompatible-type]
   ports[tabId].extension = port;
 
   port.onDisconnect.addListener(() => {
     // This should delete disconnectPipe from ports dictionary
+    // $FlowFixMe[incompatible-type]
     ports[tabId].disconnectPipe?.();
 
-    delete ports[tabId].extension;
+    // $FlowFixMe[incompatible-type]
+    ports[tabId].extension = null;
   });
 }
 
-function registerProxyPort(port, tabId) {
+function registerProxyPort(port: ExtensionRuntimePort, tabId: string) {
   ports[tabId].proxy = port;
 
   // In case proxy port was disconnected from the other end, from content script
@@ -54,7 +64,7 @@ function registerProxyPort(port, tabId) {
   port.onDisconnect.addListener(() => {
     ports[tabId].disconnectPipe?.();
 
-    delete ports[tabId].proxy;
+    ports[tabId].proxy = null;
   });
 }
 
@@ -73,14 +83,22 @@ chrome.runtime.onConnect.addListener(port => {
     // Proxy content script is executed in tab, so it should have it specified.
     const tabId = port.sender.tab.id;
 
-    if (ports[tabId]?.proxy) {
-      ports[tabId].disconnectPipe?.();
-      ports[tabId].proxy.disconnect();
+    // $FlowFixMe[incompatible-type]
+    const registeredPort = ports[tabId];
+    const proxy = registeredPort?.proxy;
+    if (proxy) {
+      registeredPort.disconnectPipe?.();
+      proxy.disconnect();
     }
 
     registerTab(tabId);
-    registerProxyPort(port, tabId);
+    registerProxyPort(
+      port,
+      // $FlowFixMe[incompatible-type]
+      tabId,
+    );
 
+    // $FlowFixMe[incompatible-type]
     if (ports[tabId].extension) {
       connectExtensionAndProxyPorts(
         ports[tabId].extension,
@@ -97,8 +115,13 @@ chrome.runtime.onConnect.addListener(port => {
     const tabId = +port.name;
 
     registerTab(tabId);
-    registerExtensionPort(port, tabId);
+    registerExtensionPort(
+      port,
+      // $FlowFixMe[incompatible-call]
+      tabId,
+    );
 
+    // $FlowFixMe[incompatible-type]
     if (ports[tabId].proxy) {
       connectExtensionAndProxyPorts(
         ports[tabId].extension,
@@ -114,26 +137,33 @@ chrome.runtime.onConnect.addListener(port => {
   console.warn(`Unknown port ${port.name} connected`);
 });
 
-function connectExtensionAndProxyPorts(extensionPort, proxyPort, tabId) {
-  if (!extensionPort) {
+function connectExtensionAndProxyPorts(
+  maybeExtensionPort: ExtensionRuntimePort | null,
+  maybeProxyPort: ExtensionRuntimePort | null,
+  tabId: number,
+) {
+  if (!maybeExtensionPort) {
     throw new Error(
       `Attempted to connect ports, when extension port is not present`,
     );
   }
+  const extensionPort = maybeExtensionPort;
 
-  if (!proxyPort) {
+  if (!maybeProxyPort) {
     throw new Error(
       `Attempted to connect ports, when proxy port is not present`,
     );
   }
+  const proxyPort = maybeProxyPort;
 
+  // $FlowFixMe[incompatible-type]
   if (ports[tabId].disconnectPipe) {
     throw new Error(
       `Attempted to connect already connected ports for tab with id ${tabId}`,
     );
   }
 
-  function extensionPortMessageListener(message) {
+  function extensionPortMessageListener(message: any) {
     try {
       proxyPort.postMessage(message);
     } catch (e) {
@@ -145,7 +175,7 @@ function connectExtensionAndProxyPorts(extensionPort, proxyPort, tabId) {
     }
   }
 
-  function proxyPortMessageListener(message) {
+  function proxyPortMessageListener(message: any) {
     try {
       extensionPort.postMessage(message);
     } catch (e) {
@@ -164,6 +194,7 @@ function connectExtensionAndProxyPorts(extensionPort, proxyPort, tabId) {
     // We handle disconnect() calls manually, based on each specific case
     // No need to disconnect other port here
 
+    // $FlowFixMe[incompatible-type]
     delete ports[tabId].disconnectPipe;
   }
 

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // Technically this is a false positive.
@@ -23,7 +23,7 @@ const browserHistory = useBasename(createHistory)({
 ## Code
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // Technically this is a false positive.

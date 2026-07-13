@@ -55,11 +55,11 @@ export default function ScrollIntoViewCase() {
   const scrollContainerRef = useRef(null);
 
   const scrollVertical = () => {
-    fragmentRef.current.experimental_scrollIntoView(alignToTop);
+    fragmentRef.current.scrollIntoView(alignToTop);
   };
 
   const scrollVerticalNoChildren = () => {
-    noChildRef.current.experimental_scrollIntoView(alignToTop);
+    noChildRef.current.scrollIntoView(alignToTop);
   };
 
   useEffect(() => {

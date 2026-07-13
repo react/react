@@ -32,6 +32,7 @@ import type {
 
 function readRecord<T>(record: Thenable<T>): T {
   if (typeof React.use === 'function') {
+    // eslint-disable-next-line react-hooks-published/rules-of-hooks
     return React.use(record);
   }
   if (record.status === 'fulfilled') {
@@ -100,13 +101,13 @@ export function inspectElement(
 
     const wake = () => {
       // This assumes they won't throw.
-      callbacks.forEach(callback => callback((thenable: any).value));
+      callbacks.forEach(callback => callback((thenable as any).value));
       callbacks.clear();
       rejectCallbacks.clear();
     };
     const wakeRejections = () => {
       // This assumes they won't throw.
-      rejectCallbacks.forEach(callback => callback((thenable: any).reason));
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
       rejectCallbacks.clear();
       callbacks.clear();
     };
@@ -115,7 +116,7 @@ export function inspectElement(
     const rendererID = store.getRendererIDForElement(element.id);
     if (rendererID == null) {
       const rejectedThenable: RejectedThenable<InspectedElementFrontend> =
-        (thenable: any);
+        thenable as any;
       rejectedThenable.status = 'rejected';
       rejectedThenable.reason = new Error(
         `Could not inspect element with id "${element.id}". No renderer found.`,
@@ -132,7 +133,7 @@ export function inspectElement(
         InspectedElementResponseType,
       ]) => {
         const fulfilledThenable: FulfilledThenable<InspectedElementFrontend> =
-          (thenable: any);
+          thenable as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = inspectedElement;
         wake();
@@ -142,7 +143,7 @@ export function inspectElement(
         console.error(error);
 
         const rejectedThenable: RejectedThenable<InspectedElementFrontend> =
-          (thenable: any);
+          thenable as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = error;
 

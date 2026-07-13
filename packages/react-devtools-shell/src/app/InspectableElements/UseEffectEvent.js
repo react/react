@@ -1,6 +1,8 @@
 import * as React from 'react';
 
-const {experimental_useEffectEvent, useState, useEffect} = React;
+const {useState, useEffect} = React;
+const useEffectEvent =
+  React.useEffectEvent || React.experimental_useEffectEvent;
 
 export default function UseEffectEvent(): React.Node {
   return (
@@ -12,14 +14,14 @@ export default function UseEffectEvent(): React.Node {
 }
 
 function SingleHookCase() {
-  const onClick = experimental_useEffectEvent(() => {});
+  const onClick = useEffectEvent(() => {});
 
   return <div onClick={onClick} />;
 }
 
 function useCustomHook() {
   const [state, setState] = useState();
-  const onClick = experimental_useEffectEvent(() => {});
+  const onClick = useEffectEvent(() => {});
   useEffect(() => {});
 
   return [state, setState, onClick];

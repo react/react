@@ -41,7 +41,6 @@ function useFoo(t0) {
   if ($[0] !== propArr[0]) {
     s1 = new Set([1, 2, 3]);
     s1.add(makeArray(propArr[0]));
-
     s2 = new Set(s1);
 
     mutate(s2);

@@ -24,7 +24,7 @@
     "html-to-text": "^9.0.5",
     "prettier": "^3.3.3",
     "puppeteer": "^24.7.2",
-    "zod": "^3.23.8"
+    "zod": "^3.25.0 || ^4.0.0"
   },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
@@ -35,7 +35,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git",
+    "url": "git+https://github.com/react/react.git",
     "directory": "compiler/packages/react-mcp-server"
   }
 }

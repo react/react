@@ -50,6 +50,7 @@ const aliases = new Map([
   ['markerEnd', 'marker-end'],
   ['markerMid', 'marker-mid'],
   ['markerStart', 'marker-start'],
+  ['maskType', 'mask-type'],
   ['overlinePosition', 'overline-position'],
   ['overlineThickness', 'overline-thickness'],
   ['paintOrder', 'paint-order'],

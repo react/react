@@ -234,14 +234,7 @@ function pushEndScopeTerminal(
   const fallthroughId = context.fallthroughs.get(scope.id);
   CompilerError.invariant(fallthroughId != null, {
     reason: 'Expected scope to exist',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: GeneratedSource,
-        message: null,
-      },
-    ],
+    loc: GeneratedSource,
   });
   context.rewrites.push({
     kind: 'EndScope',

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 import {useMemo} from 'react';
 import {identity, mutate} from 'shared-runtime';
 

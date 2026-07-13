@@ -5,7 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {BlockId, HIRFunction, computePostDominatorTree} from '.';
+import {
+  BlockId,
+  GeneratedSource,
+  HIRFunction,
+  computePostDominatorTree,
+} from '.';
 import {CompilerError} from '..';
 
 export function computeUnconditionalBlocks(fn: HIRFunction): Set<BlockId> {
@@ -24,15 +29,7 @@ export function computeUnconditionalBlocks(fn: HIRFunction): Set<BlockId> {
     CompilerError.invariant(!unconditionalBlocks.has(current), {
       reason:
         'Internal error: non-terminating loop in ComputeUnconditionalBlocks',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     unconditionalBlocks.add(current);
     current = dominators.get(current);

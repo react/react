@@ -1,9 +1,10 @@
 import React, {
-  unstable_addTransitionType as addTransitionType,
-  unstable_ViewTransition as ViewTransition,
-  unstable_Activity as Activity,
+  addTransitionType,
+  ViewTransition,
+  Activity,
   useLayoutEffect,
   useEffect,
+  useInsertionEffect,
   useState,
   useId,
   useOptimistic,
@@ -19,6 +20,7 @@ import './Page.css';
 
 import transitions from './Transitions.module.css';
 import NestedReveal from './NestedReveal.js';
+import NestedParentExit from './NestedParentExit.js';
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -41,6 +43,26 @@ const b = (
 );
 
 function Component() {
+  // Test inserting fonts with style tags using useInsertionEffect. This is not recommended but
+  // used to test that gestures etc works with useInsertionEffect so that stylesheet based
+  // libraries can be properly supported.
+  useInsertionEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .roboto-font {
+        font-family: "Roboto", serif;
+        font-optical-sizing: auto;
+        font-weight: 100;
+        font-style: normal;
+        font-variation-settings:
+          "wdth" 100;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
   return (
     <ViewTransition
       default={
@@ -50,7 +72,8 @@ function Component() {
       <p>
         <img
           src="https://react.dev/_next/image?url=%2Fimages%2Fteam%2Fsebmarkbage.jpg&w=3840&q=75"
-          width="300"
+          width="400"
+          height="248"
         />
       </p>
     </ViewTransition>
@@ -81,8 +104,59 @@ export default function Page({url, navigate}) {
       {rotate: '0deg', transformOrigin: '30px 8px'},
       {rotate: '360deg', transformOrigin: '30px 8px'},
     ];
-    viewTransition.old.animate(keyframes, 250);
-    viewTransition.new.animate(keyframes, 250);
+    const animation1 = viewTransition.old.animate(keyframes, 250);
+    const animation2 = viewTransition.new.animate(keyframes, 250);
+    return () => {
+      animation1.cancel();
+      animation2.cancel();
+    };
+  }
+
+  function onGestureTransition(
+    timeline,
+    {rangeStart, rangeEnd},
+    viewTransition,
+    types
+  ) {
+    const keyframes = [
+      {rotate: '0deg', transformOrigin: '30px 8px'},
+      {rotate: '360deg', transformOrigin: '30px 8px'},
+    ];
+    const reverse = rangeStart > rangeEnd;
+    if (timeline instanceof AnimationTimeline) {
+      // Native Timeline
+      const options = {
+        timeline: timeline,
+        direction: reverse ? 'normal' : 'reverse',
+        rangeStart: (reverse ? rangeEnd : rangeStart) + '%',
+        rangeEnd: (reverse ? rangeStart : rangeEnd) + '%',
+      };
+      const animation1 = viewTransition.old.animate(keyframes, options);
+      const animation2 = viewTransition.new.animate(keyframes, options);
+      return () => {
+        animation1.cancel();
+        animation2.cancel();
+      };
+    } else {
+      // Custom Timeline
+      const options = {
+        direction: reverse ? 'normal' : 'reverse',
+        // We set the delay and duration to represent the span of the range.
+        delay: reverse ? rangeEnd : rangeStart,
+        duration: reverse ? rangeStart - rangeEnd : rangeEnd - rangeStart,
+      };
+      const animation1 = viewTransition.old.animate(keyframes, options);
+      const animation2 = viewTransition.new.animate(keyframes, options);
+      // Let the custom timeline take control of driving the animations.
+      const cleanup1 = timeline.animate(animation1);
+      const cleanup2 = timeline.animate(animation2);
+      return () => {
+        animation1.cancel();
+        animation2.cancel();
+        cleanup1();
+        cleanup2();
+      };
+    }
   }
 
   function swipeAction() {
@@ -130,7 +204,10 @@ export default function Page({url, navigate}) {
   );
 
   const exclamation = (
-    <ViewTransition name="exclamation" onShare={onTransition}>
+    <ViewTransition
+      name="exclamation"
+      onShare={onTransition}
+      onGestureShare={onGestureTransition}>
       <span>
         <div>!</div>
       </span>
@@ -170,17 +247,20 @@ export default function Page({url, navigate}) {
               }}>
               <h1>{!show ? 'A' + counter : 'B'}</h1>
             </ViewTransition>
-            {show ? (
-              <div>
-                {a}
-                {b}
-              </div>
-            ) : (
-              <div>
-                {b}
-                {a}
-              </div>
-            )}
+            {
+              // Using url instead of renderedUrl here lets us only update this on commit.
+              url === '/?b' ? (
+                <div>
+                  {a}
+                  {b}
+                </div>
+              ) : (
+                <div>
+                  {b}
+                  {a}
+                </div>
+              )
+            }
             <ViewTransition>
               {show ? (
                 <div>hello{exclamation}</div>
@@ -237,12 +317,13 @@ export default function Page({url, navigate}) {
                   <Suspend />
                 </div>
               </ViewTransition>
+              {show ? <Component /> : null}
             </Suspense>
-            {show ? <Component /> : null}
           </div>
         </ViewTransition>
       </SwipeRecognizer>
       <NestedReveal />
+      <NestedParentExit />
     </div>
   );
 }

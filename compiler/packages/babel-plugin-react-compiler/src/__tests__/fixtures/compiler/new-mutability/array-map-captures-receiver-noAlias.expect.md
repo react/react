@@ -37,6 +37,7 @@ function Component(props) {
     t0 = $[1];
   }
   const mapped = t0;
+
   return mapped;
 }
 function _temp(item_0) {

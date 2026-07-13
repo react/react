@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 import {useCallback} from 'react';
 
 function Component({propA, propB}) {

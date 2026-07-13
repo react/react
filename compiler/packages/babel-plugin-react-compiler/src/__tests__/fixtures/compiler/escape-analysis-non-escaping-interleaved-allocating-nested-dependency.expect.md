@@ -44,7 +44,6 @@ function Component(props) {
   let t0;
   if ($[0] !== props.a) {
     const a = [props.a];
-
     t0 = [a];
     $[0] = props.a;
     $[1] = t0;
@@ -64,6 +63,7 @@ function Component(props) {
   } else {
     c = $[4];
   }
+
   return c;
 }
 

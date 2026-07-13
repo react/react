@@ -7,25 +7,37 @@
  * @flow
  */
 
-import {REACT_PORTAL_TYPE} from 'shared/ReactSymbols';
+import {REACT_PORTAL_TYPE, REACT_OPTIMISTIC_KEY} from 'shared/ReactSymbols';
 import {checkKeyStringCoercion} from 'shared/CheckStringCoercion';
 
-import type {ReactNodeList, ReactPortal} from 'shared/ReactTypes';
+import type {
+  ReactNodeList,
+  ReactPortal,
+  ReactOptimisticKey,
+} from 'shared/ReactTypes';
 
 export function createPortal(
   children: ReactNodeList,
   containerInfo: any,
   // TODO: figure out the API for cross-renderer implementation.
   implementation: any,
-  key: ?string = null,
+  key: ?string | ReactOptimisticKey = null,
 ): ReactPortal {
-  if (__DEV__) {
-    checkKeyStringCoercion(key);
+  let resolvedKey;
+  if (key == null) {
+    resolvedKey = null;
+  } else if (key === REACT_OPTIMISTIC_KEY) {
+    resolvedKey = REACT_OPTIMISTIC_KEY;
+  } else {
+    if (__DEV__) {
+      checkKeyStringCoercion(key);
+    }
+    resolvedKey = '' + key;
   }
   return {
     // This tag allow us to uniquely identify this as a React Portal
     $$typeof: REACT_PORTAL_TYPE,
-    key: key == null ? null : '' + key,
+    key: resolvedKey,
     children,
     containerInfo,
     implementation,

@@ -27,7 +27,7 @@ export type PrintedCompilerPipelineValue =
 type CompileOptions = {
   text: string;
   file: string;
-  options: Partial<PluginOptions> | null;
+  options: PluginOptions | null;
 };
 export async function compile({
   text,

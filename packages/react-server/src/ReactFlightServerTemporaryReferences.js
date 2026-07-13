@@ -65,11 +65,10 @@ const proxyHandlers: Proxy$traps<mixed> = {
         // $FlowFixMe[prop-missing]
         return Object.prototype[Symbol.toStringTag];
       case 'Provider':
-        throw new Error(
-          `Cannot render a Client Context Provider on the Server. ` +
-            `Instead, you can export a Client Component wrapper ` +
-            `that itself renders a Client Context Provider.`,
-        );
+        // Context.Provider === Context in React, so return the same reference.
+        // This allows server components to render <ClientContext.Provider>
+        // which will be serialized and executed on the client.
+        return receiver;
       case 'then':
         // Allow returning a temporary reference from an async function
         // Unlike regular Client References, a Promise would never have been serialized as
@@ -97,13 +96,13 @@ export function createTemporaryReference<T>(
   id: string,
 ): TemporaryReference<T> {
   const reference: TemporaryReference<any> = Object.defineProperties(
-    (function () {
+    function () {
       throw new Error(
         `Attempted to call a temporary Client Reference from the server but it is on the client. ` +
           `It's not possible to invoke a client function from the server, it can ` +
           `only be rendered as a Component or passed to props of a Client Component.`,
       );
-    }: any),
+    } as any,
     {
       $$typeof: {value: TEMPORARY_REFERENCE_TAG},
     },

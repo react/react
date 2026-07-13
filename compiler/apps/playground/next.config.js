@@ -11,6 +11,7 @@ const path = require('path');
 const nextConfig = {
   experimental: {
     reactCompiler: true,
+    viewTransition: true,
   },
   reactStrictMode: true,
   webpack: (config, options) => {

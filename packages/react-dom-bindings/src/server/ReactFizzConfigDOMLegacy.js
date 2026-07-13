@@ -10,6 +10,7 @@
 import type {
   RenderState as BaseRenderState,
   ResumableState,
+  HoistableState,
   StyleQueue,
   Resource,
   HeadersDescriptor,
@@ -323,6 +324,14 @@ export function writePreambleStart(
     renderState,
     true, // skipBlockingShell
   );
+}
+
+export function hasSuspenseyContent(
+  hoistableState: HoistableState,
+  flushingInShell: boolean,
+): boolean {
+  // Never outline.
+  return false;
 }
 
 export type TransitionStatus = FormStatus;

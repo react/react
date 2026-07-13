@@ -1,4 +1,3 @@
-import * as React from 'react';
 import {use, Suspense, useState, startTransition, Profiler} from 'react';
 import ReactDOM from 'react-dom/client';
 import {createFromFetch, encodeReply} from 'react-server-dom-webpack/client';

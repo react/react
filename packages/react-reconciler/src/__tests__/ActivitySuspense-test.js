@@ -23,7 +23,7 @@ describe('Activity Suspense', () => {
     Scheduler = require('scheduler');
     act = require('internal-test-utils').act;
     LegacyHidden = React.unstable_LegacyHidden;
-    Activity = React.unstable_Activity;
+    Activity = React.Activity;
     Suspense = React.Suspense;
     useState = React.useState;
     useEffect = React.useEffect;
@@ -95,7 +95,6 @@ describe('Activity Suspense', () => {
     return text;
   }
 
-  // @gate enableActivity
   it('basic example of suspending inside hidden tree', async () => {
     const root = ReactNoop.createRoot();
 
@@ -171,7 +170,7 @@ describe('Activity Suspense', () => {
     );
   });
 
-  // @gate __DEV__ && enableActivity
+  // @gate __DEV__
   test('Regression: Suspending on hide should not infinite loop.', async () => {
     // This regression only repros in public act.
     global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -220,7 +219,6 @@ describe('Activity Suspense', () => {
     expect(root).toMatchRenderedOutput('');
   });
 
-  // @gate enableActivity
   test("suspending inside currently hidden tree that's switching to visible", async () => {
     const root = ReactNoop.createRoot();
 
@@ -289,7 +287,6 @@ describe('Activity Suspense', () => {
     );
   });
 
-  // @gate enableActivity
   test("suspending inside currently visible tree that's switching to hidden", async () => {
     const root = ReactNoop.createRoot();
 
@@ -380,7 +377,6 @@ describe('Activity Suspense', () => {
     );
   });
 
-  // @gate enableActivity
   test('update that suspends inside hidden tree', async () => {
     let setText;
     function Child() {
@@ -413,7 +409,6 @@ describe('Activity Suspense', () => {
     });
   });
 
-  // @gate enableActivity
   test('updates at multiple priorities that suspend inside hidden tree', async () => {
     let setText;
     let setStep;
@@ -470,7 +465,6 @@ describe('Activity Suspense', () => {
     expect(root).toMatchRenderedOutput(<span hidden={true}>B1</span>);
   });
 
-  // @gate enableActivity
   test('detect updates to a hidden tree during a concurrent event', async () => {
     // This is a pretty complex test case. It relates to how we detect if an
     // update is made to a hidden tree: when scheduling the update, we walk up

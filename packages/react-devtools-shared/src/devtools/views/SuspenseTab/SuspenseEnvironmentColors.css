@@ -1,0 +1,14 @@
+.SuspenseEnvironmentDefault {
+  --color-suspense: var(--color-suspense-default);
+  --color-transition: var(--color-transition-default);
+}
+
+.SuspenseEnvironmentServer {
+  --color-suspense: var(--color-suspense-server);
+  --color-transition: var(--color-transition-server);
+}
+
+.SuspenseEnvironmentOther {
+  --color-suspense: var(--color-suspense-other);
+  --color-transition: var(--color-transition-other);
+}

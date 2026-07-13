@@ -7,7 +7,7 @@
 
 import type * as BabelCore from '@babel/core';
 import {hasOwnProperty} from '../Utils/utils';
-import {PluginOptions} from './Options';
+import {ParsedPluginOptions} from './Options';
 
 function hasModule(name: string): boolean {
   if (typeof require === 'undefined') {
@@ -52,7 +52,9 @@ export function pipelineUsesReanimatedPlugin(
   return hasModule('react-native-reanimated');
 }
 
-export function injectReanimatedFlag(options: PluginOptions): PluginOptions {
+export function injectReanimatedFlag(
+  options: ParsedPluginOptions,
+): ParsedPluginOptions {
   return {
     ...options,
     environment: {

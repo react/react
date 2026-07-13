@@ -7,17 +7,15 @@
  * @flow
  */
 
-import {renameElementSymbol} from 'shared/ReactFeatureFlags';
-
 // ATTENTION
 // When adding new symbols to this file,
 // Please consider also adding to 'react-devtools-shared/src/backend/ReactSymbols'
 
 // The Symbol used to tag the ReactElement-like types.
 export const REACT_LEGACY_ELEMENT_TYPE: symbol = Symbol.for('react.element');
-export const REACT_ELEMENT_TYPE: symbol = renameElementSymbol
-  ? Symbol.for('react.transitional.element')
-  : REACT_LEGACY_ELEMENT_TYPE;
+export const REACT_ELEMENT_TYPE: symbol = Symbol.for(
+  'react.transitional.element',
+);
 export const REACT_PORTAL_TYPE: symbol = Symbol.for('react.portal');
 export const REACT_FRAGMENT_TYPE: symbol = Symbol.for('react.fragment');
 export const REACT_STRICT_MODE_TYPE: symbol = Symbol.for('react.strict_mode');
@@ -44,8 +42,6 @@ export const REACT_MEMO_CACHE_SENTINEL: symbol = Symbol.for(
   'react.memo_cache_sentinel',
 );
 
-export const REACT_POSTPONE_TYPE: symbol = Symbol.for('react.postpone');
-
 export const REACT_VIEW_TRANSITION_TYPE: symbol = Symbol.for(
   'react.view_transition',
 );
@@ -67,3 +63,12 @@ export function getIteratorFn(maybeIterable: ?any): ?() => ?Iterator<any> {
 }
 
 export const ASYNC_ITERATOR = Symbol.asyncIterator;
+
+export const REACT_OPTIMISTIC_KEY: ReactOptimisticKey = Symbol.for(
+  'react.optimistic_key',
+) as any;
+
+// This is actually a symbol but Flow doesn't support comparison of symbols to refine.
+// We use a boolean since in our code we often expect string (key) or number (index),
+// so by pretending to be a boolean we cover a lot of cases that don't consider this case.
+export type ReactOptimisticKey = true;

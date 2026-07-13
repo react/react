@@ -15,7 +15,7 @@ const ReactDOMClient = require('react-dom/client');
 const assertConsoleErrorDev =
   require('internal-test-utils').assertConsoleErrorDev;
 
-function expectWarnings(tags, warnings = [], withoutStack = 0) {
+function expectWarnings(tags, warnings = []) {
   tags = [...tags];
   warnings = [...warnings];
 
@@ -61,10 +61,7 @@ function expectWarnings(tags, warnings = [], withoutStack = 0) {
     root.render(element);
   });
   if (warnings.length) {
-    assertConsoleErrorDev(
-      warnings,
-      withoutStack > 0 ? {withoutStack} : undefined,
-    );
+    assertConsoleErrorDev(warnings);
   }
   root.unmount();
 }

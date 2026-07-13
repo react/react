@@ -36,7 +36,7 @@ const http = require('http');
 const React = require('react');
 
 const {renderToPipeableStream} = require('react-dom/server');
-const {createFromNodeStream} = require('react-server-dom-webpack/client');
+const {createFromNodeStream} = require('react-server-dom-unbundled/client');
 const {PassThrough} = require('stream');
 
 const app = express();

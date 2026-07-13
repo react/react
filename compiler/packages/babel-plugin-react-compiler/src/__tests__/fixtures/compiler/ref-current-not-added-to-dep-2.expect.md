@@ -23,7 +23,6 @@ function Foo(t0) {
   let t1;
   if ($[0] !== a) {
     const x = { a, val: ref.current };
-
     t1 = <VideoList videos={x} />;
     $[0] = a;
     $[1] = t1;

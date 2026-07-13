@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer" @enableResetCacheOnSourceFileChanges
+// @compilationMode:"infer" @enableResetCacheOnSourceFileChanges @validateExhaustiveMemoizationDependencies:false
 import {useEffect, useMemo, useState} from 'react';
 import {ValidateMemoization} from 'shared-runtime';
 
@@ -46,7 +46,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @compilationMode:"infer" @enableResetCacheOnSourceFileChanges
+import { c as _c } from "react/compiler-runtime"; // @compilationMode:"infer" @enableResetCacheOnSourceFileChanges @validateExhaustiveMemoizationDependencies:false
 import { useEffect, useMemo, useState } from "react";
 import { ValidateMemoization } from "shared-runtime";
 
@@ -63,12 +63,12 @@ function unsafeUpdateConst() {
 function Component() {
   const $ = _c(3);
   if (
-    $[0] !== "a585d27423c1181e7b6305ff909458183d284658c3c3d2e3764e1128be302fd7"
+    $[0] !== "36c02976ff5bc474b7510128ea8220ffe31d92cd5d245148ed0a43146d18ded4"
   ) {
     for (let $i = 0; $i < 3; $i += 1) {
       $[$i] = Symbol.for("react.memo_cache_sentinel");
     }
-    $[0] = "a585d27423c1181e7b6305ff909458183d284658c3c3d2e3764e1128be302fd7";
+    $[0] = "36c02976ff5bc474b7510128ea8220ffe31d92cd5d245148ed0a43146d18ded4";
   }
   useState(_temp);
 

@@ -18,12 +18,24 @@ import {
 describe('Store component filters', () => {
   let React;
   let Types;
+  let agent;
   let bridge: FrontendBridge;
   let store: Store;
   let utils;
   let actAsync;
 
+  beforeAll(() => {
+    // JSDDOM doesn't implement getClientRects so we're just faking one for testing purposes
+    Element.prototype.getClientRects = function (this: Element) {
+      const textContent = this.textContent;
+      return [
+        new DOMRect(1, 2, textContent.length, textContent.split('\n').length),
+      ];
+    };
+  });
+
   beforeEach(() => {
+    agent = global.agent;
     bridge = global.bridge;
     store = global.store;
     store.collapseNodesByDefault = false;
@@ -134,7 +146,7 @@ describe('Store component filters', () => {
     `);
   });
 
-  // @reactVersion >= 16.0
+  // @reactVersion >= 16.6
   it('should filter Suspense', async () => {
     const Suspense = React.Suspense;
     await actAsync(async () =>
@@ -156,9 +168,9 @@ describe('Store component filters', () => {
             <div>
         ▾ <Suspense>
             <div>
-      [suspense-root]  rects={[]}
-        <Suspense name="Unknown" rects={[]}>
-        <Suspense name="Unknown" rects={[]}>
+      [suspense-root]  rects={[{x:1,y:2,width:7,height:1}, {x:1,y:2,width:6,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:7,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
 
     await actAsync(
@@ -174,9 +186,9 @@ describe('Store component filters', () => {
             <div>
         ▾ <Suspense>
             <div>
-      [suspense-root]  rects={[]}
-        <Suspense name="Unknown" rects={[]}>
-        <Suspense name="Unknown" rects={[]}>
+      [suspense-root]  rects={[{x:1,y:2,width:7,height:1}, {x:1,y:2,width:6,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:7,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
 
     await actAsync(
@@ -192,14 +204,14 @@ describe('Store component filters', () => {
             <div>
         ▾ <Suspense>
             <div>
-      [suspense-root]  rects={[]}
-        <Suspense name="Unknown" rects={[]}>
-        <Suspense name="Unknown" rects={[]}>
+      [suspense-root]  rects={[{x:1,y:2,width:7,height:1}, {x:1,y:2,width:6,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:7,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
   });
 
   it('should filter Activity', async () => {
-    const Activity = React.unstable_Activity;
+    const Activity = React.Activity || React.unstable_Activity;
 
     if (Activity != null) {
       await actAsync(async () =>
@@ -217,9 +229,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
 
       await actAsync(
@@ -232,6 +244,7 @@ describe('Store component filters', () => {
       expect(store).toMatchInlineSnapshot(`
         [root]
             <div>
+            <div>
       `);
 
       await actAsync(
@@ -243,15 +256,16 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
     }
   });
 
   it('should filter ViewTransition', async () => {
-    const ViewTransition = React.unstable_ViewTransition;
+    const ViewTransition =
+      React.ViewTransition || React.unstable_ViewTransition;
 
     if (ViewTransition != null) {
       await actAsync(async () =>
@@ -738,5 +752,181 @@ describe('Store component filters', () => {
             <ComponentWithWarningAndError> ✕⚠
       `);
     });
+  });
+
+  // @reactVersion >= 18.0
+  it('resets forced error and fallback states when filters are changed', async () => {
+    store.componentFilters = [];
+    class ErrorBoundary extends React.Component {
+      state = {hasError: false};
+
+      static getDerivedStateFromError() {
+        return {hasError: true};
+      }
+
+      render() {
+        if (this.state.hasError) {
+          return <div key="did-error" />;
+        }
+        return this.props.children;
+      }
+    }
+
+    function App() {
+      return (
+        <>
+          <React.Suspense fallback={<div key="loading" />}>
+            <div key="suspense-content" />
+          </React.Suspense>
+          <ErrorBoundary>
+            <div key="error-content" />
+          </ErrorBoundary>
+        </>
+      );
+    }
+
+    await actAsync(async () => {
+      render(<App />);
+    });
+    const rendererID = utils.getRendererID();
+    await actAsync(() => {
+      agent.overrideSuspense({
+        id: store.getElementIDAtIndex(2),
+        rendererID,
+        forceFallback: true,
+      });
+      agent.overrideError({
+        id: store.getElementIDAtIndex(4),
+        rendererID,
+        forceError: true,
+      });
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Suspense>
+              <div key="loading">
+          ▾ <ErrorBoundary>
+              <div key="did-error">
+      [suspense-root]  rects={[{x:1,y:2,width:0,height:1}, {x:1,y:2,width:0,height:1}, {x:1,y:2,width:0,height:1}]}
+        <Suspense name="App" uniqueSuspenders={false} rects={[{x:1,y:2,width:0,height:1}]}>
+    `);
+
+    await actAsync(() => {
+      store.componentFilters = [
+        utils.createElementTypeFilter(Types.ElementTypeFunction, true),
+      ];
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Suspense>
+            <div key="suspense-content">
+        ▾ <ErrorBoundary>
+            <div key="error-content">
+      [suspense-root]  rects={[{x:1,y:2,width:0,height:1}, {x:1,y:2,width:0,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:0,height:1}]}>
+    `);
+  });
+
+  // @reactVersion >= 19.2
+  it('can filter by Activity slices', async () => {
+    const Activity = React.Activity;
+    const immediate = Promise.resolve(<div>Immediate</div>);
+
+    function Root({children}) {
+      return (
+        <Activity name="/" mode="visible">
+          <React.Suspense fallback="Loading...">
+            <h1>Root</h1>
+            <main>{children}</main>
+          </React.Suspense>
+        </Activity>
+      );
+    }
+
+    function Layout({children}) {
+      return (
+        <Activity name="/blog" mode="visible">
+          <h2>Blog</h2>
+          <section>{children}</section>
+        </Activity>
+      );
+    }
+
+    function Page() {
+      return <React.Suspense fallback="Loading...">{immediate}</React.Suspense>;
+    }
+
+    await actAsync(async () =>
+      render(
+        <Root>
+          <Layout>
+            <Page />
+          </Layout>
+        </Root>,
+      ),
+    );
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Root>
+          ▾ <Activity name="/" mode="visible">
+            ▾ <Suspense>
+                <h1>
+              ▾ <main>
+                ▾ <Layout>
+                  ▾ <Activity name="/blog" mode="visible">
+                      <h2>
+                    ▾ <section>
+                      ▾ <Page>
+                        ▾ <Suspense>
+                            <div>
+      [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
+        <Suspense name="Root" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
+    `);
+
+    await actAsync(
+      async () =>
+        (store.componentFilters = [
+          utils.createActivitySliceFilter(store.getElementIDAtIndex(1)),
+        ]),
+    );
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Activity name="/" mode="visible">
+          ▾ <Suspense>
+              <h1>
+            ▾ <main>
+              ▾ <Layout>
+                ▸ <Activity name="/blog" mode="visible">
+      [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
+    `);
+
+    await actAsync(async () => (store.componentFilters = []));
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Root>
+          ▾ <Activity name="/" mode="visible">
+            ▾ <Suspense>
+                <h1>
+              ▾ <main>
+                ▾ <Layout>
+                  ▾ <Activity name="/blog" mode="visible">
+                      <h2>
+                    ▾ <section>
+                      ▾ <Page>
+                        ▾ <Suspense>
+                            <div>
+      [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
+        <Suspense name="Root" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
+    `);
   });
 });

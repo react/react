@@ -46,6 +46,35 @@ const tests: CompilerTestCases = {
         }
       `,
     },
+    // ===========================================
+    // Tests for mayContainReactCode heuristic
+    // Files that should be SKIPPED (no React-like function names)
+    // These contain code that WOULD trigger errors if compiled,
+    // but since the heuristic skips them, no errors are reported.
+    // ===========================================
+    {
+      name: '[Heuristic] Skips files with only lowercase utility functions',
+      filename: 'utils.ts',
+      // This mutates an argument, which would be flagged in a component/hook,
+      // but this file is skipped because there are no React-like function names
+      code: normalizeIndent`
+        function helper(obj) {
+          obj.key = 'value';
+          return obj;
+        }
+      `,
+    },
+    {
+      name: '[Heuristic] Skips lowercase arrow functions even with mutations',
+      filename: 'helpers.ts',
+      // Would be flagged if compiled, but skipped due to lowercase name
+      code: normalizeIndent`
+        const processData = (input) => {
+          input.modified = true;
+          return input;
+        };
+      `,
+    },
   ],
   invalid: [
     {
@@ -65,6 +94,101 @@ const tests: CompilerTestCases = {
         {
           message: /Modifying a value returned from 'useState\(\)'/,
           line: 7,
+        },
+      ],
+    },
+    // ===========================================
+    // Tests for mayContainReactCode heuristic
+    // Files that SHOULD be compiled (have React-like function names)
+    // These contain violations to prove compilation happens.
+    // ===========================================
+    {
+      name: '[Heuristic] Compiles PascalCase function declaration - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        function MyComponent({a}) {
+          a.key = 'value';
+          return <div />;
+        }
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles PascalCase arrow function - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const MyComponent = ({a}) => {
+          a.key = 'value';
+          return <div />;
+        };
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles PascalCase function expression - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const MyComponent = function({a}) {
+          a.key = 'value';
+          return <div />;
+        };
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles exported function declaration - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        export function MyComponent({a}) {
+          a.key = 'value';
+          return <div />;
+        }
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles exported arrow function - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        export const MyComponent = ({a}) => {
+          a.key = 'value';
+          return <div />;
+        };
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles default exported function - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        export default function MyComponent({a}) {
+          a.key = 'value';
+          return <div />;
+        }
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
         },
       ],
     },

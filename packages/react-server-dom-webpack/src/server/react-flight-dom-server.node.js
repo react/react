@@ -10,8 +10,8 @@
 export {
   renderToReadableStream,
   renderToPipeableStream,
-  prerender as unstable_prerender,
-  prerenderToNodeStream as unstable_prerenderToNodeStream,
+  prerender,
+  prerenderToNodeStream,
   decodeReply,
   decodeReplyFromBusboy,
   decodeReplyFromAsyncIterable,

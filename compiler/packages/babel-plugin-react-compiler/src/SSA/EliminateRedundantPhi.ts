@@ -6,7 +6,13 @@
  */
 
 import {CompilerError} from '../CompilerError';
-import {BlockId, HIRFunction, Identifier, Place} from '../HIR/HIR';
+import {
+  BlockId,
+  GeneratedSource,
+  HIRFunction,
+  Identifier,
+  Place,
+} from '../HIR/HIR';
 import {
   eachInstructionLValue,
   eachInstructionOperand,
@@ -96,15 +102,7 @@ export function eliminateRedundantPhi(
         }
         CompilerError.invariant(same !== null, {
           reason: 'Expected phis to be non-empty',
-          description: null,
-          details: [
-            {
-              kind: 'error',
-              loc: null,
-              message: null,
-            },
-          ],
-          suggestions: null,
+          loc: GeneratedSource,
         });
         rewrites.set(phi.place.identifier, same);
         block.phis.delete(phi);
@@ -155,26 +153,12 @@ export function eliminateRedundantPhi(
       for (const phi of block.phis) {
         CompilerError.invariant(!rewrites.has(phi.place.identifier), {
           reason: '[EliminateRedundantPhis]: rewrite not complete',
-          description: null,
-          details: [
-            {
-              kind: 'error',
-              loc: phi.place.loc,
-              message: null,
-            },
-          ],
+          loc: phi.place.loc,
         });
         for (const [, operand] of phi.operands) {
           CompilerError.invariant(!rewrites.has(operand.identifier), {
             reason: '[EliminateRedundantPhis]: rewrite not complete',
-            description: null,
-            details: [
-              {
-                kind: 'error',
-                loc: phi.place.loc,
-                message: null,
-              },
-            ],
+            loc: phi.place.loc,
           });
         }
       }

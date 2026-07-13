@@ -1,0 +1,3 @@
+{
+  //compilationMode: "all"
+}

@@ -32,7 +32,6 @@ function Foo() {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const x = [{ value: 0 }, { value: 1 }, { value: 2 }];
     const foo = (param) => x[param].value;
-
     t0 = invoke(foo, 1);
     $[0] = t0;
   } else {

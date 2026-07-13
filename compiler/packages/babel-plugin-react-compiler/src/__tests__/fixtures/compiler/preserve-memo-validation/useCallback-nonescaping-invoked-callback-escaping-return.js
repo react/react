@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions
+// @validatePreserveExistingMemoizationGuarantees @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions @validateExhaustiveMemoizationDependencies:false
 import {useCallback} from 'react';
 
 function Component({entity, children}) {

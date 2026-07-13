@@ -5,17 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
-
-// Polyfills for test environment
-global.ReadableStream =
-  require('web-streams-polyfill/ponyfill/es6').ReadableStream;
-global.WritableStream =
-  require('web-streams-polyfill/ponyfill/es6').WritableStream;
-global.TextEncoder = require('util').TextEncoder;
-global.TextDecoder = require('util').TextDecoder;
 
 let clientExports;
 let turbopackMap;

@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "react-devtools-timeline",
-  "version": "6.1.5",
+  "version": "7.0.1",
   "license": "MIT",
   "dependencies": {
     "@elg/speedscope": "1.9.0-a6f84db",

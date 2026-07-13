@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 const THEME_MAP: ReadonlyMap<string, string> = new Map([
   ['default', 'light'],
   ['dark', 'dark'],
@@ -21,7 +22,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
 const THEME_MAP: ReadonlyMap<string, string> = new Map([
   ["default", "light"],
   ["dark", "dark"],

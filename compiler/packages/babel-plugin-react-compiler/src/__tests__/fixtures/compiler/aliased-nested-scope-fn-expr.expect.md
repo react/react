@@ -85,14 +85,10 @@ function Component(t0) {
   let t1;
   if ($[0] !== prop) {
     const obj = shallowCopy(prop);
-
     const aliasedObj = identity(obj);
-
     const getId = () => obj.id;
-
     mutate(aliasedObj);
     setPropertyByKey(aliasedObj, "id", prop.id + 1);
-
     t1 = <Stringify getId={getId} shouldInvokeFns={true} />;
     $[0] = prop;
     $[1] = t1;

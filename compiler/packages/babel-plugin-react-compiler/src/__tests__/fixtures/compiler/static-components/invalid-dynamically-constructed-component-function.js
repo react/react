@@ -1,4 +1,4 @@
-// @loggerTestOnly @validateStaticComponents
+// @loggerTestOnly @validateStaticComponents @outputMode:"lint"
 function Example(props) {
   function Component() {
     return <div />;

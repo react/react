@@ -154,53 +154,87 @@ function collectStackTrace(
   // We mirror how V8 serializes stack frames and how we later parse them.
   for (let i = framesToSkip; i < structuredStackTrace.length; i++) {
     const callSite = structuredStackTrace[i];
-    let name = callSite.getFunctionName() || '<anonymous>';
+    let name =
+      // $FlowFixMe[method-unbinding]
+      typeof callSite.getFunctionName === 'function'
+        ? callSite.getFunctionName() || '<anonymous>'
+        : '';
     if (
       name.includes('react_stack_bottom_frame') ||
       name.includes('react-stack-bottom-frame')
     ) {
       // Skip everything after the bottom frame since it'll be internals.
       break;
-    } else if (callSite.isNative()) {
-      // $FlowFixMe[prop-missing]
-      const isAsync = callSite.isAsync();
+      // $FlowFixMe[method-unbinding]
+    } else if (typeof callSite.isNative === 'function' && callSite.isNative()) {
+      const isAsync =
+        // $FlowFixMe[prop-missing]
+        // $FlowFixMe[incompatible-use]
+        typeof callSite.isAsync === 'function' && callSite.isAsync();
       result.push([name, '', 0, 0, 0, 0, isAsync]);
     } else {
       // We encode complex function calls as if they're part of the function
       // name since we cannot simulate the complex ones and they look the same
       // as function names in UIs on the client as well as stacks.
-      if (callSite.isConstructor()) {
+      if (
+        // $FlowFixMe[method-unbinding]
+        typeof callSite.isConstructor === 'function' &&
+        callSite.isConstructor()
+      ) {
         name = 'new ' + name;
-      } else if (!callSite.isToplevel()) {
+      } else if (
+        // $FlowFixMe[method-unbinding]
+        typeof callSite.isToplevel === 'function' &&
+        !callSite.isToplevel()
+      ) {
         name = getMethodCallName(callSite);
       }
       if (name === '<anonymous>') {
         name = '';
       }
-      let filename = callSite.getScriptNameOrSourceURL() || '<anonymous>';
+      let filename =
+        // $FlowFixMe[method-unbinding]
+        typeof callSite.getScriptNameOrSourceURL === 'function'
+          ? callSite.getScriptNameOrSourceURL() || '<anonymous>'
+          : '';
       if (filename === '<anonymous>') {
         filename = '';
-        if (callSite.isEval()) {
-          const origin = callSite.getEvalOrigin();
+        // $FlowFixMe[method-unbinding]
+        if (typeof callSite.isEval === 'function' && callSite.isEval()) {
+          const origin =
+            // $FlowFixMe[method-unbinding]
+            typeof callSite.getEvalOrigin === 'function'
+              ? callSite.getEvalOrigin()
+              : null;
           if (origin) {
             filename = origin.toString() + ', <anonymous>';
           }
         }
       }
-      const line = callSite.getLineNumber() || 0;
-      const col = callSite.getColumnNumber() || 0;
+      const line =
+        // $FlowFixMe[method-unbinding]
+        (typeof callSite.getLineNumber === 'function' &&
+          callSite.getLineNumber()) ||
+        0;
+      const col =
+        // $FlowFixMe[method-unbinding]
+        (typeof callSite.getColumnNumber === 'function' &&
+          callSite.getColumnNumber()) ||
+        0;
       const enclosingLine: number =
         // $FlowFixMe[prop-missing]
         typeof callSite.getEnclosingLineNumber === 'function'
-          ? (callSite: any).getEnclosingLineNumber() || 0
+          ? (callSite as any).getEnclosingLineNumber() || 0
           : 0;
       const enclosingCol: number =
         // $FlowFixMe[prop-missing]
         typeof callSite.getEnclosingColumnNumber === 'function'
-          ? (callSite: any).getEnclosingColumnNumber() || 0
+          ? (callSite as any).getEnclosingColumnNumber() || 0
           : 0;
-      // $FlowFixMe[prop-missing]
-      const isAsync = callSite.isAsync();
+      const isAsync =
+        // $FlowFixMe[prop-missing]
+        // $FlowFixMe[incompatible-use]
+        typeof callSite.isAsync === 'function' && callSite.isAsync();
       result.push([
         name,
         filename,

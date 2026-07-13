@@ -50,6 +50,7 @@ function useHook(end) {
   } else {
     log = $[1];
   }
+
   return log;
 }
 

@@ -42,13 +42,14 @@ export type Resource<Input, Key, Value> = {
 let readContext;
 if (typeof React.use === 'function') {
   readContext = function (Context: ReactContext<null>) {
+    // eslint-disable-next-line react-hooks-published/rules-of-hooks
     return React.use(Context);
   };
 } else if (
-  typeof (React: any).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED ===
+  typeof (React as any).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED ===
   'object'
 ) {
-  const ReactCurrentDispatcher = (React: any)
+  const ReactCurrentDispatcher = (React as any)
     .__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher;
   readContext = function (Context: ReactContext<null>) {
     const dispatcher = ReactCurrentDispatcher.current;
@@ -78,9 +79,9 @@ const resourceConfigs: Map<Resource<any, any, any>, Config> = new Map();
 function getEntriesForResource(
   resource: any,
 ): Map<any, any> | WeakMap<any, any> {
-  let entriesForResource: Map<any, any> | WeakMap<any, any> = ((entries.get(
+  let entriesForResource: Map<any, any> | WeakMap<any, any> = entries.get(
     resource,
-  ): any): Map<any, any>);
+  ) as any as Map<any, any>;
   if (entriesForResource === undefined) {
     const config = resourceConfigs.get(resource);
     entriesForResource =
@@ -102,12 +103,12 @@ function accessResult<Input, Key, Value>(
     const thenable = fetch(input);
     thenable.then(
       value => {
-        const fulfilledThenable: FulfilledThenable<Value> = (thenable: any);
+        const fulfilledThenable: FulfilledThenable<Value> = thenable as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = value;
       },
       error => {
-        const rejectedThenable: RejectedThenable<Value> = (thenable: any);
+        const rejectedThenable: RejectedThenable<Value> = thenable as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = error;
       },
@@ -141,6 +142,7 @@ export function createResource<Input, Key, Value>(
       const key = hashInput(input);
       const result: Thenable<Value> = accessResult(resource, fetch, input, key);
       if (typeof React.use === 'function') {
+        // eslint-disable-next-line react-hooks-published/rules-of-hooks
         return React.use(result);
       }
 
@@ -169,9 +171,9 @@ export function createResource<Input, Key, Value>(
     write(key: Key, value: Value): void {
       const entriesForResource = getEntriesForResource(resource);
 
-      const fulfilledThenable: FulfilledThenable<Value> = (Promise.resolve(
+      const fulfilledThenable: FulfilledThenable<Value> = Promise.resolve(
         value,
-      ): any);
+      ) as any;
       fulfilledThenable.status = 'fulfilled';
       fulfilledThenable.value = value;
 

@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 import {useMemo} from 'react';
 import {
   typedCapture,

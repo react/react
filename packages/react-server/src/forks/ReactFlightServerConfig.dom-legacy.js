@@ -23,12 +23,26 @@ export type HintCode = any;
 export type HintModel<T: any> = any;
 
 export const supportsRequestStorage = false;
-export const requestStorage: AsyncLocalStorage<Request | void> = (null: any);
+export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
-  (null: any);
+  null as any;
 
 export function createHints(): any {
   return null;
+}
+
+export type FormatContext = null;
+
+export function createRootFormatContext(): FormatContext {
+  return null;
+}
+
+export function getChildFormatContext(
+  parentContext: FormatContext,
+  type: string,
+  props: Object,
+): FormatContext {
+  return parentContext;
 }

@@ -1,4 +1,4 @@
-// @validateNoSetStateInEffects @enableAllowSetStateFromRefsInEffects
+// @validateNoSetStateInEffects @enableAllowSetStateFromRefsInEffects @outputMode:"lint"
 import {useState, useRef, useLayoutEffect} from 'react';
 
 function Tooltip() {

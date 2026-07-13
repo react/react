@@ -28,14 +28,7 @@ class Visitor extends ReactiveFunctionVisitor<Set<BlockId>> {
     if (terminal.kind === 'break' || terminal.kind === 'continue') {
       CompilerError.invariant(seenLabels.has(terminal.target), {
         reason: 'Unexpected break to invalid label',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: stmt.terminal.loc,
-            message: null,
-          },
-        ],
+        loc: stmt.terminal.loc,
       });
     }
   }

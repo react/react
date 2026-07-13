@@ -11,19 +11,6 @@
 import ReactVersion from 'shared/ReactVersion';
 export {ReactVersion as version};
 
-export function renderToString() {
-  return require('./src/server/ReactDOMLegacyServerNode').renderToString.apply(
-    this,
-    arguments,
-  );
-}
-export function renderToStaticMarkup() {
-  return require('./src/server/ReactDOMLegacyServerNode').renderToStaticMarkup.apply(
-    this,
-    arguments,
-  );
-}
-
 export function prerenderToNodeStream() {
   return require('./src/server/react-dom-server.node').prerenderToNodeStream.apply(
     this,

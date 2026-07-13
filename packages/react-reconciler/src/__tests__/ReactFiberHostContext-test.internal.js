@@ -106,10 +106,15 @@ describe('ReactFiberHostContext', () => {
       preloadInstance(instance, type, props) {
         return true;
       },
-      startSuspendingCommit() {},
-      suspendInstance(instance, type, props) {},
-      suspendOnActiveViewTransition(container) {},
-      waitForCommitToBeReady() {
+      startSuspendingCommit() {
+        return null;
+      },
+      suspendInstance(state, instance, type, props) {},
+      suspendOnActiveViewTransition(state, container) {},
+      waitForCommitToBeReady(state, timeoutOffset) {
+        return null;
+      },
+      getSuspendedCommitReason(state, rootContainer) {
         return null;
       },
       supportsMutation: true,

@@ -130,7 +130,12 @@ export function revealCompletedBoundariesWithViewTransitions(
       const idPrefix = '';
       name = '_' + idPrefix + 'T_' + autoNameIdx++ + '_';
     }
-    elementStyle['viewTransitionName'] = name;
+    // If the name isn't valid CSS identifier, base64 encode the name instead.
+    // This doesn't let you select it in custom CSS selectors but it does work in current
+    // browsers.
+    const escapedName =
+      CSS.escape(name) !== name ? 'r-' + btoa(name).replace(/=/g, '') : name;
+    elementStyle['viewTransitionName'] = escapedName;
     shouldStartViewTransition = true;
   }
   try {
@@ -297,6 +302,8 @@ export function revealCompletedBoundariesWithViewTransitions(
                 rect.top < window.innerHeight &&
                 rect.left < window.innerWidth;
               if (inViewport) {
+                // TODO: Use decode() instead of the load event here once the fix in
+                // https://issues.chromium.org/issues/420748301 has propagated fully.
                 const loadingImage = new Promise(resolve => {
                   suspenseyImage.addEventListener('load', resolve);
                   suspenseyImage.addEventListener('error', resolve);
@@ -627,25 +634,7 @@ export function listenToFormSubmissionsForReplaying() {
     event.preventDefault();
 
     // Take a snapshot of the FormData at the time of the event.
-    let formData;
-    if (formDataSubmitter) {
-      // The submitter's value should be included in the FormData.
-      // It should be in the document order in the form.
-      // Since the FormData constructor invokes the formdata event it also
-      // needs to be available before that happens so after construction it's too
-      // late. We use a temporary fake node for the duration of this event.
-      // TODO: FormData takes a second argument that it's the submitter but this
-      // is fairly new so not all browsers support it yet. Switch to that technique
-      // when available.
-      const temp = document.createElement('input');
-      temp.name = formDataSubmitter.name;
-      temp.value = formDataSubmitter.value;
-      formDataSubmitter.parentNode.insertBefore(temp, formDataSubmitter);
-      formData = new FormData(form);
-      temp.parentNode.removeChild(temp);
-    } else {
-      formData = new FormData(form);
-    }
+    const formData = new FormData(form, formDataSubmitter);
 
     // Queue for replaying later. This field could potentially be shared with multiple
     // Reacts on the same page since each one will preventDefault for the next one.

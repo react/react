@@ -170,14 +170,7 @@ export function alignReactiveScopesToBlockScopesHIR(fn: HIRFunction): void {
 
       CompilerError.invariant(!valueBlockNodes.has(fallthrough), {
         reason: 'Expect hir blocks to have unique fallthroughs',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: terminal.loc,
-            message: null,
-          },
-        ],
+        loc: terminal.loc,
       });
       if (node != null) {
         valueBlockNodes.set(fallthrough, node);
@@ -259,14 +252,7 @@ export function alignReactiveScopesToBlockScopesHIR(fn: HIRFunction): void {
           // Transition from block->value block, derive the outer block range
           CompilerError.invariant(fallthrough !== null, {
             reason: `Expected a fallthrough for value block`,
-            description: null,
-            details: [
-              {
-                kind: 'error',
-                loc: terminal.loc,
-                message: null,
-              },
-            ],
+            loc: terminal.loc,
           });
           const fallthroughBlock = fn.body.blocks.get(fallthrough)!;
           const nextId =

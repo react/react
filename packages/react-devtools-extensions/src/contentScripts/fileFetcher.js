@@ -23,7 +23,7 @@ function fetchResource(url) {
     });
   };
 
-  fetch(url, {cache: 'force-cache'}).then(
+  fetch(url, {cache: 'force-cache', signal: AbortSignal.timeout(60000)}).then(
     response => {
       if (response.ok) {
         response

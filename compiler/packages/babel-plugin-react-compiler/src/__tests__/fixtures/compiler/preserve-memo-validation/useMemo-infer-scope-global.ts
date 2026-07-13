@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 
 import {useMemo} from 'react';
 import {CONST_STRING0} from 'shared-runtime';

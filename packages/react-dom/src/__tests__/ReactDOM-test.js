@@ -195,13 +195,10 @@ describe('ReactDOM', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. Instead received: no.',
-        'Expected the last optional `callback` argument to be a function. Instead received: no.',
-      ],
-      {withoutStack: 2},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. Instead received: no.',
+      'Expected the last optional `callback` argument to be a function. Instead received: no.',
+    ]);
 
     await expect(async () => {
       await act(() => {
@@ -211,13 +208,10 @@ describe('ReactDOM', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
-    assertConsoleErrorDev(
-      [
-        "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }",
-        "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }.",
-      ],
-      {withoutStack: 2},
-    );
+    assertConsoleErrorDev([
+      "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }",
+      "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }.",
+    ]);
 
     await expect(async () => {
       await act(() => {
@@ -227,13 +221,10 @@ describe('ReactDOM', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
-        'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
-      ],
-      {withoutStack: 2},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
+      'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
+    ]);
   });
 
   // @gate !disableLegacyMode
@@ -261,13 +252,10 @@ describe('ReactDOM', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. Instead received: no.',
-        'Expected the last optional `callback` argument to be a function. Instead received: no.',
-      ],
-      {withoutStack: 2},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. Instead received: no.',
+      'Expected the last optional `callback` argument to be a function. Instead received: no.',
+    ]);
 
     ReactDOM.render(<A />, myDiv); // Re-mount
     await expect(async () => {
@@ -278,13 +266,10 @@ describe('ReactDOM', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
-    assertConsoleErrorDev(
-      [
-        "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }.",
-        "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }.",
-      ],
-      {withoutStack: 2},
-    );
+    assertConsoleErrorDev([
+      "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }.",
+      "Expected the last optional `callback` argument to be a function. Instead received: { foo: 'bar' }.",
+    ]);
 
     ReactDOM.render(<A />, myDiv); // Re-mount
     await expect(async () => {
@@ -295,13 +280,10 @@ describe('ReactDOM', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
-        'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
-      ],
-      {withoutStack: 2},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
+      'Expected the last optional `callback` argument to be a function. Instead received: Foo { a: 1, b: 2 }.',
+    ]);
   });
 
   it('preserves focus', async () => {
@@ -548,16 +530,23 @@ describe('ReactDOM', () => {
         '    in App (at **)',
       // ReactDOM(App > div > ServerEntry) >>> ReactDOMServer(Child) >>> ReactDOMServer(App2) >>> ReactDOMServer(blink)
       'Invalid ARIA attribute `ariaTypo2`. ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
-        '    in blink (at **)',
+        '    in blink (at **)\n' +
+        '    in App2 (at **)\n' +
+        '    in Child (at **)\n' +
+        '    in ServerEntry (at **)',
       // ReactDOM(App > div > ServerEntry) >>> ReactDOMServer(Child) >>> ReactDOMServer(App2 > Child2 > span)
       'Invalid ARIA attribute `ariaTypo3`. ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
         '    in span (at **)\n' +
         '    in Child2 (at **)\n' +
-        '    in App2 (at **)',
+        '    in App2 (at **)\n' +
+        '    in Child (at **)\n' +
+        '    in ServerEntry (at **)',
       // ReactDOM(App > div > ServerEntry) >>> ReactDOMServer(Child > span)
       'Invalid ARIA attribute `ariaTypo4`. ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
         '    in span (at **)\n' +
-        '    in Child (at **)',
+        '    in Child (at **)\n' +
+        '    in ServerEntry (at **)',
+
       // ReactDOM(App > div > font)
       'Invalid ARIA attribute `ariaTypo5`. ARIA attributes follow the pattern aria-* and must be lowercase.\n' +
         '    in font (at **)\n' +
@@ -775,7 +764,11 @@ describe('ReactDOM', () => {
 
     // @TODO remove this warning check when we loosen the tag nesting restrictions to allow arbitrary tags at the
     // root of the application
-    assertConsoleErrorDev(['In HTML, <head> cannot be a child of <main>']);
+    assertConsoleErrorDev([
+      'In HTML, <head> cannot be a child of <main>.\nThis will cause a hydration error.\n' +
+        '    in head (at **)\n' +
+        '    in App (at **)',
+    ]);
 
     await act(() => {
       root.render(<App phase={1} />);

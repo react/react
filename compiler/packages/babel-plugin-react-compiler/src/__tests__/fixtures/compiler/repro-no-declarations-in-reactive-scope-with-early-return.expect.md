@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions
+// @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 function Component() {
   const items = useItems();
   const filteredItems = useMemo(
@@ -37,7 +37,7 @@ function Component() {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions
+import { c as _c } from "react/compiler-runtime"; // @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 function Component() {
   const $ = _c(6);
   const items = useItems();
@@ -62,7 +62,6 @@ function Component() {
         t1 = t2;
         break bb0;
       }
-
       t0 = filteredItems.map(_temp2);
     }
     $[0] = items;

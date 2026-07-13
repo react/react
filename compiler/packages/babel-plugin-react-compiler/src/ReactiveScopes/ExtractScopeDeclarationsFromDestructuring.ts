@@ -19,7 +19,11 @@ import {
   promoteTemporary,
 } from '../HIR';
 import {clonePlaceToTemporary} from '../HIR/HIRBuilder';
-import {eachPatternOperand, mapPatternOperands} from '../HIR/visitors';
+import {
+  eachInstructionLValueWithKind,
+  eachPatternOperand,
+  mapPatternOperands,
+} from '../HIR/visitors';
 import {
   ReactiveFunctionTransform,
   Transformed,
@@ -113,6 +117,9 @@ class Visitor extends ReactiveFunctionTransform<State> {
   ): Transformed<ReactiveStatement> {
     this.visitInstruction(instruction, state);
 
+    let instructionsToProcess: Array<ReactiveInstruction> = [instruction];
+    let result: Transformed<ReactiveStatement> = {kind: 'keep'};
+
     if (instruction.value.kind === 'Destructure') {
       const transformed = transformDestructuring(
         state,
@@ -120,7 +127,8 @@ class Visitor extends ReactiveFunctionTransform<State> {
         instruction.value,
       );
       if (transformed) {
-        return {
+        instructionsToProcess = transformed;
+        result = {
           kind: 'replace-many',
           value: transformed.map(instruction => ({
             kind: 'instruction',
@@ -129,7 +137,17 @@ class Visitor extends ReactiveFunctionTransform<State> {
         };
       }
     }
-    return {kind: 'keep'};
+
+    // Update state.declared with declarations from the instruction(s)
+    for (const instr of instructionsToProcess) {
+      for (const [place, kind] of eachInstructionLValueWithKind(instr)) {
+        if (kind !== InstructionKind.Reassign) {
+          state.declared.add(place.identifier.declarationId);
+        }
+      }
+    }
+
+    return result;
   }
 }
 
@@ -144,10 +162,13 @@ function transformDestructuring(
     const isDeclared = state.declared.has(place.identifier.declarationId);
     if (isDeclared) {
       reassigned.add(place.identifier.id);
+    } else {
+      hasDeclaration = true;
     }
-    hasDeclaration ||= !isDeclared;
   }
-  if (reassigned.size === 0 || !hasDeclaration) {
+  if (!hasDeclaration) {
+    // all reassignments
+    destructure.lvalue.kind = InstructionKind.Reassign;
     return null;
   }
   /*

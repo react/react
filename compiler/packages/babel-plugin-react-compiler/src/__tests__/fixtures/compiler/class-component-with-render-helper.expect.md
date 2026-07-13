@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 class Component {
   _renderMessage = () => {
     const Message = () => {
@@ -22,7 +22,7 @@ class Component {
 ## Code
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 class Component {
   _renderMessage = () => {
     const Message = () => {

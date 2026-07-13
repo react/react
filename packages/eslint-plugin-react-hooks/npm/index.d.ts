@@ -5,4 +5,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-export * from './cjs/eslint-plugin-react-hooks';
+import reactHooks from './cjs/eslint-plugin-react-hooks';
+
+export = reactHooks;

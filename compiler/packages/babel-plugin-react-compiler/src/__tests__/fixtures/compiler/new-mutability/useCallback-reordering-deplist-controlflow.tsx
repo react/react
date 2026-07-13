@@ -1,4 +1,4 @@
-// @enableNewMutationAliasingModel
+// @enableNewMutationAliasingModel @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useCallback} from 'react';
 import {Stringify} from 'shared-runtime';
 

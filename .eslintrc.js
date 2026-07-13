@@ -331,9 +331,12 @@ module.exports = {
         'packages/react-server-dom-turbopack/**/*.js',
         'packages/react-server-dom-parcel/**/*.js',
         'packages/react-server-dom-fb/**/*.js',
+        'packages/react-flight-server-fb/**/*.js',
+        'packages/react-server-dom-unbundled/**/*.js',
         'packages/react-test-renderer/**/*.js',
         'packages/react-debug-tools/**/*.js',
         'packages/react-devtools-extensions/**/*.js',
+        'packages/react-devtools-facade/**/*.js',
         'packages/react-devtools-timeline/**/*.js',
         'packages/react-native-renderer/**/*.js',
         'packages/eslint-plugin-react-hooks/**/*.js',
@@ -462,6 +465,7 @@ module.exports = {
       globals: {
         nativeFabricUIManager: 'readonly',
         RN$enableMicrotasksInReact: 'readonly',
+        RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
       },
     },
     {
@@ -506,7 +510,6 @@ module.exports = {
         __IS_FIREFOX__: 'readonly',
         __IS_EDGE__: 'readonly',
         __IS_NATIVE__: 'readonly',
-        __IS_INTERNAL_MCP_BUILD__: 'readonly',
         __IS_INTERNAL_VERSION__: 'readonly',
         chrome: 'readonly',
       },
@@ -515,6 +518,14 @@ module.exports = {
       files: ['packages/react-devtools-shared/**/*.js'],
       globals: {
         __IS_INTERNAL_VERSION__: 'readonly',
+      },
+    },
+    {
+      files: ['packages/react-devtools-*/**/*.js'],
+      excludedFiles: '**/__tests__/**/*.js',
+      plugins: ['eslint-plugin-react-hooks-published'],
+      rules: {
+        'react-hooks-published/rules-of-hooks': ERROR,
       },
     },
     {
@@ -557,7 +568,9 @@ module.exports = {
     $Shape: 'readonly',
     CallSite: 'readonly',
     ConsoleTask: 'readonly', // TOOD: Figure out what the official name of this will be.
+    Readonly: 'readonly',
     ReturnType: 'readonly',
+    AggregateError: 'readonly',
     AnimationFrameID: 'readonly',
     WeakRef: 'readonly',
     // For Flow type annotation. Only `BigInt` is valid at runtime.
@@ -571,6 +584,8 @@ module.exports = {
     CopyInspectedElementPath: 'readonly',
     DOMHighResTimeStamp: 'readonly',
     EventListener: 'readonly',
+    // Flow type
+    FormDataEntryValue: 'readonly',
     Iterable: 'readonly',
     AsyncIterable: 'readonly',
     $AsyncIterable: 'readonly',
@@ -584,6 +599,7 @@ module.exports = {
     mixin$Animatable: 'readonly',
     MouseEventHandler: 'readonly',
     NavigateEvent: 'readonly',
+    Partial: 'readonly',
     PerformanceMeasureOptions: 'readonly',
     PropagationPhases: 'readonly',
     PropertyDescriptor: 'readonly',
@@ -606,6 +622,7 @@ module.exports = {
     ReadableStreamReader: 'readonly',
     RequestInfo: 'readonly',
     RequestOptions: 'readonly',
+    Required: 'readonly',
     StoreAsGlobal: 'readonly',
     symbol: 'readonly',
     SyntheticEvent: 'readonly',
@@ -617,6 +634,7 @@ module.exports = {
     FinalizationRegistry: 'readonly',
     Exclude: 'readonly',
     Omit: 'readonly',
+    Pick: 'readonly',
     Keyframe: 'readonly',
     PropertyIndexedKeyframes: 'readonly',
     KeyframeAnimationOptions: 'readonly',
@@ -626,6 +644,7 @@ module.exports = {
     FocusOptions: 'readonly',
     OptionalEffectTiming: 'readonly',
 
+    __REACT_ROOT_PATH_TEST__: 'readonly',
     spyOnDev: 'readonly',
     spyOnDevAndProd: 'readonly',
     spyOnProd: 'readonly',

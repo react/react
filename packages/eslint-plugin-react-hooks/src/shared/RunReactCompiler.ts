@@ -6,31 +6,129 @@
  */
 /* eslint-disable no-for-of-loops/no-for-of-loops */
 
-import {transformFromAstSync, traverse} from '@babel/core';
+import {transformFromAstSync} from '@babel/core';
 import {parse as babelParse} from '@babel/parser';
-import {Directive, File} from '@babel/types';
-// @ts-expect-error: no types available
-import PluginProposalPrivateMethods from '@babel/plugin-proposal-private-methods';
+import {File} from '@babel/types';
 import BabelPluginReactCompiler, {
   parsePluginOptions,
   validateEnvironmentConfig,
-  OPT_OUT_DIRECTIVES,
   type PluginOptions,
   Logger,
   LoggerEvent,
 } from 'babel-plugin-react-compiler';
 import type {SourceCode} from 'eslint';
-import {SourceLocation} from 'estree';
+import type * as ESTree from 'estree';
 import * as HermesParser from 'hermes-parser';
 import {isDeepStrictEqual} from 'util';
 import type {ParseResult} from '@babel/parser';
+import {
+  eprh_enableUseKeyedStateCompilerLint,
+  eprh_enableVerboseNoSetStateInEffectCompilerLint,
+  eprh_enableExhaustiveEffectDependenciesCompilerLint,
+} from 'shared/ReactFeatureFlags';
 
-const COMPILER_OPTIONS: Partial<PluginOptions> = {
-  noEmit: true,
+// Pattern for component names: starts with uppercase letter
+const COMPONENT_NAME_PATTERN = /^[A-Z]/;
+// Pattern for hook names: starts with 'use' followed by uppercase letter or digit
+const HOOK_NAME_PATTERN = /^use[A-Z0-9]/;
+
+/**
+ * Quick heuristic using ESLint's already-parsed AST to detect if the file
+ * may contain React components or hooks based on function naming patterns.
+ * Only checks top-level declarations since components/hooks are declared at module scope.
+ * Returns true if compilation should proceed, false to skip.
+ */
+function mayContainReactCode(sourceCode: SourceCode): boolean {
+  const ast = sourceCode.ast;
+
+  // Only check top-level statements - components/hooks are declared at module scope
+  for (const node of ast.body) {
+    if (checkTopLevelNode(node)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function checkTopLevelNode(node: ESTree.Node): boolean {
+  // Handle Flow component/hook declarations (hermes-eslint produces these node types)
+  // @ts-expect-error not part of ESTree spec
+  if (node.type === 'ComponentDeclaration' || node.type === 'HookDeclaration') {
+    return true;
+  }
+
+  // Handle: export function MyComponent() {} or export const useHook = () => {}
+  if (node.type === 'ExportNamedDeclaration') {
+    const decl = (node as ESTree.ExportNamedDeclaration).declaration;
+    if (decl != null) {
+      return checkTopLevelNode(decl);
+    }
+    return false;
+  }
+
+  // Handle: export default function MyComponent() {} or export default () => {}
+  if (node.type === 'ExportDefaultDeclaration') {
+    const decl = (node as ESTree.ExportDefaultDeclaration).declaration;
+    // Anonymous default function export - compile conservatively
+    if (
+      decl.type === 'FunctionExpression' ||
+      decl.type === 'ArrowFunctionExpression' ||
+      (decl.type === 'FunctionDeclaration' &&
+        (decl as ESTree.FunctionDeclaration).id == null)
+    ) {
+      return true;
+    }
+    return checkTopLevelNode(decl as ESTree.Node);
+  }
+
+  // Handle: function MyComponent() {}
+  // Also handles Flow component/hook syntax transformed to FunctionDeclaration with flags
+  if (node.type === 'FunctionDeclaration') {
+    // Check for Hermes-added flags indicating Flow component/hook syntax
+    if ('__componentDeclaration' in node || '__hookDeclaration' in node) {
+      return true;
+    }
+    const id = (node as ESTree.FunctionDeclaration).id;
+    if (id != null) {
+      const name = id.name;
+      if (COMPONENT_NAME_PATTERN.test(name) || HOOK_NAME_PATTERN.test(name)) {
+        return true;
+      }
+    }
+  }
+
+  // Handle: const MyComponent = () => {} or const useHook = function() {}
+  if (node.type === 'VariableDeclaration') {
+    for (const decl of (node as ESTree.VariableDeclaration).declarations) {
+      if (decl.id.type === 'Identifier') {
+        const init = decl.init;
+        if (
+          init != null &&
+          (init.type === 'ArrowFunctionExpression' ||
+            init.type === 'FunctionExpression')
+        ) {
+          const name = decl.id.name;
+          if (
+            COMPONENT_NAME_PATTERN.test(name) ||
+            HOOK_NAME_PATTERN.test(name)
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+const COMPILER_OPTIONS: PluginOptions = {
+  outputMode: 'lint',
   panicThreshold: 'none',
   // Don't emit errors on Flow suppressions--Flow already gave a signal
   flowSuppressions: false,
-  environment: validateEnvironmentConfig({
+  environment: {
     validateRefAccessDuringRender: true,
     validateNoSetStateInRender: true,
     validateNoSetStateInEffects: true,
@@ -43,20 +141,21 @@ const COMPILER_OPTIONS: Partial<PluginOptions> = {
     validateNoCapitalizedCalls: [],
     validateHooksUsage: true,
     validateNoDerivedComputationsInEffects: true,
-  }),
+
+    // Experimental options controlled by ReactFeatureFlags
+    enableUseKeyedState: eprh_enableUseKeyedStateCompilerLint,
+    enableVerboseNoSetStateInEffect:
+      eprh_enableVerboseNoSetStateInEffectCompilerLint,
+    validateExhaustiveEffectDependencies:
+      eprh_enableExhaustiveEffectDependenciesCompilerLint,
+  },
 };
 
-export type UnusedOptOutDirective = {
-  loc: SourceLocation;
-  range: [number, number];
-  directive: string;
-};
 export type RunCacheEntry = {
   sourceCode: string;
   filename: string;
   userOpts: PluginOptions;
   flowSuppressions: Array<{line: number; code: string}>;
-  unusedOptOutDirectives: Array<UnusedOptOutDirective>;
   events: Array<LoggerEvent>;
 };
 
@@ -88,32 +187,13 @@ function getFlowSuppressions(
   return results;
 }
 
-function filterUnusedOptOutDirectives(
-  directives: ReadonlyArray<Directive>,
-): Array<UnusedOptOutDirective> {
-  const results: Array<UnusedOptOutDirective> = [];
-  for (const directive of directives) {
-    if (
-      OPT_OUT_DIRECTIVES.has(directive.value.value) &&
-      directive.loc != null
-    ) {
-      results.push({
-        loc: directive.loc,
-        directive: directive.value.value,
-        range: [directive.start!, directive.end!],
-      });
-    }
-  }
-  return results;
-}
-
 function runReactCompilerImpl({
   sourceCode,
   filename,
   userOpts,
 }: RunParams): RunCacheEntry {
   // Compat with older versions of eslint
-  const options: PluginOptions = parsePluginOptions({
+  const options = parsePluginOptions({
     ...COMPILER_OPTIONS,
     ...userOpts,
     environment: {
@@ -126,7 +206,6 @@ function runReactCompilerImpl({
     filename,
     userOpts,
     flowSuppressions: [],
-    unusedOptOutDirectives: [],
     events: [],
   };
   const userLogger: Logger | null = options.logger;
@@ -144,6 +223,7 @@ function runReactCompilerImpl({
   }
 
   let babelAST: ParseResult<File> | null = null;
+
   if (filename.endsWith('.tsx') || filename.endsWith('.ts')) {
     try {
       babelAST = babelParse(sourceCode.text, {
@@ -174,36 +254,11 @@ function runReactCompilerImpl({
         filename,
         highlightCode: false,
         retainLines: true,
-        plugins: [
-          [PluginProposalPrivateMethods, {loose: true}],
-          [BabelPluginReactCompiler, options],
-        ],
+        plugins: [[BabelPluginReactCompiler, options]],
         sourceType: 'module',
         configFile: false,
         babelrc: false,
       });
-
-      if (results.events.filter(e => e.kind === 'CompileError').length === 0) {
-        traverse(babelAST, {
-          FunctionDeclaration(path) {
-            results.unusedOptOutDirectives.push(
-              ...filterUnusedOptOutDirectives(path.node.body.directives),
-            );
-          },
-          ArrowFunctionExpression(path) {
-            if (path.node.body.type === 'BlockStatement') {
-              results.unusedOptOutDirectives.push(
-                ...filterUnusedOptOutDirectives(path.node.body.directives),
-              );
-            }
-          },
-          FunctionExpression(path) {
-            results.unusedOptOutDirectives.push(
-              ...filterUnusedOptOutDirectives(path.node.body.directives),
-            );
-          },
-        });
-      }
     } catch (err) {
       /* errors handled by injected logger */
     }
@@ -264,6 +319,24 @@ export default function runReactCompiler({
     isDeepStrictEqual(entry.userOpts, userOpts)
   ) {
     return entry;
+  }
+
+  // Quick heuristic: skip files that don't appear to contain React code.
+  // We still cache the empty result so subsequent rules don't re-run the check.
+  if (!mayContainReactCode(sourceCode)) {
+    const emptyResult: RunCacheEntry = {
+      sourceCode: sourceCode.text,
+      filename,
+      userOpts,
+      flowSuppressions: [],
+      events: [],
+    };
+    if (entry != null) {
+      Object.assign(entry, emptyResult);
+    } else {
+      cache.push(filename, emptyResult);
+    }
+    return {...emptyResult};
   }
 
   const runEntry = runReactCompilerImpl({

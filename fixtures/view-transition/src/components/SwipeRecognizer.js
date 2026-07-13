@@ -114,15 +114,16 @@ export default function SwipeRecognizer({
     );
   }
   function onGestureEnd(changed) {
-    // Reset scroll
-    if (changed) {
-      // Trigger side-effects
-      startTransition(action);
-    }
+    // We cancel the gesture before invoking side-effects to allow the gesture lane to fully commit
+    // before scheduling new updates.
     if (activeGesture.current !== null) {
       const cancelGesture = activeGesture.current;
       activeGesture.current = null;
       cancelGesture();
+    }
+    if (changed) {
+      // Trigger side-effects
+      startTransition(action);
     }
   }
   function onScrollEnd() {

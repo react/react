@@ -34,7 +34,6 @@ function Component(t0) {
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     a = "a";
-
     const [t2, t3] = [null, null];
     t1 = t3;
     a = t2;

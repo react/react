@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validateNoSetStateInEffects
+// @validateNoSetStateInEffects @outputMode:"lint"
 import {useState, useRef, useEffect} from 'react';
 
 function Tooltip() {
@@ -27,28 +27,18 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @validateNoSetStateInEffects
+// @validateNoSetStateInEffects @outputMode:"lint"
 import { useState, useRef, useEffect } from "react";
 
 function Tooltip() {
-  const $ = _c(2);
   const ref = useRef(null);
   const [tooltipHeight, setTooltipHeight] = useState(0);
-  let t0;
-  let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = () => {
-      const { height } = ref.current.getBoundingClientRect();
-      setTooltipHeight(height);
-    };
-    t1 = [];
-    $[0] = t0;
-    $[1] = t1;
-  } else {
-    t0 = $[0];
-    t1 = $[1];
-  }
-  useEffect(t0, t1);
+
+  useEffect(() => {
+    const { height } = ref.current.getBoundingClientRect();
+    setTooltipHeight(height);
+  }, []);
+
   return tooltipHeight;
 }
 

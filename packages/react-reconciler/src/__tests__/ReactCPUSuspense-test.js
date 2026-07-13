@@ -1,3 +1,5 @@
+/* eslint-disable react/jsx-boolean-value */
+
 let React;
 let ReactNoop;
 let Scheduler;
@@ -122,9 +124,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         <>
           <Text text="Outer" />
           <div>
-            <Suspense
-              unstable_expectedLoadTime={2000}
-              fallback={<Text text="Loading..." />}>
+            <Suspense defer fallback={<Text text="Loading..." />}>
               <Text text="Inner" />
             </Suspense>
           </div>
@@ -164,9 +164,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         <>
           <Text text="Outer" />
           <div>
-            <Suspense
-              unstable_expectedLoadTime={2000}
-              fallback={<Text text="Loading..." />}>
+            <Suspense defer fallback={<Text text="Loading..." />}>
               <Text text={`Inner [${count}]`} />
             </Suspense>
           </div>
@@ -209,9 +207,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         <>
           <Text text="Outer" />
           <div>
-            <Suspense
-              unstable_expectedLoadTime={2000}
-              fallback={<Text text="Loading..." />}>
+            <Suspense defer fallback={<Text text="Loading..." />}>
               <AsyncText text="Inner" />
             </Suspense>
           </div>
@@ -263,14 +259,10 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         <>
           <Text text="A" />
           <div>
-            <Suspense
-              unstable_expectedLoadTime={2000}
-              fallback={<Text text="Loading B..." />}>
+            <Suspense defer fallback={<Text text="Loading B..." />}>
               <Text text="B" />
               <div>
-                <Suspense
-                  unstable_expectedLoadTime={2000}
-                  fallback={<Text text="Loading C..." />}>
+                <Suspense defer fallback={<Text text="Loading C..." />}>
                   <Text text="C" />
                 </Suspense>
               </div>

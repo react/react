@@ -86,6 +86,35 @@ export function defaultModuleTypeProvider(
         },
       };
     }
+    case '@tanstack/react-virtual': {
+      return {
+        kind: 'object',
+        properties: {
+          /*
+           * Many of the properties of `useVirtualizer()`'s return value are incompatible, so we mark the entire hook
+           * as incompatible
+           */
+          useVirtualizer: {
+            kind: 'hook',
+            positionalParams: [],
+            restParam: Effect.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            knownIncompatible: `TanStack Virtual's \`useVirtualizer()\` API returns functions that cannot be memoized safely`,
+          },
+          /*
+           * `useWindowVirtualizer()` wraps the same virtualizer instance as `useVirtualizer()`, so its return value
+           * is incompatible for the same reason and we mark the entire hook as incompatible
+           */
+          useWindowVirtualizer: {
+            kind: 'hook',
+            positionalParams: [],
+            restParam: Effect.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            knownIncompatible: `TanStack Virtual's \`useWindowVirtualizer()\` API returns functions that cannot be memoized safely`,
+          },
+        },
+      };
+    }
   }
   return null;
 }

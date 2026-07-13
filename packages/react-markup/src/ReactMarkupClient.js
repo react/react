@@ -85,15 +85,14 @@ export function experimental_renderToHTML(
       undefined,
       undefined,
       undefined,
-      undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abortFizz(fizzRequest, (signal: any).reason);
+        abortFizz(fizzRequest, (signal as any).reason);
       } else {
         const listener = () => {
-          abortFizz(fizzRequest, (signal: any).reason);
+          abortFizz(fizzRequest, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

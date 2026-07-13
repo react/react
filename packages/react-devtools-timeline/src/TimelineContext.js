@@ -31,6 +31,7 @@ import type {
 export type Context = {
   file: File | null,
   inMemoryTimelineData: Array<TimelineData> | null,
+  isPerformanceTracksSupported: boolean,
   isTimelineSupported: boolean,
   searchInputContainerRef: RefObject,
   setFile: (file: File | null) => void,
@@ -40,7 +41,7 @@ export type Context = {
 };
 
 const TimelineContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 TimelineContext.displayName = 'TimelineContext';
 
@@ -63,6 +64,18 @@ function TimelineContextController({children}: Props): React.Node {
     },
     function getState() {
       return store.rootSupportsTimelineProfiling;
+    },
+  );
+
+  const isPerformanceTracksSupported = useSyncExternalStore<boolean>(
+    function subscribe(callback) {
+      store.addListener('rootSupportsPerformanceTracks', callback);
+      return function unsubscribe() {
+        store.removeListener('rootSupportsPerformanceTracks', callback);
+      };
+    },
+    function getState() {
+      return store.rootSupportsPerformanceTracks;
     },
   );
 
@@ -135,6 +148,7 @@ function TimelineContextController({children}: Props): React.Node {
     () => ({
       file,
       inMemoryTimelineData,
+      isPerformanceTracksSupported,
       isTimelineSupported,
       searchInputContainerRef,
       setFile,
@@ -145,6 +159,7 @@ function TimelineContextController({children}: Props): React.Node {
     [
       file,
       inMemoryTimelineData,
+      isPerformanceTracksSupported,
       isTimelineSupported,
       setFile,
       viewState,

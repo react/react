@@ -78,32 +78,26 @@ describe('forwardRef', () => {
 
   it('should warn if not provided a callback during creation', () => {
     React.forwardRef(undefined);
-    assertConsoleErrorDev(
-      ['forwardRef requires a render function but was given undefined.'],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef requires a render function but was given undefined.',
+    ]);
 
     React.forwardRef(null);
-    assertConsoleErrorDev(
-      ['forwardRef requires a render function but was given null.'],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleErrorDev([
+      'forwardRef requires a render function but was given null.',
+    ]);
 
     React.forwardRef('foo');
-    assertConsoleErrorDev(
-      ['forwardRef requires a render function but was given string.'],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef requires a render function but was given string.',
+    ]);
   });
 
   it('should warn if no render function is provided', () => {
     React.forwardRef();
-    assertConsoleErrorDev(
-      ['forwardRef requires a render function but was given undefined.'],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef requires a render function but was given undefined.',
+    ]);
   });
 
   it('should warn if the render function provided has defaultProps attributes', () => {
@@ -113,13 +107,10 @@ describe('forwardRef', () => {
     renderWithDefaultProps.defaultProps = {};
 
     React.forwardRef(renderWithDefaultProps);
-    assertConsoleErrorDev(
-      [
-        'forwardRef render functions do not support defaultProps. ' +
-          'Did you accidentally pass a React component?',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef render functions do not support defaultProps. ' +
+        'Did you accidentally pass a React component?',
+    ]);
   });
 
   it('should not warn if the render function provided does not use any parameter', () => {
@@ -132,13 +123,10 @@ describe('forwardRef', () => {
     const arityOfOne = props => <div {...props} />;
 
     React.forwardRef(arityOfOne);
-    assertConsoleErrorDev(
-      [
-        'forwardRef render functions accept exactly two parameters: props and ref. ' +
-          'Did you forget to use the ref parameter?',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef render functions accept exactly two parameters: props and ref. ' +
+        'Did you forget to use the ref parameter?',
+    ]);
   });
 
   it('should not warn if the render function provided use exactly two parameters', () => {
@@ -150,13 +138,10 @@ describe('forwardRef', () => {
     const arityOfThree = (props, ref, x) => <div {...props} ref={ref} x={x} />;
 
     React.forwardRef(arityOfThree);
-    assertConsoleErrorDev(
-      [
-        'forwardRef render functions accept exactly two parameters: props and ref. ' +
-          'Any additional parameter will be undefined.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef render functions accept exactly two parameters: props and ref. ' +
+        'Any additional parameter will be undefined.',
+    ]);
   });
 
   it('should skip forwardRef in the stack if neither displayName nor name are present', async () => {
@@ -394,13 +379,10 @@ describe('forwardRef', () => {
         return null;
       }),
     );
-    assertConsoleErrorDev(
-      [
-        'forwardRef requires a render function but received a `memo` ' +
-          'component. Instead of forwardRef(memo(...)), use ' +
-          'memo(forwardRef(...)).',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'forwardRef requires a render function but received a `memo` ' +
+        'component. Instead of forwardRef(memo(...)), use ' +
+        'memo(forwardRef(...)).',
+    ]);
   });
 });

@@ -53,7 +53,6 @@ export default function ContextMenuContainer({
       position={position}
       hide={hide}
       items={items}
-      ref={ref}
     />
   );
 }

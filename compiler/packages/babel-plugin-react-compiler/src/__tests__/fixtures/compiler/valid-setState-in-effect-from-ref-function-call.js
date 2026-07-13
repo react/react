@@ -1,4 +1,4 @@
-// @validateNoSetStateInEffects @enableAllowSetStateFromRefsInEffects
+// @validateNoSetStateInEffects @enableAllowSetStateFromRefsInEffects @outputMode:"lint"
 import {useState, useRef, useEffect} from 'react';
 
 function Component() {

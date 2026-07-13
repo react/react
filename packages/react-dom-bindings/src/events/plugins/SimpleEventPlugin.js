@@ -27,6 +27,7 @@ import {
   SyntheticWheelEvent,
   SyntheticClipboardEvent,
   SyntheticPointerEvent,
+  SyntheticSubmitEvent,
   SyntheticToggleEvent,
 } from '../../events/SyntheticEvent';
 
@@ -75,7 +76,7 @@ function extractEvents(
       // non-printable. One would expect Tab to be as well (but it isn't).
       // TODO: Fixed in https://bugzilla.mozilla.org/show_bug.cgi?id=968056. Can
       // probably remove.
-      if (getEventCharCode(((nativeEvent: any): KeyboardEvent)) === 0) {
+      if (getEventCharCode(nativeEvent as any as KeyboardEvent) === 0) {
         return;
       }
     /* falls through */
@@ -162,6 +163,9 @@ function extractEvents(
     case 'pointerup':
       SyntheticEventCtor = SyntheticPointerEvent;
       break;
+    case 'submit':
+      SyntheticEventCtor = SyntheticSubmitEvent;
+      break;
     case 'toggle':
     case 'beforetoggle':
       // MDN claims <details> should not receive ToggleEvent contradicting the spec: https://html.spec.whatwg.org/multipage/indices.html#event-toggle
@@ -180,7 +184,7 @@ function extractEvents(
     const listeners = accumulateEventHandleNonManagedNodeListeners(
       // TODO: this cast may not make sense for events like
       // "focus" where React listens to e.g. "focusin".
-      ((reactEventType: any): DOMEventName),
+      reactEventType as any as DOMEventName,
       targetContainer,
       inCapturePhase,
     );

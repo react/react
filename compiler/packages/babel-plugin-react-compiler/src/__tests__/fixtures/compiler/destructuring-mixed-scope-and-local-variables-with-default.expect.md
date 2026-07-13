@@ -75,7 +75,6 @@ function Component(props) {
   let t0;
   if ($[0] !== post) {
     const allUrls = [];
-
     const { media: t1, comments: t2, urls: t3 } = post;
     const media = t1 === undefined ? null : t1;
     let t4;
@@ -102,7 +101,6 @@ function Component(props) {
         if (!comments.length) {
           return;
         }
-
         console.log(comments.length);
       };
       $[6] = comments.length;
@@ -111,7 +109,6 @@ function Component(props) {
       t6 = $[7];
     }
     const onClick = t6;
-
     allUrls.push(...urls);
     t0 = <Stringify media={media} allUrls={allUrls} onClick={onClick} />;
     $[0] = post;

@@ -22,6 +22,7 @@
   flex: 1 1 35%;
   overflow-x: hidden;
   overflow-y: auto;
+  border-left: 1px solid var(--color-border);
 }
 
 .ResizeBarWrapper {
@@ -55,6 +56,7 @@
 
   .InspectedElementWrapper {
     flex: 1 1 50%;
+    border-left: none;
   }
 
   .ResizeBar {

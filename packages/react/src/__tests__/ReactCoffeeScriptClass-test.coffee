@@ -539,15 +539,11 @@ describe 'ReactCoffeeScriptClass', ->
 
     expect(-> ref.current.replaceState {}).toThrow()
     assertConsoleWarnDev([
-      'replaceState(...) is deprecated in plain JavaScript React classes.
-       Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236).'
-    ], {withoutStack: true})
+      'replaceState(...) is deprecated in plain JavaScript React classes. Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236).'])
 
     expect(-> ref.current.isMounted()).toThrow()
     assertConsoleWarnDev([
-      'isMounted(...) is deprecated in plain JavaScript React classes.
-       Instead, make sure to clean up subscriptions and pending requests in componentWillUnmount to prevent memory leaks.',
-    ], {withoutStack: true})
+      'isMounted(...) is deprecated in plain JavaScript React classes. Instead, make sure to clean up subscriptions and pending requests in componentWillUnmount to prevent memory leaks.'])
 
   if !featureFlags.disableLegacyContext
     it 'supports this.context passed via getChildContext', ->

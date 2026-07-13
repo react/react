@@ -9,4 +9,3 @@ export {default as analyseFunctions} from './AnalyseFunctions';
 export {dropManualMemoization} from './DropManualMemoization';
 export {inferReactivePlaces} from './InferReactivePlaces';
 export {inlineImmediatelyInvokedFunctionExpressions} from './InlineImmediatelyInvokedFunctionExpressions';
-export {inferEffectDependencies} from './InferEffectDependencies';

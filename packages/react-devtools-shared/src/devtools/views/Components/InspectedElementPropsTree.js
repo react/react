@@ -17,7 +17,11 @@ import NewKeyValue from './NewKeyValue';
 import {alphaSortEntries, serializeDataForCopy} from '../utils';
 import Store from '../../store';
 import styles from './InspectedElementSharedStyles.css';
-import {ElementTypeClass} from 'react-devtools-shared/src/frontend/types';
+import {
+  ElementTypeClass,
+  ElementTypeSuspense,
+  ElementTypeActivity,
+} from 'react-devtools-shared/src/frontend/types';
 import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
 
 import type {InspectedElement} from 'react-devtools-shared/src/frontend/types';
@@ -50,7 +54,12 @@ export default function InspectedElementPropsTree({
   const canDeletePaths =
     type === ElementTypeClass || canEditFunctionPropsDeletePaths;
   const canEditValues =
-    !readOnly && (type === ElementTypeClass || canEditFunctionProps);
+    !readOnly &&
+    (type === ElementTypeClass || canEditFunctionProps) &&
+    // Make it read-only for Suspense to make it a bit cleaner. It's not
+    // useful to edit children anyway.
+    type !== ElementTypeSuspense &&
+    type !== ElementTypeActivity;
   const canRenamePaths =
     type === ElementTypeClass || canEditFunctionPropsRenamePaths;
 

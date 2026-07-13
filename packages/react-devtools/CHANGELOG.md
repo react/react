@@ -4,6 +4,58 @@
 
 ---
 
+### 7.0.1
+October 20, 2025
+
+* Various UI improvements to experimental Suspense tab ([sebmarkbage](https://github.com/sebmarkbage) & [eps1lon](https://github.com/eps1lon))
+* devtools: fix ellipsis truncation for key values ([sophiebits](https://github.com/sophiebits) in [#34796](https://github.com/facebook/react/pull/34796))
+* fix(devtools): remove duplicated "Display density" field in General settings ([Anatole-Godard](https://github.com/Anatole-Godard) in [#34792](https://github.com/facebook/react/pull/34792))
+
+---
+
+### 7.0.0
+Oct 2, 2025
+
+Add a "suspended by" section showing all causes of why the inspected element suspended. This includes:
+
+- `await` in Server Components  
+- `React.lazy`  
+- `use()`  
+- suspensey images, CSS, and fonts
+
+Add a Code Editor Sidebar Pane in the Chrome Sources Tab (@sebmarkbage [#33968](https://github.com/facebook/react/pull/33968), [#33987](https://github.com/facebook/react/pull/33987), [#33988](https://github.com/facebook/react/pull/33988))  
+
+Add Option to Open Local Files directly in External Editor (@sebmarkbage [#33983](https://github.com/facebook/react/pull/33983), [#33985](https://github.com/facebook/react/pull/33985), [#33965](https://github.com/facebook/react/pull/33965))  
+
+#### Other changes
+
+- Allow inspection of React tree before streaming has finished (@eps1lon [#34360](https://github.com/facebook/react/pull/34360))  
+- Always attempt to mount dehydrated roots (@eps1lon [#34209](https://github.com/facebook/react/pull/34209))  
+- Show `name` prop of Suspense / Activity in the Components Tree view (@sebmarkbage [#34135](https://github.com/facebook/react/pull/34135))  
+- 1st class support of used Thenables (@sebmarkbage, @eps1lon: [#32989](https://github.com/facebook/react/pull/32989), [#34097](https://github.com/facebook/react/pull/34097))  
+- Allow inspecting cause, name, message, stack of Errors in props (@eps1lon [#33023](https://github.com/facebook/react/pull/33023))  
+- Allow Introspection of React Elements and React.lazy (@sebmarkbage [#34129](https://github.com/facebook/react/pull/34129))  
+- Fix "View source" for sources with URLs that aren't normalized (@eps1lon [#32951](https://github.com/facebook/react/pull/32951))  
+- Fix symbolication with Index Source Maps (@eps1lon [#34300](https://github.com/facebook/react/pull/34300))  
+- Ignore List Stack Traces (@sebmarkbage [#34210](https://github.com/facebook/react/pull/34210))  
+- Linkify Source View (@sebmarkbage [#33954](https://github.com/facebook/react/pull/33954))  
+- Only show state for ClassComponents (@sebmarkbage [#34091](https://github.com/facebook/react/pull/34091))  
+- Show Owner Stacks in "rendered by" View (@sebmarkbage [#34130](https://github.com/facebook/react/pull/34130))  
+- Stop mounting empty roots (@eps1lon [#34467](https://github.com/facebook/react/pull/34467))  
+- Show changed hooks names in the Profiler tab (@piotrski [#31398](https://github.com/facebook/react/pull/31398))  
+- Display native tag for host components for Native (@ruslan [#32762](https://github.com/facebook/react/pull/32762))  
+- Static Components panel layout (@ruslan [#33696](https://github.com/facebook/react/pull/33696), [#33517](https://github.com/facebook/react/pull/33517), [#34088](https://github.com/facebook/react/pull/34088))  
+- Add Badge to Owners and sometimes stack traces (@sebmarkbage [#34106](https://github.com/facebook/react/pull/34106))  
+- Make a non-editable name of KeyValue clickable ([34095](https://github.com/facebook/react/pull/34095))  
+- Only inspect elements on left mouseclick (@eps1lon [#34361](https://github.com/facebook/react/pull/34361))  
+- Rerender when the browser theme changes (@sebmarkbage [#33992](https://github.com/facebook/react/pull/33992))  
+- Stop using native `title` for buttons/icons (@eps1lon [#34379](https://github.com/facebook/react/pull/34379))  
+- Style clickable Owner components with angle brackets and bold (@sebmarkbage [#34096](https://github.com/facebook/react/pull/34096))  
+- Swap Components tab layout based on container size (@eps1lon [#34035](https://github.com/facebook/react/pull/34035))  
+- Use Visually Lighter Skeletons (@sebmarkbage [#34185](https://github.com/facebook/react/pull/34185))
+
+---
+
 ### 6.1.5
 July 4, 2025
 

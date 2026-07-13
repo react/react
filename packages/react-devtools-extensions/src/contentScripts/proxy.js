@@ -10,7 +10,7 @@
 
 'use strict';
 
-function injectProxy({target}: {target: any}) {
+function injectProxy() {
   // Firefox's behaviour for injecting this content script can be unpredictable
   // While navigating the history, some content scripts might not be re-injected and still be alive
   if (!window.__REACT_DEVTOOLS_PROXY_INJECTED__) {
@@ -32,9 +32,23 @@ function injectProxy({target}: {target: any}) {
   }
 }
 
+function handlePageShow() {
+  if (document.prerendering) {
+    // React DevTools can't handle multiple documents being connected to the same extension port.
+    // However, browsers are firing pageshow events while prerendering (https://issues.chromium.org/issues/489633225).
+    // We need to wait until prerendering is finished before injecting the proxy.
+    // In browsers with pagereveal support, listening to pagereveal would be sufficient.
+    // Waiting for prerenderingchange is a workaround to support browsers that
+    // have speculationrules but not pagereveal.
+    document.addEventListener('prerenderingchange', injectProxy, {once: true});
+  } else {
+    injectProxy();
+  }
+}
+
 window.addEventListener('pagereveal', injectProxy);
 // For backwards compat with browsers not implementing `pagereveal` which is a fairly new event.
-window.addEventListener('pageshow', injectProxy);
+window.addEventListener('pageshow', handlePageShow);
 
 window.addEventListener('pagehide', function ({target}) {
   if (target !== window.document) {
@@ -117,3 +131,49 @@ function connectPort() {
   // $FlowFixMe[incompatible-use]
   port.onDisconnect.addListener(handleDisconnect);
 }
+
+let evalRequestId = 0;
+const evalRequestCallbacks = new Map<number, Function>();
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  switch (msg?.source) {
+    case 'devtools-page-eval': {
+      const {scriptId, args} = msg.payload;
+      const requestId = evalRequestId++;
+      window.postMessage(
+        {
+          source: 'react-devtools-content-script-eval',
+          payload: {
+            requestId,
+            scriptId,
+            args,
+          },
+        },
+        '*',
+      );
+      evalRequestCallbacks.set(requestId, sendResponse);
+      return true; // Indicate we will respond asynchronously
+    }
+  }
+});
+
+window.addEventListener('message', event => {
+  if (event.data?.source === 'react-devtools-content-script-eval-response') {
+    const {requestId, response} = event.data.payload;
+    const callback = evalRequestCallbacks.get(requestId);
+    try {
+      if (!callback)
+        throw new Error(
+          `No eval request callback for id "${requestId}" exists.`,
+        );
+      callback(response);
+    } catch (e) {
+      console.warn(
+        'React DevTools Content Script eval response error occurred:',
+        e,
+      );
+    } finally {
+      evalRequestCallbacks.delete(requestId);
+    }
+  }
+});

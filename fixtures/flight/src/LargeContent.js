@@ -1,5 +1,3 @@
-import * as React from 'react';
-
 export default async function LargeContent() {
   return (
     <div>

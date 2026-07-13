@@ -21,9 +21,11 @@ function Component(props) {
 ```
 Found 2 errors:
 
-Error: Calling setState during render may trigger an infinite loop
+Error: Cannot call setState during render
 
-Calling setState during render will trigger another render, and can lead to infinite loops. (https://react.dev/reference/react/useState).
+Calling setState during render may trigger an infinite loop.
+* To reset state when other state/props change, store the previous value in state and update conditionally: https://react.dev/reference/react/useState#storing-information-from-previous-renders
+* To derive data from other state/props, compute the derived data during render without using state.
 
 error.invalid-unconditional-set-state-in-render.ts:6:2
   4 |   const aliased = setX;
@@ -34,9 +36,11 @@ error.invalid-unconditional-set-state-in-render.ts:6:2
   8 |
   9 |   return x;
 
-Error: Calling setState during render may trigger an infinite loop
+Error: Cannot call setState during render
 
-Calling setState during render will trigger another render, and can lead to infinite loops. (https://react.dev/reference/react/useState).
+Calling setState during render may trigger an infinite loop.
+* To reset state when other state/props change, store the previous value in state and update conditionally: https://react.dev/reference/react/useState#storing-information-from-previous-renders
+* To derive data from other state/props, compute the derived data during render without using state.
 
 error.invalid-unconditional-set-state-in-render.ts:7:2
    5 |

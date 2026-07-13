@@ -53,6 +53,7 @@ function Foo(t0) {
   const result = cond
     ? [...customList.sort(comparator), { text: ["text"] }]
     : defaultList;
+
   return result;
 }
 function _temp(a, b) {

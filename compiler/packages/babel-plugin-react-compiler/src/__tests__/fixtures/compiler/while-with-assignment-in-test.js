@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 function Component() {
   const queue = [1, 2, 3];
   let value = 0;

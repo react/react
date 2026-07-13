@@ -38,7 +38,11 @@ export function flushBuffered(destination: Destination) {
   }
 }
 
-const VIEW_SIZE = 2048;
+// Chunks larger than VIEW_SIZE are written directly, without copying into the
+// internal view buffer. This must be at least half of Node's internal Buffer
+// pool size (8192) to avoid corrupting the pool when using
+// renderToReadableStream, which uses a byte stream that detaches ArrayBuffers.
+const VIEW_SIZE = 4096;
 let currentView = null;
 let writtenBytes = 0;
 let destinationHasCapacity = true;
@@ -58,7 +62,7 @@ function writeStringChunk(destination: Destination, stringChunk: string) {
     if (writtenBytes > 0) {
       writeToDestination(
         destination,
-        ((currentView: any): Uint8Array).subarray(0, writtenBytes),
+        (currentView as any as Uint8Array).subarray(0, writtenBytes),
       );
       currentView = new Uint8Array(VIEW_SIZE);
       writtenBytes = 0;
@@ -68,9 +72,9 @@ function writeStringChunk(destination: Destination, stringChunk: string) {
     return;
   }
 
-  let target: Uint8Array = (currentView: any);
+  let target: Uint8Array = currentView as any;
   if (writtenBytes > 0) {
-    target = ((currentView: any): Uint8Array).subarray(writtenBytes);
+    target = (currentView as any as Uint8Array).subarray(writtenBytes);
   }
   const {read, written} = textEncoder.encodeInto(stringChunk, target);
   writtenBytes += written;
@@ -78,17 +82,17 @@ function writeStringChunk(destination: Destination, stringChunk: string) {
   if (read < stringChunk.length) {
     writeToDestination(
       destination,
-      (currentView: any).subarray(0, writtenBytes),
+      (currentView as any).subarray(0, writtenBytes),
     );
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = textEncoder.encodeInto(
       stringChunk.slice(read),
-      (currentView: any),
+      currentView as any,
     ).written;
   }
 
   if (writtenBytes === VIEW_SIZE) {
-    writeToDestination(destination, (currentView: any));
+    writeToDestination(destination, currentView as any);
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
@@ -108,7 +112,7 @@ function writeViewChunk(
     if (writtenBytes > 0) {
       writeToDestination(
         destination,
-        ((currentView: any): Uint8Array).subarray(0, writtenBytes),
+        (currentView as any as Uint8Array).subarray(0, writtenBytes),
       );
       currentView = new Uint8Array(VIEW_SIZE);
       writtenBytes = 0;
@@ -118,32 +122,33 @@ function writeViewChunk(
   }
 
   let bytesToWrite = chunk;
-  const allowableBytes = ((currentView: any): Uint8Array).length - writtenBytes;
+  const allowableBytes =
+    (currentView as any as Uint8Array).length - writtenBytes;
   if (allowableBytes < bytesToWrite.byteLength) {
     // this chunk would overflow the current view. We enqueue a full view
     // and start a new view with the remaining chunk
     if (allowableBytes === 0) {
       // the current view is already full, send it
-      writeToDestination(destination, (currentView: any));
+      writeToDestination(destination, currentView as any);
     } else {
       // fill up the current view and apply the remaining chunk bytes
       // to a new view.
-      ((currentView: any): Uint8Array).set(
+      (currentView as any as Uint8Array).set(
         bytesToWrite.subarray(0, allowableBytes),
         writtenBytes,
       );
       writtenBytes += allowableBytes;
-      writeToDestination(destination, (currentView: any));
+      writeToDestination(destination, currentView as any);
       bytesToWrite = bytesToWrite.subarray(allowableBytes);
     }
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
-  ((currentView: any): Uint8Array).set(bytesToWrite, writtenBytes);
+  (currentView as any as Uint8Array).set(bytesToWrite, writtenBytes);
   writtenBytes += bytesToWrite.byteLength;
 
   if (writtenBytes === VIEW_SIZE) {
-    writeToDestination(destination, (currentView: any));
+    writeToDestination(destination, currentView as any);
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
@@ -156,7 +161,7 @@ export function writeChunk(
   if (typeof chunk === 'string') {
     writeStringChunk(destination, chunk);
   } else {
-    writeViewChunk(destination, ((chunk: any): PrecomputedChunk | BinaryChunk));
+    writeViewChunk(destination, chunk as any as PrecomputedChunk | BinaryChunk);
   }
 }
 
@@ -227,7 +232,7 @@ export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
 }
 
 export function closeWithError(destination: Destination, error: mixed): void {
-  // $FlowFixMe[incompatible-call]: This is an Error object or the destination accepts other types.
+  // $FlowFixMe[incompatible-type]: This is an Error object or the destination accepts other types.
   destination.destroy(error);
 }
 

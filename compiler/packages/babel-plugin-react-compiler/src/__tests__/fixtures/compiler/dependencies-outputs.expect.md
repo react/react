@@ -56,6 +56,7 @@ function foo(a, b) {
   } else {
     y = $[4];
   }
+
   return y;
 }
 

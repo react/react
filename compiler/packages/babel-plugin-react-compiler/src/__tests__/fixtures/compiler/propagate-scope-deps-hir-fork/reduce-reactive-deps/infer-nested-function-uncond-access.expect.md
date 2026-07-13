@@ -36,7 +36,6 @@ function useFoo(t0) {
   let t1;
   if ($[0] !== a.b.c) {
     const fn = () => () => ({ value: a.b.c });
-
     t1 = <Stringify fn={fn} shouldInvokeFns={true} />;
     $[0] = a.b.c;
     $[1] = t1;

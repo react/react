@@ -50,7 +50,6 @@ function Component(props) {
         return null;
       }
     };
-
     t0 = getValue();
     $[0] = foo.current;
     $[1] = t0;

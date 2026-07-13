@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {Fragment, useContext, useMemo} from 'react';
+import {Fragment, useContext} from 'react';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import {ProfilerContext} from './ProfilerContext';
@@ -22,15 +22,17 @@ export type Props = {};
 
 export default function SnapshotSelector(_: Props): React.Node {
   const {
-    isCommitFilterEnabled,
-    minCommitDuration,
     rootID,
     selectedCommitIndex,
     selectCommitIndex,
+    selectPrevCommitIndex,
+    selectNextCommitIndex,
+    filteredCommitIndices,
+    selectedFilteredCommitIndex,
   } = useContext(ProfilerContext);
 
   const {profilerStore} = useContext(StoreContext);
-  const {commitData} = profilerStore.getDataForRoot(((rootID: any): number));
+  const {commitData} = profilerStore.getDataForRoot(rootID as any as number);
 
   const totalDurations: Array<number> = [];
   const commitTimes: Array<number> = [];
@@ -43,46 +45,7 @@ export default function SnapshotSelector(_: Props): React.Node {
     commitTimes.push(commitDatum.timestamp);
   });
 
-  const filteredCommitIndices = useMemo(
-    () =>
-      commitData.reduce((reduced: $FlowFixMe, commitDatum, index) => {
-        if (
-          !isCommitFilterEnabled ||
-          commitDatum.duration >= minCommitDuration
-        ) {
-          reduced.push(index);
-        }
-        return reduced;
-      }, []),
-    [commitData, isCommitFilterEnabled, minCommitDuration],
-  );
-
   const numFilteredCommits = filteredCommitIndices.length;
-
-  // Map the (unfiltered) selected commit index to an index within the filtered data.
-  const selectedFilteredCommitIndex = useMemo(() => {
-    if (selectedCommitIndex !== null) {
-      for (let i = 0; i < filteredCommitIndices.length; i++) {
-        if (filteredCommitIndices[i] === selectedCommitIndex) {
-          return i;
-        }
-      }
-    }
-    return null;
-  }, [filteredCommitIndices, selectedCommitIndex]);
-
-  // TODO (ProfilerContext) This should be managed by the context controller (reducer).
-  // It doesn't currently know about the filtered commits though (since it doesn't suspend).
-  // Maybe this component should pass filteredCommitIndices up?
-  if (selectedFilteredCommitIndex === null) {
-    if (numFilteredCommits > 0) {
-      selectCommitIndex(0);
-    } else {
-      selectCommitIndex(null);
-    }
-  } else if (selectedFilteredCommitIndex >= numFilteredCommits) {
-    selectCommitIndex(numFilteredCommits === 0 ? null : numFilteredCommits - 1);
-  }
 
   let label = null;
   if (numFilteredCommits > 0) {
@@ -110,11 +73,11 @@ export default function SnapshotSelector(_: Props): React.Node {
     const handleKeyDown = event => {
       switch (event.key) {
         case 'ArrowDown':
-          viewPrevCommit();
+          selectPrevCommitIndex();
           event.stopPropagation();
           break;
         case 'ArrowUp':
-          viewNextCommit();
+          selectNextCommitIndex();
           event.stopPropagation();
           break;
         default:
@@ -147,30 +110,15 @@ export default function SnapshotSelector(_: Props): React.Node {
     );
   }
 
-  const viewNextCommit = () => {
-    let nextCommitIndex = ((selectedFilteredCommitIndex: any): number) + 1;
-    if (nextCommitIndex === filteredCommitIndices.length) {
-      nextCommitIndex = 0;
-    }
-    selectCommitIndex(filteredCommitIndices[nextCommitIndex]);
-  };
-  const viewPrevCommit = () => {
-    let nextCommitIndex = ((selectedFilteredCommitIndex: any): number) - 1;
-    if (nextCommitIndex < 0) {
-      nextCommitIndex = filteredCommitIndices.length - 1;
-    }
-    selectCommitIndex(filteredCommitIndices[nextCommitIndex]);
-  };
-
   // $FlowFixMe[missing-local-annot]
   const handleKeyDown = event => {
     switch (event.key) {
       case 'ArrowLeft':
-        viewPrevCommit();
+        selectPrevCommitIndex();
         event.stopPropagation();
         break;
       case 'ArrowRight':
-        viewNextCommit();
+        selectNextCommitIndex();
         event.stopPropagation();
         break;
       default:
@@ -193,8 +141,8 @@ export default function SnapshotSelector(_: Props): React.Node {
         className={styles.Button}
         data-testname="SnapshotSelector-PreviousButton"
         disabled={numFilteredCommits === 0}
-        onClick={viewPrevCommit}
-        title="Select previous commit">
+        onClick={selectPrevCommitIndex}
+        title="Select previous commit ←">
         <ButtonIcon type="previous" />
       </Button>
       <div
@@ -227,8 +175,8 @@ export default function SnapshotSelector(_: Props): React.Node {
         className={styles.Button}
         data-testname="SnapshotSelector-NextButton"
         disabled={numFilteredCommits === 0}
-        onClick={viewNextCommit}
-        title="Select next commit">
+        onClick={selectNextCommitIndex}
+        title="Select next commit →">
         <ButtonIcon type="next" />
       </Button>
     </Fragment>

@@ -2,13 +2,26 @@
   padding: 0.25rem;
 }
 
-.CallSite, .IgnoredCallSite {
-  display: block;
+.CallSite, .BuiltInCallSite {
+  display: flex;
   padding-left: 1rem;
+  white-space-collapse: preserve;
 }
 
 .IgnoredCallSite {
   opacity: 0.5;
+}
+
+.IgnoredCallSite, .BuiltInCallSite {
+  display: none;
+}
+
+.IgnoredCallSite.CallSite {
+  display: flex;
+}
+
+.CallSite + .BuiltInCallSite {
+  display: block;
 }
 
 .Link {
@@ -16,13 +29,26 @@
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
   cursor: pointer;
   border-radius: 0.125rem;
-  padding: 0px 2px;
 }
 
 .Link:hover {
   background-color: var(--color-background-hover);
 }
 
+.ElementBadges {
+  margin-left: 0.25rem;
+}
+
+.IgnoreListToggleContainer {
+  padding-left: 1rem;
+}
+
+.IgnoreListToggleButton {
+  background: none;
+  color: var(--color-link);
+  font: inherit;
+  font-style: italic;
+  text-decoration: underline;
+}

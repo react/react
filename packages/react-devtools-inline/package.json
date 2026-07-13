@@ -1,12 +1,12 @@
 {
   "name": "react-devtools-inline",
-  "version": "6.1.5",
+  "version": "7.0.1",
   "description": "Embed react-devtools within a website",
   "license": "MIT",
   "main": "./dist/backend.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-devtools-inline"
   },
   "files": [
@@ -22,8 +22,8 @@
     "test:e2e": "playwright test --config=playwright.config.js"
   },
   "dependencies": {
-    "source-map-js": "^0.6.2",
-    "sourcemap-codec": "^1.4.8"
+    "@jridgewell/sourcemap-codec": "1.5.5",
+    "source-map-js": "^0.6.2"
   },
   "devDependencies": {
     "@babel/core": "^7.11.1",

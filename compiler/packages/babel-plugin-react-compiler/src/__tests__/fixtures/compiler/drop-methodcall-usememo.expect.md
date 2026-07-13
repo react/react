@@ -38,6 +38,7 @@ function Component(props) {
     x = $[1];
   }
   const x_0 = x;
+
   return x_0;
 }
 

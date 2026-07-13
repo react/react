@@ -12,15 +12,47 @@ import {isInternalFacebookBuild} from 'react-devtools-feature-flags';
 
 import styles from './TimelineNotSupported.css';
 
-export default function TimelineNotSupported(): React.Node {
+type Props = {
+  isPerformanceTracksSupported: boolean,
+};
+
+function PerformanceTracksSupported() {
   return (
-    <div className={styles.Column}>
-      <div className={styles.Header}>Timeline profiling not supported.</div>
+    <>
       <p className={styles.Paragraph}>
         <span>
-          Timeline profiler requires a development or profiling build of{' '}
-          <code className={styles.Code}>react-dom@^18</code>.
+          Please use{' '}
+          <a
+            className={styles.Link}
+            href="https://react.dev/reference/dev-tools/react-performance-tracks"
+            rel="noopener noreferrer"
+            target="_blank">
+            React Performance tracks
+          </a>{' '}
+          instead of the Timeline profiler.
         </span>
+      </p>
+    </>
+  );
+}
+
+function UnknownUnsupportedReason() {
+  return (
+    <>
+      <p className={styles.Paragraph}>
+        Timeline profiler requires a development or profiling build of{' '}
+        <code className={styles.Code}>react-dom@{'>='}18</code>.
+      </p>
+      <p className={styles.Paragraph}>
+        In React 19.2 and above{' '}
+        <a
+          className={styles.Link}
+          href="https://react.dev/reference/dev-tools/react-performance-tracks"
+          rel="noopener noreferrer"
+          target="_blank">
+          React Performance tracks
+        </a>{' '}
+        can be used instead.
       </p>
       <div className={styles.LearnMoreRow}>
         Click{' '}
@@ -33,6 +65,22 @@ export default function TimelineNotSupported(): React.Node {
         </a>{' '}
         to learn more about profiling.
       </div>
+    </>
+  );
+}
+
+export default function TimelineNotSupported({
+  isPerformanceTracksSupported,
+}: Props): React.Node {
+  return (
+    <div className={styles.Column}>
+      <div className={styles.Header}>Timeline profiling not supported.</div>
+
+      {isPerformanceTracksSupported ? (
+        <PerformanceTracksSupported />
+      ) : (
+        <UnknownUnsupportedReason />
+      )}
 
       {isInternalFacebookBuild && (
         <div className={styles.MetaGKRow}>

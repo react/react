@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @eslintSuppressionRules:["my-app","react-rule"]
+// @eslintSuppressionRules:["my-app","react-rule"] @validateExhaustiveMemoizationDependencies:false
 
 /* eslint-disable my-app/react-rule */
 function lowercasecomponent() {
@@ -26,7 +26,7 @@ Error: React Compiler has skipped optimizing this component because one or more 
 React Compiler only works when your components follow all the rules of React, disabling them may result in unexpected or incorrect behavior. Found suppression `eslint-disable my-app/react-rule`.
 
 error.bailout-on-suppression-of-custom-rule.ts:3:0
-  1 | // @eslintSuppressionRules:["my-app","react-rule"]
+  1 | // @eslintSuppressionRules:["my-app","react-rule"] @validateExhaustiveMemoizationDependencies:false
   2 |
 > 3 | /* eslint-disable my-app/react-rule */
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Found React rule suppression

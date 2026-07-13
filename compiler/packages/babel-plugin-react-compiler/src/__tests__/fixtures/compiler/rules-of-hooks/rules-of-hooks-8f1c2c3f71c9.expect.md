@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 // Valid because components can use hooks.
 function createComponentWithHook() {
   return function ComponentWithHook() {
@@ -15,7 +15,7 @@ function createComponentWithHook() {
 ## Code
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 // Valid because components can use hooks.
 function createComponentWithHook() {
   return function ComponentWithHook() {

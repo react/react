@@ -18,6 +18,7 @@ import {
   REACT_SUSPENSE_LIST_TYPE,
   REACT_VIEW_TRANSITION_TYPE,
   REACT_ACTIVITY_TYPE,
+  REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
 import {
   cloneElement,
@@ -38,7 +39,6 @@ import {lazy} from './ReactLazy';
 import {memo} from './ReactMemo';
 import {cache, cacheSignal} from './ReactCacheServer';
 import {startTransition} from './ReactStartTransition';
-import {postpone} from './ReactPostpone';
 import version from 'shared/ReactVersion';
 
 const Children = {
@@ -57,10 +57,12 @@ export {
 
 export {
   Children,
+  REACT_ACTIVITY_TYPE as Activity,
   REACT_FRAGMENT_TYPE as Fragment,
   REACT_PROFILER_TYPE as Profiler,
   REACT_STRICT_MODE_TYPE as StrictMode,
   REACT_SUSPENSE_TYPE as Suspense,
+  REACT_VIEW_TRANSITION_TYPE as ViewTransition,
   cloneElement,
   createElement,
   createRef,
@@ -73,7 +75,6 @@ export {
   cacheSignal,
   startTransition,
   getCacheForType as unstable_getCacheForType,
-  postpone as unstable_postpone,
   useId,
   useCallback,
   useDebugValue,
@@ -81,6 +82,6 @@ export {
   version,
   // Experimental
   REACT_SUSPENSE_LIST_TYPE as unstable_SuspenseList,
-  REACT_VIEW_TRANSITION_TYPE as unstable_ViewTransition,
-  REACT_ACTIVITY_TYPE as unstable_Activity,
+  // enableOptimisticKey
+  REACT_OPTIMISTIC_KEY as optimisticKey,
 };

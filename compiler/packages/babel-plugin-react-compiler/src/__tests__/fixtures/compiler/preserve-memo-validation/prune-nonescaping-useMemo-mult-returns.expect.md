@@ -34,7 +34,6 @@ import { identity } from "shared-runtime";
 
 function useFoo(cond) {
   let t0;
-
   if (cond) {
     t0 = identity(10);
   } else {

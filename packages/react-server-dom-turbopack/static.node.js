@@ -8,6 +8,6 @@
  */
 
 export {
-  unstable_prerender,
-  unstable_prerenderToNodeStream,
+  prerender,
+  prerenderToNodeStream,
 } from './src/server/react-flight-dom-server.node';

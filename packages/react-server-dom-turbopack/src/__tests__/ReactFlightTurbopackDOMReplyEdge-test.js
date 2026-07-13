@@ -5,17 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
 
-// Polyfills for test environment
-global.ReadableStream =
-  require('web-streams-polyfill/ponyfill/es6').ReadableStream;
-global.TextEncoder = require('util').TextEncoder;
-global.TextDecoder = require('util').TextDecoder;
-
-// let serverExports;
 let turbopackServerMap;
 let ReactServerDOMServer;
 let ReactServerDOMClient;
@@ -29,7 +23,6 @@ describe('ReactFlightDOMTurbopackReply', () => {
       require('react-server-dom-turbopack/server.edge'),
     );
     const TurbopackMock = require('./utils/TurbopackMock');
-    // serverExports = TurbopackMock.serverExports;
     turbopackServerMap = TurbopackMock.turbopackServerMap;
     ReactServerDOMServer = require('react-server-dom-turbopack/server.edge');
     jest.resetModules();

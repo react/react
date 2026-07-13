@@ -14,10 +14,9 @@
   "dependencies": {
     "@babel/core": "^7.24.4",
     "@babel/parser": "^7.24.4",
-    "@babel/plugin-proposal-private-methods": "^7.18.6",
     "hermes-parser": "^0.25.1",
-    "zod": "^3.22.4",
-    "zod-validation-error": "^3.0.3"
+    "zod": "^3.25.0 || ^4.0.0",
+    "zod-validation-error": "^3.5.0 || ^4.0.0"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.22.4",
@@ -36,11 +35,17 @@
     "node": "^14.17.0 || ^16.0.0 || >= 18.0.0"
   },
   "peerDependencies": {
-    "eslint": ">=7"
+    "eslint": ">=7",
+    "babel-plugin-react-compiler-rust": "*"
+  },
+  "peerDependenciesMeta": {
+    "babel-plugin-react-compiler-rust": {
+      "optional": true
+    }
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git",
+    "url": "git+https://github.com/react/react.git",
     "directory": "compiler/packages/eslint-plugin-react-compiler"
   },
   "license": "MIT"

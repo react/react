@@ -39,6 +39,7 @@ function foo(cond) {
     if (cond) {
     }
   }
+
   return items;
 }
 

@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import {Fragment, useContext} from 'react';
+import {Fragment, useContext, useEffect, useRef, useEffectEvent} from 'react';
 import {ModalDialog} from '../ModalDialog';
 import {ProfilerContext} from './ProfilerContext';
 import TabBar from '../TabBar';
@@ -38,6 +38,11 @@ import {TimelineContext} from 'react-devtools-timeline/src/TimelineContext';
 import styles from './Profiler.css';
 
 function Profiler(_: {}) {
+  const profilerRef = useRef<HTMLDivElement | null>(null);
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
   const {
     didRecordCommits,
     isProcessingData,
@@ -47,6 +52,10 @@ function Profiler(_: {}) {
     selectedTabID,
     selectTab,
     supportsProfiling,
+    startProfiling,
+    stopProfiling,
+    selectPrevCommitIndex,
+    selectNextCommitIndex,
   } = useContext(ProfilerContext);
 
   const {file: timelineTraceEventData, searchInputContainerRef} =
@@ -55,6 +64,50 @@ function Profiler(_: {}) {
   const {supportsTimeline} = useContext(StoreContext);
 
   const isLegacyProfilerSelected = selectedTabID !== 'timeline';
+
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    const correctModifier = isMac ? event.metaKey : event.ctrlKey;
+    // Cmd+E to start/stop profiler recording
+    if (correctModifier && event.key === 'e') {
+      if (isProfiling) {
+        stopProfiling();
+      } else {
+        startProfiling();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (
+      isLegacyProfilerSelected &&
+      didRecordCommits &&
+      selectedCommitIndex !== null
+    ) {
+      // Cmd+Left/Right (Mac) or Ctrl+Left/Right (Windows/Linux) to navigate commits
+      if (
+        correctModifier &&
+        (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+      ) {
+        if (event.key === 'ArrowLeft') {
+          selectPrevCommitIndex();
+        } else {
+          selectNextCommitIndex();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+  });
+
+  useEffect(() => {
+    const div = profilerRef.current;
+    if (!div) {
+      return;
+    }
+    const ownerWindow = div.ownerDocument.defaultView;
+    ownerWindow.addEventListener('keydown', handleKeyDown);
+    return () => {
+      ownerWindow.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   let view = null;
   if (didRecordCommits || selectedTabID === 'timeline') {
@@ -112,7 +165,7 @@ function Profiler(_: {}) {
 
   return (
     <SettingsModalContextController>
-      <div className={styles.Profiler}>
+      <div ref={profilerRef} className={styles.Profiler}>
         <div className={styles.LeftColumn}>
           <div className={styles.Toolbar}>
             <RecordToggle disabled={!supportsProfiling} />
@@ -190,4 +243,4 @@ const tabsWithTimeline = [
   },
 ];
 
-export default (portaledContent(Profiler): component());
+export default portaledContent(Profiler) as component();

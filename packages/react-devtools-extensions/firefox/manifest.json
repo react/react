@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "React Developer Tools",
   "description": "Adds React debugging tools to the Firefox Developer Tools.",
-  "version": "6.1.5",
+  "version": "7.0.1",
   "browser_specific_settings": {
     "gecko": {
       "id": "@react-devtools",

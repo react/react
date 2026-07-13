@@ -14,11 +14,12 @@ import type {Thenable} from 'shared/ReactTypes';
 
 export * from 'react-markup/src/ReactMarkupLegacyClientStreamConfig.js';
 export * from 'react-client/src/ReactClientConsoleConfigPlain';
+export * from 'react-client/src/ReactClientDebugConfigPlain';
 
 export type ModuleLoading = null;
 export type ServerConsumerModuleMap = null;
 export opaque type ServerManifest = null;
-export opaque type ServerReferenceId = string;
+export type ServerReferenceId = string;
 export opaque type ClientReferenceMetadata = null;
 export opaque type ClientReference<T> = null; // eslint-disable-line no-unused-vars
 

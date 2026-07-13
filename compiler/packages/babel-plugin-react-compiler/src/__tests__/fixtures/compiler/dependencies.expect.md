@@ -50,6 +50,7 @@ function foo(x, y, z) {
   if (y) {
     items.push(x);
   }
+
   return items2;
 }
 

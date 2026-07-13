@@ -1,4 +1,4 @@
-// @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions
+// @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 function Component() {
   const items = useItems();
   const filteredItems = useMemo(

@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function useHook(maybeRef, shouldRead) {

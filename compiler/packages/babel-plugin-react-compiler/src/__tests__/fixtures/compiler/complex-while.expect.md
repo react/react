@@ -32,6 +32,7 @@ function foo(a, b, c) {
       }
     }
   }
+
   return c;
 }
 

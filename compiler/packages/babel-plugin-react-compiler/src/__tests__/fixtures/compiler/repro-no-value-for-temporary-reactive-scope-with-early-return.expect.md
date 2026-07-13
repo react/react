@@ -50,7 +50,6 @@ function Component(props) {
         t1 = null;
         break bb0;
       }
-
       t0 = (
         <div className="foo">
           {fbt._(

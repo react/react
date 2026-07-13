@@ -32,7 +32,6 @@ function Component(props) {
   let context;
   if ($[0] !== props.value) {
     const key = { a: "key" };
-
     const t0 = key.a;
     const t1 = identity([props.value]);
     let t2;

@@ -1,0 +1,58 @@
+.ActivityListContaier {
+  display: flex;
+  flex-direction: column;
+}
+
+.ActivityListHeader {
+  /* even if empty, provides layout alignment with the main view */
+  display: flex;
+  flex: 0 0 42px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ActivityListList {
+  cursor: default;
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ActivityListList[data-pending-activity-slice-selection="true"] {
+  cursor: wait;
+}
+
+.ActivityListList:focus {
+  outline: none;
+}
+
+.ActivityListItem {
+  color: var(--color-component-name);
+  line-height: var(--line-height-data);
+  padding: 0 0.25rem;
+  user-select: none;
+}
+
+.ActivityListItem:hover {
+  background-color: var(--color-background-hover);
+}
+
+.ActivityListItem[aria-selected="true"] {
+  background-color: var(--color-background-inactive);
+}
+
+.ActivityListList:focus .ActivityListItem[aria-selected="true"] {
+  background-color: var(--color-background-selected);
+  color: var(--color-text-selected);
+
+  /* Invert colors */
+  --color-component-name: var(--color-component-name-inverted);
+  --color-text: var(--color-text-selected);
+  --color-component-badge-background: var(
+    --color-component-badge-background-inverted
+  );
+  --color-forget-badge-background: var(--color-forget-badge-background-inverted);
+  --color-component-badge-count: var(--color-component-badge-count-inverted);
+  --color-attribute-name: var(--color-attribute-name-inverted);
+  --color-attribute-value: var(--color-attribute-value-inverted);
+  --color-expand-collapse-toggle: var(--color-component-name-inverted);
+}

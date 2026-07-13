@@ -3,7 +3,7 @@ import React, {
   useLayoutEffect,
   useEffect,
   useState,
-  unstable_addTransitionType as addTransitionType,
+  addTransitionType,
 } from 'react';
 
 import Chrome from './Chrome.js';

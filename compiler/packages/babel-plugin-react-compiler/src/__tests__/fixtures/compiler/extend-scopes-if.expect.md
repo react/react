@@ -52,6 +52,7 @@ function foo(a, b, c) {
   if (x.length) {
     return x;
   }
+
   return null;
 }
 

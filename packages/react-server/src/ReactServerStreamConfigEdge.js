@@ -37,7 +37,11 @@ export function flushBuffered(destination: Destination) {
   // transform streams. https://github.com/whatwg/streams/issues/960
 }
 
-const VIEW_SIZE = 2048;
+// Chunks larger than VIEW_SIZE are written directly, without copying into the
+// internal view buffer. This must be at least half of Node's internal Buffer
+// pool size (8192) to avoid corrupting the pool when using
+// renderToReadableStream, which uses a byte stream that detaches ArrayBuffers.
+const VIEW_SIZE = 4096;
 let currentView = null;
 let writtenBytes = 0;
 
@@ -61,7 +65,7 @@ export function writeChunk(
     if (writtenBytes > 0) {
       destination.enqueue(
         new Uint8Array(
-          ((currentView: any): Uint8Array).buffer,
+          (currentView as any as Uint8Array).buffer,
           0,
           writtenBytes,
         ),
@@ -74,7 +78,8 @@ export function writeChunk(
   }
 
   let bytesToWrite = chunk;
-  const allowableBytes = ((currentView: any): Uint8Array).length - writtenBytes;
+  const allowableBytes =
+    (currentView as any as Uint8Array).length - writtenBytes;
   if (allowableBytes < bytesToWrite.byteLength) {
     // this chunk would overflow the current view. We enqueue a full view
     // and start a new view with the remaining chunk
@@ -84,7 +89,7 @@ export function writeChunk(
     } else {
       // fill up the current view and apply the remaining chunk bytes
       // to a new view.
-      ((currentView: any): Uint8Array).set(
+      (currentView as any as Uint8Array).set(
         bytesToWrite.subarray(0, allowableBytes),
         writtenBytes,
       );
@@ -95,7 +100,7 @@ export function writeChunk(
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
-  ((currentView: any): Uint8Array).set(bytesToWrite, writtenBytes);
+  (currentView as any as Uint8Array).set(bytesToWrite, writtenBytes);
   writtenBytes += bytesToWrite.byteLength;
 }
 
@@ -147,14 +152,7 @@ export function typedArrayToBinaryChunk(
   // If we passed through this straight to enqueue we wouldn't have to convert it but since
   // we need to copy the buffer in that case, we need to convert it to copy it.
   // When we copy it into another array using set() it needs to be a Uint8Array.
-  const buffer = new Uint8Array(
-    content.buffer,
-    content.byteOffset,
-    content.byteLength,
-  );
-  // We clone large chunks so that we can transfer them when we write them.
-  // Others get copied into the target buffer.
-  return content.byteLength > VIEW_SIZE ? buffer.slice() : buffer;
+  return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
 }
 
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
@@ -168,7 +166,7 @@ export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
 export function closeWithError(destination: Destination, error: mixed): void {
   // $FlowFixMe[method-unbinding]
   if (typeof destination.error === 'function') {
-    // $FlowFixMe[incompatible-call]: This is an Error object or the destination accepts other types.
+    // $FlowFixMe[incompatible-type]: This is an Error object or the destination accepts other types.
     destination.error(error);
   } else {
     // Earlier implementations doesn't support this method. In that environment you're

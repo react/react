@@ -44,15 +44,23 @@ import fbt from "fbt";
 import { identity } from "shared-runtime";
 
 function Component(props) {
-  const $ = _c(3);
+  const $ = _c(5);
   let t0;
   if ($[0] !== props.count || $[1] !== props.option) {
+    let t1;
+    if ($[3] !== props.count) {
+      t1 = identity(props.count);
+      $[3] = props.count;
+      $[4] = t1;
+    } else {
+      t1 = $[4];
+    }
     t0 = (
       <span>
         {fbt._(
           { "*": "{count} votes for {option}", _1: "1 vote for {option}" },
           [
-            fbt._plural(identity(props.count), "count"),
+            fbt._plural(t1, "count"),
             fbt._param(
               "option",
 

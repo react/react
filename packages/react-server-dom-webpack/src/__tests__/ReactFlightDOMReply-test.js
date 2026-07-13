@@ -394,6 +394,74 @@ describe('ReactFlightDOMReply', () => {
     expect(response.children).toBe(children);
   });
 
+  it('can pass JSX as root model through a round trip using temporary references', async () => {
+    const jsx = <div />;
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(jsx, {
+      temporaryReferences,
+    });
+
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+    const serverPayload = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: temporaryReferencesServer},
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(serverPayload, null, {
+        temporaryReferences: temporaryReferencesServer,
+      }),
+    );
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      stream,
+      {
+        temporaryReferences,
+      },
+    );
+
+    // This should be the same reference that we already saw.
+    await expect(response).toBe(jsx);
+  });
+
+  it('can pass a promise that resolves to JSX through a round trip using temporary references', async () => {
+    const jsx = <div />;
+    const promise = Promise.resolve(jsx);
+
+    const temporaryReferences =
+      ReactServerDOMClient.createTemporaryReferenceSet();
+    const body = await ReactServerDOMClient.encodeReply(
+      {promise},
+      {
+        temporaryReferences,
+      },
+    );
+
+    const temporaryReferencesServer =
+      ReactServerDOMServer.createTemporaryReferenceSet();
+    const serverPayload = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+      {temporaryReferences: temporaryReferencesServer},
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(serverPayload, null, {
+        temporaryReferences: temporaryReferencesServer,
+      }),
+    );
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      stream,
+      {
+        temporaryReferences,
+      },
+    );
+
+    // This should resolve to the same reference that we already saw.
+    await expect(response.promise).resolves.toBe(jsx);
+  });
+
   it('can return the same object using temporary references', async () => {
     const obj = {
       this: {is: 'a large object'},
@@ -650,6 +718,17 @@ describe('ReactFlightDOMReply', () => {
     expect(root.prop.obj).toBe(root.prop);
   });
 
+  it('can transport cyclic arrays', async () => {
+    const obj = {};
+    const cyclic = [obj];
+    cyclic[1] = cyclic;
+
+    const body = await ReactServerDOMClient.encodeReply({prop: cyclic, obj});
+    const root = await ReactServerDOMServer.decodeReply(body, webpackServerMap);
+    expect(root.prop[1]).toBe(root.prop);
+    expect(root.prop[0]).toBe(root.obj);
+  });
+
   it('can abort an unresolved model and get the partial result', async () => {
     const promise = new Promise(r => {});
     const controller = new AbortController();
@@ -661,8 +740,19 @@ describe('ReactFlightDOMReply', () => {
 
     const result = await ReactServerDOMServer.decodeReply(await bodyPromise);
     expect(result.hello).toBe('world');
-    // TODO: await result.promise should reject at this point because the stream
-    // has closed but that's a bug in both ReactFlightReplyServer and ReactFlightClient.
-    // It just halts in this case.
+    await expect(result.promise).rejects.toThrow('Connection closed.');
+  });
+
+  it('cannot deserialize a Blob reference backed by a string', async () => {
+    const formData = new FormData();
+    formData.set('1', '-'.repeat(50000));
+    formData.set('0', JSON.stringify(['$B1']));
+    let error;
+    try {
+      await ReactServerDOMServer.decodeReply(formData, webpackServerMap);
+    } catch (x) {
+      error = x;
+    }
+    expect(error.message).toContain('Referenced Blob is not a Blob.');
   });
 });

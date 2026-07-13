@@ -1,5 +1,14 @@
-function cloneStyleTags() {
-  const linkTags = [];
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
+
+export function cloneStyleTags(): Array<HTMLLinkElement | HTMLStyleElement> {
+  const tags: Array<HTMLLinkElement | HTMLStyleElement> = [];
 
   // eslint-disable-next-line no-for-of-loops/no-for-of-loops
   for (const linkTag of document.getElementsByTagName('link')) {
@@ -11,11 +20,23 @@ function cloneStyleTags() {
         newLinkTag.setAttribute(attribute.nodeName, attribute.nodeValue);
       }
 
-      linkTags.push(newLinkTag);
+      tags.push(newLinkTag);
     }
   }
 
-  return linkTags;
-}
+  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+  for (const styleTag of document.getElementsByTagName('style')) {
+    const newStyleTag = document.createElement('style');
 
-export default cloneStyleTags;
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const attribute of styleTag.attributes) {
+      newStyleTag.setAttribute(attribute.nodeName, attribute.nodeValue);
+    }
+
+    newStyleTag.textContent = styleTag.textContent;
+
+    tags.push(newStyleTag);
+  }
+
+  return tags;
+}

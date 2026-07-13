@@ -29,29 +29,29 @@ import {
   Fragment,
 } from './ReactWorkTags';
 import {NoFlags, Placement, Hydrating} from './ReactFiberFlags';
+import {enableFragmentRefsTextNodes} from 'shared/ReactFeatureFlags';
 
 export function getNearestMountedFiber(fiber: Fiber): null | Fiber {
   let node = fiber;
   let nearestMounted: null | Fiber = fiber;
-  if (!fiber.alternate) {
-    // If there is no alternate, this might be a new tree that isn't inserted
-    // yet. If it is, then it will have a pending insertion effect on it.
-    let nextNode: Fiber = node;
-    do {
-      node = nextNode;
-      if ((node.flags & (Placement | Hydrating)) !== NoFlags) {
-        // This is an insertion or in-progress hydration. The nearest possible
-        // mounted fiber is the parent but we need to continue to figure out
-        // if that one is still mounted.
-        nearestMounted = node.return;
-      }
-      // $FlowFixMe[incompatible-type] we bail out when we get a null
-      nextNode = node.return;
-    } while (nextNode);
-  } else {
-    while (node.return) {
-      node = node.return;
+  // If there is no alternate, this might be a new tree that isn't inserted
+  // yet. If it is, then it will have a pending insertion effect on it.
+  let nextNode: Fiber = node;
+  while (nextNode && !nextNode.alternate) {
+    node = nextNode;
+    if ((node.flags & (Placement | Hydrating)) !== NoFlags) {
+      // This is an insertion or in-progress hydration. The nearest possible
+      // mounted fiber is the parent but we need to continue to figure out
+      // if that one is still mounted.
+      nearestMounted = node.return;
     }
+    // $FlowFixMe[incompatible-type] we bail out when we get a null
+    nextNode = node.return;
+  }
+  // After we've reached an alternate, go the rest of the way to see if the
+  // tree is still mounted. If it's not, its return pointer will be disconnected.
+  while (node.return) {
+    node = node.return;
   }
   if (node.tag === HostRoot) {
     // TODO: Check if this was a nested HostRoot when used with
@@ -102,7 +102,7 @@ export function getActivityInstanceFromFiber(
 
 export function getContainerFromFiber(fiber: Fiber): null | Container {
   return fiber.tag === HostRoot
-    ? (fiber.stateNode.containerInfo: Container)
+    ? (fiber.stateNode.containerInfo as Container)
     : null;
 }
 
@@ -374,7 +374,10 @@ function traverseVisibleHostChildren<A, B, C>(
   c: C,
 ): boolean {
   while (child !== null) {
-    if (child.tag === HostComponent && fn(child, a, b, c)) {
+    const isHostNode =
+      child.tag === HostComponent ||
+      (enableFragmentRefsTextNodes && child.tag === HostText);
+    if (isHostNode && fn(child, a, b, c)) {
       return true;
     } else if (
       child.tag === OffscreenComponent &&
@@ -474,6 +477,7 @@ function findFragmentInstanceSiblings(
 export function getInstanceFromHostFiber<I>(fiber: Fiber): I {
   switch (fiber.tag) {
     case HostComponent:
+    case HostText:
       return fiber.stateNode;
     case HostRoot:
       return fiber.stateNode.containerInfo;

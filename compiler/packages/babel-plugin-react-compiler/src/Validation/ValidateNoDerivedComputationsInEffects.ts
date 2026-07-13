@@ -6,7 +6,7 @@
  */
 
 import {CompilerError, SourceLocation} from '..';
-import {ErrorCategory} from '../CompilerError';
+import {CompilerErrorDetail, ErrorCategory} from '../CompilerError';
 import {
   ArrayExpression,
   BlockId,
@@ -20,6 +20,7 @@ import {
   eachInstructionValueOperand,
   eachTerminalOperand,
 } from '../HIR/visitors';
+import {Environment} from '../HIR/Environment';
 
 /**
  * Validates that useEffect is not used for derived computations which could/should
@@ -48,8 +49,6 @@ export function validateNoDerivedComputationsInEffects(fn: HIRFunction): void {
   const candidateDependencies: Map<IdentifierId, ArrayExpression> = new Map();
   const functions: Map<IdentifierId, FunctionExpression> = new Map();
   const locals: Map<IdentifierId, IdentifierId> = new Map();
-
-  const errors = new CompilerError();
 
   for (const block of fn.body.blocks.values()) {
     for (const instr of block.instructions) {
@@ -83,36 +82,26 @@ export function validateNoDerivedComputationsInEffects(fn: HIRFunction): void {
             const dependencies: Array<IdentifierId> = deps.elements.map(dep => {
               CompilerError.invariant(dep.kind === 'Identifier', {
                 reason: `Dependency is checked as a place above`,
-                description: null,
-                details: [
-                  {
-                    kind: 'error',
-                    loc: value.loc,
-                    message: 'this is checked as a place above',
-                  },
-                ],
+                loc: value.loc,
               });
               return locals.get(dep.identifier.id) ?? dep.identifier.id;
             });
             validateEffect(
               effectFunction.loweredFunc.func,
               dependencies,
-              errors,
+              fn.env,
             );
           }
         }
       }
     }
   }
-  if (errors.hasAnyErrors()) {
-    throw errors;
-  }
 }
 
 function validateEffect(
   effectFunction: HIRFunction,
   effectDeps: Array<IdentifierId>,
-  errors: CompilerError,
+  env: Environment,
 ): void {
   for (const operand of effectFunction.context) {
     if (isSetStateType(operand.identifier)) {
@@ -226,13 +215,15 @@ function validateEffect(
   }
 
   for (const loc of setStateLocations) {
-    errors.push({
-      category: ErrorCategory.EffectDerivationsOfState,
-      reason:
-        'Values derived from props and state should be calculated during render, not in an effect. (https://react.dev/learn/you-might-not-need-an-effect#updating-state-based-on-props-or-state)',
-      description: null,
-      loc,
-      suggestions: null,
-    });
+    env.recordError(
+      new CompilerErrorDetail({
+        category: ErrorCategory.EffectDerivationsOfState,
+        reason:
+          'Values derived from props and state should be calculated during render, not in an effect. (https://react.dev/learn/you-might-not-need-an-effect#updating-state-based-on-props-or-state)',
+        description: null,
+        loc,
+        suggestions: null,
+      }),
+    );
   }
 }

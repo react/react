@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @expectNothingCompiled
 // Valid because classes can call functions.
 // We don't consider these to be hooks.
 class C {
@@ -16,6 +17,7 @@ class C {
 ## Code
 
 ```javascript
+// @expectNothingCompiled
 // Valid because classes can call functions.
 // We don't consider these to be hooks.
 class C {

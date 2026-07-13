@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @validateExhaustiveMemoizationDependencies:false
 function component() {
   const [count, setCount] = useState(0);
   const increment = useCallback(() => setCount(count + 1));
@@ -14,7 +15,7 @@ function component() {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @validateExhaustiveMemoizationDependencies:false
 function component() {
   const $ = _c(4);
   const [count, setCount] = useState(0);

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees @enableNewMutationAliasingModel
+// @validatePreserveExistingMemoizationGuarantees @enableNewMutationAliasingModel @enablePreserveExistingMemoizationGuarantees:false
 import {useCallback} from 'react';
 import {makeArray} from 'shared-runtime';
 

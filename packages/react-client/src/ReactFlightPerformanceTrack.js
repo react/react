@@ -102,6 +102,7 @@ export function logComponentRender(
     const entryName =
       isPrimaryEnv || env === undefined ? name : name + ' [' + env + ']';
     const debugTask = componentInfo.debugTask;
+    const measureName = '\u200b' + entryName;
     if (__DEV__ && debugTask) {
       const properties: Array<[string, string]> = [];
       if (componentInfo.key != null) {
@@ -110,9 +111,10 @@ export function logComponentRender(
       if (componentInfo.props != null) {
         addObjectToProperties(componentInfo.props, properties, 0, '');
       }
+
       debugTask.run(
         // $FlowFixMe[method-unbinding]
-        performance.measure.bind(performance, '\u200b' + entryName, {
+        performance.measure.bind(performance, measureName, {
           start: startTime < 0 ? 0 : startTime,
           end: childrenEndTime,
           detail: {
@@ -125,9 +127,10 @@ export function logComponentRender(
           },
         }),
       );
+      performance.clearMeasures(measureName);
     } else {
       console.timeStamp(
-        '\u200b' + entryName,
+        measureName,
         startTime < 0 ? 0 : startTime,
         childrenEndTime,
         trackNames[trackIdx],
@@ -152,6 +155,7 @@ export function logComponentAborted(
     const isPrimaryEnv = env === rootEnv;
     const entryName =
       isPrimaryEnv || env === undefined ? name : name + ' [' + env + ']';
+    const measureName = '\u200b' + entryName;
     if (__DEV__) {
       const properties: Array<[string, string]> = [
         [
@@ -165,7 +169,8 @@ export function logComponentAborted(
       if (componentInfo.props != null) {
         addObjectToProperties(componentInfo.props, properties, 0, '');
       }
-      performance.measure('\u200b' + entryName, {
+
+      performance.measure(measureName, {
         start: startTime < 0 ? 0 : startTime,
         end: childrenEndTime,
         detail: {
@@ -178,9 +183,10 @@ export function logComponentAborted(
           },
         },
       });
+      performance.clearMeasures(measureName);
     } else {
       console.timeStamp(
-        entryName,
+        measureName,
         startTime < 0 ? 0 : startTime,
         childrenEndTime,
         trackNames[trackIdx],
@@ -206,6 +212,7 @@ export function logComponentErrored(
     const isPrimaryEnv = env === rootEnv;
     const entryName =
       isPrimaryEnv || env === undefined ? name : name + ' [' + env + ']';
+    const measureName = '\u200b' + entryName;
     if (__DEV__) {
       const message =
         typeof error === 'object' &&
@@ -222,7 +229,8 @@ export function logComponentErrored(
       if (componentInfo.props != null) {
         addObjectToProperties(componentInfo.props, properties, 0, '');
       }
-      performance.measure('\u200b' + entryName, {
+
+      performance.measure(measureName, {
         start: startTime < 0 ? 0 : startTime,
         end: childrenEndTime,
         detail: {
@@ -235,9 +243,10 @@ export function logComponentErrored(
           },
         },
       });
+      performance.clearMeasures(measureName);
     } else {
       console.timeStamp(
-        entryName,
+        measureName,
         startTime < 0 ? 0 : startTime,
         childrenEndTime,
         trackNames[trackIdx],
@@ -397,6 +406,7 @@ export function logComponentAwaitAborted(
           },
         }),
       );
+      performance.clearMeasures(entryName);
     } else {
       console.timeStamp(
         entryName,
@@ -453,6 +463,7 @@ export function logComponentAwaitErrored(
           },
         }),
       );
+      performance.clearMeasures(entryName);
     } else {
       console.timeStamp(
         entryName,
@@ -514,6 +525,7 @@ export function logComponentAwait(
           },
         }),
       );
+      performance.clearMeasures(entryName);
     } else {
       console.timeStamp(
         entryName,
@@ -538,6 +550,7 @@ export function logIOInfoErrored(
     const description = getIODescription(error);
     const entryName = getIOShortName(ioInfo, description, ioInfo.env, rootEnv);
     const debugTask = ioInfo.debugTask;
+    const measureName = '\u200b' + entryName;
     if (__DEV__ && debugTask) {
       const message =
         typeof error === 'object' &&
@@ -550,9 +563,10 @@ export function logIOInfoErrored(
       const properties = [['rejected with', message]];
       const tooltipText =
         getIOLongName(ioInfo, description, ioInfo.env, rootEnv) + ' Rejected';
+
       debugTask.run(
         // $FlowFixMe[method-unbinding]
-        performance.measure.bind(performance, '\u200b' + entryName, {
+        performance.measure.bind(performance, measureName, {
           start: startTime < 0 ? 0 : startTime,
           end: endTime,
           detail: {
@@ -565,9 +579,10 @@ export function logIOInfoErrored(
           },
         }),
       );
+      performance.clearMeasures(measureName);
     } else {
       console.timeStamp(
-        entryName,
+        measureName,
         startTime < 0 ? 0 : startTime,
         endTime,
         IO_TRACK,
@@ -590,6 +605,7 @@ export function logIOInfo(
     const entryName = getIOShortName(ioInfo, description, ioInfo.env, rootEnv);
     const color = getIOColor(entryName);
     const debugTask = ioInfo.debugTask;
+    const measureName = '\u200b' + entryName;
     if (__DEV__ && debugTask) {
       const properties: Array<[string, string]> = [];
       if (typeof value === 'object' && value !== null) {
@@ -605,7 +621,7 @@ export function logIOInfo(
       );
       debugTask.run(
         // $FlowFixMe[method-unbinding]
-        performance.measure.bind(performance, '\u200b' + entryName, {
+        performance.measure.bind(performance, measureName, {
           start: startTime < 0 ? 0 : startTime,
           end: endTime,
           detail: {
@@ -618,9 +634,10 @@ export function logIOInfo(
           },
         }),
       );
+      performance.clearMeasures(measureName);
     } else {
       console.timeStamp(
-        entryName,
+        measureName,
         startTime < 0 ? 0 : startTime,
         endTime,
         IO_TRACK,

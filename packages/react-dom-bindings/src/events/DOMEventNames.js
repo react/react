@@ -51,6 +51,7 @@ export type DOMEventName =
   | 'focusin'
   | 'focusout'
   | 'fullscreenchange'
+  | 'fullscreenerror'
   | 'gotpointercapture'
   | 'hashchange'
   | 'input'

@@ -93,7 +93,9 @@ test.describe('Components', () => {
 
         const name = isEditable.name
           ? existingNameElements[0].value
-          : existingNameElements[0].innerText;
+          : existingNameElements[0].innerText
+              // remove trailing colon
+              .slice(0, -1);
         const value = isEditable.value
           ? existingValueElements[0].value
           : existingValueElements[0].innerText;
@@ -218,12 +220,20 @@ test.describe('Components', () => {
           window.REACT_DOM_DEVTOOLS;
         const container = document.getElementById('devtools');
 
-        const element = findAllNodes(container, [
+        // The current result index is an editable input, so its value is not
+        // part of the wrapper's innerText. Combine the input value with the
+        // total result count to reconstruct the "X | Y" label.
+        const indexInput = findAllNodes(container, [
+          createTestNameSelector('ComponentSearchInput-ResultIndexInput'),
+        ])[0];
+        const resultsCount = findAllNodes(container, [
           createTestNameSelector('ComponentSearchInput-ResultsCount'),
         ])[0];
-        return element !== undefined
-          ? element.innerText === expectedElementText
-          : false;
+        if (indexInput === undefined || resultsCount === undefined) {
+          return false;
+        }
+        const totalCount = resultsCount.innerText.replace(/[^0-9]/g, '');
+        return `${indexInput.value} | ${totalCount}` === expectedElementText;
       }, text);
     }
 

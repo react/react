@@ -202,15 +202,7 @@ function writeOptionalDependency(
     CompilerError.invariant(firstOptional !== -1, {
       reason:
         '[ScopeDependencyUtils] Internal invariant broken: expected optional path',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: dep.identifier.loc,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: dep.identifier.loc,
     });
     if (firstOptional === dep.path.length - 1) {
       // Base case: the test block is simple
@@ -244,15 +236,7 @@ function writeOptionalDependency(
   builder.enterReserved(consequent, () => {
     CompilerError.invariant(testIdentifier !== null, {
       reason: 'Satisfy type checker',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
 
     lowerValueToTemporary(builder, {

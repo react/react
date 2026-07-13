@@ -16,7 +16,7 @@ import {assertExhaustive} from '../Utils/utils';
 import {Environment, ReactFunctionType} from './Environment';
 import type {HookKind} from './ObjectShape';
 import {Type, makeType} from './Types';
-import {z} from 'zod';
+import {z} from 'zod/v4';
 import type {AliasingEffect} from '../Inference/AliasingEffects';
 import {isReservedWord} from '../Utils/Keyword';
 import {Err, Ok, Result} from '../Utils/Result';
@@ -612,7 +612,7 @@ export type TryTerminal = {
 export type MaybeThrowTerminal = {
   kind: 'maybe-throw';
   continuation: BlockId;
-  handler: BlockId;
+  handler: BlockId | null;
   id: InstructionId;
   loc: SourceLocation;
   fallthrough?: never;
@@ -694,11 +694,13 @@ export type SpreadPattern = {
 export type ArrayPattern = {
   kind: 'ArrayPattern';
   items: Array<Place | SpreadPattern | Hole>;
+  loc: SourceLocation;
 };
 
 export type ObjectPattern = {
   kind: 'ObjectPattern';
   properties: Array<ObjectProperty | SpreadPattern>;
+  loc: SourceLocation;
 };
 
 export type ObjectPropertyKey =
@@ -803,9 +805,11 @@ export type ManualMemoDependency = {
     | {
         kind: 'NamedLocal';
         value: Place;
+        constant: boolean;
       }
     | {kind: 'Global'; identifierName: string};
   path: DependencyPath;
+  loc: SourceLocation;
 };
 
 export type StartMemoize = {
@@ -817,6 +821,12 @@ export type StartMemoize = {
    * (e.g. useMemo without a second arg)
    */
   deps: Array<ManualMemoDependency> | null;
+  /**
+   * The source location of the dependencies argument. Used for
+   * emitting diagnostics with a suggested replacement
+   */
+  depsLoc: SourceLocation | null;
+  hasInvalidDeps?: true;
   loc: SourceLocation;
 };
 export type FinishMemoize = {
@@ -1364,14 +1374,7 @@ export function promoteTemporary(identifier: Identifier): void {
   CompilerError.invariant(identifier.name === null, {
     reason: `Expected a temporary (unnamed) identifier`,
     description: `Identifier already has a name, \`${identifier.name}\``,
-    details: [
-      {
-        kind: 'error',
-        loc: GeneratedSource,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   identifier.name = {
     kind: 'promoted',
@@ -1394,14 +1397,7 @@ export function promoteTemporaryJsxTag(identifier: Identifier): void {
   CompilerError.invariant(identifier.name === null, {
     reason: `Expected a temporary (unnamed) identifier`,
     description: `Identifier already has a name, \`${identifier.name}\``,
-    details: [
-      {
-        kind: 'error',
-        loc: GeneratedSource,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   identifier.name = {
     kind: 'promoted',
@@ -1567,15 +1563,7 @@ export function isMutableEffect(
     case Effect.Unknown: {
       CompilerError.invariant(false, {
         reason: 'Unexpected unknown effect',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: location,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: location,
       });
     }
     case Effect.Read:
@@ -1652,6 +1640,7 @@ export function makePropertyLiteral(value: string | number): PropertyLiteral {
 export type DependencyPathEntry = {
   property: PropertyLiteral;
   optional: boolean;
+  loc: SourceLocation;
 };
 export type DependencyPath = Array<DependencyPathEntry>;
 export type ReactiveScopeDependency = {
@@ -1669,6 +1658,7 @@ export type ReactiveScopeDependency = {
    */
   reactive: boolean;
   path: DependencyPath;
+  loc: SourceLocation;
 };
 
 export function areEqualPaths(a: DependencyPath, b: DependencyPath): boolean {
@@ -1678,6 +1668,28 @@ export function areEqualPaths(a: DependencyPath, b: DependencyPath): boolean {
       (item, ix) =>
         item.property === b[ix].property && item.optional === b[ix].optional,
     )
+  );
+}
+export function isSubPath(
+  subpath: DependencyPath,
+  path: DependencyPath,
+): boolean {
+  return (
+    subpath.length <= path.length &&
+    subpath.every(
+      (item, ix) =>
+        item.property === path[ix].property &&
+        item.optional === path[ix].optional,
+    )
+  );
+}
+export function isSubPathIgnoringOptionals(
+  subpath: DependencyPath,
+  path: DependencyPath,
+): boolean {
+  return (
+    subpath.length <= path.length &&
+    subpath.every((item, ix) => item.property === path[ix].property)
   );
 }
 
@@ -1706,15 +1718,7 @@ export type BlockId = number & {[opaqueBlockId]: 'BlockId'};
 export function makeBlockId(id: number): BlockId {
   CompilerError.invariant(id >= 0 && Number.isInteger(id), {
     reason: 'Expected block id to be a non-negative integer',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   return id as BlockId;
 }
@@ -1729,15 +1733,7 @@ export type ScopeId = number & {[opaqueScopeId]: 'ScopeId'};
 export function makeScopeId(id: number): ScopeId {
   CompilerError.invariant(id >= 0 && Number.isInteger(id), {
     reason: 'Expected block id to be a non-negative integer',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   return id as ScopeId;
 }
@@ -1752,15 +1748,7 @@ export type IdentifierId = number & {[opaqueIdentifierId]: 'IdentifierId'};
 export function makeIdentifierId(id: number): IdentifierId {
   CompilerError.invariant(id >= 0 && Number.isInteger(id), {
     reason: 'Expected identifier id to be a non-negative integer',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   return id as IdentifierId;
 }
@@ -1775,15 +1763,7 @@ export type DeclarationId = number & {[opageDeclarationId]: 'DeclarationId'};
 export function makeDeclarationId(id: number): DeclarationId {
   CompilerError.invariant(id >= 0 && Number.isInteger(id), {
     reason: 'Expected declaration id to be a non-negative integer',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   return id as DeclarationId;
 }
@@ -1798,15 +1778,7 @@ export type InstructionId = number & {[opaqueInstructionId]: 'IdentifierId'};
 export function makeInstructionId(id: number): InstructionId {
   CompilerError.invariant(id >= 0 && Number.isInteger(id), {
     reason: 'Expected instruction id to be a non-negative integer',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   return id as InstructionId;
 }
@@ -1821,6 +1793,10 @@ export function isObjectType(id: Identifier): boolean {
 
 export function isPrimitiveType(id: Identifier): boolean {
   return id.type.kind === 'Primitive';
+}
+
+export function isPlainObjectType(id: Identifier): boolean {
+  return id.type.kind === 'Object' && id.type.shapeId === 'BuiltInObject';
 }
 
 export function isArrayType(id: Identifier): boolean {
@@ -1887,6 +1863,18 @@ export function isStartTransitionType(id: Identifier): boolean {
   );
 }
 
+export function isUseOptimisticType(id: Identifier): boolean {
+  return (
+    id.type.kind === 'Object' && id.type.shapeId === 'BuiltInUseOptimistic'
+  );
+}
+
+export function isSetOptimisticType(id: Identifier): boolean {
+  return (
+    id.type.kind === 'Function' && id.type.shapeId === 'BuiltInSetOptimistic'
+  );
+}
+
 export function isSetActionStateType(id: Identifier): boolean {
   return (
     id.type.kind === 'Function' && id.type.shapeId === 'BuiltInSetActionState'
@@ -1899,12 +1887,6 @@ export function isUseReducerType(id: Identifier): boolean {
 
 export function isDispatcherType(id: Identifier): boolean {
   return id.type.kind === 'Function' && id.type.shapeId === 'BuiltInDispatch';
-}
-
-export function isFireFunctionType(id: Identifier): boolean {
-  return (
-    id.type.kind === 'Function' && id.type.shapeId === 'BuiltInFireFunction'
-  );
 }
 
 export function isEffectEventFunctionType(id: Identifier): boolean {
@@ -1920,7 +1902,8 @@ export function isStableType(id: Identifier): boolean {
     isSetActionStateType(id) ||
     isDispatcherType(id) ||
     isUseRefType(id) ||
-    isStartTransitionType(id)
+    isStartTransitionType(id) ||
+    isSetOptimisticType(id)
   );
 }
 
@@ -1931,8 +1914,9 @@ export function isStableTypeContainer(id: Identifier): boolean {
   }
   return (
     isUseStateType(id) || // setState
-    type_.shapeId === 'BuiltInUseActionState' || // setActionState
+    isUseActionStateType(id) || // setActionState
     isUseReducerType(id) || // dispatcher
+    isUseOptimisticType(id) || // setOptimistic
     type_.shapeId === 'BuiltInUseTransition' // startTransition
   );
 }
@@ -1952,6 +1936,7 @@ export function evaluatesToStableTypeOrContainer(
       case 'useActionState':
       case 'useRef':
       case 'useTransition':
+      case 'useOptimistic':
         return true;
     }
   }
@@ -1973,6 +1958,11 @@ export function isUseInsertionEffectHookType(id: Identifier): boolean {
   return (
     id.type.kind === 'Function' &&
     id.type.shapeId === 'BuiltInUseInsertionEffectHook'
+  );
+}
+export function isUseEffectEventType(id: Identifier): boolean {
+  return (
+    id.type.kind === 'Function' && id.type.shapeId === 'BuiltInUseEffectEvent'
   );
 }
 

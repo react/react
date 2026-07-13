@@ -114,14 +114,11 @@ describe('ReactJSXTransformIntegration', () => {
     const element = <Component ref={ref} foo="56" />;
     expect(element.type).toBe(Component);
     expect(element.ref).toBe(ref);
-    assertConsoleErrorDev(
-      [
-        'Accessing element.ref was removed in React 19. ref is now a ' +
-          'regular prop. It will be removed from the JSX Element ' +
-          'type in a future release.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Accessing element.ref was removed in React 19. ref is now a ' +
+        'regular prop. It will be removed from the JSX Element ' +
+        'type in a future release.',
+    ]);
     const expectation = {foo: '56', ref};
     Object.freeze(expectation);
     expect(element.props).toEqual(expectation);

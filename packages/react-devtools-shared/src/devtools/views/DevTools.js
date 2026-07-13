@@ -26,6 +26,7 @@ import Profiler from './Profiler/Profiler';
 import SuspenseTab from './SuspenseTab/SuspenseTab';
 import TabBar from './TabBar';
 import EditorPane from './Editor/EditorPane';
+import InspectedElementPane from './InspectedElement/InspectedElementPane';
 import {SettingsContextController} from './Settings/SettingsContext';
 import {TreeContextController} from './Components/TreeContext';
 import ViewElementSourceContext from './Components/ViewElementSourceContext';
@@ -100,6 +101,7 @@ export type Props = {
   // The root <DevTools> app is rendered in the top-level extension window,
   // but individual tabs (e.g. Components, Profiling) can be rendered into portals within their browser panels.
   componentsPortalContainer?: Element,
+  inspectedElementPortalContainer?: Element,
   profilerPortalContainer?: Element,
   suspensePortalContainer?: Element,
   editorPortalContainer?: Element,
@@ -115,39 +117,25 @@ export type Props = {
 };
 
 const componentsTab = {
-  id: ('components': TabID),
+  id: 'components' as TabID,
   icon: 'components',
   label: 'Components',
   title: 'React Components',
 };
 const profilerTab = {
-  id: ('profiler': TabID),
+  id: 'profiler' as TabID,
   icon: 'profiler',
   label: 'Profiler',
   title: 'React Profiler',
 };
 const suspenseTab = {
-  id: ('suspense': TabID),
+  id: 'suspense' as TabID,
   icon: 'suspense',
   label: 'Suspense',
   title: 'React Suspense',
 };
 
-const defaultTabs = [componentsTab, profilerTab];
-const tabsWithSuspense = [componentsTab, profilerTab, suspenseTab];
-
-function useIsSuspenseTabEnabled(store: Store): boolean {
-  const subscribe = useCallback(
-    (onStoreChange: () => void) => {
-      store.addListener('enableSuspenseTab', onStoreChange);
-      return () => {
-        store.removeListener('enableSuspenseTab', onStoreChange);
-      };
-    },
-    [store],
-  );
-  return React.useSyncExternalStore(subscribe, () => store.supportsSuspenseTab);
-}
+const tabs = [componentsTab, profilerTab, suspenseTab];
 
 export default function DevTools({
   bridge,
@@ -155,6 +143,7 @@ export default function DevTools({
   canViewElementSourceFunction,
   componentsPortalContainer,
   editorPortalContainer,
+  inspectedElementPortalContainer,
   profilerPortalContainer,
   suspensePortalContainer,
   currentSelectedSource,
@@ -180,8 +169,6 @@ export default function DevTools({
     LOCAL_STORAGE_DEFAULT_TAB_KEY,
     defaultTab,
   );
-  const enableSuspenseTab = useIsSuspenseTabEnabled(store);
-  const tabs = enableSuspenseTab ? tabsWithSuspense : defaultTabs;
 
   let tab = currentTab;
 
@@ -375,6 +362,14 @@ export default function DevTools({
                                     <EditorPane
                                       selectedSource={currentSelectedSource}
                                       portalContainer={editorPortalContainer}
+                                    />
+                                  ) : null}
+                                  {inspectedElementPortalContainer ? (
+                                    <InspectedElementPane
+                                      selectedSource={currentSelectedSource}
+                                      portalContainer={
+                                        inspectedElementPortalContainer
+                                      }
                                     />
                                   ) : null}
                                 </ThemeProvider>

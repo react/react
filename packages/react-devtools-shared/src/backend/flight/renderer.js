@@ -152,6 +152,9 @@ export function attach(
     findHostInstancesForElementID() {
       return null;
     },
+    findLastKnownRectsForID() {
+      return null;
+    },
     flushInitialOperations() {},
     getBestMatchForTrackedPath() {
       return null;
@@ -164,6 +167,9 @@ export function attach(
       return null;
     },
     getElementIDForHostInstance() {
+      return null;
+    },
+    getSuspenseNodeIDForHostInstance() {
       return null;
     },
     getInstanceAndStyle() {

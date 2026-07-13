@@ -29,20 +29,24 @@ import { c as _c } from "react/compiler-runtime";
 import fbt from "fbt";
 
 function Component(t0) {
-  const $ = _c(4);
+  const $ = _c(6);
   const { name, data, icon } = t0;
   let t1;
   if ($[0] !== data || $[1] !== icon || $[2] !== name) {
+    let t2;
+    if ($[4] !== name) {
+      t2 = <Text type="h4">{name}</Text>;
+      $[4] = name;
+      $[5] = t2;
+    } else {
+      t2 = $[5];
+    }
     t1 = (
       <Text type="body4">
         {fbt._(
           "{item author}{icon}{=m2}",
           [
-            fbt._param(
-              "item author",
-
-              <Text type="h4">{name}</Text>,
-            ),
+            fbt._param("item author", t2),
             fbt._param(
               "icon",
 

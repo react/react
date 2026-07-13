@@ -40,13 +40,11 @@ function Component(props) {
       [
         fbt._param(
           "a really long description that got split into multiple lines",
-
           props.name,
         ),
       ],
       { hk: "1euPUp" },
     );
-
     t0 = element.toString();
     $[0] = props.name;
     $[1] = t0;

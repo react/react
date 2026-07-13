@@ -346,16 +346,11 @@ describe('ReactElementClone', () => {
     expect(clone.key).toBe('12');
     expect(clone.props.ref).toBe('34');
     expect(clone.ref).toBe('34');
-    assertConsoleErrorDev(
-      [
-        'Accessing element.ref was removed in React 19. ref is now a ' +
-          'regular prop. It will be removed from the JSX Element ' +
-          'type in a future release.',
-      ],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleErrorDev([
+      'Accessing element.ref was removed in React 19. ref is now a ' +
+        'regular prop. It will be removed from the JSX Element ' +
+        'type in a future release.',
+    ]);
     expect(clone.props).toEqual({foo: 'ef', ref: '34'});
     if (__DEV__) {
       expect(Object.isFrozen(element)).toBe(true);

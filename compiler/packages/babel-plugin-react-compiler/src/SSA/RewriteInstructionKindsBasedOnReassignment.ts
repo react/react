@@ -8,6 +8,7 @@
 import {CompilerError} from '../CompilerError';
 import {
   DeclarationId,
+  GeneratedSource,
   HIRFunction,
   InstructionKind,
   LValue,
@@ -59,13 +60,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
             {
               reason: `Expected variable not to be defined prior to declaration`,
               description: `${printPlace(lvalue.place)} was already defined`,
-              details: [
-                {
-                  kind: 'error',
-                  loc: lvalue.place.loc,
-                  message: null,
-                },
-              ],
+              loc: lvalue.place.loc,
             },
           );
           declarations.set(lvalue.place.identifier.declarationId, lvalue);
@@ -83,13 +78,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
                 {
                   reason: `Expected variable not to be defined prior to declaration`,
                   description: `${printPlace(lvalue.place)} was already defined`,
-                  details: [
-                    {
-                      kind: 'error',
-                      loc: lvalue.place.loc,
-                      message: null,
-                    },
-                  ],
+                  loc: lvalue.place.loc,
                 },
               );
               declarations.set(lvalue.place.identifier.declarationId, lvalue);
@@ -113,14 +102,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
                   description: `other places were \`${kind}\` but '${printPlace(
                     place,
                   )}' is const`,
-                  details: [
-                    {
-                      kind: 'error',
-                      loc: place.loc,
-                      message: 'Expected consistent kind for destructuring',
-                    },
-                  ],
-                  suggestions: null,
+                  loc: place.loc,
                 },
               );
               kind = InstructionKind.Const;
@@ -131,15 +113,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
               if (declaration === undefined) {
                 CompilerError.invariant(block.kind !== 'value', {
                   reason: `TODO: Handle reassignment in a value block where the original declaration was removed by dead code elimination (DCE)`,
-                  description: null,
-                  details: [
-                    {
-                      kind: 'error',
-                      loc: place.loc,
-                      message: null,
-                    },
-                  ],
-                  suggestions: null,
+                  loc: place.loc,
                 });
                 declarations.set(place.identifier.declarationId, lvalue);
                 CompilerError.invariant(
@@ -149,14 +123,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
                     description: `Other places were \`${kind}\` but '${printPlace(
                       place,
                     )}' is const`,
-                    details: [
-                      {
-                        kind: 'error',
-                        loc: place.loc,
-                        message: 'Expected consistent kind for destructuring',
-                      },
-                    ],
-                    suggestions: null,
+                    loc: place.loc,
                   },
                 );
                 kind = InstructionKind.Const;
@@ -168,14 +135,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
                     description: `Other places were \`${kind}\` but '${printPlace(
                       place,
                     )}' is reassigned`,
-                    details: [
-                      {
-                        kind: 'error',
-                        loc: place.loc,
-                        message: 'Expected consistent kind for destructuring',
-                      },
-                    ],
-                    suggestions: null,
+                    loc: place.loc,
                   },
                 );
                 kind = InstructionKind.Reassign;
@@ -185,15 +145,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
           }
           CompilerError.invariant(kind !== null, {
             reason: 'Expected at least one operand',
-            description: null,
-            details: [
-              {
-                kind: 'error',
-                loc: null,
-                message: null,
-              },
-            ],
-            suggestions: null,
+            loc: GeneratedSource,
           });
           lvalue.kind = kind;
           break;
@@ -205,13 +157,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
           CompilerError.invariant(declaration !== undefined, {
             reason: `Expected variable to have been defined`,
             description: `No declaration for ${printPlace(lvalue)}`,
-            details: [
-              {
-                kind: 'error',
-                loc: lvalue.loc,
-                message: null,
-              },
-            ],
+            loc: lvalue.loc,
           });
           declaration.kind = InstructionKind.Let;
           break;

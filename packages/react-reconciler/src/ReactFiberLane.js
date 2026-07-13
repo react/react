@@ -28,6 +28,8 @@ import {
   retryLaneExpirationMs,
   disableLegacyMode,
   enableDefaultTransitionIndicator,
+  enableGestureTransition,
+  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {clz32} from './clz32';
@@ -72,6 +74,8 @@ const TransitionLane11: Lane = /*                       */ 0b0000000000001000000
 const TransitionLane12: Lane = /*                       */ 0b0000000000010000000000000000000;
 const TransitionLane13: Lane = /*                       */ 0b0000000000100000000000000000000;
 const TransitionLane14: Lane = /*                       */ 0b0000000001000000000000000000000;
+
+export const SomeTransitionLane: Lane = TransitionLane1;
 
 const TransitionUpdateLanes =
   TransitionLane1 |
@@ -205,6 +209,9 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
     case TransitionLane8:
     case TransitionLane9:
     case TransitionLane10:
+      if (enableParallelTransitions) {
+        return getHighestPriorityLane(lanes);
+      }
       return lanes & TransitionUpdateLanes;
     case TransitionLane11:
     case TransitionLane12:
@@ -609,10 +616,6 @@ export function includesSyncLane(lanes: Lanes): boolean {
   return (lanes & (SyncLane | SyncHydrationLane)) !== NoLanes;
 }
 
-export function isSyncLane(lanes: Lanes): boolean {
-  return (lanes & (SyncLane | SyncHydrationLane)) !== NoLanes;
-}
-
 export function includesNonIdleWork(lanes: Lanes): boolean {
   return (lanes & NonIdleLanes) !== NoLanes;
 }
@@ -622,7 +625,8 @@ export function includesOnlyRetries(lanes: Lanes): boolean {
 export function includesOnlyNonUrgentLanes(lanes: Lanes): boolean {
   // TODO: Should hydration lanes be included here? This function is only
   // used in `updateDeferredValueImpl`.
-  const UrgentLanes = SyncLane | InputContinuousLane | DefaultLane;
+  const UrgentLanes =
+    SyncLane | InputContinuousLane | DefaultLane | GestureLane;
   return (lanes & UrgentLanes) === NoLanes;
 }
 export function includesOnlyTransitions(lanes: Lanes): boolean {
@@ -631,6 +635,22 @@ export function includesOnlyTransitions(lanes: Lanes): boolean {
 
 export function includesTransitionLane(lanes: Lanes): boolean {
   return (lanes & TransitionLanes) !== NoLanes;
+}
+
+export function includesRetryLane(lanes: Lanes): boolean {
+  return (lanes & RetryLanes) !== NoLanes;
+}
+
+export function includesIdleGroupLanes(lanes: Lanes): boolean {
+  return (
+    (lanes &
+      (SelectiveHydrationLane |
+        IdleHydrationLane |
+        IdleLane |
+        OffscreenLane |
+        DeferredLane)) !==
+    NoLanes
+  );
 }
 
 export function includesOnlyHydrationLanes(lanes: Lanes): boolean {
@@ -663,6 +683,8 @@ export function includesLoadingIndicatorLanes(lanes: Lanes): boolean {
 
 export function includesBlockingLane(lanes: Lanes): boolean {
   const SyncDefaultLanes =
+    SyncHydrationLane |
+    SyncLane |
     InputContinuousHydrationLane |
     InputContinuousLane |
     DefaultHydrationLane |
@@ -679,10 +701,13 @@ export function includesExpiredLane(root: FiberRoot, lanes: Lanes): boolean {
 
 export function isBlockingLane(lane: Lane): boolean {
   const SyncDefaultLanes =
+    SyncHydrationLane |
+    SyncLane |
     InputContinuousHydrationLane |
     InputContinuousLane |
     DefaultHydrationLane |
-    DefaultLane;
+    DefaultLane |
+    GestureLane;
   return (lane & SyncDefaultLanes) !== NoLanes;
 }
 
@@ -691,6 +716,9 @@ export function isTransitionLane(lane: Lane): boolean {
 }
 
 export function isGestureRender(lanes: Lanes): boolean {
+  if (!enableGestureTransition) {
+    return false;
+  }
   // This should render only the one lane.
   return lanes === GestureLane;
 }
@@ -914,6 +942,7 @@ export function markRootFinished(
       // commits, they behave like regular updates.
       for (let i = 0; i < hiddenUpdatesForLane.length; i++) {
         const update = hiddenUpdatesForLane[i];
+        // $FlowFixMe[invalid-compare]
         if (update !== null) {
           update.lane &= ~OffscreenLane;
         }
@@ -1252,10 +1281,12 @@ export function getGroupNameOfHighestPriorityLane(lanes: Lanes): string {
       InputContinuousHydrationLane |
       InputContinuousLane |
       DefaultHydrationLane |
-      DefaultLane |
-      GestureLane)
+      DefaultLane)
   ) {
     return 'Blocking';
+  }
+  if (lanes & GestureLane) {
+    return 'Gesture';
   }
   if (lanes & (TransitionHydrationLane | TransitionLanes)) {
     return 'Transition';

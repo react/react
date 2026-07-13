@@ -1,4 +1,4 @@
-// @panicThreshold:"none"
+// @panicThreshold:"none" @validateExhaustiveMemoizationDependencies:false
 
 // unclosed disable rule should affect all components
 /* eslint-disable react-hooks/rules-of-hooks */

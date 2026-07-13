@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @expectNothingCompiled
 // Valid because they're not matching use[A-Z].
 fooState();
 _use();
@@ -15,6 +16,7 @@ jest.useFakeTimer();
 ## Code
 
 ```javascript
+// @expectNothingCompiled
 // Valid because they're not matching use[A-Z].
 fooState();
 _use();

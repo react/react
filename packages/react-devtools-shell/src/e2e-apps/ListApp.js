@@ -19,7 +19,7 @@ function List() {
   const inputRef = useRef(null);
 
   const addItem = () => {
-    const input = ((inputRef.current: any): HTMLInputElement);
+    const input = inputRef.current as any as HTMLInputElement;
     const text = input.value;
     input.value = '';
 

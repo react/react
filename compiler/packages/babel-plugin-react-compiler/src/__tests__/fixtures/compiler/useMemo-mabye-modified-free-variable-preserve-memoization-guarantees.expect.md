@@ -85,6 +85,7 @@ function Component(props) {
 
   identity(free);
   identity(part);
+
   return object;
 }
 

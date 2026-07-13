@@ -159,7 +159,11 @@ function Components(_: {}) {
             <div className={styles.InspectedElementWrapper}>
               <NativeStyleContextController>
                 <InspectedElementErrorBoundary>
-                  <InspectedElement />
+                  <InspectedElement
+                    fallbackEmpty={
+                      'No React element selected. Select an element in the tree to inspect.'
+                    }
+                  />
                 </InspectedElementErrorBoundary>
               </NativeStyleContextController>
             </div>
@@ -235,4 +239,4 @@ function setResizeCSSVariable(
   }
 }
 
-export default (portaledContent(Components): component());
+export default portaledContent(Components) as component();

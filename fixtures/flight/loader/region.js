@@ -3,7 +3,7 @@ import {
   load as reactLoad,
   getSource as getSourceImpl,
   transformSource as reactTransformSource,
-} from 'react-server-dom-webpack/node-loader';
+} from 'react-server-dom-unbundled/node-loader';
 
 export {resolve};
 
@@ -14,7 +14,7 @@ const babelOptions = {
   ignore: [/\/(build|node_modules)\//],
   plugins: [
     '@babel/plugin-syntax-import-meta',
-    '@babel/plugin-transform-react-jsx',
+    ['@babel/plugin-transform-react-jsx', {runtime: 'automatic'}],
   ],
   sourceMaps: process.env.NODE_ENV === 'development' ? 'inline' : false,
 };

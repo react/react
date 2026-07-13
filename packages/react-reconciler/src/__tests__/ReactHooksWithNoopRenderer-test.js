@@ -68,7 +68,7 @@ describe('ReactHooksWithNoopRenderer', () => {
     useTransition = React.useTransition;
     useDeferredValue = React.useDeferredValue;
     Suspense = React.Suspense;
-    Activity = React.unstable_Activity;
+    Activity = React.Activity;
     ContinuousEventPriority =
       require('react-reconciler/constants').ContinuousEventPriority;
     if (gate(flags => flags.enableSuspenseList)) {
@@ -236,17 +236,14 @@ describe('ReactHooksWithNoopRenderer', () => {
     expect(() => useState(0)).toThrow(
       "Cannot read property 'useState' of null",
     );
-    assertConsoleErrorDev(
-      [
-        'Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for' +
-          ' one of the following reasons:\n' +
-          '1. You might have mismatching versions of React and the renderer (such as React DOM)\n' +
-          '2. You might be breaking the Rules of Hooks\n' +
-          '3. You might have more than one copy of React in the same app\n' +
-          'See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for' +
+        ' one of the following reasons:\n' +
+        '1. You might have mismatching versions of React and the renderer (such as React DOM)\n' +
+        '2. You might be breaking the Rules of Hooks\n' +
+        '3. You might have more than one copy of React in the same app\n' +
+        'See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.',
+    ]);
   });
 
   describe('useState', () => {
@@ -734,6 +731,61 @@ describe('ReactHooksWithNoopRenderer', () => {
         expect(root).toMatchRenderedOutput(<span prop="B:0" />);
       });
     });
+
+    it(
+      'preserves pending updates on later hooks that were not processed ' +
+        'before unwind',
+      async () => {
+        const thenable = {then() {}};
+
+        let setLabel;
+        function Foo({suspend}) {
+          return (
+            <Suspense fallback="Loading...">
+              <Bar suspend={suspend} />
+            </Suspense>
+          );
+        }
+
+        function Bar({suspend}) {
+          const [counter, setCounter] = useState(0);
+
+          if (suspend) {
+            setCounter(c => c + 1);
+            Scheduler.log('Suspend!');
+            throw thenable;
+          }
+
+          const [label, _setLabel] = useState('A');
+          setLabel = _setLabel;
+
+          return <Text text={`${label}:${counter}`} />;
+        }
+
+        const root = ReactNoop.createRoot();
+        root.render(<Foo suspend={false} />);
+
+        await waitForAll(['A:0']);
+        expect(root).toMatchRenderedOutput(<span prop="A:0" />);
+
+        await act(async () => {
+          React.startTransition(() => {
+            root.render(<Foo suspend={true} />);
+            setLabel('B');
+          });
+
+          await waitForAll(['Suspend!']);
+          expect(root).toMatchRenderedOutput(<span prop="A:0" />);
+
+          React.startTransition(() => {
+            root.render(<Foo suspend={false} />);
+          });
+
+          await waitForAll(['B:0']);
+          expect(root).toMatchRenderedOutput(<span prop="B:0" />);
+        });
+      },
+    );
 
     it('regression: render phase updates cause lower pri work to be dropped', async () => {
       let setRow;
@@ -3047,7 +3099,6 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    // @gate enableActivity
     it('warns when setState is called from offscreen deleted insertion effect cleanup', async () => {
       function App(props) {
         const [, setX] = useState(0);
@@ -3074,14 +3125,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       await act(() => {
         root.render(<Activity mode="hidden" />);
       });
-      assertConsoleErrorDev(
-        gate('enableHiddenSubtreeInsertionEffectCleanup')
-          ? [
-              'useInsertionEffect must not schedule updates.\n' +
-                '    in App (at **)',
-            ]
-          : [],
-      );
+      assertConsoleErrorDev([
+        'useInsertionEffect must not schedule updates.\n' +
+          '    in App (at **)',
+      ]);
 
       // Should not warn for regular effects after throw.
       function NotInsertion() {

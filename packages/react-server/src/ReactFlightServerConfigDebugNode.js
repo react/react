@@ -35,7 +35,7 @@ import {parseStackTracePrivate} from './ReactFlightServerConfig';
 const getAsyncId = AsyncResource.prototype.asyncId;
 
 const pendingOperations: Map<number, AsyncSequence> =
-  __DEV__ && enableAsyncDebugInfo ? new Map() : (null: any);
+  __DEV__ && enableAsyncDebugInfo ? new Map() : (null as any);
 
 // Keep the last resolved await as a workaround for async functions missing data.
 let lastRanAwait: null | AwaitNode = null;
@@ -44,10 +44,10 @@ function resolvePromiseOrAwaitNode(
   unresolvedNode: UnresolvedAwaitNode | UnresolvedPromiseNode,
   endTime: number,
 ): AwaitNode | PromiseNode {
-  const resolvedNode: AwaitNode | PromiseNode = (unresolvedNode: any);
-  resolvedNode.tag = ((unresolvedNode.tag === UNRESOLVED_PROMISE_NODE
-    ? PROMISE_NODE
-    : AWAIT_NODE): any);
+  const resolvedNode: AwaitNode | PromiseNode = unresolvedNode as any;
+  resolvedNode.tag = (
+    unresolvedNode.tag === UNRESOLVED_PROMISE_NODE ? PROMISE_NODE : AWAIT_NODE
+  ) as any;
   resolvedNode.end = endTime;
   return resolvedNode;
 }
@@ -93,13 +93,13 @@ export function initAsyncDebugInfo(): void {
               stack = emptyStack;
               if (resource._debugInfo !== undefined) {
                 // We may need to forward this debug info at the end so we need to retain this promise.
-                promiseRef = new WeakRef((resource: Promise<any>));
+                promiseRef = new WeakRef(resource as Promise<any>);
               } else {
                 // Otherwise, we can just refer to the inner one since that's the one we'll log anyway.
                 promiseRef = trigger.promise;
               }
             } else {
-              promiseRef = new WeakRef((resource: Promise<any>));
+              promiseRef = new WeakRef(resource as Promise<any>);
               const request = resolveRequest();
               if (request === null) {
                 // We don't collect stacks for awaits that weren't in the scope of a specific render.
@@ -114,7 +114,7 @@ export function initAsyncDebugInfo(): void {
               }
             }
             const current = pendingOperations.get(currentAsyncId);
-            node = ({
+            node = {
               tag: UNRESOLVED_AWAIT_NODE,
               owner: resolveOwner(),
               stack: stack,
@@ -123,33 +123,51 @@ export function initAsyncDebugInfo(): void {
               promise: promiseRef,
               awaited: trigger, // The thing we're awaiting on. Might get overrriden when we resolve.
               previous: current === undefined ? null : current, // The path that led us here.
-            }: UnresolvedAwaitNode);
+            } as UnresolvedAwaitNode;
           } else {
             const owner = resolveOwner();
-            node = ({
+            node = {
               tag: UNRESOLVED_PROMISE_NODE,
               owner: owner,
               stack:
                 owner === null ? null : parseStackTracePrivate(new Error(), 5),
               start: performance.now(),
               end: -1.1, // Set when we resolve.
-              promise: new WeakRef((resource: Promise<any>)),
+              promise: new WeakRef(resource as Promise<any>),
               awaited:
                 trigger === undefined
                   ? null // It might get overridden when we resolve.
                   : trigger,
               previous: null,
-            }: UnresolvedPromiseNode);
+            } as UnresolvedPromiseNode;
           }
         } else if (
-          type !== 'Microtask' &&
-          type !== 'TickObject' &&
-          type !== 'Immediate'
+          // bound-anonymous-fn is the default name for snapshots and .bind() without a name.
+          // This isn't I/O by itself but likely just a continuation. If the bound function
+          // has a name, we might treat it as I/O but we can't tell the difference.
+          type === 'bound-anonymous-fn' ||
+          // queueMicroTask, process.nextTick and setImmediate aren't considered new I/O
+          // for our purposes but just continuation of existing I/O.
+          type === 'Microtask' ||
+          type === 'TickObject' ||
+          type === 'Immediate'
         ) {
+          // Treat the trigger as the node to carry along the sequence.
+          // For "bound-anonymous-fn" this will be the callsite of the .bind() which may not
+          // be the best if the callsite of the .run() call is within I/O which should be
+          // tracked. It might be better to track the execution context of "before()" as the
+          // execution context for anything spawned from within the run(). Basically as if
+          // it wasn't an AsyncResource at all.
+          if (trigger === undefined) {
+            return;
+          }
+          node = trigger;
+        } else {
+          // New I/O
           if (trigger === undefined) {
             // We have begun a new I/O sequence.
             const owner = resolveOwner();
-            node = ({
+            node = {
               tag: IO_NODE,
               owner: owner,
               stack:
@@ -159,14 +177,14 @@ export function initAsyncDebugInfo(): void {
               promise: null,
               awaited: null,
               previous: null,
-            }: IONode);
+            } as IONode;
           } else if (
             trigger.tag === AWAIT_NODE ||
             trigger.tag === UNRESOLVED_AWAIT_NODE
           ) {
             // We have begun a new I/O sequence after the await.
             const owner = resolveOwner();
-            node = ({
+            node = {
               tag: IO_NODE,
               owner: owner,
               stack:
@@ -176,18 +194,11 @@ export function initAsyncDebugInfo(): void {
               promise: null,
               awaited: null,
               previous: trigger,
-            }: IONode);
+            } as IONode;
           } else {
             // Otherwise, this is just a continuation of the same I/O sequence.
             node = trigger;
           }
-        } else {
-          // Ignore nextTick and microtasks as they're not considered I/O operations.
-          // we just treat the trigger as the node to carry along the sequence.
-          if (trigger === undefined) {
-            return;
-          }
-          node = trigger;
         }
         pendingOperations.set(asyncId, node);
       },
@@ -197,17 +208,36 @@ export function initAsyncDebugInfo(): void {
           switch (node.tag) {
             case IO_NODE: {
               lastRanAwait = null;
-              // Log the end time when we resolved the I/O. This can happen
-              // more than once if it's a recurring resource like a connection.
-              const ioNode: IONode = (node: any);
-              ioNode.end = performance.now();
+              // Log the end time when we resolved the I/O.
+              const ioNode: IONode = node as any;
+              if (ioNode.end < 0) {
+                ioNode.end = performance.now();
+              } else {
+                // This can happen more than once if it's a recurring resource like a connection.
+                // Even for single events like setTimeout, this can happen three times due to ticks
+                // and microtasks each running its own scope.
+                // To preserve each operation's separate end time, we create a clone of the IO node.
+                // Any pre-existing reference will refer to the first resolution and any new resolutions
+                // will refer to the new node.
+                const clonedNode: IONode = {
+                  tag: IO_NODE,
+                  owner: ioNode.owner,
+                  stack: ioNode.stack,
+                  start: ioNode.start,
+                  end: performance.now(),
+                  promise: ioNode.promise,
+                  awaited: ioNode.awaited,
+                  previous: ioNode.previous,
+                };
+                pendingOperations.set(asyncId, clonedNode);
+              }
               break;
             }
             case UNRESOLVED_AWAIT_NODE: {
               // If we begin before we resolve, that means that this is actually already resolved but
               // the promiseResolve hook is called at the end of the execution. So we track the time
               // in the before call instead.
-              // $FlowFixMe
+              // $FlowFixMe[incompatible-type]
               lastRanAwait = resolvePromiseOrAwaitNode(node, performance.now());
               break;
             }

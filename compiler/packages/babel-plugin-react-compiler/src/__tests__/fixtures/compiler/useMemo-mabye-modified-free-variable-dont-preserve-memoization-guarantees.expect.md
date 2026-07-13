@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enablePreserveExistingMemoizationGuarantees:false
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 import {identity, makeObject_Primitives, mutate, useHook} from 'shared-runtime';
 
@@ -36,7 +36,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @enablePreserveExistingMemoizationGuarantees:false
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import { useMemo } from "react";
 import {
   identity,

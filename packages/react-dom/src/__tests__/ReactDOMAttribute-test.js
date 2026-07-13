@@ -9,6 +9,13 @@
 
 'use strict';
 
+// Fix JSDOM. setAttribute is supposed to throw on things that can't be implicitly toStringed.
+const setAttribute = Element.prototype.setAttribute;
+Element.prototype.setAttribute = function (name, value) {
+  // eslint-disable-next-line react-internal/safe-string-coercion
+  return setAttribute.call(this, name, '' + value);
+};
+
 describe('ReactDOM unknown attribute', () => {
   let React;
   let ReactDOMClient;

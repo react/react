@@ -12,11 +12,7 @@ import type {
   BootstrapScriptDescriptor,
   HeadersDescriptor,
 } from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
-import type {
-  PostponedState,
-  ErrorInfo,
-  PostponeInfo,
-} from 'react-server/src/ReactFizzServer';
+import type {PostponedState, ErrorInfo} from 'react-server/src/ReactFizzServer';
 import type {ImportMap} from '../shared/ReactDOMTypes';
 
 import {Writable, Readable} from 'stream';
@@ -40,8 +36,6 @@ import {
   createRootFormatContext,
 } from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
 
-import {enablePostpone, enableHalt} from 'shared/ReactFeatureFlags';
-
 import {textEncoder} from 'react-server/src/ReactServerStreamConfigNode';
 
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
@@ -63,7 +57,6 @@ type Options = {
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
-  onPostpone?: (reason: string, postponeInfo: PostponeInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   onHeaders?: (headers: HeadersDescriptor) => void,
@@ -80,7 +73,7 @@ function createFakeWritableFromReadableStreamController(
 ): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       if (typeof chunk === 'string') {
         chunk = textEncoder.encode(chunk);
@@ -101,13 +94,13 @@ function createFakeWritableFromReadableStreamController(
         controller.close();
       }
     },
-  }: any);
+  } as any;
 }
 
 function createFakeWritableFromReadable(readable: any): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk) {
       return readable.push(chunk);
     },
@@ -117,7 +110,7 @@ function createFakeWritableFromReadable(readable: any): Writable {
     destroy(error) {
       readable.destroy(error);
     },
-  }: any);
+  } as any;
 }
 
 function prerenderToNodeStream(
@@ -135,15 +128,10 @@ function prerenderToNodeStream(
       });
       const writable = createFakeWritableFromReadable(readable);
 
-      const result: StaticResult =
-        enablePostpone || enableHalt
-          ? {
-              postponed: getPostponedState(request),
-              prelude: readable,
-            }
-          : ({
-              prelude: readable,
-            }: any);
+      const result: StaticResult = {
+        postponed: getPostponedState(request),
+        prelude: readable,
+      };
       resolve(result);
     }
     const resumableState = createResumableState(
@@ -171,15 +159,14 @@ function prerenderToNodeStream(
       undefined,
       undefined,
       onFatalError,
-      options ? options.onPostpone : undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -219,18 +206,14 @@ function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
-      const result =
-        enablePostpone || enableHalt
-          ? {
-              postponed: getPostponedState(request),
-              prelude: stream,
-            }
-          : ({
-              prelude: stream,
-            }: any);
+      const result = {
+        postponed: getPostponedState(request),
+        prelude: stream,
+      };
       resolve(result);
     }
 
@@ -266,15 +249,14 @@ function prerender(
       undefined,
       undefined,
       onFatalError,
-      options ? options.onPostpone : undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -288,13 +270,12 @@ type ResumeOptions = {
   nonce?: NonceOption,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
-  onPostpone?: (reason: string, postponeInfo: PostponeInfo) => void,
 };
 
 function resumeAndPrerenderToNodeStream(
   children: ReactNodeList,
   postponedState: PostponedState,
-  options?: ResumeOptions,
+  options?: Omit<ResumeOptions, 'nonce'>,
 ): Promise<StaticResult> {
   return new Promise((resolve, reject) => {
     const onFatalError = reject;
@@ -316,24 +297,20 @@ function resumeAndPrerenderToNodeStream(
     const request = resumeAndPrerenderRequest(
       children,
       postponedState,
-      resumeRenderState(
-        postponedState.resumableState,
-        options ? options.nonce : undefined,
-      ),
+      resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
       onAllReady,
       undefined,
       undefined,
       onFatalError,
-      options ? options.onPostpone : undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -346,7 +323,7 @@ function resumeAndPrerenderToNodeStream(
 function resumeAndPrerender(
   children: ReactNodeList,
   postponedState: PostponedState,
-  options?: ResumeOptions,
+  options?: Omit<ResumeOptions, 'nonce'>,
 ): Promise<{
   postponed: null | PostponedState,
   prelude: ReadableStream,
@@ -372,6 +349,7 @@ function resumeAndPrerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -385,24 +363,20 @@ function resumeAndPrerender(
     const request = resumeAndPrerenderRequest(
       children,
       postponedState,
-      resumeRenderState(
-        postponedState.resumableState,
-        options ? options.nonce : undefined,
-      ),
+      resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
       onAllReady,
       undefined,
       undefined,
       onFatalError,
-      options ? options.onPostpone : undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

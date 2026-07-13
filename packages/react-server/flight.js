@@ -7,4 +7,11 @@
  * @flow
  */
 
+import typeof * as FlightServerAPI from './src/ReactFlightServer';
+import typeof * as HostConfig from './src/ReactFlightServerConfig';
+
 export * from './src/ReactFlightServer';
+
+// At build time, this module is wrapped as a factory function ($$$reconciler).
+// Consumers pass a host config object and get back the Flight server API.
+declare export default (hostConfig: HostConfig) => FlightServerAPI;

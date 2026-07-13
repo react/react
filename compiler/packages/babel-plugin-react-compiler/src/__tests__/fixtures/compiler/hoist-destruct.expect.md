@@ -37,7 +37,6 @@ function Foo() {
         </div>
       );
     };
-
     const [t1, t2] = [1, { x: 2 }];
     const a = t1;
     const { x: t3, y: t4 } = t2;

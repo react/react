@@ -10,7 +10,14 @@
 import type {ReactContext} from 'shared/ReactTypes';
 
 import * as React from 'react';
-import {createContext, useCallback, useContext, useMemo, useState} from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  useEffect,
+} from 'react';
 import {useLocalStorage, useSubscription} from '../hooks';
 import {
   TreeDispatcherContext,
@@ -18,8 +25,9 @@ import {
 } from '../Components/TreeContext';
 import {StoreContext} from '../context';
 import {logEvent} from 'react-devtools-shared/src/Logger';
+import {useCommitFilteringAndNavigation} from './useCommitFilteringAndNavigation';
 
-import type {ProfilingDataFrontend} from './types';
+import type {CommitDataFrontend, ProfilingDataFrontend} from './types';
 
 export type TabID = 'flame-chart' | 'ranked-chart' | 'timeline';
 
@@ -61,6 +69,12 @@ export type Context = {
   // It impacts the flame graph and ranked charts.
   selectedCommitIndex: number | null,
   selectCommitIndex: (value: number | null) => void,
+  selectNextCommitIndex(): void,
+  selectPrevCommitIndex(): void,
+
+  // Which commits are currently filtered by duration?
+  filteredCommitIndices: Array<number>,
+  selectedFilteredCommitIndex: number | null,
 
   // Which fiber is currently selected in the Ranked or Flamegraph charts?
   selectedFiberID: number | null,
@@ -69,7 +83,7 @@ export type Context = {
 };
 
 const ProfilerContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 ProfilerContext.displayName = 'ProfilerContext';
 
@@ -164,6 +178,7 @@ function ProfilerContextController({children}: Props): React.Node {
     [setRootID, selectFiber],
   );
 
+  // Sync rootID with profilingData changes.
   if (prevProfilingData !== profilingData) {
     setPrevProfilingData(profilingData);
 
@@ -189,16 +204,6 @@ function ProfilerContextController({children}: Props): React.Node {
     }
   }
 
-  const [isCommitFilterEnabled, setIsCommitFilterEnabled] =
-    useLocalStorage<boolean>('React::DevTools::isCommitFilterEnabled', false);
-  const [minCommitDuration, setMinCommitDuration] = useLocalStorage<number>(
-    'minCommitDuration',
-    0,
-  );
-
-  const [selectedCommitIndex, selectCommitIndex] = useState<number | null>(
-    null,
-  );
   const [selectedTabID, selectTab] = useLocalStorage<TabID>(
     'React::DevTools::Profiler::defaultTab',
     'flame-chart',
@@ -212,27 +217,66 @@ function ProfilerContextController({children}: Props): React.Node {
     },
   );
 
-  const startProfiling = useCallback(() => {
-    logEvent({
-      event_name: 'profiling-start',
-      metadata: {current_tab: selectedTabID},
-    });
-    store.profilerStore.startProfiling();
-  }, [store, selectedTabID]);
   const stopProfiling = useCallback(
     () => store.profilerStore.stopProfiling(),
     [store],
   );
 
-  if (isProfiling) {
-    if (selectedCommitIndex !== null) {
-      selectCommitIndex(null);
+  // Get commit data for the current root
+  // NOTE: Unlike profilerStore.getDataForRoot() which uses Suspense (throws when data unavailable),
+  // this uses subscription pattern and returns [] when data isn't ready.
+  // Always check didRecordCommits before using commitData or filteredCommitIndices.
+  const commitData = useMemo(() => {
+    if (!didRecordCommits || rootID === null || profilingData === null) {
+      return [] as Array<CommitDataFrontend>;
     }
-    if (selectedFiberID !== null) {
-      selectFiberID(null);
-      selectFiberName(null);
+    const dataForRoot = profilingData.dataForRoots.get(rootID);
+    return dataForRoot
+      ? dataForRoot.commitData
+      : ([] as Array<CommitDataFrontend>);
+  }, [didRecordCommits, rootID, profilingData]);
+
+  // Commit filtering and navigation
+  const {
+    isCommitFilterEnabled,
+    setIsCommitFilterEnabled,
+    minCommitDuration,
+    setMinCommitDuration,
+    selectedCommitIndex,
+    selectCommitIndex,
+    filteredCommitIndices,
+    selectedFilteredCommitIndex,
+    selectNextCommitIndex,
+    selectPrevCommitIndex,
+  } = useCommitFilteringAndNavigation(commitData);
+
+  const startProfiling = useCallback(() => {
+    logEvent({
+      event_name: 'profiling-start',
+      metadata: {current_tab: selectedTabID},
+    });
+
+    // Clear selections when starting a new profiling session
+    selectCommitIndex(null);
+    selectFiberID(null);
+    selectFiberName(null);
+
+    store.profilerStore.startProfiling();
+  }, [store, selectedTabID, selectCommitIndex]);
+
+  // Auto-select first commit when profiling data becomes available and no commit is selected.
+  useEffect(() => {
+    if (
+      profilingData !== null &&
+      selectedCommitIndex === null &&
+      rootID !== null
+    ) {
+      const dataForRoot = profilingData.dataForRoots.get(rootID);
+      if (dataForRoot && dataForRoot.commitData.length > 0) {
+        selectCommitIndex(0);
+      }
     }
-  }
+  }, [profilingData, rootID, selectCommitIndex]);
 
   const value = useMemo(
     () => ({
@@ -257,6 +301,10 @@ function ProfilerContextController({children}: Props): React.Node {
 
       selectedCommitIndex,
       selectCommitIndex,
+      selectNextCommitIndex,
+      selectPrevCommitIndex,
+      filteredCommitIndices,
+      selectedFilteredCommitIndex,
 
       selectedFiberID,
       selectedFiberName,
@@ -275,7 +323,6 @@ function ProfilerContextController({children}: Props): React.Node {
       supportsProfiling,
 
       rootID,
-      setRootID,
       setRootIDAndClearFiber,
 
       isCommitFilterEnabled,
@@ -285,6 +332,10 @@ function ProfilerContextController({children}: Props): React.Node {
 
       selectedCommitIndex,
       selectCommitIndex,
+      selectNextCommitIndex,
+      selectPrevCommitIndex,
+      filteredCommitIndices,
+      selectedFilteredCommitIndex,
 
       selectedFiberID,
       selectedFiberName,

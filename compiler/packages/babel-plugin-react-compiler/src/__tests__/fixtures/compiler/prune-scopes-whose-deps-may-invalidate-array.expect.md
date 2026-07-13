@@ -42,7 +42,6 @@ function Component(props) {
   let t0;
   if ($[0] !== x) {
     const y = [x];
-
     t0 = [y];
     $[0] = x;
     $[1] = t0;

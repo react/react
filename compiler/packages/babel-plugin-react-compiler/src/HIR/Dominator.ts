@@ -7,7 +7,7 @@
 
 import prettyFormat from 'pretty-format';
 import {CompilerError} from '../CompilerError';
-import {BlockId, HIRFunction} from './HIR';
+import {BlockId, GeneratedSource, HIRFunction} from './HIR';
 import {eachTerminalSuccessor} from './visitors';
 
 /*
@@ -88,15 +88,7 @@ export class Dominator<T> {
     const dominator = this.#nodes.get(id);
     CompilerError.invariant(dominator !== undefined, {
       reason: 'Unknown node',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     return dominator === id ? null : dominator;
   }
@@ -135,15 +127,7 @@ export class PostDominator<T> {
     const dominator = this.#nodes.get(id);
     CompilerError.invariant(dominator !== undefined, {
       reason: 'Unknown node',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     return dominator === id ? null : dominator;
   }
@@ -186,15 +170,7 @@ function computeImmediateDominators<T>(graph: Graph<T>): Map<T, T> {
       }
       CompilerError.invariant(newIdom !== null, {
         reason: `At least one predecessor must have been visited for block ${id}`,
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       });
 
       for (const pred of node.preds) {

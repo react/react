@@ -63,7 +63,11 @@ export type LoggerEvent =
         +value: any,
         ...
       },
-    };
+    }
+  | {
+      +event_name: 'selected-editor-pane',
+    }
+  | {+event_name: 'selected-inspected-element-pane'};
 
 export type LogFunction = LoggerEvent => void | Promise<void>;
 
@@ -80,6 +84,7 @@ export const logEvent: LogFunction =
 export const registerEventLogger: (logFunction: LogFunction) => () => void =
   enableLogger === true
     ? function registerEventLogger(logFunction: LogFunction): () => void {
+        // $FlowFixMe[constant-condition]
         if (enableLogger) {
           logFunctions.push(logFunction);
           return function unregisterEventLogger() {

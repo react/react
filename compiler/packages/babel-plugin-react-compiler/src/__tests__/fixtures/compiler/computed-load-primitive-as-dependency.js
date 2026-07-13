@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 function Component(props) {
   let a = foo();
   // freeze `a` so we know the next line cannot mutate it

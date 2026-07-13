@@ -53,6 +53,7 @@ function bar(a, b) {
   } else {
     y = $[5];
   }
+
   return y;
 }
 

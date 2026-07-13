@@ -93,6 +93,7 @@ function useFoo(t0) {
   if (z[0] !== y) {
     throw new Error("oh no!");
   }
+
   return z;
 }
 

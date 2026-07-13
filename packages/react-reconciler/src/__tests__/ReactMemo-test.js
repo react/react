@@ -375,24 +375,18 @@ describe('memo', () => {
 
       it('warns if the first argument is undefined', () => {
         memo();
-        assertConsoleErrorDev(
-          [
-            'memo: The first argument must be a component. Instead ' +
-              'received: undefined',
-          ],
-          {withoutStack: true},
-        );
+        assertConsoleErrorDev([
+          'memo: The first argument must be a component. Instead ' +
+            'received: undefined',
+        ]);
       });
 
       it('warns if the first argument is null', () => {
         memo(null);
-        assertConsoleErrorDev(
-          [
-            'memo: The first argument must be a component. Instead ' +
-              'received: null',
-          ],
-          {withoutStack: true},
-        );
+        assertConsoleErrorDev([
+          'memo: The first argument must be a component. Instead ' +
+            'received: null',
+        ]);
       });
 
       it('does not drop lower priority state updates when bailing out at higher pri (simple)', async () => {

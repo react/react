@@ -1,4 +1,4 @@
-// @loggerTestOnly @validateNoJSXInTryStatements
+// @loggerTestOnly @validateNoJSXInTryStatements @outputMode:"lint"
 function Component(props) {
   let el;
   try {

@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 const THEME_MAP: ReadonlyMap<string, string> = new Map([
   ['default', 'light'],
   ['dark', 'dark'],

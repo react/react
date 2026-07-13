@@ -42,7 +42,6 @@ function Component(t0) {
       const x0 = y[0];
       return [x0];
     };
-
     const z = f();
     const x1 = z[0];
     x1.key = "value";

@@ -40,12 +40,12 @@ type SuspenseInstance = {
 };
 
 type Placeholder = {
-  parent: Instance | SuspenseInstance,
+  parent: Instance | Segment | SuspenseInstance,
   index: number,
 };
 
 type Segment = {
-  children: null | Instance | TextInstance | SuspenseInstance,
+  children: Array<Instance | TextInstance | SuspenseInstance>,
 };
 
 type Destination = {
@@ -69,7 +69,7 @@ function write(destination: Destination, buffer: Uint8Array): void {
     return;
   }
   // We assume one chunk is one instance.
-  const instance = JSON.parse(Buffer.from((buffer: any)).toString('utf8'));
+  const instance = JSON.parse(Buffer.from(buffer as any).toString('utf8'));
   if (stack.length === 0) {
     destination.root = instance;
   } else {
@@ -79,6 +79,8 @@ function write(destination: Destination, buffer: Uint8Array): void {
   stack.push(instance);
 }
 
+// $FlowFixMe[prop-missing]
+// $FlowFixMe[incompatible-type]
 const ReactNoopServer = ReactFizzServer({
   scheduleMicrotask(callback: () => void) {
     callback();
@@ -175,6 +177,7 @@ const ReactNoopServer = ReactFizzServer({
     destination: Destination,
     renderState: RenderState,
     id: number,
+    // $FlowFixMe[incompatible-type]
   ): boolean {
     const parent = destination.stack[destination.stack.length - 1];
     destination.placeholders.set(id, {
@@ -258,7 +261,7 @@ const ReactNoopServer = ReactFizzServer({
     formatContext: null,
     id: number,
   ): boolean {
-    const segment = {
+    const segment: Segment = {
       children: [],
     };
     destination.segments.set(id, segment);
@@ -314,6 +317,7 @@ const ReactNoopServer = ReactFizzServer({
     renderState: RenderState,
     boundary: SuspenseInstance,
   ): boolean {
+    // $FlowFixMe[prop-missing]
     boundary.status = 'client-render';
     return true;
   },
@@ -324,6 +328,12 @@ const ReactNoopServer = ReactFizzServer({
   writeHoistablesForBoundary() {},
   writePostamble() {},
   hoistHoistables(parent: HoistableState, child: HoistableState) {},
+  hasSuspenseyContent(
+    hoistableState: HoistableState,
+    flushingInShell: boolean,
+  ): boolean {
+    return false;
+  },
   createHoistableState(): HoistableState {
     return null;
   },
@@ -351,6 +361,8 @@ type Options = {
 };
 
 function render(children: React$Element<any>, options?: Options): Destination {
+  // $FlowFixMe[prop-missing]
+  // $FlowFixMe[incompatible-type]
   const destination: Destination = {
     root: null,
     placeholders: new Map(),
@@ -361,9 +373,13 @@ function render(children: React$Element<any>, options?: Options): Destination {
     },
   };
   const request = ReactNoopServer.createRequest(
+    // $FlowFixMe[incompatible-type]
     children,
+    // $FlowFixMe[incompatible-type]
     null,
+    // $FlowFixMe[incompatible-type]
     null,
+    // $FlowFixMe[incompatible-type]
     null,
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
@@ -371,6 +387,7 @@ function render(children: React$Element<any>, options?: Options): Destination {
     options ? options.onShellReady : undefined,
   );
   ReactNoopServer.startWork(request);
+  // $FlowFixMe[incompatible-type]
   ReactNoopServer.startFlowing(request, destination);
   return destination;
 }

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function Component({propA}) {

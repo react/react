@@ -30,6 +30,7 @@ const moduleLoaderFunctionToModuleMap: Map<ModuleLoaderFunction, Module> =
 function readRecord<T>(record: Thenable<T>): T | null {
   if (typeof React.use === 'function') {
     try {
+      // eslint-disable-next-line react-hooks-published/rules-of-hooks
       return React.use(record);
     } catch (x) {
       if (x === null) {
@@ -51,6 +52,7 @@ function readRecord<T>(record: Thenable<T>): T | null {
 export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
   let record = moduleLoaderFunctionToModuleMap.get(moduleLoaderFunction);
 
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}")`,
@@ -91,7 +93,7 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
       }
 
       // This assumes they won't throw.
-      rejectCallbacks.forEach(callback => callback((thenable: any).reason));
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
       rejectCallbacks.clear();
       callbacks.clear();
     };
@@ -102,6 +104,7 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
     moduleLoaderFunction().then(
       module => {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.log(
             `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}") then()`,
@@ -112,13 +115,14 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
           return;
         }
 
-        const fulfilledThenable: FulfilledThenable<Module> = (thenable: any);
+        const fulfilledThenable: FulfilledThenable<Module> = thenable as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = module;
 
         wake();
       },
       error => {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.log(
             `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}") catch()`,
@@ -131,7 +135,7 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
         console.log(error);
 
-        const rejectedThenable: RejectedThenable<Module> = (thenable: any);
+        const rejectedThenable: RejectedThenable<Module> = thenable as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = error;
 
@@ -141,6 +145,7 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
     // Eventually timeout and stop trying to load the module.
     let timeoutID: null | TimeoutID = setTimeout(function onTimeout() {
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}") onTimeout()`,
@@ -151,7 +156,7 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
       didTimeout = true;
 
-      const rejectedThenable: RejectedThenable<Module> = (thenable: any);
+      const rejectedThenable: RejectedThenable<Module> = thenable as any;
       rejectedThenable.status = 'rejected';
       rejectedThenable.reason = null;
 

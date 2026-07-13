@@ -6,7 +6,7 @@
  */
 
 import {CompilerError} from '../CompilerError';
-import {PropertyLiteral} from './HIR';
+import {GeneratedSource, PropertyLiteral} from './HIR';
 
 export type BuiltInType = PrimitiveType | FunctionType | ObjectType;
 
@@ -86,15 +86,7 @@ export type TypeId = number & {[opaqueTypeId]: 'IdentifierId'};
 export function makeTypeId(id: number): TypeId {
   CompilerError.invariant(id >= 0 && Number.isInteger(id), {
     reason: 'Expected instruction id to be a non-negative integer',
-    description: null,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
   return id as TypeId;
 }

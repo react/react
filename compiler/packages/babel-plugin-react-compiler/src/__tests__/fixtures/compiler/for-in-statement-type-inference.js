@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 const {identity, mutate} = require('shared-runtime');
 
 function Component(props) {

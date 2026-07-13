@@ -1,4 +1,4 @@
-// @compilationMode:"infer" @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees
+// @expectNothingCompiled @compilationMode:"infer" @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees
 import {useMemo} from 'react';
 import {makeObject_Primitives, ValidateMemoization} from 'shared-runtime';
 

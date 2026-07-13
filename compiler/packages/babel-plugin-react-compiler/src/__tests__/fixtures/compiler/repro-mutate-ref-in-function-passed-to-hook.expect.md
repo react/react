@@ -89,7 +89,6 @@ function Example() {
         observer.disconnect();
       };
     };
-
     t3 = [];
     $[2] = t2;
     $[3] = t3;

@@ -75,6 +75,10 @@
   display: flex;
 }
 
+.CollapsableHeader[data-pending="true"] {
+  cursor: progress;
+}
+
 .CollapsableHeaderIcon {
   flex: 0 0 1rem;
   margin-left: -0.25rem;
@@ -124,13 +128,13 @@
 .TimeBarSpan, .TimeBarSpanErrored {
   position: absolute;
   border-radius: 0.125rem;
-  background-color: var(--color-timespan-background);
+  background-color: var(--color-suspense);
   width: 100%;
   height: 100%;
 }
 
 .TimeBarSpanErrored {
-  background-color: var(--color-timespan-background-errored);
+  background-color: var(--color-suspense-errored);
 }
 
 .SmallHeader {
@@ -138,4 +142,9 @@
   font-size: var(--font-size-monospace-normal);
   padding-left: 1.25rem;
   margin-top: 0.25rem;
+}
+
+.SuspendedBySkeleton {
+  padding: 0.25rem;
+  padding-left: 1.25rem;
 }

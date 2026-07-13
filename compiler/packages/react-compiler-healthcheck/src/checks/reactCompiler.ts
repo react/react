@@ -46,7 +46,7 @@ const logger = {
   },
 };
 
-const COMPILER_OPTIONS: Partial<PluginOptions> = {
+const COMPILER_OPTIONS: PluginOptions = {
   noEmit: true,
   compilationMode: 'infer',
   panicThreshold: 'critical_errors',
@@ -72,7 +72,7 @@ function runBabelPluginReactCompiler(
   text: string,
   file: string,
   language: 'flow' | 'typescript',
-  options: Partial<PluginOptions> | null,
+  options: PluginOptions | null,
 ): BabelCore.BabelFileResult {
   const ast = BabelParser.parse(text, {
     sourceFilename: file,

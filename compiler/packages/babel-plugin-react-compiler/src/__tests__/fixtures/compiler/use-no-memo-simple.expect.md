@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @expectNothingCompiled
 function Component(props) {
   'use no memo';
   let x = [props.foo];
@@ -19,6 +20,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
+// @expectNothingCompiled
 function Component(props) {
   "use no memo";
   let x = [props.foo];

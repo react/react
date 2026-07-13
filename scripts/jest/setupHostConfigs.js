@@ -248,3 +248,9 @@ jest.mock('shared/ReactDOMSharedInternals', () =>
 );
 
 jest.mock('scheduler', () => jest.requireActual('scheduler/unstable_mock'));
+
+if (global.__PERSISTENT__) {
+  jest.mock('react-noop-renderer', () =>
+    jest.requireActual('react-noop-renderer/persistent')
+  );
+}

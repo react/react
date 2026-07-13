@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validateNoJSXInTryStatements
+// @validateNoJSXInTryStatements @outputMode:"lint"
 import {identity} from 'shared-runtime';
 
 function Component(props) {

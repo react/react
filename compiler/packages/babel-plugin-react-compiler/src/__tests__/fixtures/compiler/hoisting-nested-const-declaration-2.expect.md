@@ -44,6 +44,7 @@ function hoisting(cond) {
   } else {
     items = $[1];
   }
+
   return items;
 }
 function _temp() {

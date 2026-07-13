@@ -31,7 +31,6 @@ function Component(props) {
   let items;
   if ($[0] !== props.a || $[1] !== props.cond) {
     let t0;
-
     if (props.cond) {
       t0 = [];
     } else {

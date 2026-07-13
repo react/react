@@ -1,0 +1,44 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ \"$PWD\" != */compiler* ]]; then cat .claude/instructions.md 2>/dev/null || true; fi"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Skill(extract-errors)",
+      "Skill(feature-flags)",
+      "Skill(fix)",
+      "Skill(flags)",
+      "Skill(flow)",
+      "Skill(test)",
+      "Skill(verify)",
+      "Bash(yarn test:*)",
+      "Bash(yarn test-www:*)",
+      "Bash(yarn test-classic:*)",
+      "Bash(yarn test-stable:*)",
+      "Bash(yarn linc:*)",
+      "Bash(yarn lint:*)",
+      "Bash(yarn flow:*)",
+      "Bash(yarn prettier:*)",
+      "Bash(yarn build:*)",
+      "Bash(yarn extract-errors:*)",
+      "Bash(yarn flags:*)"
+    ],
+    "deny": [
+      "Bash(yarn download-build:*)",
+      "Bash(yarn download-build-for-head:*)",
+      "Bash(npm:*)",
+      "Bash(pnpm:*)",
+      "Bash(bun:*)",
+      "Bash(npx:*)"
+    ]
+  }
+}

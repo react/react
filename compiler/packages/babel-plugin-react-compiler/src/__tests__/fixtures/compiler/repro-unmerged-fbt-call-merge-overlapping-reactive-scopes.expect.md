@@ -44,7 +44,6 @@ function Component(props) {
       [fbt._plural(props.value.length, "number")],
       { hk: "4mUen7" },
     );
-
     t0 = props.cond ? (
       <Stringify
         description={fbt._("Text here", null, { hk: "21YpZs" })}

@@ -17,6 +17,7 @@ import type {
   Awaited,
   ReactComponentInfo,
   ReactDebugInfo,
+  ReactKey,
 } from 'shared/ReactTypes';
 import type {TransitionTypes} from 'react/src/ReactTransitionType';
 import type {WorkTag} from './ReactWorkTags';
@@ -100,7 +101,7 @@ export type Fiber = {
   tag: WorkTag,
 
   // Unique identifier of this child.
-  key: null | string,
+  key: ReactKey,
 
   // The value of element.type which is used to preserve the identity during
   // reconciliation of this child.
@@ -291,7 +292,6 @@ type BaseFiberRootProperties = {
   transitionTypes: null | TransitionTypes, // TODO: Make this a LaneMap.
   // enableGestureTransition only
   pendingGestures: null | ScheduledGesture,
-  stoppingGestures: null | ScheduledGesture,
   gestureClone: null | Instance,
 };
 
@@ -409,8 +409,7 @@ export type Dispatcher = {
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,
   ): void,
-  // TODO: Non-nullable once `enableUseEffectEventHook` is on everywhere.
-  useEffectEvent?: <Args, F: (...Array<Args>) => mixed>(callback: F) => F,
+  useEffectEvent: <Args, F: (...Array<Args>) => mixed>(callback: F) => F,
   useInsertionEffect(
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,

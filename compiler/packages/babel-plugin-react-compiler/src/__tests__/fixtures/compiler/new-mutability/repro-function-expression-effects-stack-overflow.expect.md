@@ -45,7 +45,6 @@ function Component() {
         .build({})
         .build({});
     };
-
     t1 = <Stringify x={x} fn={fn} />;
     $[1] = t1;
   } else {

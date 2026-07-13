@@ -112,6 +112,13 @@ const argv = yargs
       type: 'boolean',
       default: false,
     },
+    silent: {
+      alias: 's',
+      describe: 'Use silent reporter with dot progress (minimal output).',
+      requiresArg: false,
+      type: 'boolean',
+      default: false,
+    },
   }).argv;
 
 function logError(message) {
@@ -312,6 +319,12 @@ function getCommandArgs() {
     args.push('--maxConcurrency=10');
   }
 
+  // Use silent reporter if requested.
+  if (argv.silent) {
+    args.push('--reporters=jest-silent-reporter');
+    args.push('--testLocationInResults');
+  }
+
   // Push the remaining args onto the command.
   // This will send args like `--watch` to Jest.
   args.push(...argv._);
@@ -351,6 +364,12 @@ function getEnvars() {
     // This is off by default because it slows down the test runner, but it's
     // super useful when running the debugger.
     envars.JEST_ENABLE_SOURCE_MAPS = 'inline';
+  }
+
+  if (argv.silent) {
+    // Enable dot output for jest-silent-reporter so that long test runs
+    // show progress and don't appear to be hung.
+    envars.JEST_SILENT_REPORTER_DOTS = true;
   }
 
   return envars;

@@ -10,6 +10,7 @@ import {Environment} from '../HIR/Environment';
 import {
   BasicBlock,
   BlockId,
+  GeneratedSource,
   HIRFunction,
   Identifier,
   IdentifierId,
@@ -69,15 +70,7 @@ class SSABuilder {
   state(): State {
     CompilerError.invariant(this.#current !== null, {
       reason: 'we need to be in a block to access state!',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     return this.#states.get(this.#current)!;
   }
@@ -101,6 +94,20 @@ class SSABuilder {
     const newPlace = this.definePlace(oldPlace);
     this.#context.add(oldPlace.identifier);
     return newPlace;
+  }
+
+  /**
+   * A function's context places capture a *binding*, not a value: the
+   * variable is only read when the function is later called, so a context
+   * place may reference a binding that is declared after the function
+   * expression itself (eg `const colgroup = useMemo(() => <colgroup>...)`,
+   * where the JSX tag name resolves to the variable being assigned). Unmark
+   * such identifiers so the later declaration doesn't error; if the function
+   * body actually *reads* the variable before it is defined, visiting the
+   * body re-marks it and the hoisting bailout in definePlace still applies.
+   */
+  unmarkUnknown(place: Place): void {
+    this.#unknown.delete(place.identifier);
   }
 
   definePlace(oldPlace: Place): Place {
@@ -258,15 +265,7 @@ function enterSSAImpl(
   for (const [blockId, block] of func.body.blocks) {
     CompilerError.invariant(!visitedBlocks.has(block), {
       reason: `found a cycle! visiting bb${block.id} again`,
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
 
     visitedBlocks.add(block);
@@ -277,15 +276,7 @@ function enterSSAImpl(
       // NOTE: func.context should be empty for the root function
       CompilerError.invariant(func.context.length === 0, {
         reason: `Expected function context to be empty for outer function declarations`,
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: func.loc,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: func.loc,
       });
       func.params = func.params.map(param => {
         if (param.kind === 'Identifier') {
@@ -308,19 +299,14 @@ function enterSSAImpl(
         instr.value.kind === 'ObjectMethod'
       ) {
         const loweredFunc = instr.value.loweredFunc.func;
+        for (const place of loweredFunc.context) {
+          builder.unmarkUnknown(place);
+        }
         const entry = loweredFunc.body.blocks.get(loweredFunc.body.entry)!;
         CompilerError.invariant(entry.preds.size === 0, {
           reason:
             'Expected function expression entry block to have zero predecessors',
-          description: null,
-          details: [
-            {
-              kind: 'error',
-              loc: null,
-              message: null,
-            },
-          ],
-          suggestions: null,
+          loc: GeneratedSource,
         });
         entry.preds.add(blockId);
         builder.defineFunction(loweredFunc);

@@ -9,6 +9,7 @@ import {CompilerError} from '../CompilerError';
 import {
   DeclarationId,
   Environment,
+  GeneratedSource,
   Identifier,
   InstructionId,
   Pattern,
@@ -264,14 +265,7 @@ class State {
       CompilerError.invariant(identifierNode !== undefined, {
         reason: 'Expected identifier to be initialized',
         description: `[${id}] operand=${printPlace(place)} for identifier declaration ${identifier}`,
-        details: [
-          {
-            kind: 'error',
-            loc: place.loc,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: place.loc,
       });
       identifierNode.scopes.add(scope.id);
     }
@@ -291,15 +285,7 @@ function computeMemoizedIdentifiers(state: State): Set<DeclarationId> {
     const node = state.identifiers.get(id);
     CompilerError.invariant(node !== undefined, {
       reason: `Expected a node for all identifiers, none found for \`${id}\``,
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     if (node.seen) {
       return node.memoized;
@@ -339,15 +325,7 @@ function computeMemoizedIdentifiers(state: State): Set<DeclarationId> {
     const node = state.scopes.get(id);
     CompilerError.invariant(node !== undefined, {
       reason: 'Expected a node for all scopes',
-      description: null,
-      details: [
-        {
-          kind: 'error',
-          loc: null,
-          message: null,
-        },
-      ],
-      suggestions: null,
+      loc: GeneratedSource,
     });
     if (node.seen) {
       return;
@@ -994,15 +972,7 @@ class CollectDependenciesVisitor extends ReactiveFunctionVisitor<
       );
       CompilerError.invariant(identifierNode !== undefined, {
         reason: 'Expected identifier to be initialized',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: stmt.terminal.loc,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: stmt.terminal.loc,
       });
       for (const scope of scopes) {
         identifierNode.scopes.add(scope.id);
@@ -1025,15 +995,7 @@ class CollectDependenciesVisitor extends ReactiveFunctionVisitor<
       );
       CompilerError.invariant(identifierNode !== undefined, {
         reason: 'Expected identifier to be initialized',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: reassignment.loc,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: reassignment.loc,
       });
       for (const scope of scopes) {
         identifierNode.scopes.add(scope.id);

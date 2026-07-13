@@ -45,7 +45,6 @@ function Component(t0) {
   let t1;
   if ($[0] !== num) {
     const arr = makeArray(num);
-
     T0 = SharedRuntime.Stringify;
     t1 = arr.push(num);
     $[0] = num;

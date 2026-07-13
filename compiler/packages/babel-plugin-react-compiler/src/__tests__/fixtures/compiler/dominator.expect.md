@@ -75,6 +75,7 @@ function Component(props) {
   if (props.d) {
     return null;
   }
+
   return x;
 }
 

@@ -26,6 +26,7 @@ function foo(props) {
   while (x > props.min && x < props.max) {
     x = x * 2;
   }
+
   return x;
 }
 

@@ -12,6 +12,7 @@ export const rendererPackageName = 'react-server-dom-bun';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigWeb';
 export * from 'react-client/src/ReactClientConsoleConfigPlain';
+export * from 'react-client/src/ReactClientDebugConfigPlain';
 export * from 'react-dom-bindings/src/shared/ReactFlightClientConfigDOM';
 
 export opaque type ModuleLoading = mixed;

@@ -328,6 +328,19 @@ export function createLocationFilter(
   };
 }
 
+export function createActivitySliceFilter(
+  activityID: Element['id'],
+  isEnabled: boolean = true,
+) {
+  const Types = require('react-devtools-shared/src/frontend/types');
+  return {
+    type: Types.ComponentFilterActivitySlice,
+    isEnabled,
+    isValid: true,
+    activityID: activityID,
+  };
+}
+
 export function getRendererID(): number {
   if (global.agent == null) {
     throw Error('Agent unavailable.');

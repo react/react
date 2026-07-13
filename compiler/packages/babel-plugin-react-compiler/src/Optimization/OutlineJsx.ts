@@ -515,6 +515,7 @@ function emitDestructureProps(
         pattern: {
           kind: 'ObjectPattern',
           properties,
+          loc: GeneratedSource,
         },
         kind: InstructionKind.Let,
       },

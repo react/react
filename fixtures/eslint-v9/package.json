@@ -8,6 +8,9 @@
   },
   "scripts": {
     "build": "node build.mjs && yarn",
-    "lint": "eslint index.js --report-unused-disable-directives"
+    "lint": "tsc --noEmit && eslint index.js --report-unused-disable-directives"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.3"
   }
 }

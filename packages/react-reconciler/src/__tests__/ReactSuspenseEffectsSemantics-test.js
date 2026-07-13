@@ -1402,6 +1402,105 @@ describe('ReactSuspenseEffectsSemantics', () => {
     });
 
     // @gate enableLegacyCache
+    it('should wait to reveal an inner child when inner one reveals first', async () => {
+      function App({outerChildren, innerChildren}) {
+        return (
+          <Suspense fallback={<Text text="OuterFallback" />} name="Outer">
+            <Suspense fallback={<Text text="InnerFallback" />} name="Inner">
+              <div>{innerChildren}</div>
+            </Suspense>
+            {outerChildren}
+          </Suspense>
+        );
+      }
+
+      // Mount
+      await act(() => {
+        ReactNoop.render(<App />);
+      });
+      assertLog([]);
+      expect(ReactNoop).toMatchRenderedOutput(<div />);
+
+      // Resuspend inner boundary
+      await act(() => {
+        ReactNoop.render(
+          <App
+            outerChildren={null}
+            innerChildren={<AsyncText text="InnerAsync" />}
+          />,
+        );
+      });
+      assertLog([
+        'Suspend:InnerAsync',
+        'Text:InnerFallback render',
+        'Text:InnerFallback create insertion',
+        'Text:InnerFallback create layout',
+        'Text:InnerFallback create passive',
+        'Suspend:InnerAsync',
+      ]);
+      expect(ReactNoop).toMatchRenderedOutput(
+        <>
+          <div hidden={true} />
+          <span prop="InnerFallback" />
+        </>,
+      );
+
+      // Resuspend both boundaries
+      await act(() => {
+        ReactNoop.render(
+          <App
+            outerChildren={<AsyncText text="OuterAsync" />}
+            innerChildren={<AsyncText text="InnerAsync" />}
+          />,
+        );
+      });
+      assertLog([
+        'Suspend:InnerAsync',
+        'Text:InnerFallback render',
+        'Suspend:OuterAsync',
+        'Text:OuterFallback render',
+        'Text:InnerFallback destroy layout',
+        'Text:OuterFallback create insertion',
+        'Text:OuterFallback create layout',
+        'Text:OuterFallback create passive',
+        'Suspend:InnerAsync',
+        'Text:InnerFallback render',
+        'Suspend:OuterAsync',
+      ]);
+      expect(ReactNoop).toMatchRenderedOutput(
+        <>
+          <div hidden={true} />
+          <span prop="InnerFallback" hidden={true} />
+          <span prop="OuterFallback" />
+        </>,
+      );
+
+      // Unsuspend the inner Suspense subtree only
+      // Interestingly, this never commits because the tree is left suspended.
+      // If it did commit, it would potentially cause the div to incorrectly reappear.
+      await act(() => {
+        ReactNoop.render(
+          <App
+            outerChildren={<AsyncText text="OuterAsync" />}
+            innerChildren={null}
+          />,
+        );
+      });
+      assertLog([
+        'Suspend:OuterAsync',
+        'Text:OuterFallback render',
+        'Suspend:OuterAsync',
+      ]);
+      expect(ReactNoop).toMatchRenderedOutput(
+        <>
+          <div hidden={true} />
+          <span prop="InnerFallback" hidden={true} />
+          <span prop="OuterFallback" />
+        </>,
+      );
+    });
+
+    // @gate enableLegacyCache
     it('should show nested host nodes if multiple boundaries resolve at the same time', async () => {
       function App({innerChildren = null, outerChildren = null}) {
         return (
@@ -1511,9 +1610,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
         'AsyncText:InnerAsync_1 render',
         'Text:OuterFallback destroy insertion',
         'Text:OuterFallback destroy layout',
-        ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-          ? ['Text:InnerFallback destroy insertion']
-          : []),
+        'Text:InnerFallback destroy insertion',
         'Text:Outer create layout',
         'AsyncText:OuterAsync_1 create layout',
         'Text:Inner create layout',
@@ -1658,9 +1755,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
       assertLog([
         'Text:Inside render',
         'AsyncText:OutsideAsync render',
-        ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-          ? ['Text:Fallback:Inside destroy insertion']
-          : []),
+        'Text:Fallback:Inside destroy insertion',
         'Text:Fallback:Fallback destroy insertion',
         'Text:Fallback:Fallback destroy layout',
         'Text:Fallback:Outside destroy insertion',
@@ -2149,9 +2244,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
 
           // Destroy layout and passive effects in the errored tree.
           'App destroy layout',
-          ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-            ? ['Text:Inside destroy insertion']
-            : []),
+          'Text:Inside destroy insertion',
           'Text:Fallback destroy insertion',
           'Text:Fallback destroy layout',
           'Text:Outside destroy insertion',
@@ -2412,9 +2505,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
 
           // Destroy layout and passive effects in the errored tree.
           'App destroy layout',
-          ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-            ? ['Text:Inside destroy insertion']
-            : []),
+          'Text:Inside destroy insertion',
           'Text:Fallback destroy insertion',
           'Text:Fallback destroy layout',
           'Text:Outside destroy insertion',

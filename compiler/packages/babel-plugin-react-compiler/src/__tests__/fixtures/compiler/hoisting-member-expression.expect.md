@@ -34,9 +34,7 @@ function hoisting() {
     const onClick = function onClick(x) {
       return x + bar.baz;
     };
-
     const bar = { baz: 1 };
-
     t0 = <Stringify onClick={onClick} />;
     $[0] = t0;
   } else {

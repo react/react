@@ -22,6 +22,7 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 function component() {
   const x = _temp;
+
   return x;
 }
 function _temp(a) {

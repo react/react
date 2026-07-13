@@ -17,7 +17,9 @@ import type {
   DevToolsBackend,
   DevToolsHookSettings,
   ProfilingSettings,
+  ReactBuildType,
 } from './backend/types';
+import type {ComponentFilter} from './frontend/types';
 
 import {
   FIREFOX_CONSOLE_DIMMING_COLOR,
@@ -57,6 +59,9 @@ const defaultProfilingSettings: ProfilingSettings = {
 
 export function installHook(
   target: any,
+  componentFiltersOrComponentFiltersPromise:
+    | Array<ComponentFilter>
+    | Promise<Array<ComponentFilter>>,
   maybeSettingsOrSettingsPromise?:
     | DevToolsHookSettings
     | Promise<DevToolsHookSettings>,
@@ -67,7 +72,7 @@ export function installHook(
     return null;
   }
 
-  function detectReactBuildType(renderer: ReactRenderer) {
+  function detectReactBuildType(renderer: ReactRenderer): ReactBuildType {
     try {
       if (typeof renderer.version === 'string') {
         // React DOM Fiber (16+)
@@ -207,7 +212,7 @@ export function installHook(
     const id = ++uidCounter;
     renderers.set(id, renderer);
 
-    const reactBuildType = hasDetectedBadDCE
+    const reactBuildType: ReactBuildType = hasDetectedBadDCE
       ? 'deadcode'
       : detectReactBuildType(renderer);
 
@@ -224,6 +229,7 @@ export function installHook(
       target,
       isProfiling,
       profilingSettings,
+      componentFiltersOrComponentFiltersPromise,
     );
     if (rendererInterface != null) {
       hook.rendererInterfaces.set(id, rendererInterface);
@@ -367,17 +373,22 @@ export function installHook(
           return;
         }
 
-        // Dim the text color of the double logs if we're not hiding them.
-        // Firefox doesn't support ANSI escape sequences
-        if (__IS_FIREFOX__) {
-          originalMethod(
-            ...formatWithStyles(args, FIREFOX_CONSOLE_DIMMING_COLOR),
-          );
+        if (settings.disableSecondConsoleLogDimmingInStrictMode) {
+          // Don't dim the console logs
+          originalMethod(...args);
         } else {
-          originalMethod(
-            ANSI_STYLE_DIMMING_TEMPLATE,
-            ...formatConsoleArguments(...args),
-          );
+          // Dim the text color of the double logs if we're not hiding them.
+          // Firefox doesn't support ANSI escape sequences
+          if (__IS_FIREFOX__) {
+            originalMethod(
+              ...formatWithStyles(args, FIREFOX_CONSOLE_DIMMING_COLOR),
+            );
+          } else {
+            originalMethod(
+              ANSI_STYLE_DIMMING_TEMPLATE,
+              ...formatConsoleArguments(...args),
+            );
+          }
         }
       };
 
@@ -422,7 +433,7 @@ export function installHook(
       const startStackFrame = openModuleRangesStack.pop();
       const stopStackFrame = getTopStackFrameString(error);
       if (stopStackFrame !== null) {
-        // $FlowFixMe[incompatible-call]
+        // $FlowFixMe[incompatible-type]
         moduleRanges.push([startStackFrame, stopStackFrame]);
       }
     }
@@ -482,7 +493,7 @@ export function installHook(
               // The backend is what implements a message queue, so it's the only one that injects onErrorOrWarning.
               if (onErrorOrWarning != null) {
                 onErrorOrWarning(
-                  ((method: any): 'error' | 'warn'),
+                  method as any as 'error' | 'warn',
                   args.slice(),
                 );
               }
@@ -579,7 +590,10 @@ export function installHook(
           debugger;
         }
 
-        if (isRunningDuringStrictModeInvocation) {
+        if (
+          isRunningDuringStrictModeInvocation &&
+          !settings.disableSecondConsoleLogDimmingInStrictMode
+        ) {
           // Dim the text color of the double logs if we're not hiding them.
           // Firefox doesn't support ANSI escape sequences
           if (__IS_FIREFOX__) {
@@ -667,6 +681,7 @@ export function installHook(
       breakOnConsoleErrors: false,
       showInlineWarningsAndErrors: true,
       hideConsoleLogsInStrictMode: false,
+      disableSecondConsoleLogDimmingInStrictMode: false,
     };
     patchConsoleForErrorsAndWarnings();
   } else {
@@ -684,19 +699,15 @@ export function installHook(
       });
   }
 
-  Object.defineProperty(
-    target,
-    '__REACT_DEVTOOLS_GLOBAL_HOOK__',
-    ({
-      // This property needs to be configurable for the test environment,
-      // else we won't be able to delete and recreate it between tests.
-      configurable: __DEV__,
-      enumerable: false,
-      get() {
-        return hook;
-      },
-    }: Object),
-  );
+  Object.defineProperty(target, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {
+    // This property needs to be configurable for the test environment,
+    // else we won't be able to delete and recreate it between tests.
+    configurable: __DEV__,
+    enumerable: false,
+    get() {
+      return hook;
+    },
+  } as Object);
 
   return hook;
 }

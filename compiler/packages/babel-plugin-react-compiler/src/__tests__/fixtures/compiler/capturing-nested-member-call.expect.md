@@ -33,6 +33,7 @@ function component(a) {
     t0 = $[1];
   }
   const z = t0;
+
   return z;
 }
 

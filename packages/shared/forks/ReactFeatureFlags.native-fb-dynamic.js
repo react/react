@@ -19,11 +19,10 @@
 
 export const alwaysThrottleRetries = __VARIANT__;
 export const enableObjectFiber = __VARIANT__;
-export const enableHiddenSubtreeInsertionEffectCleanup = __VARIANT__;
-export const enablePersistedModeClonedFlag = __VARIANT__;
-export const enableEagerAlternateStateNodeCleanup = __VARIANT__;
 export const passChildrenWhenCloningPersistedNodes = __VARIANT__;
-export const renameElementSymbol = __VARIANT__;
 export const enableFragmentRefs = __VARIANT__;
 export const enableFragmentRefsScrollIntoView = __VARIANT__;
-export const enableComponentPerformanceTrack = __VARIANT__;
+export const enableFragmentRefsInstanceHandles = __VARIANT__;
+export const enableEffectEventMutationPhase = __VARIANT__;
+export const enableFragmentRefsTextNodes = __VARIANT__;
+export const enableViewTransitionForPersistenceMode = __VARIANT__;

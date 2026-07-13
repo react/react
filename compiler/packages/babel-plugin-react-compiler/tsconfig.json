@@ -10,6 +10,7 @@
     "importsNotUsedAsValues": "remove",
     "noUncheckedIndexedAccess": false,
     "noUnusedParameters": false,
+    "stripInternal": true,
     "useUnknownInCatchVariables": true,
     "target": "ES2015",
     // ideally turn off only during dev, or on a per-file basis

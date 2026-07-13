@@ -34,39 +34,15 @@ function coerceFormActionProp(
   ) {
     return null;
   } else if (typeof actionProp === 'function') {
-    return (actionProp: any);
+    return actionProp as any;
   } else {
     if (__DEV__) {
       checkAttributeStringCoercion(actionProp, 'action');
     }
-    return (sanitizeURL(
-      enableTrustedTypesIntegration ? actionProp : '' + (actionProp: any),
-    ): any);
+    return sanitizeURL(
+      enableTrustedTypesIntegration ? actionProp : '' + (actionProp as any),
+    ) as any;
   }
-}
-
-function createFormDataWithSubmitter(
-  form: HTMLFormElement,
-  submitter: HTMLInputElement | HTMLButtonElement,
-) {
-  // The submitter's value should be included in the FormData.
-  // It should be in the document order in the form.
-  // Since the FormData constructor invokes the formdata event it also
-  // needs to be available before that happens so after construction it's too
-  // late. We use a temporary fake node for the duration of this event.
-  // TODO: FormData takes a second argument that it's the submitter but this
-  // is fairly new so not all browsers support it yet. Switch to that technique
-  // when available.
-  const temp = submitter.ownerDocument.createElement('input');
-  temp.name = submitter.name;
-  temp.value = submitter.value;
-  if (form.id) {
-    temp.setAttribute('form', form.id);
-  }
-  (submitter.parentNode: any).insertBefore(temp, submitter);
-  const formData = new FormData(form);
-  (temp.parentNode: any).removeChild(temp);
-  return formData;
 }
 
 /**
@@ -91,19 +67,20 @@ function extractEvents(
     return;
   }
   const formInst = maybeTargetInst;
-  const form: HTMLFormElement = (nativeEventTarget: any);
+  const form: HTMLFormElement = nativeEventTarget as any;
   let action = coerceFormActionProp(
-    (getFiberCurrentPropsFromNode(form): any).action,
+    (getFiberCurrentPropsFromNode(form) as any).action,
   );
-  let submitter: null | void | HTMLInputElement | HTMLButtonElement =
-    (nativeEvent: any).submitter;
+  let submitter: null | void | HTMLInputElement | HTMLButtonElement = (
+    nativeEvent as any
+  ).submitter;
   let submitterAction;
   if (submitter) {
     const submitterProps = getFiberCurrentPropsFromNode(submitter);
     submitterAction = submitterProps
-      ? coerceFormActionProp((submitterProps: any).formAction)
+      ? coerceFormActionProp((submitterProps as any).formAction)
       : // The built-in Flow type is ?string, wider than the spec
-        ((submitter.getAttribute('formAction'): any): string | null);
+        (submitter.getAttribute('formAction') as any as string | null);
     if (submitterAction !== null) {
       // The submitter overrides the form action.
       action = submitterAction;
@@ -129,9 +106,7 @@ function extractEvents(
       if (didCurrentEventScheduleTransition()) {
         // We're going to set the pending form status, but because the submission
         // was prevented, we should not fire the action function.
-        const formData = submitter
-          ? createFormDataWithSubmitter(form, submitter)
-          : new FormData(form);
+        const formData = new FormData(form, submitter);
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
@@ -160,9 +135,7 @@ function extractEvents(
       event.preventDefault();
 
       // Dispatch the action and set a pending form status.
-      const formData = submitter
-        ? createFormDataWithSubmitter(form, submitter)
-        : new FormData(form);
+      const formData = new FormData(form, submitter);
       const pendingState: FormStatus = {
         pending: true,
         data: formData,

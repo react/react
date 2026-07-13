@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 function Component(props) {
   let a = foo();
   // freeze `a` so we know the next line cannot mutate it
@@ -17,7 +18,7 @@ function Component(props) {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
 function Component(props) {
   const $ = _c(2);
   const a = foo();

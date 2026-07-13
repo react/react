@@ -71,6 +71,7 @@ function useFoo(t0) {
     obj = $[2];
     myDiv = $[3];
   }
+
   return myDiv;
 }
 

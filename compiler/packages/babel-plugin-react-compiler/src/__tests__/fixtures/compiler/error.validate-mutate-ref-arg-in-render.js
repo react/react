@@ -1,6 +1,8 @@
 // @validateRefAccessDuringRender:true
+import {mutate} from 'shared-runtime';
+
 function Foo(props, ref) {
-  console.log(ref.current);
+  mutate(ref.current);
   return <div>{props.bar}</div>;
 }
 

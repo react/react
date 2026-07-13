@@ -104,18 +104,6 @@ export default function GeneralSettings(_: {}): React.Node {
         ) : null}
       </div>
 
-      <div className={styles.SettingWrapper}>
-        <div className={styles.RadioLabel}>Display density</div>
-        <select
-          value={displayDensity}
-          onChange={({currentTarget}) =>
-            setDisplayDensity(currentTarget.value)
-          }>
-          <option value="compact">Compact</option>
-          <option value="comfortable">Comfortable</option>
-        </select>
-      </div>
-
       {supportsTraceUpdates && (
         <div className={styles.SettingWrapper}>
           <label className={styles.SettingRow}>

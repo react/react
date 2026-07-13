@@ -100,6 +100,7 @@ function useFoo(cond) {
   } else {
     y = $[4];
   }
+
   return y;
 }
 

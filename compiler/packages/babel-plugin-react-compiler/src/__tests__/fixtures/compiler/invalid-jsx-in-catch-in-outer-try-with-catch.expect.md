@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @loggerTestOnly @validateNoJSXInTryStatements
+// @loggerTestOnly @validateNoJSXInTryStatements @outputMode:"lint"
 import {identity} from 'shared-runtime';
 
 function Component(props) {
@@ -25,34 +25,17 @@ function Component(props) {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @loggerTestOnly @validateNoJSXInTryStatements
+// @loggerTestOnly @validateNoJSXInTryStatements @outputMode:"lint"
 import { identity } from "shared-runtime";
 
 function Component(props) {
-  const $ = _c(4);
   let el;
   try {
     let value;
     try {
-      let t0;
-      if ($[0] !== props.foo) {
-        t0 = identity(props.foo);
-        $[0] = props.foo;
-        $[1] = t0;
-      } else {
-        t0 = $[1];
-      }
-      value = t0;
+      value = identity(props.foo);
     } catch {
-      let t0;
-      if ($[2] !== value) {
-        t0 = <div value={value} />;
-        $[2] = value;
-        $[3] = t0;
-      } else {
-        t0 = $[3];
-      }
-      el = t0;
+      el = <div value={value} />;
     }
   } catch {
     return null;
@@ -65,8 +48,8 @@ function Component(props) {
 ## Logs
 
 ```
-{"kind":"CompileError","detail":{"options":{"category":"ErrorBoundaries","reason":"Avoid constructing JSX within try/catch","description":"React does not immediately render components when JSX is rendered, so any errors from this component will not be caught by the try/catch. To catch errors in rendering a given component, wrap that component in an error boundary. (https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary)","details":[{"kind":"error","loc":{"start":{"line":11,"column":11,"index":222},"end":{"line":11,"column":32,"index":243},"filename":"invalid-jsx-in-catch-in-outer-try-with-catch.ts"},"message":"Avoid constructing JSX within try/catch"}]}},"fnLoc":null}
-{"kind":"CompileSuccess","fnLoc":{"start":{"line":4,"column":0,"index":91},"end":{"line":17,"column":1,"index":298},"filename":"invalid-jsx-in-catch-in-outer-try-with-catch.ts"},"fnName":"Component","memoSlots":4,"memoBlocks":2,"memoValues":2,"prunedMemoBlocks":0,"prunedMemoValues":0}
+{"kind":"CompileError","detail":{"category":"ErrorBoundaries","reason":"Avoid constructing JSX within try/catch","description":"React does not immediately render components when JSX is rendered, so any errors from this component will not be caught by the try/catch. To catch errors in rendering a given component, wrap that component in an error boundary. (https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary)","severity":"Error","suggestions":null,"details":[{"kind":"error","loc":{"start":{"line":11,"column":11,"index":241},"end":{"line":11,"column":32,"index":262},"filename":"invalid-jsx-in-catch-in-outer-try-with-catch.ts"},"message":"Avoid constructing JSX within try/catch"}]},"fnLoc":null}
+{"kind":"CompileSuccess","fnLoc":{"start":{"line":4,"column":0,"index":110},"end":{"line":17,"column":1,"index":317},"filename":"invalid-jsx-in-catch-in-outer-try-with-catch.ts"},"fnName":"Component","memoSlots":4,"memoBlocks":2,"memoValues":2,"prunedMemoBlocks":0,"prunedMemoValues":0}
 ```
       
 ### Eval output

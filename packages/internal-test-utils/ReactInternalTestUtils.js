@@ -16,6 +16,7 @@ import {
   clearErrors,
   createLogAssertion,
 } from './consoleMock';
+export {getDebugInfo} from './debugInfo';
 export {act, serverAct} from './internalAct';
 const {assertConsoleLogsCleared} = require('internal-test-utils/consoleMock');
 
@@ -121,7 +122,6 @@ ${diff(expectedLog, actualLog)}
 
 function aggregateErrors(errors: Array<mixed>): mixed {
   if (errors.length > 1 && typeof AggregateError === 'function') {
-    // eslint-disable-next-line no-undef
     return new AggregateError(errors);
   }
   return errors[0];

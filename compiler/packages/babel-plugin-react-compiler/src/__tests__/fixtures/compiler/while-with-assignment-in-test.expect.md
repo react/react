@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 function Component() {
   const queue = [1, 2, 3];
   let value = 0;
@@ -22,6 +23,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 function Component() {
   const queue = [1, 2, 3];
   let value;
@@ -29,6 +31,7 @@ function Component() {
   while ((value = queue.pop()) != null) {
     sum = sum + value;
   }
+
   return sum;
 }
 

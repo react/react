@@ -12,6 +12,7 @@ import {
   Identifier,
   PropertyLiteral,
   ReactiveScopeDependency,
+  SourceLocation,
 } from '../HIR';
 import {printIdentifier} from '../HIR/PrintHIR';
 
@@ -36,12 +37,13 @@ export class ReactiveScopeDependencyTreeHIR {
    * duplicates when traversing the CFG.
    */
   constructor(hoistableObjects: Iterable<ReactiveScopeDependency>) {
-    for (const {path, identifier, reactive} of hoistableObjects) {
+    for (const {path, identifier, reactive, loc} of hoistableObjects) {
       let currNode = ReactiveScopeDependencyTreeHIR.#getOrCreateRoot(
         identifier,
         reactive,
         this.#hoistableObjects,
         path.length > 0 && path[0].optional ? 'Optional' : 'NonNull',
+        loc,
       );
 
       for (let i = 0; i < path.length; i++) {
@@ -54,14 +56,7 @@ export class ReactiveScopeDependencyTreeHIR {
           prevAccessType == null || prevAccessType === accessType,
           {
             reason: 'Conflicting access types',
-            description: null,
-            details: [
-              {
-                kind: 'error',
-                loc: GeneratedSource,
-                message: null,
-              },
-            ],
+            loc: GeneratedSource,
           },
         );
         let nextNode = currNode.properties.get(path[i].property);
@@ -69,6 +64,7 @@ export class ReactiveScopeDependencyTreeHIR {
           nextNode = {
             properties: new Map(),
             accessType,
+            loc: path[i].loc,
           };
           currNode.properties.set(path[i].property, nextNode);
         }
@@ -82,6 +78,7 @@ export class ReactiveScopeDependencyTreeHIR {
     reactive: boolean,
     roots: Map<Identifier, TreeNode<T> & {reactive: boolean}>,
     defaultAccessType: T,
+    loc: SourceLocation,
   ): TreeNode<T> {
     // roots can always be accessed unconditionally in JS
     let rootNode = roots.get(identifier);
@@ -91,19 +88,14 @@ export class ReactiveScopeDependencyTreeHIR {
         properties: new Map(),
         reactive,
         accessType: defaultAccessType,
+        loc,
       };
       roots.set(identifier, rootNode);
     } else {
       CompilerError.invariant(reactive === rootNode.reactive, {
         reason: '[DeriveMinimalDependenciesHIR] Conflicting reactive root flag',
         description: `Identifier ${printIdentifier(identifier)}`,
-        details: [
-          {
-            kind: 'error',
-            loc: GeneratedSource,
-            message: null,
-          },
-        ],
+        loc: GeneratedSource,
       });
     }
     return rootNode;
@@ -115,12 +107,13 @@ export class ReactiveScopeDependencyTreeHIR {
    * safe-to-evaluate subpath
    */
   addDependency(dep: ReactiveScopeDependency): void {
-    const {identifier, reactive, path} = dep;
+    const {identifier, reactive, path, loc} = dep;
     let depCursor = ReactiveScopeDependencyTreeHIR.#getOrCreateRoot(
       identifier,
       reactive,
       this.#deps,
       PropertyAccessType.UnconditionalAccess,
+      loc,
     );
     /**
      * hoistableCursor is null if depCursor is not an object we can hoist
@@ -166,6 +159,7 @@ export class ReactiveScopeDependencyTreeHIR {
           depCursor,
           entry.property,
           accessType,
+          entry.loc,
         );
       } else if (
         hoistableCursor != null &&
@@ -176,6 +170,7 @@ export class ReactiveScopeDependencyTreeHIR {
           depCursor,
           entry.property,
           PropertyAccessType.UnconditionalAccess,
+          entry.loc,
         );
       } else {
         /**
@@ -319,6 +314,7 @@ function merge(
 type TreeNode<T extends string> = {
   properties: Map<PropertyLiteral, TreeNode<T>>;
   accessType: T;
+  loc: SourceLocation;
 };
 type HoistableNode = TreeNode<'Optional' | 'NonNull'>;
 type DependencyNode = TreeNode<PropertyAccessType>;
@@ -336,7 +332,7 @@ function collectMinimalDependenciesInSubtree(
   results: Set<ReactiveScopeDependency>,
 ): void {
   if (isDependency(node.accessType)) {
-    results.add({identifier: rootIdentifier, reactive, path});
+    results.add({identifier: rootIdentifier, reactive, path, loc: node.loc});
   } else {
     for (const [childName, childNode] of node.properties) {
       collectMinimalDependenciesInSubtree(
@@ -348,6 +344,7 @@ function collectMinimalDependenciesInSubtree(
           {
             property: childName,
             optional: isOptional(childNode.accessType),
+            loc: childNode.loc,
           },
         ],
         results,
@@ -375,12 +372,14 @@ function makeOrMergeProperty(
   node: DependencyNode,
   property: PropertyLiteral,
   accessType: PropertyAccessType,
+  loc: SourceLocation,
 ): DependencyNode {
   let child = node.properties.get(property);
   if (child == null) {
     child = {
       properties: new Map(),
       accessType,
+      loc,
     };
     node.properties.set(property, child);
   } else {

@@ -45,7 +45,6 @@ function Component(props) {
   let t1;
   if ($[2] !== x) {
     const y = <div>{x}</div>;
-
     t1 = <div>{y}</div>;
     $[2] = x;
     $[3] = t1;

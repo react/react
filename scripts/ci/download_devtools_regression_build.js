@@ -9,7 +9,6 @@ const semver = require('semver');
 const yargs = require('yargs');
 const fs = require('fs');
 
-const INSTALL_PACKAGES = ['react-dom', 'react', 'react-test-renderer'];
 const REGRESSION_FOLDER = 'build-regression';
 
 const ROOT_PATH = join(__dirname, '..', '..');
@@ -23,6 +22,12 @@ const version = process.argv[2];
 const shouldReplaceBuild = !!argv.replaceBuild;
 
 async function downloadRegressionBuild() {
+  const reactVersion = semver.coerce(version).version;
+  const installPackages = ['react-dom', 'react', 'react-test-renderer'];
+  if (semver.gte(reactVersion, '16.3.0')) {
+    installPackages.push('react-is');
+  }
+
   console.log(chalk.bold.white(`Downloading React v${version}\n`));
 
   // Make build directory for temporary modules we're going to download
@@ -35,7 +40,7 @@ async function downloadRegressionBuild() {
   await exec(`mkdir ${regressionBuildPath}`);
 
   // Install all necessary React packages that have the same version
-  const downloadPackagesStr = INSTALL_PACKAGES.reduce(
+  const downloadPackagesStr = installPackages.reduce(
     (str, name) => `${str} ${name}@${version}`,
     ''
   );
@@ -51,7 +56,7 @@ async function downloadRegressionBuild() {
 
   // Remove all the packages that we downloaded in the original build folder
   // so we can move the modules from the regression build over
-  const removePackagesStr = INSTALL_PACKAGES.reduce(
+  const removePackagesStr = installPackages.reduce(
     (str, name) => `${str} ${join(buildPath, name)}`,
     ''
   );
@@ -63,12 +68,12 @@ async function downloadRegressionBuild() {
         .join(' ')}\n`
     )
   );
-  await exec(`rm -r ${removePackagesStr}`);
+  await exec(`rm -rf ${removePackagesStr}`);
 
   // Move all packages that we downloaded to the original build folder
   // We need to separately move the scheduler package because it might
   // be called schedule
-  const movePackageString = INSTALL_PACKAGES.reduce(
+  const movePackageString = installPackages.reduce(
     (str, name) => `${str} ${join(regressionBuildPath, 'node_modules', name)}`,
     ''
   );
@@ -80,9 +85,9 @@ async function downloadRegressionBuild() {
         .join(' ')} to ${chalk.underline.blue(buildPath)}\n`
     )
   );
+  fs.mkdirSync(buildPath, {recursive: true});
   await exec(`mv ${movePackageString} ${buildPath}`);
 
-  const reactVersion = semver.coerce(version).version;
   // For React versions earlier than 18.0.0, we explicitly scheduler v0.20.1, which
   // is the first version that has unstable_mock, which DevTools tests need, but also
   // has Scheduler.unstable_trace, which, although we don't use in DevTools tests
@@ -100,7 +105,7 @@ async function downloadRegressionBuild() {
     );
   } else {
     console.log(chalk.white(`Downloading scheduler\n`));
-    await exec(`rm -r ${join(buildPath, 'scheduler')}`);
+    await exec(`rm -rf ${join(buildPath, 'scheduler')}`);
     await exec(
       `mv ${join(
         regressionBuildPath,
@@ -134,8 +139,6 @@ async function main() {
       return;
     }
     await downloadRegressionBuild();
-  } catch (e) {
-    console.log(chalk.red(e));
   } finally {
     // We shouldn't remove the regression-build folder unless we're using
     // it to replace the build folder

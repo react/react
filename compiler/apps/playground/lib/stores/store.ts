@@ -71,7 +71,7 @@ export function initStoreFromUrlOrLocalStorage(): Store {
   // Make sure all properties are populated
   return {
     source: raw.source,
-    config: 'config' in raw ? raw.config : defaultConfig,
+    config: 'config' in raw && raw['config'] ? raw.config : defaultConfig,
     showInternals: 'showInternals' in raw ? raw.showInternals : false,
   };
 }

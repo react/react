@@ -52,6 +52,7 @@ function Component(props) {
     t2 = $[5];
   }
   const c = t2;
+
   return (a && b) || c;
 }
 

@@ -916,13 +916,10 @@ describe('ReactLegacyUpdates', () => {
       'Invalid argument passed as callback. Expected a function. ' +
         'Instead received: no',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be ' +
-          'a function. Instead received: no.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be ' +
+        'a function. Instead received: no.',
+    ]);
 
     container = document.createElement('div');
     component = ReactDOM.render(<A />, container);
@@ -934,13 +931,10 @@ describe('ReactLegacyUpdates', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. ' +
-          "Instead received: { foo: 'bar' }.",
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. ' +
+        "Instead received: { foo: 'bar' }.",
+    ]);
     // Make sure the warning is deduplicated and doesn't fire again
     container = document.createElement('div');
     component = ReactDOM.render(<A />, container);
@@ -980,13 +974,10 @@ describe('ReactLegacyUpdates', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. ' +
-          'Instead received: no.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. ' +
+        'Instead received: no.',
+    ]);
     container = document.createElement('div');
     component = ReactDOM.render(<A />, container);
     await expect(async () => {
@@ -997,13 +988,10 @@ describe('ReactLegacyUpdates', () => {
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
-    assertConsoleErrorDev(
-      [
-        'Expected the last optional `callback` argument to be a function. ' +
-          "Instead received: { foo: 'bar' }.",
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Expected the last optional `callback` argument to be a function. ' +
+        "Instead received: { foo: 'bar' }.",
+    ]);
     // Make sure the warning is deduplicated and doesn't fire again
     container = document.createElement('div');
     component = ReactDOM.render(<A />, container);

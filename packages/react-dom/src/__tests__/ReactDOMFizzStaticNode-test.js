@@ -14,13 +14,40 @@ let React;
 let ReactDOMFizzStatic;
 let Suspense;
 
+function normalizeCodeLocInfo(str) {
+  return (
+    str &&
+    str.replace(/^ +(?:at|in) ([\S]+)[^\n]*/gm, function (m, name) {
+      const dot = name.lastIndexOf('.');
+      if (dot !== -1) {
+        name = name.slice(dot + 1);
+      }
+      return '    in ' + name + (/\d/.test(m) ? ' (at **)' : '');
+    })
+  );
+}
+
+function ignoreListStack(str) {
+  if (!str) {
+    return str;
+  }
+
+  let ignoreListedStack = '';
+  const lines = str.split('\n');
+  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+  for (const line of lines) {
+    if (line.indexOf(__filename) !== -1) {
+      ignoreListedStack += '\n' + line;
+    }
+  }
+  return ignoreListedStack;
+}
+
 describe('ReactDOMFizzStaticNode', () => {
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
-    if (__EXPERIMENTAL__) {
-      ReactDOMFizzStatic = require('react-dom/static');
-    }
+    ReactDOMFizzStatic = require('react-dom/static');
     Suspense = React.Suspense;
   });
 
@@ -58,7 +85,6 @@ describe('ReactDOMFizzStaticNode', () => {
     }
   }
 
-  // @gate experimental
   it('should call prerenderToNodeStream', async () => {
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
       <div>hello world</div>,
@@ -67,14 +93,12 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(prelude).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
-  // @gate experimental
   it('should suppport web streams', async () => {
     const result = await ReactDOMFizzStatic.prerender(<div>hello world</div>);
     const prelude = await readContentWeb(result.prelude);
     expect(prelude).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
-  // @gate experimental
   it('should emit DOCTYPE at the root of the document', async () => {
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
       <html>
@@ -93,7 +117,6 @@ describe('ReactDOMFizzStaticNode', () => {
     }
   });
 
-  // @gate experimental
   it('should emit bootstrap script src at the end', async () => {
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
       <div>hello world</div>,
@@ -109,7 +132,6 @@ describe('ReactDOMFizzStaticNode', () => {
     );
   });
 
-  // @gate experimental
   it('emits all HTML as one unit', async () => {
     let hasLoaded = false;
     let resolve;
@@ -139,7 +161,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(prelude).toMatchInlineSnapshot(`"<div><!--$-->Done<!--/$--></div>"`);
   });
 
-  // @gate experimental
   it('should reject the promise when an error is thrown at the root', async () => {
     const reportedErrors = [];
     let caughtError = null;
@@ -161,7 +182,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  // @gate experimental
   it('should reject the promise when an error is thrown inside a fallback', async () => {
     const reportedErrors = [];
     let caughtError = null;
@@ -185,7 +205,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  // @gate experimental
   it('should not error the stream when an error is thrown inside suspense boundary', async () => {
     const reportedErrors = [];
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
@@ -206,7 +225,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  // @gate experimental
   it('should be able to complete by aborting even if the promise never resolves', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -227,6 +245,7 @@ describe('ReactDOMFizzStaticNode', () => {
     await jest.runAllTimers();
 
     controller.abort();
+    await jest.runAllTimers();
 
     const result = await resultPromise;
 
@@ -236,39 +255,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['This operation was aborted']);
   });
 
-  // @gate experimental
-  // @gate !enableHalt
-  it('should reject if aborting before the shell is complete and enableHalt is disabled', async () => {
-    const errors = [];
-    const controller = new AbortController();
-    const promise = ReactDOMFizzStatic.prerenderToNodeStream(
-      <div>
-        <InfiniteSuspend />
-      </div>,
-      {
-        signal: controller.signal,
-        onError(x) {
-          errors.push(x.message);
-        },
-      },
-    );
-
-    await jest.runAllTimers();
-
-    const theReason = new Error('aborted for reasons');
-    controller.abort(theReason);
-
-    let caughtError = null;
-    try {
-      await promise;
-    } catch (error) {
-      caughtError = error;
-    }
-    expect(caughtError).toBe(theReason);
-    expect(errors).toEqual(['aborted for reasons']);
-  });
-
-  // @gate enableHalt
   it('should resolve an empty shell if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -288,6 +274,7 @@ describe('ReactDOMFizzStaticNode', () => {
 
     const theReason = new Error('aborted for reasons');
     controller.abort(theReason);
+    await jest.runAllTimers();
 
     let didThrow = false;
     let prelude;
@@ -302,7 +289,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(content).toBe('');
   });
 
-  // @gate experimental
   it('should be able to abort before something suspends', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -326,58 +312,37 @@ describe('ReactDOMFizzStaticNode', () => {
       },
     );
 
-    if (gate(flags => flags.enableHalt)) {
-      const {prelude} = await streamPromise;
-      const content = await readContent(prelude);
-      expect(errors).toEqual(['This operation was aborted']);
-      expect(content).toBe('');
-    } else {
-      let caughtError = null;
-      try {
-        await streamPromise;
-      } catch (error) {
-        caughtError = error;
-      }
-      expect(caughtError.message).toBe('This operation was aborted');
-      expect(errors).toEqual(['This operation was aborted']);
-    }
+    await jest.runAllTimers();
+    const {prelude} = await streamPromise;
+    const content = await readContent(prelude);
+    expect(errors).toEqual(['This operation was aborted']);
+    expect(content).toBe('');
   });
 
-  // @gate experimental
-  // @gate !enableHalt
-  it('should reject if passing an already aborted signal and enableHalt is disabled', async () => {
+  it('reports the abort reason if a task suspends after aborting a prerender', async () => {
+    const promise = new Promise(() => {});
     const errors = [];
     const controller = new AbortController();
-    const theReason = new Error('aborted for reasons');
-    controller.abort(theReason);
-
-    const promise = ReactDOMFizzStatic.prerenderToNodeStream(
-      <div>
-        <Suspense fallback={<div>Loading</div>}>
-          <InfiniteSuspend />
-        </Suspense>
-      </div>,
-      {
-        signal: controller.signal,
-        onError(x) {
-          errors.push(x.message);
-        },
-      },
-    );
-
-    // Technically we could still continue rendering the shell but currently the
-    // semantics mean that we also abort any pending CPU work.
-    let caughtError = null;
-    try {
-      await promise;
-    } catch (error) {
-      caughtError = error;
+    function App() {
+      controller.abort(new Error('abort reason'));
+      React.use(promise);
+      return null;
     }
-    expect(caughtError).toBe(theReason);
-    expect(errors).toEqual(['aborted for reasons']);
+
+    const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
+      signal: controller.signal,
+      onError(error) {
+        errors.push(error.message);
+      },
+    });
+
+    await jest.runAllTimers();
+    const result = await resultPromise;
+
+    expect(errors).toEqual(['abort reason']);
+    expect(await readContent(result.prelude)).toBe('');
   });
 
-  // @gate enableHalt
   it('should resolve with an empty prelude if passing an already aborted signal', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -400,6 +365,7 @@ describe('ReactDOMFizzStaticNode', () => {
 
     // Technically we could still continue rendering the shell but currently the
     // semantics mean that we also abort any pending CPU work.
+    await jest.runAllTimers();
 
     let didThrow = false;
     let prelude;
@@ -414,7 +380,6 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(content).toBe('');
   });
 
-  // @gate experimental
   it('supports custom abort reasons with a string', async () => {
     const promise = new Promise(r => {});
     function Wait() {
@@ -450,13 +415,13 @@ describe('ReactDOMFizzStaticNode', () => {
     await jest.runAllTimers();
 
     controller.abort('foobar');
+    await jest.runAllTimers();
 
     await resultPromise;
 
     expect(errors).toEqual(['foobar', 'foobar']);
   });
 
-  // @gate experimental
   it('supports custom abort reasons with an Error', async () => {
     const promise = new Promise(r => {});
     function Wait() {
@@ -492,9 +457,115 @@ describe('ReactDOMFizzStaticNode', () => {
     await jest.runAllTimers();
 
     controller.abort(new Error('uh oh'));
+    await jest.runAllTimers();
 
     await resultPromise;
 
     expect(errors).toEqual(['uh oh', 'uh oh']);
+  });
+
+  it('uses a rejection reason when an abort listener rejects pending work before the abort finishes', async () => {
+    let reject;
+    const rejectedPromise = new Promise((resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    const haltedPromise = new Promise(() => {});
+    function RejectedWait() {
+      React.use(rejectedPromise);
+      return null;
+    }
+    function HaltedWait() {
+      React.use(haltedPromise);
+      return null;
+    }
+
+    const errors = [];
+    const controller = new AbortController();
+    const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(
+      <>
+        <Suspense fallback="Loading rejected">
+          <RejectedWait />
+        </Suspense>
+        <Suspense fallback="Loading halted">
+          <HaltedWait />
+        </Suspense>
+      </>,
+      {
+        signal: controller.signal,
+        onError(error) {
+          errors.push(error.message);
+        },
+      },
+    );
+
+    await jest.runAllTimers();
+
+    controller.signal.addEventListener('abort', () => {
+      reject(new Error('rejected during abort'));
+    });
+    controller.abort(new Error('abort reason'));
+
+    await Promise.resolve();
+    await jest.runAllTimers();
+    await resultPromise;
+
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
+  });
+
+  describe('with real timers', () => {
+    beforeEach(() => {
+      jest.useRealTimers();
+    });
+
+    afterEach(() => {
+      jest.useFakeTimers();
+    });
+
+    it('includes the suspended call site when aborting in the same rendering task', async () => {
+      const promise = new Promise(() => {});
+      const controller = new AbortController();
+      let caughtError;
+      let componentStack;
+      let ownerStack;
+
+      function AbortAndSuspend() {
+        controller.abort(new Error('abort reason'));
+        React.use(promise);
+        return null;
+      }
+
+      function App() {
+        return <AbortAndSuspend />;
+      }
+
+      const {prelude} = await ReactDOMFizzStatic.prerenderToNodeStream(
+        <App />,
+        {
+          signal: controller.signal,
+          onError(error, errorInfo) {
+            caughtError = error;
+            componentStack = errorInfo.componentStack;
+            ownerStack = __DEV__ ? React.captureOwnerStack() : null;
+          },
+        },
+      );
+
+      expect(caughtError).toEqual(
+        expect.objectContaining({message: 'abort reason'}),
+      );
+      expect(await readContent(prelude)).toBe('');
+      if (__DEV__) {
+        expect(normalizeCodeLocInfo(componentStack)).toBe(
+          '\n    in AbortAndSuspend (at **)\n    in App',
+        );
+        expect(normalizeCodeLocInfo(ignoreListStack(ownerStack))).toBe(
+          (gate(flags => flags.enableAsyncDebugInfo)
+            ? '\n    in AbortAndSuspend (at **)'
+            : '') + '\n    in App (at **)',
+        );
+      } else {
+        expect(ownerStack).toBeNull();
+      }
+    });
   });
 });

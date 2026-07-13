@@ -73,7 +73,6 @@ function Component(props) {
       const item = props.items[i];
       items.push(<div key={item.id}>{item.value}</div>);
     }
-
     t0 = <div>{items}</div>;
     $[0] = props.items;
     $[1] = props.start;

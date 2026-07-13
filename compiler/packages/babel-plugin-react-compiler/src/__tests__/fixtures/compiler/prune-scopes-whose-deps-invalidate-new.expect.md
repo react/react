@@ -34,6 +34,7 @@ function Component(props) {
   x.value = props.value;
 
   const y = { x };
+
   return { y };
 }
 

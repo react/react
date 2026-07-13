@@ -16,7 +16,7 @@ export default function useInferredName(
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
   const name = asyncInfo.awaited.name;
   let inferNameFromStack = null;
-  if (!name || name === 'Promise') {
+  if (!name || name === 'Promise' || name === 'lazy') {
     // If all we have is a generic name, we can try to infer a better name from
     // the stack. We only do this if the stack has more than one frame since
     // otherwise it's likely to just be the name of the component which isn't better.

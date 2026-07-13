@@ -60,6 +60,7 @@ function useFoo(t0) {
   );
 
   const dispatcher = useHook();
+
   return button;
 }
 

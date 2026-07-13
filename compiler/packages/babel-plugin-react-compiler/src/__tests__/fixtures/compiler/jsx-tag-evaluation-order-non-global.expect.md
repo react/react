@@ -59,7 +59,6 @@ function Component(props) {
   if ($[0] !== props.alternateComponent || $[1] !== props.component) {
     const maybeMutable = new MaybeMutable();
     Tag = props.component;
-
     T0 = Tag;
     t0 = ((Tag = props.alternateComponent), maybeMutate(maybeMutable));
     $[0] = props.alternateComponent;

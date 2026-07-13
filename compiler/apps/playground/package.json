@@ -26,26 +26,28 @@
     "@babel/traverse": "^7.18.9",
     "@babel/types": "7.26.3",
     "@heroicons/react": "^1.0.6",
-    "@monaco-editor/react": "^4.4.6",
-    "@playwright/test": "^1.51.1",
+    "@monaco-editor/react": "^4.8.0-rc.2",
+    "@playwright/test": "^1.56.1",
     "@use-gesture/react": "^10.2.22",
     "hermes-eslint": "^0.25.0",
     "hermes-parser": "^0.25.0",
     "invariant": "^2.2.4",
+    "json5": "^2.2.3",
+    "lru-cache": "^11.2.2",
     "lz-string": "^1.5.0",
     "monaco-editor": "^0.52.0",
-    "next": "15.5.2",
+    "next": "15.5.9",
     "notistack": "^3.0.0-alpha.7",
     "prettier": "^3.3.3",
     "pretty-format": "^29.3.1",
     "re-resizable": "^6.9.16",
-    "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@types/node": "18.11.9",
-    "@types/react": "19.1.12",
-    "@types/react-dom": "19.1.9",
+    "@types/react": "19.2",
+    "@types/react-dom": "19.2",
     "autoprefixer": "^10.4.13",
     "clsx": "^1.2.1",
     "concurrently": "^7.4.0",
@@ -57,7 +59,7 @@
     "wait-on": "^7.2.0"
   },
   "resolutions": {
-    "@types/react": "19.1.12",
-    "@types/react-dom": "19.1.9"
+    "@types/react": "19.2",
+    "@types/react-dom": "19.2"
   }
 }

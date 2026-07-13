@@ -95,7 +95,7 @@ export function inspectElement(
   id: number,
   path: InspectedElementPath | null,
   rendererID: number,
-  shouldListenToPauseEvents: boolean = false,
+  shouldListenToPauseEvents: boolean,
 ): Promise<InspectedElementPayload> {
   const requestID = requestCounter++;
   const promise = getPromiseForRequestID<InspectedElementPayload>(
@@ -112,6 +112,32 @@ export function inspectElement(
     path,
     rendererID,
     requestID,
+  });
+
+  return promise;
+}
+
+export function inspectScreen(
+  bridge: FrontendBridge,
+  forceFullData: boolean,
+  arbitraryRootID: number,
+  path: InspectedElementPath | null,
+  shouldListenToPauseEvents: boolean,
+): Promise<InspectedElementPayload> {
+  const requestID = requestCounter++;
+  const promise = getPromiseForRequestID<InspectedElementPayload>(
+    requestID,
+    'inspectedScreen',
+    bridge,
+    `Timed out while inspecting screen.`,
+    shouldListenToPauseEvents,
+  );
+
+  bridge.send('inspectScreen', {
+    requestID,
+    id: arbitraryRootID,
+    path,
+    forceFullData,
   });
 
   return promise;
@@ -178,7 +204,7 @@ function getPromiseForRequestID<T>(
     const onInspectedElement = (data: any) => {
       if (data.responseID === requestID) {
         cleanup();
-        resolve((data: T));
+        resolve(data as T);
       }
     };
 

@@ -14,6 +14,7 @@ import type {
   ReactScope,
   ViewTransitionProps,
   ActivityProps,
+  ReactKey,
 } from 'shared/ReactTypes';
 import type {Fiber} from './ReactInternalTypes';
 import type {RootTag} from './ReactRootTags';
@@ -43,6 +44,7 @@ import {
   enableObjectFiber,
   enableViewTransition,
   enableSuspenseyImages,
+  enableOptimisticKey,
 } from 'shared/ReactFeatureFlags';
 import {NoFlags, Placement, StaticMask} from './ReactFiberFlags';
 import {ConcurrentRoot} from './ReactRootTags';
@@ -77,11 +79,7 @@ import {
 } from './ReactWorkTags';
 import {getComponentNameFromOwner} from 'react-reconciler/src/getComponentNameFromFiber';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
-import {
-  resolveClassForHotReloading,
-  resolveFunctionForHotReloading,
-  resolveForwardRefForHotReloading,
-} from './ReactFiberHotReloading';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
 import {
   NoMode,
@@ -137,7 +135,7 @@ function FiberNode(
   this: $FlowFixMe,
   tag: WorkTag,
   pendingProps: mixed,
-  key: null | string,
+  key: ReactKey,
   mode: TypeOfMode,
 ) {
   // Instance
@@ -224,7 +222,7 @@ function FiberNode(
 function createFiberImplClass(
   tag: WorkTag,
   pendingProps: mixed,
-  key: null | string,
+  key: ReactKey,
   mode: TypeOfMode,
 ): Fiber {
   // $FlowFixMe[invalid-constructor]: the shapes are exact here but Flow doesn't like constructors
@@ -234,7 +232,7 @@ function createFiberImplClass(
 function createFiberImplObject(
   tag: WorkTag,
   pendingProps: mixed,
-  key: null | string,
+  key: ReactKey,
   mode: TypeOfMode,
 ): Fiber {
   const fiber: Fiber = {
@@ -364,6 +362,12 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     workInProgress.subtreeFlags = NoFlags;
     workInProgress.deletions = null;
 
+    if (enableOptimisticKey) {
+      // For optimistic keys, the Fibers can have different keys if one is optimistic
+      // and the other one is filled in.
+      workInProgress.key = current.key;
+    }
+
     if (enableProfilerTimer) {
       // We intentionally reset, rather than copy, actualDuration & actualStartTime.
       // This prevents time from endlessly accumulating in new commits.
@@ -419,13 +423,10 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     switch (workInProgress.tag) {
       case FunctionComponent:
       case SimpleMemoComponent:
-        workInProgress.type = resolveFunctionForHotReloading(current.type);
-        break;
+      case MemoComponent:
       case ClassComponent:
-        workInProgress.type = resolveClassForHotReloading(current.type);
-        break;
       case ForwardRef:
-        workInProgress.type = resolveForwardRefForHotReloading(current.type);
+        workInProgress.type = resolveTypeForHotReloading(current.type);
         break;
       default:
         break;
@@ -488,7 +489,14 @@ export function resetWorkInProgress(
     workInProgress.memoizedState = current.memoizedState;
     workInProgress.updateQueue = current.updateQueue;
     // Needed because Blocks store data on type.
+    // TODO: Blocks don't exist anymore. Do we still need this?
     workInProgress.type = current.type;
+
+    if (enableOptimisticKey) {
+      // For optimistic keys, the Fibers can have different keys if one is optimistic
+      // and the other one is filled in.
+      workInProgress.key = current.key;
+    }
 
     // Clone the dependencies object. This is mutated during the render phase, so
     // it cannot be shared with the current fiber.
@@ -532,10 +540,10 @@ export function createHostRootFiber(
     mode = NoMode;
   }
 
-  if (enableProfilerTimer && isDevToolsPresent) {
-    // Always collect profile timings when DevTools are present.
-    // This enables DevTools to start capturing timing at any point–
-    // Without some nodes in the tree having empty base times.
+  if (__DEV__ || (enableProfilerTimer && isDevToolsPresent)) {
+    // dev: Enable profiling instrumentation by default.
+    // profile: enabled if DevTools is present or subtree is wrapped in <Profiler>.
+    // production: disabled.
     mode |= ProfileMode;
   }
 
@@ -545,7 +553,7 @@ export function createHostRootFiber(
 // TODO: Get rid of this helper. Only createFiberFromElement should exist.
 export function createFiberFromTypeAndProps(
   type: any, // React$ElementType
-  key: null | string,
+  key: ReactKey,
   pendingProps: any,
   owner: null | ReactComponentInfo | Fiber,
   mode: TypeOfMode,
@@ -554,18 +562,15 @@ export function createFiberFromTypeAndProps(
   let fiberTag: WorkTag = FunctionComponent;
   // The resolved type is set if we know what the final type will be. I.e. it's not lazy.
   let resolvedType = type;
-  if (typeof type === 'function') {
-    if (shouldConstruct(type)) {
+  if (__DEV__) {
+    resolvedType = resolveTypeForHotReloading(type);
+  }
+  if (typeof resolvedType === 'function') {
+    if (shouldConstruct(resolvedType)) {
       fiberTag = ClassComponent;
-      if (__DEV__) {
-        resolvedType = resolveClassForHotReloading(resolvedType);
-      }
-    } else {
-      if (__DEV__) {
-        resolvedType = resolveFunctionForHotReloading(resolvedType);
-      }
     }
-  } else if (typeof type === 'string') {
+  } else if (typeof resolvedType === 'string') {
+    // $FlowFixMe[constant-condition]
     if (supportsResources && supportsSingletons) {
       const hostContext = getHostContext();
       fiberTag = isHostHoistableType(type, pendingProps, hostContext)
@@ -573,22 +578,27 @@ export function createFiberFromTypeAndProps(
         : isHostSingletonType(type)
           ? HostSingleton
           : HostComponent;
+      // $FlowFixMe[constant-condition]
     } else if (supportsResources) {
       const hostContext = getHostContext();
       fiberTag = isHostHoistableType(type, pendingProps, hostContext)
         ? HostHoistable
         : HostComponent;
+      // $FlowFixMe[constant-condition]
     } else if (supportsSingletons) {
       fiberTag = isHostSingletonType(type) ? HostSingleton : HostComponent;
     } else {
       fiberTag = HostComponent;
     }
   } else {
-    getTag: switch (type) {
+    getTag: switch (resolvedType) {
+      // $FlowFixMe[invalid-compare]
       case REACT_ACTIVITY_TYPE:
         return createFiberFromActivity(pendingProps, mode, lanes, key);
+      // $FlowFixMe[invalid-compare]
       case REACT_FRAGMENT_TYPE:
         return createFiberFromFragment(pendingProps.children, mode, lanes, key);
+      // $FlowFixMe[invalid-compare]
       case REACT_STRICT_MODE_TYPE:
         fiberTag = Mode;
         mode |= StrictLegacyMode;
@@ -597,51 +607,58 @@ export function createFiberFromTypeAndProps(
           mode |= StrictEffectsMode;
         }
         break;
+      // $FlowFixMe[invalid-compare]
       case REACT_PROFILER_TYPE:
         return createFiberFromProfiler(pendingProps, mode, lanes, key);
+      // $FlowFixMe[invalid-compare]
       case REACT_SUSPENSE_TYPE:
         return createFiberFromSuspense(pendingProps, mode, lanes, key);
+      // $FlowFixMe[invalid-compare]
       case REACT_SUSPENSE_LIST_TYPE:
         return createFiberFromSuspenseList(pendingProps, mode, lanes, key);
+      // $FlowFixMe[invalid-compare]
       case REACT_LEGACY_HIDDEN_TYPE:
         if (enableLegacyHidden) {
           return createFiberFromLegacyHidden(pendingProps, mode, lanes, key);
         }
-      // Fall through
+      // $FlowFixMe[invalid-compare] -- falls through
       case REACT_VIEW_TRANSITION_TYPE:
         if (enableViewTransition) {
           return createFiberFromViewTransition(pendingProps, mode, lanes, key);
         }
-      // Fall through
+      // $FlowFixMe[invalid-compare] -- falls through
       case REACT_SCOPE_TYPE:
         if (enableScopeAPI) {
           return createFiberFromScope(type, pendingProps, mode, lanes, key);
         }
-      // Fall through
+      // $FlowFixMe[invalid-compare] -- falls through
       case REACT_TRACING_MARKER_TYPE:
         if (enableTransitionTracing) {
           return createFiberFromTracingMarker(pendingProps, mode, lanes, key);
         }
       // Fall through
       default: {
-        if (typeof type === 'object' && type !== null) {
-          switch (type.$$typeof) {
+        // $FlowFixMe[invalid-compare]
+        if (typeof resolvedType === 'object' && resolvedType !== null) {
+          switch (resolvedType.$$typeof) {
+            // $FlowFixMe[invalid-compare]
             case REACT_CONTEXT_TYPE:
               fiberTag = ContextProvider;
               break getTag;
+            // $FlowFixMe[invalid-compare]
             case REACT_CONSUMER_TYPE:
               fiberTag = ContextConsumer;
               break getTag;
             // Fall through
+            // $FlowFixMe[invalid-compare]
             case REACT_FORWARD_REF_TYPE:
               fiberTag = ForwardRef;
-              if (__DEV__) {
-                resolvedType = resolveForwardRefForHotReloading(resolvedType);
-              }
               break getTag;
+            // $FlowFixMe[invalid-compare]
             case REACT_MEMO_TYPE:
               fiberTag = MemoComponent;
               break getTag;
+            // $FlowFixMe[invalid-compare]
             case REACT_LAZY_TYPE:
               fiberTag = LazyComponent;
               resolvedType = null;
@@ -654,6 +671,7 @@ export function createFiberFromTypeAndProps(
           if (
             type === undefined ||
             (typeof type === 'object' &&
+              // $FlowFixMe[invalid-compare]
               type !== null &&
               Object.keys(type).length === 0)
           ) {
@@ -662,12 +680,14 @@ export function createFiberFromTypeAndProps(
               "it's defined in, or you might have mixed up default and named imports.";
           }
 
+          // $FlowFixMe[invalid-compare]
           if (type === null) {
             typeString = 'null';
           } else if (isArray(type)) {
             typeString = 'array';
           } else if (
             type !== undefined &&
+            // $FlowFixMe[invalid-compare]
             type.$$typeof === REACT_ELEMENT_TYPE
           ) {
             typeString = `<${
@@ -684,6 +704,7 @@ export function createFiberFromTypeAndProps(
             info += '\n\nCheck the render method of `' + ownerName + '`.';
           }
         } else {
+          // $FlowFixMe[invalid-compare]
           typeString = type === null ? 'null' : typeof type;
         }
 
@@ -747,7 +768,7 @@ export function createFiberFromFragment(
   elements: ReactFragment,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(Fragment, elements, key, mode);
   fiber.lanes = lanes;
@@ -759,7 +780,7 @@ function createFiberFromScope(
   pendingProps: any,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ) {
   const fiber = createFiber(ScopeComponent, pendingProps, key, mode);
   fiber.type = scope;
@@ -772,7 +793,7 @@ function createFiberFromProfiler(
   pendingProps: any,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   if (__DEV__) {
     if (typeof pendingProps.id !== 'string') {
@@ -801,7 +822,7 @@ export function createFiberFromSuspense(
   pendingProps: any,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(SuspenseComponent, pendingProps, key, mode);
   fiber.elementType = REACT_SUSPENSE_TYPE;
@@ -813,7 +834,7 @@ export function createFiberFromSuspenseList(
   pendingProps: any,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(SuspenseListComponent, pendingProps, key, mode);
   fiber.elementType = REACT_SUSPENSE_LIST_TYPE;
@@ -825,7 +846,7 @@ export function createFiberFromOffscreen(
   pendingProps: OffscreenProps,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(OffscreenComponent, pendingProps, key, mode);
   fiber.lanes = lanes;
@@ -835,7 +856,7 @@ export function createFiberFromActivity(
   pendingProps: ActivityProps,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(ActivityComponent, pendingProps, key, mode);
   fiber.elementType = REACT_ACTIVITY_TYPE;
@@ -847,7 +868,7 @@ export function createFiberFromViewTransition(
   pendingProps: ViewTransitionProps,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   if (!enableSuspenseyImages) {
     // Render a ViewTransition component opts into SuspenseyImages mode even
@@ -871,7 +892,7 @@ export function createFiberFromLegacyHidden(
   pendingProps: LegacyHiddenProps,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(LegacyHiddenComponent, pendingProps, key, mode);
   fiber.elementType = REACT_LEGACY_HIDDEN_TYPE;
@@ -883,7 +904,7 @@ export function createFiberFromTracingMarker(
   pendingProps: any,
   mode: TypeOfMode,
   lanes: Lanes,
-  key: null | string,
+  key: ReactKey,
 ): Fiber {
   const fiber = createFiber(TracingMarkerComponent, pendingProps, key, mode);
   fiber.elementType = REACT_TRACING_MARKER_TYPE;

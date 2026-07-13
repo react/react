@@ -54,14 +54,12 @@ function useFoo(t0) {
   if ($[0] !== a) {
     const arr = [];
     const obj = { value: a };
-
     setPropertyByKey(obj, "arr", arr);
     const obj_alias = obj;
     const cb = () => obj_alias.arr.length;
     for (let i = 0; i < a; i++) {
       arr.push(i);
     }
-
     t1 = <Stringify cb={cb} shouldInvokeFns={true} />;
     $[0] = a;
     $[1] = t1;

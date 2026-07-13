@@ -22,16 +22,18 @@ export const TREE_OPERATION_REMOVE = 2;
 export const TREE_OPERATION_REORDER_CHILDREN = 3;
 export const TREE_OPERATION_UPDATE_TREE_BASE_DURATION = 4;
 export const TREE_OPERATION_UPDATE_ERRORS_OR_WARNINGS = 5;
-export const TREE_OPERATION_REMOVE_ROOT = 6;
+// Removed `TREE_OPERATION_REMOVE_ROOT`
 export const TREE_OPERATION_SET_SUBTREE_MODE = 7;
 export const SUSPENSE_TREE_OPERATION_ADD = 8;
 export const SUSPENSE_TREE_OPERATION_REMOVE = 9;
 export const SUSPENSE_TREE_OPERATION_REORDER_CHILDREN = 10;
 export const SUSPENSE_TREE_OPERATION_RESIZE = 11;
 export const SUSPENSE_TREE_OPERATION_SUSPENDERS = 12;
+export const TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE = 13;
 
-export const PROFILING_FLAG_BASIC_SUPPORT = 0b01;
-export const PROFILING_FLAG_TIMELINE_SUPPORT = 0b10;
+export const PROFILING_FLAG_BASIC_SUPPORT /*.             */ = 0b001;
+export const PROFILING_FLAG_TIMELINE_SUPPORT /*           */ = 0b010;
+export const PROFILING_FLAG_PERFORMANCE_TRACKS_SUPPORT /* */ = 0b100;
 
 export const UNKNOWN_SUSPENDERS_NONE: UnknownSuspendersReason = 0; // If we had at least one debugInfo, then that might have been the reason.
 export const UNKNOWN_SUSPENDERS_REASON_PRODUCTION: UnknownSuspendersReason = 1; // We're running in prod. That might be why we had unknown suspenders.

@@ -6,10 +6,14 @@
  */
 
 import type {Dispatch, ReactNode} from 'react';
-import {useEffect, useReducer} from 'react';
+import {useState, useEffect, useReducer} from 'react';
 import createContext from '../lib/createContext';
-import {emptyStore} from '../lib/defaultStore';
-import {saveStore, type Store} from '../lib/stores';
+import {emptyStore, defaultStore} from '../lib/defaultStore';
+import {
+  saveStore,
+  initStoreFromUrlOrLocalStorage,
+  type Store,
+} from '../lib/stores';
 
 const StoreContext = createContext<Store>();
 
@@ -30,6 +34,20 @@ export const useStoreDispatch = StoreDispatchContext.useContext;
  */
 export function StoreProvider({children}: {children: ReactNode}): JSX.Element {
   const [store, dispatch] = useReducer(storeReducer, emptyStore);
+  const [isPageReady, setIsPageReady] = useState<boolean>(false);
+
+  useEffect(() => {
+    let mountStore: Store;
+    try {
+      mountStore = initStoreFromUrlOrLocalStorage();
+    } catch (e) {
+      console.error('Failed to initialize store from URL or local storage', e);
+      mountStore = defaultStore;
+    }
+    dispatch({type: 'setStore', payload: {store: mountStore}});
+    setIsPageReady(true);
+  }, []);
+
   useEffect(() => {
     if (store !== emptyStore) {
       saveStore(store);
@@ -39,7 +57,7 @@ export function StoreProvider({children}: {children: ReactNode}): JSX.Element {
   return (
     <StoreContext.Provider value={store}>
       <StoreDispatchContext.Provider value={dispatch}>
-        {children}
+        {isPageReady ? children : null}
       </StoreDispatchContext.Provider>
     </StoreContext.Provider>
   );

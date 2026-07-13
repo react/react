@@ -23,7 +23,7 @@ describe('ReactSuspenseyCommitPhase', () => {
     if (gate(flags => flags.enableSuspenseList)) {
       SuspenseList = React.unstable_SuspenseList;
     }
-    Activity = React.unstable_Activity;
+    Activity = React.Activity;
     useMemo = React.useMemo;
     startTransition = React.startTransition;
     resolveSuspenseyThing = ReactNoop.resolveSuspenseyThing;
@@ -442,7 +442,7 @@ describe('ReactSuspenseyCommitPhase', () => {
     );
   });
 
-  // @gate enableActivity && enableSuspenseyImages
+  // @gate enableSuspenseyImages
   it("host instances don't suspend during prerendering, but do suspend when they are revealed", async () => {
     function More() {
       Scheduler.log('More');

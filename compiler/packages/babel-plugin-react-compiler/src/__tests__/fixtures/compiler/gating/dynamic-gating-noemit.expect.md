@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @dynamicGating:{"source":"shared-runtime"} @noEmit
+// @dynamicGating:{"source":"shared-runtime"} @outputMode:"lint"
 
 function Foo() {
   'use memo if(getTrue)';
@@ -19,7 +19,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @dynamicGating:{"source":"shared-runtime"} @noEmit
+// @dynamicGating:{"source":"shared-runtime"} @outputMode:"lint"
 
 function Foo() {
   "use memo if(getTrue)";

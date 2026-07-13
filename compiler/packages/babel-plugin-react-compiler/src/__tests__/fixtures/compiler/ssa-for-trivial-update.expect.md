@@ -26,6 +26,7 @@ function foo() {
   for (const i = 0; true; 0) {
     x = x + 1;
   }
+
   return x;
 }
 

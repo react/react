@@ -18,6 +18,14 @@ const contentScriptsToInject = [
     world: chrome.scripting.ExecutionWorld.ISOLATED,
   },
   {
+    id: '@react-devtools/fallback-eval-context',
+    js: ['build/fallbackEvalContext.js'],
+    matches: ['<all_urls>'],
+    persistAcrossSessions: true,
+    runAt: 'document_start',
+    world: chrome.scripting.ExecutionWorld.MAIN,
+  },
+  {
     id: '@react-devtools/hook',
     js: ['build/installHook.js'],
     matches: ['<all_urls>'],

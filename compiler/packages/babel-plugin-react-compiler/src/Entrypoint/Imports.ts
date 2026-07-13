@@ -18,8 +18,8 @@ import {
 import {getOrInsertWith} from '../Utils/utils';
 import {ExternalFunction, isHookName} from '../HIR/Environment';
 import {Err, Ok, Result} from '../Utils/Result';
-import {LoggerEvent, PluginOptions} from './Options';
-import {BabelFn, getReactCompilerRuntimeModule} from './Program';
+import {LoggerEvent, ParsedPluginOptions} from './Options';
+import {getReactCompilerRuntimeModule} from './Program';
 import {SuppressionRange} from './Suppression';
 
 export function validateRestrictedImports(
@@ -56,7 +56,7 @@ export function validateRestrictedImports(
 type ProgramContextOptions = {
   program: NodePath<t.Program>;
   suppressions: Array<SuppressionRange>;
-  opts: PluginOptions;
+  opts: ParsedPluginOptions;
   filename: string | null;
   code: string | null;
   hasModuleScopeOptOut: boolean;
@@ -66,7 +66,7 @@ export class ProgramContext {
    * Program and environment context
    */
   scope: BabelScope;
-  opts: PluginOptions;
+  opts: ParsedPluginOptions;
   filename: string | null;
   code: string | null;
   reactRuntimeModule: string;
@@ -83,12 +83,6 @@ export class ProgramContext {
   knownReferencedNames: Set<string> = new Set();
   // generated imports
   imports: Map<string, Map<string, NonLocalImportSpecifier>> = new Map();
-
-  /**
-   * Metadata from compilation
-   */
-  retryErrors: Array<{fn: BabelFn; error: CompilerError}> = [];
-  inferredEffectLocations: Set<t.SourceLocation> = new Set();
 
   constructor({
     program,
@@ -108,14 +102,7 @@ export class ProgramContext {
   }
 
   isHookName(name: string): boolean {
-    if (this.opts.environment.hookPattern == null) {
-      return isHookName(name);
-    } else {
-      const match = new RegExp(this.opts.environment.hookPattern).exec(name);
-      return (
-        match != null && typeof match[1] === 'string' && isHookName(match[1])
-      );
-    }
+    return isHookName(name);
   }
 
   hasReference(name: string): boolean {
@@ -162,6 +149,17 @@ export class ProgramContext {
       },
       '_c',
     );
+  }
+
+  removeMemoCacheImport(): void {
+    const moduleImports = this.imports.get(this.reactRuntimeModule);
+    if (moduleImports == null) {
+      return;
+    }
+    moduleImports.delete('c');
+    if (moduleImports.size === 0) {
+      this.imports.delete(this.reactRuntimeModule);
+    }
   }
 
   /**
@@ -240,7 +238,7 @@ export function addImportsToProgram(
   programContext: ProgramContext,
 ): void {
   const existingImports = getExistingImports(path);
-  const stmts: Array<t.ImportDeclaration> = [];
+  const stmts: Array<t.ImportDeclaration | t.VariableDeclaration> = [];
   const sortedModules = [...programContext.imports.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   );
@@ -257,14 +255,7 @@ export function addImportsToProgram(
           reason:
             'Encountered conflicting import specifiers in generated program',
           description: `Conflict from import ${loweredImport.module}:(${loweredImport.imported} as ${loweredImport.name})`,
-          details: [
-            {
-              kind: 'error',
-              loc: GeneratedSource,
-              message: null,
-            },
-          ],
-          suggestions: null,
+          loc: GeneratedSource,
         },
       );
       CompilerError.invariant(
@@ -274,13 +265,7 @@ export function addImportsToProgram(
           reason:
             'Found inconsistent import specifier. This is an internal bug.',
           description: `Expected import ${moduleName}:${specifierName} but found ${loweredImport.module}:${loweredImport.imported}`,
-          details: [
-            {
-              kind: 'error',
-              loc: GeneratedSource,
-              message: null,
-            },
-          ],
+          loc: GeneratedSource,
         },
       );
     }
@@ -303,9 +288,29 @@ export function addImportsToProgram(
     if (maybeExistingImports != null) {
       maybeExistingImports.pushContainer('specifiers', importSpecifiers);
     } else {
-      stmts.push(
-        t.importDeclaration(importSpecifiers, t.stringLiteral(moduleName)),
-      );
+      if (path.node.sourceType === 'module') {
+        stmts.push(
+          t.importDeclaration(importSpecifiers, t.stringLiteral(moduleName)),
+        );
+      } else {
+        stmts.push(
+          t.variableDeclaration('const', [
+            t.variableDeclarator(
+              t.objectPattern(
+                sortedImport.map(specifier => {
+                  return t.objectProperty(
+                    t.identifier(specifier.imported),
+                    t.identifier(specifier.name),
+                  );
+                }),
+              ),
+              t.callExpression(t.identifier('require'), [
+                t.stringLiteral(moduleName),
+              ]),
+            ),
+          ]),
+        );
+      }
     }
   }
   path.unshiftContainer('body', stmts);

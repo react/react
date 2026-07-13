@@ -28,6 +28,7 @@ function Component(props) {
   } else {
     x = $[0];
   }
+
   return x;
 }
 

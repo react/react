@@ -8,8 +8,8 @@
 import * as t from '@babel/types';
 import {CompilerError} from '../CompilerError';
 import {Environment} from '../HIR';
-import {lowerType} from '../HIR/BuildHIR';
 import {
+  GeneratedSource,
   HIRFunction,
   Identifier,
   IdentifierId,
@@ -31,6 +31,7 @@ import {
   BuiltInObjectId,
   BuiltInPropsId,
   BuiltInRefValueId,
+  BuiltInSetStateId,
   BuiltInUseRefId,
 } from '../HIR/ObjectShape';
 import {eachInstructionLValue, eachInstructionOperand} from '../HIR/visitors';
@@ -220,22 +221,11 @@ function* generateInstructionTypes(
     }
 
     case 'StoreLocal': {
-      if (env.config.enableUseTypeAnnotations) {
-        yield equation(
-          value.lvalue.place.identifier.type,
-          value.value.identifier.type,
-        );
-        const valueType =
-          value.type === null ? makeType() : lowerType(value.type);
-        yield equation(valueType, value.lvalue.place.identifier.type);
-        yield equation(left, valueType);
-      } else {
-        yield equation(left, value.value.identifier.type);
-        yield equation(
-          value.lvalue.place.identifier.type,
-          value.value.identifier.type,
-        );
-      }
+      yield equation(left, value.value.identifier.type);
+      yield equation(
+        value.lvalue.place.identifier.type,
+        value.value.identifier.type,
+      );
       break;
     }
 
@@ -276,9 +266,16 @@ function* generateInstructionTypes(
        * We should change Hook to a subtype of Function or change unifier logic.
        * (see https://github.com/facebook/react-forget/pull/1427)
        */
+      let shapeId: string | null = null;
+      if (env.config.enableTreatSetIdentifiersAsStateSetters) {
+        const name = getName(names, value.callee.identifier.id);
+        if (name.startsWith('set')) {
+          shapeId = BuiltInSetStateId;
+        }
+      }
       yield equation(value.callee.identifier.type, {
         kind: 'Function',
-        shapeId: null,
+        shapeId,
         return: returnType,
         isConstructor: false,
       });
@@ -385,7 +382,7 @@ function* generateInstructionTypes(
               shapeId: BuiltInArrayId,
             });
           } else {
-            break;
+            continue;
           }
         }
       } else {
@@ -412,12 +409,7 @@ function* generateInstructionTypes(
     }
 
     case 'TypeCastExpression': {
-      if (env.config.enableUseTypeAnnotations) {
-        yield equation(value.type, value.value.identifier.type);
-        yield equation(left, value.type);
-      } else {
-        yield equation(left, value.value.identifier.type);
-      }
+      yield equation(left, value.value.identifier.type);
       break;
     }
 
@@ -615,15 +607,7 @@ class Unifier {
     if (type.kind === 'Phi') {
       CompilerError.invariant(type.operands.length > 0, {
         reason: 'there should be at least one operand',
-        description: null,
-        details: [
-          {
-            kind: 'error',
-            loc: null,
-            message: null,
-          },
-        ],
-        suggestions: null,
+        loc: GeneratedSource,
       });
 
       let candidateType: Type | null = null;

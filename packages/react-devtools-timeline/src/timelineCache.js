@@ -29,10 +29,11 @@ const fileNameToProfilerDataMap: Map<
 function readRecord<T>(record: Thenable<T>): T | Error {
   if (typeof React.use === 'function') {
     try {
+      // eslint-disable-next-line react-hooks-published/rules-of-hooks
       return React.use(record);
     } catch (x) {
       if (record.status === 'rejected') {
-        return (record.reason: any);
+        return record.reason as any;
       }
       throw x;
     }
@@ -40,7 +41,7 @@ function readRecord<T>(record: Thenable<T>): T | Error {
   if (record.status === 'fulfilled') {
     return record.value;
   } else if (record.status === 'rejected') {
-    return (record.reason: any);
+    return record.reason as any;
   } else {
     throw record;
   }
@@ -68,13 +69,13 @@ export function importFile(file: File): TimelineData | Error {
 
     const wake = () => {
       // This assumes they won't throw.
-      callbacks.forEach(callback => callback((thenable: any).value));
+      callbacks.forEach(callback => callback((thenable as any).value));
       callbacks.clear();
       rejectCallbacks.clear();
     };
     const wakeRejections = () => {
       // This assumes they won't throw.
-      rejectCallbacks.forEach(callback => callback((thenable: any).reason));
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
       rejectCallbacks.clear();
       callbacks.clear();
     };
@@ -85,7 +86,7 @@ export function importFile(file: File): TimelineData | Error {
       switch (data.status) {
         case 'SUCCESS':
           const fulfilledThenable: FulfilledThenable<TimelineData> =
-            (thenable: any);
+            thenable as any;
           fulfilledThenable.status = 'fulfilled';
           fulfilledThenable.value = data.processedData;
           wake();
@@ -93,7 +94,7 @@ export function importFile(file: File): TimelineData | Error {
         case 'INVALID_PROFILE_ERROR':
         case 'UNEXPECTED_ERROR':
           const rejectedThenable: RejectedThenable<TimelineData> =
-            (thenable: any);
+            thenable as any;
           rejectedThenable.status = 'rejected';
           rejectedThenable.reason = data.error;
           wakeRejections();

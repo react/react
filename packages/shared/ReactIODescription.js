@@ -7,12 +7,14 @@
  * @flow
  */
 
-export function getIODescription(value: any): string {
+export function getIODescription(value: mixed): string {
   if (!__DEV__) {
     return '';
   }
   try {
     switch (typeof value) {
+      case 'function':
+        return value.name || '';
       case 'object':
         // Test the object for a bunch of common property names that are useful identifiers.
         // While we only have the return value here, it should ideally be a name that
@@ -34,11 +36,13 @@ export function getIODescription(value: any): string {
           return value.command;
         } else if (
           typeof value.request === 'object' &&
+          value.request !== null &&
           typeof value.request.url === 'string'
         ) {
           return value.request.url;
         } else if (
           typeof value.response === 'object' &&
+          value.response !== null &&
           typeof value.response.url === 'string'
         ) {
           return value.response.url;
@@ -53,7 +57,11 @@ export function getIODescription(value: any): string {
           return value.name;
         } else {
           const str = value.toString();
-          if (str.startWith('[object ') || str.length < 5 || str.length > 500) {
+          if (
+            str.startsWith('[object ') ||
+            str.length < 5 ||
+            str.length > 500
+          ) {
             // This is probably not a useful description.
             return '';
           }

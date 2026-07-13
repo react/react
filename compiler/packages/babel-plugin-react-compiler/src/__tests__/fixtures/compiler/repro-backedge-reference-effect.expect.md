@@ -47,6 +47,7 @@ function Foo(t0) {
           for (const selectedUser of userIds) {
             arr.push(selectedUser);
           }
+
           return arr;
         }}
         shouldInvokeFns={true}

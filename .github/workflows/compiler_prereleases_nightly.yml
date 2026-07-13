@@ -13,11 +13,12 @@ env:
 jobs:
   publish_prerelease_experimental:
     name: Publish to Experimental channel
-    uses: facebook/react/.github/workflows/compiler_prereleases.yml@main
+    uses: react/react/.github/workflows/compiler_prereleases.yml@main
     with:
       commit_sha: ${{ github.sha }}
       release_channel: experimental
       dist_tag: experimental
       version_name: '0.0.0'
+      dry_run: false
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,10 +1,10 @@
 {
   "name": "use-subscription",
   "description": "Reusable hooks",
-  "version": "1.11.0",
+  "version": "1.13.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/use-subscription"
   },
   "files": [

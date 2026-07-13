@@ -36,7 +36,6 @@ function hoisting() {
       },
     };
     const bar = _temp;
-
     t0 = x.foo();
     $[0] = t0;
   } else {

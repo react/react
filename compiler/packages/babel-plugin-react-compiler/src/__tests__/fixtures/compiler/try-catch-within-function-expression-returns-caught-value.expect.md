@@ -40,7 +40,6 @@ function Component(props) {
         return e;
       }
     };
-
     t0 = callback();
     $[0] = props;
     $[1] = t0;

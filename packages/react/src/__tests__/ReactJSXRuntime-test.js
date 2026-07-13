@@ -225,28 +225,22 @@ describe('ReactJSXRuntime', () => {
     await act(() => {
       root.render(JSXRuntime.jsxs('div', {children: 'foo'}, null));
     });
-    assertConsoleErrorDev(
-      [
-        'React.jsx: Static children should always be an array. ' +
-          'You are likely explicitly calling React.jsxs or React.jsxDEV. ' +
-          'Use the Babel transform instead.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'React.jsx: Static children should always be an array. ' +
+        'You are likely explicitly calling React.jsxs or React.jsxDEV. ' +
+        'Use the Babel transform instead.',
+    ]);
   });
 
   it('should warn when `key` is being accessed on a host element', () => {
     const element = JSXRuntime.jsxs('div', {}, '3');
     void element.props.key;
-    assertConsoleErrorDev(
-      [
-        'div: `key` is not a prop. Trying to access it will result ' +
-          'in `undefined` being returned. If you need to access the same ' +
-          'value within the child component, you should pass it as a different ' +
-          'prop. (https://react.dev/link/special-props)',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'div: `key` is not a prop. Trying to access it will result ' +
+        'in `undefined` being returned. If you need to access the same ' +
+        'value within the child component, you should pass it as a different ' +
+        'prop. (https://react.dev/link/special-props)',
+    ]);
   });
 
   it('should warn when unkeyed children are passed to jsx', async () => {
@@ -372,17 +366,14 @@ describe('ReactJSXRuntime', () => {
     const elementWithSpreadKey = __DEV__
       ? JSXDEVRuntime.jsxDEV('div', configWithKey)
       : JSXRuntime.jsx('div', configWithKey);
-    assertConsoleErrorDev(
-      [
-        'A props object containing a "key" prop is being spread into JSX:\n' +
-          '  let props = {key: someKey, foo: ..., bar: ...};\n' +
-          '  <div {...props} />\n' +
-          'React keys must be passed directly to JSX without using spread:\n' +
-          '  let props = {foo: ..., bar: ...};\n' +
-          '  <div key={someKey} {...props} />',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'A props object containing a "key" prop is being spread into JSX:\n' +
+        '  let props = {key: someKey, foo: ..., bar: ...};\n' +
+        '  <div {...props} />\n' +
+        'React keys must be passed directly to JSX without using spread:\n' +
+        '  let props = {foo: ..., bar: ...};\n' +
+        '  <div key={someKey} {...props} />',
+    ]);
     expect(elementWithSpreadKey.props).not.toBe(configWithKey);
   });
 });

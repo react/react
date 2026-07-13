@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enableNewMutationAliasingModel
+// @enableNewMutationAliasingModel @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function useFoo(arr1, arr2) {
@@ -27,7 +27,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enableNewMutationAliasingModel
+import { c as _c } from "react/compiler-runtime"; // @enableNewMutationAliasingModel @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import { useMemo } from "react";
 
 function useFoo(arr1, arr2) {

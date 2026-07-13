@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @customOptOutDirectives:["use todo memo"]
+// @expectNothingCompiled @customOptOutDirectives:["use todo memo"]
 function Component() {
   'use todo memo';
   return <div>hello world!</div>;
@@ -18,7 +18,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @customOptOutDirectives:["use todo memo"]
+// @expectNothingCompiled @customOptOutDirectives:["use todo memo"]
 function Component() {
   "use todo memo";
   return <div>hello world!</div>;

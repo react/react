@@ -101,6 +101,16 @@ export type FindHostInstancesForElementID = (
   id: number,
 ) => null | $ReadOnlyArray<HostInstance>;
 
+export type Rect = {
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  ...
+};
+export type FindLastKnownRectsForID = (
+  id: number,
+) => null | $ReadOnlyArray<Rect>;
 export type ReactProviderType<T> = {
   $$typeof: symbol | number,
   _context: ReactContext<T>,
@@ -155,6 +165,8 @@ export type ReactRenderer = {
   ) => void,
   // 16.9+
   scheduleUpdate?: ?(fiber: Object) => void,
+  // 19.2+
+  scheduleRetry?: ?(fiber: Object) => void,
   setSuspenseHandler?: ?(shouldSuspend: (fiber: Object) => boolean) => void,
   // Only injected by React v16.8+ in order to support hooks inspection.
   currentDispatcherRef?: LegacyDispatcherRef | CurrentDispatcherRef,
@@ -409,11 +421,13 @@ export type RendererInterface = {
     path: Array<string | number>,
   ) => void,
   findHostInstancesForElementID: FindHostInstancesForElementID,
+  findLastKnownRectsForID: FindLastKnownRectsForID,
   flushInitialOperations: () => void,
   getBestMatchForTrackedPath: () => PathMatch | null,
   getComponentStack?: GetComponentStack,
   getNearestMountedDOMNode: (component: Element) => Element | null,
   getElementIDForHostInstance: GetElementIDForHostInstance,
+  getSuspenseNodeIDForHostInstance: GetElementIDForHostInstance,
   getDisplayNameForElementID: GetDisplayNameForElementID,
   getInstanceAndStyle(id: number): InstanceAndStyle,
   getProfilingData(): ProfilingDataBackend,
@@ -437,10 +451,7 @@ export type RendererInterface = {
   onErrorOrWarning?: OnErrorOrWarning,
   overrideError: (id: number, forceError: boolean) => void,
   overrideSuspense: (id: number, forceFallback: boolean) => void,
-  overrideSuspenseMilestone: (
-    rootID: number,
-    suspendedSet: Array<number>,
-  ) => void,
+  overrideSuspenseMilestone: (suspendedSet: Array<number>) => void,
   overrideValueAtPath: (
     type: Type,
     id: number,
@@ -586,4 +597,16 @@ export type DevToolsHookSettings = {
   breakOnConsoleErrors: boolean,
   showInlineWarningsAndErrors: boolean,
   hideConsoleLogsInStrictMode: boolean,
+  disableSecondConsoleLogDimmingInStrictMode: boolean,
 };
+
+export type DevToolsSettings = DevToolsHookSettings & {
+  componentFilters: Array<ComponentFilter>,
+};
+
+export type ReactBuildType =
+  | 'deadcode'
+  | 'development'
+  | 'outdated'
+  | 'production'
+  | 'unminified';

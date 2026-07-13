@@ -157,7 +157,7 @@ function applyDerivedStateFromProps(
   // base state.
   if (workInProgress.lanes === NoLanes) {
     // Queue is always non-null for classes
-    const updateQueue: UpdateQueue<any> = (workInProgress.updateQueue: any);
+    const updateQueue: UpdateQueue<any> = workInProgress.updateQueue as any;
     updateQueue.baseState = memoizedState;
   }
 }
@@ -179,7 +179,7 @@ const classComponentUpdater = {
 
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.setState()');
+      startUpdateTimerByLane(lane, 'this.setState()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -205,7 +205,7 @@ const classComponentUpdater = {
 
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.replaceState()');
+      startUpdateTimerByLane(lane, 'this.replaceState()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -231,7 +231,7 @@ const classComponentUpdater = {
 
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.forceUpdate()');
+      startUpdateTimerByLane(lane, 'this.forceUpdate()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -574,7 +574,7 @@ function constructClassInstance(
   }
 
   if (typeof contextType === 'object' && contextType !== null) {
-    context = readContext((contextType: any));
+    context = readContext(contextType as any);
   } else if (!disableLegacyContext) {
     unmaskedContext = getUnmaskedContext(workInProgress, ctor, true);
     const contextTypes = ctor.contextTypes;
@@ -1070,9 +1070,11 @@ function updateClassInstance(
     !hasContextChanged() &&
     !checkHasForceUpdateAfterProcessing() &&
     !(
-      current !== null &&
-      current.dependencies !== null &&
-      checkIfContextChanged(current.dependencies)
+      // prettier-ignore
+      // $FlowFixMe[invalid-compare]
+      (current !== null &&
+        current.dependencies !== null &&
+        checkIfContextChanged(current.dependencies))
     )
   ) {
     // If an update was already in progress, we should schedule an Update
@@ -1121,6 +1123,7 @@ function updateClassInstance(
     // both before and after `shouldComponentUpdate` has been called. Not ideal,
     // but I'm loath to refactor this function. This only happens for memoized
     // components so it's not that common.
+    // $FlowFixMe[invalid-compare]
     (current !== null &&
       current.dependencies !== null &&
       checkIfContextChanged(current.dependencies));
@@ -1189,7 +1192,7 @@ export function resolveClassComponentProps(
 
   // Remove ref from the props object, if it exists.
   if ('ref' in baseProps) {
-    newProps = ({}: any);
+    newProps = {} as any;
     for (const propName in baseProps) {
       if (propName !== 'ref') {
         newProps[propName] = baseProps[propName];

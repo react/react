@@ -41,6 +41,7 @@ export opaque type NoTimeout = mixed;
 export opaque type RendererInspectionConfig = mixed;
 export opaque type TransitionStatus = mixed;
 export opaque type FormInstance = mixed;
+export opaque type SuspendedState = mixed;
 export type RunningViewTransition = mixed;
 export type ViewTransitionInstance = null | {name: string, ...};
 export opaque type InstanceMeasurement = mixed;
@@ -98,6 +99,7 @@ export const suspendInstance = $$$config.suspendInstance;
 export const suspendOnActiveViewTransition =
   $$$config.suspendOnActiveViewTransition;
 export const waitForCommitToBeReady = $$$config.waitForCommitToBeReady;
+export const getSuspendedCommitReason = $$$config.getSuspendedCommitReason;
 export const NotPendingTransition = $$$config.NotPendingTransition;
 export const HostTransitionContext = $$$config.HostTransitionContext;
 export const resetFormInstance = $$$config.resetFormInstance;
@@ -160,6 +162,8 @@ export const hasInstanceAffectedParent = $$$config.hasInstanceAffectedParent;
 export const startViewTransition = $$$config.startViewTransition;
 export const startGestureTransition = $$$config.startGestureTransition;
 export const stopViewTransition = $$$config.stopViewTransition;
+export const addViewTransitionFinishedListener =
+  $$$config.addViewTransitionFinishedListener;
 export const getCurrentGestureOffset = $$$config.getCurrentGestureOffset;
 export const createViewTransitionInstance =
   $$$config.createViewTransitionInstance;

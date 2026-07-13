@@ -606,16 +606,13 @@ describe('ReactDOMServer', () => {
 
     ReactDOMServer.renderToString(<Foo />);
     jest.runOnlyPendingTimers();
-    assertConsoleErrorDev(
-      [
-        'Can only update a mounting component. ' +
-          'This usually means you called setState() outside componentWillMount() on the server. ' +
-          'This is a no-op.\n' +
-          '\n' +
-          'Please check the code for the Foo component.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Can only update a mounting component. ' +
+        'This usually means you called setState() outside componentWillMount() on the server. ' +
+        'This is a no-op.\n' +
+        '\n' +
+        'Please check the code for the Foo component.',
+    ]);
 
     const markup = ReactDOMServer.renderToStaticMarkup(<Foo />);
     expect(markup).toBe('<div>hello</div>');
@@ -639,16 +636,13 @@ describe('ReactDOMServer', () => {
 
     ReactDOMServer.renderToString(<Baz />);
     jest.runOnlyPendingTimers();
-    assertConsoleErrorDev(
-      [
-        'Can only update a mounting component. ' +
-          'This usually means you called forceUpdate() outside componentWillMount() on the server. ' +
-          'This is a no-op.\n' +
-          '\n' +
-          'Please check the code for the Baz component.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Can only update a mounting component. ' +
+        'This usually means you called forceUpdate() outside componentWillMount() on the server. ' +
+        'This is a no-op.\n' +
+        '\n' +
+        'Please check the code for the Baz component.',
+    ]);
     const markup = ReactDOMServer.renderToStaticMarkup(<Baz />);
     expect(markup).toBe('<div></div>');
   });

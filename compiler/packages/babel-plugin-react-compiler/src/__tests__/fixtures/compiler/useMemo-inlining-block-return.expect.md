@@ -42,6 +42,7 @@ function component(a, b) {
     t0 = undefined;
   }
   const x = t0;
+
   return x;
 }
 

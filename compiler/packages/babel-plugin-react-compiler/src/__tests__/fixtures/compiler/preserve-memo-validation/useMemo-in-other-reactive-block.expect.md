@@ -42,7 +42,6 @@ function useFoo(minWidth, otherProp) {
   let t0;
   if ($[0] !== minWidth || $[1] !== otherProp || $[2] !== width) {
     const x = [];
-
     const t1 = Math.max(minWidth, width);
     let t2;
     if ($[4] !== t1) {
@@ -53,7 +52,6 @@ function useFoo(minWidth, otherProp) {
       t2 = $[5];
     }
     const style = t2;
-
     arrayPush(x, otherProp);
     t0 = [style, x];
     $[0] = minWidth;

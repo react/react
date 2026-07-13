@@ -36,6 +36,23 @@ contextBridge.exposeInMainWorld('api', {
     const host = process.env.HOST || 'localhost';
     const protocol = useHttps ? 'https' : 'http';
     const port = +process.env.REACT_DEVTOOLS_PORT || +process.env.PORT || 8097;
-    return {options, useHttps, host, protocol, port};
+    const path = process.env.REACT_DEVTOOLS_PATH || undefined;
+    const clientHost = process.env.REACT_DEVTOOLS_CLIENT_HOST || undefined;
+    const clientPort = process.env.REACT_DEVTOOLS_CLIENT_PORT
+      ? +process.env.REACT_DEVTOOLS_CLIENT_PORT
+      : undefined;
+    const clientUseHttps =
+      process.env.REACT_DEVTOOLS_CLIENT_USE_HTTPS === 'true' ? true : undefined;
+    return {
+      options,
+      useHttps,
+      host,
+      protocol,
+      port,
+      path,
+      clientHost,
+      clientPort,
+      clientUseHttps,
+    };
   },
 });

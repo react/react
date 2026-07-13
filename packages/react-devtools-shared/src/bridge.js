@@ -65,12 +65,6 @@ export const BRIDGE_PROTOCOL: Array<BridgeProtocol> = [
   {
     version: 2,
     minNpmVersion: '4.22.0',
-    maxNpmVersion: '6.2.0',
-  },
-  // Version 3 adds supports-toggling-suspense bit to add-root
-  {
-    version: 3,
-    minNpmVersion: '6.2.0',
     maxNpmVersion: null,
   },
 ];
@@ -80,7 +74,7 @@ export const currentBridgeProtocol: BridgeProtocol =
 
 type ElementAndRendererID = {id: number, rendererID: RendererID};
 
-type Message = {
+export type Message = {
   event: string,
   payload: any,
 };
@@ -91,6 +85,16 @@ type HighlightHostInstance = {
   hideAfterTimeout: boolean,
   openBuiltinElementsPanel: boolean,
   scrollIntoView: boolean,
+};
+type HighlightHostInstances = {
+  elements: Array<ElementAndRendererID>,
+  displayName: string | null,
+  hideAfterTimeout: boolean,
+  scrollIntoView: boolean,
+};
+
+type ScrollToHostInstance = {
+  ...ElementAndRendererID,
 };
 
 type OverrideValue = {
@@ -142,7 +146,6 @@ type OverrideSuspense = {
 
 type OverrideSuspenseMilestone = {
   rendererID: number,
-  rootID: number,
   suspendedSet: Array<number>,
 };
 
@@ -161,6 +164,13 @@ type InspectElementParams = {
   forceFullData: boolean,
   path: Array<number | string> | null,
   requestID: number,
+};
+
+type InspectScreenParams = {
+  requestID: number,
+  id: number,
+  forceFullData: boolean,
+  path: Array<number | string> | null,
 };
 
 type StoreAsGlobalParams = {
@@ -182,7 +192,7 @@ type NativeStyleEditor_SetValueParams = {
   value: string,
 };
 
-type SavedPreferencesParams = {
+export type SavedPreferencesParams = {
   componentFilters: Array<ComponentFilter>,
 };
 
@@ -190,26 +200,31 @@ export type BackendEvents = {
   backendInitialized: [],
   backendVersion: [string],
   bridgeProtocol: [BridgeProtocol],
-  enableSuspenseTab: [],
   extensionBackendInitialized: [],
   fastRefreshScheduled: [],
   getSavedPreferences: [],
   inspectedElement: [InspectedElementPayload],
+  inspectedScreen: [InspectedElementPayload],
   isReloadAndProfileSupportedByBackend: [boolean],
   operations: [Array<number>],
   ownersList: [OwnersList],
-  overrideComponentFilters: [Array<ComponentFilter>],
   environmentNames: [Array<string>],
   profilingData: [ProfilingDataBackend],
   profilingStatus: [boolean],
   reloadAppForProfiling: [],
   saveToClipboard: [string],
-  selectElement: [number],
+  selectElement: [number | null],
   shutdown: [],
   stopInspectingHost: [boolean],
-  syncSelectionFromBuiltinElementsPanel: [],
+  scrollTo: [{left: number, top: number, right: number, bottom: number}],
   syncSelectionToBuiltinElementsPanel: [],
   unsupportedRendererVersion: [],
+
+  extensionComponentsPanelShown: [],
+  extensionComponentsPanelHidden: [],
+
+  resumeElementPolling: [],
+  pauseElementPolling: [],
 
   // React Native style editor plug-in.
   isNativeStyleEditorSupported: [
@@ -223,15 +238,13 @@ export type BackendEvents = {
 type StartProfilingParams = ProfilingSettings;
 type ReloadAndProfilingParams = ProfilingSettings;
 
-type FrontendEvents = {
+export type FrontendEvents = {
   clearErrorsAndWarnings: [{rendererID: RendererID}],
   clearErrorsForElementID: [ElementAndRendererID],
   clearHostInstanceHighlight: [],
   clearWarningsForElementID: [ElementAndRendererID],
   copyElementPath: [CopyElementPathParams],
   deletePath: [DeletePath],
-  extensionComponentsPanelShown: [],
-  extensionComponentsPanelHidden: [],
   getBackendVersion: [],
   getBridgeProtocol: [],
   getIfHasUnsupportedRendererVersion: [],
@@ -239,7 +252,9 @@ type FrontendEvents = {
   getProfilingData: [{rendererID: RendererID}],
   getProfilingStatus: [],
   highlightHostInstance: [HighlightHostInstance],
+  highlightHostInstances: [HighlightHostInstances],
   inspectElement: [InspectElementParams],
+  inspectScreen: [InspectScreenParams],
   logElementToConsole: [ElementAndRendererID],
   overrideError: [OverrideError],
   overrideSuspense: [OverrideSuspense],
@@ -251,9 +266,12 @@ type FrontendEvents = {
   savedPreferences: [SavedPreferencesParams],
   setTraceUpdatesEnabled: [boolean],
   shutdown: [],
-  startInspectingHost: [],
+  startInspectingHost: [boolean],
   startProfiling: [StartProfilingParams],
-  stopInspectingHost: [boolean],
+  stopInspectingHost: [],
+  scrollToHostInstance: [ScrollToHostInstance],
+  scrollTo: [{left: number, top: number, right: number, bottom: number}],
+  requestScrollPosition: [],
   stopProfiling: [],
   storeAsGlobal: [StoreAsGlobalParams],
   updateComponentFilters: [Array<ComponentFilter>],
@@ -261,6 +279,8 @@ type FrontendEvents = {
   updateHookSettings: [$ReadOnly<DevToolsHookSettings>],
   viewAttributeSource: [ViewAttributeSourceParams],
   viewElementSource: [ElementAndRendererID],
+
+  syncSelectionFromBuiltinElementsPanel: [],
 
   // React Native style editor plug-in.
   NativeStyleEditor_measure: [ElementAndRendererID],
@@ -282,19 +302,13 @@ type FrontendEvents = {
   overrideProps: [OverrideValue],
   overrideState: [OverrideValue],
 
-  resumeElementPolling: [],
-  pauseElementPolling: [],
-
   getHookSettings: [],
 };
 
 class Bridge<
   OutgoingEvents: Object,
   IncomingEvents: Object,
-> extends EventEmitter<{
-  ...IncomingEvents,
-  ...OutgoingEvents,
-}> {
+> extends EventEmitter<IncomingEvents> {
   _isShutdown: boolean = false;
   _messageQueue: Array<any> = [];
   _scheduledFlush: boolean = false;
@@ -309,7 +323,7 @@ class Bridge<
     this._wallUnlisten =
       wall.listen((message: Message) => {
         if (message && message.event) {
-          (this: any).emit(message.event, message.payload);
+          (this as any).emit(message.event, message.payload);
         }
       }) || null;
 
@@ -347,13 +361,13 @@ class Bridge<
     this._messageQueue.push(event, payload);
     if (!this._scheduledFlush) {
       this._scheduledFlush = true;
-      // $FlowFixMe
+      // $FlowFixMe[cannot-resolve-name]
       if (typeof devtoolsJestTestScheduler === 'function') {
         // This exists just for our own jest tests.
         // They're written in such a way that we can neither mock queueMicrotask
         // because then we break React DOM and we can't not mock it because then
         // we can't synchronously flush it. So they need to be rewritten.
-        // $FlowFixMe
+        // $FlowFixMe[cannot-resolve-name]
         devtoolsJestTestScheduler(this._flush); // eslint-disable-line no-undef
       } else {
         queueMicrotask(this._flush);
@@ -404,7 +418,8 @@ class Bridge<
     try {
       if (this._messageQueue.length) {
         for (let i = 0; i < this._messageQueue.length; i += 2) {
-          this._wall.send(this._messageQueue[i], ...this._messageQueue[i + 1]);
+          // This only supports one argument in practice but the types suggests it should support multiple.
+          this._wall.send(this._messageQueue[i], this._messageQueue[i + 1][0]);
         }
         this._messageQueue.length = 0;
       }

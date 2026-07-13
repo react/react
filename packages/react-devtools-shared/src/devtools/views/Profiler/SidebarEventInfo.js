@@ -8,6 +8,7 @@
  */
 
 import type {SchedulingEvent} from 'react-devtools-timeline/src/types';
+import type {ReactFunctionLocation} from 'shared/ReactTypes';
 
 import * as React from 'react';
 import Button from '../Button';
@@ -26,6 +27,28 @@ import useOpenResource from '../useOpenResource';
 import styles from './SidebarEventInfo.css';
 
 export type Props = {};
+
+type FunctionLocationProps = {
+  location: ReactFunctionLocation,
+  displayName: string,
+};
+function FunctionLocation({location, displayName}: FunctionLocationProps) {
+  // TODO: We should support symbolication here as well, but
+  // symbolicating the whole stack can be expensive
+  const [canViewSource, viewSource] = useOpenResource(location, null);
+  return (
+    <li>
+      <Button
+        className={
+          canViewSource ? styles.ClickableSource : styles.UnclickableSource
+        }
+        disabled={!canViewSource}
+        onClick={viewSource}>
+        {displayName}
+      </Button>
+    </li>
+  );
+}
 
 type SchedulingEventProps = {
   eventInfo: SchedulingEvent,
@@ -74,25 +97,12 @@ function SchedulingEventInfo({eventInfo}: SchedulingEventProps) {
                       );
                     }
 
-                    // TODO: We should support symbolication here as well, but
-                    // symbolicating the whole stack can be expensive
-                    const [canViewSource, viewSource] = useOpenResource(
-                      location,
-                      null,
-                    );
                     return (
-                      <li key={index}>
-                        <Button
-                          className={
-                            canViewSource
-                              ? styles.ClickableSource
-                              : styles.UnclickableSource
-                          }
-                          disabled={!canViewSource}
-                          onClick={viewSource}>
-                          {displayName}
-                        </Button>
-                      </li>
+                      <FunctionLocation
+                        key={index}
+                        displayName={displayName}
+                        location={location}
+                      />
                     );
                   },
                 )}

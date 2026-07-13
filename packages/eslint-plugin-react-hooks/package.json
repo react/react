@@ -1,10 +1,10 @@
 {
   "name": "eslint-plugin-react-hooks",
   "description": "ESLint rules for React Hooks",
-  "version": "5.2.0",
+  "version": "7.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/eslint-plugin-react-hooks"
   },
   "files": [
@@ -27,7 +27,7 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/facebook/react/issues"
+    "url": "https://github.com/react/react/issues"
   },
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -36,29 +36,28 @@
   },
   "homepage": "https://react.dev/",
   "peerDependencies": {
-    "eslint": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0-0 || ^9.0.0"
+    "eslint": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0-0 || ^9.0.0 || ^10.0.0"
   },
   "dependencies": {
     "@babel/core": "^7.24.4",
     "@babel/parser": "^7.24.4",
-    "@babel/plugin-proposal-private-methods": "^7.18.6",
     "hermes-parser": "^0.25.1",
-    "zod": "^3.22.4",
-    "zod-validation-error": "^3.0.3"
+    "zod": "^3.25.0 || ^4.0.0",
+    "zod-validation-error": "^3.5.0 || ^4.0.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.11.4",
     "@babel/preset-typescript": "^7.26.0",
     "@babel/types": "^7.19.0",
     "@tsconfig/strictest": "^2.0.5",
+    "@types/eslint": "^9.6.1",
+    "@types/estree": "^1.0.6",
+    "@types/estree-jsx": "^1.0.5",
+    "@types/node": "^20.2.5",
     "@typescript-eslint/parser-v2": "npm:@typescript-eslint/parser@^2.26.0",
     "@typescript-eslint/parser-v3": "npm:@typescript-eslint/parser@^3.10.0",
     "@typescript-eslint/parser-v4": "npm:@typescript-eslint/parser@^4.1.0",
     "@typescript-eslint/parser-v5": "npm:@typescript-eslint/parser@^5.62.0",
-    "@types/eslint": "^8.56.12",
-    "@types/estree": "^1.0.6",
-    "@types/estree-jsx": "^1.0.5",
-    "@types/node": "^20.2.5",
     "babel-eslint": "^10.0.3",
     "eslint-v7": "npm:eslint@^7.7.0",
     "eslint-v8": "npm:eslint@^8.57.1",

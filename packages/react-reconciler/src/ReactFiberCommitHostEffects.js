@@ -64,7 +64,10 @@ import {captureCommitPhaseError} from './ReactFiberWorkLoop';
 import {trackHostMutation} from './ReactFiberMutationTracking';
 
 import {runWithFiberInDEV} from './ReactCurrentFiber';
-import {enableFragmentRefs} from 'shared/ReactFeatureFlags';
+import {
+  enableFragmentRefs,
+  enableFragmentRefsTextNodes,
+} from 'shared/ReactFeatureFlags';
 
 export function commitHostMount(finishedWork: Fiber) {
   const type = finishedWork.type;
@@ -258,7 +261,8 @@ export function commitNewChildToFragmentInstances(
   parentFragmentInstances: null | Array<FragmentInstanceType>,
 ): void {
   if (
-    fiber.tag !== HostComponent ||
+    (fiber.tag !== HostComponent &&
+      !(enableFragmentRefsTextNodes && fiber.tag === HostText)) ||
     // Only run fragment insertion effects for initial insertions
     fiber.alternate !== null ||
     parentFragmentInstances === null
@@ -307,7 +311,9 @@ function isHostParent(fiber: Fiber): boolean {
   return (
     fiber.tag === HostComponent ||
     fiber.tag === HostRoot ||
+    // $FlowFixMe[constant-condition]
     (supportsResources ? fiber.tag === HostHoistable : false) ||
+    // $FlowFixMe[constant-condition]
     (supportsSingletons
       ? fiber.tag === HostSingleton && isSingletonScope(fiber.type)
       : false) ||
@@ -347,6 +353,7 @@ function getHostSibling(fiber: Fiber): ?Instance {
       // singleton scope. If it is a singleton scope we skip over it because
       // you only insert against this scope when you are already inside of it
       if (
+        // $FlowFixMe[constant-condition]
         supportsSingletons &&
         node.tag === HostSingleton &&
         isSingletonScope(node.type)
@@ -405,6 +412,7 @@ function insertOrAppendPlacementNodeIntoContainer(
   }
 
   if (
+    // $FlowFixMe[constant-condition]
     (supportsSingletons ? tag === HostSingleton : false) &&
     isSingletonScope(node.type)
   ) {
@@ -463,6 +471,7 @@ function insertOrAppendPlacementNode(
   }
 
   if (
+    // $FlowFixMe[constant-condition]
     (supportsSingletons ? tag === HostSingleton : false) &&
     isSingletonScope(node.type)
   ) {
@@ -508,6 +517,7 @@ function commitPlacement(finishedWork: Fiber): void {
     parentFiber = parentFiber.return;
   }
 
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     if (enableFragmentRefs) {
       commitImmutablePlacementNodeToFragmentInstances(
@@ -527,6 +537,7 @@ function commitPlacement(finishedWork: Fiber): void {
 
   switch (hostParentFiber.tag) {
     case HostSingleton: {
+      // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
         const parent: Instance = hostParentFiber.stateNode;
         const before = getHostSibling(finishedWork);

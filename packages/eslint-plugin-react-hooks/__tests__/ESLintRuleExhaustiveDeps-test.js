@@ -1485,6 +1485,85 @@ const tests = {
         }
       `,
     },
+    {
+      // Test settings-based additionalHooks - should work with settings
+      code: normalizeIndent`
+        function MyComponent(props) {
+          useCustomEffect(() => {
+            console.log(props.foo);
+          });
+        }
+      `,
+      settings: {
+        'react-hooks': {
+          additionalEffectHooks: 'useCustomEffect',
+        },
+      },
+    },
+    {
+      // Test settings-based additionalHooks - should work with dependencies
+      code: normalizeIndent`
+        function MyComponent(props) {
+          useCustomEffect(() => {
+            console.log(props.foo);
+          }, [props.foo]);
+        }
+      `,
+      settings: {
+        'react-hooks': {
+          additionalEffectHooks: 'useCustomEffect',
+        },
+      },
+    },
+    {
+      // Test that rule-level additionalHooks takes precedence over settings
+      code: normalizeIndent`
+        function MyComponent(props) {
+          useCustomEffect(() => {
+            console.log(props.foo);
+          }, []);
+        }
+      `,
+      options: [{additionalHooks: 'useAnotherEffect'}],
+      settings: {
+        'react-hooks': {
+          additionalEffectHooks: 'useCustomEffect',
+        },
+      },
+    },
+    {
+      // Test settings with multiple hooks pattern
+      code: normalizeIndent`
+        function MyComponent(props) {
+          useCustomEffect(() => {
+            console.log(props.foo);
+          }, [props.foo]);
+          useAnotherEffect(() => {
+            console.log(props.bar);
+          }, [props.bar]);
+        }
+      `,
+      settings: {
+        'react-hooks': {
+          additionalEffectHooks: '(useCustomEffect|useAnotherEffect)',
+        },
+      },
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent({ theme }) {
+          const onStuff = useEffectEvent(() => {
+            showNotification(theme);
+          });
+          useEffect(() => {
+            onStuff();
+          }, []);
+          React.useEffect(() => {
+            onStuff();
+          }, []);
+        }
+      `,
+    },
   ],
   invalid: [
     {
@@ -3707,6 +3786,40 @@ const tests = {
                   React.useCustomEffect(() => {
                     console.log(props.foo);
                   }, []);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // Test settings-based additionalHooks - should detect missing dependency
+      code: normalizeIndent`
+        function MyComponent(props) {
+          useCustomEffect(() => {
+            console.log(props.foo);
+          }, []);
+        }
+      `,
+      settings: {
+        'react-hooks': {
+          additionalEffectHooks: 'useCustomEffect',
+        },
+      },
+      errors: [
+        {
+          message:
+            "React Hook useCustomEffect has a missing dependency: 'props.foo'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [props.foo]',
+              output: normalizeIndent`
+                function MyComponent(props) {
+                  useCustomEffect(() => {
+                    console.log(props.foo);
+                  }, [props.foo]);
                 }
               `,
             },
@@ -7721,31 +7834,6 @@ const tests = {
         },
       ],
     },
-  ],
-};
-
-if (__EXPERIMENTAL__) {
-  tests.valid = [
-    ...tests.valid,
-    {
-      code: normalizeIndent`
-        function MyComponent({ theme }) {
-          const onStuff = useEffectEvent(() => {
-            showNotification(theme);
-          });
-          useEffect(() => {
-            onStuff();
-          }, []);
-          React.useEffect(() => {
-            onStuff();
-          }, []);
-        }
-      `,
-    },
-  ];
-
-  tests.invalid = [
-    ...tests.invalid,
     {
       code: normalizeIndent`
         function MyComponent({ theme }) {
@@ -7809,8 +7897,8 @@ if (__EXPERIMENTAL__) {
         },
       ],
     },
-  ];
-}
+  ],
+};
 
 // Tests that are only valid/invalid across parsers supporting Flow
 const testsFlow = {
@@ -7822,6 +7910,25 @@ const testsFlow = {
           const bar = useEffect(<T>(a: T): Hello => {
             prop();
           }, [prop]);
+        }
+      `,
+    },
+    // Flow type aliases in type assertions should not be flagged as missing dependencies
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          type ColumnKey = 'id' | 'name';
+          type Item = {id: string, name: string};
+
+          const columns = useMemo(
+            () => [
+              {
+                type: 'text',
+                key: 'id',
+              } as TextColumn<ColumnKey, Item>,
+            ],
+            [],
+          );
         }
       `,
     },

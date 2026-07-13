@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import {useFormStatus} from 'react-dom';
 import ErrorBoundary from './ErrorBoundary.js';
 

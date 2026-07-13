@@ -23,6 +23,7 @@ const API_TIMEOUT = 3000;
 function readRecord<T>(record: Thenable<T>): T | null {
   if (typeof React.use === 'function') {
     try {
+      // eslint-disable-next-line react-hooks-published/rules-of-hooks
       return React.use(record);
     } catch (x) {
       if (x === null) {
@@ -73,13 +74,13 @@ export function findGitHubIssue(errorMessage: string): GitHubIssue | null {
     };
     const wake = () => {
       // This assumes they won't throw.
-      callbacks.forEach(callback => callback((thenable: any).value));
+      callbacks.forEach(callback => callback((thenable as any).value));
       callbacks.clear();
       rejectCallbacks.clear();
     };
     const wakeRejections = () => {
       // This assumes they won't throw.
-      rejectCallbacks.forEach(callback => callback((thenable: any).reason));
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
       rejectCallbacks.clear();
       callbacks.clear();
     };
@@ -95,20 +96,20 @@ export function findGitHubIssue(errorMessage: string): GitHubIssue | null {
 
         if (maybeItem) {
           const fulfilledThenable: FulfilledThenable<GitHubIssue> =
-            (thenable: any);
+            thenable as any;
           fulfilledThenable.status = 'fulfilled';
           fulfilledThenable.value = maybeItem;
           wake();
         } else {
           const notFoundThenable: RejectedThenable<GitHubIssue> =
-            (thenable: any);
+            thenable as any;
           notFoundThenable.status = 'rejected';
           notFoundThenable.reason = null;
           wakeRejections();
         }
       })
       .catch(error => {
-        const rejectedThenable: RejectedThenable<GitHubIssue> = (thenable: any);
+        const rejectedThenable: RejectedThenable<GitHubIssue> = thenable as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = null;
         wakeRejections();
@@ -118,7 +119,7 @@ export function findGitHubIssue(errorMessage: string): GitHubIssue | null {
     setTimeout(() => {
       didTimeout = true;
 
-      const timedoutThenable: RejectedThenable<GitHubIssue> = (thenable: any);
+      const timedoutThenable: RejectedThenable<GitHubIssue> = thenable as any;
       timedoutThenable.status = 'rejected';
       timedoutThenable.reason = null;
       wakeRejections();

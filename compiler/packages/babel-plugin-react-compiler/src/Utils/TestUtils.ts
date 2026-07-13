@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {fromZodError} from 'zod-validation-error';
+import {fromZodError} from 'zod-validation-error/v4';
 import {CompilerError} from '../CompilerError';
 import {
   CompilationMode,
@@ -14,6 +14,7 @@ import {
   PluginOptions,
 } from '../Entrypoint';
 import {EnvironmentConfig} from '..';
+import {GeneratedSource} from '../HIR/HIR';
 import {
   EnvironmentConfigSchema,
   PartialEnvironmentConfig,
@@ -38,14 +39,6 @@ function tryParseTestPragmaValue(val: string): Result<unknown, unknown> {
 
 const testComplexConfigDefaults: PartialEnvironmentConfig = {
   validateNoCapitalizedCalls: [],
-  enableChangeDetectionForDebugging: {
-    source: 'react-compiler-runtime',
-    importSpecifierName: '$structuralCheck',
-  },
-  enableEmitFreeze: {
-    source: 'react-compiler-runtime',
-    importSpecifierName: 'makeReadOnly',
-  },
   enableEmitInstrumentForget: {
     fn: {
       source: 'react-compiler-runtime',
@@ -61,37 +54,6 @@ const testComplexConfigDefaults: PartialEnvironmentConfig = {
     source: 'react-compiler-runtime',
     importSpecifierName: '$dispatcherGuard',
   },
-  inlineJsxTransform: {
-    elementSymbol: 'react.transitional.element',
-    globalDevVar: 'DEV',
-  },
-  lowerContextAccess: {
-    source: 'react-compiler-runtime',
-    importSpecifierName: 'useContext_withSelector',
-  },
-  inferEffectDependencies: [
-    {
-      function: {
-        source: 'react',
-        importSpecifierName: 'useEffect',
-      },
-      autodepsIndex: 1,
-    },
-    {
-      function: {
-        source: 'shared-runtime',
-        importSpecifierName: 'useSpecialEffect',
-      },
-      autodepsIndex: 2,
-    },
-    {
-      function: {
-        source: 'useEffectWrapper',
-        importSpecifierName: 'default',
-      },
-      autodepsIndex: 1,
-    },
-  ],
 };
 
 function* splitPragma(
@@ -135,16 +97,7 @@ function parseConfigPragmaEnvironmentForTest(
     } else if (val) {
       const parsedVal = tryParseTestPragmaValue(val).unwrap();
       if (key === 'customMacros' && typeof parsedVal === 'string') {
-        const valSplit = parsedVal.split('.');
-        const props = [];
-        for (const elt of valSplit.slice(1)) {
-          if (elt === '*') {
-            props.push({type: 'wildcard'});
-          } else if (elt.length > 0) {
-            props.push({type: 'name', name: elt});
-          }
-        }
-        maybeConfig[key] = [[valSplit[0], props]];
+        maybeConfig[key] = [parsedVal.split('.')[0]];
         continue;
       }
       maybeConfig[key] = parsedVal;
@@ -164,18 +117,11 @@ function parseConfigPragmaEnvironmentForTest(
   CompilerError.invariant(false, {
     reason: 'Internal error, could not parse config from pragma string',
     description: `${fromZodError(config.error)}`,
-    details: [
-      {
-        kind: 'error',
-        loc: null,
-        message: null,
-      },
-    ],
-    suggestions: null,
+    loc: GeneratedSource,
   });
 }
 
-const testComplexPluginOptionDefaults: Partial<PluginOptions> = {
+const testComplexPluginOptionDefaults: PluginOptions = {
   gating: {
     source: 'ReactForgetFeatureFlag',
     importSpecifierName: 'isForgetEnabled_Fixtures',

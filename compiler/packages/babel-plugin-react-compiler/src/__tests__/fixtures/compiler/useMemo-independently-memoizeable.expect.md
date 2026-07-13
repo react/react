@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const [a, b] = useMemo(() => {
     const items = [];
@@ -17,7 +18,7 @@ function Component(props) {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const $ = _c(10);
   let t0;
