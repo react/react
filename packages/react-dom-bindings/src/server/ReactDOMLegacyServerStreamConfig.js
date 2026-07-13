@@ -81,12 +81,28 @@ export function closeWithError(destination: Destination, error: mixed): void {
 
 export {createFastHashJS as createFastHash} from 'react-server/src/createFastHashJS';
 
+function arrayBufferToBase64(arrayBuffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(arrayBuffer);
+  // btoa expects a binary string. Passing every byte as a separate argument to
+  // String.fromCharCode.apply exceeds the engine's maximum argument count for
+  // large buffers and throws a RangeError, so we build the string in chunks.
+  const chunkSize = 0x8000;
+  let binaryString = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binaryString += String.fromCharCode.apply(
+      String,
+      bytes.subarray(i, i + chunkSize),
+    );
+  }
+  return btoa(binaryString);
+}
+
 export function readAsDataURL(blob: Blob): Promise<string> {
   return blob.arrayBuffer().then(arrayBuffer => {
     const encoded =
       typeof Buffer === 'function' && typeof Buffer.from === 'function'
         ? Buffer.from(arrayBuffer).toString('base64')
-        : btoa(String.fromCharCode.apply(String, new Uint8Array(arrayBuffer)));
+        : arrayBufferToBase64(arrayBuffer);
     const mimeType = blob.type || 'application/octet-stream';
     return 'data:' + mimeType + ';base64,' + encoded;
   });
