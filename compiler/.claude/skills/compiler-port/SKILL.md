@@ -46,8 +46,8 @@ Read the following files (all reads happen in main context):
 2. **Pass documentation**: Check `compiler/packages/babel-plugin-react-compiler/docs/passes/` for docs about this pass
 3. **TypeScript source**: All TypeScript source files for the pass + any helpers imported from the same folder
 4. **Rust pipeline**: `compiler/crates/react_compiler/src/entrypoint/pipeline.rs`
-5. **Rust HIR types**: Key type files in `compiler/crates/react_compiler_hir/src/` (especially `hir.rs`, `environment.rs`)
-6. **Rust reactive types**: For reactive passes, also read `compiler/crates/react_compiler_hir/src/reactive_function.rs`
+5. **Rust HIR types**: Key type files in `compiler/crates/react_compiler_hir/src/` (especially `lib.rs`, `environment.rs`)
+6. **Rust reactive types**: For reactive passes, also read `compiler/crates/react_compiler_hir/src/reactive.rs`
 7. **Target crate**: If the target crate already exists, read its `Cargo.toml`, `src/lib.rs`, and existing files to understand the current structure
 
 ## Step 3: Create implementation plan
