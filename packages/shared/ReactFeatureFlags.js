@@ -125,10 +125,6 @@ export const enableFizzExternalRuntime = __EXPERIMENTAL__;
 
 export const alwaysThrottleRetries: boolean = true;
 
-// Gate whether useEffectEvent uses the mutation phase (true) or before-mutation
-// phase (false) for updating event function references.
-export const enableEffectEventMutationPhase: boolean = false;
-
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
 
 /**
