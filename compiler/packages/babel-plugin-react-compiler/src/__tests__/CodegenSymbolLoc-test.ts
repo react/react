@@ -29,11 +29,18 @@ function collectSymbolLocs(node: unknown, path: string): Array<string> {
       return;
     }
     const maybeNode = value as {type?: unknown; loc?: unknown};
-    if (typeof maybeNode.type === 'string' && typeof maybeNode.loc === 'symbol') {
+    if (
+      typeof maybeNode.type === 'string' &&
+      typeof maybeNode.loc === 'symbol'
+    ) {
       found.push(`${currentPath} (type=${maybeNode.type})`);
     }
     for (const key of Object.keys(value)) {
-      if (key === 'loc' || key === 'leadingComments' || key === 'trailingComments') {
+      if (
+        key === 'loc' ||
+        key === 'leadingComments' ||
+        key === 'trailingComments'
+      ) {
         continue;
       }
       walk((value as Record<string, unknown>)[key], `${currentPath}.${key}`);

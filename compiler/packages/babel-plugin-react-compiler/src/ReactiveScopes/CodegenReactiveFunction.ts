@@ -2425,7 +2425,8 @@ function codegenPlace(cx: Context, place: Place): t.Expression | t.JSXText {
    * Babel requires Node.loc to be SourceLocation | null, so synthesized nodes
    * without real source positions must use null, not the internal sentinel.
    */
-  identifier.loc = place.loc !== GeneratedSource ? (place.loc as t.SourceLocation) : null;
+  identifier.loc =
+    place.loc !== GeneratedSource ? (place.loc as t.SourceLocation) : null;
   return identifier;
 }
 
