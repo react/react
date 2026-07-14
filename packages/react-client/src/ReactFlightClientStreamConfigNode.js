@@ -21,6 +21,7 @@ export function readPartialStringChunk(
   decoder: StringDecoder,
   buffer: Uint8Array,
 ): string {
+  // $FlowFixMe[incompatible-type]
   return decoder.decode(buffer, decoderOptions);
 }
 

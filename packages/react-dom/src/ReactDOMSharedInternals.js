@@ -14,7 +14,7 @@ import noop from 'shared/noop';
 
 // This should line up with NoEventPriority from react-reconciler/src/ReactEventPriorities
 // but we can't depend on the react-reconciler from this isomorphic code.
-export const NoEventPriority: EventPriority = (0: any);
+export const NoEventPriority: EventPriority = 0 as any;
 
 type ReactDOMInternals = {
   d /* ReactDOMCurrentDispatcher */: HostDispatcher,

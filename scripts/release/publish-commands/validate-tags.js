@@ -6,8 +6,7 @@ const {readJson} = require('fs-extra');
 const {join} = require('path');
 const theme = require('../theme');
 
-const run = async ({cwd, packages, tags}) => {
-  // Prevent a "next" release from ever being published as @latest
+const run = async ({cwd, packages, tag}) => {
   // All canaries share a version number, so it's okay to check any of them.
   const arbitraryPackageName = packages[0];
   const packageJSONPath = join(
@@ -18,42 +17,33 @@ const run = async ({cwd, packages, tags}) => {
     'package.json'
   );
   const {version} = await readJson(packageJSONPath);
+
   const isExperimentalVersion = version.indexOf('experimental') !== -1;
   if (version.indexOf('-') !== -1) {
-    if (tags.includes('latest')) {
-      if (isExperimentalVersion) {
-        console.log(
-          theme`{error Experimental release} {version ${version}} {error cannot be tagged as} {tag latest}`
-        );
-      } else {
-        console.log(
-          theme`{error Next release} {version ${version}} {error cannot be tagged as} {tag latest}`
-        );
-      }
-      process.exit(1);
-    }
-    if (tags.includes('next') && isExperimentalVersion) {
+    // Prerelease: canary or experimental.
+    if (tag === 'latest' || tag === 'backport') {
       console.log(
-        theme`{error Experimental release} {version ${version}} {error cannot be tagged as} {tag next}`
+        theme`{error Prerelease} {version ${version}} {error cannot be tagged as} {tag ${tag}}`
       );
       process.exit(1);
     }
-    if (tags.includes('experimental') && !isExperimentalVersion) {
+    if (tag === 'experimental' && !isExperimentalVersion) {
       console.log(
-        theme`{error Next release} {version ${version}} {error cannot be tagged as} {tag experimental}`
+        theme`{error Canary release} {version ${version}} {error cannot be tagged as} {tag experimental}`
+      );
+      process.exit(1);
+    }
+    if (tag === 'canary' && isExperimentalVersion) {
+      console.log(
+        theme`{error Experimental release} {version ${version}} {error cannot be tagged as} {tag canary}`
       );
       process.exit(1);
     }
   } else {
-    if (!tags.includes('latest')) {
+    // Semver stable: must publish under @latest or @backport.
+    if (tag !== 'latest' && tag !== 'backport') {
       console.log(
-        theme`{error Stable release} {version ${version}} {error must always be tagged as} {tag latest}`
-      );
-      process.exit(1);
-    }
-    if (tags.includes('experimental')) {
-      console.log(
-        theme`{error Stable release} {version ${version}} {error cannot be tagged as} {tag experimental}`
+        theme`{error Stable release} {version ${version}} {error must be tagged as} {tag latest} {error or} {tag backport}`
       );
       process.exit(1);
     }

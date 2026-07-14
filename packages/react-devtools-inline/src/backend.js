@@ -109,7 +109,7 @@ export function createBridge(contentWindow: any, wall?: Wall): BackendBridge {
     };
   }
 
-  return (new Bridge(wall): BackendBridge);
+  return new Bridge(wall) as BackendBridge;
 }
 
 export function initialize(contentWindow: any): void {

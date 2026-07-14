@@ -20,6 +20,7 @@ export const {
   disableSchedulerTimeoutInWorkLoop,
   enableEffectEventMutationPhase,
   enableInfiniteRenderLoopDetection,
+  enableInfiniteRenderLoopDetectionForceThrow,
   enableNoCloningMemoCache,
   enableObjectFiber,
   enableRetryLaneExpiration,
@@ -35,6 +36,7 @@ export const {
   enableFragmentRefsTextNodes,
   enableInternalInstanceMap,
   enableParallelTransitions,
+  enableViewTransitionParentEnterExit,
 } = dynamicFeatureFlags;
 
 // On WWW, __EXPERIMENTAL__ is used for a new modern build.
@@ -97,8 +99,6 @@ export const enableReactTestRendererWarning: boolean = false;
 
 export const disableLegacyMode: boolean = true;
 
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
-
 export const enableViewTransitionForPersistenceMode: boolean = false;
 
 export const enableGestureTransition: boolean = false;
@@ -126,4 +126,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

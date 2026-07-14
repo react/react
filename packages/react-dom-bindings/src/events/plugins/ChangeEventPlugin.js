@@ -23,10 +23,8 @@ import getEventTarget from '../getEventTarget';
 import isEventSupported from '../isEventSupported';
 import {getNodeFromInstance} from '../../client/ReactDOMComponentTree';
 import {updateValueIfChanged} from '../../client/inputValueTracking';
-import {setDefaultValue} from '../../client/ReactDOMInput';
 import {enqueueStateRestore} from '../ReactDOMControlledComponent';
 
-import {disableInputAttributeSyncing} from 'shared/ReactFeatureFlags';
 import {batchedUpdates} from '../ReactDOMUpdateBatching';
 import {
   processDispatchQueue,
@@ -54,7 +52,7 @@ function createAndAccumulateChangeEvent(
   target: null | EventTarget,
 ) {
   // Flag this event loop as needing state restore.
-  enqueueStateRestore(((target: any): Node));
+  enqueueStateRestore(target as any as Node);
   const listeners = accumulateTwoPhaseListeners(inst, 'onChange');
   if (listeners.length > 0) {
     const event: ReactSyntheticEvent = new SyntheticEvent(
@@ -80,7 +78,7 @@ function shouldUseChangeEvent(elem: Instance | TextInstance) {
   const nodeName = elem.nodeName && elem.nodeName.toLowerCase();
   return (
     nodeName === 'select' ||
-    (nodeName === 'input' && (elem: any).type === 'file')
+    (nodeName === 'input' && (elem as any).type === 'file')
   );
 }
 
@@ -113,7 +111,7 @@ function runEventInBatch(dispatchQueue: DispatchQueue) {
 
 function getInstIfValueChanged(targetInst: Object) {
   const targetNode = getNodeFromInstance(targetInst);
-  if (updateValueIfChanged(((targetNode: any): HTMLInputElement))) {
+  if (updateValueIfChanged(targetNode as any as HTMLInputElement)) {
     return targetInst;
   }
 }
@@ -150,7 +148,7 @@ function startWatchingForValueChange(
 ) {
   activeElement = target;
   activeElementInst = targetInst;
-  (activeElement: any).attachEvent('onpropertychange', handlePropertyChange);
+  (activeElement as any).attachEvent('onpropertychange', handlePropertyChange);
 }
 
 /**
@@ -161,7 +159,7 @@ function stopWatchingForValueChange() {
   if (!activeElement) {
     return;
   }
-  (activeElement: any).detachEvent('onpropertychange', handlePropertyChange);
+  (activeElement as any).detachEvent('onpropertychange', handlePropertyChange);
   activeElement = null;
   activeElementInst = null;
 }
@@ -260,20 +258,6 @@ function getTargetInstForInputOrChangeEvent(
   }
 }
 
-function handleControlledInputBlur(node: HTMLInputElement, props: any) {
-  if (node.type !== 'number') {
-    return;
-  }
-
-  if (!disableInputAttributeSyncing) {
-    const isControlled = props.value != null;
-    if (isControlled) {
-      // If controlled, assign the value attribute to the current value on blur
-      setDefaultValue((node: any), 'number', (node: any).value);
-    }
-  }
-}
-
 /**
  * This plugin creates an `onChange` event that normalizes change events
  * across form elements. This event fires at a time when it's possible to
@@ -298,7 +282,7 @@ function extractEvents(
   let getTargetInstFunc, handleEventFunc;
   if (shouldUseChangeEvent(targetNode)) {
     getTargetInstFunc = getTargetInstForChangeEvent;
-  } else if (isTextInputElement(((targetNode: any): HTMLElement))) {
+  } else if (isTextInputElement(targetNode as any as HTMLElement)) {
     if (isInputEventSupported) {
       getTargetInstFunc = getTargetInstForInputOrChangeEvent;
     } else {
@@ -329,15 +313,6 @@ function extractEvents(
 
   if (handleEventFunc) {
     handleEventFunc(domEventName, targetNode, targetInst);
-  }
-
-  // When blurring, set the value attribute for number inputs
-  if (domEventName === 'focusout' && targetInst) {
-    // These props aren't necessarily the most current but we warn for changing
-    // between controlled and uncontrolled, so it doesn't matter and the previous
-    // code was also broken for changes.
-    const props = targetInst.memoizedProps;
-    handleControlledInputBlur(((targetNode: any): HTMLInputElement), props);
   }
 }
 

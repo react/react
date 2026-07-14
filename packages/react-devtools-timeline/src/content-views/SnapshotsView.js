@@ -166,7 +166,7 @@ export class SnapshotsView extends View {
       imageRect.size.height,
     );
 
-    // $FlowFixMe[incompatible-call] Flow doesn't know about the 9 argument variant of drawImage()
+    // $FlowFixMe[incompatible-type] Flow doesn't know about the 9 argument variant of drawImage()
     context.drawImage(
       snapshot.image,
 

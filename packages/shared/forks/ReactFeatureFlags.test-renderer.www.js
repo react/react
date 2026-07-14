@@ -54,18 +54,19 @@ export const passChildrenWhenCloningPersistedNodes: boolean = false;
 export const disableClientCache: boolean = true;
 
 export const enableInfiniteRenderLoopDetection: boolean = false;
+export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
 export const enableReactTestRendererWarning: boolean = false;
 export const disableLegacyMode: boolean = true;
 
 export const enableObjectFiber: boolean = false;
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
 export const enableEffectEventMutationPhase: boolean = false;
 
 export const enableYieldingBeforePassive: boolean = false;
 
 export const enableThrottledScheduling: boolean = false;
 export const enableViewTransition: boolean = true;
+export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
 export const enableViewTransitionForPersistenceMode: boolean = false;
 export const enableGestureTransition: boolean = false;
 export const enableScrollEndPolyfill: boolean = true;
@@ -95,4 +96,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

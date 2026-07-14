@@ -106,6 +106,7 @@ export class UserTimingMarksView extends View {
       ? COLORS.USER_TIMING_HOVER
       : COLORS.USER_TIMING;
 
+    // $FlowFixMe[invalid-compare]
     if (fillStyle !== null) {
       const y = baseY + halfSize;
 

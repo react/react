@@ -94,7 +94,7 @@ chrome.runtime.onConnect.addListener(port => {
     registerTab(tabId);
     registerProxyPort(
       port,
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       tabId,
     );
 

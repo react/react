@@ -21,6 +21,7 @@ import {
   NoFlags,
   Update,
   ViewTransitionStatic,
+  ViewTransitionStaticParent,
   AffectedParentLayout,
   ViewTransitionNamedStatic,
 } from './ReactFiberFlags';
@@ -47,6 +48,7 @@ import {
   enableComponentPerformanceTrack,
   enableProfilerTimer,
   enableViewTransitionForPersistenceMode,
+  enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 
 export let shouldStartViewTransition: boolean = false;
@@ -140,6 +142,7 @@ function applyViewTransitionToHostInstancesRecursive(
   collectMeasurements: null | Array<InstanceMeasurement>,
   stopAtNestedViewTransitions: boolean,
 ): boolean {
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     if (enableViewTransitionForPersistenceMode) {
       while (child !== null) {
@@ -241,6 +244,7 @@ function restoreViewTransitionOnHostInstances(
   child: null | Fiber,
   stopAtNestedViewTransitions: boolean,
 ): void {
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     return;
   }
@@ -324,6 +328,157 @@ function commitAppearingPairViewTransitions(placement: Fiber): void {
   }
 }
 
+export function commitParentEnterViewTransitions(
+  parent: Fiber,
+  gesture: boolean,
+): void {
+  let child = parent.child;
+  while (child !== null) {
+    if (child.tag === OffscreenComponent && child.memoizedState !== null) {
+      // Skip hidden subtrees.
+    } else if (child.tag === ViewTransitionComponent) {
+      const props: ViewTransitionProps = child.memoizedProps;
+      const hasParentClass = props.parentEnter !== undefined;
+      const hasParentHandler = gesture
+        ? props.onGestureParentEnter != null
+        : props.onParentEnter != null;
+      if (hasParentClass || hasParentHandler) {
+        let relay = true;
+        if (hasParentClass) {
+          const state: ViewTransitionState = child.stateNode;
+          const name = getViewTransitionName(props, state);
+          const className: ?string = getViewTransitionClassName(
+            props.default,
+            props.parentEnter,
+          );
+          if (className === 'none') {
+            relay = false;
+          } else {
+            applyViewTransitionToHostInstances(
+              child,
+              name,
+              className,
+              null,
+              false,
+            );
+            if (hasParentHandler) {
+              if (gesture) {
+                scheduleGestureTransitionEvent(
+                  child,
+                  props.onGestureParentEnter,
+                );
+              } else {
+                scheduleViewTransitionEvent(child, props.onParentEnter);
+              }
+            }
+          }
+        } else {
+          if (gesture) {
+            scheduleGestureTransitionEvent(child, props.onGestureParentEnter);
+          } else {
+            scheduleViewTransitionEvent(child, props.onParentEnter);
+          }
+        }
+        if (relay) {
+          commitParentEnterViewTransitions(child, gesture);
+        }
+      }
+    } else if ((child.subtreeFlags & ViewTransitionStaticParent) !== NoFlags) {
+      commitParentEnterViewTransitions(child, gesture);
+    }
+    child = child.sibling;
+  }
+}
+
+export function commitParentExitViewTransitions(
+  parent: Fiber,
+  gesture: boolean,
+): void {
+  let child = parent.child;
+  while (child !== null) {
+    if (child.tag === OffscreenComponent && child.memoizedState !== null) {
+      // Skip hidden subtrees.
+    } else if (child.tag === ViewTransitionComponent) {
+      const props: ViewTransitionProps = child.memoizedProps;
+      const hasParentClass = props.parentExit !== undefined;
+      const hasParentHandler = gesture
+        ? props.onGestureParentExit != null
+        : props.onParentExit != null;
+      if (hasParentClass || hasParentHandler) {
+        let relay = true;
+        if (hasParentClass) {
+          const state: ViewTransitionState = child.stateNode;
+          const name = getViewTransitionName(props, state);
+          const className: ?string = getViewTransitionClassName(
+            props.default,
+            props.parentExit,
+          );
+          if (className === 'none') {
+            relay = false;
+          } else {
+            applyViewTransitionToHostInstances(
+              child,
+              name,
+              className,
+              null,
+              false,
+            );
+            if (hasParentHandler) {
+              if (gesture) {
+                scheduleGestureTransitionEvent(
+                  child,
+                  props.onGestureParentExit,
+                );
+              } else {
+                scheduleViewTransitionEvent(child, props.onParentExit);
+              }
+            }
+          }
+        } else {
+          if (gesture) {
+            scheduleGestureTransitionEvent(child, props.onGestureParentExit);
+          } else {
+            scheduleViewTransitionEvent(child, props.onParentExit);
+          }
+        }
+        if (relay) {
+          commitParentExitViewTransitions(child, gesture);
+        }
+      }
+    } else if ((child.subtreeFlags & ViewTransitionStaticParent) !== NoFlags) {
+      commitParentExitViewTransitions(child, gesture);
+    }
+    child = child.sibling;
+  }
+}
+
+function restoreParentEnterOrExitViewTransitions(parent: Fiber): void {
+  let child = parent.child;
+  while (child !== null) {
+    if (child.tag === OffscreenComponent && child.memoizedState !== null) {
+      // Skip hidden subtrees.
+    } else if (child.tag === ViewTransitionComponent) {
+      const props: ViewTransitionProps = child.memoizedProps;
+      const hasParentClass =
+        props.parentEnter !== undefined || props.parentExit !== undefined;
+      const hasParentHandler =
+        props.onParentEnter != null ||
+        props.onParentExit != null ||
+        props.onGestureParentEnter != null ||
+        props.onGestureParentExit != null;
+      if (hasParentClass) {
+        restoreViewTransitionOnHostInstances(child.child, false);
+      }
+      if (hasParentClass || hasParentHandler) {
+        restoreParentEnterOrExitViewTransitions(child);
+      }
+    } else if ((child.subtreeFlags & ViewTransitionStaticParent) !== NoFlags) {
+      restoreParentEnterOrExitViewTransitions(child);
+    }
+    child = child.sibling;
+  }
+}
+
 export function commitEnterViewTransitions(
   placement: Fiber,
   gesture: boolean,
@@ -358,6 +513,9 @@ export function commitEnterViewTransitions(
             scheduleGestureTransitionEvent(placement, props.onGestureEnter);
           } else {
             scheduleViewTransitionEvent(placement, props.onEnter);
+          }
+          if (enableViewTransitionParentEnterExit) {
+            commitParentEnterViewTransitions(placement, gesture);
           }
         }
       }
@@ -487,6 +645,9 @@ export function commitExitViewTransitions(deletion: Fiber): void {
         scheduleViewTransitionEvent(deletion, props.onShare);
       } else {
         scheduleViewTransitionEvent(deletion, props.onExit);
+        if (enableViewTransitionParentEnterExit) {
+          commitParentExitViewTransitions(deletion, false);
+        }
       }
     }
     if (appearingViewTransitions !== null) {
@@ -617,6 +778,9 @@ export function restoreEnterOrExitViewTransitions(fiber: Fiber): void {
     const instance: ViewTransitionState = fiber.stateNode;
     instance.paired = null;
     restoreViewTransitionOnHostInstances(fiber.child, false);
+    if (enableViewTransitionParentEnterExit) {
+      restoreParentEnterOrExitViewTransitions(fiber);
+    }
     restorePairedViewTransitions(fiber);
   } else if ((fiber.subtreeFlags & ViewTransitionStatic) !== NoFlags) {
     let child = fiber.child;
@@ -688,6 +852,7 @@ function measureViewTransitionHostInstancesRecursive(
   previousMeasurements: null | Array<InstanceMeasurement>,
   stopAtNestedViewTransitions: boolean,
 ): boolean {
+  // $FlowFixMe[constant-condition]
   if (!supportsMutation) {
     if (enableViewTransitionForPersistenceMode) {
       while (child !== null) {

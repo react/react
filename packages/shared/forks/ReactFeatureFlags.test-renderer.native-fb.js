@@ -26,6 +26,7 @@ export const enableCreateEventHandleAPI = false;
 export const enableMoveBefore = false;
 export const enableFizzExternalRuntime = true;
 export const enableInfiniteRenderLoopDetection = false;
+export const enableInfiniteRenderLoopDetectionForceThrow = false;
 export const enableLegacyCache = false;
 export const enableLegacyFBSupport = false;
 export const enableLegacyHidden = false;
@@ -40,7 +41,6 @@ export const enableSchedulingProfiler = __PROFILE__;
 export const enableComponentPerformanceTrack = false;
 export const enablePerformanceIssueReporting = false;
 export const enableScopeAPI = false;
-export const enableEagerAlternateStateNodeCleanup = true;
 export const enableEffectEventMutationPhase = false;
 export const enableSuspenseAvoidThisFallback = false;
 export const enableSuspenseCallback = false;
@@ -55,6 +55,7 @@ export const transitionLaneExpirationMs = 5000;
 export const enableYieldingBeforePassive = false;
 export const enableThrottledScheduling = false;
 export const enableViewTransition = true;
+export const enableViewTransitionParentEnterExit = false;
 export const enableViewTransitionForPersistenceMode = false;
 export const enableGestureTransition = false;
 export const enableScrollEndPolyfill = true;
@@ -80,4 +81,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

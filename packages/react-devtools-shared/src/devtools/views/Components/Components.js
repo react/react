@@ -239,4 +239,4 @@ function setResizeCSSVariable(
   }
 }
 
-export default (portaledContent(Components): component());
+export default portaledContent(Components) as component();

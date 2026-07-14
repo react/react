@@ -80,6 +80,7 @@ export function loadHookNames(
 ): HookNames | null {
   let record = map.get(element);
 
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.groupCollapsed('loadHookNames() record:');
     console.log(record);
@@ -114,7 +115,7 @@ export function loadHookNames(
       }
 
       // This assumes they won't throw.
-      callbacks.forEach(callback => callback((thenable: any).value));
+      callbacks.forEach(callback => callback((thenable as any).value));
       callbacks.clear();
       rejectCallbacks.clear();
     };
@@ -124,7 +125,7 @@ export function loadHookNames(
         timeoutID = null;
       }
       // This assumes they won't throw.
-      rejectCallbacks.forEach(callback => callback((thenable: any).reason));
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
       rejectCallbacks.clear();
       callbacks.clear();
     };
@@ -151,13 +152,14 @@ export function loadHookNames(
               return;
             }
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               console.log('[hookNamesCache] onSuccess() hookNames:', hookNames);
             }
 
             if (hookNames) {
               const fulfilledThenable: FulfilledThenable<HookNames> =
-                (thenable: any);
+                thenable as any;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = hookNames;
               status = 'success';
@@ -166,7 +168,7 @@ export function loadHookNames(
               wake();
             } else {
               const notFoundThenable: RejectedThenable<HookNames> =
-                (thenable: any);
+                thenable as any;
               notFoundThenable.status = 'rejected';
               notFoundThenable.reason = null;
               status = 'error';
@@ -180,6 +182,7 @@ export function loadHookNames(
               return;
             }
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               console.log('[hookNamesCache] onError()');
             }
@@ -187,7 +190,7 @@ export function loadHookNames(
             console.error(error);
 
             const rejectedThenable: RejectedThenable<HookNames> =
-              (thenable: any);
+              thenable as any;
             rejectedThenable.status = 'rejected';
             rejectedThenable.reason = null;
 
@@ -199,6 +202,7 @@ export function loadHookNames(
 
         // Eventually timeout and stop trying to load names.
         timeoutID = setTimeout(function onTimeout() {
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             console.log('[hookNamesCache] onTimeout()');
           }
@@ -207,7 +211,7 @@ export function loadHookNames(
 
           didTimeout = true;
 
-          const timedoutThenable: RejectedThenable<HookNames> = (thenable: any);
+          const timedoutThenable: RejectedThenable<HookNames> = thenable as any;
           timedoutThenable.status = 'rejected';
           timedoutThenable.reason = null;
 
