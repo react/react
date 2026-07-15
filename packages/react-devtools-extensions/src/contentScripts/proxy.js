@@ -114,7 +114,18 @@ function handleDisconnect() {
   window.removeEventListener('message', handleMessageFromPage);
   port = null;
 
-  connectPort();
+  // Mirrors the guard in handlePageShow(): the background script can evict/
+  // replace a tab's proxy port (see registerProxyPort in background/index.js),
+  // which disconnects us while still prerendering. Reconnecting immediately
+  // in that case causes an unbounded connect/disconnect cycle for as long as
+  // the document stays in the prerendering state (https://crbug.com/478909972).
+  if (document.prerendering) {
+    document.addEventListener('prerenderingchange', connectPort, {
+      once: true,
+    });
+  } else {
+    connectPort();
+  }
 }
 
 // Creates port from application page to the React DevTools' service worker
