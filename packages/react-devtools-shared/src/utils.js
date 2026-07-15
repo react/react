@@ -440,7 +440,7 @@ export function printOperationsArray(operations: Array<number>) {
       }
       case TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE: {
         i++;
-        const activitySliceIDChange = operations[i + 1];
+        const activitySliceIDChange = operations[i++];
         logs.push(
           activitySliceIDChange === 0
             ? 'Reset applied activity slice'
