@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<cd1b6bcb5c66494a5ff80fa10eb59a0b>>
+ * @generated SignedSource<<18f39656ee78d2ef20f4560203c34821>>
  */
 
 "use strict";
@@ -4098,19 +4098,14 @@ __DEV__ &&
           processRootScheduleInMicrotask();
           return null;
         });
-      supportsMicrotasks
-        ? scheduleMicrotask(function () {
-            (executionContext & (RenderContext | CommitContext)) !== NoContext
-              ? scheduleCallback$3(
-                  ImmediatePriority,
-                  processRootScheduleInImmediateTask
-                )
-              : processRootScheduleInMicrotask();
-          })
-        : scheduleCallback$3(
-            ImmediatePriority,
-            processRootScheduleInImmediateTask
-          );
+      scheduleMicrotask(function () {
+        (executionContext & (RenderContext | CommitContext)) !== NoContext
+          ? scheduleCallback$3(
+              ImmediatePriority,
+              processRootScheduleInImmediateTask
+            )
+          : processRootScheduleInMicrotask();
+      });
     }
     function requestTransitionLane() {
       if (0 === currentEventTransitionLane) {
@@ -21202,9 +21197,6 @@ __DEV__ &&
         _currentValue2: NotPendingTransition,
         _threadCount: 0
       },
-      supportsMicrotasks =
-        "undefined" !== typeof RN$enableMicrotasksInReact &&
-        !!RN$enableMicrotasksInReact,
       scheduleMicrotask =
         "function" === typeof queueMicrotask ? queueMicrotask : scheduleTimeout;
     (function (
@@ -21278,10 +21270,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-c0c39a6b-20260709",
+        version: "19.3.0-native-fb-b740af25-20260715",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-c0c39a6b-20260709"
+        reconcilerVersion: "19.3.0-native-fb-b740af25-20260715"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
