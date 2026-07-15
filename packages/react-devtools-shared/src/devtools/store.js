@@ -1985,6 +1985,15 @@ export default class Store extends EventEmitter<{
 
           const suspense = this._idToSuspense.get(id);
           if (suspense === undefined) {
+            if (removedSuspenseIDs.has(id)) {
+              // The backend batches all removals ahead of other operations
+              // within a flush, so a reorder that references a suspense node
+              // removed earlier in this same batch is an expected stale
+              // reference. Skip past this operation's payload.
+              i += numChildren;
+              break;
+            }
+
             this._throwAndEmitError(
               Error(
                 `Cannot reorder children for suspense node "${id}" because no matching node was found in the Store.`,
@@ -2036,6 +2045,17 @@ export default class Store extends EventEmitter<{
 
           const suspense = this._idToSuspense.get(id);
           if (suspense === undefined) {
+            if (removedSuspenseIDs.has(id)) {
+              // The backend batches all removals ahead of other operations
+              // within a flush, so a resize that references a suspense node
+              // removed earlier in this same batch is an expected stale
+              // reference. Skip past this operation's rects payload.
+              if (numRects > 0) {
+                i += numRects * 4;
+              }
+              break;
+            }
+
             this._throwAndEmitError(
               Error(
                 `Cannot set rects for suspense node "${id}" because no matching node was found in the Store.`,

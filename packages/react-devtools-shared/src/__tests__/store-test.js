@@ -97,6 +97,110 @@ describe('Store', () => {
   const {render, unmount, createContainer} = getVersionedRenderImplementation();
 
   // @reactVersion >= 18.0
+  it('should ignore suspense resize and reorder operations for nodes removed earlier in the same bridge update', () => {
+    const {
+      SUSPENSE_TREE_OPERATION_ADD,
+      SUSPENSE_TREE_OPERATION_REMOVE,
+      SUSPENSE_TREE_OPERATION_REORDER_CHILDREN,
+      SUSPENSE_TREE_OPERATION_RESIZE,
+      TREE_OPERATION_ADD,
+    } = require('react-devtools-shared/src/constants');
+    const {
+      ElementTypeFunction,
+      ElementTypeRoot,
+    } = require('react-devtools-shared/src/frontend/types');
+
+    store.onBridgeOperations([
+      1, // renderer ID
+      1, // root ID
+      7, // string table size
+      6, // next string length
+      80, // P
+      97, // a
+      114, // r
+      101, // e
+      110, // n
+      116, // t
+      TREE_OPERATION_ADD,
+      1,
+      ElementTypeRoot,
+      0, // StrictMode compliant?
+      0, // Profiling flags
+      0, // StrictMode supported?
+      0, // Owner metadata?
+      SUSPENSE_TREE_OPERATION_ADD,
+      1, // suspense root mirrors the root element
+      0, // no parent
+      0, // no name
+      0, // not suspended
+      -1, // no rects
+      TREE_OPERATION_ADD,
+      2,
+      ElementTypeFunction,
+      1, // parent
+      0, // owner
+      1, // displayName "Parent"
+      0, // key
+      0, // nameProp
+      SUSPENSE_TREE_OPERATION_ADD,
+      3, // suspense boundary inside the root
+      1, // parent suspense node
+      0, // no name
+      0, // not suspended
+      1, // one rect
+      1000, // x
+      2000, // y
+      3000, // width
+      4000, // height
+    ]);
+
+    expect(store.getSuspenseByID(3)).not.toBeNull();
+
+    // The backend flush layout batches all removals ahead of any other
+    // operations recorded during the same commit, so operations that
+    // reference a suspense node removed earlier in the same batch are
+    // expected stale references and must not throw.
+    expect(() =>
+      store.onBridgeOperations([
+        1, // renderer ID
+        1, // root ID
+        0, // string table size
+        SUSPENSE_TREE_OPERATION_REMOVE,
+        1, // number of removals
+        3,
+        SUSPENSE_TREE_OPERATION_RESIZE,
+        3, // stale reference to the removed node
+        2, // two rects: the payload must be skipped in full
+        1000,
+        2000,
+        3000,
+        4000,
+        5000,
+        6000,
+        7000,
+        8000,
+        SUSPENSE_TREE_OPERATION_REORDER_CHILDREN,
+        3, // stale reference to the removed node
+        1, // one child: the payload must be skipped in full
+        4,
+        // A trailing operation that must still parse correctly, proving the
+        // stale operations were skipped without corrupting the read offset.
+        TREE_OPERATION_ADD,
+        4,
+        ElementTypeFunction,
+        2, // parent
+        0, // owner
+        0, // displayName
+        0, // key
+        0, // nameProp
+      ]),
+    ).not.toThrow();
+
+    expect(store.getSuspenseByID(3)).toBeNull();
+    expect(store.getElementByID(4)).not.toBeNull();
+  });
+
+  // @reactVersion >= 18.0
   it('should not allow a root node to be collapsed', async () => {
     const Component = () => <div>Hi</div>;
 
