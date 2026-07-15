@@ -2951,6 +2951,184 @@ describe('ReactDOMFizzServer', () => {
     },
   );
 
+  it(
+    'does not discard a dehydrated boundary that is queued for a throttled ' +
+      'reveal when a concurrent client update races it (#37014)',
+    async () => {
+      // The server and client each get their own independent, manually
+      // resolved promise. This matters: if they shared one (e.g. a single
+      // cached record keyed by the same text), resolving it would ping both
+      // the server's stream and the client's own hydration attempt in the
+      // same synchronous/microtask step, which lets the client "shortcut"
+      // straight to a successful hydration and never actually exercises the
+      // race this test is targeting. Two independent promises is the only
+      // way to accurately model server and client being different machines.
+      //
+      // The `step` prop is intentionally not rendered into the DOM. It only
+      // exists so a client update can change the element identity of the
+      // boundary (forcing didReceiveUpdate on the dehydrated Suspense) while
+      // leaving the streamed markup byte-for-byte identical. That isolates
+      // the behavior under test from any incidental hydration mismatch.
+      function makeApp() {
+        let resolve, resolved;
+        const promise = new Promise(r => {
+          resolve = () => {
+            resolved = true;
+            return r();
+          };
+        });
+        function Child() {
+          if (!resolved) {
+            throw promise;
+          }
+          return 'hello';
+        }
+        function App({step}) {
+          return (
+            <div>
+              <Suspense fallback={<p>Loading...</p>}>
+                <span className="target">
+                  <Child />
+                </span>
+              </Suspense>
+            </div>
+          );
+        }
+        return [App, resolve];
+      }
+
+      // This test file runs with real timers, and the queued reveal's delay
+      // can be as short as a single requestAnimationFrame tick, so we can't
+      // just avoid awaiting long enough for it to fire. Instead we intercept
+      // requestAnimationFrame the same way the original bug report did: hold
+      // its callback captive so we can inspect the DOM in the window between
+      // "content streamed in and queued" and "reveal actually runs", then
+      // release it ourselves once we're done.
+      const realRAF = global.requestAnimationFrame;
+      let pendingRAFs = [];
+      global.requestAnimationFrame = global.window.requestAnimationFrame =
+        cb => {
+          pendingRAFs.push(cb);
+        };
+      function flushRAFs() {
+        const cbs = pendingRAFs;
+        pendingRAFs = [];
+        cbs.forEach(cb => cb());
+      }
+      try {
+        const [ServerApp, serverResolve] = makeApp();
+        await act(() => {
+          const {pipe} = renderToPipeableStream(<ServerApp step={1} />);
+          pipe(writable);
+        });
+        expect(getVisibleChildren(container)).toEqual(
+          <div>
+            <p>Loading...</p>
+          </div>,
+        );
+
+        const [ClientApp, clientResolve] = makeApp();
+        const root = ReactDOMClient.hydrateRoot(
+          container,
+          <ClientApp step={1} />,
+          {
+            onRecoverableError(error) {
+              Scheduler.log(
+                'onRecoverableError: ' + normalizeError(error.message),
+              );
+            },
+          },
+        );
+        await waitForAll([]);
+        expect(getVisibleChildren(container)).toEqual(
+          <div>
+            <p>Loading...</p>
+          </div>,
+        );
+
+        // The server finishes its content and streams it in out-of-band.
+        // This executes a `completeBoundary` instruction that marks the
+        // boundary as "$~" (queued for a throttled reveal) and queues a
+        // requestAnimationFrame callback to actually swap it in. Because we
+        // intercepted requestAnimationFrame above, that callback is now
+        // sitting captive in `pendingRAFs` instead of having run.
+        serverResolve();
+        for (let i = 0; i < 5; i++) {
+          await new Promise(resolve => setImmediate(resolve));
+          if (buffer) {
+            const bufferedContent = buffer;
+            buffer = '';
+            const div = document.createElement('div');
+            div.innerHTML = bufferedContent;
+            await insertNodesAndExecuteScripts(
+              div,
+              streamingContainer,
+              CSPnonce,
+            );
+          }
+        }
+        expect(pendingRAFs.length).toBeGreaterThan(0);
+
+        // The boundary is now marked "$~" (queued) with its streamed content
+        // waiting in a hidden sibling, but the reveal hasn't run yet.
+        expect(container.innerHTML).toContain('<!--$~-->');
+        expect(getVisibleChildren(container)).toEqual(
+          <div>
+            <p>Loading...</p>
+          </div>,
+        );
+
+        // A concurrent client update (e.g. a transition or setState
+        // elsewhere in the tree) re-renders the root while this Suspense
+        // boundary is still dehydrated and queued. This is the race: the
+        // reconciler must NOT discard the already-streamed content and mount
+        // a fresh client render, because that orphans the streamed segment
+        // and races the queued reveal, producing the transient duplicate the
+        // issue describes. Instead it must leave the dehydrated content in
+        // place and let the queued reveal proceed.
+        await clientAct(() => {
+          root.render(<ClientApp step={2} />);
+        });
+        assertLog([]);
+        // The "$~" boundary must still be intact (not discarded/replaced by
+        // a client-rendered fallback), with its streamed content preserved.
+        expect(container.innerHTML).toContain('<!--$~-->');
+        expect(container.querySelectorAll('span').length).toBe(1);
+
+        // Now let the queued reveal run. It swaps the streamed content into
+        // place. Without the fix, the streamed content would have been
+        // orphaned by the discard above and this reveal would instead delete
+        // it, leaving the boundary showing a client fallback (0 spans).
+        await clientAct(() => {
+          while (pendingRAFs.length > 0) {
+            flushRAFs();
+          }
+        });
+        assertLog([]);
+        expect(getVisibleChildren(container)).toEqual(
+          <div>
+            <span class="target">hello</span>
+          </div>,
+        );
+
+        // The client's own data finally resolves and hydration completes
+        // cleanly against the streamed content (no mismatch, no errors).
+        await clientAct(() => {
+          clientResolve();
+        });
+        assertLog([]);
+        expect(getVisibleChildren(container)).toEqual(
+          <div>
+            <span class="target">hello</span>
+          </div>,
+        );
+      } finally {
+        global.requestAnimationFrame = global.window.requestAnimationFrame =
+          realRAF;
+      }
+    },
+  );
+
   // Disabled because of a WWW late mutations regression.
   // We may want to re-enable this if we figure out why.
 

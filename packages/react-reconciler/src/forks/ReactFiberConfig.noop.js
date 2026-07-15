@@ -189,6 +189,7 @@ export const cloneHiddenTextInstance = $$$config.cloneHiddenTextInstance;
 //     (optional)
 // -------------------
 export const isSuspenseInstancePending = $$$config.isSuspenseInstancePending;
+export const isSuspenseInstanceQueued = $$$config.isSuspenseInstanceQueued;
 export const isSuspenseInstanceFallback = $$$config.isSuspenseInstanceFallback;
 export const getSuspenseInstanceFallbackErrorDetails =
   $$$config.getSuspenseInstanceFallbackErrorDetails;
