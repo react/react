@@ -38,6 +38,25 @@ export default function ProfilingImportExportButtons(): React.Node {
 
   const {dispatch: modalDialogDispatch} = useContext(ModalDialogContext);
 
+  const showImportError = useCallback(
+    (error: null | {message: string}) => {
+      modalDialogDispatch({
+        id: 'ProfilingImportExportButtons',
+        type: 'SHOW',
+        title: 'Import failed',
+        content: (
+          <Fragment>
+            <div>The profiling data you selected cannot be imported.</div>
+            {error !== null && (
+              <div className={styles.ErrorMessage}>{error.message}</div>
+            )}
+          </Fragment>
+        ),
+      });
+    },
+    [modalDialogDispatch],
+  );
+
   const doesHaveInMemoryData = profilerStore.didRecordCommits;
 
   const downloadData = useCallback(() => {
@@ -83,8 +102,10 @@ export default function ProfilingImportExportButtons(): React.Node {
     if (input !== null && input.files.length > 0) {
       const file = input.files[0];
 
-      // TODO (profiling) Handle fileReader errors.
       const fileReader = new FileReader();
+      fileReader.addEventListener('error', () => {
+        showImportError(fileReader.error);
+      });
       fileReader.addEventListener('load', () => {
         const raw = fileReader.result as any as string;
         const json = JSON.parse(raw);
@@ -99,19 +120,7 @@ export default function ProfilingImportExportButtons(): React.Node {
             profilerStore.profilingData =
               prepareProfilingDataFrontendFromExport(profilingDataExport);
           } catch (error) {
-            modalDialogDispatch({
-              id: 'ProfilingImportExportButtons',
-              type: 'SHOW',
-              title: 'Import failed',
-              content: (
-                <Fragment>
-                  <div>The profiling data you selected cannot be imported.</div>
-                  {error !== null && (
-                    <div className={styles.ErrorMessage}>{error.message}</div>
-                  )}
-                </Fragment>
-              ),
-            });
+            showImportError(error);
           }
         } else {
           // Otherwise let's assume this is Trace Event data and pass it to the Timeline preprocessor.
