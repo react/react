@@ -20,15 +20,15 @@ export type ImportManifestEntry = {
 export type ImportMetadata =
   | [
       /* id */ string,
-      /* chunk filenames */ Array<string>,
       /* name */ string,
+      /* chunk filenames */ Array<string>,
       /* async */ 1,
     ]
-  | [/* id */ string, /* chunk filenames */ Array<string>, /* name */ string];
+  | [/* id */ string, /* name */ string, /* chunk filenames */ Array<string>];
 
 export const ID = 0;
-export const CHUNKS = 1;
-export const NAME = 2;
+export const NAME = 1;
+export const CHUNKS = 2;
 // export const ASYNC = 3;
 
 // This logic is correct because currently only include the 4th tuple member

@@ -102,12 +102,12 @@ export function resolveClientReference<T>(
     if (isAsyncImport(metadata)) {
       return [
         resolvedModuleData.id,
-        resolvedModuleData.chunks,
         name,
+        resolvedModuleData.chunks,
         1 /* async */,
       ];
     } else {
-      return [resolvedModuleData.id, resolvedModuleData.chunks, name];
+      return [resolvedModuleData.id, name, resolvedModuleData.chunks];
     }
   }
   return metadata;
@@ -149,12 +149,12 @@ export function resolveServerReference<T>(
     // manifest.
     return [
       resolvedModuleData.id,
-      resolvedModuleData.chunks,
       name,
+      resolvedModuleData.chunks,
       1 /* async */,
     ];
   }
-  return [resolvedModuleData.id, resolvedModuleData.chunks, name];
+  return [resolvedModuleData.id, name, resolvedModuleData.chunks];
 }
 
 // The chunk cache contains all the chunks we've preloaded so far.

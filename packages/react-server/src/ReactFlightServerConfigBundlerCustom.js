@@ -12,7 +12,10 @@ declare const $$$config: any;
 export opaque type ClientManifest = mixed;
 export opaque type ClientReference<T> = mixed; // eslint-disable-line no-unused-vars
 export opaque type ServerReference<T> = mixed; // eslint-disable-line no-unused-vars
-export opaque type ClientReferenceMetadata: any = mixed;
+export type ClientReferenceMetadata =
+  | [string, string]
+  | [string, string, $ReadOnlyArray<mixed>]
+  | [string, string, $ReadOnlyArray<mixed>, mixed];
 export opaque type ServerReferenceId: any = mixed;
 export opaque type ClientReferenceKey: any = mixed;
 export const isClientReference = $$$config.isClientReference;
