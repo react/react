@@ -11,12 +11,10 @@ module.exports.JSDOM = function JSDOM() {
     result = JSDOM.apply(undefined, arguments);
   }
 
-  const {
-    setupDocumentReadyState,
-    setupNonceHiding,
-  } = require('./ReactJSDOMUtils');
-  setupDocumentReadyState(result.window.document, result.window.Event);
-  setupNonceHiding(result.window.Element);
+  require('./ReactJSDOMUtils').setupDocumentReadyState(
+    result.window.document,
+    result.window.Event,
+  );
 
   return result;
 };

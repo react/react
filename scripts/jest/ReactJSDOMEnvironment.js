@@ -3,7 +3,6 @@
 const {TestEnvironment: JSDOMEnvironment} = require('jest-environment-jsdom');
 const {
   setupDocumentReadyState,
-  setupNonceHiding,
 } = require('internal-test-utils/ReactJSDOMUtils');
 
 /**
@@ -14,7 +13,6 @@ class ReactJSDOMEnvironment extends JSDOMEnvironment {
     super(config, context);
 
     setupDocumentReadyState(this.global.document, this.global.Event);
-    setupNonceHiding(this.global.Element);
   }
 }
 

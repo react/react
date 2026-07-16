@@ -31,34 +31,3 @@ export function setupDocumentReadyState(
     configurable: true,
   });
 }
-
-/**
- * When CSP is enabled, browsers hide the nonce content attribute for security
- * (getAttribute("nonce") returns "") while the .nonce IDL property remains
- * accessible. JSDOM does not implement this, so we simulate it.
- * https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
- */
-export function setupNonceHiding(Element: typeof Element) {
-  const originalGetAttribute = Element.prototype.getAttribute;
-  Element.prototype.getAttribute = function (name: string) {
-    if (
-      (Element: any)._hideNonceAttribute &&
-      typeof name === 'string' &&
-      name.toLowerCase() === 'nonce'
-    ) {
-      return '';
-    }
-    return originalGetAttribute.call(this, name);
-  };
-}
-
-/**
- * Enables or disables the CSP nonce-hiding behavior installed by
- * setupNonceHiding. Tests can toggle this per case to simulate browsers
- * that hide nonce content attributes.
- */
-export function setHideNonceAttribute(enabled: boolean) {
-  const ElementCtor =
-    typeof window !== 'undefined' ? window.Element : global.Element;
-  (ElementCtor: any)._hideNonceAttribute = enabled;
-}
