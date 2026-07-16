@@ -20,7 +20,6 @@ const dynamicFlags: DynamicExportsType = dynamicFlagsUntyped as any;
 // the exports object every time a flag is read.
 export const {
   alwaysThrottleRetries,
-  enableEffectEventMutationPhase,
   enableObjectFiber,
   passChildrenWhenCloningPersistedNodes,
   enableFragmentRefs,
