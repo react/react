@@ -83,7 +83,11 @@ export function getValueForAttributeOnCustomComponent(
       }
       return expected === undefined ? undefined : null;
     }
-    const value = node.getAttribute(name);
+    // When CSP is enabled, browsers hide the nonce attribute
+    // so we need to access the nonce property directly
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
+    const isNonce = name.toLowerCase() === 'nonce';
+    const value = isNonce ? (node as any).nonce : node.getAttribute(name);
 
     if (value === '' && expected === true) {
       return true;

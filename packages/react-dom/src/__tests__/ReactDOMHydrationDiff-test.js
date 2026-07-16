@@ -547,6 +547,7 @@ describe('ReactDOMServerHydration', () => {
             <form nonce="r4nd0m">
               <input type="text" nonce="r4nd0m" />
             </form>
+            <my-element nonce="r4nd0m" />
           </div>
         );
       }
