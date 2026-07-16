@@ -1616,17 +1616,14 @@ export default class Store extends EventEmitter<{
             const id = operations[i];
             const element = this._idToElement.get(id);
 
-            if (element === undefined) {
-              this._throwAndEmitError(
-                Error(
-                  `Cannot remove node "${id}" because no matching node was found in the Store.`,
-                ),
-              );
-
-              break;
-            }
-
             i += 1;
+
+            if (element === undefined) {
+              // This node was already removed (e.g. a desynced or duplicate
+              // REMOVE op for the same id). Skip it rather than crashing the
+              // whole DevTools panel; there's nothing left to clean up for it.
+              continue;
+            }
 
             const {children, ownerID, parentID, weight} = element;
             if (children.length > 0) {
@@ -1656,18 +1653,12 @@ export default class Store extends EventEmitter<{
               }
 
               parentElement = this._idToElement.get(parentID);
-              if (parentElement === undefined) {
-                this._throwAndEmitError(
-                  Error(
-                    `Cannot remove node "${id}" from parent "${parentID}" because no matching node was found in the Store.`,
-                  ),
-                );
-
-                break;
+              if (parentElement !== undefined) {
+                const index = parentElement.children.indexOf(id);
+                if (index !== -1) {
+                  parentElement.children.splice(index, 1);
+                }
               }
-
-              const index = parentElement.children.indexOf(id);
-              parentElement.children.splice(index, 1);
             }
 
             this._adjustParentTreeWeight(parentElement, -weight);

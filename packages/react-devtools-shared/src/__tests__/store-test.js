@@ -97,6 +97,59 @@ describe('Store', () => {
   const {render, unmount, createContainer} = getVersionedRenderImplementation();
 
   // @reactVersion >= 18.0
+  it('should ignore a duplicate or stale remove operation instead of throwing', () => {
+    const {
+      TREE_OPERATION_ADD,
+      TREE_OPERATION_REMOVE,
+    } = require('react-devtools-shared/src/constants');
+    const {
+      ElementTypeFunction,
+      ElementTypeRoot,
+    } = require('react-devtools-shared/src/frontend/types');
+
+    store.onBridgeOperations([
+      1, // renderer ID
+      1, // root ID
+      2, // string table size
+      1, // next string length
+      67, // C
+      TREE_OPERATION_ADD,
+      1,
+      ElementTypeRoot,
+      0, // StrictMode compliant?
+      0, // Profiling flags
+      0, // StrictMode supported?
+      0, // Owner metadata?
+      TREE_OPERATION_ADD,
+      2,
+      ElementTypeFunction,
+      1, // parent
+      0, // owner
+      1, // displayName "C"
+      0, // key
+      0, // nameProp
+    ]);
+
+    expect(store.getElementByID(2)).not.toBeNull();
+
+    // A second, stale REMOVE referencing the same id (e.g. a duplicated or
+    // desynced bridge message) must not crash the whole DevTools panel.
+    expect(() =>
+      store.onBridgeOperations([
+        1, // renderer ID
+        1, // root ID
+        0, // string table size
+        TREE_OPERATION_REMOVE,
+        2, // number of removals
+        2, // first removal
+        2, // duplicate, stale removal of the same id
+      ]),
+    ).not.toThrow();
+
+    expect(store.getElementByID(2)).toBeNull();
+  });
+
+  // @reactVersion >= 18.0
   it('should not allow a root node to be collapsed', async () => {
     const Component = () => <div>Hi</div>;
 
