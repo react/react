@@ -12191,21 +12191,6 @@ __DEV__ &&
           case 0:
           case 11:
           case 15:
-            if (
-              !enableEffectEventMutationPhase &&
-              0 !== (flags & 4) &&
-              ((finishedWork = finishedWork.updateQueue),
-              (finishedWork =
-                null !== finishedWork ? finishedWork.events : null),
-              null !== finishedWork)
-            )
-              for (
-                isViewTransitionEligible = 0;
-                isViewTransitionEligible < finishedWork.length;
-                isViewTransitionEligible++
-              )
-                (current = finishedWork[isViewTransitionEligible]),
-                  (current.ref.impl = current.nextImpl);
             break;
           case 1:
             0 !== (flags & 1024) &&
@@ -13139,7 +13124,6 @@ __DEV__ &&
         case 14:
         case 15:
           if (
-            enableEffectEventMutationPhase &&
             flags & 4 &&
             ((current = finishedWork.updateQueue),
             (current = null !== current ? current.events : null),
@@ -18331,8 +18315,6 @@ __DEV__ &&
         dynamicFeatureFlags.disableLegacyContextForFunctionComponents,
       disableSchedulerTimeoutInWorkLoop =
         dynamicFeatureFlags.disableSchedulerTimeoutInWorkLoop,
-      enableEffectEventMutationPhase =
-        dynamicFeatureFlags.enableEffectEventMutationPhase,
       enableInfiniteRenderLoopDetection =
         dynamicFeatureFlags.enableInfiniteRenderLoopDetection,
       enableInfiniteRenderLoopDetectionForceThrow =
@@ -20586,10 +20568,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-www-classic-c0c39a6b-20260709",
+        version: "19.3.0-www-classic-cec5a9bd-20260716",
         rendererPackageName: "react-art",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-www-classic-c0c39a6b-20260709"
+        reconcilerVersion: "19.3.0-www-classic-cec5a9bd-20260716"
       };
       internals.overrideHookState = overrideHookState;
       internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -20624,7 +20606,7 @@ __DEV__ &&
     exports.Shape = Shape;
     exports.Surface = Surface;
     exports.Text = Text;
-    exports.version = "19.3.0-www-classic-c0c39a6b-20260709";
+    exports.version = "19.3.0-www-classic-cec5a9bd-20260716";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

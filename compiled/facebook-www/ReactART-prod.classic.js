@@ -67,8 +67,6 @@ var dynamicFeatureFlags = require("ReactFeatureFlags"),
     dynamicFeatureFlags.disableLegacyContextForFunctionComponents,
   disableSchedulerTimeoutInWorkLoop =
     dynamicFeatureFlags.disableSchedulerTimeoutInWorkLoop,
-  enableEffectEventMutationPhase =
-    dynamicFeatureFlags.enableEffectEventMutationPhase,
   enableInfiniteRenderLoopDetection =
     dynamicFeatureFlags.enableInfiniteRenderLoopDetection,
   enableInfiniteRenderLoopDetectionForceThrow =
@@ -7947,20 +7945,6 @@ function commitBeforeMutationEffects_complete(
       case 0:
       case 11:
       case 15:
-        if (
-          !enableEffectEventMutationPhase &&
-          0 !== (flags & 4) &&
-          ((current = fiber.updateQueue),
-          (current = null !== current ? current.events : null),
-          null !== current)
-        )
-          for (
-            isViewTransitionEligible = 0;
-            isViewTransitionEligible < current.length;
-            isViewTransitionEligible++
-          )
-            (flags = current[isViewTransitionEligible]),
-              (flags.ref.impl = flags.nextImpl);
         break;
       case 1:
         if (0 !== (flags & 1024) && null !== current) {
@@ -8658,7 +8642,6 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
     case 14:
     case 15:
       if (
-        enableEffectEventMutationPhase &&
         flags & 4 &&
         ((current = finishedWork.updateQueue),
         (current = null !== current ? current.events : null),
@@ -11708,24 +11691,24 @@ var slice = Array.prototype.slice,
     };
     return Text;
   })(React.Component);
-var internals$jscomp$inline_1629 = {
+var internals$jscomp$inline_1623 = {
   bundleType: 0,
-  version: "19.3.0-www-classic-c0c39a6b-20260709",
+  version: "19.3.0-www-classic-cec5a9bd-20260716",
   rendererPackageName: "react-art",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-classic-c0c39a6b-20260709"
+  reconcilerVersion: "19.3.0-www-classic-cec5a9bd-20260716"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1630 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1624 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1630.isDisabled &&
-    hook$jscomp$inline_1630.supportsFiber
+    !hook$jscomp$inline_1624.isDisabled &&
+    hook$jscomp$inline_1624.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1630.inject(
-        internals$jscomp$inline_1629
+      (rendererID = hook$jscomp$inline_1624.inject(
+        internals$jscomp$inline_1623
       )),
-        (injectedHook = hook$jscomp$inline_1630);
+        (injectedHook = hook$jscomp$inline_1624);
     } catch (err) {}
 }
 var Path = Mode$1.Path;
@@ -11739,4 +11722,4 @@ exports.RadialGradient = RadialGradient;
 exports.Shape = TYPES.SHAPE;
 exports.Surface = Surface;
 exports.Text = Text;
-exports.version = "19.3.0-www-classic-c0c39a6b-20260709";
+exports.version = "19.3.0-www-classic-cec5a9bd-20260716";

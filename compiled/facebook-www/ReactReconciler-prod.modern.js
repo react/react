@@ -8560,20 +8560,6 @@ module.exports = function ($$$config) {
         case 0:
         case 11:
         case 15:
-          if (
-            !enableEffectEventMutationPhase &&
-            0 !== (flags & 4) &&
-            ((current = fiber.updateQueue),
-            (current = null !== current ? current.events : null),
-            null !== current)
-          )
-            for (
-              isViewTransitionEligible = 0;
-              isViewTransitionEligible < current.length;
-              isViewTransitionEligible++
-            )
-              (flags = current[isViewTransitionEligible]),
-                (flags.ref.impl = flags.nextImpl);
           break;
         case 1:
           if (0 !== (flags & 1024) && null !== current) {
@@ -9437,7 +9423,6 @@ module.exports = function ($$$config) {
       case 14:
       case 15:
         if (
-          enableEffectEventMutationPhase &&
           flags & 4 &&
           ((current = finishedWork.updateQueue),
           (current = null !== current ? current.events : null),
@@ -13088,8 +13073,6 @@ module.exports = function ($$$config) {
     alwaysThrottleRetries = dynamicFeatureFlags.alwaysThrottleRetries,
     disableSchedulerTimeoutInWorkLoop =
       dynamicFeatureFlags.disableSchedulerTimeoutInWorkLoop,
-    enableEffectEventMutationPhase =
-      dynamicFeatureFlags.enableEffectEventMutationPhase,
     enableInfiniteRenderLoopDetection =
       dynamicFeatureFlags.enableInfiniteRenderLoopDetection,
     enableInfiniteRenderLoopDetectionForceThrow =
@@ -14341,7 +14324,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-c0c39a6b-20260709"
+      reconcilerVersion: "19.3.0-www-modern-cec5a9bd-20260716"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);
