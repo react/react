@@ -336,16 +336,19 @@ export function initAsyncDebugInfo(): void {
         // extracted it or it should be part of a chain of triggers.
         const node = pendingOperations.get(asyncId);
         if (node !== undefined) {
-          // Sever the outgoing references to allow GC of the old ancestry chain.
+          // Sever the previous link to allow GC of the old execution-path chain.
           // The node itself may still be alive if referenced by newer nodes via
           // their previous/awaited fields, but once this async resource is
-          // destroyed, its own ancestors are no longer needed. Without this,
-          // long-lived async workloads (streaming SSR, WebSocket connections,
-          // etc.) would retain an ever-growing linked list of ancestor nodes
-          // through these strong references, causing unbounded memory growth.
+          // destroyed, its own execution-path ancestors are no longer needed.
+          // Without this, long-lived async workloads (streaming SSR, WebSocket
+          // connections, etc.) would retain an ever-growing linked list of
+          // ancestor nodes through these strong references, causing unbounded
+          // memory growth.
+          // We intentionally keep `awaited` intact — it is the I/O dependency
+          // chain that newer nodes rely on to reach the originating I/O node
+          // when debug info is emitted after intermediate promises are GC'd.
           const n: any = node;
           n.previous = null;
-          n.awaited = null;
         }
         pendingOperations.delete(asyncId);
       },
@@ -361,11 +364,11 @@ export function markAsyncSequenceRootTask(): void {
     const asyncId = executionAsyncId();
     const node = pendingOperations.get(asyncId);
     if (node !== undefined) {
-      // Sever outgoing references to allow GC of any ancestry that is no longer
-      // reachable from live nodes.  Same rationale as in the destroy hook.
+      // Sever the previous link to allow GC of any execution-path ancestry
+      // that is no longer reachable from live nodes. Same rationale as in the
+      // destroy hook. Keep `awaited` intact for I/O debug info preservation.
       const n: any = node;
       n.previous = null;
-      n.awaited = null;
     }
     pendingOperations.delete(asyncId);
   }
