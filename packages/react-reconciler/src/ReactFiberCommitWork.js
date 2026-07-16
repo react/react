@@ -2273,6 +2273,7 @@ function commitMutationEffectsOnFiber(
       } else {
         // $FlowFixMe[constant-condition]
         if (supportsPersistence) {
+          // $FlowFixMe[constant-condition]
           if (enableViewTransitionForPersistenceMode && (flags & Cloned)) {
             commitHostCloned();
           }
@@ -2313,6 +2314,7 @@ function commitMutationEffectsOnFiber(
           commitHostTextUpdate(finishedWork, newText, oldText);
         }
       }
+      // $FlowFixMe[constant-condition]
       if (supportsPersistence && enableViewTransitionForPersistenceMode && (flags & Cloned)) {
         commitHostCloned();
       }
