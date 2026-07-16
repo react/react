@@ -57,11 +57,15 @@ import {
 
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 
+import {stripChunkAffixesFromManifest} from './ReactFlightTurbopackChunkAffixes';
+import type {ChunkLoadingOptions} from './ReactFlightTurbopackChunkAffixes';
+
 export {createTemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 
 export type {TemporaryReferenceSet};
 
 type Options = {
+  chunkLoading?: ChunkLoadingOptions,
   debugChannel?: {readable?: ReadableStream, writable?: WritableStream, ...},
   environmentName?: string | (() => string),
   filterStackFrame?: (url: string, functionName: string) => boolean,
@@ -128,7 +132,9 @@ function renderToReadableStream(
       : undefined;
   const request = createRequest(
     model,
-    turbopackMap,
+    options && options.chunkLoading
+      ? stripChunkAffixesFromManifest(turbopackMap, options.chunkLoading)
+      : turbopackMap,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
@@ -218,7 +224,9 @@ function prerender(
     }
     const request = createPrerenderRequest(
       model,
-      turbopackMap,
+      options && options.chunkLoading
+        ? stripChunkAffixesFromManifest(turbopackMap, options.chunkLoading)
+        : turbopackMap,
       onAllReady,
       onFatalError,
       options ? options.onError : undefined,
