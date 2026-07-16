@@ -1051,6 +1051,85 @@ describe('ReactFlightDOMEdge', () => {
     expect(result.a).toBe(result.b);
   });
 
+  it('should dedupe objects shared across packed siblings props', async () => {
+    // Each packed item anchors parent-path references for its subtree at its
+    // own reference, like a row root does.
+    const categories = [
+      {name: 'Engineering', description: 'Deep dives from the teams.'},
+      {name: 'Guides', description: 'Step-by-step guides and how-tos.'},
+      {name: 'Culture', description: 'Life at the company.'},
+    ];
+    const seen = [];
+    const Card = clientExports(function Card({category, index}) {
+      seen.push(category);
+      return (
+        <article>
+          {category.name} card {index}
+        </article>
+      );
+    });
+    const clientModuleMetadata = webpackMap[Card.$$id];
+
+    const children = [];
+    for (let i = 0; i < 60; i++) {
+      const text =
+        'filler text that accumulates serialized size toward the limit ' + i;
+      children.push(<i key={'f' + i}>{text}</i>);
+    }
+    for (let i = 0; i < 30; i++) {
+      children.push(
+        <Card key={'c' + i} category={categories[i % 3]} index={i} />,
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <section>{children}</section>,
+        webpackMap,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    if (!__DEV__) {
+      // The shared object is serialized once. (DEV may serialize props again
+      // into debug info rows.)
+      expect(serializedContent.match(/Deep dives from the teams/g).length).toBe(
+        1,
+      );
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream2, {
+      serverConsumerManifest: {
+        moduleMap: {
+          [clientModuleMetadata.id]: {
+            '*': clientModuleMetadata,
+          },
+        },
+        moduleLoading: webpackModuleLoading,
+      },
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    const html = await readResult(ssrStream);
+    expect(html).toContain('Engineering<!-- --> card <!-- -->0');
+    expect(html).toContain('Culture<!-- --> card <!-- -->29');
+
+    const engineering = seen.filter(
+      category => category.name === 'Engineering',
+    );
+    expect(engineering.length).toBe(10);
+    for (let i = 1; i < engineering.length; i++) {
+      expect(engineering[i]).toBe(engineering[0]);
+    }
+  });
+
   it('regression: should not leak serialized size', async () => {
     const MAX_ROW_SIZE = 3200;
     // This test case is a bit convoluted and may no longer trigger the original bug.
