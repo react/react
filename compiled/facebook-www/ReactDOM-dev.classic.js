@@ -1714,7 +1714,8 @@ __DEV__ &&
           }
           return void 0 === expected ? void 0 : null;
         }
-        node = node.getAttribute(name);
+        node =
+          "nonce" === name.toLowerCase() ? node.nonce : node.getAttribute(name);
         if ("" === node && !0 === expected) return !0;
         checkAttributeStringCoercion(expected, name);
         return node === "" + expected ? expected : node;
@@ -26062,9 +26063,12 @@ __DEV__ &&
                       if (
                         attributeName.hasAttribute(serverDifferences$jscomp$0)
                       )
-                        (attributeName = attributeName.getAttribute(
-                          serverDifferences$jscomp$0
-                        )),
+                        (attributeName =
+                          "nonce" === serverDifferences$jscomp$0.toLowerCase()
+                            ? attributeName.nonce
+                            : attributeName.getAttribute(
+                                serverDifferences$jscomp$0
+                              )),
                           checkAttributeStringCoercion(
                             i,
                             serverDifferences$jscomp$0
@@ -33361,11 +33365,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-classic-cec5a9bd-20260716" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-classic-58a6360f-20260716" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-classic-cec5a9bd-20260716\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-classic-58a6360f-20260716\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -33408,10 +33412,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-classic-cec5a9bd-20260716",
+          version: "19.3.0-www-classic-58a6360f-20260716",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-classic-cec5a9bd-20260716"
+          reconcilerVersion: "19.3.0-www-classic-58a6360f-20260716"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34033,7 +34037,7 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-classic-cec5a9bd-20260716";
+    exports.version = "19.3.0-www-classic-58a6360f-20260716";
     "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
       "function" ===
         typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
