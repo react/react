@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<2a497a17c914654153707846a2f67ce1>>
+ * @generated SignedSource<<2ac3e8344d277fac8f9f76b6d04aee50>>
  */
 
 /*
@@ -34,8 +34,6 @@ function formatProdErrorMessage(code) {
   );
 }
 var alwaysThrottleRetries = dynamicFlagsUntyped.alwaysThrottleRetries,
-  enableEffectEventMutationPhase =
-    dynamicFlagsUntyped.enableEffectEventMutationPhase,
   enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
   enableFragmentRefs = dynamicFlagsUntyped.enableFragmentRefs,
   enableFragmentRefsScrollIntoView =
@@ -49,7 +47,6 @@ function isValidContainer(node) {
     (1 !== node.nodeType && 9 !== node.nodeType && 11 !== node.nodeType)
   );
 }
-var BeforeMutationMask = 1024 | (enableEffectEventMutationPhase ? 0 : 4);
 function getNearestMountedFiber(fiber) {
   for (var node = fiber, nextNode = node; nextNode && !nextNode.alternate; )
     (node = nextNode),
@@ -10360,11 +10357,7 @@ function commitBeforeMutationEffects(root, firstChild, committedLanes) {
   _enabled = !1;
   committedLanes = (committedLanes & 335544064) === committedLanes;
   nextEffect = firstChild;
-  for (
-    firstChild = committedLanes ? 9270 : BeforeMutationMask;
-    null !== nextEffect;
-
-  ) {
+  for (firstChild = committedLanes ? 9270 : 1024; null !== nextEffect; ) {
     root = nextEffect;
     if (
       committedLanes &&
@@ -10418,20 +10411,6 @@ function commitBeforeMutationEffects_complete(
       case 0:
       case 11:
       case 15:
-        if (
-          !enableEffectEventMutationPhase &&
-          0 !== (flags & 4) &&
-          ((current = fiber.updateQueue),
-          (current = null !== current ? current.events : null),
-          null !== current)
-        )
-          for (
-            isViewTransitionEligible = 0;
-            isViewTransitionEligible < current.length;
-            isViewTransitionEligible++
-          )
-            (flags = current[isViewTransitionEligible]),
-              (flags.ref.impl = flags.nextImpl);
         break;
       case 1:
         if (0 !== (flags & 1024) && null !== current) {
@@ -11179,7 +11158,6 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
     case 14:
     case 15:
       if (
-        enableEffectEventMutationPhase &&
         flags & 4 &&
         ((current = finishedWork.updateQueue),
         (current = null !== current ? current.events : null),
@@ -13601,11 +13579,8 @@ function commitRoot(
       }))
     : ((root.callbackNode = null), (root.callbackPriority = 0));
   shouldStartViewTransition = !1;
-  spawnedLane = 0 !== (finishedWork.flags & (BeforeMutationMask | 13878));
-  if (
-    0 !== (finishedWork.subtreeFlags & (BeforeMutationMask | 13878)) ||
-    spawnedLane
-  ) {
+  spawnedLane = 0 !== (finishedWork.flags & 13878);
+  if (0 !== (finishedWork.subtreeFlags & 13878) || spawnedLane) {
     spawnedLane = ReactSharedInternals.T;
     ReactSharedInternals.T = null;
     updatedLanes = ReactDOMSharedInternals.p;
@@ -14473,20 +14448,20 @@ function debounceScrollEnd(targetInst, nativeEvent, nativeEventTarget) {
     (nativeEventTarget[internalScrollTimer] = targetInst));
 }
 for (
-  var i$jscomp$inline_1716 = 0;
-  i$jscomp$inline_1716 < simpleEventPluginEvents.length;
-  i$jscomp$inline_1716++
+  var i$jscomp$inline_1710 = 0;
+  i$jscomp$inline_1710 < simpleEventPluginEvents.length;
+  i$jscomp$inline_1710++
 ) {
-  var eventName$jscomp$inline_1717 =
-      simpleEventPluginEvents[i$jscomp$inline_1716],
-    domEventName$jscomp$inline_1718 =
-      eventName$jscomp$inline_1717.toLowerCase(),
-    capitalizedEvent$jscomp$inline_1719 =
-      eventName$jscomp$inline_1717[0].toUpperCase() +
-      eventName$jscomp$inline_1717.slice(1);
+  var eventName$jscomp$inline_1711 =
+      simpleEventPluginEvents[i$jscomp$inline_1710],
+    domEventName$jscomp$inline_1712 =
+      eventName$jscomp$inline_1711.toLowerCase(),
+    capitalizedEvent$jscomp$inline_1713 =
+      eventName$jscomp$inline_1711[0].toUpperCase() +
+      eventName$jscomp$inline_1711.slice(1);
   registerSimpleEvent(
-    domEventName$jscomp$inline_1718,
-    "on" + capitalizedEvent$jscomp$inline_1719
+    domEventName$jscomp$inline_1712,
+    "on" + capitalizedEvent$jscomp$inline_1713
   );
 }
 registerSimpleEvent(ANIMATION_END, "onAnimationEnd");
@@ -19243,16 +19218,16 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
     0 === i && attemptExplicitHydrationTarget(target);
   }
 };
-var isomorphicReactPackageVersion$jscomp$inline_2135 = React.version;
+var isomorphicReactPackageVersion$jscomp$inline_2129 = React.version;
 if (
-  "19.3.0-native-fb-b740af25-20260715" !==
-  isomorphicReactPackageVersion$jscomp$inline_2135
+  "19.3.0-native-fb-cec5a9bd-20260716" !==
+  isomorphicReactPackageVersion$jscomp$inline_2129
 )
   throw Error(
     formatProdErrorMessage(
       527,
-      isomorphicReactPackageVersion$jscomp$inline_2135,
-      "19.3.0-native-fb-b740af25-20260715"
+      isomorphicReactPackageVersion$jscomp$inline_2129,
+      "19.3.0-native-fb-cec5a9bd-20260716"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -19272,24 +19247,24 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
     null === componentOrElement ? null : componentOrElement.stateNode;
   return componentOrElement;
 };
-var internals$jscomp$inline_2731 = {
+var internals$jscomp$inline_2725 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-b740af25-20260715",
+  version: "19.3.0-native-fb-cec5a9bd-20260716",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-b740af25-20260715"
+  reconcilerVersion: "19.3.0-native-fb-cec5a9bd-20260716"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_2732 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_2726 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_2732.isDisabled &&
-    hook$jscomp$inline_2732.supportsFiber
+    !hook$jscomp$inline_2726.isDisabled &&
+    hook$jscomp$inline_2726.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_2732.inject(
-        internals$jscomp$inline_2731
+      (rendererID = hook$jscomp$inline_2726.inject(
+        internals$jscomp$inline_2725
       )),
-        (injectedHook = hook$jscomp$inline_2732);
+        (injectedHook = hook$jscomp$inline_2726);
     } catch (err) {}
 }
 exports.createRoot = function (container, options) {
@@ -19384,4 +19359,4 @@ exports.hydrateRoot = function (container, initialChildren, options) {
   listenToAllSupportedEvents(container);
   return new ReactDOMHydrationRoot(initialChildren);
 };
-exports.version = "19.3.0-native-fb-b740af25-20260715";
+exports.version = "19.3.0-native-fb-cec5a9bd-20260716";

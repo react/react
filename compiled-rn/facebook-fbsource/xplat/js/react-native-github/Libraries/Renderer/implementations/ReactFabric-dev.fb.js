@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<18f39656ee78d2ef20f4560203c34821>>
+ * @generated SignedSource<<b308233dcdef8749586b14f325dcd308>>
  */
 
 "use strict";
@@ -12308,11 +12308,7 @@ __DEV__ &&
     function commitBeforeMutationEffects(root, firstChild, committedLanes) {
       root = (committedLanes & 335544064) === committedLanes;
       nextEffect = firstChild;
-      for (
-        firstChild = root ? 9270 : BeforeMutationMask;
-        null !== nextEffect;
-
-      ) {
+      for (firstChild = root ? 9270 : 1024; null !== nextEffect; ) {
         committedLanes = nextEffect;
         if (root) {
           var deletions = committedLanes.deletions;
@@ -12365,23 +12361,6 @@ __DEV__ &&
           case 0:
           case 11:
           case 15:
-            if (
-              !enableEffectEventMutationPhase &&
-              0 !== (flags & 4) &&
-              ((isViewTransitionEligible = finishedWork.updateQueue),
-              (isViewTransitionEligible =
-                null !== isViewTransitionEligible
-                  ? isViewTransitionEligible.events
-                  : null),
-              null !== isViewTransitionEligible)
-            )
-              for (
-                finishedWork = 0;
-                finishedWork < isViewTransitionEligible.length;
-                finishedWork++
-              )
-                (current = isViewTransitionEligible[finishedWork]),
-                  (current.ref.impl = current.nextImpl);
             break;
           case 1:
             0 !== (flags & 1024) &&
@@ -12984,7 +12963,6 @@ __DEV__ &&
         case 14:
         case 15:
           if (
-            enableEffectEventMutationPhase &&
             flags & 4 &&
             ((current = finishedWork.updateQueue),
             (current = null !== current ? current.events : null),
@@ -16320,12 +16298,8 @@ __DEV__ &&
           workInProgressUpdateTask
         );
       shouldStartViewTransition = !1;
-      suspendedCommitReason =
-        0 !== (finishedWork.flags & (BeforeMutationMask | 13878));
-      if (
-        0 !== (finishedWork.subtreeFlags & (BeforeMutationMask | 13878)) ||
-        suspendedCommitReason
-      ) {
+      suspendedCommitReason = 0 !== (finishedWork.flags & 13878);
+      if (0 !== (finishedWork.subtreeFlags & 13878) || suspendedCommitReason) {
         suspendedCommitReason = ReactSharedInternals.T;
         ReactSharedInternals.T = null;
         completedRenderEndTime = currentUpdatePriority;
@@ -18234,8 +18208,6 @@ __DEV__ &&
       ReactSharedInternals =
         React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
       alwaysThrottleRetries = dynamicFlagsUntyped.alwaysThrottleRetries,
-      enableEffectEventMutationPhase =
-        dynamicFlagsUntyped.enableEffectEventMutationPhase,
       enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
       passChildrenWhenCloningPersistedNodes =
         dynamicFlagsUntyped.passChildrenWhenCloningPersistedNodes,
@@ -18919,7 +18891,6 @@ __DEV__ &&
     var isInsideEventHandler = !1,
       eventQueue = null,
       _enableNativeEventTargetEventDispatching = null,
-      BeforeMutationMask = 1024 | (enableEffectEventMutationPhase ? 0 : 4),
       scheduleCallback$3 = Scheduler.unstable_scheduleCallback,
       cancelCallback$1 = Scheduler.unstable_cancelCallback,
       shouldYield = Scheduler.unstable_shouldYield,
@@ -21270,10 +21241,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-b740af25-20260715",
+        version: "19.3.0-native-fb-cec5a9bd-20260716",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-b740af25-20260715"
+        reconcilerVersion: "19.3.0-native-fb-cec5a9bd-20260716"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);

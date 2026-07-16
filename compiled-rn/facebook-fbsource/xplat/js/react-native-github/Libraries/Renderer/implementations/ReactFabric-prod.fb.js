@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<a865f75f29725d7c7d186b265cf94cbb>>
+ * @generated SignedSource<<cd6bc5b7278a2cdcf63b68f5f7a98f5e>>
  */
 
 "use strict";
@@ -20,8 +20,6 @@ var ReactNativePrivateInterface = require("react-native/Libraries/ReactPrivate/R
   ReactSharedInternals =
     React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
   alwaysThrottleRetries = dynamicFlagsUntyped.alwaysThrottleRetries,
-  enableEffectEventMutationPhase =
-    dynamicFlagsUntyped.enableEffectEventMutationPhase,
   enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
   passChildrenWhenCloningPersistedNodes =
     dynamicFlagsUntyped.passChildrenWhenCloningPersistedNodes,
@@ -1452,8 +1450,7 @@ function dispatchEvent(target, topLevelType, nativeEventParam) {
     }
   });
 }
-var BeforeMutationMask = 1024 | (enableEffectEventMutationPhase ? 0 : 4),
-  scheduleCallback$3 = Scheduler.unstable_scheduleCallback,
+var scheduleCallback$3 = Scheduler.unstable_scheduleCallback,
   cancelCallback$1 = Scheduler.unstable_cancelCallback,
   shouldYield = Scheduler.unstable_shouldYield,
   requestPaint = Scheduler.unstable_requestPaint,
@@ -8834,7 +8831,7 @@ var offscreenSubtreeIsHidden = !1,
 function commitBeforeMutationEffects(root, firstChild, committedLanes) {
   root = (committedLanes & 335544064) === committedLanes;
   nextEffect = firstChild;
-  for (firstChild = root ? 9270 : BeforeMutationMask; null !== nextEffect; ) {
+  for (firstChild = root ? 9270 : 1024; null !== nextEffect; ) {
     committedLanes = nextEffect;
     if (root) {
       var deletions = committedLanes.deletions;
@@ -8883,20 +8880,6 @@ function commitBeforeMutationEffects_complete(
       case 0:
       case 11:
       case 15:
-        if (
-          !enableEffectEventMutationPhase &&
-          0 !== (flags & 4) &&
-          ((current = fiber.updateQueue),
-          (current = null !== current ? current.events : null),
-          null !== current)
-        )
-          for (
-            isViewTransitionEligible = 0;
-            isViewTransitionEligible < current.length;
-            isViewTransitionEligible++
-          )
-            (flags = current[isViewTransitionEligible]),
-              (flags.ref.impl = flags.nextImpl);
         break;
       case 1:
         if (0 !== (flags & 1024) && null !== current) {
@@ -9305,7 +9288,6 @@ function commitMutationEffectsOnFiber(finishedWork, root, lanes) {
     case 14:
     case 15:
       if (
-        enableEffectEventMutationPhase &&
         flags & 4 &&
         ((current = finishedWork.updateQueue),
         (current = null !== current ? current.events : null),
@@ -11223,11 +11205,8 @@ function commitRoot(
       }))
     : ((root.callbackNode = null), (root.callbackPriority = 0));
   shouldStartViewTransition = !1;
-  spawnedLane = 0 !== (finishedWork.flags & (BeforeMutationMask | 13878));
-  if (
-    0 !== (finishedWork.subtreeFlags & (BeforeMutationMask | 13878)) ||
-    spawnedLane
-  ) {
+  spawnedLane = 0 !== (finishedWork.flags & 13878);
+  if (0 !== (finishedWork.subtreeFlags & 13878) || spawnedLane) {
     spawnedLane = ReactSharedInternals.T;
     ReactSharedInternals.T = null;
     updatedLanes = currentUpdatePriority;
@@ -12379,26 +12358,26 @@ batchedUpdatesImpl = function (fn, a) {
   }
 };
 var roots = new Map(),
-  internals$jscomp$inline_1363 = {
+  internals$jscomp$inline_1357 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-b740af25-20260715",
+    version: "19.3.0-native-fb-cec5a9bd-20260716",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-b740af25-20260715"
+    reconcilerVersion: "19.3.0-native-fb-cec5a9bd-20260716"
   };
 null !== extraDevToolsConfig &&
-  (internals$jscomp$inline_1363.rendererConfig = extraDevToolsConfig);
+  (internals$jscomp$inline_1357.rendererConfig = extraDevToolsConfig);
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_1724 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_1718 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_1724.isDisabled &&
-    hook$jscomp$inline_1724.supportsFiber
+    !hook$jscomp$inline_1718.isDisabled &&
+    hook$jscomp$inline_1718.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_1724.inject(
-        internals$jscomp$inline_1363
+      (rendererID = hook$jscomp$inline_1718.inject(
+        internals$jscomp$inline_1357
       )),
-        (injectedHook = hook$jscomp$inline_1724);
+        (injectedHook = hook$jscomp$inline_1718);
     } catch (err) {}
 }
 exports.createPortal = function (children, containerTag) {
