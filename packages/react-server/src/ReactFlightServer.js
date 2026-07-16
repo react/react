@@ -3759,7 +3759,7 @@ function renderModelDestructive(
   if (typeof value === 'object') {
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        let elementReference: null | DeferredReference = null;
+        let elementReference: null | string | DeferredReference = null;
         const writtenObjects = request.writtenObjects;
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
@@ -3772,6 +3772,10 @@ function renderModelDestructive(
               // This is the ID we're currently emitting so we need to write it
               // once but if we discover it again, we refer to it by id.
               modelRoot = null;
+              // We're rendering the content this reference resolves to, so
+              // the result can be referred to by the same reference and
+              // descendants can chain off it for dedupe.
+              elementReference = existingReference;
             } else {
               // We've already emitted this as an outlined object, so we can refer to that by its
               // existing ID. TODO: We should use a lazy reference since, unlike plain objects,
