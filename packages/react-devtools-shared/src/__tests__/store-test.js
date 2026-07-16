@@ -9,6 +9,15 @@
 
 import semver from 'semver';
 
+import {
+  SUSPENSE_TREE_OPERATION_ADD,
+  TREE_OPERATION_ADD,
+  TREE_OPERATION_REMOVE,
+} from 'react-devtools-shared/src/constants';
+import {
+  ElementTypeFunction,
+  ElementTypeRoot,
+} from 'react-devtools-shared/src/frontend/types';
 import {getVersionedRenderImplementation} from './utils';
 import {ReactVersion} from '../../../../ReactVersions';
 
@@ -95,6 +104,69 @@ describe('Store', () => {
   });
 
   const {render, unmount, createContainer} = getVersionedRenderImplementation();
+
+  // @reactVersion >= 18.0
+  it('should ignore add operations for parents removed earlier in the same bridge update', () => {
+    store.onBridgeOperations([
+      1, // renderer ID
+      1, // root ID
+      7, // string table size
+      6,
+      80,
+      97,
+      114,
+      101,
+      110,
+      116,
+      TREE_OPERATION_ADD,
+      1,
+      ElementTypeRoot,
+      0, // StrictMode compliant?
+      0, // Profiling flags
+      0, // StrictMode supported?
+      0, // Owner metadata?
+      SUSPENSE_TREE_OPERATION_ADD,
+      1,
+      0,
+      0,
+      0,
+      -1,
+      TREE_OPERATION_ADD,
+      2,
+      ElementTypeFunction,
+      1,
+      0,
+      1,
+      0,
+      0,
+    ]);
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Parent>
+    `);
+
+    expect(() =>
+      store.onBridgeOperations([
+        1, // renderer ID
+        1, // root ID
+        0, // string table size
+        TREE_OPERATION_REMOVE,
+        1,
+        2,
+        TREE_OPERATION_ADD,
+        3,
+        ElementTypeFunction,
+        2,
+        0,
+        0,
+        0,
+        0,
+      ]),
+    ).not.toThrow();
+
+    expect(store).toMatchInlineSnapshot(`[root]`);
+  });
 
   // @reactVersion >= 18.0
   it('should not allow a root node to be collapsed', async () => {
