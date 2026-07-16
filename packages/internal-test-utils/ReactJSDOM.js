@@ -11,10 +11,12 @@ module.exports.JSDOM = function JSDOM() {
     result = JSDOM.apply(undefined, arguments);
   }
 
-  require('./ReactJSDOMUtils').setupDocumentReadyState(
-    result.window.document,
-    result.window.Event,
-  );
+  const {
+    setupDocumentReadyState,
+    setupCSPNonceHiding,
+  } = require('./ReactJSDOMUtils');
+  setupDocumentReadyState(result.window.document, result.window.Event);
+  setupCSPNonceHiding(result.window.Element);
 
   return result;
 };

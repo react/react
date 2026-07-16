@@ -3,6 +3,7 @@
 const {TestEnvironment: JSDOMEnvironment} = require('jest-environment-jsdom');
 const {
   setupDocumentReadyState,
+  setupCSPNonceHiding,
 } = require('internal-test-utils/ReactJSDOMUtils');
 
 /**
@@ -13,6 +14,7 @@ class ReactJSDOMEnvironment extends JSDOMEnvironment {
     super(config, context);
 
     setupDocumentReadyState(this.global.document, this.global.Event);
+    setupCSPNonceHiding(this.global.Element);
   }
 }
 

@@ -14,6 +14,7 @@ let ReactDOMClient;
 let ReactDOMServer;
 let act;
 
+const {setHideNonceAttribute} = require('internal-test-utils/ReactJSDOMUtils');
 const util = require('util');
 const realConsoleError = console.error;
 
@@ -27,6 +28,7 @@ describe('ReactDOMServerHydration', () => {
 
   beforeEach(() => {
     jest.resetModules();
+    setHideNonceAttribute(true);
     React = require('react');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
@@ -47,6 +49,7 @@ describe('ReactDOMServerHydration', () => {
   });
 
   afterEach(() => {
+    setHideNonceAttribute(false);
     window.removeEventListener('error', errorHandler);
     document.body.removeChild(container);
     console.error = realConsoleError;
@@ -524,6 +527,44 @@ describe('ReactDOMServerHydration', () => {
             in App (at **)",
         ]
       `);
+    });
+
+    // @gate __DEV__
+    it('does not warn when elements have user-provided nonce attribute that matches but getAttribute hides it', () => {
+      function App() {
+        return (
+          <div>
+            <script nonce="r4nd0m" src="https://example.com/script.js" />
+            <style nonce="r4nd0m">{`body { background-color: red; }`}</style>
+            <link
+              rel="stylesheet"
+              nonce="r4nd0m"
+              href="https://example.com/style.css"
+            />
+            <img nonce="r4nd0m" src="https://example.com/image.png" />
+            <video nonce="r4nd0m" src="https://example.com/video.mp4" />
+            <audio nonce="r4nd0m" src="https://example.com/audio.mp3" />
+            <iframe nonce="r4nd0m" src="https://example.com/iframe.html" />
+            <form nonce="r4nd0m">
+              <input type="text" nonce="r4nd0m" />
+            </form>
+          </div>
+        );
+      }
+
+      const htmlString = ReactDOMServer.renderToString(<App />);
+      container.innerHTML = htmlString;
+
+      const script = container.querySelector('script');
+      // With CSP enabled, JSDOM simulates browser nonce hiding:
+      // getAttribute("nonce") === "" while .nonce remains accessible.
+      expect(script.getAttribute('nonce')).toBe('');
+      expect(script.nonce).toBe('r4nd0m');
+
+      act(() => {
+        ReactDOMClient.hydrateRoot(container, <App />);
+      });
+      expect(formatConsoleErrors()).toEqual([]);
     });
   });
 
@@ -1125,7 +1166,7 @@ describe('ReactDOMServerHydration', () => {
   describe('special nodes', () => {
     describe('Suspense', () => {
       function Never() {
-        throw new Promise(resolve => {});
+        throw new Promise(_ => {});
       }
 
       // @gate __DEV__
