@@ -183,9 +183,23 @@ function requireAsyncModule(id: string): null | Thenable<any> {
 // thenables directly.
 const instrumentedChunks: WeakSet<Thenable<any>> = new WeakSet();
 const loadedChunks: WeakSet<Thenable<any>> = new WeakSet();
+// Chunk filenames that have finished loading. A filename identifies the
+// chunk globally, so once it has loaded there's no need to go back to the
+// loader (which re-parses the URL) just to learn that again.
+const loadedChunkFilenames: Set<string> = new Set();
 
 function ignoreReject() {
   // We rely on rejected promises to be handled by another listener.
+}
+
+function createLoadedChunkRecord(
+  thenable: Thenable<any>,
+  chunkFilename: string,
+): () => void {
+  return function () {
+    loadedChunks.add(thenable);
+    loadedChunkFilenames.add(chunkFilename);
+  };
 }
 // Start preloading the modules since we might need them soon.
 // This function doesn't suspend.
@@ -196,15 +210,21 @@ export function preloadModule<T>(
   const promises: Promise<any>[] = [];
   for (let i = 0; i < chunks.length; i++) {
     const chunkFilename = chunks[i];
+    if (!__DEV__ && loadedChunkFilenames.has(chunkFilename)) {
+      // In DEV the bundler can invalidate a loaded chunk, so always ask the
+      // loader again there.
+      continue;
+    }
     const thenable = loadChunk(chunkFilename);
     if (!loadedChunks.has(thenable)) {
       promises.push(thenable);
     }
 
     if (!instrumentedChunks.has(thenable)) {
-      // $FlowFixMe[method-unbinding]
-      const resolve = loadedChunks.add.bind(loadedChunks, thenable);
-      thenable.then(resolve, ignoreReject);
+      thenable.then(
+        createLoadedChunkRecord(thenable, chunkFilename),
+        ignoreReject,
+      );
       instrumentedChunks.add(thenable);
     }
   }

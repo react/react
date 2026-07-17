@@ -42,7 +42,11 @@ export function flushBuffered(destination: Destination) {
 // internal view buffer. This must be at least half of Node's internal Buffer
 // pool size (8192) to avoid corrupting the pool when using
 // renderToReadableStream, which uses a byte stream that detaches ArrayBuffers.
-const VIEW_SIZE = 4096;
+// A larger view batches more small writes into one destination write; a
+// document-sized render fills views tens of times per request either way,
+// so the view is sized to cut the per-fill overhead without holding more
+// than a few packets of memory per connection.
+const VIEW_SIZE = 16384;
 let currentView = null;
 let writtenBytes = 0;
 let destinationHasCapacity = true;

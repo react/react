@@ -2175,11 +2175,13 @@ describe('ReactFlightDOMNode', () => {
           endTime: staticEndTime,
         },
       );
-      // The final write contains the completed model. The preceding writes
-      // contain the debug rows produced while rendering it.
-      for (let i = 0; i < chunks.length - 1; i++) {
-        contentStream.push(chunks[i]);
-      }
+      // The stream ends with the completed model row. Withhold it, so the
+      // stream can error before the model completes, while delivering the
+      // debug rows produced while rendering it — regardless of how the
+      // server batched its writes.
+      const combined = Buffer.concat(chunks);
+      const modelRowStart = combined.lastIndexOf(0x0a, combined.length - 2) + 1;
+      contentStream.push(combined.subarray(0, modelRowStart));
 
       const decoded = await response;
 
