@@ -2446,6 +2446,83 @@ describe('ReactFlightDOMNode', () => {
     expect(Buffer.isBuffer(result.font)).toBe(false);
     expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
   });
+  it('parses mixed string and binary chunks split at every possible offset', async () => {
+    // A transport may deliver any prefix of the wire bytes as decoded text
+    // and the rest as bytes (or the reverse); rows can straddle the switch
+    // in either direction. Only prefixes that are valid UTF-8 can exist as
+    // strings, so those are the splits a real transport can produce.
+    const bytes = new Uint8Array(64);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = (i * 7 + 200) % 256;
+    }
+    const testString = 'text \u2713\ud83d\ude03 '.repeat(80);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        before: testString,
+        buffer: bytes,
+        after: testString,
+      }),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const wireChunks = [];
+    readable.on('data', chunk => {
+      // The object-mode stream passes through whatever the server wrote:
+      // strings for text and views for binary rows.
+      wireChunks.push(Buffer.from(chunk));
+    });
+    stream.pipe(readable);
+    await new Promise(resolve => readable.on('end', resolve));
+    const wireBytes = Buffer.concat(wireChunks);
+    const decoder = new TextDecoder('utf-8', {fatal: true});
+
+    for (let split = 1; split < wireBytes.length; split += 7) {
+      const head = wireBytes.subarray(0, split);
+      const tail = wireBytes.subarray(split);
+      // string head + binary tail, when the head is decodable text.
+      let headText = null;
+      try {
+        headText = decoder.decode(head);
+      } catch (x) {
+        // An undecodable prefix can't exist as a string chunk.
+      }
+      if (headText !== null) {
+        const replay = new Stream.PassThrough(streamOptions);
+        const parsed = ReactServerDOMClient.createFromNodeStream(replay, {
+          moduleMap: {},
+          moduleLoading: webpackModuleLoading,
+        });
+        replay.write(headText);
+        replay.write(tail);
+        replay.end();
+        const result = await parsed;
+        expect(result.before).toBe(testString);
+        expect(result.after).toBe(testString);
+        expect(Array.from(result.buffer)).toEqual(Array.from(bytes));
+      }
+      // binary head + string tail, when the tail is decodable text.
+      let tailText = null;
+      try {
+        tailText = decoder.decode(tail);
+      } catch (x) {
+        // An undecodable suffix can't exist as a string chunk.
+      }
+      if (tailText !== null) {
+        const replay = new Stream.PassThrough(streamOptions);
+        const parsed = ReactServerDOMClient.createFromNodeStream(replay, {
+          moduleMap: {},
+          moduleLoading: webpackModuleLoading,
+        });
+        replay.write(head);
+        replay.write(tailText);
+        replay.end();
+        const result = await parsed;
+        expect(result.before).toBe(testString);
+        expect(result.after).toBe(testString);
+        expect(Array.from(result.buffer)).toEqual(Array.from(bytes));
+      }
+    }
+  });
+
   it('parses string chunks split at every possible offset', async () => {
     // A string transport may deliver the wire text in chunks of any shape:
     // merged rows, rows split mid-way, length-framed bodies split mid-way,
