@@ -129,6 +129,76 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`[root]`);
   });
 
+  it('throws when a transition timeline is requested during initial paint', () => {
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+
+    expect(() =>
+      store.getSuspendableDocumentOrderSuspenseTransition(false, 1),
+    ).toThrow(
+      'Cannot get a transition timeline during the initial paint. This is a bug in React DevTools.',
+    );
+    expect(errorListener).toHaveBeenCalledTimes(1);
+
+    store.removeListener('error', errorListener);
+  });
+
+  // @reactVersion >= 18.0
+  it('throws before removing a node that is not a child of its parent', () => {
+    function FirstChild() {
+      return null;
+    }
+    function SecondChild() {
+      return null;
+    }
+    function Parent({showFirstChild}) {
+      return (
+        <>
+          {showFirstChild && <FirstChild />}
+          <SecondChild />
+        </>
+      );
+    }
+
+    act(() => render(<Parent showFirstChild={true} />));
+
+    const parent = store.getElementAtIndex(0);
+    expect(parent.displayName).toBe('Parent');
+    const firstChildIndex = parent.children.findIndex(id => {
+      const child = store.getElementByID(id);
+      return child !== null && child.displayName === 'FirstChild';
+    });
+    expect(firstChildIndex).not.toBe(-1);
+    const firstChildID = parent.children[firstChildIndex];
+
+    // Corrupt only the frontend relationship. The removal operation below is
+    // still produced canonically by rendering React.
+    parent.children.splice(firstChildIndex, 1);
+
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+    let caughtError = null;
+    try {
+      act(() => render(<Parent showFirstChild={false} />));
+    } catch (error) {
+      caughtError = error;
+    } finally {
+      // The test Bridge invokes listeners synchronously, so discard the batch
+      // whose Store listener intentionally threw.
+      bridge._messageQueue.length = 0;
+    }
+
+    const expectedMessage =
+      `Cannot remove node "${firstChildID}" from parent "${parent.id}" ` +
+      `because it is not a child of the parent.`;
+    expect(caughtError).toMatchObject({message: expectedMessage});
+    expect(errorListener).toHaveBeenCalledWith(caughtError);
+    expect(store.containsElement(firstChildID)).toBe(true);
+
+    parent.children.splice(firstChildIndex, 0, firstChildID);
+    store.removeListener('error', errorListener);
+  });
+
   // This test is not the same cause as what's reported on GitHub,
   // but the resulting behavior (owner mounting after descendant) is the same.
   // Thec ase below is admittedly contrived and relies on side effects.
