@@ -6563,7 +6563,7 @@ function retryTask(request: Request, task: Task): void {
       task.implicitSlot = false;
       // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
       const json: string = stringify(resolved);
-      emitModelChunk(request, task.id, json);
+      emitModelChunk(request, task.id, json, resolved, null);
       task.status = COMPLETED;
       request.abortableTasks.delete(task);
       callOnAllReadyIfReady(request);
