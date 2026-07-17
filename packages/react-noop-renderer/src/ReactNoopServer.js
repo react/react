@@ -297,6 +297,28 @@ const ReactNoopServer = ReactFizzServer({
     return true;
   },
 
+  writeInlineDataInit(
+    destination: Destination,
+    renderState: RenderState,
+  ): boolean {
+    return true;
+  },
+
+  writeInlineDataSegment(
+    destination: Destination,
+    renderState: RenderState,
+    segment: string | Uint8Array,
+  ): boolean {
+    return true;
+  },
+
+  writeInlineDataClose(
+    destination: Destination,
+    renderState: RenderState,
+  ): boolean {
+    return true;
+  },
+
   writeCompletedBoundaryInstruction(
     destination: Destination,
     renderState: RenderState,
