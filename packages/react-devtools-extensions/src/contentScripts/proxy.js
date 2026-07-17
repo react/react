@@ -224,6 +224,20 @@ let evalRequestId = 0;
 const evalRequestCallbacks = new Map<number, Function>();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.command) {
+    window.postMessage(
+      {
+        source: 'react-devtools-content-script',
+        payload: {
+          type: 'command',
+          command: msg.command,
+        },
+      },
+      '*',
+    );
+    return;
+  }
+
   switch (msg?.source) {
     case 'devtools-page-eval': {
       const {scriptId, args} = msg.payload;
