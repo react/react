@@ -4920,7 +4920,10 @@ function emitImportChunk(
   } else {
     request.completedImportChunks.push(processedChunk);
   }
-  deliverRow(request, id, 'I', json, 1, debug);
+  // The metadata object is delivered as-is; it is manifest data that never
+  // contains Flight encodings, so the byte path parses the same shape back
+  // out of the text.
+  deliverRow(request, id, 'I', clientReferenceMetadata, 1, debug);
 }
 
 function emitHintChunk<Code: HintCode>(

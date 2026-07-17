@@ -3301,12 +3301,19 @@ function resolveModule(
   model: UninitializedModel,
   streamState: StreamState,
 ): void {
+  resolveModuleMetadata(response, id, parseModel(response, model), streamState);
+}
+
+// Like resolveModule, but for metadata that arrived in object form from an
+// in-process render: the same object the row was stringified from.
+function resolveModuleMetadata(
+  response: Response,
+  id: number,
+  clientReferenceMetadata: ClientReferenceMetadata,
+  streamState: StreamState,
+): void {
   const chunks = response._chunks;
   const chunk = chunks.get(id);
-  const clientReferenceMetadata: ClientReferenceMetadata = parseModel(
-    response,
-    model,
-  );
   const clientReference = resolveClientReference<$FlowFixMe>(
     response._bundlerConfig,
     clientReferenceMetadata,
@@ -5740,6 +5747,12 @@ export function processModelRow(
     case 'T': {
       // Text rows skip the wire's byte-length framing entirely.
       resolveText(response, id, payload as any, streamState);
+      return;
+    }
+    case 'I': {
+      // Import metadata arrives as the object the row was stringified
+      // from, so there's nothing to parse.
+      resolveModuleMetadata(response, id, payload as any, streamState);
       return;
     }
     case 'A': {
