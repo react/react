@@ -4576,8 +4576,11 @@ const inlineDataNull = stringToPrecomputedChunk('null');
 
 function binaryToBase64(chunk: Uint8Array): string {
   if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {
-    return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
-      .toString('base64');
+    return Buffer.from(
+      chunk.buffer,
+      chunk.byteOffset,
+      chunk.byteLength,
+    ).toString('base64');
   }
   let binary = '';
   for (let i = 0; i < chunk.length; i++) {

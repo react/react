@@ -2490,5 +2490,4 @@ describe('ReactFlightDOMNode', () => {
       expect(result.short).toBe(shortString);
     }
   });
-
 });
