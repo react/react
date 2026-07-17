@@ -1023,6 +1023,10 @@ export default class Agent extends EventEmitter<{
     this._bridge.send('profilingStatus', this._isProfiling);
   };
 
+  startInspectingNative: () => void = () => {
+    this.emit('startInspectingNative');
+  };
+
   stopInspectingNative: (selected: boolean) => void = selected => {
     this._bridge.send('stopInspectingHost', selected);
   };

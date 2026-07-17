@@ -227,6 +227,20 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
 });
 
+chrome.commands.onCommand.addListener(command => {
+  switch (command) {
+    case 'inspect_node':
+      chrome.tabs.query({active: true, currentWindow: true}, tabs => {
+        if (tabs[0]?.id != null) {
+          chrome.tabs.sendMessage(tabs[0].id, {command: 'inspect_node'});
+        }
+      });
+      return;
+    default:
+      return;
+  }
+});
+
 chrome.tabs.onActivated.addListener(({tabId: activeTabId}) => {
   for (const registeredTabId in ports) {
     if (
