@@ -16,6 +16,12 @@ import setupNativeStyleEditor from 'react-devtools-shared/src/backend/NativeStyl
 
 import {COMPACT_VERSION_NAME} from './utils';
 
+// Capture original window methods before app scripts can override them.
+const _window = {
+  addEventListener: window.addEventListener.bind(window),
+  removeEventListener: window.removeEventListener.bind(window),
+};
+
 setup(window.__REACT_DEVTOOLS_GLOBAL_HOOK__);
 
 function setup(hook: ?DevToolsHook) {
@@ -31,4 +37,6 @@ function setup(hook: ?DevToolsHook) {
   });
 
   hook.emit('devtools-backend-installed', COMPACT_VERSION_NAME);
+
+  hook.__devtoolsOriginalWindow = _window;
 }
