@@ -2446,4 +2446,49 @@ describe('ReactFlightDOMNode', () => {
     expect(Buffer.isBuffer(result.font)).toBe(false);
     expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
   });
+  it('parses string chunks split at every possible offset', async () => {
+    // A string transport may deliver the wire text in chunks of any shape:
+    // merged rows, rows split mid-way, length-framed bodies split mid-way,
+    // even mid-surrogate-pair. Render once, capture the full wire text, then
+    // replay it re-chunked with a split at every offset.
+    const testString = '"\n\t🙃✓'.repeat(300);
+    const shortString = 'row ✓';
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        text: testString,
+        short: shortString,
+      }),
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    let wireText = '';
+    readable.setEncoding('utf8');
+    readable.on('data', chunk => {
+      wireText += chunk;
+    });
+    stream.pipe(readable);
+    await new Promise(resolve => readable.on('end', resolve));
+
+    // Splitting inside a surrogate pair is the transport's bug, not the
+    // parser's; skip those offsets like a correct transport would.
+    for (let split = 1; split < wireText.length; split++) {
+      if (
+        wireText.charCodeAt(split) >= 0xdc00 &&
+        wireText.charCodeAt(split) <= 0xdfff
+      ) {
+        continue;
+      }
+      const replay = new Stream.PassThrough(streamOptions);
+      const parsed = ReactServerDOMClient.createFromNodeStream(replay, {
+        moduleMap: {},
+        moduleLoading: webpackModuleLoading,
+      });
+      replay.write(wireText.slice(0, split));
+      replay.write(wireText.slice(split));
+      replay.end();
+      const result = await parsed;
+      expect(result.text).toBe(testString);
+      expect(result.short).toBe(shortString);
+    }
+  });
+
 });
