@@ -3169,6 +3169,53 @@ function resolveModel(
   }
 }
 
+// For a row that arrived in object form and provably contains no Flight
+// encodings (the producer's copy-on-write resolve walk returned the model
+// unchanged): there's nothing to parse or revive, so the chunk can be
+// initialized with the value directly.
+function resolveInitializedModel(
+  response: Response,
+  id: number,
+  value: Object,
+  streamState: StreamState,
+): void {
+  const chunks = response._chunks;
+  const chunk = chunks.get(id);
+  if (!chunk) {
+    // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
+    const newChunk: InitializedChunk<any> = new ReactPromise(
+      INITIALIZED,
+      value,
+      null,
+    );
+    if (__DEV__) {
+      resolveChunkDebugInfo(response, streamState, newChunk);
+    }
+    chunks.set(id, newChunk);
+    return;
+  }
+  if (__DEV__) {
+    resolveChunkDebugInfo(response, streamState, chunk);
+  }
+  if (chunk.status !== PENDING) {
+    // If we get more data to an already resolved ID, we assume that it's
+    // a stream chunk since any other row shouldn't have more than one entry.
+    const streamChunk: InitializedStreamChunk<any> = chunk as any;
+    const controller = streamChunk.reason;
+    controller.enqueueValue(value);
+    return;
+  }
+  releasePendingChunk(response, chunk);
+  const resolveListeners = chunk.value;
+  const initializedChunk: InitializedChunk<any> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = value;
+  initializedChunk.reason = null;
+  if (resolveListeners !== null) {
+    wakeChunk(response, resolveListeners, value, initializedChunk);
+  }
+}
+
 // Like resolveModel, but for a row that arrived in object form from an
 // in-process render: already parsed, not yet revived.
 function resolveModelObject(
@@ -5649,8 +5696,8 @@ export function connectRenderResult(
     unwrapWeakResponse(weakResponse)._deferredDispatches = [];
   }
   result._attach({
-    row: (id: number, tag: string, payload: mixed) =>
-      processModelRow(weakResponse, streamState, id, tag, payload),
+    row: (id: number, tag: string, payload: mixed, plainModel: boolean) =>
+      processModelRow(weakResponse, streamState, id, tag, payload, plainModel),
     close: () => close(weakResponse),
     error: (reason: mixed) => reportGlobalError(weakResponse, reason as any),
   });
@@ -5662,6 +5709,7 @@ export function processModelRow(
   id: number,
   tag: string,
   payload: mixed,
+  plainModel: boolean,
 ): void {
   if (hasGCedResponse(weakResponse)) {
     // Ignore more rows if we've already GC:ed all listeners.
@@ -5682,6 +5730,8 @@ export function processModelRow(
       if (typeof payload === 'string') {
         // The model's JSON text: primitives and DEV-only pre-serialized rows.
         resolveModel(response, id, payload, streamState);
+      } else if (plainModel) {
+        resolveInitializedModel(response, id, payload as any, streamState);
       } else {
         resolveModelObject(response, id, payload as any, streamState);
       }

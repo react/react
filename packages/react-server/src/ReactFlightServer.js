@@ -3244,6 +3244,9 @@ function deliverRow(
   // header chunk; hint rows are never reserved at all.
   chunkCount: number,
   debug: boolean,
+  // True when the payload is a model that resolved to itself in the
+  // copy-on-write resolve walk, which proves it contains no encodings.
+  plainModel?: boolean,
 ): void {
   request.emittedRows++;
   if (__DEV__ && debug) {
@@ -3259,7 +3262,7 @@ function deliverRow(
   // consumer that skipped them would be left with dangling references. This
   // matches a byte stream consumer that reads the debug channel alongside
   // the main stream.
-  request.pendingDeliveries.push(id, tag, payload);
+  request.pendingDeliveries.push(id, tag, payload, plainModel === true);
 }
 
 function drainDeliveries(request: Request): void {
@@ -3273,7 +3276,7 @@ function drainDeliveries(request: Request): void {
   try {
     // The length is re-read on purpose: rows delivered while the consumer
     // runs are appended and drained in the same pass.
-    for (let i = 0; i < deliveries.length; i += 3) {
+    for (let i = 0; i < deliveries.length; i += 4) {
       const consumer = request.consumer;
       if (consumer === null) {
         // Detached (by an earlier throw) while draining.
@@ -3284,6 +3287,7 @@ function drainDeliveries(request: Request): void {
           deliveries[i] as any,
           deliveries[i + 1] as any,
           deliveries[i + 2],
+          (deliveries[i + 3] as any),
         );
       } catch (x) {
         // The consumer threw. Detach it so it can't corrupt this render; the
@@ -4957,6 +4961,9 @@ function emitModelChunk(
   id: number,
   json: string,
   model: ReactJSONValue,
+  // The pre-resolve value; a model that resolved to itself contains no
+  // encodings and the consumer can use it without revival.
+  originalValue: mixed,
 ): void {
   const row = id.toString(16) + ':' + json + '\n';
   const processedChunk = stringToChunk(row);
@@ -4972,6 +4979,7 @@ function emitModelChunk(
     typeof model === 'object' && model !== null ? model : json,
     1,
     false,
+    typeof model === 'object' && model !== null && model === originalValue,
   );
 }
 
@@ -6454,7 +6462,7 @@ function emitChunk(
   const resolvedModel = resolveModel(request, task, {'': value}, '', value);
   // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
   const json: string = stringify(resolvedModel);
-  emitModelChunk(request, task.id, json, resolvedModel);
+  emitModelChunk(request, task.id, json, resolvedModel, value);
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
@@ -6617,7 +6625,9 @@ function retryTask(request: Request, task: Task): void {
       // We don't need to escape it again so it's not passed through resolveModel.
       // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
       const json: string = stringify(resolvedModel);
-      emitModelChunk(request, task.id, json, resolvedModel);
+      // Primitive models deliver as JSON text; the plain-model shortcut
+      // never applies to them.
+      emitModelChunk(request, task.id, json, resolvedModel, null);
     }
 
     task.status = COMPLETED;

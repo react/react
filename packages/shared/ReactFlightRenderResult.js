@@ -20,7 +20,16 @@
 // cloned, correctly-typed views; every other row is delivered as the same
 // text that frames it on the wire.
 export type RenderConsumer = {
-  +row: (id: number, tag: string, payload: mixed) => void,
+  +row: (
+    id: number,
+    tag: string,
+    payload: mixed,
+    // True when the payload is plain data containing no Flight encodings:
+    // it can be used as the model directly, without revival. The producer
+    // knows this for free: the resolve walk copies on write, so a model
+    // that resolved to itself provably contains no encodings.
+    plainModel: boolean,
+  ) => void,
   +close: () => void,
   +error: (reason: mixed) => void,
 };
