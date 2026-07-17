@@ -149,6 +149,7 @@ function activateBackend(version: string, hook: DevToolsHook) {
     bridge,
     getIfReloadedAndProfiling(),
     onReloadAndProfile,
+    hook.__devtoolsOriginalWindow,
   );
   // Agent read flags successfully, we can count it as successful launch
   // Clean up flags, so that next reload won't start profiling
