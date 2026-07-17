@@ -27,15 +27,12 @@ describe('inlineData smoke', () => {
       return React.createElement('div', null, 'hello <world> & "quotes"');
     }
     const {pipe} = await new Promise(resolve => {
-      const s = ReactDOMFizz.renderToPipeableStream(
-        React.createElement(App),
-        {
-          inlineData: source,
-          onShellReady() {
-            resolve(s);
-          },
+      const s = ReactDOMFizz.renderToPipeableStream(React.createElement(App), {
+        inlineData: source,
+        onShellReady() {
+          resolve(s);
         },
-      );
+      });
     });
     const out = new Stream.PassThrough();
     let html = '';

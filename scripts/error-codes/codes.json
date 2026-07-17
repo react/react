@@ -587,5 +587,6 @@
   "599": "Expected an initialized chunk but got an initialized stream chunk instead. This payload may have been submitted by an older version of React.",
   "600": "A rejected Promise was passed to React without a `reason` property. React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`.",
   "601": "A chunk pair is incomplete. This is a bug in React.",
-  "602": "A length-framed row ended inside a character. This is a bug in the wiring of the React streams."
+  "602": "A length-framed row ended inside a character. This is a bug in the wiring of the React streams.",
+  "603": "The inline data channel already has a reader. createFromInlineData can only be called once per document."
 }
