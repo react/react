@@ -128,9 +128,6 @@ declare module 'react-native' {
 }
 
 // eslint-disable-next-line no-unused-vars
-declare const RN$enableMicrotasksInReact: boolean;
-
-// eslint-disable-next-line no-unused-vars
 declare const RN$isNativeEventTargetEventDispatchingEnabled:
   | (() => boolean)
   | void;

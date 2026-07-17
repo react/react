@@ -3562,6 +3562,129 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('reports abort errors for every suspended task when aborting fatals the shell', async () => {
+    const promise = new Promise(() => {});
+    const rendered = [];
+    function Suspend({label}) {
+      rendered.push(label);
+      use(promise);
+      return null;
+    }
+
+    function App() {
+      return (
+        <>
+          <Suspense fallback="Loading...">
+            <Suspend label="boundary" />
+          </Suspense>
+          <Suspend label="root one" />
+          <Suspend label="root two" />
+        </>
+      );
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      abort = renderToPipeableStream(<App />, {
+        onError(error) {
+          errors.push(error.message);
+        },
+        onShellError() {},
+      }).abort;
+    });
+
+    expect(rendered).toEqual(['boundary', 'root one', 'root two']);
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason', 'abort reason']);
+  });
+
+  it('uses a rejection reason from a lazy component before the abort finishes', async () => {
+    let reject;
+    const Lazy = React.lazy(
+      () =>
+        new Promise((resolve, rejectPromise) => {
+          reject = rejectPromise;
+        }),
+    );
+    const haltedPromise = new Promise(() => {});
+    function HaltedWait() {
+      use(haltedPromise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <>
+          <Suspense fallback="Loading lazy">
+            <Lazy />
+          </Suspense>
+          <Suspense fallback="Loading halted">
+            <HaltedWait />
+          </Suspense>
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+      reject(new Error('rejected during abort'));
+    });
+
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
+  });
+
+  it('does not report a rejection reason after abort has finished', async () => {
+    let reject;
+    const promise = new Promise((resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    function Wait() {
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <Suspense fallback="Loading">
+          <Wait />
+        </Suspense>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    await act(() => {
+      reject(new Error('rejected after abort'));
+    });
+
+    expect(errors).toEqual(['abort reason']);
+  });
+
   it('warns in dev if you access digest from errorInfo in onRecoverableError', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -3803,11 +3926,40 @@ describe('ReactDOMFizzServer', () => {
 
     expect(headers).toEqual({
       Link: `
-<non-responsive-preload>; rel=preload; as="image"; fetchpriority="high", 
-<non-responsive-img>; rel=preload; as="image"; fetchpriority="high"
+<non-responsive-preload>; rel=preload; as="image"; fetchpriority="high",
+ <non-responsive-img>; rel=preload; as="image"; fetchpriority="high"
 `
         .replaceAll('\n', '')
         .trim(),
+    });
+  });
+
+  it('preserves referrerPolicy for image preload headers', async () => {
+    let headers = null;
+    function onHeaders(x) {
+      headers = x;
+    }
+
+    function App() {
+      return (
+        <html>
+          <body>
+            <img
+              src="image-with-referrer-policy"
+              fetchPriority="high"
+              referrerPolicy="no-referrer"
+            />
+          </body>
+        </html>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App />, {onHeaders});
+    });
+
+    expect(headers).toEqual({
+      Link: `<image-with-referrer-policy>; rel=preload; as="image"; fetchpriority="high"; referrerpolicy="no-referrer"`,
     });
   });
 
@@ -4003,10 +4155,46 @@ describe('ReactDOMFizzServer', () => {
     await act(() => pipe(testWritable));
     expect(didRender).toBe(false);
     expect(didFatal).toBe(didFatal);
-    expect(errors).toEqual([
-      'boom',
-      'The destination stream errored while writing data.',
-    ]);
+    expect(errors).toEqual(['boom']);
+  });
+
+  it('does not report aborts after fatally erroring', async () => {
+    const promise = new Promise(() => {});
+    function AsyncComp() {
+      React.use(promise);
+      return 'Async';
+    }
+
+    function ErrorComp() {
+      throw new Error('boom');
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      abort = renderToPipeableStream(
+        <div>
+          <Suspense fallback="loading...">
+            <AsyncComp />
+          </Suspense>
+          <ErrorComp />
+        </div>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      ).abort;
+    });
+
+    expect(errors).toEqual(['boom']);
+
+    await act(() => {
+      abort(new Error('too late'));
+    });
+
+    expect(errors).toEqual(['boom']);
   });
 
   describe('error escaping', () => {
@@ -6986,6 +7174,107 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('reports an in-flight root task after another root task fatals while aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      return 'child';
+    }
+
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(new Error('abort reason'));
+      return <Child />;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <ComponentThatAborts />
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason']);
+  });
+
+  it('reports a root task before rendering a suspended child returned after aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      use(promise);
+      return null;
+    }
+
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(new Error('abort reason'));
+      return <Child />;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <ComponentThatAborts />
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason']);
+  });
+
+  it('reports a root task that suspends directly after aborting during render', async () => {
+    const promise = new Promise(() => {});
+    const abortRef = {current: null};
+    function ComponentThatAbortsAndSuspends() {
+      abortRef.current(new Error('abort reason'));
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <ComponentThatAbortsAndSuspends />,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason']);
+  });
+
   it('can abort during render in a lazy initializer for a component', async () => {
     function Sibling() {
       return <p>sibling</p>;
@@ -8290,11 +8579,11 @@ describe('ReactDOMFizzServer', () => {
     }
 
     expect(thrownError).toBe('boom');
-    // TODO there should actually be three errors. One for the pending Suspense, one for the fallback task, and one for the task
-    // that does the abort itself. At the moment abort will flush queues and if there is no pending tasks will close the request before
-    // the task which initiated the abort can even be processed. This is a bug but not one that I am fixing with the current change
-    // so I am asserting the current behavior
     expect(errors).toEqual([
+      {
+        error: 'boom',
+        componentStack: componentStack(['Abort', 'body', 'html', 'App']),
+      },
       {
         error: 'boom',
         componentStack: componentStack([
@@ -8313,9 +8602,6 @@ describe('ReactDOMFizzServer', () => {
           'html',
           'App',
         ]),
-        // }, {
-        //   error: 'boom',
-        //   componentStack: componentStack(['Abort', 'body', 'html', 'App'])
       },
     ]);
 
@@ -9550,6 +9836,43 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>hello</span>
+      </div>,
+    );
+  });
+
+  it('outlines boundaries based on UTF-8 byte size, not code unit count', async () => {
+    // Boundaries are outlined when byteSize > 500, which streams the fallback
+    // first. Content is 200 three-byte characters: 600 UTF-8 bytes but only 200
+    // code units. The fallback should be shown initially because the boundary is
+    // large enough to outline. A string.length shortcut for byte size would
+    // count 200, stay under the threshold, and inline the content with no
+    // fallback shown — which would be incorrect.
+    const multiByte = '✓'.repeat(200);
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Waiting">
+            <span>{multiByte}</span>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(async () => {
+      renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
+        writable,
+      );
+      await jest.runAllTimers();
+      const temp = document.createElement('body');
+      temp.innerHTML = buffer;
+      // Fallback is shown because the boundary is outlined by its UTF-8 size.
+      expect(getVisibleChildren(temp)).toEqual(<div>Waiting</div>);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>{multiByte}</span>
       </div>,
     );
   });

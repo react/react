@@ -46,4 +46,4 @@ function ListItem({item, removeItem, toggleItem}: Props) {
   );
 }
 
-export default (memo(ListItem): component(...props: Props));
+export default memo(ListItem) as component(...props: Props);

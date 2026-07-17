@@ -44,8 +44,7 @@ export const enablePerformanceIssueReporting: boolean = false;
 export const enableSchedulingProfiler: boolean =
   !enableComponentPerformanceTrack && __PROFILE__;
 export const enableScopeAPI: boolean = false;
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
-export const enableEffectEventMutationPhase: boolean = false;
+export const enableEffectEventMutationPhase: boolean = true;
 export const enableSuspenseAvoidThisFallback: boolean = false;
 export const enableSuspenseCallback: boolean = false;
 export const enableTaint: boolean = true;
@@ -60,6 +59,7 @@ export const enableYieldingBeforePassive: boolean = false;
 
 export const enableThrottledScheduling: boolean = false;
 export const enableViewTransition: boolean = true;
+export const enableViewTransitionParentEnterExit: boolean = false;
 export const enableViewTransitionForPersistenceMode: boolean = false;
 export const enableGestureTransition: boolean = false;
 export const enableScrollEndPolyfill: boolean = true;
@@ -95,4 +95,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

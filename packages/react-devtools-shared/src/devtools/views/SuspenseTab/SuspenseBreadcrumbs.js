@@ -189,6 +189,7 @@ function SuspenseBreadcrumbsMenu({
               )}
               onPointerLeave={onItemPointerLeave}
               type="button">
+              {/* $FlowFixMe[invalid-compare] */}
               {selectedSuspenseNode === null
                 ? 'Unknown'
                 : selectedSuspenseNode.name || 'Unknown'}

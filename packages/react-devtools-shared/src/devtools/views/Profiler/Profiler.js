@@ -243,4 +243,4 @@ const tabsWithTimeline = [
   },
 ];
 
-export default (portaledContent(Profiler): component());
+export default portaledContent(Profiler) as component();

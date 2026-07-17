@@ -80,6 +80,8 @@ export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
 
+export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
+
 export const enableViewTransitionForPersistenceMode: boolean = false;
 
 export const enableGestureTransition = __EXPERIMENTAL__;
@@ -125,11 +127,9 @@ export const alwaysThrottleRetries: boolean = true;
 
 // Gate whether useEffectEvent uses the mutation phase (true) or before-mutation
 // phase (false) for updating event function references.
-export const enableEffectEventMutationPhase: boolean = false;
+export const enableEffectEventMutationPhase: boolean = true;
 
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
-
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
 
 /**
  * Enables an expiration time for retry lanes to avoid starvation.

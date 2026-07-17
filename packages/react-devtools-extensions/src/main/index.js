@@ -453,6 +453,7 @@ function performInTabNavigationCleanup() {
   // Potentially, if react hasn't loaded yet and user performs in-tab navigation
   clearReactPollingInstance();
 
+  // $FlowFixMe[invalid-compare]
   if (store !== null) {
     // Store profiling data, so it can be used later
     profilingData = store.profilerStore.profilingData;
@@ -485,10 +486,10 @@ function performInTabNavigationCleanup() {
   // Do not clean mostRecentOverrideTab on purpose, so we remember last opened
   // React DevTools tab, when user does in-tab navigation
 
-  store = (null: $FlowFixMe);
-  bridge = (null: $FlowFixMe);
-  render = (null: $FlowFixMe);
-  root = (null: $FlowFixMe);
+  store = null as $FlowFixMe;
+  bridge = null as $FlowFixMe;
+  render = null as $FlowFixMe;
+  root = null as $FlowFixMe;
 }
 
 function performFullCleanup() {
@@ -510,15 +511,15 @@ function performFullCleanup() {
   componentsPortalContainer = null;
   profilerPortalContainer = null;
   suspensePortalContainer = null;
-  root = (null: $FlowFixMe);
+  root = null as $FlowFixMe;
 
   mostRecentOverrideTab = null;
-  store = (null: $FlowFixMe);
-  bridge = (null: $FlowFixMe);
-  render = (null: $FlowFixMe);
+  store = null as $FlowFixMe;
+  bridge = null as $FlowFixMe;
+  render = null as $FlowFixMe;
 
   port?.disconnect();
-  port = (null: $FlowFixMe);
+  port = null as $FlowFixMe;
 }
 
 function connectExtensionPort(): void {
@@ -545,7 +546,7 @@ function connectExtensionPort(): void {
   // so, when we call `port.disconnect()` from this script,
   // this should not trigger this callback and port reconnection
   port.onDisconnect.addListener(() => {
-    port = (null: $FlowFixMe);
+    port = null as $FlowFixMe;
     connectExtensionPort();
   });
 }
@@ -598,9 +599,9 @@ function mountReactDevToolsWhenReactHasLoaded() {
   );
 }
 
-let bridge: FrontendBridge = (null: $FlowFixMe);
+let bridge: FrontendBridge = null as $FlowFixMe;
 let lastSubscribedBridgeListener = null;
-let store: Store = (null: $FlowFixMe);
+let store: Store = null as $FlowFixMe;
 
 let profilingData = null;
 
@@ -616,12 +617,12 @@ let editorPortalContainer = null;
 let inspectedElementPortalContainer = null;
 
 let mostRecentOverrideTab: null | TabID = null;
-let render: (overrideTab?: TabID) => void = (null: $FlowFixMe);
-let root: RootType = (null: $FlowFixMe);
+let render: (overrideTab?: TabID) => void = null as $FlowFixMe;
+let root: RootType = null as $FlowFixMe;
 
 let currentSelectedSource: null | SourceSelection = null;
 
-let port: ExtensionRuntimePort = (null: $FlowFixMe);
+let port: ExtensionRuntimePort = null as $FlowFixMe;
 
 // In case when multiple navigation events emitted in a short period of time
 // This debounced callback primarily used to avoid mounting React DevTools multiple times, which results

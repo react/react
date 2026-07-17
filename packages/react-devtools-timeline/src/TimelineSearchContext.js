@@ -125,7 +125,7 @@ export type Context = {
 };
 
 const TimelineSearchContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 TimelineSearchContext.displayName = 'TimelineSearchContext';
 

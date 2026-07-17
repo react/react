@@ -32,7 +32,7 @@ export type StatusTypes = 'server-connected' | 'devtools-connected' | 'error';
 export type StatusListener = (message: string, status: StatusTypes) => void;
 export type OnDisconnectedCallback = () => void;
 
-let node: HTMLElement = ((null: any): HTMLElement);
+let node: HTMLElement = null as any as HTMLElement;
 let nodeWaitingToConnectHTML: string = '';
 let projectRoots: Array<string> = [];
 let statusListener: StatusListener = (
@@ -83,6 +83,7 @@ log.error = (...args: Array<mixed>) =>
   console.error('[React DevTools]', ...args);
 
 function debug(methodName: string, ...args: Array<mixed>) {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `%c[core/standalone] %c${methodName}`,
@@ -111,11 +112,11 @@ function reload() {
     root = createRoot(node);
     root.render(
       createElement(DevTools, {
-        bridge: ((bridge: any): FrontendBridge),
+        bridge: bridge as any as FrontendBridge,
         canViewElementSourceFunction,
         hookNamesModuleLoaderFunction,
         showTabBar: true,
-        store: ((store: any): Store),
+        store: store as any as Store,
         warnIfLegacyBackendDetected: true,
         viewElementSourceFunction,
         fetchFileWithCaching,
@@ -175,31 +176,34 @@ function onDisconnected() {
   disconnectedCallback();
 }
 
+function showErrorMessage(headerText: string, contentText: string) {
+  const box = document.createElement('div');
+  box.className = 'box';
+
+  const header = document.createElement('div');
+  header.className = 'box-header';
+  header.textContent = headerText;
+  box.appendChild(header);
+
+  const content = document.createElement('div');
+  content.className = 'box-content';
+  content.textContent = contentText;
+  box.appendChild(content);
+
+  node.textContent = '';
+  node.appendChild(box);
+}
+
 function onError({code, message}: $FlowFixMe) {
   safeUnmount();
 
   if (code === 'EADDRINUSE') {
-    node.innerHTML = `
-      <div class="box">
-        <div class="box-header">
-          Another instance of DevTools is running.
-        </div>
-        <div class="box-content">
-          Only one copy of DevTools can be used at a time.
-        </div>
-      </div>
-    `;
+    showErrorMessage(
+      'Another instance of DevTools is running.',
+      'Only one copy of DevTools can be used at a time.',
+    );
   } else {
-    node.innerHTML = `
-      <div class="box">
-        <div class="box-header">
-          Unknown error
-        </div>
-        <div class="box-content">
-          ${message}
-        </div>
-      </div>
-    `;
+    showErrorMessage('Unknown error', String(message));
   }
 }
 
@@ -225,6 +229,7 @@ function initialize(socket: WebSocket) {
       if (typeof event.data === 'string') {
         data = JSON.parse(event.data);
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug('WebSocket.onmessage', data);
         }
@@ -261,11 +266,11 @@ function initialize(socket: WebSocket) {
       }
     },
   });
-  ((bridge: any): FrontendBridge).addListener('shutdown', () => {
+  (bridge as any as FrontendBridge).addListener('shutdown', () => {
     socket.close();
   });
 
-  // $FlowFixMe[incompatible-call] found when upgrading Flow
+  // $FlowFixMe[incompatible-type] found when upgrading Flow
   store = new Store(bridge, {
     checkBridgeProtocolCompatibility: true,
     supportsTraceUpdates: true,

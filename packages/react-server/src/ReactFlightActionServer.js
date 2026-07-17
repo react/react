@@ -52,7 +52,7 @@ function loadServerReference<T>(
 ): Promise<T> {
   const id: ServerReferenceId = metaData.id;
   if (typeof id !== 'string') {
-    return (null: any);
+    return null as any;
   }
   const serverReference: ServerReference<T> =
     resolveServerReference<$FlowFixMe>(bundlerConfig, id);
@@ -62,7 +62,7 @@ function loadServerReference<T>(
   const preloadPromise = preloadModule(serverReference);
   const bound = metaData.bound;
   if (bound instanceof Promise) {
-    return Promise.all([(bound: any), preloadPromise]).then(
+    return Promise.all([bound as any, preloadPromise]).then(
       ([args]: Array<any>) => bindArgs(requireModule(serverReference), args),
     );
   } else if (preloadPromise) {
@@ -95,10 +95,10 @@ function decodeBoundActionMetaData(
     bound: null | Promise<Array<any>>,
   }>(actionResponse);
   // Force it to initialize
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   refPromise.then(() => {});
   if (refPromise.status !== 'fulfilled') {
-    // $FlowFixMe
+    // $FlowFixMe[prop-missing]
     throw refPromise.reason;
   }
   return refPromise.value;
@@ -118,7 +118,7 @@ export function decodeAction<T>(
   // $FlowFixMe[prop-missing]
   body.forEach((value: string | File, key: string) => {
     if (!key.startsWith('$ACTION_')) {
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       formData.append(key, value);
       return;
     }

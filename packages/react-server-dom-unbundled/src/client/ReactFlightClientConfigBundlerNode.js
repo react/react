@@ -119,18 +119,18 @@ export function preloadModule<T>(
       // Node.js so we have to get the default export to get the
       // full module exports.
       modulePromise = modulePromise.then(function (value) {
-        return (value: any).default;
+        return (value as any).default;
       });
     }
     modulePromise.then(
       value => {
         const fulfilledThenable: FulfilledThenable<mixed> =
-          (modulePromise: any);
+          modulePromise as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = value;
       },
       reason => {
-        const rejectedThenable: RejectedThenable<mixed> = (modulePromise: any);
+        const rejectedThenable: RejectedThenable<mixed> = modulePromise as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = reason;
       },
@@ -163,7 +163,7 @@ export function requireModule<T>(metadata: ClientReference<T>): T {
   if (hasOwnProperty.call(moduleExports, metadata.name)) {
     return moduleExports[metadata.name];
   }
-  return (undefined: any);
+  return undefined as any;
 }
 
 export function getModuleDebugInfo<T>(metadata: ClientReference<T>): null {

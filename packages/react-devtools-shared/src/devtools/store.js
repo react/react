@@ -96,6 +96,7 @@ class RectRBush extends RBush<Rect> {
 }
 
 const debug = (methodName: string, ...args: Array<string>) => {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `%cStore %c${methodName}`,
@@ -273,6 +274,7 @@ export default class Store extends EventEmitter<{
   constructor(bridge: FrontendBridge, config?: Config) {
     super();
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('constructor', 'subscribing to Bridge');
     }
@@ -606,6 +608,7 @@ export default class Store extends EventEmitter<{
       root = this._idToElement.get(rootID);
 
       if (root === undefined) {
+        // We should never reach this. This is a bug in the backend renderer.
         this._throwAndEmitError(
           Error(
             `Couldn't find root with id "${rootID}": no matching node was found in the Store.`,
@@ -642,6 +645,7 @@ export default class Store extends EventEmitter<{
         const child = this._idToElement.get(childID);
 
         if (child === undefined) {
+          // We should never reach this. This is a bug in the backend renderer.
           this._throwAndEmitError(
             Error(
               `Couldn't child element with id "${childID}": no matching node was found in the Store.`,
@@ -1055,6 +1059,7 @@ export default class Store extends EventEmitter<{
   ): Array<SuspenseTimelineStep> {
     const target: Array<SuspenseTimelineStep> = [];
     const focusedTransitionID = this._focusedTransition;
+    // $FlowFixMe[invalid-compare]
     if (focusedTransitionID === null) {
       return target;
     }
@@ -1310,7 +1315,7 @@ export default class Store extends EventEmitter<{
       if (didMutate) {
         let weightAcrossRoots = 0;
         this._roots.forEach(rootID => {
-          const {weight} = ((this.getElementByID(rootID): any): Element);
+          const {weight} = this.getElementByID(rootID) as any as Element;
           weightAcrossRoots += weight;
         });
         this._weightAcrossRoots = weightAcrossRoots;
@@ -1373,6 +1378,7 @@ export default class Store extends EventEmitter<{
   };
 
   onBridgeOperations: (operations: Array<number>) => void = operations => {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.groupCollapsed('onBridgeOperations');
       debug('onBridgeOperations', operations.join(','));
@@ -1422,11 +1428,12 @@ export default class Store extends EventEmitter<{
       switch (operation) {
         case TREE_OPERATION_ADD: {
           const id = operations[i + 1];
-          const type = ((operations[i + 2]: any): ElementType);
+          const type = operations[i + 2] as any as ElementType;
 
           i += 3;
 
           if (this._idToElement.has(id)) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot add node "${id}" because a node with that id is already in the Store.`,
@@ -1435,6 +1442,7 @@ export default class Store extends EventEmitter<{
           }
 
           if (type === ElementTypeRoot) {
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               debug('Add', `new root node ${id}`);
             }
@@ -1526,6 +1534,7 @@ export default class Store extends EventEmitter<{
             const nameProp = stringTable[namePropStringID];
             i++;
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               debug(
                 'Add',
@@ -1535,6 +1544,7 @@ export default class Store extends EventEmitter<{
 
             const parentElement = this._idToElement.get(parentID);
             if (parentElement === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot add child "${id}" to parent "${parentID}" because parent node was not found in the Store.`,
@@ -1611,6 +1621,7 @@ export default class Store extends EventEmitter<{
             const element = this._idToElement.get(id);
 
             if (element === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot remove node "${id}" because no matching node was found in the Store.`,
@@ -1624,6 +1635,7 @@ export default class Store extends EventEmitter<{
 
             const {children, ownerID, parentID, weight} = element;
             if (children.length > 0) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(`Node "${id}" was removed before its children.`),
               );
@@ -1633,6 +1645,7 @@ export default class Store extends EventEmitter<{
 
             let parentElement: ?Element = null;
             if (parentID === 0) {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Remove', `node ${id} root`);
               }
@@ -1643,12 +1656,14 @@ export default class Store extends EventEmitter<{
 
               haveRootsChanged = true;
             } else {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Remove', `node ${id} from parent ${parentID}`);
               }
 
               parentElement = this._idToElement.get(parentID);
               if (parentElement === undefined) {
+                // We should never reach this. This is a bug in the backend renderer.
                 this._throwAndEmitError(
                   Error(
                     `Cannot remove node "${id}" from parent "${parentID}" because no matching node was found in the Store.`,
@@ -1688,6 +1703,7 @@ export default class Store extends EventEmitter<{
 
           const element = this._idToElement.get(id);
           if (element === undefined) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot reorder children for node "${id}" because no matching node was found in the Store.`,
@@ -1699,6 +1715,7 @@ export default class Store extends EventEmitter<{
 
           const children = element.children;
           if (children.length !== numChildren) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Children cannot be added or removed during a reorder operation.`,
@@ -1721,6 +1738,7 @@ export default class Store extends EventEmitter<{
           }
           i += numChildren;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug('Re-order', `Node ${id} children ${children.join(',')}`);
           }
@@ -1776,6 +1794,7 @@ export default class Store extends EventEmitter<{
             }
           }
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Subtree mode',
@@ -1810,10 +1829,11 @@ export default class Store extends EventEmitter<{
           const parentID = operations[i + 2];
           const nameStringID = operations[i + 3];
           const isSuspended = operations[i + 4] === 1;
-          const numRects = ((operations[i + 5]: any): number);
+          const numRects = operations[i + 5] as any as number;
           let name = stringTable[nameStringID];
 
           if (this._idToSuspense.has(id)) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot add suspense node "${id}" because a suspense node with that id is already in the Store.`,
@@ -1858,6 +1878,7 @@ export default class Store extends EventEmitter<{
             }
           }
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug('Suspense Add', `node ${id} as child of ${parentID}`);
           }
@@ -1865,6 +1886,7 @@ export default class Store extends EventEmitter<{
           if (parentID !== 0) {
             const parentSuspense = this._idToSuspense.get(parentID);
             if (parentSuspense === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot add suspense child "${id}" to parent suspense "${parentID}" because parent suspense node was not found in the Store.`,
@@ -1901,6 +1923,7 @@ export default class Store extends EventEmitter<{
             const suspense = this._idToSuspense.get(id);
 
             if (suspense === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot remove suspense node "${id}" because no matching node was found in the Store.`,
@@ -1914,6 +1937,7 @@ export default class Store extends EventEmitter<{
 
             const {children, parentID, rects} = suspense;
             if (children.length > 0) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(`Suspense node "${id}" was removed before its children.`),
               );
@@ -1931,16 +1955,19 @@ export default class Store extends EventEmitter<{
 
             let parentSuspense: ?SuspenseNode = null;
             if (parentID === 0) {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Suspense remove', `node ${id} root`);
               }
             } else {
+              // $FlowFixMe[constant-condition]
               if (__DEBUG__) {
                 debug('Suspense Remove', `node ${id} from parent ${parentID}`);
               }
 
               parentSuspense = this._idToSuspense.get(parentID);
               if (parentSuspense === undefined) {
+                // We should never reach this. This is a bug in the backend renderer.
                 this._throwAndEmitError(
                   Error(
                     `Cannot remove suspense node "${id}" from parent "${parentID}" because no matching node was found in the Store.`,
@@ -1952,6 +1979,7 @@ export default class Store extends EventEmitter<{
 
               const index = parentSuspense.children.indexOf(id);
               if (index === -1) {
+                // We should never reach this. This is a bug in the backend renderer.
                 this._throwAndEmitError(
                   Error(
                     `Cannot remove suspense node "${id}" from parent "${parentID}" because it is not a child of the parent.`,
@@ -1972,6 +2000,7 @@ export default class Store extends EventEmitter<{
 
           const suspense = this._idToSuspense.get(id);
           if (suspense === undefined) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot reorder children for suspense node "${id}" because no matching node was found in the Store.`,
@@ -1983,6 +2012,7 @@ export default class Store extends EventEmitter<{
 
           const children = suspense.children;
           if (children.length !== numChildren) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Suspense children cannot be added or removed during a reorder operation.`,
@@ -2005,6 +2035,7 @@ export default class Store extends EventEmitter<{
           }
           i += numChildren;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Re-order',
@@ -2016,12 +2047,13 @@ export default class Store extends EventEmitter<{
           break;
         }
         case SUSPENSE_TREE_OPERATION_RESIZE: {
-          const id = ((operations[i + 1]: any): number);
-          const numRects = ((operations[i + 2]: any): number);
+          const id = operations[i + 1] as any as number;
+          const numRects = operations[i + 2] as any as number;
           i += 3;
 
           const suspense = this._idToSuspense.get(id);
           if (suspense === undefined) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot set rects for suspense node "${id}" because no matching node was found in the Store.`,
@@ -2063,6 +2095,7 @@ export default class Store extends EventEmitter<{
 
           suspense.rects = nextRects;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Resize',
@@ -2108,6 +2141,7 @@ export default class Store extends EventEmitter<{
             const suspense = this._idToSuspense.get(id);
 
             if (suspense === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot update suspenders of suspense node "${id}" because no matching node was found in the Store.`,
@@ -2117,6 +2151,7 @@ export default class Store extends EventEmitter<{
               break;
             }
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               const previousHasUniqueSuspenders = suspense.hasUniqueSuspenders;
               debug(
@@ -2235,6 +2270,7 @@ export default class Store extends EventEmitter<{
       this.emit('suspenseTreeMutated', [removedSuspenseIDs]);
     }
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(printStore(this, true));
       console.groupEnd();
@@ -2259,7 +2295,7 @@ export default class Store extends EventEmitter<{
       if (didCollapse) {
         let weightAcrossRoots = 0;
         this._roots.forEach(rootID => {
-          const {weight} = ((this.getElementByID(rootID): any): Element);
+          const {weight} = this.getElementByID(rootID) as any as Element;
           weightAcrossRoots += weight;
         });
         this._weightAcrossRoots = weightAcrossRoots;
@@ -2319,6 +2355,7 @@ export default class Store extends EventEmitter<{
   }
 
   onBridgeShutdown: () => void = () => {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('onBridgeShutdown', 'unsubscribing from Bridge');
     }
