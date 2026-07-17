@@ -48,6 +48,11 @@ import injectBackendManager from './injectBackendManager';
 import registerEventsLogger from './registerEventsLogger';
 import getProfilingFlags from './getProfilingFlags';
 import debounce from './debounce';
+import {
+  EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+  EXTENSION_BRIDGE_CONNECTION_READY,
+  getExtensionBridgeConnectionType,
+} from '../constants';
 import './requestAnimationFramePolyfill';
 
 const resolvedParseHookNames = Promise.resolve(parseHookNames);
@@ -56,24 +61,98 @@ const resolvedParseHookNames = Promise.resolve(parseHookNames);
 // wrapper around calling the worker.
 const hookNamesModuleLoaderFunction = () => resolvedParseHookNames;
 
+type PendingBridgeMessage = {
+  event: string,
+  payload: mixed,
+  transferable?: $ReadOnlyArray<mixed>,
+};
+
+function flushPendingBridgeMessages(): void {
+  const currentPort = port;
+  if (!isBridgeConnected || currentPort === null) {
+    return;
+  }
+
+  let sentCount = 0;
+  while (sentCount < pendingBridgeMessages.length) {
+    const {event, payload, transferable} = pendingBridgeMessages[sentCount];
+    try {
+      currentPort.postMessage({event, payload}, transferable);
+      sentCount++;
+    } catch (error) {
+      isBridgeConnected = false;
+      break;
+    }
+  }
+
+  if (sentCount > 0) {
+    pendingBridgeMessages.splice(0, sentCount);
+  }
+}
+
+function handleBridgeConnectionMessage(message: mixed): void {
+  switch (getExtensionBridgeConnectionType(message)) {
+    case EXTENSION_BRIDGE_CONNECTION_READY:
+      isBridgeConnected = true;
+      flushPendingBridgeMessages();
+      break;
+    case EXTENSION_BRIDGE_CONNECTION_DISCONNECTED:
+      isBridgeConnected = false;
+      break;
+  }
+}
+
+function removeBridgePortListener(): void {
+  if (subscribedBridgePort !== null && bridgePortListener !== null) {
+    subscribedBridgePort.onMessage.removeListener(bridgePortListener);
+  }
+  subscribedBridgePort = null;
+  bridgePortListener = null;
+}
+
+function addBridgePortListener(nextPort: ExtensionRuntimePort): void {
+  const bridgeListener = lastSubscribedBridgeListener;
+  if (bridgeListener === null) {
+    return;
+  }
+
+  removeBridgePortListener();
+
+  const nextBridgePortListener = (message: mixed) => {
+    if (port === nextPort) {
+      bridgeListener(message);
+    }
+  };
+  nextPort.onMessage.addListener(nextBridgePortListener);
+  subscribedBridgePort = nextPort;
+  bridgePortListener = nextBridgePortListener;
+}
+
 function createBridge() {
   bridge = new Bridge({
     listen(fn) {
-      const bridgeListener = (message: mixed) => fn(message);
-      // Store the reference so that we unsubscribe from the same object.
-      const portOnMessage = port.onMessage;
-      portOnMessage.addListener(bridgeListener);
+      const currentPort = port;
+      if (currentPort === null) {
+        throw new Error('DevTools port is not connected.');
+      }
+      if (lastSubscribedBridgeListener !== null) {
+        throw new Error('The Bridge already has a Wall listener.');
+      }
 
-      lastSubscribedBridgeListener = bridgeListener;
+      lastSubscribedBridgeListener = fn;
+      addBridgePortListener(currentPort);
 
       return () => {
-        port?.onMessage.removeListener(bridgeListener);
-        lastSubscribedBridgeListener = null;
+        if (lastSubscribedBridgeListener === fn) {
+          lastSubscribedBridgeListener = null;
+          removeBridgePortListener();
+        }
       };
     },
 
     send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
-      port?.postMessage({event, payload}, transferable);
+      pendingBridgeMessages.push({event, payload, transferable});
+      flushPendingBridgeMessages();
     },
   });
 
@@ -490,6 +569,7 @@ function performInTabNavigationCleanup() {
   bridge = null as $FlowFixMe;
   render = null as $FlowFixMe;
   root = null as $FlowFixMe;
+  pendingBridgeMessages.length = 0;
 }
 
 function performFullCleanup() {
@@ -517,9 +597,10 @@ function performFullCleanup() {
   store = null as $FlowFixMe;
   bridge = null as $FlowFixMe;
   render = null as $FlowFixMe;
+  pendingBridgeMessages.length = 0;
 
   port?.disconnect();
-  port = null as $FlowFixMe;
+  port = null;
 }
 
 function connectExtensionPort(): void {
@@ -528,8 +609,15 @@ function connectExtensionPort(): void {
   }
 
   const tabId = chrome.devtools.inspectedWindow.tabId;
-  port = chrome.runtime.connect({
+  isBridgeConnected = false;
+  const nextPort = chrome.runtime.connect({
     name: String(tabId),
+  });
+  port = nextPort;
+  nextPort.onMessage.addListener(message => {
+    if (port === nextPort) {
+      handleBridgeConnectionMessage(message);
+    }
   });
 
   // If DevTools port was reconnected and Bridge was already created
@@ -537,16 +625,18 @@ function connectExtensionPort(): void {
   // This could happen if service worker dies and all ports are disconnected,
   // but later user continues the session and Chrome reconnects all ports
   // Bridge object is still in-memory, though
-  if (lastSubscribedBridgeListener) {
-    port.onMessage.addListener(lastSubscribedBridgeListener);
-  }
+  addBridgePortListener(nextPort);
 
   // This port may be disconnected by Chrome at some point, this callback
   // will be executed only if this port was disconnected from the other end
   // so, when we call `port.disconnect()` from this script,
   // this should not trigger this callback and port reconnection
-  port.onDisconnect.addListener(() => {
-    port = null as $FlowFixMe;
+  nextPort.onDisconnect.addListener(() => {
+    if (port !== nextPort) {
+      return;
+    }
+    isBridgeConnected = false;
+    port = null;
     connectExtensionPort();
   });
 }
@@ -600,7 +690,9 @@ function mountReactDevToolsWhenReactHasLoaded() {
 }
 
 let bridge: FrontendBridge = null as $FlowFixMe;
-let lastSubscribedBridgeListener = null;
+let lastSubscribedBridgeListener: ((message: mixed) => void) | null = null;
+let subscribedBridgePort: ExtensionRuntimePort | null = null;
+let bridgePortListener: ((message: mixed) => void) | null = null;
 let store: Store = null as $FlowFixMe;
 
 let profilingData = null;
@@ -622,7 +714,9 @@ let root: RootType = null as $FlowFixMe;
 
 let currentSelectedSource: null | SourceSelection = null;
 
-let port: ExtensionRuntimePort = null as $FlowFixMe;
+let port: ExtensionRuntimePort | null = null;
+let isBridgeConnected: boolean = false;
+const pendingBridgeMessages: Array<PendingBridgeMessage> = [];
 
 // In case when multiple navigation events emitted in a short period of time
 // This debounced callback primarily used to avoid mounting React DevTools multiple times, which results

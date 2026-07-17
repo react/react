@@ -14,6 +14,18 @@ import type {
   FrontendBridge,
 } from 'react-devtools-shared/src/bridge';
 
+type TestBridgeMessage = {event: string, payload: mixed};
+type TestBridgeWall = {
+  disconnect: () => void,
+  reconnect: () => void,
+  listen: (callback: (message: mixed) => void) => () => void,
+  send: (
+    event: string,
+    payload: mixed,
+    transferable?: $ReadOnlyArray<mixed>,
+  ) => void,
+};
+
 const {getTestFlags} = require('../../../../scripts/jest/TestFlags');
 
 // Argument is serialized when passed from jest-cli script through to setupTests.
@@ -247,21 +259,58 @@ beforeEach(() => {
     disableSecondConsoleLogDimmingInStrictMode: false,
   });
 
-  const bridgeListeners = [];
-  const bridge = new Bridge({
+  let bridgeListeners: Array<(message: mixed) => void> = [];
+  let disconnectedBridgeListeners: Array<(message: mixed) => void> | null =
+    null;
+  let pendingBridgeMessages: Array<TestBridgeMessage> = [];
+  const bridgeWall: TestBridgeWall = {
+    disconnect() {
+      if (disconnectedBridgeListeners === null) {
+        disconnectedBridgeListeners = bridgeListeners;
+        bridgeListeners = [];
+      }
+    },
+    reconnect() {
+      if (disconnectedBridgeListeners !== null) {
+        bridgeListeners = disconnectedBridgeListeners;
+        disconnectedBridgeListeners = null;
+
+        const messages = pendingBridgeMessages;
+        pendingBridgeMessages = [];
+        messages.forEach(message => {
+          bridgeListeners.forEach(callback => callback(message));
+        });
+      }
+    },
     listen(callback) {
-      bridgeListeners.push(callback);
+      const listeners =
+        disconnectedBridgeListeners !== null
+          ? disconnectedBridgeListeners
+          : bridgeListeners;
+      listeners.push(callback);
       return () => {
-        const index = bridgeListeners.indexOf(callback);
+        let index = bridgeListeners.indexOf(callback);
         if (index >= 0) {
           bridgeListeners.splice(index, 1);
+        }
+        if (disconnectedBridgeListeners !== null) {
+          index = disconnectedBridgeListeners.indexOf(callback);
+          if (index >= 0) {
+            disconnectedBridgeListeners.splice(index, 1);
+          }
         }
       };
     },
     send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
-      bridgeListeners.forEach(callback => callback({event, payload}));
+      const message = {event, payload};
+      if (disconnectedBridgeListeners === null) {
+        bridgeListeners.forEach(callback => callback(message));
+      } else {
+        pendingBridgeMessages.push(message);
+      }
     },
-  });
+  };
+  const bridge = new Bridge(bridgeWall);
 
   const store = new Store(((bridge: any): FrontendBridge), {
     supportsTimeline: true,

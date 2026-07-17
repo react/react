@@ -199,6 +199,58 @@ describe('Store', () => {
     store.removeListener('error', errorListener);
   });
 
+  // @reactVersion >= 18.0
+  it('receives operations queued while the frontend transport reconnects', () => {
+    const App = ({children}) => children ?? null;
+    const Parent = ({children}) => children ?? null;
+    const Child = () => null;
+
+    act(() => render(<App />));
+
+    const bridgeWall = (bridge.wall: any);
+
+    bridgeWall.disconnect();
+    try {
+      act(() =>
+        render(
+          <App>
+            <Parent />
+          </App>,
+        ),
+      );
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+            <App>
+      `);
+    } finally {
+      bridgeWall.reconnect();
+    }
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+            <Parent>
+    `);
+
+    act(() =>
+      render(
+        <App>
+          <Parent>
+            <Child />
+          </Parent>
+        </App>,
+      ),
+    );
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Parent>
+              <Child>
+    `);
+  });
+
   // This test is not the same cause as what's reported on GitHub,
   // but the resulting behavior (owner mounting after descendant) is the same.
   // Thec ase below is admittedly contrived and relies on side effects.

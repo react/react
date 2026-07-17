@@ -6,9 +6,15 @@
  *
  * @flow
  */
-/* global chrome */
+/* global chrome, ExtensionRuntimePort */
 
 'use strict';
+
+import {
+  EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+  EXTENSION_BRIDGE_CONNECTION_READY,
+  getExtensionBridgeConnectionType,
+} from '../constants';
 
 function injectProxy() {
   // Firefox's behaviour for injecting this content script can be unpredictable
@@ -16,6 +22,7 @@ function injectProxy() {
   if (!window.__REACT_DEVTOOLS_PROXY_INJECTED__) {
     window.__REACT_DEVTOOLS_PROXY_INJECTED__ = true;
 
+    listenToMessagesFromBackend();
     connectPort();
     sayHelloToBackendManager();
 
@@ -58,8 +65,42 @@ window.addEventListener('pagehide', function ({target}) {
   delete window.__REACT_DEVTOOLS_PROXY_INJECTED__;
 });
 
-let port = null;
+let port: ExtensionRuntimePort | null = null;
 let backendInitialized: boolean = false;
+let isBridgeConnected: boolean = false;
+let isListeningToMessagesFromBackend: boolean = false;
+const pendingMessages: Array<mixed> = [];
+
+function listenToMessagesFromBackend() {
+  if (!isListeningToMessagesFromBackend) {
+    window.addEventListener('message', handleMessageFromPage);
+    isListeningToMessagesFromBackend = true;
+  }
+}
+
+function flushPendingMessages(): boolean {
+  const currentPort = port;
+  if (!isBridgeConnected || currentPort === null) {
+    return false;
+  }
+
+  let sentCount = 0;
+  while (sentCount < pendingMessages.length) {
+    try {
+      currentPort.postMessage(pendingMessages[sentCount]);
+      sentCount++;
+    } catch (error) {
+      isBridgeConnected = false;
+      break;
+    }
+  }
+
+  if (sentCount > 0) {
+    pendingMessages.splice(0, sentCount);
+  }
+
+  return isBridgeConnected && pendingMessages.length === 0;
+}
 
 function sayHelloToBackendManager() {
   window.postMessage(
@@ -71,7 +112,37 @@ function sayHelloToBackendManager() {
   );
 }
 
-function handleMessageFromDevtools(message: mixed) {
+function handleMessageFromDevtools(
+  sourcePort: ExtensionRuntimePort,
+  message: mixed,
+) {
+  if (port !== sourcePort) {
+    return;
+  }
+
+  switch (getExtensionBridgeConnectionType(message)) {
+    case EXTENSION_BRIDGE_CONNECTION_READY:
+      isBridgeConnected = true;
+      if (flushPendingMessages()) {
+        const currentPort = port;
+        if (currentPort === null) {
+          // The port may disconnect synchronously while its queue is flushed.
+          return;
+        }
+        try {
+          // This travels through the forwarding pipe after all queued backend
+          // messages, so the frontend can safely flush its command queue.
+          currentPort.postMessage(message);
+        } catch (error) {
+          isBridgeConnected = false;
+        }
+      }
+      return;
+    case EXTENSION_BRIDGE_CONNECTION_DISCONNECTED:
+      isBridgeConnected = false;
+      return;
+  }
+
   window.postMessage(
     {
       source: 'react-devtools-content-script',
@@ -91,8 +162,8 @@ function handleMessageFromPage(event: any) {
     case 'react-devtools-bridge': {
       backendInitialized = true;
 
-      // $FlowFixMe[incompatible-use]
-      port.postMessage(event.data.payload);
+      pendingMessages.push(event.data.payload);
+      flushPendingMessages();
       break;
     }
 
@@ -110,8 +181,12 @@ function handleMessageFromPage(event: any) {
   }
 }
 
-function handleDisconnect() {
-  window.removeEventListener('message', handleMessageFromPage);
+function handleDisconnect(disconnectedPort: ExtensionRuntimePort) {
+  if (port !== disconnectedPort) {
+    return;
+  }
+
+  isBridgeConnected = false;
   port = null;
 
   // Mirrors the guard in handlePageShow(): the background script can evict/
@@ -131,16 +206,18 @@ function handleDisconnect() {
 // Creates port from application page to the React DevTools' service worker
 // Which then connects it with extension port
 function connectPort() {
-  port = chrome.runtime.connect({
+  isBridgeConnected = false;
+  const nextPort = chrome.runtime.connect({
     name: 'proxy',
   });
+  port = nextPort;
 
-  window.addEventListener('message', handleMessageFromPage);
+  listenToMessagesFromBackend();
 
-  // $FlowFixMe[incompatible-use]
-  port.onMessage.addListener(handleMessageFromDevtools);
-  // $FlowFixMe[incompatible-use]
-  port.onDisconnect.addListener(handleDisconnect);
+  nextPort.onMessage.addListener(message =>
+    handleMessageFromDevtools(nextPort, message),
+  );
+  nextPort.onDisconnect.addListener(() => handleDisconnect(nextPort));
 }
 
 let evalRequestId = 0;
