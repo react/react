@@ -71,6 +71,9 @@ import {
   writeEndSegment,
   writeClientRenderBoundaryInstruction,
   writeCompletedBoundaryInstruction,
+  writeInlineDataInit,
+  writeInlineDataSegment,
+  writeInlineDataClose,
   writeCompletedSegmentInstruction,
   writeHoistablesForBoundary,
   pushTextInstance,
@@ -374,6 +377,11 @@ const STALLED_DEV = 14;
 export opaque type Request = {
   destination: null | Destination,
   flushScheduled: boolean,
+  pendingInlineData: null | Array<InlineDataSegment>,
+  inlineDataDone: boolean,
+  inlineDataInitWritten: boolean,
+  inlineDataCloseWritten: boolean,
+  inlineDataFlushScheduled: boolean,
   +resumableState: ResumableState,
   +renderState: RenderState,
   +rootFormatContext: FormatContext,
@@ -522,6 +530,37 @@ function defaultErrorHandler(error: mixed) {
   return null;
 }
 
+export type InlineDataSegment = string | Uint8Array;
+
+// Data can arrive while no render work is pending, when the work-driven
+// flush schedule is idle, so the channel schedules its own flushes. The
+// flag only debounces this channel; the flush itself is the shared one.
+function scheduleInlineDataFlush(request: Request): void {
+  if (request.inlineDataFlushScheduled) {
+    return;
+  }
+  request.inlineDataFlushScheduled = true;
+  scheduleWork(() => {
+    request.inlineDataFlushScheduled = false;
+    const destination = request.destination;
+    if (destination !== null && request.status !== CLOSED) {
+      flushCompletedQueues(request, destination);
+    }
+  });
+}
+
+// A source of out-of-band data (for example a Flight payload) that the
+// render emits into the document as script blocks, interleaved at its own
+// flush boundaries so the document and the data stay one stream. The source
+// is opaque: this layer never interprets the segments.
+export type InlineDataSource = {
+  subscribe: (consumer: {
+    segment: (chunk: InlineDataSegment) => void,
+    close: () => void,
+    error: (error: mixed) => void,
+  }) => void,
+};
+
 function RequestInstance(
   this: $FlowFixMe,
   resumableState: ResumableState,
@@ -534,6 +573,7 @@ function RequestInstance(
   onShellError: void | ((error: mixed) => void),
   onFatalError: void | ((error: mixed) => void),
   formState: void | null | ReactFormState<any, any>,
+  inlineData: void | InlineDataSource,
 ) {
   const pingedTasks: Array<Task> = [];
   const abortSet: Set<Task> = new Set();
@@ -570,6 +610,45 @@ function RequestInstance(
   this.onShellError = onShellError === undefined ? noop : onShellError;
   this.onFatalError = onFatalError === undefined ? noop : onFatalError;
   this.formState = formState === undefined ? null : formState;
+  this.pendingInlineData = null;
+  this.inlineDataDone = true;
+  this.inlineDataInitWritten = false;
+  this.inlineDataCloseWritten = false;
+  this.inlineDataFlushScheduled = false;
+  if (inlineData !== undefined) {
+    const inlineQueue: Array<InlineDataSegment> = [];
+    this.pendingInlineData = inlineQueue;
+    this.inlineDataDone = false;
+    // The subscription only queues and schedules; all writing happens at
+    // flush boundaries so the data lands between complete HTML writes.
+    const request = this;
+    inlineData.subscribe({
+      segment(chunk: InlineDataSegment): void {
+        if (request.inlineDataDone) {
+          // The channel was severed (closed, aborted, or errored); there is
+          // no document left for this data.
+          return;
+        }
+        inlineQueue.push(chunk);
+        scheduleInlineDataFlush(request);
+      },
+      close(): void {
+        request.inlineDataDone = true;
+        scheduleInlineDataFlush(request);
+      },
+      error(error: mixed): void {
+        if (request.inlineDataDone) {
+          return;
+        }
+        request.inlineDataDone = true;
+        // The document embeds this data; if the data can't complete,
+        // the document can't either. This matches what happens when a
+        // framework merges the two streams itself and the data side errors.
+        logRecoverableError(request, error, {}, null);
+        fatalError(request, error, {}, null);
+      },
+    });
+  }
   if (__DEV__) {
     this.didWarnForKey = null;
   }
@@ -587,6 +666,7 @@ export function createRequest(
   onShellError: void | ((error: mixed) => void),
   onFatalError: void | ((error: mixed) => void),
   formState: void | null | ReactFormState<any, any>,
+  inlineData: void | InlineDataSource,
 ): Request {
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -604,6 +684,7 @@ export function createRequest(
     onShellError,
     onFatalError,
     formState,
+    inlineData,
   );
 
   // This segment represents the root fallback.
@@ -1374,6 +1455,12 @@ function fatalError(
   errorInfo: ThrownInfo,
   debugTask: null | ConsoleTask,
 ): void {
+  if (request.pendingInlineData !== null) {
+    // Sever the data channel; nothing can be written past a fatal error.
+    request.inlineDataDone = true;
+    request.pendingInlineData.length = 0;
+    request.inlineDataCloseWritten = true;
+  }
   // This is called outside error handling code such as if the root errors outside
   // a suspense boundary or if the root suspense boundary's fallback errors.
   // It's also called if React itself or its host configs errors.
@@ -6131,6 +6218,12 @@ function flushCompletedQueues(
         (request.trackedPostpones === null ||
           (request.trackedPostpones.rootNodes.length === 0 &&
             request.trackedPostpones.rootSlots === null));
+      if (request.pendingInlineData !== null) {
+        // The receiver definition precedes the bootstrap scripts, so even a
+        // synchronous bootstrapScriptContent reader finds the channel.
+        request.inlineDataInitWritten = true;
+        writeInlineDataInit(destination, request.renderState);
+      }
       writeCompletedRoot(
         destination,
         request.resumableState,
@@ -6208,6 +6301,41 @@ function flushCompletedQueues(
       }
     }
     largeBoundaries.splice(0, i);
+
+    // Inline data segments go out after the HTML content of this flush, so
+    // the markup a segment's consumer might look for is already in the
+    // document ahead of it. Every early return above skips this: data is
+    // never written before the shell, into a postponed prelude, or after
+    // the destination stopped accepting writes.
+    const pendingInlineData = request.pendingInlineData;
+    if (pendingInlineData !== null) {
+      if (!request.inlineDataInitWritten) {
+        request.inlineDataInitWritten = true;
+        writeInlineDataInit(destination, request.renderState);
+      }
+      if (pendingInlineData.length > 0) {
+        let j;
+        for (j = 0; j < pendingInlineData.length; j++) {
+          if (
+            !writeInlineDataSegment(
+              destination,
+              request.renderState,
+              pendingInlineData[j],
+            )
+          ) {
+            request.destination = null;
+            j++;
+            pendingInlineData.splice(0, j);
+            return;
+          }
+        }
+        pendingInlineData.splice(0, j);
+      }
+      if (request.inlineDataDone && !request.inlineDataCloseWritten) {
+        request.inlineDataCloseWritten = true;
+        writeInlineDataClose(destination, request.renderState);
+      }
+    }
   } finally {
     flushingPartialBoundaries = false;
     const postponedState = request.postponedState;
@@ -6226,7 +6354,13 @@ function flushCompletedQueues(
     if (
       request.allPendingTasks === 0 &&
       request.clientRenderedBoundaries.length === 0 &&
-      request.completedBoundaries.length === 0
+      request.completedBoundaries.length === 0 &&
+      // The document holds this render's data channel: it can't end while
+      // the data is still streaming or queued.
+      request.inlineDataDone &&
+      (request.pendingInlineData === null ||
+        (request.pendingInlineData.length === 0 &&
+          request.inlineDataCloseWritten))
       // We don't need to check any partially completed segments because
       // either they have pending task or they're complete.
     ) {
@@ -6412,6 +6546,11 @@ export function abort(request: Request, reason: mixed): void {
     return;
   }
   request.aborted = true;
+  if (request.pendingInlineData !== null && !request.inlineDataDone) {
+    // Sever the data channel: an aborted document isn't waiting for more
+    // data and shouldn't be held open by a source that never closes.
+    request.inlineDataDone = true;
+  }
   const error =
     reason === undefined
       ? new Error('The render was aborted by the server without a reason.')

@@ -87,6 +87,9 @@ export const writeCompletedSegmentInstruction =
   $$$config.writeCompletedSegmentInstruction;
 export const writeCompletedBoundaryInstruction =
   $$$config.writeCompletedBoundaryInstruction;
+export const writeInlineDataInit = $$$config.writeInlineDataInit;
+export const writeInlineDataSegment = $$$config.writeInlineDataSegment;
+export const writeInlineDataClose = $$$config.writeInlineDataClose;
 export const writeClientRenderBoundaryInstruction =
   $$$config.writeClientRenderBoundaryInstruction;
 export const NotPendingTransition = $$$config.NotPendingTransition;

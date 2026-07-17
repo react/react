@@ -11,6 +11,7 @@ import type {
   Request,
   PostponedState,
   ErrorInfo,
+  InlineDataSource,
 } from 'react-server/src/ReactFizzServer';
 import type {ReactNodeList, ReactFormState} from 'shared/ReactTypes';
 import type {Writable} from 'stream';
@@ -81,6 +82,7 @@ type Options = {
   formState?: ReactFormState<any, any> | null,
   onHeaders?: (headers: HeadersDescriptor) => void,
   maxHeadersLength?: number,
+  inlineData?: InlineDataSource,
 };
 
 type ResumeOptions = {
@@ -125,6 +127,7 @@ function createRequestImpl(children: ReactNodeList, options: void | Options) {
     options ? options.onShellError : undefined,
     undefined,
     options ? options.formState : undefined,
+    options ? options.inlineData : undefined,
   );
 }
 
