@@ -1157,4 +1157,158 @@ describe('ReactFlightDOMRender', () => {
       expect((await response).model).toBe(true);
     });
   });
+
+  // Subscribes to a render's rows and resolves with the reassembled wire
+  // text once the render closes. Binary rows are decoded so the result is
+  // comparable to a byte stream read as UTF-8 text.
+  function readRows(result) {
+    return new Promise((resolve, reject) => {
+      let text = '';
+      const decoder = new TextDecoder();
+      result._subscribeRows({
+        string(chunk) {
+          text += chunk;
+        },
+        bytes(chunk) {
+          text += decoder.decode(chunk, {stream: true});
+        },
+        close() {
+          resolve(text);
+        },
+        error(reason) {
+          reject(reason);
+        },
+      });
+    });
+  }
+
+  it('delivers rows whose text is exactly the byte stream', async () => {
+    const ClientRef = clientExports(function Client({label}) {
+      return React.createElement('b', null, label);
+    });
+    function App() {
+      const items = [];
+      for (let i = 0; i < 40; i++) {
+        items.push(
+          ReactServer.createElement(
+            'p',
+            {key: i},
+            'row text with some weight to cross a flush or two ✓ ',
+            String(i),
+          ),
+        );
+      }
+      items.push(
+        ReactServer.createElement(ClientRef, {key: 'c', label: 'client'}),
+      );
+      return ReactServer.createElement('main', null, items);
+    }
+    // The same element tree renders twice so DEV module ids and stacks
+    // match; the timeOrigin and timing debug rows are request-specific and
+    // normalized away.
+    const model = ReactServer.createElement(App);
+    function normalize(text) {
+      return text
+        .split('\n')
+        .filter(row => !/^:N/.test(row) && !/^[0-9a-f]+:D\{"time":/.test(row))
+        .join('\n');
+    }
+    // The byte stream text of one render...
+    const byteStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(model, webpackMap),
+    );
+    const readable = new Stream.PassThrough();
+    const byteTextPromise = readResult(readable);
+    byteStream.pipe(readable);
+    const byteText = await byteTextPromise;
+    // ...must equal the reassembled rows of another.
+    let rowsTextPromise;
+    await serverAct(() => {
+      const result = ReactServerDOMServer.render(model, webpackMap);
+      rowsTextPromise = readRows(result);
+    });
+    expect(normalize(await rowsTextPromise)).toBe(normalize(byteText));
+  });
+
+  it('serves a rows subscriber and an in-process consumer from one render', async () => {
+    function makeModel() {
+      function App() {
+        return ReactServer.createElement('section', null, 'both doors');
+      }
+      return ReactServer.createElement(App);
+    }
+    const {response: wireResponse} = await renderThroughWire(makeModel());
+    const wireHTML = await renderToHTML(wireResponse);
+    let renderResponse;
+    let rowsTextPromise;
+    await serverAct(() => {
+      const result = ReactServerDOMServer.render(makeModel(), webpackMap);
+      renderResponse = ReactServerDOMClient.createFromRender(
+        result,
+        ssrManifest,
+      );
+      rowsTextPromise = readRows(result);
+    });
+    expect(await renderToHTML(renderResponse)).toBe(wireHTML);
+    expect(await rowsTextPromise).toContain('both doors');
+  });
+
+  it('enforces that the rows and the byte stream are exclusive', async () => {
+    await serverAct(async () => {
+      const result = ReactServerDOMServer.render({model: true}, webpackMap);
+      const rowsTextPromise = readRows(result);
+      expect(() => {
+        result.pipe(new Stream.PassThrough());
+      }).toThrow(
+        'Cannot read the byte stream of a render result whose rows are ' +
+          'already subscribed. Use one or the other.',
+      );
+      const otherResult = ReactServerDOMServer.render(
+        {model: true},
+        webpackMap,
+      );
+      otherResult.pipe(new Stream.PassThrough());
+      expect(() => {
+        otherResult._subscribeRows({
+          string() {},
+          bytes() {},
+          close() {},
+          error() {},
+        });
+      }).toThrow(
+        'Cannot subscribe to the rows of a render result whose byte ' +
+          'stream is already claimed. Use one or the other.',
+      );
+      expect(await rowsTextPromise).toContain('"model":true');
+    });
+  });
+
+  it('errors the rows subscriber when the render is aborted', async () => {
+    const never = new Promise(() => {});
+    async function Hanging() {
+      await never;
+      return null;
+    }
+    let result;
+    let rowsTextPromise;
+    await serverAct(() => {
+      result = ReactServerDOMServer.render(
+        ReactServer.createElement(Hanging),
+        webpackMap,
+        {
+          onError() {
+            return 'digest';
+          },
+        },
+      );
+      rowsTextPromise = readRows(result);
+    });
+    await serverAct(() => result.abort(new Error('goodbye')));
+    // The abort emits error rows and then closes: the subscriber sees the
+    // full wire output including the error row, like a byte stream would.
+    // No client consumes this render, so nothing replays the error to the
+    // console.
+    const text = await rowsTextPromise;
+    expect(text).toContain(':E');
+  });
 });

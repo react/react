@@ -27,6 +27,7 @@ import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 import type {
   RenderResult as FlightRenderResult,
   RenderConsumer,
+  RowsConsumer,
 } from 'react-server/src/ReactFlightServer';
 
 import {
@@ -813,6 +814,7 @@ export type RenderOptions = {
 
 export type RenderResult = {
   _attach: (consumer: RenderConsumer) => void,
+  _subscribeRows: (consumer: RowsConsumer) => void,
   pipe<T: Writable>(destination: T): T,
   abort(reason: mixed): void,
 };
@@ -867,6 +869,7 @@ function render(
   }
   return {
     _attach: result._attach,
+    _subscribeRows: result._subscribeRows,
     pipe: pipeableStream.pipe,
     abort: pipeableStream.abort,
   };

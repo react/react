@@ -592,9 +592,10 @@ const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
 import type {
   RenderConsumer,
   RenderResult,
+  RowsConsumer,
 } from 'shared/ReactFlightRenderResult';
 
-export type {RenderConsumer, RenderResult};
+export type {RenderConsumer, RenderResult, RowsConsumer};
 
 export type Request = {
   status: 10 | 11 | 12 | 13 | 14,
@@ -603,6 +604,9 @@ export type Request = {
   fatalError: mixed,
   destination: null | Destination,
   consumer: null | RenderConsumer,
+  // Receives the wire output as strings (batched per flush) instead of
+  // encoded bytes; mutually exclusive with a byte destination.
+  rowsConsumer: null | RowsConsumer,
   // Rows delivered since the last flush, as flat [id, tag, payload] triples.
   // Delivering at flush boundaries batches the consumer's wake-ups the same
   // way flushing batches the destination's, which matters for tail latency:
@@ -767,6 +771,7 @@ function RequestInstance(
   this.nextChunkId = 0;
   this.pendingChunks = 0;
   this.consumer = null;
+  this.rowsConsumer = null;
   this.pendingDeliveries = [];
   this.drainingDeliveries = false;
   this.emittedRows = 0;
@@ -3287,7 +3292,7 @@ function drainDeliveries(request: Request): void {
           deliveries[i] as any,
           deliveries[i + 1] as any,
           deliveries[i + 2],
-          (deliveries[i + 3] as any),
+          deliveries[i + 3] as any,
         );
       } catch (x) {
         // The consumer threw. Detach it so it can't corrupt this render; the
@@ -3389,6 +3394,30 @@ export function createRenderResult(request: Request): RenderResult {
         return;
       }
       request.consumer = consumer;
+    },
+    _subscribeRows(consumer: RowsConsumer): void {
+      if (request.rowsConsumer !== null) {
+        throw new Error(
+          'A render result can only have a single rows subscriber.',
+        );
+      }
+      if (request.destination !== null || request.byteStreamClaimed) {
+        // The queues can only feed one of the two: flushing hands each
+        // completed chunk to whichever door is connected.
+        throw new Error(
+          'Cannot subscribe to the rows of a render result whose byte ' +
+            'stream is already claimed. Use one or the other.',
+        );
+      }
+      if (request.status === CLOSING || request.status === CLOSED) {
+        // The request already failed fatally before the subscriber attached.
+        consumer.error(request.fatalError);
+        return;
+      }
+      // The rows are this render's wire output; nothing should release them
+      // as unclaimed.
+      request.byteStreamClaimed = true;
+      request.rowsConsumer = consumer;
     },
   };
 }
@@ -4663,6 +4692,15 @@ function fatalError(request: Request, error: mixed): void {
       consumer.error(error);
     } catch (x) {
       // The consumer is already detached; there's no one to notify.
+    }
+  }
+  const rowsConsumer = request.rowsConsumer;
+  if (rowsConsumer !== null) {
+    request.rowsConsumer = null;
+    try {
+      rowsConsumer.error(error);
+    } catch (x) {
+      // The subscriber is already detached; there's no one to notify.
     }
   }
   if (enableTaint) {
@@ -6797,6 +6835,115 @@ function finishHaltedTask(task: Task, request: Request): void {
   request.pendingChunks--;
 }
 
+// The rows-door counterpart of the destination section of
+// flushCompletedChunks: walks the same queues in the same order with the
+// same chunk accounting, but hands the wire text to the subscriber as one
+// string per flush (with binary rows delivered between the batches, in
+// order) instead of encoding it. There is no backpressure: a subscriber
+// takes every completed chunk.
+function flushCompletedRows(
+  request: Request,
+  rowsConsumer: RowsConsumer,
+): void {
+  const segments: Array<string | $ArrayBufferView> = [];
+  let batch = '';
+  const push = (item: mixed) => {
+    if (typeof item === 'string') {
+      batch += item;
+    } else {
+      if (batch !== '') {
+        segments.push(batch);
+        batch = '';
+      }
+      segments.push(item as any);
+    }
+  };
+  const importsChunks = request.completedImportChunks;
+  for (let i = 0; i < importsChunks.length; i++) {
+    request.pendingChunks--;
+    request.queuedChunks--;
+    push(importsChunks[i]);
+  }
+  importsChunks.length = 0;
+  const hintChunks = request.completedHintChunks;
+  for (let i = 0; i < hintChunks.length; i++) {
+    push(hintChunks[i]);
+  }
+  hintChunks.length = 0;
+  if (__DEV__ && request.debugDestination === null) {
+    const debugChunks = request.completedDebugChunks;
+    for (let i = 0; i < debugChunks.length; i++) {
+      const item = debugChunks[i];
+      if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+        if (i + 2 >= debugChunks.length) {
+          throw new Error(
+            'A chunk pair is incomplete. This is a bug in React.',
+          );
+        }
+        request.pendingDebugChunks -= 2;
+        request.queuedDebugChunks -= 2;
+        push(debugChunks[i + 1]);
+        push(debugChunks[i + 2]);
+        i += 2;
+      } else {
+        request.pendingDebugChunks--;
+        request.queuedDebugChunks--;
+        push(item);
+      }
+    }
+    debugChunks.length = 0;
+  }
+  const regularChunks = request.completedRegularChunks;
+  for (let i = 0; i < regularChunks.length; i++) {
+    const item = regularChunks[i];
+    if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+      if (i + 2 >= regularChunks.length) {
+        throw new Error('A chunk pair is incomplete. This is a bug in React.');
+      }
+      request.pendingChunks -= 2;
+      request.queuedChunks -= 2;
+      push(regularChunks[i + 1]);
+      push(regularChunks[i + 2]);
+      i += 2;
+    } else {
+      request.pendingChunks--;
+      request.queuedChunks--;
+      push(item);
+    }
+  }
+  regularChunks.length = 0;
+  const errorChunks = request.completedErrorChunks;
+  for (let i = 0; i < errorChunks.length; i++) {
+    request.pendingChunks--;
+    request.queuedChunks--;
+    push(errorChunks[i]);
+  }
+  errorChunks.length = 0;
+  if (batch !== '') {
+    segments.push(batch);
+  }
+  // Deliver after the accounting so a throwing subscriber can't corrupt the
+  // queues; it only loses its own remaining segments.
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    try {
+      if (typeof segment === 'string') {
+        rowsConsumer.string(segment);
+      } else {
+        rowsConsumer.bytes(segment);
+      }
+    } catch (x) {
+      request.rowsConsumer = null;
+      try {
+        rowsConsumer.error(x);
+      } catch (_) {
+        // There's no one left to notify.
+      }
+      return;
+    }
+  }
+}
+
 function flushCompletedChunks(request: Request): void {
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
@@ -6974,6 +7121,11 @@ function flushCompletedChunks(request: Request): void {
     }
     flushBuffered(destination);
   }
+  const rowsConsumer = request.rowsConsumer;
+  if (rowsConsumer !== null) {
+    request.flushScheduled = false;
+    flushCompletedRows(request, rowsConsumer);
+  }
   // Deliveries drain after the same rows' bytes are written: the buffered
   // wire chunks are ready to go as-is, while delivering runs consumer code
   // (revival, renderer wake-ups) that would otherwise sit between the byte
@@ -7007,6 +7159,16 @@ function flushCompletedChunks(request: Request): void {
             close(request.destination);
             request.destination = null;
           }
+          const debugPendingRowsConsumer = request.rowsConsumer;
+          if (debugPendingRowsConsumer !== null) {
+            request.status = CLOSED;
+            request.rowsConsumer = null;
+            try {
+              debugPendingRowsConsumer.close();
+            } catch (x) {
+              // The subscriber is already detached; there's no one to notify.
+            }
+          }
           return;
         }
       }
@@ -7025,6 +7187,16 @@ function flushCompletedChunks(request: Request): void {
       request.status = CLOSED;
       close(request.destination);
       request.destination = null;
+    }
+    const doneRowsConsumer = request.rowsConsumer;
+    if (doneRowsConsumer !== null) {
+      request.status = CLOSED;
+      request.rowsConsumer = null;
+      try {
+        doneRowsConsumer.close();
+      } catch (x) {
+        // The subscriber is already detached; there's no one to notify.
+      }
     }
     if (__DEV__ && request.debugDestination !== null) {
       close(request.debugDestination);
@@ -7056,9 +7228,11 @@ function enqueueFlush(request: Request): void {
     // If there are pinged tasks we are going to flush anyway after work completes
     request.pingedTasks.length === 0 &&
     // If there is no destination there is nothing we can flush to, but an
-    // in-process consumer still gets its deliveries on the flush schedule.
+    // in-process consumer or rows subscriber still gets its deliveries on
+    // the flush schedule.
     (request.destination !== null ||
       request.consumer !== null ||
+      request.rowsConsumer !== null ||
       (__DEV__ && request.debugDestination !== null))
   ) {
     request.flushScheduled = true;
@@ -7083,6 +7257,12 @@ export function claimByteStream(request: Request): void {
 }
 
 export function startFlowing(request: Request, destination: Destination): void {
+  if (request.rowsConsumer !== null) {
+    throw new Error(
+      'Cannot read the byte stream of a render result whose rows are ' +
+        'already subscribed. Use one or the other.',
+    );
+  }
   request.byteStreamClaimed = true;
   if (request.status === CLOSING) {
     request.status = CLOSED;

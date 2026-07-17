@@ -34,9 +34,24 @@ export type RenderConsumer = {
   +error: (reason: mixed) => void,
 };
 
+// A consumer of the render's wire output before it is encoded to bytes.
+// String chunks are the same text a byte stream would carry, batched per
+// flush; binary rows are delivered as views between the batches, in wire
+// order. Concatenating everything (encoding the strings) reproduces the
+// byte stream exactly. Used when the output is re-encoded into a larger
+// document (hydration data inlining), where bytes would just be decoded
+// back to text.
+export type RowsConsumer = {
+  +string: (chunk: string) => void,
+  +bytes: (chunk: $ArrayBufferView) => void,
+  +close: () => void,
+  +error: (reason: mixed) => void,
+};
+
 // The base result of render(). Each server entry point composes it with its
 // platform's byte stream doors; a paired Flight Client's createFromRender
 // attaches a consumer to it.
 export type RenderResult = {
   +_attach: (consumer: RenderConsumer) => void,
+  +_subscribeRows: (consumer: RowsConsumer) => void,
 };
