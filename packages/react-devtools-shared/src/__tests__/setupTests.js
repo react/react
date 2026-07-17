@@ -258,7 +258,7 @@ beforeEach(() => {
         }
       };
     },
-    send(event: string, payload: any, transferable?: Array<any>) {
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
       bridgeListeners.forEach(callback => callback({event, payload}));
     },
   });

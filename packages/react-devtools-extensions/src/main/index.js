@@ -2,7 +2,7 @@
 /** @flow */
 
 import type {RootType} from 'react-dom/src/client/ReactDOMRoot';
-import type {FrontendBridge, Message} from 'react-devtools-shared/src/bridge';
+import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 import type {
   TabID,
   ViewElementSource,
@@ -59,7 +59,7 @@ const hookNamesModuleLoaderFunction = () => resolvedParseHookNames;
 function createBridge() {
   bridge = new Bridge({
     listen(fn) {
-      const bridgeListener = (message: Message) => fn(message);
+      const bridgeListener = (message: mixed) => fn(message);
       // Store the reference so that we unsubscribe from the same object.
       const portOnMessage = port.onMessage;
       portOnMessage.addListener(bridgeListener);
@@ -72,7 +72,7 @@ function createBridge() {
       };
     },
 
-    send(event: string, payload: any, transferable?: Array<any>) {
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
       port?.postMessage({event, payload}, transferable);
     },
   });

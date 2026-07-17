@@ -133,7 +133,7 @@ function activateBackend(version: string, hook: DevToolsHook) {
         window.removeEventListener('message', listener);
       };
     },
-    send(event: string, payload: any, transferable?: Array<any>) {
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
       window.postMessage(
         {
           source: 'react-devtools-bridge',

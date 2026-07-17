@@ -71,7 +71,7 @@ function sayHelloToBackendManager() {
   );
 }
 
-function handleMessageFromDevtools(message: any) {
+function handleMessageFromDevtools(message: mixed) {
   window.postMessage(
     {
       source: 'react-devtools-content-script',

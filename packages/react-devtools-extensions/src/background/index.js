@@ -163,7 +163,7 @@ function connectExtensionAndProxyPorts(
     );
   }
 
-  function extensionPortMessageListener(message: any) {
+  function extensionPortMessageListener(message: mixed) {
     try {
       proxyPort.postMessage(message);
     } catch (e) {
@@ -175,7 +175,7 @@ function connectExtensionAndProxyPorts(
     }
   }
 
-  function proxyPortMessageListener(message: any) {
+  function proxyPortMessageListener(message: mixed) {
     try {
       extensionPort.postMessage(message);
     } catch (e) {
