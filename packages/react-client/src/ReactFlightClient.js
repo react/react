@@ -2867,6 +2867,7 @@ export type StreamState = {
   _rowTag: number, // 0 indicates that we're currently parsing the row ID
   _rowLength: number, // remaining bytes in the row. 0 indicates that we're looking for a newline.
   _buffer: Array<Uint8Array>, // chunks received so far as part of this row
+  _stringBuffer: string, // for string chunks: the part of the row received so far
   _debugInfo: ReactIOInfo, // DEV-only
   _debugTargetChunkSize: number, // DEV-only
 };
@@ -2881,6 +2882,7 @@ export function createStreamState(
     _rowTag: 0,
     _rowLength: 0,
     _buffer: [],
+    _stringBuffer: '',
   } as Omit<StreamState, '_debugInfo' | '_debugTargetChunkSize'> as any;
   if (__DEV__ && enableAsyncDebugInfo) {
     const response = unwrapWeakResponse(weakResponse);
@@ -5169,6 +5171,63 @@ export function processBinaryChunk(
   streamState._rowLength = rowLength;
 }
 
+// Returns the index at which byteBudget UTF-8 bytes have been consumed
+// counting from start, or -1 if the string ends before consuming them. The
+// producer frames rows on whole strings, so the budget always lands on a
+// character boundary.
+function indexOfUTF8ByteLength(
+  chunk: string,
+  start: number,
+  byteBudget: number,
+): number {
+  let bytes = 0;
+  let i = start;
+  const length = chunk.length;
+  while (i < length) {
+    if (bytes === byteBudget) {
+      return i;
+    }
+    const code = chunk.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+      i += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+      i += 1;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // A surrogate pair encodes as one four byte character.
+      bytes += 4;
+      i += 2;
+    } else {
+      bytes += 3;
+      i += 1;
+    }
+  }
+  return bytes === byteBudget ? i : -1;
+}
+
+function utf8ByteLength(chunk: string, start: number, end: number): number {
+  let bytes = 0;
+  let i = start;
+  while (i < end) {
+    const code = chunk.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+      i += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+      i += 1;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i += 2;
+    } else {
+      bytes += 3;
+      i += 1;
+    }
+  }
+  return bytes;
+}
+
 export function processStringChunk(
   weakResponse: WeakResponse,
   streamState: StreamState,
@@ -5266,33 +5325,37 @@ export function processStringChunk(
               'This is a bug in the wiring of the React streams.',
           );
         }
-        // For a large string by length, we don't know how many unicode characters
-        // we are looking for but we can assume that the raw string will be its own
-        // chunk. We add extra validation that the length is at least within the
-        // possible byte range it could possibly be to catch mistakes.
-        if (rowLength < chunk.length || chunk.length > rowLength * 3) {
-          throw new Error(
-            'String chunks need to be passed in their original shape. ' +
-              'Not split into smaller string chunks. ' +
-              'This is a bug in the wiring of the React streams.',
-          );
+        // rowLength counts the bytes of the row still unread; the chunk is
+        // measured in UTF-16 code units, so the row's end is found by
+        // walking the chunk's UTF-8 byte lengths.
+        const split = indexOfUTF8ByteLength(chunk, i, rowLength);
+        if (split === -1) {
+          // The row continues in a future chunk.
+          streamState._stringBuffer += chunk.slice(i);
+          rowLength -= utf8ByteLength(chunk, i, chunk.length);
+          i = chunkLength;
+          continue;
         }
-        lastIdx = chunk.length;
+        lastIdx = split;
         break;
       }
     }
     if (lastIdx > -1) {
       // We found the last chunk of the row
       if (buffer.length > 0) {
-        // If we had a buffer already, it means that this chunk was split up into
-        // binary chunks preceeding it.
+        // A row that started as binary chunks can't continue as a string:
+        // there's no telling how the binary part decodes.
         throw new Error(
           'String chunks need to be passed in their original shape. ' +
             'Not split into smaller string chunks. ' +
             'This is a bug in the wiring of the React streams.',
         );
       }
-      const lastChunk = chunk.slice(i, lastIdx);
+      let lastChunk = chunk.slice(i, lastIdx);
+      if (streamState._stringBuffer !== '') {
+        lastChunk = streamState._stringBuffer + lastChunk;
+        streamState._stringBuffer = '';
+      }
       processFullStringRow(response, streamState, rowID, rowTag, lastChunk);
       // Reset state machine for a new row
       i = lastIdx;
@@ -5306,15 +5369,9 @@ export function processStringChunk(
       rowLength = 0;
       buffer.length = 0;
     } else if (chunk.length !== i) {
-      // The rest of this row is in a future chunk. We only support passing the
-      // string from chunks in their entirety. Not split up into smaller string chunks.
-      // We could support this by buffering them but we shouldn't need to for
-      // this use case.
-      throw new Error(
-        'String chunks need to be passed in their original shape. ' +
-          'Not split into smaller string chunks. ' +
-          'This is a bug in the wiring of the React streams.',
-      );
+      // The rest of this newline-framed row is in a future chunk.
+      streamState._stringBuffer += chunk.slice(i);
+      i = chunkLength;
     }
   }
   streamState._rowState = rowState;
