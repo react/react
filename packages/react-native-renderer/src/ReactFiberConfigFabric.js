@@ -947,9 +947,7 @@ export function resetFormInstance(form: Instance): void {}
 //     Microtasks
 // -------------------
 
-export const supportsMicrotasks: boolean =
-  typeof RN$enableMicrotasksInReact !== 'undefined' &&
-  !!RN$enableMicrotasksInReact;
+export const supportsMicrotasks: boolean = true;
 
 export const scheduleMicrotask: any =
   typeof queueMicrotask === 'function' ? queueMicrotask : scheduleTimeout;

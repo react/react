@@ -94,6 +94,165 @@ describe('react-devtools-cdt-mcp', () => {
     expect(globalThis.__dtmcp).toBeUndefined();
   });
 
+  it('root entry exports tools without registering', () => {
+    unregister();
+    delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    jest.resetModules();
+
+    const api = require('../index');
+
+    expect(typeof api.register).toBe('function');
+    expect(typeof api.buildToolGroup).toBe('function');
+    expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeUndefined();
+  });
+
+  it('throws when the register entry is imported outside an event target', () => {
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalRemoveEventListener = globalThis.removeEventListener;
+
+    unregister();
+    delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    jest.resetModules();
+
+    try {
+      // $FlowFixMe[cannot-write]
+      globalThis.addEventListener = undefined;
+      // $FlowFixMe[cannot-write]
+      globalThis.removeEventListener = undefined;
+
+      expect(() => require('../register')).toThrow(
+        'react-devtools-cdt-mcp/register must be imported in a browser-like environment',
+      );
+      expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeUndefined();
+    } finally {
+      globalThis.addEventListener = originalAddEventListener;
+      globalThis.removeEventListener = originalRemoveEventListener;
+    }
+  });
+
+  it('register entry installs the DevTools hook', () => {
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalRemoveEventListener = globalThis.removeEventListener;
+    let autoListener = null;
+
+    unregister();
+    delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    jest.resetModules();
+
+    try {
+      // $FlowFixMe[cannot-write]
+      globalThis.addEventListener = (type, listener, options) => {
+        if (type === 'devtoolstooldiscovery') {
+          autoListener = listener;
+        }
+        return originalAddEventListener.call(
+          globalThis,
+          type,
+          listener,
+          options,
+        );
+      };
+
+      require('../register');
+
+      expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBeDefined();
+    } finally {
+      if (autoListener !== null) {
+        originalRemoveEventListener.call(
+          globalThis,
+          'devtoolstooldiscovery',
+          autoListener,
+        );
+      }
+      globalThis.addEventListener = originalAddEventListener;
+      globalThis.removeEventListener = originalRemoveEventListener;
+    }
+  });
+
+  it('returns the cached registration for repeated calls per target', () => {
+    let listener = null;
+    const target = {
+      addEventListener: jest.fn((type, callback) => {
+        expect(type).toBe('devtoolstooldiscovery');
+        listener = callback;
+      }),
+      removeEventListener: jest.fn(),
+    };
+
+    const first = register(target);
+    const second = register(target);
+
+    expect(target.addEventListener).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(second.facade).toBe(first.facade);
+
+    let firstGroup = null;
+    let secondGroup = null;
+    listener({
+      respondWith: group => {
+        firstGroup = group;
+      },
+    });
+    listener({
+      respondWith: group => {
+        secondGroup = group;
+      },
+    });
+    expect(secondGroup).toBe(firstGroup);
+
+    first.unregister();
+    expect(target.removeEventListener).toHaveBeenCalledTimes(1);
+    expect(target.removeEventListener).toHaveBeenCalledWith(
+      'devtoolstooldiscovery',
+      listener,
+    );
+
+    second.unregister();
+    expect(target.removeEventListener).toHaveBeenCalledTimes(1);
+
+    const third = register(target);
+    expect(third).not.toBe(first);
+    expect(target.addEventListener).toHaveBeenCalledTimes(2);
+    third.unregister();
+  });
+
+  it('does not write registration state to the target', () => {
+    let listener = null;
+    const existingHook = {
+      inject: jest.fn(() => 0),
+      onCommitFiberRoot: jest.fn(),
+      onPostCommitFiberRoot: jest.fn(),
+      renderers: new Map(),
+    };
+    const target = Object.preventExtensions({
+      __REACT_DEVTOOLS_GLOBAL_HOOK__: existingHook,
+      addEventListener: jest.fn((type, callback) => {
+        expect(type).toBe('devtoolstooldiscovery');
+        listener = callback;
+      }),
+      removeEventListener: jest.fn(),
+    });
+
+    const first = register(target);
+    const second = register(target);
+
+    expect(target.addEventListener).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(second.facade).toBe(first.facade);
+    expect(Object.keys(target).sort()).toEqual([
+      '__REACT_DEVTOOLS_GLOBAL_HOOK__',
+      'addEventListener',
+      'removeEventListener',
+    ]);
+
+    first.unregister();
+    second.unregister();
+    expect(target.removeEventListener).toHaveBeenCalledWith(
+      'devtoolstooldiscovery',
+      listener,
+    );
+  });
+
   it('builds a "react" tool group exposing every facade tool', () => {
     expect(toolGroup.name).toBe('react');
     expect(typeof toolGroup.description).toBe('string');

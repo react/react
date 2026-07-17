@@ -608,6 +608,7 @@ export default class Store extends EventEmitter<{
       root = this._idToElement.get(rootID);
 
       if (root === undefined) {
+        // We should never reach this. This is a bug in the backend renderer.
         this._throwAndEmitError(
           Error(
             `Couldn't find root with id "${rootID}": no matching node was found in the Store.`,
@@ -644,6 +645,7 @@ export default class Store extends EventEmitter<{
         const child = this._idToElement.get(childID);
 
         if (child === undefined) {
+          // We should never reach this. This is a bug in the backend renderer.
           this._throwAndEmitError(
             Error(
               `Couldn't child element with id "${childID}": no matching node was found in the Store.`,
@@ -1431,6 +1433,7 @@ export default class Store extends EventEmitter<{
           i += 3;
 
           if (this._idToElement.has(id)) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot add node "${id}" because a node with that id is already in the Store.`,
@@ -1541,6 +1544,7 @@ export default class Store extends EventEmitter<{
 
             const parentElement = this._idToElement.get(parentID);
             if (parentElement === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot add child "${id}" to parent "${parentID}" because parent node was not found in the Store.`,
@@ -1617,6 +1621,7 @@ export default class Store extends EventEmitter<{
             const element = this._idToElement.get(id);
 
             if (element === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot remove node "${id}" because no matching node was found in the Store.`,
@@ -1630,6 +1635,7 @@ export default class Store extends EventEmitter<{
 
             const {children, ownerID, parentID, weight} = element;
             if (children.length > 0) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(`Node "${id}" was removed before its children.`),
               );
@@ -1657,6 +1663,7 @@ export default class Store extends EventEmitter<{
 
               parentElement = this._idToElement.get(parentID);
               if (parentElement === undefined) {
+                // We should never reach this. This is a bug in the backend renderer.
                 this._throwAndEmitError(
                   Error(
                     `Cannot remove node "${id}" from parent "${parentID}" because no matching node was found in the Store.`,
@@ -1696,6 +1703,7 @@ export default class Store extends EventEmitter<{
 
           const element = this._idToElement.get(id);
           if (element === undefined) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot reorder children for node "${id}" because no matching node was found in the Store.`,
@@ -1707,6 +1715,7 @@ export default class Store extends EventEmitter<{
 
           const children = element.children;
           if (children.length !== numChildren) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Children cannot be added or removed during a reorder operation.`,
@@ -1824,6 +1833,7 @@ export default class Store extends EventEmitter<{
           let name = stringTable[nameStringID];
 
           if (this._idToSuspense.has(id)) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot add suspense node "${id}" because a suspense node with that id is already in the Store.`,
@@ -1876,6 +1886,7 @@ export default class Store extends EventEmitter<{
           if (parentID !== 0) {
             const parentSuspense = this._idToSuspense.get(parentID);
             if (parentSuspense === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot add suspense child "${id}" to parent suspense "${parentID}" because parent suspense node was not found in the Store.`,
@@ -1912,6 +1923,7 @@ export default class Store extends EventEmitter<{
             const suspense = this._idToSuspense.get(id);
 
             if (suspense === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot remove suspense node "${id}" because no matching node was found in the Store.`,
@@ -1925,6 +1937,7 @@ export default class Store extends EventEmitter<{
 
             const {children, parentID, rects} = suspense;
             if (children.length > 0) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(`Suspense node "${id}" was removed before its children.`),
               );
@@ -1954,6 +1967,7 @@ export default class Store extends EventEmitter<{
 
               parentSuspense = this._idToSuspense.get(parentID);
               if (parentSuspense === undefined) {
+                // We should never reach this. This is a bug in the backend renderer.
                 this._throwAndEmitError(
                   Error(
                     `Cannot remove suspense node "${id}" from parent "${parentID}" because no matching node was found in the Store.`,
@@ -1965,6 +1979,7 @@ export default class Store extends EventEmitter<{
 
               const index = parentSuspense.children.indexOf(id);
               if (index === -1) {
+                // We should never reach this. This is a bug in the backend renderer.
                 this._throwAndEmitError(
                   Error(
                     `Cannot remove suspense node "${id}" from parent "${parentID}" because it is not a child of the parent.`,
@@ -1985,6 +2000,7 @@ export default class Store extends EventEmitter<{
 
           const suspense = this._idToSuspense.get(id);
           if (suspense === undefined) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot reorder children for suspense node "${id}" because no matching node was found in the Store.`,
@@ -1996,6 +2012,7 @@ export default class Store extends EventEmitter<{
 
           const children = suspense.children;
           if (children.length !== numChildren) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Suspense children cannot be added or removed during a reorder operation.`,
@@ -2036,6 +2053,7 @@ export default class Store extends EventEmitter<{
 
           const suspense = this._idToSuspense.get(id);
           if (suspense === undefined) {
+            // We should never reach this. This is a bug in the backend renderer.
             this._throwAndEmitError(
               Error(
                 `Cannot set rects for suspense node "${id}" because no matching node was found in the Store.`,
@@ -2123,6 +2141,7 @@ export default class Store extends EventEmitter<{
             const suspense = this._idToSuspense.get(id);
 
             if (suspense === undefined) {
+              // We should never reach this. This is a bug in the backend renderer.
               this._throwAndEmitError(
                 Error(
                   `Cannot update suspenders of suspense node "${id}" because no matching node was found in the Store.`,
