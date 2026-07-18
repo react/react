@@ -166,12 +166,12 @@ export type InlineDataSource = {
 // from their stream chunking.
 const INLINE_SEGMENT_SIZE = 4096;
 
-// Adapts a Flight byte stream into an inline data source for a Fizz render
-// with inlineData. Text is decoded once here and re-encoded once into the
-// document; binary chunks pass through for the document to carry as
-// base64. A transport may split chunks anywhere, so text segments make no
-// row-alignment promises — the receiving side parses arbitrary chunking.
-function createInlineDataSource(stream: Readable): InlineDataSource {
+// A byte stream (any transport, including a remote server tier) adapts by
+// decoding text once here so it re-encodes once, into the document; binary
+// chunks pass through for the document to carry as base64. A transport may
+// split chunks anywhere, so text segments make no row-alignment promises —
+// the receiving side parses arbitrary chunking.
+function createInlineDataSourceFromStream(stream: Readable): InlineDataSource {
   return {
     subscribe(consumer: InlineDataConsumer): void {
       const decoder = new TextDecoder('utf-8', {fatal: true});
@@ -221,6 +221,14 @@ function createInlineDataSource(stream: Readable): InlineDataSource {
       }
       stream.on('data', (chunk: Buffer | string) => {
         if (typeof chunk === 'string') {
+          if (carry !== null) {
+            // Bytes held back from the previous chunk precede this text in
+            // wire order; they can't be completed by a string.
+            const carried = carry;
+            carry = null;
+            flushPending();
+            consumer.segment(carried);
+          }
           pending += chunk;
           flushPending();
           return;
@@ -231,9 +239,12 @@ function createInlineDataSource(stream: Readable): InlineDataSource {
           chunk.byteLength,
         );
         if (carry !== null) {
-          const joined = new Uint8Array(carry.length + bytes.length);
-          joined.set(carry, 0);
-          joined.set(bytes, carry.length);
+          // Flow cannot refine a closure-captured let across callbacks;
+          // snapshot it.
+          const carried = carry;
+          const joined = new Uint8Array(carried.length + bytes.length);
+          joined.set(carried, 0);
+          joined.set(bytes, carried.length);
           bytes = joined;
           carry = null;
         }
@@ -253,9 +264,10 @@ function createInlineDataSource(stream: Readable): InlineDataSource {
             pending = '';
           }
           if (carry !== null) {
-            const rejoined = new Uint8Array(head.length + carry.length);
+            const carried = carry;
+            const rejoined = new Uint8Array(head.length + carried.length);
             rejoined.set(head, 0);
-            rejoined.set(carry, head.length);
+            rejoined.set(carried, head.length);
             carry = null;
             consumer.segment(rejoined);
           } else {
@@ -268,12 +280,15 @@ function createInlineDataSource(stream: Readable): InlineDataSource {
       stream.on('end', () => {
         if (carry !== null) {
           // The stream ended mid-sequence; pass the raw bytes through.
+          // Snapshot before any calls: Flow drops refinements on
+          // closure-captured lets across them.
+          const carried = carry;
+          carry = null;
           if (pending !== '') {
             consumer.segment(pending);
             pending = '';
           }
-          consumer.segment(carry);
-          carry = null;
+          consumer.segment(carried);
         }
         if (pending !== '') {
           consumer.segment(pending);
@@ -287,6 +302,127 @@ function createInlineDataSource(stream: Readable): InlineDataSource {
   };
 }
 
+// Wire rows delivered as text (with binary row bodies between them, in
+// wire order) need no decoding on this side; segments end at row
+// boundaries whenever whole rows fit under the cap, so each document
+// script tends to carry complete rows.
+function createRowSegmentingConsumer(consumer: InlineDataConsumer): {
+  string: (chunk: string) => void,
+  bytes: (chunk: $ArrayBufferView) => void,
+  close: () => void,
+  error: (reason: mixed) => void,
+} {
+  let pending = '';
+  function flushPending(): void {
+    // One forward sweep: segments prefer to end at the last row boundary
+    // under the cap, and the newline cursor only ever advances, so a large
+    // batch costs one scan however its rows fall against the cap.
+    let offset = 0;
+    let lastBoundary = 0;
+    let nextNewline = pending.indexOf('\n');
+    while (pending.length - offset > INLINE_SEGMENT_SIZE) {
+      const windowEnd = offset + INLINE_SEGMENT_SIZE;
+      while (nextNewline !== -1 && nextNewline < windowEnd) {
+        lastBoundary = nextNewline + 1;
+        nextNewline = pending.indexOf('\n', lastBoundary);
+      }
+      let end;
+      if (lastBoundary > offset) {
+        end = lastBoundary;
+      } else {
+        // A row longer than the cap splits mid-row, which the receiving
+        // side parses fine.
+        end = windowEnd;
+        const lead = pending.charCodeAt(end - 1);
+        if (lead >= 0xd800 && lead <= 0xdbff) {
+          // Don't split a surrogate pair across segments.
+          end--;
+        }
+      }
+      consumer.segment(pending.slice(offset, end));
+      offset = end;
+    }
+    if (offset < pending.length) {
+      consumer.segment(offset === 0 ? pending : pending.slice(offset));
+    }
+    pending = '';
+  }
+  return {
+    string(chunk: string): void {
+      pending += chunk;
+      flushPending();
+    },
+    bytes(chunk: $ArrayBufferView): void {
+      flushPending();
+      consumer.segment(
+        chunk instanceof Uint8Array
+          ? chunk
+          : new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength),
+      );
+    },
+    close(): void {
+      flushPending();
+      consumer.close();
+    },
+    error(reason: mixed): void {
+      consumer.error(reason);
+    },
+  };
+}
+
+// A render result from this process delivers its wire output through the
+// rows door: the producer's own row strings, batched per flush.
+function createInlineDataSourceFromRender(
+  result: RenderResult,
+): InlineDataSource {
+  return {
+    subscribe(consumer: InlineDataConsumer): void {
+      result._subscribeRows(createRowSegmentingConsumer(consumer));
+    },
+  };
+}
+
+// An object-mode stream is a rows transport: strings are wire text and
+// buffers are binary row bodies, already split on row boundaries by the
+// producer (e.g. a replayable tee of a render's rows door).
+function createInlineDataSourceFromRowStream(
+  stream: Readable,
+): InlineDataSource {
+  return {
+    subscribe(consumer: InlineDataConsumer): void {
+      const rows = createRowSegmentingConsumer(consumer);
+      stream.on('data', (chunk: Buffer | string) => {
+        if (typeof chunk === 'string') {
+          rows.string(chunk);
+        } else {
+          rows.bytes(chunk);
+        }
+      });
+      stream.on('end', () => {
+        rows.close();
+      });
+      stream.on('error', (error: mixed) => {
+        rows.error(error);
+      });
+    },
+  };
+}
+
+// Adapts a Flight render into an inline data source for a Fizz render with
+// inlineData: the document carries the payload alongside the HTML, and a
+// paired createFromInlineData reads it back out on the other side.
+function createInlineDataSource(
+  source: Readable | RenderResult,
+): InlineDataSource {
+  if (typeof (source as any)._subscribeRows === 'function') {
+    // An in-process render result: take its rows directly.
+    return createInlineDataSourceFromRender(source as any);
+  }
+  if ((source as any).readableObjectMode === true) {
+    return createInlineDataSourceFromRowStream(source as any);
+  }
+  return createInlineDataSourceFromStream(source as any);
+}
 
 // Shadows the Edge implementation re-exported above with one that follows
 // this entry point's conventions: the manifest is positional, like
