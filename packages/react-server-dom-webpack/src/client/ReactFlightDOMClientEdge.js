@@ -170,7 +170,12 @@ function createFromReadableStream<T>(
         close(response);
       }
     };
-    startReadingFromStream(response, options.debugChannel.readable, handleDone);
+    startReadingFromStream(
+      response,
+      options.debugChannel.readable,
+      handleDone,
+      options.debugChannel.readable,
+    );
     startReadingFromStream(response, stream, handleDone, stream);
   } else {
     startReadingFromStream(
@@ -207,6 +212,7 @@ function createFromFetch<T>(
           response,
           options.debugChannel.readable,
           handleDone,
+          options.debugChannel.readable,
         );
         startReadingFromStream(response, r.body as any, handleDone, r);
       } else {
