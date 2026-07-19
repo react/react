@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<f30cf855ee2a687f44ca238eaa454025>>
+ * @generated SignedSource<<6d21a8398225c4779d4f2212a326dd31>>
  */
 
 "use strict";
@@ -1942,14 +1942,21 @@ function findCurrentHostFiberImpl(node) {
   }
   return null;
 }
-function traverseVisibleHostChildren(child, searchWithinHosts, fn, a, b, c) {
+function traverseVisibleInstancesAndTextInstances(
+  child,
+  searchWithinHosts,
+  fn,
+  a,
+  b,
+  c
+) {
   for (; null !== child; ) {
     if (
       ((5 === child.tag || (enableFragmentRefsTextNodes && 6 === child.tag)) &&
         fn(child, a, b, c)) ||
       ((22 !== child.tag || null === child.memoizedState) &&
         (searchWithinHosts || 5 !== child.tag) &&
-        traverseVisibleHostChildren(
+        traverseVisibleInstancesAndTextInstances(
           child.child,
           searchWithinHosts,
           fn,
@@ -1963,7 +1970,7 @@ function traverseVisibleHostChildren(child, searchWithinHosts, fn, a, b, c) {
   }
   return !1;
 }
-function getFragmentParentHostFiber(fiber) {
+function getFragmentParentInstanceOrContainerFiber(fiber) {
   for (fiber = fiber.return; null !== fiber; ) {
     if (3 === fiber.tag || 5 === fiber.tag) return fiber;
     fiber = fiber.return;
@@ -8988,7 +8995,7 @@ function safelyAttachRef(current, nearestMountedAncestor) {
             if (null === current.stateNode) {
               var fragmentInstance = new FragmentInstance(current);
               enableFragmentRefsInstanceHandles &&
-                traverseVisibleHostChildren(
+                traverseVisibleInstancesAndTextInstances(
                   current.child,
                   !1,
                   addFragmentHandleToFiber,
@@ -14151,7 +14158,7 @@ function FragmentInstance(fragmentFiber) {
 FragmentInstance.prototype.observeUsing = function (observer) {
   null === this._observers && (this._observers = new Set());
   this._observers.add(observer);
-  traverseVisibleHostChildren(
+  traverseVisibleInstancesAndTextInstances(
     this._fragmentFiber.child,
     !1,
     observeChild,
@@ -14170,7 +14177,7 @@ FragmentInstance.prototype.unobserveUsing = function (observer) {
   null !== observers &&
     observers.has(observer) &&
     (observers.delete(observer),
-    traverseVisibleHostChildren(
+    traverseVisibleInstancesAndTextInstances(
       this._fragmentFiber.child,
       !1,
       unobserveChild,
@@ -14185,10 +14192,12 @@ function unobserveChild(child, observer) {
   return !1;
 }
 FragmentInstance.prototype.compareDocumentPosition = function (otherNode) {
-  var parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  var parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber
+  );
   if (null === parentHostFiber) return Node.DOCUMENT_POSITION_DISCONNECTED;
   var children = [];
-  traverseVisibleHostChildren(
+  traverseVisibleInstancesAndTextInstances(
     this._fragmentFiber.child,
     !1,
     collectChildren,
@@ -14205,7 +14214,7 @@ FragmentInstance.prototype.compareDocumentPosition = function (otherNode) {
     children === otherNode
       ? (result = Node.DOCUMENT_POSITION_CONTAINS)
       : parentResult & Node.DOCUMENT_POSITION_CONTAINED_BY &&
-        (traverseVisibleHostChildren(
+        (traverseVisibleInstancesAndTextInstances(
           fragmentFiber.sibling,
           !1,
           findNextSibling
@@ -14244,7 +14253,9 @@ function collectChildren(child, collection) {
   return !1;
 }
 FragmentInstance.prototype.getRootNode = function (getRootNodeOptions) {
-  var parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  var parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber
+  );
   return null === parentHostFiber
     ? this
     : getPublicInstanceFromHostFiber(parentHostFiber).getRootNode(
@@ -14253,7 +14264,7 @@ FragmentInstance.prototype.getRootNode = function (getRootNodeOptions) {
 };
 FragmentInstance.prototype.getClientRects = function () {
   var rects = [];
-  traverseVisibleHostChildren(
+  traverseVisibleInstancesAndTextInstances(
     this._fragmentFiber.child,
     !1,
     collectClientRects,
@@ -14375,10 +14386,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1680 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-58a6360f-20260716",
+    version: "19.3.0-native-fb-2ba07c6d-20260719",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-58a6360f-20260716"
+    reconcilerVersion: "19.3.0-native-fb-2ba07c6d-20260719"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1680.rendererConfig = extraDevToolsConfig);

@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<eb5a17eac0476aed66662683be2b9df2>>
+ * @generated SignedSource<<1ddbeb07eb35d284eb25cf61856a5a24>>
  */
 
 "use strict";
@@ -1855,7 +1855,7 @@ __DEV__ &&
       }
       return null;
     }
-    function traverseVisibleHostChildren(
+    function traverseVisibleInstancesAndTextInstances(
       child,
       searchWithinHosts,
       fn,
@@ -1870,7 +1870,7 @@ __DEV__ &&
             fn(child, a, b, c)) ||
           ((22 !== child.tag || null === child.memoizedState) &&
             (searchWithinHosts || 5 !== child.tag) &&
-            traverseVisibleHostChildren(
+            traverseVisibleInstancesAndTextInstances(
               child.child,
               searchWithinHosts,
               fn,
@@ -1884,7 +1884,7 @@ __DEV__ &&
       }
       return !1;
     }
-    function getFragmentParentHostFiber(fiber) {
+    function getFragmentParentInstanceOrContainerFiber(fiber) {
       for (fiber = fiber.return; null !== fiber; ) {
         if (3 === fiber.tag || 5 === fiber.tag) return fiber;
         fiber = fiber.return;
@@ -11613,7 +11613,7 @@ __DEV__ &&
               null === finishedWork.stateNode &&
                 ((instanceToUse = new FragmentInstance(finishedWork)),
                 enableFragmentRefsInstanceHandles &&
-                  traverseVisibleHostChildren(
+                  traverseVisibleInstancesAndTextInstances(
                     finishedWork.child,
                     !1,
                     addFragmentHandleToFiber,
@@ -21058,7 +21058,7 @@ __DEV__ &&
     FragmentInstance.prototype.observeUsing = function (observer) {
       null === this._observers && (this._observers = new Set());
       this._observers.add(observer);
-      traverseVisibleHostChildren(
+      traverseVisibleInstancesAndTextInstances(
         this._fragmentFiber.child,
         !1,
         observeChild,
@@ -21071,7 +21071,7 @@ __DEV__ &&
       var observers = this._observers;
       null !== observers && observers.has(observer)
         ? (observers.delete(observer),
-          traverseVisibleHostChildren(
+          traverseVisibleInstancesAndTextInstances(
             this._fragmentFiber.child,
             !1,
             unobserveChild,
@@ -21084,10 +21084,12 @@ __DEV__ &&
           );
     };
     FragmentInstance.prototype.compareDocumentPosition = function (otherNode) {
-      var parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+      var parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+        this._fragmentFiber
+      );
       if (null === parentHostFiber) return Node.DOCUMENT_POSITION_DISCONNECTED;
       var children = [];
-      traverseVisibleHostChildren(
+      traverseVisibleInstancesAndTextInstances(
         this._fragmentFiber.child,
         !1,
         collectChildren,
@@ -21104,7 +21106,7 @@ __DEV__ &&
         children === otherNode
           ? (result = Node.DOCUMENT_POSITION_CONTAINS)
           : parentResult & Node.DOCUMENT_POSITION_CONTAINED_BY &&
-            (traverseVisibleHostChildren(
+            (traverseVisibleInstancesAndTextInstances(
               fragmentFiber.sibling,
               !1,
               findNextSibling
@@ -21140,7 +21142,9 @@ __DEV__ &&
         : fragmentFiber;
     };
     FragmentInstance.prototype.getRootNode = function (getRootNodeOptions) {
-      var parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+      var parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+        this._fragmentFiber
+      );
       return null === parentHostFiber
         ? this
         : getPublicInstanceFromHostFiber(parentHostFiber).getRootNode(
@@ -21149,7 +21153,7 @@ __DEV__ &&
     };
     FragmentInstance.prototype.getClientRects = function () {
       var rects = [];
-      traverseVisibleHostChildren(
+      traverseVisibleInstancesAndTextInstances(
         this._fragmentFiber.child,
         !1,
         collectClientRects,
@@ -21241,10 +21245,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-58a6360f-20260716",
+        version: "19.3.0-native-fb-2ba07c6d-20260719",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-58a6360f-20260716"
+        reconcilerVersion: "19.3.0-native-fb-2ba07c6d-20260719"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
