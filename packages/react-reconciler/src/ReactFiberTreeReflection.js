@@ -449,7 +449,7 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
   return foundPortalParent;
 }
 
-export function getFragmentInstanceSiblings(
+export function getFragmentInstanceOrTextInstanceSiblings(
   fiber: Fiber,
 ): [Fiber | null, Fiber | null] {
   const result: [Fiber | null, Fiber | null] = [null, null];
@@ -458,11 +458,18 @@ export function getFragmentInstanceSiblings(
     return result;
   }
 
-  findFragmentInstanceSiblings(result, fiber, parentHostFiber.child);
+  findFragmentInstanceOrTextInstanceSiblings(
+    result,
+    fiber,
+    parentHostFiber.child,
+  );
   return result;
 }
 
-function findFragmentInstanceSiblings(
+/**
+ * Only collects HostText with enableFragmentRefsTextNodes enabled. Otherwise, only collects HostComponent.
+ */
+function findFragmentInstanceOrTextInstanceSiblings(
   result: [Fiber | null, Fiber | null],
   self: Fiber,
   child: null | Fiber,
@@ -477,7 +484,10 @@ function findFragmentInstanceSiblings(
         return true;
       }
     }
-    if (child.tag === HostComponent) {
+    if (
+      child.tag === HostComponent ||
+      (enableFragmentRefsTextNodes && child.tag === HostText)
+    ) {
       if (foundSelf) {
         result[1] = child;
         return true;
@@ -490,7 +500,14 @@ function findFragmentInstanceSiblings(
     ) {
       // Skip hidden subtrees
     } else {
-      if (findFragmentInstanceSiblings(result, self, child.child, foundSelf)) {
+      if (
+        findFragmentInstanceOrTextInstanceSiblings(
+          result,
+          self,
+          child.child,
+          foundSelf,
+        )
+      ) {
         return true;
       }
     }
