@@ -22,7 +22,6 @@ let simulateIntersection;
 let setClientRects;
 let mockRangeClientRects;
 let assertConsoleErrorDev;
-let assertConsoleWarnDev;
 
 function Wrapper({children}) {
   return children;
@@ -45,7 +44,6 @@ describe('FragmentRefs', () => {
     mockRangeClientRects = IntersectionMocks.mockRangeClientRects;
     assertConsoleErrorDev =
       require('internal-test-utils').assertConsoleErrorDev;
-    assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
 
     container = document.createElement('div');
     document.body.innerHTML = '';
@@ -2758,7 +2756,10 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs && enableFragmentRefsTextNodes && enableFragmentRefsScrollIntoView
-    it('scrollIntoView ignores text siblings of an empty fragment', async () => {
+    it('scrollIntoView scrolls to text siblings of an empty fragment using the Range API', async () => {
+      const restoreRange = mockRangeClientRects([
+        {x: 100, y: 200, width: 80, height: 16},
+      ]);
       const fragmentRef = React.createRef();
       const parentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -2780,26 +2781,20 @@ describe('FragmentRefs', () => {
       const scrollToMock = jest.fn();
       window.scrollTo = scrollToMock;
 
-      // TODO: Text siblings should be scrolled to with the Range API like
-      // text children are. Currently they are skipped when collecting
-      // siblings, so the default call scrolls the parent element instead.
+      // Default call scrolls to the following text sibling
       fragmentRef.current.scrollIntoView();
-      expect(parentScrollMock).toHaveBeenCalledTimes(1);
-      expect(scrollToMock).toHaveBeenCalledTimes(0);
+      expect(scrollToMock).toHaveBeenCalledTimes(1);
+      expect(parentScrollMock).toHaveBeenCalledTimes(0);
 
-      // alignToTop=false has no parent fallback, so no scroll is performed
+      scrollToMock.mockClear();
+
+      // alignToTop=false scrolls to the preceding text sibling
       fragmentRef.current.scrollIntoView(false);
-      expect(parentScrollMock).toHaveBeenCalledTimes(1);
-      expect(scrollToMock).toHaveBeenCalledTimes(0);
-      assertConsoleWarnDev(
-        [
-          'You are attempting to scroll a FragmentInstance that has no ' +
-            'children, siblings, or parent. No scroll was performed.',
-        ],
-        {withoutStack: true},
-      );
+      expect(scrollToMock).toHaveBeenCalledTimes(1);
+      expect(parentScrollMock).toHaveBeenCalledTimes(0);
 
       window.scrollTo = originalScrollTo;
+      restoreRange();
     });
 
     // @gate enableFragmentRefs
