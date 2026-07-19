@@ -151,9 +151,13 @@
                 pairedElement &&
                   (applyViewTransitionName(pairedElement, "vt-share"),
                   appearingViewTransitions.set(exitName, null));
-                var disappearingElements = j.querySelectorAll("[vt-share]");
-                for (j = 0; j < disappearingElements.length; j++) {
-                  var disappearingElement = disappearingElements[j],
+                for (
+                  var disappearingElements = j.querySelectorAll("[vt-share]"),
+                    j$1 = 0;
+                  j$1 < disappearingElements.length;
+                  j$1++
+                ) {
+                  var disappearingElement = disappearingElements[j$1],
                     name = disappearingElement.getAttribute("vt-name"),
                     appearingElement$2 = appearingViewTransitions.get(name);
                   appearingElement$2 &&
@@ -161,20 +165,38 @@
                     applyViewTransitionName(appearingElement$2, "vt-share"),
                     appearingViewTransitions.set(name, null));
                 }
+                var relayExitElements = j.querySelectorAll("[vt-parent-exit]");
+                for (j = 0; j < relayExitElements.length; j++)
+                  applyViewTransitionName(
+                    relayExitElements[j],
+                    "vt-parent-exit"
+                  );
               }
               appearingElement = appearingElement.nextSibling;
             }
             for (
-              var contentNode$3 = batch[appearingElements + 1],
-                enterElement = contentNode$3.firstElementChild;
+              var contentNode$4 = batch[appearingElements + 1],
+                enterElement = contentNode$4.firstElementChild;
               enterElement;
 
-            )
+            ) {
               null !==
                 appearingViewTransitions.get(
                   enterElement.getAttribute("vt-name")
-                ) && applyViewTransitionName(enterElement, "vt-enter"),
-                (enterElement = enterElement.nextElementSibling);
+                ) && applyViewTransitionName(enterElement, "vt-enter");
+              var relayEnterElements =
+                enterElement.querySelectorAll("[vt-parent-enter]");
+              for (
+                appearingElement = 0;
+                appearingElement < relayEnterElements.length;
+                appearingElement++
+              )
+                applyViewTransitionName(
+                  relayEnterElements[appearingElement],
+                  "vt-parent-enter"
+                );
+              enterElement = enterElement.nextElementSibling;
+            }
             appearingElement = parentInstance;
             do
               for (
@@ -194,7 +216,7 @@
               1 === appearingElement.nodeType &&
               "none" !== appearingElement.getAttribute("vt-update")
             );
-            var appearingImages = contentNode$3.querySelectorAll(
+            var appearingImages = contentNode$4.querySelectorAll(
               'img[src]:not([loading="lazy"])'
             );
             suspenseyImages.push.apply(suspenseyImages, appearingImages);
@@ -211,39 +233,39 @@
                     document.documentElement.clientHeight,
                     document.fonts.ready
                   ],
-                  $jscomp$loop$7 = {},
-                  i$4 = 0;
-                i$4 < suspenseyImages.length;
-                $jscomp$loop$7 = {
-                  $jscomp$loop$prop$suspenseyImage$8:
-                    $jscomp$loop$7.$jscomp$loop$prop$suspenseyImage$8
+                  $jscomp$loop$9 = {},
+                  i$6 = 0;
+                i$6 < suspenseyImages.length;
+                $jscomp$loop$9 = {
+                  $jscomp$loop$prop$suspenseyImage$10:
+                    $jscomp$loop$9.$jscomp$loop$prop$suspenseyImage$10
                 },
-                  i$4++
+                  i$6++
               )
                 if (
-                  (($jscomp$loop$7.$jscomp$loop$prop$suspenseyImage$8 =
-                    suspenseyImages[i$4]),
-                  !$jscomp$loop$7.$jscomp$loop$prop$suspenseyImage$8.complete)
+                  (($jscomp$loop$9.$jscomp$loop$prop$suspenseyImage$10 =
+                    suspenseyImages[i$6]),
+                  !$jscomp$loop$9.$jscomp$loop$prop$suspenseyImage$10.complete)
                 ) {
                   var rect =
-                    $jscomp$loop$7.$jscomp$loop$prop$suspenseyImage$8.getBoundingClientRect();
+                    $jscomp$loop$9.$jscomp$loop$prop$suspenseyImage$10.getBoundingClientRect();
                   0 < rect.bottom &&
                     0 < rect.right &&
                     rect.top < window.innerHeight &&
                     rect.left < window.innerWidth &&
                     ((rect = new Promise(
-                      (function ($jscomp$loop$7) {
+                      (function ($jscomp$loop$9) {
                         return function (resolve) {
-                          $jscomp$loop$7.$jscomp$loop$prop$suspenseyImage$8.addEventListener(
+                          $jscomp$loop$9.$jscomp$loop$prop$suspenseyImage$10.addEventListener(
                             "load",
                             resolve
                           );
-                          $jscomp$loop$7.$jscomp$loop$prop$suspenseyImage$8.addEventListener(
+                          $jscomp$loop$9.$jscomp$loop$prop$suspenseyImage$10.addEventListener(
                             "error",
                             resolve
                           );
                         };
-                      })($jscomp$loop$7)
+                      })($jscomp$loop$9)
                     )),
                     blockingPromises.push(rect));
                 }
@@ -263,11 +285,11 @@
             types: []
           }));
         transition.ready.finally(function () {
-          for (var i$5 = restoreQueue.length - 3; 0 <= i$5; i$5 -= 3) {
-            var element = restoreQueue[i$5],
+          for (var i$7 = restoreQueue.length - 3; 0 <= i$7; i$7 -= 3) {
+            var element = restoreQueue[i$7],
               elementStyle = element.style;
-            elementStyle.viewTransitionName = restoreQueue[i$5 + 1];
-            elementStyle.viewTransitionClass = restoreQueue[i$5 + 1];
+            elementStyle.viewTransitionName = restoreQueue[i$7 + 1];
+            elementStyle.viewTransitionClass = restoreQueue[i$7 + 1];
             "" === element.getAttribute("style") &&
               element.removeAttribute("style");
           }
@@ -349,8 +371,8 @@
           "link[data-precedence],style[data-precedence]"
         ),
         styleTagsToHoist = [],
-        i$6 = 0;
-      (node = nodes[i$6++]);
+        i$8 = 0;
+      (node = nodes[i$8++]);
 
     )
       "not all" === node.getAttribute("media")
@@ -360,11 +382,11 @@
     nodes = 0;
     node = [];
     var precedence, resourceEl;
-    for (i$6 = !0; ; ) {
-      if (i$6) {
+    for (i$8 = !0; ; ) {
+      if (i$8) {
         var stylesheetDescriptor = stylesheetDescriptors[nodes++];
         if (!stylesheetDescriptor) {
-          i$6 = !1;
+          i$8 = !1;
           nodes = 0;
           continue;
         }
