@@ -5079,7 +5079,8 @@ function retryNode(request, task) {
                         "object" === typeof x &&
                         null !== x &&
                         (x === SuspenseException ||
-                          "function" === typeof x.then)
+                          "function" === typeof x.then ||
+                          "Maximum call stack size exceeded" === x.message)
                       )
                         throw (
                           (task.node === currentNode
@@ -6716,190 +6717,227 @@ exports.renderNextChunk = function (stream) {
       for (i = 0; i < pingedTasks.length; i++) {
         var task = pingedTasks[i],
           segment = task.blockedSegment;
-        if (null === segment) {
-          var task$jscomp$0 = task;
-          if (0 !== task$jscomp$0.replay.pendingTasks) {
-            var prevTask = request.currentTask;
-            request.currentTask = task$jscomp$0;
-            switchContext(task$jscomp$0.context);
-            try {
-              "number" === typeof task$jscomp$0.replay.slots
-                ? resumeNode(
-                    request,
-                    task$jscomp$0,
-                    task$jscomp$0.replay.slots,
-                    task$jscomp$0.node,
-                    task$jscomp$0.childIndex
-                  )
-                : retryNode(request, task$jscomp$0);
-              if (
-                1 === task$jscomp$0.replay.pendingTasks &&
-                0 < task$jscomp$0.replay.nodes.length
-              )
-                throw Error(
-                  "Couldn't find all resumable slots by key/index during replaying. The tree doesn't match so React will fallback to client rendering."
-                );
-              task$jscomp$0.replay.pendingTasks--;
-              task$jscomp$0.abortSet.delete(task$jscomp$0);
-              finishedTask(
-                request,
-                task$jscomp$0.blockedBoundary,
-                task$jscomp$0.row,
-                null
-              );
-            } catch (thrownValue) {
-              resetHooksState();
-              var x =
-                thrownValue === SuspenseException
-                  ? getSuspendedThenable()
-                  : thrownValue;
-              if (request.aborted)
-                thrownValue === SuspenseException &&
-                  (task$jscomp$0.thenableState =
-                    getThenableStateAfterSuspending()),
-                  (request.currentTask = prevTask),
-                  abortTask(task$jscomp$0, request),
-                  task$jscomp$0.abortSet.delete(task$jscomp$0),
-                  finishAbortedTask(task$jscomp$0, request, request.fatalError);
-              else if (
-                "object" === typeof x &&
-                null !== x &&
-                "function" === typeof x.then
-              ) {
-                var ping = task$jscomp$0.ping;
-                x.then(ping.resolve, ping.reject);
-                task$jscomp$0.thenableState =
-                  thrownValue === SuspenseException
-                    ? getThenableStateAfterSuspending()
-                    : null;
-              } else {
+        if (null === segment)
+          b: {
+            var task$jscomp$0 = task;
+            if (0 !== task$jscomp$0.replay.pendingTasks) {
+              var prevTask = request.currentTask;
+              request.currentTask = task$jscomp$0;
+              switchContext(task$jscomp$0.context);
+              var startNode = task$jscomp$0.node;
+              try {
+                "number" === typeof task$jscomp$0.replay.slots
+                  ? resumeNode(
+                      request,
+                      task$jscomp$0,
+                      task$jscomp$0.replay.slots,
+                      task$jscomp$0.node,
+                      task$jscomp$0.childIndex
+                    )
+                  : retryNode(request, task$jscomp$0);
+                if (
+                  1 === task$jscomp$0.replay.pendingTasks &&
+                  0 < task$jscomp$0.replay.nodes.length
+                )
+                  throw Error(
+                    "Couldn't find all resumable slots by key/index during replaying. The tree doesn't match so React will fallback to client rendering."
+                  );
                 task$jscomp$0.replay.pendingTasks--;
                 task$jscomp$0.abortSet.delete(task$jscomp$0);
-                var errorInfo = getThrownInfo(task$jscomp$0.componentStack),
-                  boundary = task$jscomp$0.blockedBoundary,
-                  error$jscomp$0 = request.aborted ? request.fatalError : x,
-                  replayNodes = task$jscomp$0.replay.nodes,
-                  resumeSlots = task$jscomp$0.replay.slots,
-                  errorDigest = logRecoverableError(
-                    request,
-                    error$jscomp$0,
-                    errorInfo
-                  );
-                abortRemainingReplayNodes(
-                  request,
-                  boundary,
-                  replayNodes,
-                  resumeSlots,
-                  error$jscomp$0,
-                  errorDigest
-                );
-                request.pendingRootTasks--;
-                0 === request.pendingRootTasks && completeShell(request);
-                request.allPendingTasks--;
-                0 === request.allPendingTasks && completeAll(request);
-              }
-            } finally {
-              request.currentTask = prevTask;
-            }
-          }
-        } else {
-          task$jscomp$0 = task;
-          var segment$jscomp$0 = segment;
-          if (0 === segment$jscomp$0.status) {
-            var prevTask$jscomp$0 = request.currentTask;
-            request.currentTask = task$jscomp$0;
-            switchContext(task$jscomp$0.context);
-            var childrenLength = segment$jscomp$0.children.length,
-              chunkLength = segment$jscomp$0.chunks.length;
-            try {
-              retryNode(request, task$jscomp$0),
-                pushSegmentFinale(
-                  segment$jscomp$0.chunks,
-                  request.renderState,
-                  segment$jscomp$0.lastPushedText,
-                  segment$jscomp$0.textEmbedded
-                ),
-                task$jscomp$0.abortSet.delete(task$jscomp$0),
-                (segment$jscomp$0.status = 1),
                 finishedTask(
                   request,
                   task$jscomp$0.blockedBoundary,
                   task$jscomp$0.row,
-                  segment$jscomp$0
+                  null
                 );
-            } catch (thrownValue) {
-              resetHooksState();
-              segment$jscomp$0.children.length = childrenLength;
-              segment$jscomp$0.chunks.length = chunkLength;
-              var x$jscomp$0 =
-                thrownValue === SuspenseException
-                  ? getSuspendedThenable()
-                  : thrownValue;
-              if (request.aborted)
-                thrownValue === SuspenseException &&
-                  (task$jscomp$0.thenableState =
-                    getThenableStateAfterSuspending()),
-                  (request.currentTask = prevTask$jscomp$0),
-                  abortTask(task$jscomp$0, request),
-                  task$jscomp$0.abortSet.delete(task$jscomp$0),
-                  finishAbortedTask(task$jscomp$0, request, request.fatalError);
-              else if (
-                "object" === typeof x$jscomp$0 &&
-                null !== x$jscomp$0 &&
-                "function" === typeof x$jscomp$0.then
-              ) {
-                segment$jscomp$0.status = 0;
-                task$jscomp$0.thenableState =
+              } catch (thrownValue) {
+                resetHooksState();
+                var x =
                   thrownValue === SuspenseException
-                    ? getThenableStateAfterSuspending()
-                    : null;
-                var ping$jscomp$0 = task$jscomp$0.ping;
-                x$jscomp$0.then(ping$jscomp$0.resolve, ping$jscomp$0.reject);
-              } else {
-                var errorInfo$jscomp$0 = getThrownInfo(
-                  task$jscomp$0.componentStack
-                );
-                task$jscomp$0.abortSet.delete(task$jscomp$0);
-                segment$jscomp$0.status = 4;
-                var boundary$jscomp$0 = task$jscomp$0.blockedBoundary,
-                  row = task$jscomp$0.row;
-                null !== row &&
-                  0 === --row.pendingTasks &&
-                  finishSuspenseListRow(request, row);
-                request.allPendingTasks--;
-                var errorDigest$jscomp$0 = logRecoverableError(
-                  request,
-                  x$jscomp$0,
-                  errorInfo$jscomp$0
-                );
-                if (null === boundary$jscomp$0) fatalError(request, x$jscomp$0);
+                    ? getSuspendedThenable()
+                    : thrownValue;
+                if (request.aborted)
+                  thrownValue === SuspenseException &&
+                    (task$jscomp$0.thenableState =
+                      getThenableStateAfterSuspending()),
+                    (request.currentTask = prevTask),
+                    abortTask(task$jscomp$0, request),
+                    task$jscomp$0.abortSet.delete(task$jscomp$0),
+                    finishAbortedTask(
+                      task$jscomp$0,
+                      request,
+                      request.fatalError
+                    );
                 else {
-                  boundary$jscomp$0.pendingTasks--;
-                  if (4 !== boundary$jscomp$0.status) {
-                    boundary$jscomp$0.status = 4;
-                    boundary$jscomp$0.errorDigest = errorDigest$jscomp$0;
-                    untrackBoundary(request, boundary$jscomp$0);
-                    var boundaryRow = boundary$jscomp$0.row;
-                    null !== boundaryRow &&
-                      (request.allPendingTasks++,
-                      0 === --boundaryRow.pendingTasks &&
-                        finishSuspenseListRow(request, boundaryRow),
-                      request.allPendingTasks--);
-                    boundary$jscomp$0.parentFlushed &&
-                      request.clientRenderedBoundaries.push(boundary$jscomp$0);
-                    0 === request.pendingRootTasks &&
-                      null === request.trackedPostpones &&
-                      null !== boundary$jscomp$0.preamble &&
-                      preparePreamble(request);
+                  if ("object" === typeof x && null !== x) {
+                    if ("function" === typeof x.then) {
+                      var ping = task$jscomp$0.ping;
+                      x.then(ping.resolve, ping.reject);
+                      task$jscomp$0.thenableState =
+                        thrownValue === SuspenseException
+                          ? getThenableStateAfterSuspending()
+                          : null;
+                      break b;
+                    }
+                    if (
+                      "Maximum call stack size exceeded" === x.message &&
+                      task$jscomp$0.node !== startNode
+                    ) {
+                      task$jscomp$0.thenableState = null;
+                      request.pingedTasks.push(task$jscomp$0);
+                      break b;
+                    }
                   }
+                  task$jscomp$0.replay.pendingTasks--;
+                  task$jscomp$0.abortSet.delete(task$jscomp$0);
+                  var errorInfo = getThrownInfo(task$jscomp$0.componentStack),
+                    boundary = task$jscomp$0.blockedBoundary,
+                    error$jscomp$0 = request.aborted ? request.fatalError : x,
+                    replayNodes = task$jscomp$0.replay.nodes,
+                    resumeSlots = task$jscomp$0.replay.slots,
+                    errorDigest = logRecoverableError(
+                      request,
+                      error$jscomp$0,
+                      errorInfo
+                    );
+                  abortRemainingReplayNodes(
+                    request,
+                    boundary,
+                    replayNodes,
+                    resumeSlots,
+                    error$jscomp$0,
+                    errorDigest
+                  );
+                  request.pendingRootTasks--;
+                  0 === request.pendingRootTasks && completeShell(request);
+                  request.allPendingTasks--;
                   0 === request.allPendingTasks && completeAll(request);
                 }
+              } finally {
+                request.currentTask = prevTask;
               }
-            } finally {
-              request.currentTask = prevTask$jscomp$0;
             }
           }
-        }
+        else
+          b: {
+            task$jscomp$0 = task;
+            var segment$jscomp$0 = segment;
+            if (0 === segment$jscomp$0.status) {
+              var prevTask$jscomp$0 = request.currentTask;
+              request.currentTask = task$jscomp$0;
+              switchContext(task$jscomp$0.context);
+              var childrenLength = segment$jscomp$0.children.length,
+                chunkLength = segment$jscomp$0.chunks.length,
+                startNode$jscomp$0 = task$jscomp$0.node;
+              try {
+                retryNode(request, task$jscomp$0),
+                  pushSegmentFinale(
+                    segment$jscomp$0.chunks,
+                    request.renderState,
+                    segment$jscomp$0.lastPushedText,
+                    segment$jscomp$0.textEmbedded
+                  ),
+                  task$jscomp$0.abortSet.delete(task$jscomp$0),
+                  (segment$jscomp$0.status = 1),
+                  finishedTask(
+                    request,
+                    task$jscomp$0.blockedBoundary,
+                    task$jscomp$0.row,
+                    segment$jscomp$0
+                  );
+              } catch (thrownValue) {
+                resetHooksState();
+                segment$jscomp$0.children.length = childrenLength;
+                segment$jscomp$0.chunks.length = chunkLength;
+                var x$jscomp$0 =
+                  thrownValue === SuspenseException
+                    ? getSuspendedThenable()
+                    : thrownValue;
+                if (request.aborted)
+                  thrownValue === SuspenseException &&
+                    (task$jscomp$0.thenableState =
+                      getThenableStateAfterSuspending()),
+                    (request.currentTask = prevTask$jscomp$0),
+                    abortTask(task$jscomp$0, request),
+                    task$jscomp$0.abortSet.delete(task$jscomp$0),
+                    finishAbortedTask(
+                      task$jscomp$0,
+                      request,
+                      request.fatalError
+                    );
+                else {
+                  if ("object" === typeof x$jscomp$0 && null !== x$jscomp$0) {
+                    if ("function" === typeof x$jscomp$0.then) {
+                      segment$jscomp$0.status = 0;
+                      task$jscomp$0.thenableState =
+                        thrownValue === SuspenseException
+                          ? getThenableStateAfterSuspending()
+                          : null;
+                      var ping$jscomp$0 = task$jscomp$0.ping;
+                      x$jscomp$0.then(
+                        ping$jscomp$0.resolve,
+                        ping$jscomp$0.reject
+                      );
+                      break b;
+                    }
+                    if (
+                      "Maximum call stack size exceeded" ===
+                        x$jscomp$0.message &&
+                      task$jscomp$0.node !== startNode$jscomp$0
+                    ) {
+                      segment$jscomp$0.status = 0;
+                      task$jscomp$0.thenableState = null;
+                      request.pingedTasks.push(task$jscomp$0);
+                      break b;
+                    }
+                  }
+                  var errorInfo$jscomp$0 = getThrownInfo(
+                    task$jscomp$0.componentStack
+                  );
+                  task$jscomp$0.abortSet.delete(task$jscomp$0);
+                  segment$jscomp$0.status = 4;
+                  var boundary$jscomp$0 = task$jscomp$0.blockedBoundary,
+                    row = task$jscomp$0.row;
+                  null !== row &&
+                    0 === --row.pendingTasks &&
+                    finishSuspenseListRow(request, row);
+                  request.allPendingTasks--;
+                  var errorDigest$jscomp$0 = logRecoverableError(
+                    request,
+                    x$jscomp$0,
+                    errorInfo$jscomp$0
+                  );
+                  if (null === boundary$jscomp$0)
+                    fatalError(request, x$jscomp$0);
+                  else {
+                    boundary$jscomp$0.pendingTasks--;
+                    if (4 !== boundary$jscomp$0.status) {
+                      boundary$jscomp$0.status = 4;
+                      boundary$jscomp$0.errorDigest = errorDigest$jscomp$0;
+                      untrackBoundary(request, boundary$jscomp$0);
+                      var boundaryRow = boundary$jscomp$0.row;
+                      null !== boundaryRow &&
+                        (request.allPendingTasks++,
+                        0 === --boundaryRow.pendingTasks &&
+                          finishSuspenseListRow(request, boundaryRow),
+                        request.allPendingTasks--);
+                      boundary$jscomp$0.parentFlushed &&
+                        request.clientRenderedBoundaries.push(
+                          boundary$jscomp$0
+                        );
+                      0 === request.pendingRootTasks &&
+                        null === request.trackedPostpones &&
+                        null !== boundary$jscomp$0.preamble &&
+                        preparePreamble(request);
+                    }
+                    0 === request.allPendingTasks && completeAll(request);
+                  }
+                }
+              } finally {
+                request.currentTask = prevTask$jscomp$0;
+              }
+            }
+          }
       }
       pingedTasks.splice(0, i);
       null !== request.destination &&

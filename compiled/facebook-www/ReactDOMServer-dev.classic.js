@@ -6648,7 +6648,9 @@ __DEV__ &&
               if (
                 "object" === typeof x &&
                 null !== x &&
-                (x === SuspenseException || "function" === typeof x.then)
+                (x === SuspenseException ||
+                  "function" === typeof x.then ||
+                  "Maximum call stack size exceeded" === x.message)
               )
                 throw (
                   (task.node === currentNode
@@ -7895,229 +7897,259 @@ __DEV__ &&
             var request = request$jscomp$1,
               task = pingedTasks[i],
               segment = task.blockedSegment;
-            if (null === segment) {
-              var prevTaskInDEV = void 0,
-                task$jscomp$0 = task;
-              if (0 !== task$jscomp$0.replay.pendingTasks) {
-                var prevTask = request.currentTask;
+            if (null === segment)
+              a: {
+                var prevTaskInDEV = void 0,
+                  task$jscomp$0 = task;
+                if (0 !== task$jscomp$0.replay.pendingTasks) {
+                  var prevTask = request.currentTask;
+                  request.currentTask = task$jscomp$0;
+                  switchContext(task$jscomp$0.context);
+                  prevTaskInDEV = currentTaskInDEV;
+                  currentTaskInDEV = task$jscomp$0;
+                  var startNode = task$jscomp$0.node;
+                  try {
+                    "number" === typeof task$jscomp$0.replay.slots
+                      ? resumeNode(
+                          request,
+                          task$jscomp$0,
+                          task$jscomp$0.replay.slots,
+                          task$jscomp$0.node,
+                          task$jscomp$0.childIndex
+                        )
+                      : retryNode(request, task$jscomp$0);
+                    if (
+                      1 === task$jscomp$0.replay.pendingTasks &&
+                      0 < task$jscomp$0.replay.nodes.length
+                    )
+                      throw Error(
+                        "Couldn't find all resumable slots by key/index during replaying. The tree doesn't match so React will fallback to client rendering."
+                      );
+                    task$jscomp$0.replay.pendingTasks--;
+                    task$jscomp$0.abortSet.delete(task$jscomp$0);
+                    finishedTask(
+                      request,
+                      task$jscomp$0.blockedBoundary,
+                      task$jscomp$0.row,
+                      null
+                    );
+                  } catch (thrownValue) {
+                    resetHooksState();
+                    var x =
+                      thrownValue === SuspenseException
+                        ? getSuspendedThenable()
+                        : thrownValue;
+                    if (request.aborted) {
+                      thrownValue === SuspenseException &&
+                        (task$jscomp$0.thenableState =
+                          getThenableStateAfterSuspending());
+                      request.currentTask = prevTask;
+                      var request$jscomp$0 = request;
+                      abortTaskDEV(task$jscomp$0, request$jscomp$0);
+                      task$jscomp$0.abortSet.delete(task$jscomp$0);
+                      finishAbortedTaskDEV(
+                        task$jscomp$0,
+                        request$jscomp$0,
+                        request$jscomp$0.fatalError
+                      );
+                    } else {
+                      if ("object" === typeof x && null !== x) {
+                        if ("function" === typeof x.then) {
+                          var ping = task$jscomp$0.ping;
+                          x.then(ping.resolve, ping.reject);
+                          task$jscomp$0.thenableState =
+                            thrownValue === SuspenseException
+                              ? getThenableStateAfterSuspending()
+                              : null;
+                          break a;
+                        }
+                        if (
+                          "Maximum call stack size exceeded" === x.message &&
+                          task$jscomp$0.node !== startNode
+                        ) {
+                          task$jscomp$0.thenableState = null;
+                          request.pingedTasks.push(task$jscomp$0);
+                          break a;
+                        }
+                      }
+                      task$jscomp$0.replay.pendingTasks--;
+                      task$jscomp$0.abortSet.delete(task$jscomp$0);
+                      var errorInfo = getThrownInfo(
+                        task$jscomp$0.componentStack
+                      );
+                      request$jscomp$0 = request;
+                      var boundary = task$jscomp$0.blockedBoundary,
+                        error$jscomp$0 = request.aborted
+                          ? request.fatalError
+                          : x,
+                        errorInfo$jscomp$0 = errorInfo,
+                        replayNodes = task$jscomp$0.replay.nodes,
+                        resumeSlots = task$jscomp$0.replay.slots,
+                        errorDigest = logRecoverableError(
+                          request$jscomp$0,
+                          error$jscomp$0,
+                          errorInfo$jscomp$0,
+                          task$jscomp$0.debugTask
+                        );
+                      abortRemainingReplayNodes(
+                        request$jscomp$0,
+                        boundary,
+                        replayNodes,
+                        resumeSlots,
+                        error$jscomp$0,
+                        errorDigest,
+                        errorInfo$jscomp$0,
+                        !1
+                      );
+                      request.pendingRootTasks--;
+                      0 === request.pendingRootTasks && completeShell(request);
+                      request.allPendingTasks--;
+                      0 === request.allPendingTasks && completeAll(request);
+                    }
+                  } finally {
+                    (request.currentTask = prevTask),
+                      (currentTaskInDEV = prevTaskInDEV);
+                  }
+                }
+              }
+            else
+              a: if (
+                ((prevTaskInDEV = void 0),
+                (task$jscomp$0 = task),
+                (request$jscomp$0 = segment),
+                request$jscomp$0.status === PENDING)
+              ) {
+                var prevTask$jscomp$0 = request.currentTask;
                 request.currentTask = task$jscomp$0;
                 switchContext(task$jscomp$0.context);
                 prevTaskInDEV = currentTaskInDEV;
                 currentTaskInDEV = task$jscomp$0;
+                var childrenLength = request$jscomp$0.children.length,
+                  chunkLength = request$jscomp$0.chunks.length,
+                  startNode$jscomp$0 = task$jscomp$0.node;
                 try {
-                  "number" === typeof task$jscomp$0.replay.slots
-                    ? resumeNode(
-                        request,
-                        task$jscomp$0,
-                        task$jscomp$0.replay.slots,
-                        task$jscomp$0.node,
-                        task$jscomp$0.childIndex
-                      )
-                    : retryNode(request, task$jscomp$0);
-                  if (
-                    1 === task$jscomp$0.replay.pendingTasks &&
-                    0 < task$jscomp$0.replay.nodes.length
-                  )
-                    throw Error(
-                      "Couldn't find all resumable slots by key/index during replaying. The tree doesn't match so React will fallback to client rendering."
+                  retryNode(request, task$jscomp$0),
+                    pushSegmentFinale(
+                      request$jscomp$0.chunks,
+                      request.renderState,
+                      request$jscomp$0.lastPushedText,
+                      request$jscomp$0.textEmbedded
+                    ),
+                    task$jscomp$0.abortSet.delete(task$jscomp$0),
+                    (request$jscomp$0.status = COMPLETED),
+                    finishedTask(
+                      request,
+                      task$jscomp$0.blockedBoundary,
+                      task$jscomp$0.row,
+                      request$jscomp$0
                     );
-                  task$jscomp$0.replay.pendingTasks--;
-                  task$jscomp$0.abortSet.delete(task$jscomp$0);
-                  finishedTask(
-                    request,
-                    task$jscomp$0.blockedBoundary,
-                    task$jscomp$0.row,
-                    null
-                  );
                 } catch (thrownValue) {
                   resetHooksState();
-                  var x =
+                  request$jscomp$0.children.length = childrenLength;
+                  request$jscomp$0.chunks.length = chunkLength;
+                  var x$jscomp$0 =
                     thrownValue === SuspenseException
                       ? getSuspendedThenable()
                       : thrownValue;
-                  if (request.aborted) {
+                  if (request.aborted)
                     thrownValue === SuspenseException &&
                       (task$jscomp$0.thenableState =
-                        getThenableStateAfterSuspending());
-                    request.currentTask = prevTask;
-                    var request$jscomp$0 = request;
-                    abortTaskDEV(task$jscomp$0, request$jscomp$0);
-                    task$jscomp$0.abortSet.delete(task$jscomp$0);
-                    finishAbortedTaskDEV(
-                      task$jscomp$0,
-                      request$jscomp$0,
-                      request$jscomp$0.fatalError
-                    );
-                  } else if (
-                    "object" === typeof x &&
-                    null !== x &&
-                    "function" === typeof x.then
-                  ) {
-                    var ping = task$jscomp$0.ping;
-                    x.then(ping.resolve, ping.reject);
-                    task$jscomp$0.thenableState =
-                      thrownValue === SuspenseException
-                        ? getThenableStateAfterSuspending()
-                        : null;
-                  } else {
-                    task$jscomp$0.replay.pendingTasks--;
-                    task$jscomp$0.abortSet.delete(task$jscomp$0);
-                    var errorInfo = getThrownInfo(task$jscomp$0.componentStack);
-                    request$jscomp$0 = request;
-                    var boundary = task$jscomp$0.blockedBoundary,
-                      error$jscomp$0 = request.aborted ? request.fatalError : x,
-                      errorInfo$jscomp$0 = errorInfo,
-                      replayNodes = task$jscomp$0.replay.nodes,
-                      resumeSlots = task$jscomp$0.replay.slots,
-                      errorDigest = logRecoverableError(
+                        getThenableStateAfterSuspending()),
+                      (request.currentTask = prevTask$jscomp$0),
+                      (request$jscomp$0 = request),
+                      abortTaskDEV(task$jscomp$0, request$jscomp$0),
+                      task$jscomp$0.abortSet.delete(task$jscomp$0),
+                      finishAbortedTaskDEV(
+                        task$jscomp$0,
                         request$jscomp$0,
-                        error$jscomp$0,
-                        errorInfo$jscomp$0,
-                        task$jscomp$0.debugTask
+                        request$jscomp$0.fatalError
                       );
-                    abortRemainingReplayNodes(
-                      request$jscomp$0,
-                      boundary,
-                      replayNodes,
-                      resumeSlots,
-                      error$jscomp$0,
-                      errorDigest,
-                      errorInfo$jscomp$0,
-                      !1
+                  else {
+                    if ("object" === typeof x$jscomp$0 && null !== x$jscomp$0) {
+                      if ("function" === typeof x$jscomp$0.then) {
+                        request$jscomp$0.status = PENDING;
+                        task$jscomp$0.thenableState =
+                          thrownValue === SuspenseException
+                            ? getThenableStateAfterSuspending()
+                            : null;
+                        var ping$jscomp$0 = task$jscomp$0.ping;
+                        x$jscomp$0.then(
+                          ping$jscomp$0.resolve,
+                          ping$jscomp$0.reject
+                        );
+                        break a;
+                      }
+                      if (
+                        "Maximum call stack size exceeded" ===
+                          x$jscomp$0.message &&
+                        task$jscomp$0.node !== startNode$jscomp$0
+                      ) {
+                        request$jscomp$0.status = PENDING;
+                        task$jscomp$0.thenableState = null;
+                        request.pingedTasks.push(task$jscomp$0);
+                        break a;
+                      }
+                    }
+                    var errorInfo$jscomp$1 = getThrownInfo(
+                      task$jscomp$0.componentStack
                     );
-                    request.pendingRootTasks--;
-                    0 === request.pendingRootTasks && completeShell(request);
+                    task$jscomp$0.abortSet.delete(task$jscomp$0);
+                    request$jscomp$0.status = ERRORED;
+                    var boundary$jscomp$0 = task$jscomp$0.blockedBoundary,
+                      row = task$jscomp$0.row,
+                      debugTask = task$jscomp$0.debugTask;
+                    null !== row &&
+                      0 === --row.pendingTasks &&
+                      finishSuspenseListRow(request, row);
                     request.allPendingTasks--;
-                    0 === request.allPendingTasks && completeAll(request);
-                  }
-                } finally {
-                  (request.currentTask = prevTask),
-                    (currentTaskInDEV = prevTaskInDEV);
-                }
-              }
-            } else if (
-              ((prevTaskInDEV = void 0),
-              (task$jscomp$0 = task),
-              (request$jscomp$0 = segment),
-              request$jscomp$0.status === PENDING)
-            ) {
-              var prevTask$jscomp$0 = request.currentTask;
-              request.currentTask = task$jscomp$0;
-              switchContext(task$jscomp$0.context);
-              prevTaskInDEV = currentTaskInDEV;
-              currentTaskInDEV = task$jscomp$0;
-              var childrenLength = request$jscomp$0.children.length,
-                chunkLength = request$jscomp$0.chunks.length;
-              try {
-                retryNode(request, task$jscomp$0),
-                  pushSegmentFinale(
-                    request$jscomp$0.chunks,
-                    request.renderState,
-                    request$jscomp$0.lastPushedText,
-                    request$jscomp$0.textEmbedded
-                  ),
-                  task$jscomp$0.abortSet.delete(task$jscomp$0),
-                  (request$jscomp$0.status = COMPLETED),
-                  finishedTask(
-                    request,
-                    task$jscomp$0.blockedBoundary,
-                    task$jscomp$0.row,
-                    request$jscomp$0
-                  );
-              } catch (thrownValue) {
-                resetHooksState();
-                request$jscomp$0.children.length = childrenLength;
-                request$jscomp$0.chunks.length = chunkLength;
-                var x$jscomp$0 =
-                  thrownValue === SuspenseException
-                    ? getSuspendedThenable()
-                    : thrownValue;
-                if (request.aborted)
-                  thrownValue === SuspenseException &&
-                    (task$jscomp$0.thenableState =
-                      getThenableStateAfterSuspending()),
-                    (request.currentTask = prevTask$jscomp$0),
-                    (request$jscomp$0 = request),
-                    abortTaskDEV(task$jscomp$0, request$jscomp$0),
-                    task$jscomp$0.abortSet.delete(task$jscomp$0),
-                    finishAbortedTaskDEV(
-                      task$jscomp$0,
-                      request$jscomp$0,
-                      request$jscomp$0.fatalError
-                    );
-                else if (
-                  "object" === typeof x$jscomp$0 &&
-                  null !== x$jscomp$0 &&
-                  "function" === typeof x$jscomp$0.then
-                ) {
-                  request$jscomp$0.status = PENDING;
-                  task$jscomp$0.thenableState =
-                    thrownValue === SuspenseException
-                      ? getThenableStateAfterSuspending()
-                      : null;
-                  var ping$jscomp$0 = task$jscomp$0.ping;
-                  x$jscomp$0.then(ping$jscomp$0.resolve, ping$jscomp$0.reject);
-                } else {
-                  var errorInfo$jscomp$1 = getThrownInfo(
-                    task$jscomp$0.componentStack
-                  );
-                  task$jscomp$0.abortSet.delete(task$jscomp$0);
-                  request$jscomp$0.status = ERRORED;
-                  var boundary$jscomp$0 = task$jscomp$0.blockedBoundary,
-                    row = task$jscomp$0.row,
-                    debugTask = task$jscomp$0.debugTask;
-                  null !== row &&
-                    0 === --row.pendingTasks &&
-                    finishSuspenseListRow(request, row);
-                  request.allPendingTasks--;
-                  var errorDigest$jscomp$0 = logRecoverableError(
-                    request,
-                    x$jscomp$0,
-                    errorInfo$jscomp$1,
-                    debugTask
-                  );
-                  if (null === boundary$jscomp$0)
-                    fatalError(
+                    var errorDigest$jscomp$0 = logRecoverableError(
                       request,
                       x$jscomp$0,
                       errorInfo$jscomp$1,
                       debugTask
                     );
-                  else {
-                    boundary$jscomp$0.pendingTasks--;
-                    if (boundary$jscomp$0.status !== CLIENT_RENDERED) {
-                      boundary$jscomp$0.status = CLIENT_RENDERED;
-                      encodeErrorForBoundary(
-                        boundary$jscomp$0,
-                        errorDigest$jscomp$0,
+                    if (null === boundary$jscomp$0)
+                      fatalError(
+                        request,
                         x$jscomp$0,
                         errorInfo$jscomp$1,
-                        !1
+                        debugTask
                       );
-                      untrackBoundary(request, boundary$jscomp$0);
-                      var boundaryRow = boundary$jscomp$0.row;
-                      null !== boundaryRow &&
-                        (request.allPendingTasks++,
-                        0 === --boundaryRow.pendingTasks &&
-                          finishSuspenseListRow(request, boundaryRow),
-                        request.allPendingTasks--);
-                      boundary$jscomp$0.parentFlushed &&
-                        request.clientRenderedBoundaries.push(
-                          boundary$jscomp$0
+                    else {
+                      boundary$jscomp$0.pendingTasks--;
+                      if (boundary$jscomp$0.status !== CLIENT_RENDERED) {
+                        boundary$jscomp$0.status = CLIENT_RENDERED;
+                        encodeErrorForBoundary(
+                          boundary$jscomp$0,
+                          errorDigest$jscomp$0,
+                          x$jscomp$0,
+                          errorInfo$jscomp$1,
+                          !1
                         );
-                      0 === request.pendingRootTasks &&
-                        null === request.trackedPostpones &&
-                        null !== boundary$jscomp$0.preamble &&
-                        preparePreamble(request);
+                        untrackBoundary(request, boundary$jscomp$0);
+                        var boundaryRow = boundary$jscomp$0.row;
+                        null !== boundaryRow &&
+                          (request.allPendingTasks++,
+                          0 === --boundaryRow.pendingTasks &&
+                            finishSuspenseListRow(request, boundaryRow),
+                          request.allPendingTasks--);
+                        boundary$jscomp$0.parentFlushed &&
+                          request.clientRenderedBoundaries.push(
+                            boundary$jscomp$0
+                          );
+                        0 === request.pendingRootTasks &&
+                          null === request.trackedPostpones &&
+                          null !== boundary$jscomp$0.preamble &&
+                          preparePreamble(request);
+                      }
+                      0 === request.allPendingTasks && completeAll(request);
                     }
-                    0 === request.allPendingTasks && completeAll(request);
                   }
+                } finally {
+                  (request.currentTask = prevTask$jscomp$0),
+                    (currentTaskInDEV = prevTaskInDEV);
                 }
-              } finally {
-                (request.currentTask = prevTask$jscomp$0),
-                  (currentTaskInDEV = prevTaskInDEV);
               }
-            }
           }
           pingedTasks.splice(0, i);
           null !== request$jscomp$1.destination &&
@@ -10584,5 +10616,5 @@ __DEV__ &&
         'The server used "renderToString" which does not support Suspense. If you intended for this Suspense boundary to render the fallback content on the server consider throwing an Error somewhere within the Suspense boundary. If you intended to have the server wait for the suspended component please switch to "renderToReadableStream" which supports Suspense on the server'
       );
     };
-    exports.version = "19.3.0-www-classic-58a6360f-20260716";
+    exports.version = "19.3.0-www-classic-689a4fa4-20260719";
   })();
