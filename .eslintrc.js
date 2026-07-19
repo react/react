@@ -464,7 +464,6 @@ module.exports = {
       files: ['packages/react-native-renderer/**/*.js'],
       globals: {
         nativeFabricUIManager: 'readonly',
-        RN$enableMicrotasksInReact: 'readonly',
         RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
       },
     },
