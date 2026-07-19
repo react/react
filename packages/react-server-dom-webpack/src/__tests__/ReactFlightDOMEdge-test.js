@@ -321,6 +321,85 @@ describe('ReactFlightDOMEdge', () => {
     expect(result).toEqual('<span>Client Component</span>');
   });
 
+  it('should write a chunk list shared by several import rows only once', async () => {
+    // Three distinct client modules from the same chunk group: their
+    // manifest entries carry equal (but instance-distinct) chunk lists,
+    // the shape a JSON-parsed manifest produces.
+    const chunkLoad = Promise.resolve();
+    const ClientA = clientExports(
+      function ClientA() {
+        return <span>A</span>;
+      },
+      '42S',
+      '/shared-chunk-list.js',
+      chunkLoad,
+    );
+    const ClientB = clientExports(
+      function ClientB() {
+        return <span>B</span>;
+      },
+      '42S',
+      '/shared-chunk-list.js',
+    );
+    const ClientC = clientExports(
+      function ClientC() {
+        return <span>C</span>;
+      },
+      '42S',
+      '/shared-chunk-list.js',
+    );
+
+    const translationMap = {};
+    [ClientA, ClientB, ClientC].forEach(Component => {
+      translationMap[webpackMap[Component.$$id].id] = {
+        '*': webpackMap[Component.$$id],
+      };
+    });
+
+    function App() {
+      return (
+        <div>
+          <ClientA />
+          <ClientB />
+          <ClientC />
+        </div>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<App />, webpackMap),
+    );
+    const [payloadStream, consumeStream] = stream.tee();
+
+    // The shared list appears once inline in the first import row and
+    // once as the outlined row the later import rows reference — not
+    // once per module.
+    const payload = await readResult(payloadStream);
+    expect(payload.match(/shared-chunk-list\.js/g).length).toBe(2);
+
+    const response = ReactServerDOMClient.createFromReadableStream(
+      consumeStream,
+      {
+        serverConsumerManifest: {
+          moduleMap: translationMap,
+          moduleLoading: webpackModuleLoading,
+        },
+      },
+    );
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    const result = await readResult(ssrStream);
+    expect(result).toEqual(
+      '<div><span>A</span><span>B</span><span>C</span></div>',
+    );
+  });
+
   it('should resolve cyclic references in client component props after two rounds of serialization and deserialization', async () => {
     const ClientComponent = clientExports(function ClientComponent({data}) {
       return (

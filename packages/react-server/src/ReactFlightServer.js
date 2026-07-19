@@ -615,6 +615,7 @@ export type Request = {
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
+  writtenImportMetadata: WeakMap<Reference, string>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -740,6 +741,7 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.writtenImportMetadata = new WeakMap();
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -4446,6 +4448,53 @@ function emitErrorChunk(
   }
 }
 
+// Instances shared between import rows (like a chunk list shared by the
+// modules of a chunk group, see internChunkList) are written once: when
+// first repeated they get outlined into the import queue, ahead of the
+// rows that reference them. The map is separate from writtenObjects so
+// import metadata can only ever reference other import rows.
+const IMPORT_METADATA_SEEN_ONCE = '';
+
+function importMetadataReplacer(
+  request: Request,
+  key: string,
+  value: mixed,
+): mixed {
+  if (key === '') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return escapeStringValue(value);
+  }
+  if (typeof value === 'object' && value !== null) {
+    const writtenImportMetadata = request.writtenImportMetadata;
+    const existing = writtenImportMetadata.get(value as any);
+    if (existing === undefined) {
+      writtenImportMetadata.set(value as any, IMPORT_METADATA_SEEN_ONCE);
+    } else if (existing === IMPORT_METADATA_SEEN_ONCE) {
+      request.pendingChunks++;
+      const outlinedId = request.nextChunkId++;
+      const json = stringifyImportMetadata(request, value);
+      const row = outlinedId.toString(16) + ':' + json + '\n';
+      request.completedImportChunks.push(stringToChunk(row));
+      const reference = serializeByValueID(outlinedId);
+      writtenImportMetadata.set(value as any, reference);
+      return reference;
+    } else {
+      return existing;
+    }
+  }
+  return value;
+}
+
+function stringifyImportMetadata(request: Request, metadata: mixed): string {
+  // $FlowFixMe[incompatible-type] stringify can return null
+  const json: string = stringify(metadata, function (key, value) {
+    return importMetadataReplacer(request, key, value);
+  });
+  return json;
+}
+
 function emitImportChunk(
   request: Request,
   id: number,
@@ -4453,7 +4502,11 @@ function emitImportChunk(
   debug: boolean,
 ): void {
   // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
+  const json: string =
+    __DEV__ && debug
+      ? // The debug channel can't reference rows in the main stream.
+        stringify(clientReferenceMetadata)
+      : stringifyImportMetadata(request, clientReferenceMetadata);
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
