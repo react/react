@@ -25,6 +25,7 @@ let waitFor;
 let waitForAll;
 let assertLog;
 let Suspense;
+let StrictMode;
 let useMemo;
 let textCache;
 
@@ -49,6 +50,7 @@ describe('useSyncExternalStore', () => {
     useSyncExternalStore = React.useSyncExternalStore;
     startTransition = React.startTransition;
     Suspense = React.Suspense;
+    StrictMode = React.StrictMode;
     useMemo = React.useMemo;
     textCache = new Map();
     const InternalTestUtils = require('internal-test-utils');
@@ -351,6 +353,64 @@ describe('useSyncExternalStore', () => {
       );
     },
   );
+
+  it('re-checks the snapshot after re-subscribing following a StrictMode Suspense remount', async () => {
+    let currentState = 0;
+    let shouldMutateOnSubscribe = false;
+
+    const store = {
+      subscribe(listener) {
+        if (shouldMutateOnSubscribe) {
+          shouldMutateOnSubscribe = false;
+          currentState = 1;
+        }
+        // We intentionally do not notify through the listener here; the point
+        // of this test is that subscribe-time silent mutations still need the
+        // post-subscribe snapshot repair path.
+        return () => {};
+      },
+      getState() {
+        return currentState;
+      },
+    };
+
+    function StoreText({text}) {
+      const value = useSyncExternalStore(store.subscribe, store.getState);
+      const resolvedText = readText(text);
+      return <Text text={resolvedText + value} />;
+    }
+
+    function App({text}) {
+      return (
+        <StrictMode>
+          <Suspense fallback={<Text text="Loading..." />}>
+            <StoreText text={text} />
+          </Suspense>
+        </StrictMode>
+      );
+    }
+
+    resolveText('A');
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App text="A" />);
+    });
+    assertLog(['A0']);
+    expect(root).toMatchRenderedOutput('A0');
+
+    await act(async () => {
+      shouldMutateOnSubscribe = true;
+      root.render(<App text="B" />);
+    });
+    assertLog(['Loading...']);
+    expect(root).toMatchRenderedOutput('Loading...');
+
+    await act(() => {
+      resolveText('B');
+    });
+    assertLog(['B0', 'B1']);
+    expect(root).toMatchRenderedOutput('B1');
+  });
 
   it('regression: does not infinite loop for only changing store reference in render', async () => {
     let store = {value: {}};

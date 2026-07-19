@@ -1871,8 +1871,18 @@ function subscribeToStore<T>(
       forceStoreRerender(fiber);
     }
   };
-  // Subscribe to the store and return a clean-up function.
-  return subscribe(handleStoreChange);
+  // Subscribe to the store.
+  const unsubscribe = subscribe(handleStoreChange);
+
+  // Something may have been mutated before the subscription finished but after
+  // the last snapshot read during render. Check one more time now that the
+  // subscription is active.
+  if (checkIfSnapshotChanged(inst)) {
+    forceStoreRerender(fiber);
+  }
+
+  // Return a clean-up function.
+  return unsubscribe;
 }
 
 function checkIfSnapshotChanged<T>(inst: StoreInstance<T>): boolean {
