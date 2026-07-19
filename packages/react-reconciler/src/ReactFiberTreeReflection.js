@@ -425,7 +425,11 @@ export function getFragmentParentInstanceOrContainerFiber(
 ): null | Fiber {
   let parent = fiber.return;
   while (parent !== null) {
-    if (parent.tag === HostRoot || parent.tag === HostComponent) {
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
       return parent;
     }
     parent = parent.return;
@@ -441,7 +445,11 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
     if (parent.tag === HostPortal) {
       foundPortalParent = true;
     }
-    if (parent.tag === HostRoot || parent.tag === HostComponent) {
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
       break;
     }
     parent = parent.return;
@@ -521,6 +529,7 @@ export function getInstanceFromHostFiber<
 >(fiber: Fiber): I {
   switch (fiber.tag) {
     case HostComponent:
+    case HostSingleton:
     case HostText:
       return fiber.stateNode;
     case HostRoot:
@@ -589,7 +598,9 @@ export function isFragmentContainedByFiber(
     getFragmentParentInstanceOrContainerFiber(fragmentFiber);
   while (current !== null) {
     if (
-      (current.tag === HostComponent || current.tag === HostRoot) &&
+      (current.tag === HostComponent ||
+        current.tag === HostRoot ||
+        current.tag === HostSingleton) &&
       (current === fiberHostParent || current.alternate === fiberHostParent)
     ) {
       return true;
