@@ -2588,6 +2588,24 @@ describe('FragmentRefs', () => {
         fragmentRef.current.scrollIntoView();
         expect(parentRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
       });
+
+      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+      it('throws when the fallback target is a ShadowRoot container', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+        await act(() => {
+          root.render(<Fragment ref={fragmentRef} />);
+        });
+
+        // TODO: The ShadowRoot's host element marks where the fragment's
+        // content would appear and should be scrolled into view instead.
+        // Currently the HostRoot fallback returns the ShadowRoot container,
+        // which has no scrollIntoView method.
+        expect(() => fragmentRef.current.scrollIntoView()).toThrow();
+      });
     });
   });
 
