@@ -3614,12 +3614,34 @@ if (enableFragmentRefsScrollIntoView) {
       const target = getInstanceFromHostFiber<Instance | Container>(
         targetFiber,
       );
-      // TODO: If the parent host fiber is a HostRoot, the target is a
-      // Container which can be a Document or DocumentFragment. Those have no
-      // scrollIntoView method, so this crashes at runtime.
-      // $FlowFixMe[prop-missing]
-      target.scrollIntoView(alignToTop);
-      return;
+      // If the parent host fiber is a HostRoot, the target is a Container
+      // which is not necessarily an Element with a scrollIntoView method.
+      if (target.nodeType === DOCUMENT_NODE) {
+        // A Document is always in view.
+      } else if (target.nodeType === DOCUMENT_FRAGMENT_NODE) {
+        const fragment = target as any as DocumentFragment;
+        // ShadowRoot always has a host: https://dom.spec.whatwg.org/#ref-for-concept-documentfragment-host%E2%91%A5
+        // A generic DocumentFragment doesn't implement this property but conceptually
+        // host is a nullable Element: https://dom.spec.whatwg.org/#concept-documentfragment-host
+        const host =
+          'host' in fragment ? (fragment as any as ShadowRoot).host : null;
+        if (host !== null) {
+          // The ShadowRoot's host element marks the position where the
+          // fragment's content would appear.
+          host.scrollIntoView(alignToTop);
+        } else if (__DEV__) {
+          console.warn(
+            'You are attempting to scroll a FragmentInstance that is only ' +
+              'mounted inside a detached DocumentFragment. No scroll was ' +
+              'performed.',
+          );
+        }
+        return;
+      } else {
+        // Narrowed down to Element by nodeType check above, but Flow doesn't know that.
+        const element = target as any as Element;
+        element.scrollIntoView(alignToTop);
+      }
     }
 
     let i = resolvedAlignToTop ? children.length - 1 : 0;

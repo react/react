@@ -22,6 +22,7 @@ let simulateIntersection;
 let setClientRects;
 let mockRangeClientRects;
 let assertConsoleErrorDev;
+let assertConsoleWarnDev;
 
 function Wrapper({children}) {
   return children;
@@ -44,6 +45,7 @@ describe('FragmentRefs', () => {
     mockRangeClientRects = IntersectionMocks.mockRangeClientRects;
     assertConsoleErrorDev =
       require('internal-test-utils').assertConsoleErrorDev;
+    assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
 
     container = document.createElement('div');
     document.body.innerHTML = '';
@@ -2590,7 +2592,7 @@ describe('FragmentRefs', () => {
       });
 
       // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
-      it('throws when the fallback target is a ShadowRoot container', async () => {
+      it('scrolls the host element when the fallback target is a ShadowRoot container', async () => {
         const fragmentRef = React.createRef();
         const host = document.createElement('div');
         container.appendChild(host);
@@ -2600,11 +2602,32 @@ describe('FragmentRefs', () => {
           root.render(<Fragment ref={fragmentRef} />);
         });
 
-        // TODO: The ShadowRoot's host element marks where the fragment's
-        // content would appear and should be scrolled into view instead.
-        // Currently the HostRoot fallback returns the ShadowRoot container,
-        // which has no scrollIntoView method.
-        expect(() => fragmentRef.current.scrollIntoView()).toThrow();
+        // The ShadowRoot's host element marks where the fragment's content
+        // would appear
+        host.scrollIntoView = jest.fn();
+        fragmentRef.current.scrollIntoView();
+        expect(host.scrollIntoView).toHaveBeenCalledTimes(1);
+      });
+
+      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+      it('warns without scrolling when the fallback target is a detached DocumentFragment container', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(
+          document.createDocumentFragment(),
+        );
+        await act(() => {
+          root.render(<Fragment ref={fragmentRef} />);
+        });
+
+        expect(() => fragmentRef.current.scrollIntoView()).not.toThrow();
+        assertConsoleWarnDev(
+          [
+            'You are attempting to scroll a FragmentInstance that is only ' +
+              'mounted inside a detached DocumentFragment. No scroll was ' +
+              'performed.',
+          ],
+          {withoutStack: true},
+        );
       });
     });
   });
