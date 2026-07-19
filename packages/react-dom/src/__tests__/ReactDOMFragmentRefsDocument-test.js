@@ -58,10 +58,10 @@ describe('FragmentRefs', () => {
         });
         expect(document.activeElement.id).toEqual('child-a');
 
-        // TODO: blur() should remove focus from the child. Currently the
-        // HostRoot fallback returns the Document container, whose
-        // `ownerDocument` is null, so reading `activeElement` from it throws.
-        expect(() => fragmentRef.current.blur()).toThrow();
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(document.activeElement).toEqual(document.body);
       });
     });
   });
