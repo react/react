@@ -47,6 +47,7 @@ describe('ReactDOMServerHydration', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     window.removeEventListener('error', errorHandler);
     document.body.removeChild(container);
     console.error = realConsoleError;
@@ -524,6 +525,74 @@ describe('ReactDOMServerHydration', () => {
             in App (at **)",
         ]
       `);
+    });
+
+    describe('nonce', () => {
+      // Nonce is on HTMLOrSVGElement, so cover a few host tags that hydrate
+      // attributes through getValueForAttribute.
+      function App() {
+        return (
+          <div>
+            <script nonce="r4nd0m" src="https://example.com/script.js" />
+            <style nonce="r4nd0m">{`body { background-color: red; }`}</style>
+            <link
+              rel="stylesheet"
+              nonce="r4nd0m"
+              href="https://example.com/style.css"
+            />
+            <img nonce="r4nd0m" src="https://example.com/image.png" />
+            <video nonce="r4nd0m" src="https://example.com/video.mp4" />
+            <audio nonce="r4nd0m" src="https://example.com/audio.mp3" />
+            <iframe nonce="r4nd0m" src="https://example.com/iframe.html" />
+            <form nonce="r4nd0m">
+              <input type="text" nonce="r4nd0m" />
+            </form>
+            <my-element nonce="r4nd0m" />
+          </div>
+        );
+      }
+
+      // @gate __DEV__
+      it('does not warn when nonce matches and CSP hides getAttribute', () => {
+        // When CSP is enabled, browsers hide the nonce content attribute
+        // (getAttribute("nonce") returns "") while .nonce remains readable.
+        // JSDOM does not implement this, so mock it for this case.
+        // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
+        const originalGetAttribute = window.Element.prototype.getAttribute;
+        spyOnDevAndProd(
+          window.Element.prototype,
+          'getAttribute',
+        ).mockImplementation(function (name) {
+          if (typeof name === 'string' && name.toLowerCase() === 'nonce') {
+            return '';
+          }
+          return originalGetAttribute.call(this, name);
+        });
+
+        const htmlString = ReactDOMServer.renderToString(<App />);
+        container.innerHTML = htmlString;
+
+        // validate that the nonce attribute is hidden by getAttribute
+        // mimicking the behavior of browsers when CSP is enabled
+        const script = container.querySelector('script');
+        expect(script.getAttribute('nonce')).toBe('');
+        expect(script.nonce).toBe('r4nd0m');
+
+        expect(testMismatch(App)).toEqual([]);
+      });
+
+      // @gate __DEV__
+      it('does not warn when nonce matches without CSP hiding', () => {
+        const htmlString = ReactDOMServer.renderToString(<App />);
+        container.innerHTML = htmlString;
+
+        // validate that the nonce attribute is visible via getAttribute
+        // when CSP is disabled
+        const script = container.querySelector('script');
+        expect(script.getAttribute('nonce')).toBe('r4nd0m');
+        expect(script.nonce).toBe('r4nd0m');
+        expect(testMismatch(App)).toEqual([]);
+      });
     });
   });
 
