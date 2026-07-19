@@ -7730,6 +7730,94 @@ describe('ReactDOMFizzServer', () => {
     expect(caughtError.message).toBe('Maximum call stack size exceeded');
   });
 
+  it('can recover from very deep trees during resume to avoid stack overflow', async () => {
+    const promise = new Promise(() => {});
+
+    let prerendering = true;
+
+    // Deep wrappers above the postponed boundary. On resume, replaying this
+    // path goes through retryReplayTask → retryNode (no trampoline), so a
+    // tree deep enough to overflow must recover there — not only on the
+    // ordinary render retry path.
+    function Deep({n, children}) {
+      if (n > 0) {
+        return <Deep n={n - 1}>{children}</Deep>;
+      }
+      return children;
+    }
+
+    function Content() {
+      if (prerendering) {
+        return React.use(promise);
+      }
+      return <span>hi</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Deep n={1200}>
+            <Suspense fallback="Loading...">
+              <Content />
+            </Suspense>
+          </Deep>
+        </div>
+      );
+    }
+
+    const controller = new AbortController();
+    const errors = [];
+    let pendingPrerender;
+    await act(() => {
+      pendingPrerender = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
+        signal: controller.signal,
+        onError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    controller.abort('abort');
+
+    const prerendered = await pendingPrerender;
+    expect(errors).toEqual(['abort']);
+    expect(prerendered.postponed).not.toBe(null);
+
+    const preludeWritable = new Stream.PassThrough();
+    preludeWritable.setEncoding('utf8');
+    preludeWritable.on('data', chunk => {
+      writable.write(chunk);
+    });
+
+    await act(() => {
+      prerendered.prelude.pipe(preludeWritable);
+    });
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    prerendering = false;
+    errors.length = 0;
+
+    const resumed = await ReactDOMFizzServer.resumeToPipeableStream(
+      <App />,
+      JSON.parse(JSON.stringify(prerendered.postponed)),
+      {
+        onError(error) {
+          errors.push(error);
+        },
+      },
+    );
+
+    await act(() => {
+      resumed.pipe(writable);
+    });
+
+    expect(errors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>hi</span>
+      </div>,
+    );
+  });
+
   it('client renders incomplete Suspense boundaries when the document is no longer loading when hydration begins', async () => {
     let resolve;
     const promise = new Promise(r => {

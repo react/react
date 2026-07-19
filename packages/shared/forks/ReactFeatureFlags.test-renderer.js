@@ -54,7 +54,7 @@ export const disableClientCache: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
-export const enableEffectEventMutationPhase: boolean = false;
+export const enableEffectEventMutationPhase: boolean = true;
 
 export const enableYieldingBeforePassive: boolean = true;
 
