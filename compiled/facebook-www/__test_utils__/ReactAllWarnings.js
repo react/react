@@ -340,6 +340,7 @@ export default [
   "When calling super() in `%s`, make sure to pass up the same props that your component's constructor was passed.",
   "You are accessing \"digest\" from the errorInfo object passed to onRecoverableError. This property is no longer provided as part of errorInfo but can be accessed as a property of the Error instance itself.",
   "You are attempting to scroll a FragmentInstance that has no children, siblings, or parent. No scroll was performed.",
+  "You are attempting to scroll a FragmentInstance that is only mounted inside a detached DocumentFragment. No scroll was performed.",
   "You are calling ReactDOM.render() on a container that was previously passed to ReactDOMClient.createRoot(). This is not supported. Did you mean to call root.render(element)?",
   "You are calling ReactDOM.unmountComponentAtNode() on a container that was previously passed to ReactDOMClient.createRoot(). This is not supported. Did you mean to call root.unmount()?",
   "You are calling ReactDOMClient.createRoot() on a container that has already been passed to createRoot() before. Instead, call root.render() on the existing root instead if you want to update it.",

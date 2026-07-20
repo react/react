@@ -33183,44 +33183,56 @@ __DEV__ &&
         );
         var resolvedAlignToTop = !1 !== alignToTop;
         if (0 === children.length) {
-          children = this._fragmentFiber;
-          var result = [null, null],
-            parentHostFiber =
-              getFragmentParentInstanceOrContainerFiber(children);
+          var fiber = this._fragmentFiber,
+            result = [null, null],
+            parentHostFiber = getFragmentParentInstanceOrContainerFiber(fiber);
           null !== parentHostFiber &&
             findFragmentInstanceOrTextInstanceSiblings(
               result,
-              children,
+              fiber,
               parentHostFiber.child
             );
-          children = resolvedAlignToTop
+          fiber = resolvedAlignToTop
             ? result[1] ||
               result[0] ||
               getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
             : result[0] || result[1];
-          null === children
-            ? console.warn(
-                "You are attempting to scroll a FragmentInstance that has no children, siblings, or parent. No scroll was performed."
-              )
-            : enableFragmentRefsTextNodes && 6 === children.tag
-              ? ((alignToTop = getInstanceFromHostFiber(children)),
-                scrollTextNodeIntoView(alignToTop, resolvedAlignToTop))
-              : getInstanceFromHostFiber(children).scrollIntoView(alignToTop);
-        } else
-          for (
-            result = resolvedAlignToTop ? children.length - 1 : 0;
-            result !== (resolvedAlignToTop ? -1 : children.length);
+          if (null === fiber) {
+            console.warn(
+              "You are attempting to scroll a FragmentInstance that has no children, siblings, or parent. No scroll was performed."
+            );
+            return;
+          }
+          if (enableFragmentRefsTextNodes && 6 === fiber.tag) {
+            alignToTop = getInstanceFromHostFiber(fiber);
+            scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
+            return;
+          }
+          fiber = getInstanceFromHostFiber(fiber);
+          if (fiber.nodeType !== DOCUMENT_NODE) {
+            if (fiber.nodeType === DOCUMENT_FRAGMENT_NODE) {
+              resolvedAlignToTop = "host" in fiber ? fiber.host : null;
+              null !== resolvedAlignToTop
+                ? resolvedAlignToTop.scrollIntoView(alignToTop)
+                : console.warn(
+                    "You are attempting to scroll a FragmentInstance that is only mounted inside a detached DocumentFragment. No scroll was performed."
+                  );
+              return;
+            }
+            fiber.scrollIntoView(alignToTop);
+          }
+        }
+        for (
+          fiber = resolvedAlignToTop ? children.length - 1 : 0;
+          fiber !== (resolvedAlignToTop ? -1 : children.length);
 
-          )
-            (parentHostFiber = children[result]),
-              enableFragmentRefsTextNodes && 6 === parentHostFiber.tag
-                ? ((parentHostFiber =
-                    getInstanceFromHostFiber(parentHostFiber)),
-                  scrollTextNodeIntoView(parentHostFiber, resolvedAlignToTop))
-                : getInstanceFromHostFiber(parentHostFiber).scrollIntoView(
-                    alignToTop
-                  ),
-              (result += resolvedAlignToTop ? -1 : 1);
+        )
+          (result = children[fiber]),
+            enableFragmentRefsTextNodes && 6 === result.tag
+              ? ((result = getInstanceFromHostFiber(result)),
+                scrollTextNodeIntoView(result, resolvedAlignToTop))
+              : getInstanceFromHostFiber(result).scrollIntoView(alignToTop),
+            (fiber += resolvedAlignToTop ? -1 : 1);
       });
     var previousHydratableOnEnteringScopedSingleton = null,
       NotLoaded = 0,
@@ -33529,11 +33541,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-modern-83840902-20260719" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-modern-fa5212c1-20260720" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-modern-83840902-20260719\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-modern-fa5212c1-20260720\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -33576,10 +33588,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-modern-83840902-20260719",
+          version: "19.3.0-www-modern-fa5212c1-20260720",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-modern-83840902-20260719"
+          reconcilerVersion: "19.3.0-www-modern-fa5212c1-20260720"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34367,5 +34379,5 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-modern-83840902-20260719";
+    exports.version = "19.3.0-www-modern-fa5212c1-20260720";
   })();

@@ -18264,39 +18264,48 @@ enableFragmentRefsScrollIntoView &&
     );
     var resolvedAlignToTop = !1 !== alignToTop;
     if (0 === children.length) {
-      children = this._fragmentFiber;
-      var result = [null, null],
-        parentHostFiber = getFragmentParentInstanceOrContainerFiber(children);
+      var fiber = this._fragmentFiber,
+        result = [null, null],
+        parentHostFiber = getFragmentParentInstanceOrContainerFiber(fiber);
       null !== parentHostFiber &&
         findFragmentInstanceOrTextInstanceSiblings(
           result,
-          children,
+          fiber,
           parentHostFiber.child
         );
-      children = resolvedAlignToTop
+      fiber = resolvedAlignToTop
         ? result[1] ||
           result[0] ||
           getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
         : result[0] || result[1];
-      null !== children &&
-        (enableFragmentRefsTextNodes && 6 === children.tag
-          ? ((alignToTop = getInstanceFromHostFiber(children)),
-            scrollTextNodeIntoView(alignToTop, resolvedAlignToTop))
-          : getInstanceFromHostFiber(children).scrollIntoView(alignToTop));
-    } else
-      for (
-        result = resolvedAlignToTop ? children.length - 1 : 0;
-        result !== (resolvedAlignToTop ? -1 : children.length);
+      if (null === fiber) return;
+      if (enableFragmentRefsTextNodes && 6 === fiber.tag) {
+        alignToTop = getInstanceFromHostFiber(fiber);
+        scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
+        return;
+      }
+      fiber = getInstanceFromHostFiber(fiber);
+      if (9 !== fiber.nodeType) {
+        if (11 === fiber.nodeType) {
+          resolvedAlignToTop = "host" in fiber ? fiber.host : null;
+          null !== resolvedAlignToTop &&
+            resolvedAlignToTop.scrollIntoView(alignToTop);
+          return;
+        }
+        fiber.scrollIntoView(alignToTop);
+      }
+    }
+    for (
+      fiber = resolvedAlignToTop ? children.length - 1 : 0;
+      fiber !== (resolvedAlignToTop ? -1 : children.length);
 
-      )
-        (parentHostFiber = children[result]),
-          enableFragmentRefsTextNodes && 6 === parentHostFiber.tag
-            ? ((parentHostFiber = getInstanceFromHostFiber(parentHostFiber)),
-              scrollTextNodeIntoView(parentHostFiber, resolvedAlignToTop))
-            : getInstanceFromHostFiber(parentHostFiber).scrollIntoView(
-                alignToTop
-              ),
-          (result += resolvedAlignToTop ? -1 : 1);
+    )
+      (result = children[fiber]),
+        enableFragmentRefsTextNodes && 6 === result.tag
+          ? ((result = getInstanceFromHostFiber(result)),
+            scrollTextNodeIntoView(result, resolvedAlignToTop))
+          : getInstanceFromHostFiber(result).scrollIntoView(alignToTop),
+        (fiber += resolvedAlignToTop ? -1 : 1);
   });
 function addFragmentHandleToFiber(child, fragmentInstance) {
   child = getInstanceFromHostFiber(child);
@@ -20182,14 +20191,14 @@ function getCrossOriginStringAs(as, input) {
 }
 var isomorphicReactPackageVersion$jscomp$inline_2046 = React.version;
 if (
-  "19.3.0-www-modern-83840902-20260719" !==
+  "19.3.0-www-modern-fa5212c1-20260720" !==
   isomorphicReactPackageVersion$jscomp$inline_2046
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2046,
-      "19.3.0-www-modern-83840902-20260719"
+      "19.3.0-www-modern-fa5212c1-20260720"
     )
   );
 Internals.findDOMNode = function (componentOrElement) {
@@ -20207,10 +20216,10 @@ Internals.Events = [
 ];
 var internals$jscomp$inline_2604 = {
   bundleType: 0,
-  version: "19.3.0-www-modern-83840902-20260719",
+  version: "19.3.0-www-modern-fa5212c1-20260720",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-www-modern-83840902-20260719"
+  reconcilerVersion: "19.3.0-www-modern-fa5212c1-20260720"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2605 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -20648,4 +20657,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-www-modern-83840902-20260719";
+exports.version = "19.3.0-www-modern-fa5212c1-20260720";
