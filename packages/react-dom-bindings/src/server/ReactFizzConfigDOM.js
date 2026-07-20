@@ -1199,20 +1199,19 @@ export function pushSegmentFinale(
   }
 }
 
-function pushViewTransitionAttributes(
-  target: Array<Chunk | PrecomputedChunk>,
+function viewTransitionAttributesToString(
   formatContext: FormatContext,
-): void {
+): string {
   if (!enableViewTransition) {
-    return;
+    return '';
   }
   const viewTransition = formatContext.viewTransition;
   if (viewTransition === null) {
-    return;
+    return '';
   }
+  let attrs = '';
   if (viewTransition.name !== 'auto') {
-    pushStringAttribute(
-      target,
+    attrs += stringAttributeToString(
       'vt-name',
       viewTransition.nameIdx === 0
         ? viewTransition.name
@@ -1224,27 +1223,44 @@ function pushViewTransitionAttributes(
     // TODO: Make this deterministic.
     viewTransition.nameIdx++;
   }
-  pushStringAttribute(target, 'vt-update', viewTransition.update);
+  attrs += stringAttributeToString('vt-update', viewTransition.update);
   if (viewTransition.enter !== 'none') {
-    pushStringAttribute(target, 'vt-enter', viewTransition.enter);
+    attrs += stringAttributeToString('vt-enter', viewTransition.enter);
   }
   if (viewTransition.exit !== 'none') {
-    pushStringAttribute(target, 'vt-exit', viewTransition.exit);
+    attrs += stringAttributeToString('vt-exit', viewTransition.exit);
   }
   if (viewTransition.share !== 'none') {
-    pushStringAttribute(target, 'vt-share', viewTransition.share);
+    attrs += stringAttributeToString('vt-share', viewTransition.share);
   }
   if (
     enableViewTransitionParentEnterExit &&
     viewTransition.parentEnter !== 'none'
   ) {
-    pushStringAttribute(target, 'vt-parent-enter', viewTransition.parentEnter);
+    attrs += stringAttributeToString(
+      'vt-parent-enter',
+      viewTransition.parentEnter,
+    );
   }
   if (
     enableViewTransitionParentEnterExit &&
     viewTransition.parentExit !== 'none'
   ) {
-    pushStringAttribute(target, 'vt-parent-exit', viewTransition.parentExit);
+    attrs += stringAttributeToString(
+      'vt-parent-exit',
+      viewTransition.parentExit,
+    );
+  }
+  return attrs;
+}
+
+function pushViewTransitionAttributes(
+  target: Array<Chunk | PrecomputedChunk>,
+  formatContext: FormatContext,
+): void {
+  const attrs = viewTransitionAttributesToString(formatContext);
+  if (attrs !== '') {
+    target.push(stringToChunk(attrs));
   }
 }
 
@@ -1259,10 +1275,7 @@ function processStyleName(styleName: string): string {
   return result;
 }
 
-function pushStyleAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
-  style: Object,
-): void {
+function styleAttributeToString(style: Object): string {
   if (typeof style !== 'object') {
     throw new Error(
       'The `style` prop expects a mapping from style properties to values, ' +
@@ -1328,23 +1341,58 @@ function pushStyleAttribute(
     }
   }
   if (styleString !== '') {
-    target.push(stringToChunk(' style="' + styleString + '"'));
+    return ' style="' + styleString + '"';
+  }
+  return '';
+}
+
+function pushStyleAttribute(
+  target: Array<Chunk | PrecomputedChunk>,
+  style: Object,
+): void {
+  const attr = styleAttributeToString(style);
+  if (attr !== '') {
+    target.push(stringToChunk(attr));
   }
 }
 
 const attributeSeparator = stringToPrecomputedChunk(' ');
 const attributeAssign = stringToPrecomputedChunk('="');
 const attributeEnd = stringToPrecomputedChunk('"');
-const attributeEmptyString = stringToPrecomputedChunk('=""');
+
+function booleanAttributeToString(
+  name: string,
+  value: string | boolean | number | Function | Object, // not null or undefined
+): string {
+  if (value && typeof value !== 'function' && typeof value !== 'symbol') {
+    return ' ' + name + '=""';
+  }
+  return '';
+}
 
 function pushBooleanAttribute(
   target: Array<Chunk | PrecomputedChunk>,
   name: string,
   value: string | boolean | number | Function | Object, // not null or undefined
 ): void {
-  if (value && typeof value !== 'function' && typeof value !== 'symbol') {
-    target.push(stringToChunk(' ' + name + '=""'));
+  const attr = booleanAttributeToString(name, value);
+  if (attr !== '') {
+    target.push(stringToChunk(attr));
   }
+}
+
+function stringAttributeToString(
+  name: string,
+  value: string | boolean | number | Function | Object, // not null or undefined
+): string {
+  if (
+    typeof value !== 'function' &&
+    typeof value !== 'symbol' &&
+    typeof value !== 'boolean'
+  ) {
+    return ' ' + name + '="' + escapeTextForBrowser(value) + '"';
+  }
+  return '';
 }
 
 function pushStringAttribute(
@@ -1352,14 +1400,9 @@ function pushStringAttribute(
   name: string,
   value: string | boolean | number | Function | Object, // not null or undefined
 ): void {
-  if (
-    typeof value !== 'function' &&
-    typeof value !== 'symbol' &&
-    typeof value !== 'boolean'
-  ) {
-    target.push(
-      stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
-    );
+  const attr = stringAttributeToString(name, value);
+  if (attr !== '') {
+    target.push(stringToChunk(attr));
   }
 }
 
@@ -1543,10 +1586,7 @@ function pushFormActionAttribute(
 
 let blobCache: null | WeakMap<Blob, Thenable<string>> = null;
 
-function pushSrcObjectAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
-  blob: Blob,
-): void {
+function srcObjectAttributeToString(blob: Blob): string {
   // Throwing a Promise style suspense read of the Blob content.
   if (blobCache === null) {
     blobCache = new WeakMap();
@@ -1573,50 +1613,38 @@ function pushSrcObjectAttribute(
     throw thenable;
   }
   const url = thenable.value;
-  target.push(
-    attributeSeparator,
-    stringToChunk('src'),
-    attributeAssign,
-    stringToChunk(escapeTextForBrowser(url)),
-    attributeEnd,
-  );
+  return ' src="' + escapeTextForBrowser(url) + '"';
 }
 
-function pushAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
+function attributeToString(
   name: string,
   value: string | boolean | number | Function | Object, // not null or undefined
-): void {
+): string {
   switch (name) {
     // These are very common props and therefore are in the beginning of the switch.
     // TODO: aria-label is a very common prop but allows booleans so is not like the others
     // but should ideally go in this list too.
     case 'className': {
-      pushStringAttribute(target, 'class', value);
-      break;
+      return stringAttributeToString('class', value);
     }
     case 'tabIndex': {
-      pushStringAttribute(target, 'tabindex', value);
-      break;
+      return stringAttributeToString('tabindex', value);
     }
     case 'dir':
     case 'role':
     case 'viewBox':
     case 'width':
     case 'height': {
-      pushStringAttribute(target, name, value);
-      break;
+      return stringAttributeToString(name, value);
     }
     case 'style': {
-      pushStyleAttribute(target, value);
-      return;
+      return styleAttributeToString(value);
     }
     case 'src': {
       // $FlowFixMe[invalid-compare]
       if (enableSrcObject && typeof value === 'object' && value !== null) {
         if (typeof Blob === 'function' && value instanceof Blob) {
-          pushSrcObjectAttribute(target, value);
-          return;
+          return srcObjectAttributeToString(value);
         }
       }
       // Fallthrough to general urls
@@ -1643,7 +1671,7 @@ function pushAttribute(
             );
           }
         }
-        return;
+        return '';
       }
     }
     // Fall through to the last case which shouldn't remove empty strings.
@@ -1656,18 +1684,13 @@ function pushAttribute(
         typeof value === 'symbol' ||
         typeof value === 'boolean'
       ) {
-        return;
+        return '';
       }
       if (__DEV__) {
         checkAttributeStringCoercion(value, name);
       }
       const sanitizedValue = sanitizeURL('' + value);
-      target.push(
-        stringToChunk(
-          ' ' + name + '="' + escapeTextForBrowser(sanitizedValue) + '"',
-        ),
-      );
-      return;
+      return ' ' + name + '="' + escapeTextForBrowser(sanitizedValue) + '"';
     }
     case 'defaultValue':
     case 'defaultChecked': // These shouldn't be set as attributes on generic HTML elements.
@@ -1676,12 +1699,11 @@ function pushAttribute(
     case 'suppressHydrationWarning':
     case 'ref':
       // Ignored. These are built-in to React on the client.
-      return;
+      return '';
     case 'autoFocus':
     case 'multiple':
     case 'muted': {
-      pushBooleanAttribute(target, name.toLowerCase(), value);
-      return;
+      return booleanAttributeToString(name.toLowerCase(), value);
     }
     case 'xlinkHref': {
       if (
@@ -1689,18 +1711,13 @@ function pushAttribute(
         typeof value === 'symbol' ||
         typeof value === 'boolean'
       ) {
-        return;
+        return '';
       }
       if (__DEV__) {
         checkAttributeStringCoercion(value, name);
       }
       const sanitizedValue = sanitizeURL('' + value);
-      target.push(
-        stringToChunk(
-          ' xlink:href="' + escapeTextForBrowser(sanitizedValue) + '"',
-        ),
-      );
-      return;
+      return ' xlink:href="' + escapeTextForBrowser(sanitizedValue) + '"';
     }
     case 'contentEditable':
     case 'spellCheck':
@@ -1715,11 +1732,9 @@ function pushAttribute(
       // In React, we let users pass `true` and `false` even though technically
       // these aren't boolean attributes (they are coerced to strings).
       if (typeof value !== 'function' && typeof value !== 'symbol') {
-        target.push(
-          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
-        );
+        return ' ' + name + '="' + escapeTextForBrowser(value) + '"';
       }
-      return;
+      return '';
     }
     case 'inert': {
       if (__DEV__) {
@@ -1760,28 +1775,19 @@ function pushAttribute(
     case 'seamless':
     case 'itemScope': {
       // Boolean
-      if (value && typeof value !== 'function' && typeof value !== 'symbol') {
-        target.push(
-          attributeSeparator,
-          stringToChunk(name),
-          attributeEmptyString,
-        );
-      }
-      return;
+      return booleanAttributeToString(name, value);
     }
     case 'capture':
     case 'download': {
       // Overloaded Boolean
       if (value === true) {
-        target.push(stringToChunk(' ' + name + '=""'));
+        return ' ' + name + '=""';
       } else if (value === false) {
         // Ignored
       } else if (typeof value !== 'function' && typeof value !== 'symbol') {
-        target.push(
-          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
-        );
+        return ' ' + name + '="' + escapeTextForBrowser(value) + '"';
       }
-      return;
+      return '';
     }
     case 'cols':
     case 'rows':
@@ -1794,11 +1800,9 @@ function pushAttribute(
         !isNaN(value) &&
         (value as any) >= 1
       ) {
-        target.push(
-          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
-        );
+        return ' ' + name + '="' + escapeTextForBrowser(value) + '"';
       }
-      return;
+      return '';
     }
     case 'rowSpan':
     case 'start': {
@@ -1808,39 +1812,28 @@ function pushAttribute(
         typeof value !== 'symbol' &&
         !isNaN(value)
       ) {
-        target.push(
-          stringToChunk(' ' + name + '="' + escapeTextForBrowser(value) + '"'),
-        );
+        return ' ' + name + '="' + escapeTextForBrowser(value) + '"';
       }
-      return;
+      return '';
     }
     case 'xlinkActuate':
-      pushStringAttribute(target, 'xlink:actuate', value);
-      return;
+      return stringAttributeToString('xlink:actuate', value);
     case 'xlinkArcrole':
-      pushStringAttribute(target, 'xlink:arcrole', value);
-      return;
+      return stringAttributeToString('xlink:arcrole', value);
     case 'xlinkRole':
-      pushStringAttribute(target, 'xlink:role', value);
-      return;
+      return stringAttributeToString('xlink:role', value);
     case 'xlinkShow':
-      pushStringAttribute(target, 'xlink:show', value);
-      return;
+      return stringAttributeToString('xlink:show', value);
     case 'xlinkTitle':
-      pushStringAttribute(target, 'xlink:title', value);
-      return;
+      return stringAttributeToString('xlink:title', value);
     case 'xlinkType':
-      pushStringAttribute(target, 'xlink:type', value);
-      return;
+      return stringAttributeToString('xlink:type', value);
     case 'xmlBase':
-      pushStringAttribute(target, 'xml:base', value);
-      return;
+      return stringAttributeToString('xml:base', value);
     case 'xmlLang':
-      pushStringAttribute(target, 'xml:lang', value);
-      return;
+      return stringAttributeToString('xml:lang', value);
     case 'xmlSpace':
-      pushStringAttribute(target, 'xml:space', value);
-      return;
+      return stringAttributeToString('xml:space', value);
     default:
       if (
         // shouldIgnoreAttribute
@@ -1849,7 +1842,7 @@ function pushAttribute(
         (name[0] === 'o' || name[0] === 'O') &&
         (name[1] === 'n' || name[1] === 'N')
       ) {
-        return;
+        return '';
       }
 
       const attributeName = getAttributeAlias(name);
@@ -1858,20 +1851,28 @@ function pushAttribute(
         switch (typeof value) {
           case 'function':
           case 'symbol':
-            return;
+            return '';
           case 'boolean': {
             const prefix = attributeName.toLowerCase().slice(0, 5);
             if (prefix !== 'data-' && prefix !== 'aria-') {
-              return;
+              return '';
             }
           }
         }
-        target.push(
-          stringToChunk(
-            ' ' + attributeName + '="' + escapeTextForBrowser(value) + '"',
-          ),
-        );
+        return ' ' + attributeName + '="' + escapeTextForBrowser(value) + '"';
       }
+      return '';
+  }
+}
+
+function pushAttribute(
+  target: Array<Chunk | PrecomputedChunk>,
+  name: string,
+  value: string | boolean | number | Function | Object, // not null or undefined
+): void {
+  const attr = attributeToString(name, value);
+  if (attr !== '') {
+    target.push(stringToChunk(attr));
   }
 }
 
@@ -1949,7 +1950,7 @@ function pushStartAnchor(
   props: Object,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag('a'));
+  let open = startStringForTag('a');
 
   let children = null;
   let innerHTML = null;
@@ -1966,25 +1967,27 @@ function pushStartAnchor(
         case 'dangerouslySetInnerHTML':
           innerHTML = propValue;
           break;
-        case 'href':
+        case 'href': {
           if (propValue === '') {
             // Empty `href` is special on anchors so we're short-circuiting here.
             // On other tags it should trigger a warning
-            pushStringAttribute(target, 'href', '');
+            open += stringAttributeToString('href', '');
           } else {
-            pushAttribute(target, propKey, propValue);
+            open += attributeToString(propKey, propValue);
           }
           break;
-        default:
-          pushAttribute(target, propKey, propValue);
+        }
+        default: {
+          open += attributeToString(propKey, propValue);
           break;
+        }
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   pushInnerHTML(target, innerHTML, children);
   if (typeof children === 'string') {
     // Special case children as a string to avoid the unnecessary comment.
@@ -3491,7 +3494,7 @@ function pushSelfClosing(
   tag: string,
   formatContext: FormatContext,
 ): null {
-  target.push(startChunkForTag(tag));
+  let open = startStringForTag(tag);
 
   for (const propKey in props) {
     if (hasOwnProperty.call(props, propKey)) {
@@ -3506,16 +3509,17 @@ function pushSelfClosing(
             `${tag} is a self-closing tag and must neither have \`children\` nor ` +
               'use `dangerouslySetInnerHTML`.',
           );
-        default:
-          pushAttribute(target, propKey, propValue);
+        default: {
+          open += attributeToString(propKey, propValue);
           break;
+        }
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTagSelfClosing);
+  target.push(stringToChunk(open + '/>'));
   return null;
 }
 
@@ -3965,7 +3969,10 @@ function pushStartGenericElement(
   tag: string,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag(tag));
+  // The whole open tag is accumulated into one string and pushed as a single
+  // chunk to keep the per-chunk costs (push, byte counting, write) to one per
+  // element rather than one per attribute plus two for the tag itself.
+  let open = startStringForTag(tag);
 
   let children = null;
   let innerHTML = null;
@@ -3982,16 +3989,17 @@ function pushStartGenericElement(
         case 'dangerouslySetInnerHTML':
           innerHTML = propValue;
           break;
-        default:
-          pushAttribute(target, propKey, propValue);
+        default: {
+          open += attributeToString(propKey, propValue);
           break;
+        }
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   pushInnerHTML(target, innerHTML, children);
   if (typeof children === 'string') {
     // Special case children as a string to avoid the unnecessary comment.
@@ -4172,6 +4180,22 @@ function startChunkForTag(tag: string): PrecomputedChunk {
     validatedTagCache.set(tag, tagStartChunk);
   }
   return tagStartChunk;
+}
+
+// Same as startChunkForTag but for paths that accumulate the whole open tag
+// into a single string before pushing it as one chunk.
+const validatedTagStringCache = new Map<string, string>();
+function startStringForTag(tag: string): string {
+  let tagStartString = validatedTagStringCache.get(tag);
+  if (tagStartString === undefined) {
+    if (!VALID_TAG_REGEX.test(tag)) {
+      throw new Error(`Invalid tag: ${tag}`);
+    }
+
+    tagStartString = '<' + tag;
+    validatedTagStringCache.set(tag, tagStartString);
+  }
+  return tagStartString;
 }
 
 export const doctypeChunk: PrecomputedChunk =
