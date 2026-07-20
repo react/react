@@ -3232,8 +3232,11 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
   const parentInstanceOrContainer = getInstanceFromHostFiber<
     Instance | Container,
   >(parentHostFiber);
-  // TODO: Handle parentInstanceOrContainer being a document
-  const activeElement = parentInstanceOrContainer.ownerDocument.activeElement;
+  // Instance is included in the Container type for DOM.
+  const ownerDocument = getOwnerDocumentFromRootContainer(
+    parentInstanceOrContainer,
+  );
+  const activeElement = ownerDocument.activeElement;
   if (
     activeElement === null ||
     !parentInstanceOrContainer.contains(activeElement)
