@@ -5346,9 +5346,22 @@ function reviveModel(
   if (typeof value !== 'object' || value === null) {
     return value;
   }
+  return reviveContainer(response, value);
+}
+
+function reviveContainer(response: Response, value: Object): any {
   if (isArray(value)) {
     for (let i = 0; i < value.length; i++) {
-      (value as any)[i] = reviveModel(response, value[i], value, '' + i);
+      const element = (value as any)[i];
+      if (typeof element === 'string') {
+        if (element[0] === '$') {
+          // Only '$'-prefixed strings transform, and only they consume the
+          // key, so the index only needs to be stringified on this path.
+          (value as any)[i] = parseModelString(response, value, '' + i, element);
+        }
+      } else if (typeof element === 'object' && element !== null) {
+        (value as any)[i] = reviveContainer(response, element);
+      }
     }
     // $FlowFixMe[invalid-compare]
     if (value[0] === REACT_ELEMENT_TYPE) {
@@ -5362,11 +5375,23 @@ function reviveModel(
     if (k === __PROTO__) {
       delete (value as any)[k];
     } else {
-      const walked = reviveModel(response, (value as any)[k], value, k);
-      if (walked !== undefined) {
-        (value as any)[k] = walked;
-      } else {
-        delete (value as any)[k];
+      const v = (value as any)[k];
+      if (typeof v === 'string') {
+        if (v[0] === '$') {
+          const walked = parseModelString(response, value, k, v);
+          if (walked !== undefined) {
+            (value as any)[k] = walked;
+          } else {
+            delete (value as any)[k];
+          }
+        }
+      } else if (typeof v === 'object' && v !== null) {
+        const walked = reviveContainer(response, v);
+        if (walked !== undefined) {
+          (value as any)[k] = walked;
+        } else {
+          delete (value as any)[k];
+        }
       }
     }
   }
