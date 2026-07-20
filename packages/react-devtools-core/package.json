@@ -25,7 +25,7 @@
     "start:standalone": "cross-env NODE_ENV=development webpack --config webpack.standalone.js --watch"
   },
   "dependencies": {
-    "shell-quote": "^1.6.1",
+    "shell-quote": "^1.9.0",
     "ws": "^7"
   },
   "devDependencies": {
