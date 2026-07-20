@@ -2867,6 +2867,7 @@ export type StreamState = {
   _rowTag: number, // 0 indicates that we're currently parsing the row ID
   _rowLength: number, // remaining bytes in the row. 0 indicates that we're looking for a newline.
   _buffer: Array<Uint8Array>, // chunks received so far as part of this row
+  _stringBuffer: string, // for string chunks: the part of the row received so far
   _debugInfo: ReactIOInfo, // DEV-only
   _debugTargetChunkSize: number, // DEV-only
 };
@@ -2881,6 +2882,7 @@ export function createStreamState(
     _rowTag: 0,
     _rowLength: 0,
     _buffer: [],
+    _stringBuffer: '',
   } as Omit<StreamState, '_debugInfo' | '_debugTargetChunkSize'> as any;
   if (__DEV__ && enableAsyncDebugInfo) {
     const response = unwrapWeakResponse(weakResponse);
@@ -5013,6 +5015,23 @@ export function processBinaryChunk(
     // Ignore more chunks if we've already GC:ed all listeners.
     return;
   }
+  if (streamState._stringBuffer !== '') {
+    // A row started as string chunks and continues as bytes: replay the
+    // buffered text through this parser so it sees one contiguous byte
+    // stream. The parser state still points into the buffered row.
+    const bufferedText = streamState._stringBuffer;
+    streamState._stringBuffer = '';
+    if (stringChunkEncoder === null) {
+      stringChunkEncoder = new TextEncoder();
+    }
+    const encodedText = stringChunkEncoder.encode(bufferedText);
+    if (streamState._rowState === ROW_CHUNK_BY_LENGTH) {
+      // Buffering the text already subtracted its bytes from the row's
+      // remaining length; the byte parser is about to count them again.
+      streamState._rowLength += encodedText.length;
+    }
+    processBinaryChunk(weakResponse, streamState, encodedText);
+  }
   const response = unwrapWeakResponse(weakResponse);
   let i = 0;
   let rowState = streamState._rowState;
@@ -5169,6 +5188,75 @@ export function processBinaryChunk(
   streamState._rowLength = rowLength;
 }
 
+// Returns the index at which byteBudget UTF-8 bytes have been consumed
+// counting from start, or -1 if the string ends before consuming them. The
+// producer frames rows on whole strings, so the budget always lands on a
+// character boundary.
+function indexOfUTF8ByteLength(
+  chunk: string,
+  start: number,
+  byteBudget: number,
+): number {
+  let bytes = 0;
+  let i = start;
+  const length = chunk.length;
+  while (i < length) {
+    if (bytes === byteBudget) {
+      return i;
+    }
+    const code = chunk.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+      i += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+      i += 1;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // A surrogate pair encodes as one four byte character.
+      bytes += 4;
+      i += 2;
+    } else {
+      bytes += 3;
+      i += 1;
+    }
+    if (bytes > byteBudget) {
+      // The budget landed inside a character, which framing produced by a
+      // Flight Server can't do.
+      throw new Error(
+        'A length-framed row ended inside a character. ' +
+          'This is a bug in the wiring of the React streams.',
+      );
+    }
+  }
+  return bytes === byteBudget ? i : -1;
+}
+
+// Lazily created: only mixed transports that continue a binary row with a
+// string chunk ever need to encode.
+let stringChunkEncoder: null | TextEncoder = null;
+
+function utf8ByteLength(chunk: string, start: number, end: number): number {
+  let bytes = 0;
+  let i = start;
+  while (i < end) {
+    const code = chunk.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+      i += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+      i += 1;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i += 2;
+    } else {
+      bytes += 3;
+      i += 1;
+    }
+  }
+  return bytes;
+}
+
 export function processStringChunk(
   weakResponse: WeakResponse,
   streamState: StreamState,
@@ -5261,38 +5349,64 @@ export function processStringChunk(
       }
       case ROW_CHUNK_BY_LENGTH: {
         if (rowTag !== 84) {
-          throw new Error(
-            'Binary RSC chunks cannot be encoded as strings. ' +
-              'This is a bug in the wiring of the React streams.',
+          // A binary row's bytes arrived in string form. The byte parser
+          // handles every row kind, so encode the rest of this chunk and
+          // continue there; the row's binary parts don't round-trip
+          // through text.
+          streamState._rowState = rowState;
+          streamState._rowID = rowID;
+          streamState._rowTag = rowTag;
+          streamState._rowLength = rowLength;
+          if (stringChunkEncoder === null) {
+            stringChunkEncoder = new TextEncoder();
+          }
+          processBinaryChunk(
+            weakResponse,
+            streamState,
+            stringChunkEncoder.encode(chunk.slice(i)),
           );
+          return;
         }
-        // For a large string by length, we don't know how many unicode characters
-        // we are looking for but we can assume that the raw string will be its own
-        // chunk. We add extra validation that the length is at least within the
-        // possible byte range it could possibly be to catch mistakes.
-        if (rowLength < chunk.length || chunk.length > rowLength * 3) {
-          throw new Error(
-            'String chunks need to be passed in their original shape. ' +
-              'Not split into smaller string chunks. ' +
-              'This is a bug in the wiring of the React streams.',
-          );
+        // rowLength counts the bytes of the row still unread; the chunk is
+        // measured in UTF-16 code units, so the row's end is found by
+        // walking the chunk's UTF-8 byte lengths.
+        const split = indexOfUTF8ByteLength(chunk, i, rowLength);
+        if (split === -1) {
+          // The row continues in a future chunk.
+          streamState._stringBuffer += chunk.slice(i);
+          rowLength -= utf8ByteLength(chunk, i, chunk.length);
+          i = chunkLength;
+          continue;
         }
-        lastIdx = chunk.length;
+        lastIdx = split;
         break;
       }
     }
     if (lastIdx > -1) {
       // We found the last chunk of the row
       if (buffer.length > 0) {
-        // If we had a buffer already, it means that this chunk was split up into
-        // binary chunks preceeding it.
-        throw new Error(
-          'String chunks need to be passed in their original shape. ' +
-            'Not split into smaller string chunks. ' +
-            'This is a bug in the wiring of the React streams.',
+        // The row started as binary parts, so it has to finish as one: its
+        // buffered parts don't round-trip through text. Encode the rest of
+        // this chunk and continue in the byte parser.
+        streamState._rowState = rowState;
+        streamState._rowID = rowID;
+        streamState._rowTag = rowTag;
+        streamState._rowLength = rowLength;
+        if (stringChunkEncoder === null) {
+          stringChunkEncoder = new TextEncoder();
+        }
+        processBinaryChunk(
+          weakResponse,
+          streamState,
+          stringChunkEncoder.encode(chunk.slice(i)),
         );
+        return;
       }
-      const lastChunk = chunk.slice(i, lastIdx);
+      let lastChunk = chunk.slice(i, lastIdx);
+      if (streamState._stringBuffer !== '') {
+        lastChunk = streamState._stringBuffer + lastChunk;
+        streamState._stringBuffer = '';
+      }
       processFullStringRow(response, streamState, rowID, rowTag, lastChunk);
       // Reset state machine for a new row
       i = lastIdx;
@@ -5306,15 +5420,9 @@ export function processStringChunk(
       rowLength = 0;
       buffer.length = 0;
     } else if (chunk.length !== i) {
-      // The rest of this row is in a future chunk. We only support passing the
-      // string from chunks in their entirety. Not split up into smaller string chunks.
-      // We could support this by buffering them but we shouldn't need to for
-      // this use case.
-      throw new Error(
-        'String chunks need to be passed in their original shape. ' +
-          'Not split into smaller string chunks. ' +
-          'This is a bug in the wiring of the React streams.',
-      );
+      // The rest of this newline-framed row is in a future chunk.
+      streamState._stringBuffer += chunk.slice(i);
+      i = chunkLength;
     }
   }
   streamState._rowState = rowState;

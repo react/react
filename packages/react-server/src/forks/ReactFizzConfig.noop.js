@@ -101,6 +101,9 @@ export const hoistPreambleState = $$$config.hoistPreambleState;
 // -------------------------
 export const writePreambleStart = $$$config.writePreambleStart;
 export const writePreambleEnd = $$$config.writePreambleEnd;
+export const writeInlineDataInit = $$$config.writeInlineDataInit;
+export const writeInlineDataSegment = $$$config.writeInlineDataSegment;
+export const writeInlineDataClose = $$$config.writeInlineDataClose;
 export const writeHoistables = $$$config.writeHoistables;
 export const writeHoistablesForBoundary = $$$config.writeHoistablesForBoundary;
 export const writePostamble = $$$config.writePostamble;

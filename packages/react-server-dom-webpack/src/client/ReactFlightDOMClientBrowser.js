@@ -289,7 +289,81 @@ function encodeReply(
   });
 }
 
-export {createFromFetch, createFromReadableStream, encodeReply};
+function base64ToBinary(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// Calls made after the channel closed have nowhere to go; accepting them
+// silently (without retaining anything) matches a closed stream. A later
+// reader attempt must still see that the channel was consumed.
+function receiveAfterClose() {}
+(receiveAfterClose as any).claimed = true;
+
+// Reads the inline data channel that a Fizz render with inlineData writes
+// into the document: inline scripts deliver wire chunks by calling the $RF
+// receiver defined with the shell, which queues them on itself until a
+// reader takes over. Text chunks arrive as strings, binary chunks as
+// single-element arrays of base64, and null marks the end of the data.
+// Chunks queued before we got here are drained; future calls stream in as
+// the document parses. Closing swaps in a receiver that holds no
+// references, so the response can be collected when the app lets go of it.
+function createFromInlineData<T>(options?: Options): Thenable<T> {
+  const receiver = (globalThis as any).$RF;
+  if (typeof receiver !== 'function') {
+    throw new Error(
+      'This document does not have an inline data channel. ' +
+        'createFromInlineData requires a document rendered with inlineData.',
+    );
+  }
+  if (receiver.claimed) {
+    throw new Error(
+      'The inline data channel already has a reader. ' +
+        'createFromInlineData can only be called once per document.',
+    );
+  }
+  const response: FlightResponse = createResponseFromOptions(options);
+  const streamState = createStreamState(response, receiver);
+  let closed = false;
+  function receive(chunk: string | [string] | null): void {
+    if (closed) {
+      return;
+    }
+    if (chunk === null) {
+      closed = true;
+      (globalThis as any).$RF = receiveAfterClose;
+      close(response);
+    } else if (typeof chunk === 'string') {
+      processStringChunk(response, streamState, chunk);
+    } else {
+      processBinaryChunk(response, streamState, base64ToBinary(chunk[0]));
+    }
+  }
+  (receive as any).claimed = true;
+  // Take over before draining: if the close marker is already queued, the
+  // drain itself swaps in the closed receiver.
+  (globalThis as any).$RF = receive;
+  const queue: void | Array<string | [string] | null> = receiver.q;
+  // The drained chunks would otherwise be retained by the document forever.
+  receiver.q = null;
+  if (queue != null) {
+    for (let i = 0; i < queue.length; i++) {
+      receive(queue[i]);
+    }
+  }
+  return getRoot(response);
+}
+
+export {
+  createFromFetch,
+  createFromReadableStream,
+  createFromInlineData,
+  encodeReply,
+};
 
 if (__DEV__) {
   injectIntoDevTools();
