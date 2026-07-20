@@ -24,8 +24,8 @@ import {
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import {HostText} from 'react-reconciler/src/ReactWorkTags';
 import {
-  getFragmentParentHostFiber,
-  traverseFragmentInstance,
+  getFragmentParentInstanceOrContainerFiber,
+  traverseFragmentInstancesAndTextInstances,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
 
 // Modules provided by RN:
@@ -704,7 +704,11 @@ FragmentInstance.prototype.observeUsing = function (
     this._observers = new Set();
   }
   this._observers.add(observer);
-  traverseFragmentInstance(this._fragmentFiber, observeChild, observer);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    observeChild,
+    observer,
+  );
 };
 function observeChild(child: Fiber, observer: IntersectionObserver) {
   // $FlowFixMe[incompatible-type]
@@ -728,7 +732,11 @@ FragmentInstance.prototype.unobserveUsing = function (
     }
   } else {
     observers.delete(observer);
-    traverseFragmentInstance(this._fragmentFiber, unobserveChild, observer);
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      unobserveChild,
+      observer,
+    );
   }
 };
 function unobserveChild(child: Fiber, observer: IntersectionObserver) {
@@ -744,12 +752,18 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   this: FragmentInstanceType,
   otherNode: PublicInstance,
 ): number {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return Node.DOCUMENT_POSITION_DISCONNECTED;
   }
   const children: Array<Fiber> = [];
-  traverseFragmentInstance(this._fragmentFiber, collectChildren, children);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectChildren,
+    children,
+  );
   if (children.length === 0) {
     const parentHostInstance = getPublicInstanceFromHostFiber(parentHostFiber);
     return compareDocumentPositionForEmptyFragment<PublicInstance>(
@@ -804,7 +818,9 @@ FragmentInstance.prototype.getRootNode = function (
   this: FragmentInstanceType,
   getRootNodeOptions?: {composed: boolean},
 ): Node | FragmentInstanceType {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return this;
   }
@@ -819,7 +835,11 @@ FragmentInstance.prototype.getClientRects = function (
   this: FragmentInstanceType,
 ): Array<DOMRect> {
   const rects: Array<DOMRect> = [];
-  traverseFragmentInstance(this._fragmentFiber, collectClientRects, rects);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectClientRects,
+    rects,
+  );
   return rects;
 };
 function collectClientRects(child: Fiber, rects: Array<DOMRect>): boolean {
@@ -867,7 +887,7 @@ export function createFragmentInstance(
 ): FragmentInstanceType {
   const fragmentInstance = new (FragmentInstance as any)(fragmentFiber);
   if (enableFragmentRefsInstanceHandles) {
-    traverseFragmentInstance(
+    traverseFragmentInstancesAndTextInstances(
       fragmentFiber,
       addFragmentHandleToFiber,
       fragmentInstance,
