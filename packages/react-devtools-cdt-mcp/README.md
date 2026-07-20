@@ -3,19 +3,27 @@
 Integrates React tools with
 [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp).
 
-Importing this package **before React** installs the DevTools hook and registers
-a React tool group via chrome-devtools-mcp's `devtoolstooldiscovery` / `__dtmcp`
-third-party-tool protocol. The React tools then become discoverable and callable
-inside a chrome-devtools-mcp session — no separate server.
+Importing `react-devtools-cdt-mcp/register` **before React** installs the
+DevTools hook and registers a React tool group via chrome-devtools-mcp's
+`devtoolstooldiscovery` / `__dtmcp` third-party-tool protocol. The React tools
+then become discoverable and callable inside a chrome-devtools-mcp session — no
+separate server.
 
 ## Usage
 
-Import the package **before** React so the hook is installed before React
-initializes:
+Import the register entry **before** React so the hook is installed before
+React initializes:
 
 ```js
-import 'react-devtools-cdt-mcp';
+import 'react-devtools-cdt-mcp/register';
 import React from 'react';
+```
+
+The package root is side-effect-free and exports the lower-level API for custom
+targets:
+
+```js
+import {register, buildToolGroup} from 'react-devtools-cdt-mcp';
 ```
 
 When the page runs under chrome-devtools-mcp, the React tools are listed by

@@ -20,7 +20,6 @@ const dynamicFlags: DynamicExportsType = dynamicFlagsUntyped as any;
 // the exports object every time a flag is read.
 export const {
   alwaysThrottleRetries,
-  enableEffectEventMutationPhase,
   enableObjectFiber,
   passChildrenWhenCloningPersistedNodes,
   enableFragmentRefs,
@@ -43,6 +42,7 @@ export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableCPUSuspense: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableEffectEventMutationPhase: boolean = true;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;

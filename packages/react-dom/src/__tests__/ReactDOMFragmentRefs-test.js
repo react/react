@@ -2755,6 +2755,48 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
+    // @gate enableFragmentRefs && enableFragmentRefsTextNodes && enableFragmentRefsScrollIntoView
+    it('scrollIntoView scrolls to text siblings of an empty fragment using the Range API', async () => {
+      const restoreRange = mockRangeClientRects([
+        {x: 100, y: 200, width: 80, height: 16},
+      ]);
+      const fragmentRef = React.createRef();
+      const parentRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() =>
+        root.render(
+          <div ref={parentRef}>
+            Text before
+            <Fragment ref={fragmentRef} />
+            Text after
+          </div>,
+        ),
+      );
+
+      const parentScrollMock = jest.fn();
+      parentRef.current.scrollIntoView = parentScrollMock;
+      // Mock window.scrollTo to verify Range-based text scrolling
+      const originalScrollTo = window.scrollTo;
+      const scrollToMock = jest.fn();
+      window.scrollTo = scrollToMock;
+
+      // Default call scrolls to the following text sibling
+      fragmentRef.current.scrollIntoView();
+      expect(scrollToMock).toHaveBeenCalledTimes(1);
+      expect(parentScrollMock).toHaveBeenCalledTimes(0);
+
+      scrollToMock.mockClear();
+
+      // alignToTop=false scrolls to the preceding text sibling
+      fragmentRef.current.scrollIntoView(false);
+      expect(scrollToMock).toHaveBeenCalledTimes(1);
+      expect(parentScrollMock).toHaveBeenCalledTimes(0);
+
+      window.scrollTo = originalScrollTo;
+      restoreRange();
+    });
+
     // @gate enableFragmentRefs
     it('treats passive:true and passive:false as same listener per DOM spec', async () => {
       const fragmentRef = React.createRef();
