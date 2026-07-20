@@ -30,6 +30,8 @@ describe('FragmentRefs', () => {
     document = jsdom.window.document;
     global.window = jsdom.window;
     global.document = global.window.document;
+    global.navigator = global.window.navigator;
+    global.Event = global.window.Event;
   });
 
   describe('focus methods', () => {
@@ -62,6 +64,39 @@ describe('FragmentRefs', () => {
           fragmentRef.current.blur();
         });
         expect(document.activeElement).toEqual(document.body);
+      });
+    });
+  });
+
+  describe('events', () => {
+    describe('dispatchEvent()', () => {
+      // @gate enableFragmentRefs
+      it('throws when the fragment is a child of a HostSingleton in a document root', async () => {
+        const fragmentRef = React.createRef();
+        const bodyRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+
+        await act(() => {
+          root.render(
+            <html>
+              <body ref={bodyRef}>
+                <Fragment ref={fragmentRef} />
+              </body>
+            </html>,
+          );
+        });
+
+        const fragmentListener = jest.fn();
+        fragmentRef.current.addEventListener('custom', fragmentListener);
+        const bodyListener = jest.fn();
+        bodyRef.current.addEventListener('custom', bodyListener);
+
+        // The <body> is the fragment's host parent, so the
+        // temporary event target is appended there.
+        fragmentRef.current.dispatchEvent(new Event('custom', {bubbles: true}));
+
+        expect(fragmentListener).toHaveBeenCalledTimes(1);
+        expect(bodyListener).toHaveBeenCalledTimes(1);
       });
     });
   });
