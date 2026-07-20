@@ -10,7 +10,7 @@
 export type Destination = ReadableStreamController;
 
 export type PrecomputedChunk = Uint8Array;
-export opaque type Chunk = Uint8Array;
+export opaque type Chunk = string | Uint8Array;
 export type BinaryChunk = Uint8Array;
 
 function handleErrorInNextTick(error: any) {
@@ -50,10 +50,50 @@ export function beginWriting(destination: Destination) {
   writtenBytes = 0;
 }
 
+function writeStringChunk(destination: Destination, stringChunk: string) {
+  if (stringChunk.length === 0) {
+    return;
+  }
+  // stringToChunk only keeps strings that fit in a view even at the maximum
+  // of three bytes per code unit, so we can always encode into the current
+  // view and at most spill the remainder into a fresh one.
+  let target: Uint8Array = currentView as any;
+  if (writtenBytes > 0) {
+    target = (currentView as any as Uint8Array).subarray(writtenBytes);
+  }
+  const {read, written} = (textEncoder as any).encodeInto(stringChunk, target);
+  writtenBytes += written;
+
+  if (read < stringChunk.length) {
+    destination.enqueue(
+      new Uint8Array(
+        (currentView as any as Uint8Array).buffer,
+        0,
+        writtenBytes,
+      ),
+    );
+    currentView = new Uint8Array(VIEW_SIZE);
+    writtenBytes = (textEncoder as any).encodeInto(
+      stringChunk.slice(read),
+      currentView,
+    ).written;
+  }
+
+  if (writtenBytes === VIEW_SIZE) {
+    destination.enqueue(currentView);
+    currentView = new Uint8Array(VIEW_SIZE);
+    writtenBytes = 0;
+  }
+}
+
 export function writeChunk(
   destination: Destination,
   chunk: PrecomputedChunk | Chunk | BinaryChunk,
 ): void {
+  if (typeof chunk === 'string') {
+    writeStringChunk(destination, chunk);
+    return;
+  }
   if (chunk.byteLength === 0) {
     return;
   }
@@ -128,7 +168,16 @@ export function close(destination: Destination) {
 const textEncoder = new TextEncoder();
 
 export function stringToChunk(content: string): Chunk {
-  return textEncoder.encode(content);
+  if (content.length * 3 > VIEW_SIZE) {
+    // A string this large would bypass the view buffer at write time anyway,
+    // and keeping it as a string would add a byte-length scan on top of the
+    // same encode. Encode it eagerly.
+    return textEncoder.encode(content);
+  }
+  // Small strings stay strings until write time, where they are encoded
+  // directly into the view buffer. This avoids allocating a transient
+  // Uint8Array per chunk during rendering.
+  return content;
 }
 
 export function stringToPrecomputedChunk(content: string): PrecomputedChunk {
@@ -156,7 +205,35 @@ export function typedArrayToBinaryChunk(
 }
 
 export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
-  return chunk.byteLength;
+  if (typeof chunk !== 'string') {
+    return chunk.byteLength;
+  }
+  // Count the UTF-8 byte length without encoding. This must match
+  // TextEncoder exactly, including lone surrogates, which encode as the
+  // three-byte replacement character U+FFFD.
+  let byteLength = 0;
+  for (let i = 0; i < chunk.length; i++) {
+    const code = chunk.charCodeAt(i);
+    if (code < 0x80) {
+      byteLength += 1;
+    } else if (code < 0x800) {
+      byteLength += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = i + 1 < chunk.length ? chunk.charCodeAt(i + 1) : 0;
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        // Surrogate pair: encodes as one four-byte code point.
+        byteLength += 4;
+        i++;
+      } else {
+        // Lone high surrogate: encodes as U+FFFD.
+        byteLength += 3;
+      }
+    } else {
+      // Includes lone low surrogates, which also encode as U+FFFD.
+      byteLength += 3;
+    }
+  }
+  return byteLength;
 }
 
 export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
