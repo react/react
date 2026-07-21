@@ -2269,6 +2269,18 @@ function createSet(response: Response, model: Array<any>): Set<any> {
   return new Set(model);
 }
 
+function createNullPrototypeObject(
+  response: Response,
+  model: Array<[string, any]>,
+): {[key: string]: any} {
+  const object: any = Object.create(null);
+  for (let i = 0; i < model.length; i++) {
+    const entry = model[i];
+    object[entry[0]] = entry[1];
+  }
+  return object;
+}
+
 function createBlob(response: Response, model: Array<any>): Blob {
   return new Blob(model.slice(1), {type: model[0]});
 }
@@ -2479,6 +2491,17 @@ function parseModelString(
         // Set
         const ref = value.slice(2);
         return getOutlinedModel(response, ref, parentObject, key, createSet);
+      }
+      case 'p': {
+        // Object with a null prototype
+        const ref = value.slice(2);
+        return getOutlinedModel(
+          response,
+          ref,
+          parentObject,
+          key,
+          createNullPrototypeObject,
+        );
       }
       case 'B': {
         // Blob

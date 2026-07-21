@@ -3264,6 +3264,12 @@ function serializeSet(request: Request, set: Set<ReactClientValue>): string {
   return '$W' + id.toString(16);
 }
 
+function serializeNullPrototypeObject(request: Request, object: any): string {
+  const entries: Array<[string, ReactClientValue]> = Object.entries(object);
+  const id = outlineModel(request, entries);
+  return '$p' + id.toString(16);
+}
+
 function serializeDebugMap(
   request: Request,
   counter: {objectLimit: number},
@@ -3310,6 +3316,24 @@ function serializeDebugSet(
   }
   const id = outlineDebugModel(request, counter, entries);
   return '$W' + id.toString(16);
+}
+
+function serializeDebugNullPrototypeObject(
+  request: Request,
+  counter: {objectLimit: number},
+  object: any,
+): string {
+  const entries: Array<[string, ReactClientValue]> = Object.entries(object);
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    doNotLimit.add(entry);
+    if (typeof entry[1] === 'object' && entry[1] !== null) {
+      doNotLimit.add(entry[1]);
+    }
+  }
+  counter.objectLimit++;
+  const id = outlineDebugModel(request, counter, entries);
+  return '$p' + id.toString(16);
 }
 
 function serializeIterator(
@@ -4006,11 +4030,12 @@ function renderModelDestructive(
     const proto = getPrototypeOf(value);
     if (
       proto !== ObjectPrototype &&
-      (proto === null || getPrototypeOf(proto) !== null)
+      proto !== null &&
+      getPrototypeOf(proto) !== null
     ) {
       throw new Error(
         'Only plain objects, and a few built-ins, can be passed to Client Components ' +
-          'from Server Components. Classes or null prototypes are not supported.' +
+          'from Server Components. Classes are not supported.' +
           describeObjectForErrorMessage(parent, parentPropertyName),
       );
     }
@@ -4024,7 +4049,7 @@ function renderModelDestructive(
             describeObjectForErrorMessage(parent, parentPropertyName),
           );
         });
-      } else if (!isSimpleObject(value)) {
+      } else if (proto !== null && !isSimpleObject(value)) {
         callWithDebugContextInDEV(request, task, () => {
           console.error(
             'Only plain objects can be passed to Client Components from Server Components. ' +
@@ -4045,6 +4070,10 @@ function renderModelDestructive(
           });
         }
       }
+    }
+
+    if (proto === null) {
+      return serializeNullPrototypeObject(request, value);
     }
 
     // $FlowFixMe[incompatible-type]
@@ -5234,7 +5263,10 @@ function renderDebugModel(
     }
 
     const proto = getPrototypeOf(value);
-    if (proto !== ObjectPrototype && proto !== null) {
+    if (proto === null) {
+      return serializeDebugNullPrototypeObject(request, counter, value);
+    }
+    if (proto !== ObjectPrototype) {
       const object: Object = value;
       const instanceDescription: Object = Object.create(null);
       for (const propName in object) {

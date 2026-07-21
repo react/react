@@ -613,6 +613,41 @@ describe('ReactFlight', () => {
       `);
   });
 
+  it('can transport null-prototype objects', async () => {
+    const obj = Object.create(null);
+    const nested = Object.create(null);
+    const shared = Object.create(null);
+    nested.answer = 42;
+    shared.label = 'shared';
+    obj.greet = 'world';
+    obj.constructor = 'safe';
+    Object.defineProperty(obj, '__proto__', {
+      value: 'proto value',
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    obj.nested = nested;
+    obj.first = shared;
+    obj.second = shared;
+
+    const transport = ReactNoopFlightServer.render(obj);
+    const model = await ReactNoopFlightClient.read(transport);
+
+    assertConsoleErrorDev([]);
+    expect(Object.getPrototypeOf(model)).toBe(null);
+    expect(Object.getPrototypeOf(model.nested)).toBe(null);
+    expect(Object.getPrototypeOf(model.first)).toBe(null);
+    expect(model.first).toBe(model.second);
+    expect(Object.prototype.hasOwnProperty.call(model, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(model, '__proto__').value).toBe(
+      'proto value',
+    );
+    expect(model.constructor).toBe('safe');
+    expect(model.greet).toBe('world');
+    expect(model.nested.answer).toBe(42);
+  });
+
   it('can transport FormData (no blobs)', async () => {
     function ComponentClient({prop}) {
       return `
@@ -2227,7 +2262,7 @@ describe('ReactFlight', () => {
 
     expect(errors).toEqual([
       'Only plain objects, and a few built-ins, can be passed to Client Components ' +
-        'from Server Components. Classes or null prototypes are not supported.' +
+        'from Server Components. Classes are not supported.' +
         (__DEV__
           ? '\n' + '  <input value={{}}>\n' + '               ^^^^'
           : '\n' + '  {value: {}}\n' + '          ^^'),
