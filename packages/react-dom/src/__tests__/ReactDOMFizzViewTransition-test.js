@@ -332,4 +332,419 @@ describe('ReactDOMFizzViewTransition', () => {
       ReactDOMClient.hydrateRoot(container, <App />);
     });
   });
+
+  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  it('stops the parentExit relay when an intermediate class is "none"', async () => {
+    const promise = new Promise(() => {});
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      const fallback = (
+        <ViewTransition exit="page-exit">
+          <div id="A">
+            <ViewTransition parentExit="none">
+              <div id="B">
+                <ViewTransition parentExit="nested-exit">
+                  <div id="C">Deep</div>
+                </ViewTransition>
+              </div>
+            </ViewTransition>
+            <ViewTransition parentExit="nested-exit">
+              <span id="D">Shallow</span>
+            </ViewTransition>
+          </div>
+        </ViewTransition>
+      );
+      return (
+        <div>
+          <Suspense fallback={fallback}>
+            <Suspend />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    // The "none" on the wrapper stops the relay, so the deep child (C) never
+    // gets a vt-parent-exit annotation. The sibling (D), which is not behind a
+    // "none" boundary, still relays.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="A" vt-update="auto" vt-exit="page-exit">
+          <div id="B" vt-update="auto">
+            <div id="C" vt-update="auto">
+              Deep
+            </div>
+          </div>
+          <span id="D" vt-update="auto" vt-parent-exit="nested-exit">
+            Shallow
+          </span>
+        </div>
+      </div>,
+    );
+  });
+
+  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  it('stops the parentEnter relay when an intermediate class is "none"', async () => {
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<div>loading</div>}>
+            <ViewTransition enter="page-enter">
+              <Suspend />
+            </ViewTransition>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    await serverAct(async () => {
+      await resolve(
+        <div id="A">
+          <ViewTransition parentEnter="none">
+            <div id="B">
+              <ViewTransition parentEnter="nested-enter">
+                <div id="C">Deep</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+          <ViewTransition parentEnter="nested-enter">
+            <span id="D">Shallow</span>
+          </ViewTransition>
+        </div>,
+      );
+    });
+
+    // The "none" on the wrapper stops the relay, so the deep child (C) never
+    // gets a vt-parent-enter annotation. The sibling (D) still relays.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="A" vt-update="auto" vt-enter="page-enter">
+          <div id="B" vt-update="auto">
+            <div id="C" vt-update="auto">
+              Deep
+            </div>
+          </div>
+          <span id="D" vt-update="auto" vt-parent-enter="nested-enter">
+            Shallow
+          </span>
+        </div>
+      </div>,
+    );
+
+    // Hydration should not yield any errors.
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+  });
+
+  // @gate enableViewTransition
+  it('breaks the parentExit relay through a ViewTransition without parentExit', async () => {
+    const promise = new Promise(() => {});
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      const fallback = (
+        <ViewTransition exit="page-exit">
+          <div id="A">
+            <ViewTransition>
+              <div id="B">
+                <ViewTransition parentExit="nested-exit">
+                  <div id="C">Deep</div>
+                </ViewTransition>
+              </div>
+            </ViewTransition>
+          </div>
+        </ViewTransition>
+      );
+      return (
+        <div>
+          <Suspense fallback={fallback}>
+            <Suspend />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    // A ViewTransition that doesn't opt in with parentExit breaks the relay,
+    // just like the client runtime, so C is not annotated.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="A" vt-update="auto" vt-exit="page-exit">
+          <div id="B" vt-update="auto">
+            <div id="C" vt-update="auto">
+              Deep
+            </div>
+          </div>
+        </div>
+      </div>,
+    );
+  });
+
+  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  it('relays the parentExit chain through an "auto" parentExit', async () => {
+    const promise = new Promise(() => {});
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      const fallback = (
+        <ViewTransition exit="page-exit">
+          <div id="A">
+            <ViewTransition parentExit="auto">
+              <div id="B">
+                <ViewTransition parentExit="nested-exit">
+                  <div id="C">Deep</div>
+                </ViewTransition>
+              </div>
+            </ViewTransition>
+          </div>
+        </ViewTransition>
+      );
+      return (
+        <div>
+          <Suspense fallback={fallback}>
+            <Suspend />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    // An "auto" parentExit emits no annotation of its own but still relays, so
+    // the deep child (C) is annotated.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="A" vt-update="auto" vt-exit="page-exit">
+          <div id="B" vt-update="auto">
+            <div id="C" vt-update="auto" vt-parent-exit="nested-exit">
+              Deep
+            </div>
+          </div>
+        </div>
+      </div>,
+    );
+  });
+
+  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  it('relays the parentExit chain through a handler-only ViewTransition', async () => {
+    const promise = new Promise(() => {});
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      const fallback = (
+        <ViewTransition exit="page-exit">
+          <div id="A">
+            <ViewTransition onParentExit={() => {}}>
+              <div id="B">
+                <ViewTransition parentExit="nested-exit">
+                  <div id="C">Deep</div>
+                </ViewTransition>
+              </div>
+            </ViewTransition>
+          </div>
+        </ViewTransition>
+      );
+      return (
+        <div>
+          <Suspense fallback={fallback}>
+            <Suspend />
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    // A ViewTransition with only an onParentExit handler (no class) emits no
+    // annotation but still relays, just like the client runtime, so the deep
+    // child (C) is annotated.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="A" vt-update="auto" vt-exit="page-exit">
+          <div id="B" vt-update="auto">
+            <div id="C" vt-update="auto" vt-parent-exit="nested-exit">
+              Deep
+            </div>
+          </div>
+        </div>
+      </div>,
+    );
+  });
+
+  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  it('relays the parentEnter chain through a handler-only ViewTransition', async () => {
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<div>loading</div>}>
+            <ViewTransition enter="page-enter">
+              <Suspend />
+            </ViewTransition>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    await serverAct(async () => {
+      await resolve(
+        <div id="A">
+          <ViewTransition onParentEnter={() => {}}>
+            <div id="B">
+              <ViewTransition parentEnter="nested-enter">
+                <div id="C">Deep</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        </div>,
+      );
+    });
+
+    // A ViewTransition with only an onParentEnter handler still relays, so the
+    // deep child (C) is annotated.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div id="A" vt-update="auto" vt-enter="page-enter">
+          <div id="B" vt-update="auto">
+            <div id="C" vt-update="auto" vt-parent-enter="nested-enter">
+              Deep
+            </div>
+          </div>
+        </div>
+      </div>,
+    );
+  });
+
+  // @gate enableViewTransition && enableViewTransitionParentEnterExit
+  it('applies view-transition-name to nested parentEnter/parentExit on streaming reveal', async () => {
+    // Capture the view transition class applied to each element at the moment
+    // the reveal starts a view transition (the names are reverted once it
+    // begins, so we read them synchronously here).
+    const applied = new Map();
+    document.startViewTransition = function (arg) {
+      const update = typeof arg === 'function' ? arg : arg.update;
+      container.querySelectorAll('*').forEach(el => {
+        if (el.id && el.style && el.style.viewTransitionName) {
+          applied.set(el.id, el.style.viewTransitionClass);
+        }
+      });
+      if (update) {
+        update();
+      }
+      return {
+        ready: Promise.resolve(),
+        finished: Promise.resolve(),
+        skipTransition() {},
+        types: [],
+      };
+    };
+    if (!global.window.CSS) {
+      global.window.CSS = {escape: s => s};
+    }
+    Object.defineProperty(document, 'fonts', {
+      value: {status: 'loaded', ready: Promise.resolve()},
+      configurable: true,
+    });
+    // The reveal skips a boundary whose parent measures as empty, so give
+    // elements a non-zero rect.
+    global.window.Element.prototype.getBoundingClientRect = function () {
+      return {left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20};
+    };
+
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+    function Suspend() {
+      return React.use(promise);
+    }
+    function App() {
+      const fallback = (
+        <ViewTransition exit="page-exit">
+          <div id="fbA">
+            <ViewTransition parentExit="skeleton-exit">
+              <div id="fbC">
+                <ViewTransition parentExit="skeleton-exit-deep">
+                  <div id="fbD">Loading</div>
+                </ViewTransition>
+              </div>
+            </ViewTransition>
+          </div>
+        </ViewTransition>
+      );
+      return (
+        <div>
+          <Suspense fallback={fallback}>
+            <ViewTransition enter="page-enter">
+              <Suspend />
+            </ViewTransition>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    await serverAct(async () => {
+      await resolve(
+        <div id="A">
+          <ViewTransition parentEnter="nested-enter">
+            <div id="C">
+              <ViewTransition parentEnter="nested-enter-deep">
+                <div id="D">Deep</div>
+              </ViewTransition>
+            </div>
+          </ViewTransition>
+        </div>,
+      );
+    });
+
+    // Top-level enter/exit were already applied by the reveal. The nested parent
+    // relay is the new behavior, and it relays through multiple levels: the
+    // relay continues through C/fbC (non-none classes) down to D/fbD, matching
+    // the client runtime's commitParentEnter/ExitViewTransitions.
+    expect(applied.get('A')).toBe('page-enter');
+    expect(applied.get('C')).toBe('nested-enter');
+    expect(applied.get('D')).toBe('nested-enter-deep');
+    expect(applied.get('fbA')).toBe('page-exit');
+    expect(applied.get('fbC')).toBe('skeleton-exit');
+    expect(applied.get('fbD')).toBe('skeleton-exit-deep');
+  });
 });
