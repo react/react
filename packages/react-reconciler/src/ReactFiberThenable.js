@@ -234,8 +234,9 @@ export function trackUsedThenable<T>(
         if (root !== null && root.shellSuspendCounter > 100) {
           // This root has suspended repeatedly in the shell without making any
           // progress (i.e. committing something). This is highly suggestive of
-          // an infinite ping loop, often caused by an accidental Async Client
-          // Component.
+          // an infinite ping loop, usually caused either by an accidental async
+          // Client Component or by a promise passed to `use()` that is
+          // re-created on every render.
           //
           // During a transition, we can suspend the work loop until the promise
           // to resolve, but this is a sync render, so that's not an option. We
@@ -246,11 +247,17 @@ export function trackUsedThenable<T>(
           // this case include forcing a concurrent render, or putting the whole
           // root into offscreen mode.
           throw new Error(
-            'An unknown Component is an async Client Component. ' +
-              'Only Server Components can be async at the moment. ' +
-              'This error is often caused by accidentally ' +
+            'A component suspended while rendering, but no Suspense boundary ' +
+              'was found to show a fallback. This usually has one of two ' +
+              'causes:\n\n' +
+              '1) An async Client Component. Only Server Components can be ' +
+              'async at the moment. This is often caused by accidentally ' +
               "adding `'use client'` to a module that was originally written " +
-              'for the server.',
+              'for the server.\n' +
+              '2) A promise passed to `use()` that is re-created on every ' +
+              'render, for example a promise created during render instead of ' +
+              'being cached. Cache the promise so the same instance is reused ' +
+              'across renders, or wrap the component in a Suspense boundary.',
           );
         }
 

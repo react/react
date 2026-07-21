@@ -1889,23 +1889,41 @@ describe('ReactUse', () => {
         '    in AsyncClientComponent (at **)',
     ]);
     assertLog([
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
+      'A component suspended while rendering, but no Suspense boundary ' +
+        'was found to show a fallback. This usually has one of two ' +
+        'causes:\n\n' +
+        '1) An async Client Component. Only Server Components can be ' +
+        'async at the moment. This is often caused by accidentally ' +
+        "adding `'use client'` to a module that was originally written " +
+        'for the server.\n' +
+        '2) A promise passed to `use()` that is re-created on every ' +
+        'render, for example a promise created during render instead of ' +
+        'being cached. Cache the promise so the same instance is reused ' +
+        'across renders, or wrap the component in a Suspense boundary.',
+      'A component suspended while rendering, but no Suspense boundary ' +
+        'was found to show a fallback. This usually has one of two ' +
+        'causes:\n\n' +
+        '1) An async Client Component. Only Server Components can be ' +
+        'async at the moment. This is often caused by accidentally ' +
+        "adding `'use client'` to a module that was originally written " +
+        'for the server.\n' +
+        '2) A promise passed to `use()` that is re-created on every ' +
+        'render, for example a promise created during render instead of ' +
+        'being cached. Cache the promise so the same instance is reused ' +
+        'across renders, or wrap the component in a Suspense boundary.',
     ]);
     expect(root).toMatchRenderedOutput(
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
+      'A component suspended while rendering, but no Suspense boundary ' +
+        'was found to show a fallback. This usually has one of two ' +
+        'causes:\n\n' +
+        '1) An async Client Component. Only Server Components can be ' +
+        'async at the moment. This is often caused by accidentally ' +
+        "adding `'use client'` to a module that was originally written " +
+        'for the server.\n' +
+        '2) A promise passed to `use()` that is re-created on every ' +
+        'render, for example a promise created during render instead of ' +
+        'being cached. Cache the promise so the same instance is reused ' +
+        'across renders, or wrap the component in a Suspense boundary.',
     );
   });
 
@@ -1944,25 +1962,107 @@ describe('ReactUse', () => {
         '    in AsyncClientComponent (at **)',
     ]);
     assertLog([
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
+      'A component suspended while rendering, but no Suspense boundary ' +
+        'was found to show a fallback. This usually has one of two ' +
+        'causes:\n\n' +
+        '1) An async Client Component. Only Server Components can be ' +
+        'async at the moment. This is often caused by accidentally ' +
+        "adding `'use client'` to a module that was originally written " +
+        'for the server.\n' +
+        '2) A promise passed to `use()` that is re-created on every ' +
+        'render, for example a promise created during render instead of ' +
+        'being cached. Cache the promise so the same instance is reused ' +
+        'across renders, or wrap the component in a Suspense boundary.',
+      'A component suspended while rendering, but no Suspense boundary ' +
+        'was found to show a fallback. This usually has one of two ' +
+        'causes:\n\n' +
+        '1) An async Client Component. Only Server Components can be ' +
+        'async at the moment. This is often caused by accidentally ' +
+        "adding `'use client'` to a module that was originally written " +
+        'for the server.\n' +
+        '2) A promise passed to `use()` that is re-created on every ' +
+        'render, for example a promise created during render instead of ' +
+        'being cached. Cache the promise so the same instance is reused ' +
+        'across renders, or wrap the component in a Suspense boundary.',
     ]);
     expect(root).toMatchRenderedOutput(
-      'An unknown Component is an async Client Component. ' +
-        'Only Server Components can be async at the moment. ' +
-        'This error is often caused by accidentally adding ' +
-        "`'use client'` to a module that was originally written for " +
-        'the server.',
+      'A component suspended while rendering, but no Suspense boundary ' +
+        'was found to show a fallback. This usually has one of two ' +
+        'causes:\n\n' +
+        '1) An async Client Component. Only Server Components can be ' +
+        'async at the moment. This is often caused by accidentally ' +
+        "adding `'use client'` to a module that was originally written " +
+        'for the server.\n' +
+        '2) A promise passed to `use()` that is re-created on every ' +
+        'render, for example a promise created during render instead of ' +
+        'being cached. Cache the promise so the same instance is reused ' +
+        'across renders, or wrap the component in a Suspense boundary.',
     );
   });
+
+  // Regression test for https://github.com/facebook/react/issues/30709
+  it(
+    'use(promise) without a Suspense boundary, where the promise is ' +
+      're-created on every render, throws a useful error',
+    async () => {
+      class ErrorBoundary extends React.Component {
+        state = {error: null};
+        static getDerivedStateFromError(error) {
+          return {error};
+        }
+        render() {
+          if (this.state.error) {
+            return <Text text={this.state.error.message} />;
+          }
+          return this.props.children;
+        }
+      }
+
+      function App() {
+        // A promise stored in state, but because there's no Suspense
+        // boundary the shell suspends and discards the in-progress state,
+        // so the initializer re-runs and a new promise is created on every
+        // retry. This is an uncached promise from React's perspective.
+        const [promise] = React.useState(
+          () => new Promise(resolve => Promise.resolve().then(resolve)),
+        );
+        return use(promise);
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(async () => {
+        root.render(
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>,
+        );
+      });
+      assertLog([
+        'A component suspended while rendering, but no Suspense boundary ' +
+          'was found to show a fallback. This usually has one of two ' +
+          'causes:\n\n' +
+          '1) An async Client Component. Only Server Components can be ' +
+          'async at the moment. This is often caused by accidentally ' +
+          "adding `'use client'` to a module that was originally written " +
+          'for the server.\n' +
+          '2) A promise passed to `use()` that is re-created on every ' +
+          'render, for example a promise created during render instead of ' +
+          'being cached. Cache the promise so the same instance is reused ' +
+          'across renders, or wrap the component in a Suspense boundary.',
+        'A component suspended while rendering, but no Suspense boundary ' +
+          'was found to show a fallback. This usually has one of two ' +
+          'causes:\n\n' +
+          '1) An async Client Component. Only Server Components can be ' +
+          'async at the moment. This is often caused by accidentally ' +
+          "adding `'use client'` to a module that was originally written " +
+          'for the server.\n' +
+          '2) A promise passed to `use()` that is re-created on every ' +
+          'render, for example a promise created during render instead of ' +
+          'being cached. Cache the promise so the same instance is reused ' +
+          'across renders, or wrap the component in a Suspense boundary.',
+      ]);
+    },
+  );
 
   it(
     'warn if async client component calls a hook (e.g. useState) ' +
