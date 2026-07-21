@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<9edc51c5a0744dc723fe45d4786ab94b>>
+ * @generated SignedSource<<017db2cdbdf3330eb0e2d9875dbe1132>>
  */
 
 "use strict";
@@ -3364,18 +3364,19 @@ function updateSyncExternalStore(subscribe, getSnapshot) {
   updateEffect(subscribeToStore.bind(null, fiber, hook, subscribe), [
     subscribe
   ]);
-  if (
+  subscribe =
     hook.getSnapshot !== getSnapshot ||
     snapshotChanged ||
-    (null !== workInProgressHook && workInProgressHook.memoizedState.tag & 1)
-  ) {
+    (null !== workInProgressHook &&
+      0 !== (workInProgressHook.memoizedState.tag & 1));
+  pushSimpleEffect(
+    subscribe ? 9 : 8,
+    { destroy: void 0 },
+    updateStoreInstance.bind(null, fiber, hook, nextSnapshot, getSnapshot),
+    null
+  );
+  if (subscribe) {
     fiber.flags |= 2048;
-    pushSimpleEffect(
-      9,
-      { destroy: void 0 },
-      updateStoreInstance.bind(null, fiber, hook, nextSnapshot, getSnapshot),
-      null
-    );
     if (null === workInProgressRoot)
       throw Error(
         "Expected a work-in-progress root. This is a bug in React. Please file an issue."
@@ -10985,10 +10986,10 @@ function wrapFiber(fiber) {
 }
 var internals$jscomp$inline_1579 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-fa5212c1-20260720",
+  version: "19.3.0-native-fb-2860e00c-20260720",
   rendererPackageName: "react-test-renderer",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-fa5212c1-20260720"
+  reconcilerVersion: "19.3.0-native-fb-2860e00c-20260720"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_1580 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -11124,4 +11125,4 @@ exports.unstable_batchedUpdates = function (fn, a) {
         flushSyncWorkAcrossRoots_impl(0, !0));
   }
 };
-exports.version = "19.3.0-native-fb-fa5212c1-20260720";
+exports.version = "19.3.0-native-fb-2860e00c-20260720";

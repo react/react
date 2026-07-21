@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<7b39123b8e76650a421a46cf112db3ad>>
+ * @generated SignedSource<<5dc98a398093bfecb329c752be9ea42d>>
  */
 
 "use strict";
@@ -4402,18 +4402,19 @@ function updateSyncExternalStore(subscribe, getSnapshot) {
   updateEffect(subscribeToStore.bind(null, fiber, hook, subscribe), [
     subscribe
   ]);
-  if (
+  subscribe =
     hook.getSnapshot !== getSnapshot ||
     snapshotChanged ||
-    (null !== workInProgressHook && workInProgressHook.memoizedState.tag & 1)
-  ) {
+    (null !== workInProgressHook &&
+      0 !== (workInProgressHook.memoizedState.tag & 1));
+  pushSimpleEffect(
+    subscribe ? 9 : 8,
+    { destroy: void 0 },
+    updateStoreInstance.bind(null, fiber, hook, nextSnapshot, getSnapshot),
+    null
+  );
+  if (subscribe) {
     fiber.flags |= 2048;
-    pushSimpleEffect(
-      9,
-      { destroy: void 0 },
-      updateStoreInstance.bind(null, fiber, hook, nextSnapshot, getSnapshot),
-      null
-    );
     if (null === workInProgressRoot)
       throw Error(
         "Expected a work-in-progress root. This is a bug in React. Please file an issue."
@@ -12371,10 +12372,10 @@ batchedUpdatesImpl = function (fn, a) {
 var roots = new Map(),
   internals$jscomp$inline_1357 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-fa5212c1-20260720",
+    version: "19.3.0-native-fb-2860e00c-20260720",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-fa5212c1-20260720"
+    reconcilerVersion: "19.3.0-native-fb-2860e00c-20260720"
   };
 null !== extraDevToolsConfig &&
   (internals$jscomp$inline_1357.rendererConfig = extraDevToolsConfig);
