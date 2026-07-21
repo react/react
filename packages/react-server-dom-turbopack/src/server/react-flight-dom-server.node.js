@@ -8,6 +8,7 @@
  */
 
 export {
+  render,
   renderToReadableStream,
   renderToPipeableStream,
   prerender,

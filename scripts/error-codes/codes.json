@@ -586,5 +586,14 @@
   "598": "Maximum update depth exceeded. This could be an infinite loop. This can happen when a component repeatedly calls setState during render phase or inside useLayoutEffect, causing infinite render loop. React limits the number of nested updates to prevent infinite loops.",
   "599": "Expected an initialized chunk but got an initialized stream chunk instead. This payload may have been submitted by an older version of React.",
   "600": "A rejected Promise was passed to React without a `reason` property. React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`.",
-  "601": "A chunk pair is incomplete. This is a bug in React."
+  "601": "A chunk pair is incomplete. This is a bug in React.",
+  "602": "A length-framed row ended inside a character. This is a bug in the wiring of the React streams.",
+  "603": "The inline data channel already has a reader. createFromInlineData can only be called once per document.",
+  "604": "A render result can only have a single consumer.",
+  "605": "Cannot attach a consumer to a render result that has already started emitting. Attach the consumer synchronously after render().",
+  "606": "The byte stream of this render was released because an in-process consumer received the full render before anything claimed the stream. To also read the byte stream, claim it before the render finishes.",
+  "607": "This document does not have an inline data channel. createFromInlineData requires a document rendered with inlineData.",
+  "608": "A render result can only have a single rows subscriber.",
+  "609": "Cannot subscribe to the rows of a render result whose byte stream is already claimed. Use one or the other.",
+  "610": "Cannot read the byte stream of a render result whose rows are already subscribed. Use one or the other."
 }

@@ -17,7 +17,14 @@ import type {ServerManifest} from 'react-client/src/ReactFlightClientConfig';
 
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
+import type {
+  RenderResult as FlightRenderResult,
+  RenderConsumer,
+} from 'react-server/src/ReactFlightServer';
+
 import {
+  claimByteStream,
+  createRenderResult,
   createRequest,
   createPrerenderRequest,
   startWork,
@@ -166,12 +173,16 @@ function renderToReadableStream(
   if (debugChannelReadable !== undefined) {
     startReadingFromDebugChannelReadableStream(request, debugChannelReadable);
   }
-  const stream = new ReadableStream(
+  startWork(request);
+  return createByteStream(request);
+}
+
+// The stream construction is passive: work has already been started by the
+// caller, and flowing begins on the first pull.
+function createByteStream(request: Request): ReadableStream {
+  return new ReadableStream(
     {
       type: 'bytes',
-      start: (controller): ?Promise<void> => {
-        startWork(request);
-      },
       pull: (controller): ?Promise<void> => {
         startFlowing(request, controller);
       },
@@ -184,7 +195,6 @@ function renderToReadableStream(
     // $FlowFixMe[incompatible-type]
     {highWaterMark: 0},
   );
-  return stream;
 }
 
 type StaticResult = {
@@ -322,7 +332,100 @@ function decodeReplyFromAsyncIterable<T>(
   return getRoot(response);
 }
 
+export type RenderOptions = {
+  identifierPrefix?: string,
+  signal?: AbortSignal,
+  onError?: (error: mixed) => void,
+  environmentName?: string | (() => string),
+  filterStackFrame?: (url: string, functionName: string) => boolean,
+  temporaryReferences?: TemporaryReferenceSet,
+  startTime?: number,
+  // DEV-only: debug rows leave on this channel instead of reaching either
+  // the byte stream or the in-process consumer.
+  debugChannel?: {readable?: ReadableStream, writable?: WritableStream, ...},
+};
+
+export type RenderResult = {
+  _attach: (consumer: RenderConsumer) => void,
+  stream: ReadableStream,
+};
+
+// Renders the model without deciding how it will be consumed: pass the
+// result to a paired Flight Client's createFromRender to read the render
+// back in the same process without going through the wire format, read its
+// stream to get the bytes, or both from the same render. A consumer has to
+// attach before the render starts emitting, so createFromRender must be
+// called synchronously after render().
+function render(
+  model: ReactClientValue,
+  webpackMap: ClientManifest,
+  options?: RenderOptions,
+): RenderResult {
+  const debugChannelReadable =
+    __DEV__ && options && options.debugChannel
+      ? options.debugChannel.readable
+      : undefined;
+  const debugChannelWritable =
+    __DEV__ && options && options.debugChannel
+      ? options.debugChannel.writable
+      : undefined;
+  const request = createRequest(
+    model,
+    webpackMap,
+    options ? options.onError : undefined,
+    options ? options.identifierPrefix : undefined,
+    options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
+    __DEV__ && options ? options.environmentName : undefined,
+    __DEV__ && options ? options.filterStackFrame : undefined,
+    debugChannelReadable !== undefined,
+  );
+  const result: FlightRenderResult = createRenderResult(request);
+  if (options && options.signal) {
+    const signal = options.signal;
+    if (signal.aborted) {
+      // Give the caller a chance to attach a consumer before the abort
+      // emits its error rows.
+      Promise.resolve().then(() => abort(request, (signal as any).reason));
+    } else {
+      const listener = () => {
+        abort(request, (signal as any).reason);
+        signal.removeEventListener('abort', listener);
+      };
+      signal.addEventListener('abort', listener);
+    }
+  }
+  startWork(request);
+  if (debugChannelWritable !== undefined) {
+    const debugStream = new ReadableStream(
+      {
+        type: 'bytes',
+        pull: (controller): ?Promise<void> => {
+          startFlowingDebug(request, controller);
+        },
+      },
+      // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+      // $FlowFixMe[incompatible-type]
+      {highWaterMark: 0},
+    );
+    debugStream.pipeTo(debugChannelWritable);
+  }
+  if (debugChannelReadable !== undefined) {
+    startReadingFromDebugChannelReadableStream(request, debugChannelReadable);
+  }
+  return {
+    _attach: result._attach,
+    // Accessing the stream claims it: an unclaimed byte stream is released
+    // once an in-process consumer has received the full render.
+    get stream(): ReadableStream {
+      claimByteStream(request);
+      return createByteStream(request);
+    },
+  };
+}
+
 export {
+  render,
   renderToReadableStream,
   prerender,
   decodeReply,

@@ -29,9 +29,13 @@ type ServerConsumerManifest = {
   serverModuleMap: null | ServerManifest,
 };
 
+import type {RenderResult} from 'react-client/src/ReactFlightClient';
+
 import {
   createResponse,
   createStreamState,
+  connectRenderResult,
+  provideDispatchScope,
   getRoot,
   reportGlobalError,
   processBinaryChunk,
@@ -184,6 +188,44 @@ function createFromReadableStream<T>(
   return getRoot(response);
 }
 
+// Consumes an in-process render() result through the normal Response, so
+// module resolution, dedupe, lazy chunks, hint dispatch and debug info all
+// behave exactly as they do for byte streams — without the byte stream.
+// The consumer has to attach before the render starts emitting, so this must
+// be called synchronously after render().
+function createFromRender<T>(
+  result: RenderResult,
+  options: Options,
+): Thenable<T> {
+  const response: FlightResponse = createResponseFromOptions(options);
+  const streamState = createStreamState(response, result);
+  connectRenderResult(response, result, streamState);
+  const root = getRoot<T>(response);
+  let scopeCaptured = false;
+  return {
+    then(resolve: any, reject: any) {
+      if (!scopeCaptured) {
+        scopeCaptured = true;
+        // Module preinits and hints must land in whatever request consumes
+        // this response. A byte stream gets this implicitly: its
+        // subscription callbacks inherit the consumer's async scope. For an
+        // in-process render, capture the scope of the first read — the
+        // consuming renderer's — and route every dispatch through it.
+        // $FlowFixMe[cannot-resolve-name]: feature detected at runtime
+        const snapshot =
+          typeof AsyncLocalStorage === 'function' &&
+          // $FlowFixMe[cannot-resolve-name]
+          typeof AsyncLocalStorage.snapshot === 'function'
+            ? // $FlowFixMe[cannot-resolve-name]
+              AsyncLocalStorage.snapshot()
+            : (dispatch: () => void) => dispatch();
+        provideDispatchScope(response, snapshot);
+      }
+      return (root as any).then(resolve, reject);
+    },
+  } as any;
+}
+
 function createFromFetch<T>(
   promiseForResponse: Promise<Response>,
   options: Options,
@@ -256,4 +298,9 @@ function encodeReply(
   });
 }
 
-export {createFromFetch, createFromReadableStream, encodeReply};
+export {
+  createFromFetch,
+  createFromReadableStream,
+  createFromRender,
+  encodeReply,
+};

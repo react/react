@@ -1,0 +1,57 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
+
+// The contract between a Flight Server render and a Flight Client consuming
+// it in the same process. It only consists of plain functions so that it can
+// cross the boundary between the react-server module graph and the client
+// module graph; this module holds the single definition both graphs type
+// against.
+
+// A same-process consumer of the rows of a render, receiving each row when
+// it's emitted instead of decoding it from the byte stream. Model rows are
+// delivered in their object form so the consumer doesn't need to parse and
+// re-allocate what this process already has; binary rows are delivered as
+// cloned, correctly-typed views; every other row is delivered as the same
+// text that frames it on the wire.
+export type RenderConsumer = {
+  +row: (
+    id: number,
+    tag: string,
+    payload: mixed,
+    // True when the payload is plain data containing no Flight encodings:
+    // it can be used as the model directly, without revival. The producer
+    // knows this for free: the resolve walk copies on write, so a model
+    // that resolved to itself provably contains no encodings.
+    plainModel: boolean,
+  ) => void,
+  +close: () => void,
+  +error: (reason: mixed) => void,
+};
+
+// A consumer of the render's wire output before it is encoded to bytes.
+// String chunks are the same text a byte stream would carry, batched per
+// flush; binary rows are delivered as views between the batches, in wire
+// order. Concatenating everything (encoding the strings) reproduces the
+// byte stream exactly. Used when the output is re-encoded into a larger
+// document (hydration data inlining), where bytes would just be decoded
+// back to text.
+export type RowsConsumer = {
+  +string: (chunk: string) => void,
+  +bytes: (chunk: $ArrayBufferView) => void,
+  +close: () => void,
+  +error: (reason: mixed) => void,
+};
+
+// The base result of render(). Each server entry point composes it with its
+// platform's byte stream doors; a paired Flight Client's createFromRender
+// attaches a consumer to it.
+export type RenderResult = {
+  +_attach: (consumer: RenderConsumer) => void,
+  +_subscribeRows: (consumer: RowsConsumer) => void,
+};

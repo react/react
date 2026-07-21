@@ -553,6 +553,8 @@ type Task = {
   implicitSlot: boolean, // true if the root server component of this sequence had a null key
   formatContext: FormatContext, // an approximate parent context from host components
   thenableState: ThenableState | null,
+  packedItems: null | Array<ReactClientValue>, // a packed row's deferred siblings; the same array as the model
+
   timed: boolean, // Profiling-only. Whether we need to track the completion time of this task.
   time: number, // Profiling-only. The last time stamp emitted for this task.
   environmentName: string, // DEV-only. Used to track if the environment for this task changed.
@@ -587,12 +589,43 @@ const PRERENDER = 21;
 // emitTypedArrayChunk for why, and flushCompletedChunks for how it's read.
 const NEXT_TWO_CHUNKS_ARE_ATOMIC: symbol = Symbol();
 
+import type {
+  RenderConsumer,
+  RenderResult,
+  RowsConsumer,
+} from 'shared/ReactFlightRenderResult';
+
+export type {RenderConsumer, RenderResult, RowsConsumer};
+
 export type Request = {
   status: 10 | 11 | 12 | 13 | 14,
   type: 20 | 21,
   flushScheduled: boolean,
   fatalError: mixed,
   destination: null | Destination,
+  consumer: null | RenderConsumer,
+  // Receives the wire output as strings (batched per flush) instead of
+  // encoded bytes; mutually exclusive with a byte destination.
+  rowsConsumer: null | RowsConsumer,
+  // Rows delivered since the last flush, as flat [id, tag, payload] triples.
+  // Delivering at flush boundaries batches the consumer's wake-ups the same
+  // way flushing batches the destination's, which matters for tail latency:
+  // every extra wake-up is a task boundary on the request's critical path.
+  pendingDeliveries: Array<mixed>,
+  drainingDeliveries: boolean,
+  // The number of rows delivered to the consumer (or that would have been).
+  // Monotonic; used to enforce that consumers attach before emissions start.
+  emittedRows: number,
+  // How many of the chunks counted by pendingChunks/pendingDebugChunks have
+  // reached the completed queues. When these pairs are equal, every reserved
+  // row has been emitted (and therefore delivered): nothing more is coming.
+  queuedChunks: number,
+  queuedDebugChunks: number,
+  sentTimeOrigin: boolean,
+  // Whether anything has claimed this request's byte stream (piping it or
+  // reading its stream). If nothing has by the time an in-process consumer
+  // has received everything, the buffered wire chunks are released.
+  byteStreamClaimed: boolean,
   bundlerConfig: ClientManifest,
   cache: Map<Function, mixed>,
   cacheController: AbortController,
@@ -614,7 +647,17 @@ export type Request = {
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
-  writtenObjects: WeakMap<Reference, string>,
+  writtenObjects: WeakMap<Reference, string | DeferredReference>,
+  // Fixed-size blocks encoding deferred references: entry i holds the
+  // property key at [i] and the parent's entry at [i + 1] within its
+  // block. Leaf values in flat blocks instead of per-object pair records:
+  // registration is the hot path, records would each be a traced
+  // allocation that survives every young collection for the request's
+  // lifetime, and one growable array would recopy its backing store as it
+  // doubles through tens of thousands of slots.
+  deferredBlocks: Array<Array<string | DeferredReference>>,
+  deferredCount: number,
+  writtenChunkLists: Map<string, string>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -727,6 +770,15 @@ function RequestInstance(
   this.cacheController = new AbortController();
   this.nextChunkId = 0;
   this.pendingChunks = 0;
+  this.consumer = null;
+  this.rowsConsumer = null;
+  this.pendingDeliveries = [];
+  this.drainingDeliveries = false;
+  this.emittedRows = 0;
+  this.queuedChunks = 0;
+  this.queuedDebugChunks = 0;
+  this.sentTimeOrigin = false;
+  this.byteStreamClaimed = false;
   this.hints = hints;
   this.abortableTasks = abortSet;
   this.pingedTasks = pingedTasks;
@@ -740,6 +792,9 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.deferredBlocks = [];
+  this.deferredCount = 0;
+  this.writtenChunkLists = new Map();
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -794,12 +849,10 @@ function RequestInstance(
     } else {
       timeOrigin = this.timeOrigin = performance.now();
     }
-    emitTimeOriginChunk(
-      this,
-      timeOrigin +
-        // $FlowFixMe[prop-missing]
-        performance.timeOrigin,
-    );
+    // The time origin row itself is emitted lazily by the first work (see
+    // ensureTimeOriginIsSent): nothing may emit while the request is being
+    // constructed, since an in-process consumer can only attach after
+    // construction and must observe every row.
     this.abortTime = -0.0;
   } else {
     timeOrigin = 0;
@@ -1229,6 +1282,7 @@ function serializeReadableStream(
   const startStreamRow =
     streamTask.id.toString(16) + ':' + (isByteStream ? 'r' : 'R') + '\n';
   request.completedRegularChunks.push(stringToChunk(startStreamRow));
+  deliverRow(request, streamTask.id, isByteStream ? 'r' : 'R', '', 1, false);
 
   function progress(entry: {done: boolean, value: ReactClientValue, ...}) {
     if (streamTask.status !== PENDING) {
@@ -1239,6 +1293,7 @@ function serializeReadableStream(
       streamTask.status = COMPLETED;
       const endStreamRow = streamTask.id.toString(16) + ':C\n';
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      deliverRow(request, streamTask.id, 'C', '', 1, false);
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener('abort', abortStream);
       enqueueFlush(request);
@@ -1339,6 +1394,7 @@ function serializeAsyncIterable(
   const startStreamRow =
     streamTask.id.toString(16) + ':' + (isIterator ? 'x' : 'X') + '\n';
   request.completedRegularChunks.push(stringToChunk(startStreamRow));
+  deliverRow(request, streamTask.id, isIterator ? 'x' : 'X', '', 1, false);
 
   function progress(
     entry:
@@ -1351,25 +1407,24 @@ function serializeAsyncIterable(
 
     if (entry.done) {
       streamTask.status = COMPLETED;
-      let endStreamRow;
+      let endStreamPayload;
       if (entry.value === undefined) {
-        endStreamRow = streamTask.id.toString(16) + ':C\n';
+        endStreamPayload = '';
       } else {
         // Unlike streams, the last value may not be undefined. If it's not
         // we outline it and encode a reference to it in the closing instruction.
         try {
           const chunkId = outlineModel(request, entry.value);
-          endStreamRow =
-            streamTask.id.toString(16) +
-            ':C' +
-            stringify(serializeByValueID(chunkId)) +
-            '\n';
+          endStreamPayload = stringify(serializeByValueID(chunkId));
         } catch (x) {
           error(x);
           return;
         }
       }
+      const endStreamRow =
+        streamTask.id.toString(16) + ':C' + endStreamPayload + '\n';
       request.completedRegularChunks.push(stringToChunk(endStreamRow));
+      deliverRow(request, streamTask.id, 'C', endStreamPayload, 1, false);
       request.abortableTasks.delete(streamTask);
       request.cacheController.signal.removeEventListener(
         'abort',
@@ -2153,12 +2208,44 @@ let canEmitDebugInfo: boolean = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
 
+// How many deferred siblings can share one packed row. We can't use a size
+// limit like MAX_ROW_SIZE because we emit the references into the row
+// before any of the items have rendered, but at typical deferred element
+// sizes this keeps packed rows near MAX_ROW_SIZE. It also bounds how much
+// the client has to buffer, since no item resolves until the whole row is
+// received.
+const PACKED_SIBLINGS_LIMIT = 64;
+
+// The task currently accumulating deferred siblings, if any. This is only
+// valid while the task we're deferring out of is still rendering.
+let currentPackedTask: null | Task = null;
+
 function deferTask(request: Request, task: Task): ReactJSONValue {
   // Like outlineTask but instead the item is scheduled to be serialized
-  // after its parent in the stream.
+  // after its parent in the stream. Deferred siblings that share the same
+  // serialization context are packed into a shared row and referenced by
+  // index to avoid emitting one row per sibling.
+  const packedTask = currentPackedTask;
+  if (
+    packedTask !== null &&
+    packedTask.keyPath === task.keyPath &&
+    packedTask.implicitSlot === task.implicitSlot &&
+    packedTask.formatContext === task.formatContext
+  ) {
+    const items = packedTask.packedItems;
+    if (items !== null && items.length < PACKED_SIBLINGS_LIMIT) {
+      const index = items.push(task.model) - 1;
+      registerPackedItem(request, task, packedTask.id, index);
+      return serializeLazyPackedItemID(packedTask.id, index);
+    }
+    // This packed row is full. Start a new one.
+  }
+  const packedItems: Array<ReactClientValue> = [
+    task.model, // the currently rendering element
+  ];
   const newTask = createTask(
     request,
-    task.model, // the currently rendering element
+    packedItems,
     task.keyPath, // unlike outlineModel this one carries along context
     task.implicitSlot,
     task.formatContext,
@@ -2171,9 +2258,36 @@ function deferTask(request: Request, task: Task): ReactJSONValue {
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
   );
+  newTask.packedItems = packedItems;
+  currentPackedTask = newTask;
 
+  registerPackedItem(request, task, newTask.id, 0);
   pingTask(request, newTask);
-  return serializeLazyID(newTask.id);
+  return serializeLazyPackedItemID(newTask.id, 0);
+}
+
+function registerPackedItem(
+  request: Request,
+  task: Task,
+  packedId: number,
+  index: number,
+): void {
+  // We may have just registered this element for dedupe as a path to its
+  // slot in the parent row, but that slot now holds only a lazy reference
+  // to the packed item. The rendered content itself lives at
+  // "$<row>:<index>" inside the packed row, so we point the registration
+  // there and later occurrences resolve it without going through the lazy.
+  // If we're in some kind of context we can't reuse the result of this
+  // render, so we don't register it.
+  if (task.keyPath === null && !task.implicitSlot) {
+    const model = task.model;
+    if (typeof model === 'object' && model !== null) {
+      request.writtenObjects.set(
+        model,
+        serializeByValueID(packedId) + ':' + index,
+      );
+    }
+  }
 }
 
 function outlineTask(request: Request, task: Task): ReactJSONValue {
@@ -2780,6 +2894,7 @@ function createTask(
     formatContext: formatContext,
     ping: () => pingTask(request, task),
     thenableState: null,
+    packedItems: null,
   } as Omit<
     Task,
     | 'timed'
@@ -2892,40 +3007,151 @@ function resolveModel(
     return rendered;
   }
 
-  if (isArray(rendered)) {
-    const resolved: Array<ReactJSONValue> = [];
-    for (let i = 0; i < rendered.length; i++) {
-      resolved[i] = resolveModel(request, task, rendered, '' + i, rendered[i]);
-    }
-    return resolved;
-  }
+  // The resolved tree is copy-on-write: a copy is allocated only if a child
+  // resolves to something different.
 
-  // Use `{}` for fast properties; `__proto__` is handled below because simple
-  // assignment would hit Object.prototype's setter instead of creating a key.
-  const resolved: {[key: string]: ReactJSONValue} = {} as any;
-  for (const key in rendered) {
-    if (hasOwnProperty.call(rendered, key)) {
+  if (isArray(rendered)) {
+    if (rendered[0] === REACT_ELEMENT_TYPE) {
+      // An element tuple always diverges: the tag slot serializes to '$'.
+      // Skip the identity walk and copy directly.
+      serializedSize += 1;
+      const resolved: Array<ReactJSONValue> = new Array(rendered.length);
+      resolved[0] = '$';
+      for (let idx = 1; idx < rendered.length; idx++) {
+        resolved[idx] = resolveModel(
+          request,
+          task,
+          rendered,
+          '' + idx,
+          rendered[idx],
+        );
+      }
+      return resolved;
+    }
+    for (let i = 0; i < rendered.length; i++) {
+      const child = rendered[i];
       const resolvedValue = resolveModel(
         request,
         task,
         rendered,
-        key,
-        rendered[key],
+        '' + i,
+        child,
       );
-      if (key === __PROTO__) {
-        // Match JSON's ordinary data-property semantics for this legacy key.
-        Object.defineProperty(resolved, key, {
-          value: resolvedValue,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-      } else {
-        resolved[key] = resolvedValue;
+      if (resolvedValue !== child) {
+        const resolved: Array<ReactJSONValue> = rendered.slice() as any;
+        resolved[i] = resolvedValue;
+        for (let idx = i + 1; idx < rendered.length; idx++) {
+          resolved[idx] = resolveModel(
+            request,
+            task,
+            rendered,
+            '' + idx,
+            rendered[idx],
+          );
+        }
+        return resolved;
       }
     }
+    return rendered;
   }
-  return resolved;
+
+  // Object.keys instead of for-in: V8 deopt-cycles the enumerated keyed
+  // loads when the loop body doesn't store to every key.
+  const keys = Object.keys(rendered);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const child = rendered[key];
+    const resolvedValue = resolveModel(request, task, rendered, key, child);
+    if (resolvedValue !== child) {
+      // Use `{}` for fast properties; `__proto__` is handled below because
+      // simple assignment would hit Object.prototype's setter instead of
+      // creating a key.
+      const resolved: {[key: string]: ReactJSONValue} = {} as any;
+      for (let j = 0; j < keys.length; j++) {
+        const k = keys[j];
+        const childValue =
+          j < i
+            ? (rendered[k] as any)
+            : j === i
+              ? resolvedValue
+              : resolveModel(request, task, rendered, k, rendered[k]);
+        if (k === __PROTO__) {
+          // Match JSON's ordinary data-property semantics for this legacy key.
+          Object.defineProperty(resolved, k, {
+            value: childValue,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        } else {
+          resolved[k] = childValue;
+        }
+      }
+      return resolved;
+    }
+  }
+  return rendered;
+}
+
+// A reference to an object that hasn't needed its path yet: the path
+// string copies the whole parent path, so it's only materialized (and
+// memoized) if the object is actually seen again. The index points into
+// the request's deferred arrays, whose entry holds the property key and
+// the parent's own entry as captured at registration time - so the
+// materialized path is exactly the string that would have been built
+// eagerly, even if the parent's map entry is later replaced (for example
+// when the parent is outlined into its own row).
+type DeferredReference = number;
+
+// Block capacity in slots (two slots per entry). A shift and a mask keep
+// index math on Smis.
+const DEFERRED_BLOCK_SLOTS = 4096;
+
+function registerDeferredReference(
+  request: Request,
+  parentEntry: string | DeferredReference,
+  key: string,
+): DeferredReference {
+  const index = request.deferredCount;
+  request.deferredCount = index + 2;
+  const blockIndex = index >> 12;
+  const offset = index & (DEFERRED_BLOCK_SLOTS - 1);
+  let block = request.deferredBlocks[blockIndex];
+  if (block === undefined) {
+    block = new Array(DEFERRED_BLOCK_SLOTS);
+    request.deferredBlocks.push(block);
+  }
+  block[offset] = key;
+  block[offset + 1] = parentEntry;
+  return index;
+}
+
+function resolveWrittenReference(
+  request: Request,
+  value: Reference,
+  entry: string | DeferredReference,
+): string {
+  if (typeof entry === 'string') {
+    return entry;
+  }
+  // Walk the captured chain iteratively: it can be as long as the model is
+  // deep, and it always ends at a string by construction.
+  const deferredBlocks = request.deferredBlocks;
+  const keys: Array<string> = [];
+  let node: string | DeferredReference = entry;
+  while (typeof node !== 'string') {
+    const block = deferredBlocks[node >> 12];
+    const offset = node & (DEFERRED_BLOCK_SLOTS - 1);
+    keys.push(block[offset] as any);
+    node = block[offset + 1] as any;
+  }
+  let reference: string = node;
+  for (let i = keys.length - 1; i >= 0; i--) {
+    reference = reference + ':' + keys[i];
+  }
+  // Memoize so the next hit on this object is a plain string read.
+  request.writtenObjects.set(value, reference);
+  return reference;
 }
 
 function serializeByValueID(id: number): string {
@@ -2934,6 +3160,12 @@ function serializeByValueID(id: number): string {
 
 function serializeLazyID(id: number): string {
   return '$L' + id.toString(16);
+}
+
+function serializeLazyPackedItemID(id: number, index: number): string {
+  // The index is decimal, unlike row ids, because it's also used as a
+  // property path segment which the client applies verbatim as an array key.
+  return '$L' + id.toString(16) + ':' + index;
 }
 
 function serializePromiseID(id: number): string {
@@ -3002,6 +3234,192 @@ function serializeDateFromDateJSON(dateJSON: string): string {
 
 function serializeBigInt(n: bigint): string {
   return '$n' + n.toString(10);
+}
+
+function deliverRow(
+  request: Request,
+  id: number,
+  tag: string,
+  // Call sites whose payload is expensive to prepare (clones, extra
+  // stringification) pass null when no consumer is attached; the payload is
+  // never read in that case, but the chunk accounting below still runs.
+  payload: mixed,
+  // How many chunks flushing this row will subtract from pendingChunks (or
+  // pendingDebugChunks for debug rows). Text and binary rows write an extra
+  // header chunk; hint rows are never reserved at all.
+  chunkCount: number,
+  debug: boolean,
+  // True when the payload is a model that resolved to itself in the
+  // copy-on-write resolve walk, which proves it contains no encodings.
+  plainModel?: boolean,
+): void {
+  request.emittedRows++;
+  if (__DEV__ && debug) {
+    request.queuedDebugChunks += chunkCount;
+  } else {
+    request.queuedChunks += chunkCount;
+  }
+  if (request.consumer === null) {
+    return;
+  }
+  // Debug rows are delivered even when a debug channel carries their bytes:
+  // the rows on the main queue reference the outlined debug rows, so a
+  // consumer that skipped them would be left with dangling references. This
+  // matches a byte stream consumer that reads the debug channel alongside
+  // the main stream.
+  request.pendingDeliveries.push(id, tag, payload, plainModel === true);
+}
+
+function drainDeliveries(request: Request): void {
+  if (request.drainingDeliveries) {
+    // The consumer called back into the request (e.g. started piping) and
+    // flushed reentrantly. The outer drain finishes the deliveries.
+    return;
+  }
+  const deliveries = request.pendingDeliveries;
+  request.drainingDeliveries = true;
+  try {
+    // The length is re-read on purpose: rows delivered while the consumer
+    // runs are appended and drained in the same pass.
+    for (let i = 0; i < deliveries.length; i += 4) {
+      const consumer = request.consumer;
+      if (consumer === null) {
+        // Detached (by an earlier throw) while draining.
+        break;
+      }
+      try {
+        consumer.row(
+          deliveries[i] as any,
+          deliveries[i + 1] as any,
+          deliveries[i + 2],
+          deliveries[i + 3] as any,
+        );
+      } catch (x) {
+        // The consumer threw. Detach it so it can't corrupt this render; the
+        // byte stream is unaffected. This mirrors how a byte stream
+        // consumer's errors don't propagate into the server.
+        request.consumer = null;
+        try {
+          consumer.error(x);
+        } catch (_) {
+          // If even the error handler throws there's nothing further we can
+          // do to notify this consumer.
+        }
+      }
+    }
+    deliveries.length = 0;
+  } finally {
+    request.drainingDeliveries = false;
+  }
+}
+
+function closeConsumerIfDone(request: Request): void {
+  const consumer = request.consumer;
+  if (
+    consumer !== null &&
+    !request.drainingDeliveries &&
+    request.pendingDeliveries.length === 0 &&
+    request.abortableTasks.size === 0 &&
+    // Every chunk that has ever been reserved has reached the completed
+    // queues, which means every row has also been delivered: nothing more
+    // will be emitted.
+    request.pendingChunks === request.queuedChunks &&
+    (!__DEV__ || request.pendingDebugChunks === request.queuedDebugChunks)
+  ) {
+    request.consumer = null;
+    try {
+      consumer.close();
+    } catch (x) {
+      // The consumer is already detached; there's no one to notify.
+    }
+    if (
+      !request.byteStreamClaimed &&
+      request.destination === null &&
+      (!__DEV__ || request.debugDestination === null) &&
+      request.status !== CLOSED
+    ) {
+      // The consumer has received everything and nothing has claimed the
+      // byte stream, so the buffered wire chunks would only sit in memory
+      // until the result is dropped. Release them, and refuse a late claim
+      // loudly rather than replay an empty stream.
+      request.status = CLOSING;
+      request.fatalError = new Error(
+        'The byte stream of this render was released because an in-process ' +
+          'consumer received the full render before anything claimed the ' +
+          'stream. To also read the byte stream, claim it before the render ' +
+          'finishes.',
+      );
+      request.completedImportChunks.length = 0;
+      request.completedHintChunks.length = 0;
+      request.completedRegularChunks.length = 0;
+      request.completedErrorChunks.length = 0;
+      if (__DEV__) {
+        request.completedDebugChunks.length = 0;
+      }
+    }
+  }
+}
+
+function cloneBinaryValue(value: $ArrayBufferView): $ArrayBufferView {
+  // The consumer may read this view lazily after the wire copy of these
+  // bytes has been written, and the destination is allowed to transfer or
+  // detach what we hand it, so the consumer gets its own copy.
+  if (typeof (value as any).slice === 'function') {
+    return (value as any).slice();
+  }
+  // DataView has no slice; copy the underlying range instead.
+  return new DataView(
+    value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
+  );
+}
+
+export function createRenderResult(request: Request): RenderResult {
+  return {
+    _attach(consumer: RenderConsumer): void {
+      if (request.consumer !== null) {
+        throw new Error('A render result can only have a single consumer.');
+      }
+      if (request.emittedRows > 0) {
+        // Nothing emits until the first scheduled work runs, so attaching
+        // synchronously after render() always precedes the first row.
+        throw new Error(
+          'Cannot attach a consumer to a render result that has already ' +
+            'started emitting. Attach the consumer synchronously after ' +
+            'render().',
+        );
+      }
+      if (request.status === CLOSING || request.status === CLOSED) {
+        // The request already failed fatally before the consumer attached.
+        consumer.error(request.fatalError);
+        return;
+      }
+      request.consumer = consumer;
+    },
+    _subscribeRows(consumer: RowsConsumer): void {
+      if (request.rowsConsumer !== null) {
+        throw new Error(
+          'A render result can only have a single rows subscriber.',
+        );
+      }
+      if (request.destination !== null || request.byteStreamClaimed) {
+        // The queues can only feed one of the two: flushing hands each
+        // completed chunk to whichever door is connected.
+        throw new Error(
+          'Cannot subscribe to the rows of a render result whose byte ' +
+            'stream is already claimed. Use one or the other.',
+        );
+      }
+      if (request.status === CLOSING || request.status === CLOSED) {
+        // The request already failed fatally before the subscriber attached.
+        consumer.error(request.fatalError);
+        return;
+      }
+      // The rows are this render's wire output; nothing should release them
+      // as unclaimed.
+      request.byteStreamClaimed = true;
+      request.rowsConsumer = consumer;
+    },
+  };
 }
 
 function serializeRowHeader(tag: string, id: number) {
@@ -3617,7 +4035,7 @@ function renderModelDestructive(
   if (typeof value === 'object') {
     switch ((value as any).$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        let elementReference = null;
+        let elementReference: null | string | DeferredReference = null;
         const writtenObjects = request.writtenObjects;
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
@@ -3630,6 +4048,10 @@ function renderModelDestructive(
               // This is the ID we're currently emitting so we need to write it
               // once but if we discover it again, we refer to it by id.
               modelRoot = null;
+              // We're rendering the content this reference resolves to, so
+              // the result can be referred to by the same reference and
+              // descendants can chain off it for dedupe.
+              elementReference = existingReference;
             } else {
               // We've already emitted this as an outlined object, so we can refer to that by its
               // existing ID. TODO: We should use a lazy reference since, unlike plain objects,
@@ -3638,15 +4060,21 @@ function renderModelDestructive(
               // detect whether this already was emitted and synchronously available. In that
               // case we can refer to it synchronously and only make it lazy otherwise.
               // We currently don't have a data structure that lets us see that though.
-              return existingReference;
+              return typeof existingReference === 'string'
+                ? existingReference
+                : resolveWrittenReference(request, value, existingReference);
             }
           } else if (parentPropertyName.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-            const parentReference = writtenObjects.get(parent);
-            if (parentReference !== undefined) {
+            const parentEntry = writtenObjects.get(parent);
+            if (parentEntry !== undefined) {
               // If the parent has a reference, we can refer to this object indirectly
               // through the property name inside that parent.
-              elementReference = parentReference + ':' + parentPropertyName;
+              elementReference = registerDeferredReference(
+                request,
+                parentEntry,
+                parentPropertyName,
+              );
               writtenObjects.set(value, elementReference);
             }
           }
@@ -3852,10 +4280,14 @@ function renderModelDestructive(
 
     if (existingReference !== undefined) {
       if (modelRoot === value) {
-        if (existingReference !== serializeByValueID(task.id)) {
+        const materialized =
+          typeof existingReference === 'string'
+            ? existingReference
+            : resolveWrittenReference(request, value, existingReference);
+        if (materialized !== serializeByValueID(task.id)) {
           // Turns out that we already have this root at a different reference.
           // Use that after all.
-          return existingReference;
+          return materialized;
         }
         // This is the ID we're currently emitting so we need to write it
         // once but if we discover it again, we refer to it by id.
@@ -3863,12 +4295,14 @@ function renderModelDestructive(
       } else {
         // We've already emitted this as an outlined object, so we can
         // just refer to that by its existing ID.
-        return existingReference;
+        return typeof existingReference === 'string'
+          ? existingReference
+          : resolveWrittenReference(request, value, existingReference);
       }
     } else if (parentPropertyName.indexOf(':') === -1) {
       // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
-      const parentReference = writtenObjects.get(parent);
-      if (parentReference !== undefined) {
+      const parentEntry = writtenObjects.get(parent);
+      if (parentEntry !== undefined) {
         // If the parent has a reference, we can refer to this object indirectly
         // through the property name inside that parent.
         let propertyName = parentPropertyName;
@@ -3891,7 +4325,10 @@ function renderModelDestructive(
               break;
           }
         }
-        writtenObjects.set(value, parentReference + ':' + propertyName);
+        writtenObjects.set(
+          value,
+          registerDeferredReference(request, parentEntry, propertyName),
+        );
       }
     }
 
@@ -4248,6 +4685,24 @@ function logRecoverableError(
 function fatalError(request: Request, error: mixed): void {
   const onFatalError = request.onFatalError;
   onFatalError(error);
+  const consumer = request.consumer;
+  if (consumer !== null) {
+    request.consumer = null;
+    try {
+      consumer.error(error);
+    } catch (x) {
+      // The consumer is already detached; there's no one to notify.
+    }
+  }
+  const rowsConsumer = request.rowsConsumer;
+  if (rowsConsumer !== null) {
+    request.rowsConsumer = null;
+    try {
+      rowsConsumer.error(error);
+    } catch (x) {
+      // The subscriber is already detached; there's no one to notify.
+    }
+  }
   if (enableTaint) {
     cleanupTaintQueue(request);
   }
@@ -4437,14 +4892,21 @@ function emitErrorChunk(
   } else {
     errorInfo = {digest};
   }
-  const row = serializeRowHeader('E', id) + stringify(errorInfo) + '\n';
+  const json: string = stringify(errorInfo);
+  const row = serializeRowHeader('E', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
     request.completedDebugChunks.push(processedChunk);
   } else {
     request.completedErrorChunks.push(processedChunk);
   }
+  deliverRow(request, id, 'E', json, 1, debug);
 }
+
+const chunkListJSONCache: WeakMap<
+  $ReadOnlyArray<mixed>,
+  string,
+> = new WeakMap();
 
 function emitImportChunk(
   request: Request,
@@ -4452,8 +4914,43 @@ function emitImportChunk(
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
+  let metadata: mixed = clientReferenceMetadata;
+  if (
+    !(__DEV__ && debug) &&
+    isArray(metadata) &&
+    isArray(metadata[1]) &&
+    metadata[1].length > 0
+  ) {
+    // Bundlers put the chunk list at index 1 and modules commonly share
+    // it by value. Outline each distinct list into its own row and refer to
+    // it: import rows are parsed with the regular model reviver, so the
+    // reference resolves like any other. The row goes into the import queue
+    // so it always arrives before the import rows that refer to it. The
+    // manifest is parsed once per server, so each list is stringified once
+    // per process and the request map keys on the cached string, whose hash
+    // V8 also computes only once.
+    const chunks: $ReadOnlyArray<mixed> = metadata[1] as any;
+    let chunksJSON = chunkListJSONCache.get(chunks);
+    if (chunksJSON === undefined) {
+      // $FlowFixMe[incompatible-type] stringify can return null
+      chunksJSON = stringify(chunks) as any;
+      chunkListJSONCache.set(chunks, chunksJSON);
+    }
+    const writtenChunkLists = request.writtenChunkLists;
+    let ref = writtenChunkLists.get(chunksJSON);
+    if (ref === undefined) {
+      request.pendingChunks++;
+      const chunkListId = request.nextChunkId++;
+      const chunkListRow = chunkListId.toString(16) + ':' + chunksJSON + '\n';
+      request.completedImportChunks.push(stringToChunk(chunkListRow));
+      ref = serializeByValueID(chunkListId);
+      writtenChunkLists.set(chunksJSON, ref);
+    }
+    metadata = metadata.slice(0);
+    (metadata as any)[1] = ref;
+  }
   // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
+  const json: string = stringify(metadata);
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
@@ -4461,6 +4958,10 @@ function emitImportChunk(
   } else {
     request.completedImportChunks.push(processedChunk);
   }
+  // The metadata object is delivered as-is; it is manifest data that never
+  // contains Flight encodings, so the byte path parses the same shape back
+  // out of the text.
+  deliverRow(request, id, 'I', clientReferenceMetadata, 1, debug);
 }
 
 function emitHintChunk<Code: HintCode>(
@@ -4472,18 +4973,55 @@ function emitHintChunk<Code: HintCode>(
   const row = ':H' + code + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedHintChunks.push(processedChunk);
+  deliverRow(
+    request,
+    0,
+    'H',
+    request.consumer === null ? null : code + json,
+    0,
+    false,
+  );
 }
 
 function emitSymbolChunk(request: Request, id: number, name: string): void {
   const symbolReference = serializeSymbolReference(name);
   const processedChunk = encodeReferenceChunk(request, id, symbolReference);
   request.completedImportChunks.push(processedChunk);
+  deliverRow(
+    request,
+    id,
+    '',
+    request.consumer === null ? null : stringify(symbolReference),
+    1,
+    false,
+  );
 }
 
-function emitModelChunk(request: Request, id: number, json: string): void {
+function emitModelChunk(
+  request: Request,
+  id: number,
+  json: string,
+  model: ReactJSONValue,
+  // The pre-resolve value; a model that resolved to itself contains no
+  // encodings and the consumer can use it without revival.
+  originalValue: mixed,
+): void {
   const row = id.toString(16) + ':' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedRegularChunks.push(processedChunk);
+  // Deliver the object form so an in-process consumer doesn't parse and
+  // re-allocate what we already have. Primitive models are delivered as
+  // their JSON text: a string payload of a model row always unambiguously
+  // means JSON text, never a model that happens to be a string.
+  deliverRow(
+    request,
+    id,
+    '',
+    typeof model === 'object' && model !== null ? model : json,
+    1,
+    false,
+    typeof model === 'object' && model !== null && model === originalValue,
+  );
 }
 
 function emitDebugHaltChunk(request: Request, id: number): void {
@@ -4499,6 +5037,7 @@ function emitDebugHaltChunk(request: Request, id: number): void {
   const row = id.toString(16) + ':\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, id, '', '', 1, true);
 }
 
 function emitDebugChunk(
@@ -4521,19 +5060,23 @@ function emitDebugChunk(
       // without an unnecessary indirection.
       const row = serializeRowHeader('D', id) + json + '\n';
       request.completedRegularChunks.push(stringToChunk(row));
+      deliverRow(request, id, 'D', json, 1, false);
     } else {
       // Outline the debug information to the debug channel.
       const outlinedId = request.nextChunkId++;
       const debugRow = outlinedId.toString(16) + ':' + json + '\n';
       request.pendingDebugChunks++;
       request.completedDebugChunks.push(stringToChunk(debugRow));
-      const row =
-        serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
+      deliverRow(request, outlinedId, '', json, 1, true);
+      const refJSON = '"$' + outlinedId.toString(16) + '"';
+      const row = serializeRowHeader('D', id) + refJSON + '\n';
       request.completedRegularChunks.push(stringToChunk(row));
+      deliverRow(request, id, 'D', refJSON, 1, false);
     }
   } else {
     const row = serializeRowHeader('D', id) + json + '\n';
     request.completedRegularChunks.push(stringToChunk(row));
+    deliverRow(request, id, 'D', json, 1, false);
   }
 }
 
@@ -4661,6 +5204,7 @@ function emitIOInfoChunk(
   const row = id.toString(16) + ':J' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, id, 'J', json, 1, true);
 }
 
 function outlineIOInfo(request: Request, ioInfo: ReactIOInfo): void {
@@ -4837,6 +5381,15 @@ function emitTypedArrayChunk(
       binaryChunk,
     );
   }
+  deliverRow(
+    request,
+    id,
+    tag,
+    // Cloning is only for the consumer; don't pay for it otherwise.
+    request.consumer === null ? null : cloneBinaryValue(typedArray),
+    2,
+    debug,
+  );
 }
 
 function emitTextChunk(
@@ -4875,6 +5428,7 @@ function emitTextChunk(
       textChunk,
     );
   }
+  deliverRow(request, id, 'T', text, 2, debug);
 }
 
 function serializeEval(source: string): string {
@@ -5009,7 +5563,9 @@ function renderDebugModel(
     if (existingReference !== undefined) {
       // We've already emitted this as a real object, so we can refer to that by its existing reference.
       // This might be slightly different serialization than what renderDebugModel would've produced.
-      return existingReference;
+      return typeof existingReference === 'string'
+        ? existingReference
+        : resolveWrittenReference(request, value, existingReference);
     }
 
     if (counter.objectLimit <= 0 && !doNotLimit.has(value)) {
@@ -5350,6 +5906,14 @@ function renderDebugModel(
     const id = request.nextChunkId++;
     const processedChunk = encodeReferenceChunk(request, id, serializedValue);
     request.completedDebugChunks.push(processedChunk);
+    deliverRow(
+      request,
+      id,
+      '',
+      request.consumer === null ? null : stringify(serializedValue),
+      1,
+      true,
+    );
     const reference = serializeByValueID(id);
     writtenDebugObjects.set(value, reference);
     return reference;
@@ -5491,6 +6055,7 @@ function emitOutlinedDebugModelChunk(
   const row = id.toString(16) + ':' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, id, '', json, 1, true);
 }
 
 function outlineDebugModel(
@@ -5555,6 +6120,7 @@ function emitConsoleChunk(
   const row = ':W' + json + '\n';
   const processedChunk = stringToChunk(row);
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, 0, 'W', json, 1, true);
 }
 
 function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
@@ -5566,6 +6132,28 @@ function emitTimeOriginChunk(request: Request, timeOrigin: number): void {
   const processedChunk = stringToChunk(row);
   // TODO: Move to its own priority queue.
   request.completedDebugChunks.push(processedChunk);
+  deliverRow(request, 0, 'N', timeOrigin.toString(), 1, true);
+}
+
+// Emits the time origin row exactly once, before the first row that could
+// carry a timestamp relative to it. This runs at the start of work rather
+// than during request construction so that no row predates an in-process
+// consumer, which can only attach after construction.
+function ensureTimeOriginIsSent(request: Request): void {
+  if (
+    enableProfilerTimer &&
+    (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+  ) {
+    if (!request.sentTimeOrigin) {
+      request.sentTimeOrigin = true;
+      emitTimeOriginChunk(
+        request,
+        request.timeOrigin +
+          // $FlowFixMe[prop-missing]
+          performance.timeOrigin,
+      );
+    }
+  }
 }
 
 function forwardDebugInfo(
@@ -5770,12 +6358,15 @@ function emitTimingChunk(
     const debugRow = outlinedId.toString(16) + ':' + json + '\n';
     request.pendingDebugChunks++;
     request.completedDebugChunks.push(stringToChunk(debugRow));
-    const row =
-      serializeRowHeader('D', id) + '"$' + outlinedId.toString(16) + '"\n';
+    deliverRow(request, outlinedId, '', json, 1, true);
+    const refJSON = '"$' + outlinedId.toString(16) + '"';
+    const row = serializeRowHeader('D', id) + refJSON + '\n';
     request.completedRegularChunks.push(stringToChunk(row));
+    deliverRow(request, id, 'D', refJSON, 1, false);
   } else {
     const row = serializeRowHeader('D', id) + json + '\n';
     request.completedRegularChunks.push(stringToChunk(row));
+    deliverRow(request, id, 'D', json, 1, false);
   }
 }
 
@@ -5912,7 +6503,7 @@ function emitChunk(
   const resolvedModel = resolveModel(request, task, {'': value}, '', value);
   // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
   const json: string = stringify(resolvedModel);
-  emitModelChunk(request, task.id, json);
+  emitModelChunk(request, task.id, json, resolvedModel, value);
 }
 
 function erroredTask(request: Request, task: Task, error: mixed): void {
@@ -5951,6 +6542,10 @@ function retryTask(request: Request, task: Task): void {
 
   // We stash the outer parent size so we can restore it when we exit.
   const parentSerializedSize = serializedSize;
+  // Deferred siblings only pack into rows created while the same task is
+  // rendering, so each task gets a fresh packing scope.
+  const prevPackedTask = currentPackedTask;
+  currentPackedTask = null;
   // We don't reset the serialized size counter from reentry because that indicates that we
   // are outlining a model and we actually want to include that size into the parent since
   // it will still block the parent row. It only restores to zero at the top of the stack.
@@ -5963,6 +6558,57 @@ function retryTask(request: Request, task: Task): void {
     if (__DEV__) {
       // Track that we can emit debug info for the current task.
       canEmitDebugInfo = true;
+    }
+
+    const items = task.packedItems;
+    if (items !== null) {
+      // A packed row of deferred siblings. We can't render the items array
+      // as one model because an array picks up fragment key semantics, and
+      // the references into the row are by index so it has to serialize as
+      // exactly this array.
+      const resolved: Array<ReactJSONValue> = [];
+      for (let i = 0; i < items.length; i++) {
+        // Each item gets a fresh size budget, like it would have gotten in
+        // its own row, because a shared budget would run out and cascade
+        // the rest of the items into packed row after packed row. Oversized
+        // items still defer their own children, which bounds each item's
+        // contribution to the row.
+        serializedSize = 0;
+        // The item's dedupe registration points into this row, so we treat
+        // it as the model root or it would dedupe against itself.
+        modelRoot = items[i];
+        // If an item suspends or errors, resolveModel leaves a reference
+        // in its slot, like it would in its own row.
+        resolved[i] = resolveModel(request, task, items, '' + i, items[i]);
+      }
+      modelRoot = null;
+
+      if (__DEV__) {
+        canEmitDebugInfo = false;
+        const currentEnv = (0, request.environmentName)();
+        if (currentEnv !== task.environmentName) {
+          request.pendingChunks++;
+          emitDebugChunk(request, task.id, {env: currentEnv});
+        }
+      }
+      if (
+        enableProfilerTimer &&
+        (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+      ) {
+        if (task.timed) {
+          markOperationEndTime(request, task, performance.now());
+        }
+      }
+
+      task.keyPath = null;
+      task.implicitSlot = false;
+      // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
+      const json: string = stringify(resolved);
+      emitModelChunk(request, task.id, json, resolved, null);
+      task.status = COMPLETED;
+      request.abortableTasks.delete(task);
+      callOnAllReadyIfReady(request);
+      return;
     }
 
     // We call the destructive form that mutates this task. That way if something
@@ -6020,7 +6666,9 @@ function retryTask(request: Request, task: Task): void {
       // We don't need to escape it again so it's not passed through resolveModel.
       // $FlowFixMe[incompatible-type] stringify can return null for undefined but we never do
       const json: string = stringify(resolvedModel);
-      emitModelChunk(request, task.id, json);
+      // Primitive models deliver as JSON text; the plain-model shortcut
+      // never applies to them.
+      emitModelChunk(request, task.id, json, resolvedModel, null);
     }
 
     task.status = COMPLETED;
@@ -6071,6 +6719,7 @@ function retryTask(request: Request, task: Task): void {
       canEmitDebugInfo = prevCanEmitDebugInfo;
     }
     serializedSize = parentSerializedSize;
+    currentPackedTask = prevPackedTask;
   }
 }
 
@@ -6084,10 +6733,13 @@ function tryStreamTask(request: Request, task: Task): void {
     canEmitDebugInfo = false;
   }
   const parentSerializedSize = serializedSize;
+  const prevPackedTask = currentPackedTask;
+  currentPackedTask = null;
   try {
     emitChunk(request, task, task.model);
   } finally {
     serializedSize = parentSerializedSize;
+    currentPackedTask = prevPackedTask;
     if (__DEV__) {
       canEmitDebugInfo = prevCanEmitDebugInfo;
     }
@@ -6096,6 +6748,7 @@ function tryStreamTask(request: Request, task: Task): void {
 
 function performWork(request: Request): void {
   markAsyncSequenceRootTask();
+  ensureTimeOriginIsSent(request);
 
   const prevDispatcher = ReactSharedInternals.H;
   ReactSharedInternals.H = HooksDispatcher;
@@ -6153,6 +6806,14 @@ function finishAbortedTask(
   const ref = serializeByValueID(errorId);
   const processedChunk = encodeReferenceChunk(request, task.id, ref);
   request.completedErrorChunks.push(processedChunk);
+  deliverRow(
+    request,
+    task.id,
+    '',
+    request.consumer === null ? null : stringify(ref),
+    1,
+    false,
+  );
 }
 
 function haltTask(task: Task, request: Request): void {
@@ -6174,6 +6835,115 @@ function finishHaltedTask(task: Task, request: Request): void {
   request.pendingChunks--;
 }
 
+// The rows-door counterpart of the destination section of
+// flushCompletedChunks: walks the same queues in the same order with the
+// same chunk accounting, but hands the wire text to the subscriber as one
+// string per flush (with binary rows delivered between the batches, in
+// order) instead of encoding it. There is no backpressure: a subscriber
+// takes every completed chunk.
+function flushCompletedRows(
+  request: Request,
+  rowsConsumer: RowsConsumer,
+): void {
+  const segments: Array<string | $ArrayBufferView> = [];
+  let batch = '';
+  const push = (item: mixed) => {
+    if (typeof item === 'string') {
+      batch += item;
+    } else {
+      if (batch !== '') {
+        segments.push(batch);
+        batch = '';
+      }
+      segments.push(item as any);
+    }
+  };
+  const importsChunks = request.completedImportChunks;
+  for (let i = 0; i < importsChunks.length; i++) {
+    request.pendingChunks--;
+    request.queuedChunks--;
+    push(importsChunks[i]);
+  }
+  importsChunks.length = 0;
+  const hintChunks = request.completedHintChunks;
+  for (let i = 0; i < hintChunks.length; i++) {
+    push(hintChunks[i]);
+  }
+  hintChunks.length = 0;
+  if (__DEV__ && request.debugDestination === null) {
+    const debugChunks = request.completedDebugChunks;
+    for (let i = 0; i < debugChunks.length; i++) {
+      const item = debugChunks[i];
+      if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+        if (i + 2 >= debugChunks.length) {
+          throw new Error(
+            'A chunk pair is incomplete. This is a bug in React.',
+          );
+        }
+        request.pendingDebugChunks -= 2;
+        request.queuedDebugChunks -= 2;
+        push(debugChunks[i + 1]);
+        push(debugChunks[i + 2]);
+        i += 2;
+      } else {
+        request.pendingDebugChunks--;
+        request.queuedDebugChunks--;
+        push(item);
+      }
+    }
+    debugChunks.length = 0;
+  }
+  const regularChunks = request.completedRegularChunks;
+  for (let i = 0; i < regularChunks.length; i++) {
+    const item = regularChunks[i];
+    if (item === NEXT_TWO_CHUNKS_ARE_ATOMIC) {
+      if (i + 2 >= regularChunks.length) {
+        throw new Error('A chunk pair is incomplete. This is a bug in React.');
+      }
+      request.pendingChunks -= 2;
+      request.queuedChunks -= 2;
+      push(regularChunks[i + 1]);
+      push(regularChunks[i + 2]);
+      i += 2;
+    } else {
+      request.pendingChunks--;
+      request.queuedChunks--;
+      push(item);
+    }
+  }
+  regularChunks.length = 0;
+  const errorChunks = request.completedErrorChunks;
+  for (let i = 0; i < errorChunks.length; i++) {
+    request.pendingChunks--;
+    request.queuedChunks--;
+    push(errorChunks[i]);
+  }
+  errorChunks.length = 0;
+  if (batch !== '') {
+    segments.push(batch);
+  }
+  // Deliver after the accounting so a throwing subscriber can't corrupt the
+  // queues; it only loses its own remaining segments.
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    try {
+      if (typeof segment === 'string') {
+        rowsConsumer.string(segment);
+      } else {
+        rowsConsumer.bytes(segment);
+      }
+    } catch (x) {
+      request.rowsConsumer = null;
+      try {
+        rowsConsumer.error(x);
+      } catch (_) {
+        // There's no one left to notify.
+      }
+      return;
+    }
+  }
+}
+
 function flushCompletedChunks(request: Request): void {
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
@@ -6190,6 +6960,7 @@ function flushCompletedChunks(request: Request): void {
             );
           }
           request.pendingDebugChunks -= 2;
+          request.queuedDebugChunks -= 2;
           writeChunk(
             debugDestination,
             debugChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -6201,6 +6972,7 @@ function flushCompletedChunks(request: Request): void {
           i += 2;
         } else {
           request.pendingDebugChunks--;
+          request.queuedDebugChunks--;
           writeChunk(debugDestination, item as any as Chunk | BinaryChunk);
         }
       }
@@ -6220,6 +6992,7 @@ function flushCompletedChunks(request: Request): void {
       let i = 0;
       for (; i < importsChunks.length; i++) {
         request.pendingChunks--;
+        request.queuedChunks--;
         const chunk = importsChunks[i];
         const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
         if (!keepWriting) {
@@ -6259,6 +7032,7 @@ function flushCompletedChunks(request: Request): void {
               );
             }
             request.pendingDebugChunks -= 2;
+            request.queuedDebugChunks -= 2;
             writeChunk(
               destination,
               debugChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -6270,6 +7044,7 @@ function flushCompletedChunks(request: Request): void {
             i += 2;
           } else {
             request.pendingDebugChunks--;
+            request.queuedDebugChunks--;
             keepWriting = writeChunkAndReturn(
               destination,
               item as any as Chunk | BinaryChunk,
@@ -6297,6 +7072,7 @@ function flushCompletedChunks(request: Request): void {
             );
           }
           request.pendingChunks -= 2;
+          request.queuedChunks -= 2;
           writeChunk(
             destination,
             regularChunks[i + 1] as any as Chunk | BinaryChunk,
@@ -6308,6 +7084,7 @@ function flushCompletedChunks(request: Request): void {
           i += 2;
         } else {
           request.pendingChunks--;
+          request.queuedChunks--;
           keepWriting = writeChunkAndReturn(
             destination,
             item as any as Chunk | BinaryChunk,
@@ -6328,6 +7105,7 @@ function flushCompletedChunks(request: Request): void {
       i = 0;
       for (; i < errorChunks.length; i++) {
         request.pendingChunks--;
+        request.queuedChunks--;
         const chunk = errorChunks[i];
         const keepWriting: boolean = writeChunkAndReturn(destination, chunk);
         if (!keepWriting) {
@@ -6343,6 +7121,21 @@ function flushCompletedChunks(request: Request): void {
     }
     flushBuffered(destination);
   }
+  const rowsConsumer = request.rowsConsumer;
+  if (rowsConsumer !== null) {
+    request.flushScheduled = false;
+    flushCompletedRows(request, rowsConsumer);
+  }
+  // Deliveries drain after the same rows' bytes are written: the buffered
+  // wire chunks are ready to go as-is, while delivering runs consumer code
+  // (revival, renderer wake-ups) that would otherwise sit between the byte
+  // stream and the destination on every flush.
+  drainDeliveries(request);
+  // Every path that finishes emitting ends in a flush, so this is where a
+  // consumer learns that nothing more is coming. (Flushing itself can't
+  // change the outcome: it decrements the reserved and queued counters in
+  // lockstep.)
+  closeConsumerIfDone(request);
   if (request.pendingChunks === 0) {
     if (__DEV__) {
       const debugDestination = request.debugDestination;
@@ -6366,6 +7159,16 @@ function flushCompletedChunks(request: Request): void {
             close(request.destination);
             request.destination = null;
           }
+          const debugPendingRowsConsumer = request.rowsConsumer;
+          if (debugPendingRowsConsumer !== null) {
+            request.status = CLOSED;
+            request.rowsConsumer = null;
+            try {
+              debugPendingRowsConsumer.close();
+            } catch (x) {
+              // The subscriber is already detached; there's no one to notify.
+            }
+          }
           return;
         }
       }
@@ -6384,6 +7187,16 @@ function flushCompletedChunks(request: Request): void {
       request.status = CLOSED;
       close(request.destination);
       request.destination = null;
+    }
+    const doneRowsConsumer = request.rowsConsumer;
+    if (doneRowsConsumer !== null) {
+      request.status = CLOSED;
+      request.rowsConsumer = null;
+      try {
+        doneRowsConsumer.close();
+      } catch (x) {
+        // The subscriber is already detached; there's no one to notify.
+      }
     }
     if (__DEV__ && request.debugDestination !== null) {
       close(request.debugDestination);
@@ -6414,9 +7227,12 @@ function enqueueFlush(request: Request): void {
     request.flushScheduled === false &&
     // If there are pinged tasks we are going to flush anyway after work completes
     request.pingedTasks.length === 0 &&
-    // If there is no destination there is nothing we can flush to. A flush will
-    // happen when we start flowing again
+    // If there is no destination there is nothing we can flush to, but an
+    // in-process consumer or rows subscriber still gets its deliveries on
+    // the flush schedule.
     (request.destination !== null ||
+      request.consumer !== null ||
+      request.rowsConsumer !== null ||
       (__DEV__ && request.debugDestination !== null))
   ) {
     request.flushScheduled = true;
@@ -6436,7 +7252,18 @@ function callOnAllReadyIfReady(request: Request): void {
   }
 }
 
+export function claimByteStream(request: Request): void {
+  request.byteStreamClaimed = true;
+}
+
 export function startFlowing(request: Request, destination: Destination): void {
+  if (request.rowsConsumer !== null) {
+    throw new Error(
+      'Cannot read the byte stream of a render result whose rows are ' +
+        'already subscribed. Use one or the other.',
+    );
+  }
+  request.byteStreamClaimed = true;
   if (request.status === CLOSING) {
     request.status = CLOSED;
     closeWithError(destination, request.fatalError);
@@ -6526,6 +7353,7 @@ export function abort(request: Request, reason: mixed): void {
       enableProfilerTimer &&
       (enableComponentPerformanceTrack || enableAsyncDebugInfo)
     ) {
+      ensureTimeOriginIsSent(request);
       request.abortTime = performance.now();
     }
     request.cacheController.abort(reason);

@@ -4550,6 +4550,101 @@ function writeBootstrap(
   return true;
 }
 
+// Inline data segments are emitted as script blocks calling the $RF
+// receiver, the same shape as boundary instructions. The receiver written
+// with the shell queues the calls on itself until the reader end
+// (createFromInlineData in a paired Flight client) takes over. Text
+// segments pass a string; binary segments pass a single-element array with
+// the bytes as base64; the final call passes null to mark the end of the
+// data.
+const inlineDataCallStart = stringToPrecomputedChunk('$RF(');
+const inlineDataCallEnd = stringToPrecomputedChunk(')');
+
+// Text segments travel as a JSON string literal inside the receiver call.
+// JSON.stringify leaves `<` and U+2028/U+2029 raw: a `<` would let payload
+// text form HTML-significant byte sequences (`</script`, `</body></html>`)
+// that the HTML parser or a framework's byte-scanning stream transforms
+// could act on, and the line terminators are invalid in pre-ES2019 string
+// literals. Escaping `<` entirely subsumes script-close defusing, the same
+// choice escapeJSStringsForInstructionScripts makes.
+const inlineDataTextEscapeRegex = /[<\u2028\u2029]/g;
+const inlineDataTextEscapeReplacer = (match: string) =>
+  match === '<' ? '\\u003c' : match === '\u2028' ? '\\u2028' : '\\u2029';
+const inlineDataBinaryStart = stringToPrecomputedChunk('["');
+const inlineDataBinaryEnd = stringToPrecomputedChunk('"]');
+const inlineDataNull = stringToPrecomputedChunk('null');
+
+function binaryToBase64(chunk: Uint8Array): string {
+  if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {
+    return Buffer.from(
+      chunk.buffer,
+      chunk.byteOffset,
+      chunk.byteLength,
+    ).toString('base64');
+  }
+  let binary = '';
+  for (let i = 0; i < chunk.length; i++) {
+    binary += String.fromCharCode(chunk[i]);
+  }
+  return btoa(binary);
+}
+
+// Defines the receiver in the shell: the function exists by the time any
+// script that could read the data executes, so a consumer can detect the
+// channel from the document itself.
+const inlineDataInit = stringToPrecomputedChunk(
+  'self.$RF=function(c){($RF.q||($RF.q=[])).push(c)}',
+);
+
+export function writeInlineDataInit(
+  destination: Destination,
+  renderState: RenderState,
+): boolean {
+  writeChunk(destination, renderState.startInlineScript);
+  writeChunk(destination, endOfStartTag);
+  writeChunk(destination, inlineDataInit);
+  return writeChunkAndReturn(destination, endInlineScript);
+}
+
+export function writeInlineDataSegment(
+  destination: Destination,
+  renderState: RenderState,
+  segment: string | Uint8Array,
+): boolean {
+  writeChunk(destination, renderState.startInlineScript);
+  writeChunk(destination, endOfStartTag);
+  writeChunk(destination, inlineDataCallStart);
+  if (typeof segment === 'string') {
+    writeChunk(
+      destination,
+      stringToChunk(
+        JSON.stringify(segment).replace(
+          inlineDataTextEscapeRegex,
+          inlineDataTextEscapeReplacer,
+        ),
+      ),
+    );
+  } else {
+    writeChunk(destination, inlineDataBinaryStart);
+    writeChunk(destination, stringToChunk(binaryToBase64(segment)));
+    writeChunk(destination, inlineDataBinaryEnd);
+  }
+  writeChunk(destination, inlineDataCallEnd);
+  return writeChunkAndReturn(destination, endInlineScript);
+}
+
+export function writeInlineDataClose(
+  destination: Destination,
+  renderState: RenderState,
+): boolean {
+  writeChunk(destination, renderState.startInlineScript);
+  writeChunk(destination, endOfStartTag);
+  writeChunk(destination, inlineDataCallStart);
+  writeChunk(destination, inlineDataNull);
+  writeChunk(destination, inlineDataCallEnd);
+  return writeChunkAndReturn(destination, endInlineScript);
+}
+
 const shellTimeRuntimeScript = stringToPrecomputedChunk(markShellTime);
 
 function writeShellTimeInstruction(

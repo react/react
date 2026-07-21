@@ -7,6 +7,7 @@ if (process.env.NODE_ENV === 'production') {
   s = require('./cjs/react-server-dom-turbopack-server.edge.development.js');
 }
 
+exports.render = s.render;
 exports.renderToReadableStream = s.renderToReadableStream;
 exports.decodeReply = s.decodeReply;
 exports.decodeReplyFromAsyncIterable = s.decodeReplyFromAsyncIterable;
