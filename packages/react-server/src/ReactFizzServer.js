@@ -181,6 +181,7 @@ import {
   enableScopeAPI,
   enableAsyncIterableChildren,
   enableViewTransition,
+  enableViewTransitionParentEnterExit,
   enableFizzBlockingRender,
   enableAsyncDebugInfo,
   enableCPUSuspense,
@@ -2953,6 +2954,20 @@ function renderViewTransition(
     getViewTransitionClassName(props.default, props.enter),
     getViewTransitionClassName(props.default, props.exit),
     getViewTransitionClassName(props.default, props.share),
+    // Pass `undefined` (rather than the resolved class) when the prop is absent
+    // so the format context can distinguish "no parentEnter/parentExit" (which
+    // stops the relay) from an explicit "auto"/class (which continues it).
+    enableViewTransitionParentEnterExit && props.parentEnter !== undefined
+      ? getViewTransitionClassName(props.default, props.parentEnter)
+      : undefined,
+    enableViewTransitionParentEnterExit && props.parentExit !== undefined
+      ? getViewTransitionClassName(props.default, props.parentExit)
+      : undefined,
+    // A ViewTransition with an onParentEnter/onParentExit handler but no class
+    // still relays the activation to its descendants, so the relay must continue
+    // through it even though the handler itself emits no annotation.
+    enableViewTransitionParentEnterExit && props.onParentEnter != null,
+    enableViewTransitionParentEnterExit && props.onParentExit != null,
     props.name,
     autoName,
   );
@@ -3213,7 +3228,10 @@ function replayElement(
         if (
           typeof x === 'object' &&
           x !== null &&
-          (x === SuspenseException || typeof x.then === 'function')
+          (x === SuspenseException ||
+            typeof x.then === 'function' ||
+            // Rethrow so retryReplayTask can trampoline on stack overflow.
+            x.message === 'Maximum call stack size exceeded')
         ) {
           // Suspend
           if (task.node === currentNode) {
@@ -5239,6 +5257,8 @@ function retryRenderTask(
 
   const childrenLength = segment.children.length;
   const chunkLength = segment.chunks.length;
+  // Used to detect forward progress if we hit a stack overflow below.
+  const startNode = task.node;
   try {
     // We call the destructive form that mutates this task. That way if something
     // suspends again, we can reuse the same task instead of spawning a new one.
@@ -5303,6 +5323,16 @@ function retryRenderTask(
         (x as any).then(ping.resolve, ping.reject);
         return;
       }
+      if (
+        x.message === 'Maximum call stack size exceeded' &&
+        task.node !== startNode
+      ) {
+        segment.status = PENDING;
+        task.thenableState = null;
+        // Immediately schedule the task for retrying.
+        request.pingedTasks.push(task);
+        return;
+      }
     }
 
     const errorInfo = getThrownInfo(task.componentStack);
@@ -5345,6 +5375,8 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
     setCurrentTaskInDEV(task);
   }
 
+  // Used to detect forward progress if we hit a stack overflow below.
+  const startNode = task.node;
   try {
     // We call the destructive form that mutates this task. That way if something
     // suspends again, we can reuse the same task instead of spawning a new one.
@@ -5406,6 +5438,17 @@ function retryReplayTask(request: Request, task: ReplayTask): void {
           thrownValue === SuspenseException
             ? getThenableStateAfterSuspending()
             : null;
+        return;
+      }
+      if (
+        x.message === 'Maximum call stack size exceeded' &&
+        task.node !== startNode
+      ) {
+        // Stack overflow after making forward progress. Retry from a fresh stack.
+        // No progress (e.g. overflow inside the component itself) falls through.
+        task.thenableState = null;
+        // Immediately schedule the task for retrying.
+        request.pingedTasks.push(task);
         return;
       }
     }

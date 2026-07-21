@@ -73,6 +73,7 @@ import {
   enableSrcObject,
   enableTrustedTypesIntegration,
   enableViewTransition,
+  enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 import {
   mediaEventTypes,
@@ -240,7 +241,10 @@ function hasViewTransition(htmlElement: HTMLElement): boolean {
     htmlElement.getAttribute('vt-share') ||
     htmlElement.getAttribute('vt-exit') ||
     htmlElement.getAttribute('vt-enter') ||
-    htmlElement.getAttribute('vt-update')
+    htmlElement.getAttribute('vt-update') ||
+    (enableViewTransitionParentEnterExit &&
+      (htmlElement.getAttribute('vt-parent-enter') ||
+        htmlElement.getAttribute('vt-parent-exit')))
   );
 }
 
@@ -3307,6 +3311,8 @@ export function diffHydratedProperties(
         case 'vt-enter':
         case 'vt-exit':
         case 'vt-share':
+        case 'vt-parent-enter':
+        case 'vt-parent-exit':
           if (enableViewTransition) {
             // View Transition annotations are expected from the Server Runtime.
             // However, if they're also specified on the client and don't match
