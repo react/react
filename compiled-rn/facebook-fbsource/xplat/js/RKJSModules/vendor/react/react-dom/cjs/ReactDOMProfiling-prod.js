@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<3696a7f51ce239a5e9c0ac3a60aa360c>>
+ * @generated SignedSource<<1bf1a2253536c7723e679f6001c7738b>>
  */
 
 /*
@@ -16989,7 +16989,8 @@ FragmentInstance.prototype.blur = function () {
   );
   if (null !== parentHostFiber) {
     parentHostFiber = getInstanceFromHostFiber(parentHostFiber);
-    var activeElement = parentHostFiber.ownerDocument.activeElement;
+    var activeElement =
+      getOwnerDocumentFromRootContainer(parentHostFiber).activeElement;
     null !== activeElement &&
       parentHostFiber.contains(activeElement) &&
       traverseVisibleInstancesAndTextInstances(
@@ -19276,14 +19277,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2131 = React.version;
 if (
-  "19.3.0-native-fb-2860e00c-20260720" !==
+  "19.3.0-native-fb-862e275a-20260721" !==
   isomorphicReactPackageVersion$jscomp$inline_2131
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2131,
-      "19.3.0-native-fb-2860e00c-20260720"
+      "19.3.0-native-fb-862e275a-20260721"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -19305,10 +19306,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2729 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-2860e00c-20260720",
+  version: "19.3.0-native-fb-862e275a-20260721",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-2860e00c-20260720"
+  reconcilerVersion: "19.3.0-native-fb-862e275a-20260721"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2730 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -19577,4 +19578,4 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-2860e00c-20260720";
+exports.version = "19.3.0-native-fb-862e275a-20260721";
