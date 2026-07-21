@@ -3269,24 +3269,25 @@ module.exports = function ($$$config) {
     updateEffect(subscribeToStore.bind(null, fiber, hook, subscribe), [
       subscribe
     ]);
-    if (
+    subscribe =
       hook.getSnapshot !== getSnapshot ||
       snapshotChanged ||
-      (null !== workInProgressHook && workInProgressHook.memoizedState.tag & 1)
-    ) {
+      (null !== workInProgressHook &&
+        0 !== (workInProgressHook.memoizedState.tag & 1));
+    pushSimpleEffect(
+      subscribe ? 9 : 8,
+      { destroy: void 0 },
+      updateStoreInstance.bind(
+        null,
+        fiber,
+        hook,
+        getServerSnapshot,
+        getSnapshot
+      ),
+      null
+    );
+    if (subscribe) {
       fiber.flags |= 2048;
-      pushSimpleEffect(
-        9,
-        { destroy: void 0 },
-        updateStoreInstance.bind(
-          null,
-          fiber,
-          hook,
-          getServerSnapshot,
-          getSnapshot
-        ),
-        null
-      );
       if (null === workInProgressRoot) throw Error(formatProdErrorMessage(349));
       isHydrating$jscomp$0 ||
         0 !== (renderLanes & 127) ||
@@ -14324,7 +14325,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-modern-fa5212c1-20260720"
+      reconcilerVersion: "19.3.0-www-modern-2860e00c-20260720"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);
