@@ -49,6 +49,8 @@ export {createTemporaryReferenceSet} from 'react-server/src/ReactFlightServerTem
 
 export type {TemporaryReferenceSet};
 
+function noop(): void {}
+
 type Options = {
   environmentName?: string | (() => string),
   filterStackFrame?: (url: string, functionName: string) => boolean,
@@ -232,8 +234,8 @@ function decodeReplyFromAsyncIterable<T>(
     reportGlobalError(response, reason);
     if (typeof (iterator: any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      // $FlowFixMe[prop-missing] should be able to pass mixed
+      iterator.throw(reason).then(noop, noop);
     }
   }
 
