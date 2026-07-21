@@ -699,7 +699,7 @@ function serializeAsyncIterable(request, task, iterable, iterator) {
       erroredTask(request, streamTask, reason),
       enqueueFlush(request),
       "function" === typeof iterator.throw &&
-        iterator.throw(reason).then(error, error));
+        iterator.throw(reason).then(noop, noop));
   }
   function abortIterable() {
     if (0 === streamTask.status) {
@@ -713,7 +713,7 @@ function serializeAsyncIterable(request, task, iterable, iterator) {
         : (erroredTask(request, streamTask, signal.reason),
           enqueueFlush(request));
       "function" === typeof iterator.throw &&
-        iterator.throw(reason).then(error, error);
+        iterator.throw(reason).then(noop, noop);
     }
   }
   iterable = iterable === iterator;
@@ -3086,44 +3086,41 @@ exports.createTemporaryReferenceSet = function () {
 };
 exports.decodeAction = function (body, serverManifest) {
   var formData = new FormData(),
-    action = null,
-    seenActions = new Set();
+    maybeActionKey = null;
   body.forEach(function (value, key) {
     key.startsWith("$ACTION_")
       ? key.startsWith("$ACTION_REF_")
-        ? seenActions.has(key) ||
-          (seenActions.add(key),
-          (value = "$ACTION_" + key.slice(12) + ":"),
-          (value = decodeBoundActionMetaData(body, serverManifest, value)),
-          (action = loadServerReference(serverManifest, value)))
-        : key.startsWith("$ACTION_ID_") &&
-          !seenActions.has(key) &&
-          (seenActions.add(key),
-          (value = key.slice(11)),
-          (action = loadServerReference(serverManifest, {
-            id: value,
-            bound: null
-          })))
+        ? (maybeActionKey = key)
+        : key.startsWith("$ACTION_ID_") && (maybeActionKey = key)
       : formData.append(key, value);
   });
-  return null === action
-    ? null
-    : action.then(function (fn) {
-        return fn.bind(null, formData);
-      });
+  if (null === maybeActionKey) return null;
+  var actionKey = maybeActionKey,
+    action = null;
+  if (actionKey.startsWith("$ACTION_REF_"))
+    (actionKey = "$ACTION_" + actionKey.slice(12) + ":"),
+      (body = decodeBoundActionMetaData(body, serverManifest, actionKey)),
+      (action = loadServerReference(serverManifest, body));
+  else if (actionKey.startsWith("$ACTION_ID_"))
+    (body = actionKey.slice(11)),
+      (action = loadServerReference(serverManifest, { id: body, bound: null }));
+  else throw Error("Cannot handle action key. This is a bug in React.");
+  return action.then(function (fn) {
+    return fn.bind(null, formData);
+  });
 };
 exports.decodeFormState = function (actionResult, body, serverManifest) {
   var keyPath = body.get("$ACTION_KEY");
   if ("string" !== typeof keyPath) return Promise.resolve(null);
-  var metaData = null;
+  var actionKey = null;
   body.forEach(function (value, key) {
-    key.startsWith("$ACTION_REF_") &&
-      ((value = "$ACTION_" + key.slice(12) + ":"),
-      (metaData = decodeBoundActionMetaData(body, serverManifest, value)));
+    key.startsWith("$ACTION_REF_") && (actionKey = key);
   });
-  if (null === metaData) return Promise.resolve(null);
-  var referenceId = metaData.id;
-  return Promise.resolve(metaData.bound).then(function (bound) {
+  if (null === actionKey) return Promise.resolve(null);
+  var formFieldPrefix = "$ACTION_" + actionKey.slice(12) + ":";
+  body = decodeBoundActionMetaData(body, serverManifest, formFieldPrefix);
+  var referenceId = body.id;
+  return Promise.resolve(body.bound).then(function (bound) {
     return null === bound
       ? null
       : [actionResult, keyPath, referenceId, bound.length - 1];
