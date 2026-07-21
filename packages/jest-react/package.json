@@ -20,8 +20,8 @@
   "homepage": "https://react.dev/",
   "peerDependencies": {
     "jest": "^23.0.1 || ^24.0.0 || ^25.1.0 || ^26.0.0 || ^27.0.0 || ^28.0.0 || ^29.0.0",
-    "react": "^19.0.7",
-    "react-test-renderer": "^19.0.7"
+    "react": "^19.0.8",
+    "react-test-renderer": "^19.0.8"
   },
   "files": [
     "LICENSE",
