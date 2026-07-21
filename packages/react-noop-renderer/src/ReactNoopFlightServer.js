@@ -64,7 +64,7 @@ const ReactNoopFlightServer = ReactFlightServer({
     config: void,
     reference: {$$typeof: symbol, value: any},
   ) {
-    return saveModule(reference.value);
+    return [saveModule(reference.value), '*'];
   },
 });
 

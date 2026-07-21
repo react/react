@@ -15,7 +15,7 @@ export type ImportMetadata = [
   id: string,
   name: string,
   bundles: Array<string>,
-  importMap?: {[string]: string},
+  importMap?: {[string]: string} | void,
   /* eslint-enable */
 ];
 

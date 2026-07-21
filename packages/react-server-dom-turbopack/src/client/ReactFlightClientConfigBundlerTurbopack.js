@@ -95,12 +95,12 @@ export function resolveClientReference<T>(
     if (isAsyncImport(metadata)) {
       return [
         resolvedModuleData.id,
-        resolvedModuleData.chunks,
         name,
+        resolvedModuleData.chunks,
         1 /* async */,
       ];
     } else {
-      return [resolvedModuleData.id, resolvedModuleData.chunks, name];
+      return [resolvedModuleData.id, name, resolvedModuleData.chunks];
     }
   }
   return metadata;
@@ -142,12 +142,12 @@ export function resolveServerReference<T>(
     // manifest.
     return [
       resolvedModuleData.id,
-      resolvedModuleData.chunks,
       name,
+      resolvedModuleData.chunks,
       1 /* async */,
     ];
   }
-  return [resolvedModuleData.id, resolvedModuleData.chunks, name];
+  return [resolvedModuleData.id, name, resolvedModuleData.chunks];
 }
 
 function requireAsyncModule(id: string): null | Thenable<any> {

@@ -613,6 +613,7 @@ export type Request = {
   completedErrorChunks: Array<Chunk>,
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
+  writtenClientReferenceChunkEntries: Map<string, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
   temporaryReferences: void | TemporaryReferenceSet,
@@ -641,6 +642,7 @@ export type Request = {
     columnNumber: number,
   ) => boolean,
   didWarnForKey: null | WeakSet<ReactComponentInfo>,
+  writtenDebugClientReferenceChunkEntries: Map<string, number>,
   writtenDebugObjects: WeakMap<Reference, string>,
   deferredDebugObjects: null | DeferredDebugStore,
 };
@@ -738,6 +740,7 @@ function RequestInstance(
   this.completedErrorChunks = [] as Array<Chunk>;
   this.writtenSymbols = new Map();
   this.writtenClientReferences = new Map();
+  this.writtenClientReferenceChunkEntries = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
   this.temporaryReferences = temporaryReferences;
@@ -765,6 +768,7 @@ function RequestInstance(
         ? defaultFilterStackFrame
         : filterStackFrame;
     this.didWarnForKey = null;
+    this.writtenDebugClientReferenceChunkEntries = new Map();
     this.writtenDebugObjects = new WeakMap();
     this.deferredDebugObjects = keepDebugAlive
       ? {
@@ -4454,8 +4458,67 @@ function emitImportChunk(
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
+  let resolvedMetadata: $ReadOnlyArray<mixed> = clientReferenceMetadata;
+  if (clientReferenceMetadata.length >= 3) {
+    // Dedupe individual chunk entries across client references.
+    // $FlowFixMe[invalid-tuple-index] guarded by length check
+    const chunks = clientReferenceMetadata[2];
+    if (chunks.length > 0) {
+      const writtenChunkEntries =
+        __DEV__ && debug
+          ? request.writtenDebugClientReferenceChunkEntries
+          : request.writtenClientReferenceChunkEntries;
+      const newChunks = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        // Only outline and dedupe string entries longer than 5 characters.
+        // Short strings (e.g. webpack chunk IDs) are kept inline since the
+        // reference would be close to the same length.
+        if (typeof chunk === 'string' && chunk.length > 5) {
+          let chunkId = writtenChunkEntries.get(chunk);
+          if (chunkId === undefined) {
+            chunkId = request.nextChunkId++;
+            // $FlowFixMe[incompatible-type] stringify can return null
+            const chunkJson: string = stringify(chunk);
+            const chunkRow = chunkId.toString(16) + ':' + chunkJson + '\n';
+            if (__DEV__ && debug) {
+              request.pendingDebugChunks++;
+              request.completedDebugChunks.push(stringToChunk(chunkRow));
+            } else {
+              request.pendingChunks++;
+              request.completedImportChunks.push(stringToChunk(chunkRow));
+            }
+            writtenChunkEntries.set(chunk, chunkId);
+          }
+          newChunks.push(serializeByValueID(chunkId));
+        } else {
+          // Other entries are emitted as-is. No bundler currently uses
+          // non-string chunk entries, but the opaque type allows for the
+          // possibility of other types in the future (e.g. tuples with SRI
+          // hashes). The dedupe strategy should be revisited then.
+          newChunks.push(chunk);
+        }
+      }
+      if (clientReferenceMetadata.length === 3) {
+        resolvedMetadata = [
+          clientReferenceMetadata[0],
+          clientReferenceMetadata[1],
+          newChunks,
+        ];
+      } else {
+        resolvedMetadata = [
+          clientReferenceMetadata[0],
+          clientReferenceMetadata[1],
+          newChunks,
+          // $FlowFixMe[invalid-tuple-index] guarded by length check
+          clientReferenceMetadata[3],
+        ];
+      }
+    }
+  }
+
   // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
+  const json: string = stringify(resolvedMetadata);
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {

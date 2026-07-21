@@ -38,10 +38,14 @@ const {createResponse, createStreamState, processBinaryChunk, getRoot, close} =
     readFinalStringChunk(decoder: TextDecoder, buffer: Uint8Array): string {
       return decoder.decode(buffer);
     },
-    resolveClientReference(bundlerConfig: null, idx: string) {
-      return idx;
+    resolveClientReference(bundlerConfig: null, metadata: [string, string]) {
+      return metadata[0];
     },
-    prepareDestinationForModule(moduleLoading: null, metadata: string) {},
+    prepareDestinationForModule(
+      moduleLoading: null,
+      nonce: ?string,
+      metadata: [string, string],
+    ) {},
     preloadModule(idx: string) {},
     requireModule(idx: string) {
       return readModule(idx);

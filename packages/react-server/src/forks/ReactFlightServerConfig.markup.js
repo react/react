@@ -48,7 +48,10 @@ export * from '../ReactServerConsoleConfigPlain';
 export type ClientManifest = null;
 export opaque type ClientReference<T> = null; // eslint-disable-line no-unused-vars
 export opaque type ServerReference<T> = null; // eslint-disable-line no-unused-vars
-export opaque type ClientReferenceMetadata: any = null;
+export type ClientReferenceMetadata =
+  | [string, string]
+  | [string, string, $ReadOnlyArray<mixed>]
+  | [string, string, $ReadOnlyArray<mixed>, mixed];
 export opaque type ServerReferenceId: string = string;
 export opaque type ClientReferenceKey: any = string;
 
