@@ -3904,6 +3904,12 @@ export function attach(
   }
 
   function recordResetSuspenseChildren(parentInstance: SuspenseNode) {
+    const fiberInstance = parentInstance.instance;
+    if (fiberInstance.kind !== FIBER_INSTANCE) {
+      // Reorders of filtered Suspense nodes are currently dropped.
+      return;
+    }
+
     // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       if (parentInstance.firstChild !== null) {
