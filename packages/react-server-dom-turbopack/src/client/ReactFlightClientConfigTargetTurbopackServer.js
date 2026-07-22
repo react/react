@@ -16,14 +16,16 @@ export type ModuleLoading = null | {
 
 export function prepareDestinationWithChunks(
   moduleLoading: ModuleLoading,
-  // Chunks are single-indexed filenames
-  chunks: Array<string>,
+  // A chunk is either a single-indexed filename, or a merged chunk emitted as
+  // `[mergedChunkUrl, componentChunkPaths, componentChunkSizes]`.
+  chunks: Array<string | [string, Array<string>, Array<number>]>,
   nonce: ?string,
 ) {
   if (moduleLoading !== null) {
     for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
       preinitScriptForSSR(
-        moduleLoading.prefix + chunks[i],
+        moduleLoading.prefix + (Array.isArray(chunk) ? chunk[0] : chunk),
         nonce,
         moduleLoading.crossOrigin,
       );
