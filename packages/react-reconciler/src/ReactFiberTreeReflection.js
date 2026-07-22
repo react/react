@@ -10,6 +10,8 @@
 import type {Fiber} from './ReactInternalTypes';
 import type {
   Container,
+  Instance,
+  TextInstance,
   ActivityInstance,
   SuspenseInstance,
 } from './ReactFiberConfig';
@@ -345,27 +347,41 @@ export function doesFiberContain(
   return false;
 }
 
-export function traverseFragmentInstance<A, B, C>(
+export function traverseFragmentInstancesAndTextInstances<A, B, C>(
   fragmentFiber: Fiber,
   fn: (Fiber, A, B, C) => boolean,
   a: A,
   b: B,
   c: C,
 ): void {
-  traverseVisibleHostChildren(fragmentFiber.child, false, fn, a, b, c);
+  traverseVisibleInstancesAndTextInstances(
+    fragmentFiber.child,
+    false,
+    fn,
+    a,
+    b,
+    c,
+  );
 }
 
-export function traverseFragmentInstanceDeeply<A, B, C>(
+export function traverseFragmentInstancesAndTextInstancesDeeply<A, B, C>(
   fragmentFiber: Fiber,
   fn: (Fiber, A, B, C) => boolean,
   a: A,
   b: B,
   c: C,
 ): void {
-  traverseVisibleHostChildren(fragmentFiber.child, true, fn, a, b, c);
+  traverseVisibleInstancesAndTextInstances(
+    fragmentFiber.child,
+    true,
+    fn,
+    a,
+    b,
+    c,
+  );
 }
 
-function traverseVisibleHostChildren<A, B, C>(
+function traverseVisibleInstancesAndTextInstances<A, B, C>(
   child: Fiber | null,
   searchWithinHosts: boolean,
   fn: (Fiber, A, B, C) => boolean,
@@ -387,7 +403,14 @@ function traverseVisibleHostChildren<A, B, C>(
     } else {
       if (
         (searchWithinHosts || child.tag !== HostComponent) &&
-        traverseVisibleHostChildren(child.child, searchWithinHosts, fn, a, b, c)
+        traverseVisibleInstancesAndTextInstances(
+          child.child,
+          searchWithinHosts,
+          fn,
+          a,
+          b,
+          c,
+        )
       ) {
         return true;
       }
@@ -397,7 +420,9 @@ function traverseVisibleHostChildren<A, B, C>(
   return false;
 }
 
-export function getFragmentParentHostFiber(fiber: Fiber): null | Fiber {
+export function getFragmentParentInstanceOrContainerFiber(
+  fiber: Fiber,
+): null | Fiber {
   let parent = fiber.return;
   while (parent !== null) {
     if (parent.tag === HostRoot || parent.tag === HostComponent) {
@@ -424,20 +449,27 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
   return foundPortalParent;
 }
 
-export function getFragmentInstanceSiblings(
+export function getFragmentInstanceOrTextInstanceSiblings(
   fiber: Fiber,
 ): [Fiber | null, Fiber | null] {
   const result: [Fiber | null, Fiber | null] = [null, null];
-  const parentHostFiber = getFragmentParentHostFiber(fiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(fiber);
   if (parentHostFiber === null) {
     return result;
   }
 
-  findFragmentInstanceSiblings(result, fiber, parentHostFiber.child);
+  findFragmentInstanceOrTextInstanceSiblings(
+    result,
+    fiber,
+    parentHostFiber.child,
+  );
   return result;
 }
 
-function findFragmentInstanceSiblings(
+/**
+ * Only collects HostText with enableFragmentRefsTextNodes enabled. Otherwise, only collects HostComponent.
+ */
+function findFragmentInstanceOrTextInstanceSiblings(
   result: [Fiber | null, Fiber | null],
   self: Fiber,
   child: null | Fiber,
@@ -452,7 +484,10 @@ function findFragmentInstanceSiblings(
         return true;
       }
     }
-    if (child.tag === HostComponent) {
+    if (
+      child.tag === HostComponent ||
+      (enableFragmentRefsTextNodes && child.tag === HostText)
+    ) {
       if (foundSelf) {
         result[1] = child;
         return true;
@@ -465,7 +500,14 @@ function findFragmentInstanceSiblings(
     ) {
       // Skip hidden subtrees
     } else {
-      if (findFragmentInstanceSiblings(result, self, child.child, foundSelf)) {
+      if (
+        findFragmentInstanceOrTextInstanceSiblings(
+          result,
+          self,
+          child.child,
+          foundSelf,
+        )
+      ) {
         return true;
       }
     }
@@ -474,7 +516,9 @@ function findFragmentInstanceSiblings(
   return false;
 }
 
-export function getInstanceFromHostFiber<I>(fiber: Fiber): I {
+export function getInstanceFromHostFiber<
+  I: Instance | TextInstance | Container,
+>(fiber: Fiber): I {
   switch (fiber.tag) {
     case HostComponent:
     case HostText:
@@ -501,8 +545,14 @@ function popSearchBoundary(): null | Fiber {
   return searchBoundary;
 }
 
-export function getNextSiblingHostFiber(fiber: Fiber): null | Fiber {
-  traverseVisibleHostChildren(fiber.sibling, false, findNextSibling);
+export function getNextSiblingInstanceOrTextInstanceFiber(
+  fiber: Fiber,
+): null | Fiber {
+  traverseVisibleInstancesAndTextInstances(
+    fiber.sibling,
+    false,
+    findNextSibling,
+  );
   const sibling = popSearchTarget();
   pushSearchTarget(null);
   return sibling;
@@ -536,7 +586,7 @@ export function isFragmentContainedByFiber(
 ): boolean {
   let current: Fiber | null = fragmentFiber;
   const fiberHostParent: Fiber | null =
-    getFragmentParentHostFiber(fragmentFiber);
+    getFragmentParentInstanceOrContainerFiber(fragmentFiber);
   while (current !== null) {
     if (
       (current.tag === HostComponent || current.tag === HostRoot) &&
@@ -558,7 +608,7 @@ export function isFiberPreceding(fiber: Fiber, otherFiber: Fiber): boolean {
   if (commonAncestor === null) {
     return false;
   }
-  traverseVisibleHostChildren(
+  traverseVisibleInstancesAndTextInstances(
     commonAncestor,
     true,
     isFiberPrecedingCheck,
@@ -594,7 +644,7 @@ export function isFiberFollowing(fiber: Fiber, otherFiber: Fiber): boolean {
   if (commonAncestor === null) {
     return false;
   }
-  traverseVisibleHostChildren(
+  traverseVisibleInstancesAndTextInstances(
     commonAncestor,
     true,
     isFiberFollowingCheck,
