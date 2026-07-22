@@ -146,7 +146,11 @@ declare const __webpack_require__: ((id: string) => any) & {
   u: string => string,
 };
 
-declare function __turbopack_load_by_url__(id: string): Promise<mixed>;
+// A chunk id is a plain filename, or a merged chunk emitted as
+// `[mergedChunkFilename, componentChunkFilenames, componentChunkSizes]`.
+declare function __turbopack_load_by_url__(
+  id: string | [string, Array<string>, Array<number>],
+): Promise<mixed>;
 declare const __turbopack_require__: ((id: string) => any) & {
   u: string => string,
 };
