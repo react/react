@@ -25,7 +25,7 @@ export function prepareDestinationWithChunks(
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       preinitScriptForSSR(
-        moduleLoading.prefix + (Array.isArray(chunk) ? chunk[0] : chunk),
+        moduleLoading.prefix + (typeof chunk === 'string' ? chunk : chunk[0]),
         nonce,
         moduleLoading.crossOrigin,
       );
