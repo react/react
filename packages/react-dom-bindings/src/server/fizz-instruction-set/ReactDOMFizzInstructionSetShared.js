@@ -429,6 +429,10 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
     return;
   }
 
+  // Clear the segment id so it cannot collide with future segment ids before
+  // the deferred reveal flush occurs.
+  contentNodeOuter.removeAttribute('id');
+
   // Mark this Suspense boundary as queued so we know not to client render it
   // at the end of document load.
   const suspenseNodeOuter = suspenseIdNodeOuter.previousSibling;
