@@ -587,5 +587,6 @@
   "599": "Expected an initialized chunk but got an initialized stream chunk instead. This payload may have been submitted by an older version of React.",
   "600": "A rejected Promise was passed to React without a `reason` property. React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`.",
   "601": "A chunk pair is incomplete. This is a bug in React.",
-  "602": "Cannot handle action key. This is a bug in React."
+  "602": "Cannot handle action key. This is a bug in React.",
+  "603": "This library called use() to suspend in a previous render but did not call use() when it finished. This indicates an incorrect use of use(). A common mistake is to call use() only when something is not cached.\n\n  if (cache.value !== undefined) use(cache.promise) else return cache.value\n\nThe correct way is to always call use() with a Promise and resolve it with the value.\n\n  return use(cache.promise)"
 }

@@ -285,7 +285,7 @@ function unwrapThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  return trackUsedThenable(thenableState, thenable, index);
+  return trackUsedThenable(thenableState, thenable, index, null);
 }
 
 function coerceRef(workInProgress: Fiber, element: ReactElement): void {

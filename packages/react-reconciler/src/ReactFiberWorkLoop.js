@@ -392,6 +392,8 @@ import {
   SuspenseyCommitException,
   getSuspendedThenable,
   isThenableResolved,
+  hasPotentialUseWarnings,
+  clearUseWarnings,
 } from './ReactFiberThenable';
 import {schedulePostPaintCallback} from './ReactPostPaintCallback';
 import {
@@ -845,12 +847,24 @@ export function requestUpdateLane(fiber: Fiber): Lane {
         transition._updatedFibers = new Set();
       }
       transition._updatedFibers.add(fiber);
+      if (
+        hasPotentialUseWarnings() &&
+        resolveUpdatePriority() === DiscreteEventPriority
+      ) {
+        // If we're updating inside a discrete event, then this might be a new user interaction
+        // and not just an automatically resolved loading sequence. Don't warn unless it happens again.
+        clearUseWarnings();
+      }
     }
 
     return requestTransitionLane(transition);
   }
 
-  return eventPriorityToLane(resolveUpdatePriority());
+  const priority = resolveUpdatePriority();
+  if (__DEV__ && priority === DiscreteEventPriority) {
+    clearUseWarnings();
+  }
+  return eventPriorityToLane(priority);
 }
 
 function requestRetryLane(fiber: Fiber) {

@@ -143,6 +143,7 @@ import {now} from './Scheduler';
 import {
   trackUsedThenable,
   checkIfUseWrappedInTryCatch,
+  checkIfUseWasUsedBefore,
   createThenableState,
   SuspenseException,
   SuspenseActionException,
@@ -650,6 +651,7 @@ function finishRenderingHooks<Props, SecondArg>(
     } else {
       workInProgress.dependencies._debugThenableState = thenableState;
     }
+    checkIfUseWasUsedBefore(workInProgress, thenableState);
   }
 
   // We can assume the previous dispatcher is always this one, since we set it
@@ -1099,7 +1101,12 @@ function useThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  const result = trackUsedThenable(thenableState, thenable, index);
+  const result = trackUsedThenable(
+    thenableState,
+    thenable,
+    index,
+    __DEV__ ? currentlyRenderingFiber : null,
+  );
 
   // When something suspends with `use`, we replay the component with the
   // "re-render" dispatcher instead of the "mount" or "update" dispatcher.
