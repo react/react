@@ -55,6 +55,7 @@ pub fn each_instruction_value_lvalue(value: &InstructionValue) -> Vec<Place> {
         | InstructionValue::MethodCall { .. }
         | InstructionValue::UnaryExpression { .. }
         | InstructionValue::TypeCastExpression { .. }
+        | InstructionValue::NonNullExpression { .. }
         | InstructionValue::JsxExpression { .. }
         | InstructionValue::ObjectExpression { .. }
         | InstructionValue::ObjectMethod { .. }
@@ -119,6 +120,7 @@ pub fn each_instruction_lvalue_with_kind(
         | InstructionValue::MethodCall { .. }
         | InstructionValue::UnaryExpression { .. }
         | InstructionValue::TypeCastExpression { .. }
+        | InstructionValue::NonNullExpression { .. }
         | InstructionValue::JsxExpression { .. }
         | InstructionValue::ObjectExpression { .. }
         | InstructionValue::ObjectMethod { .. }
@@ -323,7 +325,8 @@ pub fn each_instruction_value_operand_with_functions(
         InstructionValue::TaggedTemplateExpression { tag, .. } => {
             result.push(tag.clone());
         }
-        InstructionValue::TypeCastExpression { value: val, .. } => {
+        InstructionValue::TypeCastExpression { value: val, .. }
+        | InstructionValue::NonNullExpression { value: val, .. } => {
             result.push(val.clone());
         }
         InstructionValue::TemplateLiteral { subexprs, .. } => {
@@ -763,7 +766,8 @@ pub fn map_instruction_value_operands(
         InstructionValue::TaggedTemplateExpression { tag, .. } => {
             *tag = f(tag.clone());
         }
-        InstructionValue::TypeCastExpression { value: val, .. } => {
+        InstructionValue::TypeCastExpression { value: val, .. }
+        | InstructionValue::NonNullExpression { value: val, .. } => {
             *val = f(val.clone());
         }
         InstructionValue::TemplateLiteral { subexprs, .. } => {
@@ -1600,7 +1604,8 @@ pub fn for_each_instruction_value_operand_mut(
         InstructionValue::TaggedTemplateExpression { tag, .. } => {
             f(tag);
         }
-        InstructionValue::TypeCastExpression { value: val, .. } => {
+        InstructionValue::TypeCastExpression { value: val, .. }
+        | InstructionValue::NonNullExpression { value: val, .. } => {
             f(val);
         }
         InstructionValue::TemplateLiteral { subexprs, .. } => {

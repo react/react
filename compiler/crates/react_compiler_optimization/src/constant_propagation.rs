@@ -705,6 +705,7 @@ fn evaluate_instruction(
         | InstructionValue::CallExpression { .. }
         | InstructionValue::MethodCall { .. }
         | InstructionValue::TypeCastExpression { .. }
+        | InstructionValue::NonNullExpression { .. }
         | InstructionValue::JsxExpression { .. }
         | InstructionValue::ObjectExpression { .. }
         | InstructionValue::ArrayExpression { .. }

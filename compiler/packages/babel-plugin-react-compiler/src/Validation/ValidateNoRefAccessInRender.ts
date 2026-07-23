@@ -383,7 +383,8 @@ function validateNoRefAccessInRenderImpl(
             );
             break;
           }
-          case 'TypeCastExpression': {
+          case 'TypeCastExpression':
+          case 'NonNullExpression': {
             env.set(
               instr.lvalue.identifier.id,
               env.get(instr.value.value.identifier.id) ??
