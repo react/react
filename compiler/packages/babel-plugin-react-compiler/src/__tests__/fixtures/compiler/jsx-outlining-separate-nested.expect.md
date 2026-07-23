@@ -91,7 +91,7 @@ function Component(t0) {
 }
 function _temp(t0) {
   const $ = _c(11);
-  const { i: i, j: j, k: k, x: x } = t0;
+  const { i, j, k, x } = t0;
   let t1;
   if ($[0] !== i) {
     t1 = <Baz i={i} />;

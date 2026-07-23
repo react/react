@@ -1104,7 +1104,9 @@ function codegenInstructionNullable(
         });
         CompilerError.invariant(value?.type === 'FunctionExpression', {
           reason: 'Expected a function as a function declaration value',
-          description: `Got ${value == null ? String(value) : value.type} at ${printInstruction(instr)}`,
+          description: `Got ${
+            value == null ? String(value) : value.type
+          } at ${printInstruction(instr)}`,
           loc: instr.value.loc,
         });
         return createFunctionDeclaration(
@@ -1963,34 +1965,29 @@ function codegenInstructionValue(
           instruction,
         })),
       ).body;
-      const expressions = body.map(stmt => {
+      const expressions = body.flatMap(stmt => {
         if (stmt.type === 'ExpressionStatement') {
-          return stmt.expression;
+          return [stmt.expression];
+        } else if (t.isVariableDeclaration(stmt)) {
+          return stmt.declarations.map(declarator => {
+            return t.assignmentExpression(
+              '=',
+              declarator.id as t.LVal,
+              declarator.init != null
+                ? declarator.init
+                : t.identifier('undefined'),
+            );
+          });
         } else {
-          if (t.isVariableDeclaration(stmt)) {
-            const declarator = stmt.declarations[0];
-            cx.recordError(
-              new CompilerErrorDetail({
-                reason: `(CodegenReactiveFunction::codegenInstructionValue) Cannot declare variables in a value block, tried to declare '${
-                  (declarator.id as t.Identifier).name
-                }'`,
-                category: ErrorCategory.Todo,
-                loc: declarator.loc ?? null,
-                suggestions: null,
-              }),
-            );
-            return t.stringLiteral(`TODO handle ${declarator.id}`);
-          } else {
-            cx.recordError(
-              new CompilerErrorDetail({
-                reason: `(CodegenReactiveFunction::codegenInstructionValue) Handle conversion of ${stmt.type} to expression`,
-                category: ErrorCategory.Todo,
-                loc: stmt.loc ?? null,
-                suggestions: null,
-              }),
-            );
-            return t.stringLiteral(`TODO handle ${stmt.type}`);
-          }
+          cx.recordError(
+            new CompilerErrorDetail({
+              reason: `(CodegenReactiveFunction::codegenInstructionValue) Handle conversion of ${stmt.type} to expression`,
+              category: ErrorCategory.Todo,
+              loc: stmt.loc ?? null,
+              suggestions: null,
+            }),
+          );
+          return [t.stringLiteral(`TODO handle ${stmt.type}`)];
         }
       });
       if (expressions.length === 0) {
