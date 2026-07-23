@@ -57,6 +57,7 @@ const SPACEBAR_CHAR = String.fromCharCode(SPACEBAR_CODE);
 
 function registerEvents() {
   registerTwoPhaseEvent('onBeforeInput', [
+    'beforeinput',
     'compositionend',
     'keypress',
     'textInput',
@@ -282,6 +283,7 @@ function getNativeBeforeInputChars(
       hasSpaceKeypress = true;
       return SPACEBAR_CHAR;
 
+    case 'beforeinput':
     case 'textInput':
       // Record the characters to be added to the DOM.
       const chars = nativeEvent.data;
@@ -387,7 +389,11 @@ function extractBeforeInputEvent(
 ) {
   let chars;
 
-  if (canUseTextInputEvent) {
+  if (domEventName === 'beforeinput') {
+    chars = canUseTextInputEvent
+      ? null
+      : getNativeBeforeInputChars(domEventName, nativeEvent);
+  } else if (canUseTextInputEvent) {
     chars = getNativeBeforeInputChars(domEventName, nativeEvent);
   } else {
     chars = getFallbackBeforeInputChars(domEventName, nativeEvent);
