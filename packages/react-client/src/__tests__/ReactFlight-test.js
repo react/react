@@ -154,7 +154,7 @@ describe('ReactFlight', () => {
           );
           expect(this.state.error.digest).toBe('a dev digest');
           expect(this.state.error.environmentName).toBe(
-            this.props.expectedEnviromentName || 'Server',
+            this.props.expectedEnvironmentName || 'Server',
           );
           if (this.props.expectedErrorStack !== undefined) {
             expect(this.state.error.stack).toContain(
@@ -3529,7 +3529,7 @@ describe('ReactFlight', () => {
       ReactNoop.render(
         <ErrorBoundary
           expectedMessage="third-party-error"
-          expectedEnviromentName="third-party"
+          expectedEnvironmentName="third-party"
           expectedErrorStack={expectedErrorStack}>
           {ReactNoopFlightClient.read(transport, {
             findSourceMapURL(url, environmentName) {

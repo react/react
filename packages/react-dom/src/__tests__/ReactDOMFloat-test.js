@@ -154,7 +154,7 @@ describe('ReactDOMFloat', () => {
         bufferedContent.startsWith('<html ')
       ) {
         throw new Error(
-          'Recieved <html> without a <!DOCTYPE html> which is almost certainly a bug in React',
+          'Received <html> without a <!DOCTYPE html> which is almost certainly a bug in React',
         );
       }
 

@@ -284,7 +284,7 @@ describe('useId', () => {
     // and 0s. In other words, they are all of the form 101010101.
     //
     // Because we use base 32 encoding, the resulting id should consist of
-    // alternating 'a' (01010) and 'l' (10101) characters, except for the the
+    // alternating 'a' (01010) and 'l' (10101) characters, except for the
     // 'R:' prefix, and the first character after that, which may not correspond
     // to a complete set of 5 bits.
     //
