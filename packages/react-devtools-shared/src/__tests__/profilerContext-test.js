@@ -854,6 +854,68 @@ describe('ProfilerContext', () => {
     expect(context.selectedCommitIndex).toBe(0);
   });
 
+  it('should select the first visible commit when switching roots with filtering enabled', async () => {
+    const Scheduler = require('scheduler');
+
+    const TimedWork = ({duration}) => {
+      Scheduler.unstable_advanceTime(duration);
+      return null;
+    };
+
+    const containerA = document.createElement('div');
+    const containerB = document.createElement('div');
+
+    const rootA = ReactDOMClient.createRoot(containerA);
+    const rootB = ReactDOMClient.createRoot(containerB);
+
+    utils.act(() => rootA.render(<TimedWork duration={0} />));
+    utils.act(() => rootB.render(<TimedWork duration={0} />));
+
+    await utils.actAsync(() => store.profilerStore.startProfiling());
+    await utils.actAsync(() => rootA.render(<TimedWork duration={200} />));
+    await utils.actAsync(() => rootB.render(<TimedWork duration={1} />));
+    await utils.actAsync(() => rootB.render(<TimedWork duration={100} />));
+    await utils.actAsync(() => store.profilerStore.stopProfiling());
+
+    let context: Context = ((null: any): Context);
+    function ContextReader() {
+      context = React.useContext(ProfilerContext);
+      return null;
+    }
+
+    await utils.actAsync(() =>
+      TestRenderer.create(
+        <Contexts>
+          <ContextReader />
+        </Contexts>,
+      ),
+    );
+
+    const rootIDs = Array.from(context.profilingData.dataForRoots.keys());
+    const [rootAID, rootBID] = rootIDs;
+    const rootBData = context.profilingData.dataForRoots.get(rootBID);
+    const [firstCommit, secondCommit] = rootBData.commitData;
+    const filterThreshold = (firstCommit.duration + secondCommit.duration) / 2;
+
+    await utils.actAsync(() => context.setRootID(rootAID));
+    await utils.actAsync(() => context.setMinCommitDuration(filterThreshold));
+    await utils.actAsync(() => context.setIsCommitFilterEnabled(true));
+    await utils.actAsync(() => context.setRootID(rootBID));
+
+    const filteredCommitIndices = context.filteredCommitIndices;
+    const selectedCommitIndex = context.selectedCommitIndex;
+    const selectedFilteredCommitIndex = context.selectedFilteredCommitIndex;
+
+    await utils.actAsync(() => {
+      context.setMinCommitDuration(0);
+      context.setIsCommitFilterEnabled(false);
+    });
+
+    expect(filteredCommitIndices).toEqual([1]);
+    expect(selectedCommitIndex).toBe(1);
+    expect(selectedFilteredCommitIndex).toBe(0);
+  });
+
   it('should handle commit selection edge cases when filtering commits', async () => {
     const Scheduler = require('scheduler');
 
