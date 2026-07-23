@@ -612,3 +612,16 @@ const ToggleEventInterface: EventInterfaceType = {
 };
 export const SyntheticToggleEvent: $FlowFixMe =
   createSyntheticEvent(ToggleEventInterface);
+
+/**
+ * @interface CommandEvent
+ * @see https://html.spec.whatwg.org/multipage/interaction.html#commandevent
+ */
+const CommandEventInterface: EventInterfaceType = {
+  ...EventInterface,
+  command: 0,
+  source: 0,
+};
+export const SyntheticCommandEvent: $FlowFixMe = createSyntheticEvent(
+  CommandEventInterface,
+);

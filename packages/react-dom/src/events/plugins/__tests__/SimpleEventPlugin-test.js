@@ -18,6 +18,14 @@ class ToggleEvent extends Event {
   }
 }
 
+class CommandEvent extends Event {
+  constructor(type, eventInit) {
+    super(type, eventInit);
+    this.command = eventInit.command;
+    this.source = eventInit.source;
+  }
+}
+
 describe('SimpleEventPlugin', function () {
   let React;
   let ReactDOMClient;
@@ -587,6 +595,43 @@ describe('SimpleEventPlugin', function () {
         expect.objectContaining({
           oldState: 'open',
           newState: 'closed',
+        }),
+      );
+    });
+
+    it('dispatches synthetic command events when the Invoker Commands API is used', async () => {
+      container = document.createElement('div');
+
+      const onCommand = jest.fn();
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <>
+            <button commandFor="target" command="--rotate-left">
+              Rotate left
+            </button>
+            <img id="target" alt="" onCommand={onCommand} />
+          </>,
+        );
+      });
+
+      const target = container.querySelector('#target');
+      const source = container.querySelector('button');
+      target.dispatchEvent(
+        new CommandEvent('command', {
+          bubbles: false,
+          cancelable: true,
+          command: '--rotate-left',
+          source: source,
+        }),
+      );
+
+      expect(onCommand).toHaveBeenCalledTimes(1);
+      const event = onCommand.mock.calls[0][0];
+      expect(event).toEqual(
+        expect.objectContaining({
+          command: '--rotate-left',
+          source: source,
         }),
       );
     });
