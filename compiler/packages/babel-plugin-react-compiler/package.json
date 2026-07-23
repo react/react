@@ -53,7 +53,7 @@
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
     "zod": "^3.25.0 || ^4.0.0",
-    "zod-validation-error": "^3.5.0 || ^4.0.0"
+    "zod-validation-error": ">=3.5.0 <3.5.4 || ^4.0.0"
   },
   "resolutions": {
     "./**/@babel/parser": "7.7.4",
