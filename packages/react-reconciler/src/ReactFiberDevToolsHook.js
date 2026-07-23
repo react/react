@@ -59,6 +59,12 @@ export function injectInternals(internals: Object): boolean {
     // https://github.com/facebook/react/issues/3877
     return true;
   }
+  if (hook.suppressLogMessage && !hook.supportsFiber) {
+    // This isn't a real property on the hook, but it can be set to suppress
+    // the DevTools download message without installing a full hook shim.
+    // https://github.com/facebook/react/issues/24283
+    return false;
+  }
   if (!hook.supportsFiber) {
     if (__DEV__) {
       console.error(

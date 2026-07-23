@@ -28,6 +28,8 @@ import ReactVersion from 'shared/ReactVersion';
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
 ensureCorrectIsomorphicReactVersion();
 
+declare const __REACT_DEVTOOLS_GLOBAL_HOOK__: Object | void;
+
 import {
   getInstanceFromNode,
   getNodeFromInstance,
@@ -149,8 +151,20 @@ Internals.Events /* Events */ = [
 
 const foundDevTools = injectIntoDevTools();
 
+function isDevToolsDownloadPromptSuppressed(): boolean {
+  if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === 'undefined') {
+    return false;
+  }
+  return __REACT_DEVTOOLS_GLOBAL_HOOK__.suppressLogMessage === true;
+}
+
 if (__DEV__) {
-  if (!foundDevTools && canUseDOM && window.top === window.self) {
+  if (
+    !foundDevTools &&
+    !isDevToolsDownloadPromptSuppressed() &&
+    canUseDOM &&
+    window.top === window.self
+  ) {
     // If we're in Chrome or Firefox, provide a download link if not installed.
     if (
       (navigator.userAgent.indexOf('Chrome') > -1 &&
