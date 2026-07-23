@@ -17,6 +17,7 @@ export function createStore(bridge: FrontendBridge, config?: Config): Store {
     checkBridgeProtocolCompatibility: true,
     supportsTraceUpdates: true,
     supportsTimeline: true,
+    supportsNativeInspection: true,
     ...config,
   });
 }
@@ -48,9 +49,11 @@ export function initialize(
   {
     bridge,
     store,
+    reload,
   }: {
     bridge?: FrontendBridge,
     store?: Store,
+    reload?: () => void,
   } = {},
 ): component(...props: Props) {
   if (bridge == null) {
@@ -80,6 +83,9 @@ export function initialize(
   };
 
   frontendBridge.addListener('getSavedPreferences', onGetSavedPreferences);
+  if (reload) {
+    frontendBridge.addListener('reloadAppForProfiling', reload);
+  }
 
   const ForwardRef = forwardRef<Props, mixed>((props, ref) => (
     <DevTools ref={ref} bridge={frontendBridge} store={store} {...props} />

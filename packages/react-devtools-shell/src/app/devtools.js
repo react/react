@@ -7,7 +7,6 @@ import {
   initialize as initializeBackend,
 } from 'react-devtools-inline/backend';
 import {initialize as initializeFrontend} from 'react-devtools-inline/frontend';
-import {initDevTools} from 'react-devtools-shared/src/devtools';
 
 // This is a pretty gross hack to make the runtime loaded named-hooks-code work.
 // TODO (Webpack 5) Hoepfully we can remove this once we upgrade to Webpack 5.
@@ -25,7 +24,10 @@ initializeBackend(contentWindow);
 
 // Initialize the front end and activate the backend early so that we are able
 // to pass console settings in local storage to the backend before initial render
-const DevTools = initializeFrontend(contentWindow);
+const DevTools = initializeFrontend(contentWindow, {
+  // eslint-disable-next-line no-restricted-globals
+  reload: () => location.reload(),
+});
 
 // Activate the backend only once the DevTools frontend Store has been initialized.
 // Otherwise the Store may miss important initial tree op codes.
@@ -60,25 +62,17 @@ function hookNamesModuleLoaderFunction() {
 }
 
 inject('dist/app-index.js', () => {
-  initDevTools({
-    connect(cb) {
-      const root = createRoot(container);
-      root.render(
-        createElement(DevTools, {
-          browserTheme: 'light',
-          enabledInspectedElementContextMenu: true,
-          hookNamesModuleLoaderFunction,
-          showTabBar: true,
-          warnIfLegacyBackendDetected: true,
-          warnIfUnsupportedVersionDetected: true,
-        }),
-      );
-    },
-
-    onReload(reloadFn) {
-      iframe.onload = reloadFn;
-    },
-  });
+  const root = createRoot(container);
+  root.render(
+    createElement(DevTools, {
+      browserTheme: 'light',
+      enabledInspectedElementContextMenu: true,
+      hookNamesModuleLoaderFunction,
+      showTabBar: true,
+      warnIfLegacyBackendDetected: true,
+      warnIfUnsupportedVersionDetected: true,
+    }),
+  );
 });
 
 function inject(sourcePath: string, callback: () => void) {
