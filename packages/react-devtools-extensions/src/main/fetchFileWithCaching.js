@@ -175,14 +175,19 @@ const fetchFromPage = (url, resolve, reject) => {
   });
   chrome.runtime.onMessage.addListener(onPortMessage);
   promise.then(resolve, reject);
-  chrome.runtime.sendMessage({
-    source: 'devtools-page',
-    payload: {
-      type: 'fetch-file-with-cache',
-      tabId: chrome.devtools.inspectedWindow.tabId,
-      url,
-    },
-  });
+  try {
+    chrome.runtime.sendMessage({
+      source: 'devtools-page',
+      payload: {
+        type: 'fetch-file-with-cache',
+        tabId: chrome.devtools.inspectedWindow.tabId,
+        url,
+      },
+    });
+  } catch (error) {
+    clearPendingFetchRequest(url);
+    rejectFetchRequest(error);
+  }
 };
 
 // 1. Check if resource is available via chrome.devtools.inspectedWindow.getResources
