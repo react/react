@@ -895,7 +895,7 @@ TYPED_GLOBALS.push(
         'createRef',
         addFunction(DEFAULT_SHAPES, [], {
           positionalParams: [],
-          restParam: Effect.Capture, // createRef takes no paramters
+          restParam: Effect.Capture, // createRef takes no parameters
           returnType: {kind: 'Object', shapeId: BuiltInUseRefId},
           calleeEffect: Effect.Read,
           returnValueKind: ValueKind.Mutable,

@@ -2236,7 +2236,7 @@ function renderSuspenseList(
         prepareToUseThenableState(prevThenableState);
 
         // We need to know how many total rows are in this set, so that we
-        // can allocate enough id slots to acommodate them. So we must exhaust
+        // can allocate enough id slots to accommodate them. So we must exhaust
         // the iterator before we start recursively rendering the rows.
         // TODO: This is not great but I think it's inherent to the id
         // generation algorithm.
@@ -3557,7 +3557,7 @@ function retryNode(request: Request, task: Task): void {
           validateIterable(task, node, childIndex, iterator, iteratorFn);
         }
         // We need to know how many total children are in this set, so that we
-        // can allocate enough id slots to acommodate them. So we must exhaust
+        // can allocate enough id slots to accommodate them. So we must exhaust
         // the iterator before we start recursively rendering the children.
         // TODO: This is not great but I think it's inherent to the id
         // generation algorithm.
@@ -3595,7 +3595,7 @@ function retryNode(request: Request, task: Task): void {
         prepareToUseThenableState(prevThenableState);
 
         // We need to know how many total children are in this set, so that we
-        // can allocate enough id slots to acommodate them. So we must exhaust
+        // can allocate enough id slots to accommodate them. So we must exhaust
         // the iterator before we start recursively rendering the children.
         // TODO: This is not great but I think it's inherent to the id
         // generation algorithm.
@@ -6329,13 +6329,13 @@ function enqueueFlush(request: Request): void {
   }
 }
 
-// This function is intented to only be called during the pipe function for the Node builds.
+// This function is intended to only be called during the pipe function for the Node builds.
 // The reason we need this is because `renderToPipeableStream` is the only API which allows
 // you to start flowing before the shell is complete and we've had a chance to emit early
 // preloads already. This is really just defensive programming to ensure that we give hosts an
 // opportunity to flush early preloads before streaming begins in case they are in an environment
 // that only supports a single call to emitEarlyPreloads like the DOM renderers. It's unfortunate
-// to put this Node only function directly in ReactFizzServer but it'd be more ackward to factor it
+// to put this Node only function directly in ReactFizzServer but it'd be more awkward to factor it
 // by moving the implementation into ReactServerStreamConfigNode and even then we may not be able to
 // eliminate all the wasted branching.
 export function prepareForStartFlowingIfBeforeAllReady(request: Request) {

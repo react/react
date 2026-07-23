@@ -613,7 +613,7 @@ export function listenToFormSubmissionsForReplaying() {
   // A global replay queue ensures actions are replayed in order.
   // This event listener should be above the React one. That way when
   // we preventDefault in React's handling we also prevent this event
-  // from queing it. Since React listens to the root and the top most
+  // from queuing it. Since React listens to the root and the top most
   // container you can use is the document, the window is fine.
   // eslint-disable-next-line no-restricted-globals
   addEventListener('submit', event => {

@@ -88,7 +88,7 @@ class State {
 
   /*
    * Check if any version of the given identifier is used somewhere.
-   * This checks both for usage of this specific identifer id (ssa id)
+   * This checks both for usage of this specific identifier id (ssa id)
    * and (for named identifiers) for any usages of that identifier name.
    */
   isIdOrNameUsed(identifier: Identifier): boolean {

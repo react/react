@@ -1063,7 +1063,7 @@ function commitTransitionProgress(offscreenFiber: Fiber) {
     // the map.
 
     // We use stateNode on the Offscreen component as a stable object
-    // that doesnt change from render to render. This way we can
+    // that doesn't change from render to render. This way we can
     // distinguish between different Offscreen instances (vs. the same
     // Offscreen instance with different fibers)
     const offscreenInstance: OffscreenInstance = offscreenFiber.stateNode;
@@ -5064,7 +5064,7 @@ export function disconnectPassiveEffect(finishedWork: Fiber): void {
         HookPassive,
       );
       // When disconnecting passive effects, we fire the effects in the same
-      // order as during a deletiong: parent before child
+      // order as during a deletion: parent before child
       recursivelyTraverseDisconnectPassiveEffects(finishedWork);
       break;
     }

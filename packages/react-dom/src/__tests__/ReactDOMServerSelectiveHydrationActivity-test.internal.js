@@ -713,7 +713,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
 
     // We should prioritize hydrating D first because we clicked it.
-    // but event isnt replayed
+    // but event isn't replayed
     assertLog([
       'D',
       'B', // Ideally this should be later.
@@ -844,7 +844,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
 
     // We should prioritize hydrating D first because we clicked it.
-    // but event isnt replayed
+    // but event isn't replayed
     assertLog([
       'D',
       'B', // Ideally this should be later.

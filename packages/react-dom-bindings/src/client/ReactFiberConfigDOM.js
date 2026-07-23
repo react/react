@@ -722,7 +722,7 @@ export function finalizeHydratedChildren(
   props: Props,
   hostContext: HostContext,
 ): boolean {
-  // TOOD: Consider unifying this with hydrateInstance.
+  // TODO: Consider unifying this with hydrateInstance.
   if (!enableHydrationChangeEvent) {
     return false;
   }
@@ -2382,7 +2382,7 @@ export function startViewTransition(
     transition.finished.finally(() => {
       for (let i = 0; i < viewTransitionAnimations.length; i++) {
         // In Safari, we need to manually cancel all manually started animations
-        // or it'll block or interfer with future transitions.
+        // or it'll block or interfere with future transitions.
         // We can't use getAnimations() due to #35336 so we collect them in an array.
         viewTransitionAnimations[i].cancel();
       }
@@ -2648,7 +2648,7 @@ export function startGestureTransition(
           const duration =
             // $FlowFixMe[prop-missing]
             typeof timing.duration === 'number' ? timing.duration : 0;
-          // TODO: Consider interation count higher than 1.
+          // TODO: Consider integration count higher than 1.
           // $FlowFixMe[prop-missing]
           // $FlowFixMe[unsafe-addition]
           const durationWithDelay = timing.delay + duration;
@@ -2815,7 +2815,7 @@ export function startGestureTransition(
         // was invoked, then we need to first finish the mutation and layout phases.
         // If they're already invoked it's still safe to call them due the status check.
         mutationCallback();
-        // Skip readyCallback() and go straight to animateCallbck() since we're not animating.
+        // Skip readyCallback() and go straight to animateCallback() since we're not animating.
         // animateCallback() is still required to restore states.
         animateCallback();
         if (enableProfilerTimer) {
@@ -2827,7 +2827,7 @@ export function startGestureTransition(
     transition.finished.finally(() => {
       for (let i = 0; i < viewTransitionAnimations.length; i++) {
         // In Safari, we need to manually cancel all manually started animations
-        // or it'll block or interfer with future transitions.
+        // or it'll block or interfere with future transitions.
         // We can't use getAnimations() due to #35336 so we collect them in an array.
         viewTransitionAnimations[i].cancel();
       }
@@ -3791,7 +3791,7 @@ function clearContainerSparingly(container: Node) {
         const element: Element = node as any;
         clearContainerSparingly(element);
         // If these singleton instances had previously been rendered with React they
-        // may still hold on to references to the previous fiber tree. We detatch them
+        // may still hold on to references to the previous fiber tree. We detach them
         // prospectively to reset them to a baseline starting state since we cannot create
         // new instances.
         detachDeletedInstance(element);
@@ -3935,7 +3935,7 @@ export function canHydrateInstance(
         }
         case 'link': {
           // Links come in many forms and we do expect 3rd parties to inject them into <head> / <body>. We exclude known resources
-          // and then use high-entroy attributes like href which are almost always used and almost always unique to filter out unlikely
+          // and then use high-entropy attributes like href which are almost always used and almost always unique to filter out unlikely
           // matches.
           const rel = element.getAttribute('rel');
           if (rel === 'stylesheet' && element.hasAttribute('data-precedence')) {
@@ -3971,7 +3971,7 @@ export function canHydrateInstance(
           // Scripts are a little tricky, we exclude known resources and then similar to links try to use high-entropy attributes
           // to reject poor matches. One challenge with scripts are inline scripts. We don't attempt to check text content which could
           // in theory lead to a hydration error later if a 3rd party injected an inline script before the React rendered nodes.
-          // Falling back to client rendering if this happens should be seemless though so we will try this hueristic and revisit later
+          // Falling back to client rendering if this happens should be seamless though so we will try this heuristic and revisit later
           // if we learn it is problematic
           const srcAttr = element.getAttribute('src');
           if (
@@ -3982,7 +3982,7 @@ export function canHydrateInstance(
               (anyProps.crossOrigin == null ? null : anyProps.crossOrigin)
           ) {
             // This script is for a different src/type/crossOrigin. It may be a script resource
-            // or it may just be a mistmatch
+            // or it may just be a mismatch
             if (
               srcAttr &&
               element.hasAttribute('async') &&
@@ -3996,7 +3996,7 @@ export function canHydrateInstance(
         }
         default: {
           // We have excluded the most likely cases of mismatch between hoistable tags, 3rd party script inserted tags,
-          // and browser extension inserted tags. While it is possible this is not the right match it is a decent hueristic
+          // and browser extension inserted tags. While it is possible this is not the right match it is a decent heuristic
           // that should work in the vast majority of cases.
           return element;
         }
@@ -5098,7 +5098,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
           rel: 'preload',
           // There is a bug in Safari where imageSrcSet is not respected on preload links
           // so we omit the href here if we have imageSrcSet b/c safari will load the wrong image.
-          // This harms older browers that do not support imageSrcSet by making their preloads not work
+          // This harms older browsers that do not support imageSrcSet by making their preloads not work
           // but this population is shrinking fast and is already small so we accept this tradeoff.
           href:
             as === 'image' && options && options.imageSrcSet ? undefined : href,
@@ -6632,7 +6632,7 @@ function checkIfFullyUnsuspended(state: SuspendedState) {
       // If we haven't actually inserted the stylesheets yet we need to do so now before starting the commit.
       // The reason we do this after everything else has finished is because we want to have all the stylesheets
       // load synchronously right before mutating. Ideally the new styles will cause a single recalc only on the
-      // new tree. When we filled up stylesheets we only inlcuded stylesheets with matching media attributes so we
+      // new tree. When we filled up stylesheets we only included stylesheets with matching media attributes so we
       // wait for them to load before actually continuing. We expect this to increase the count above zero
       insertSuspendedStylesheets(state, state.stylesheets);
     } else if (state.unsuspend) {

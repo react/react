@@ -75,7 +75,7 @@ const STRICT_MODE_RESERVED_WORDS = new Set([
 const STRICT_MODE_RESTRICTED_WORDS = new Set(['eval', 'arguments']);
 
 /**
- * Conservative check for whether an identifer name is reserved or not. We assume that code is
+ * Conservative check for whether an identifier name is reserved or not. We assume that code is
  * written with strict mode.
  */
 export function isReservedWord(identifierName: string): boolean {

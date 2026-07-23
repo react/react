@@ -1899,7 +1899,7 @@ function loadServerReference<A: Iterable<any>, T>(
     let resolvedValue = requireModule(serverReference) as any;
 
     if (metaData.bound) {
-      // This promise is coming from us and should have initilialized by now.
+      // This promise is coming from us and should have initialized by now.
       const boundArgs: Array<any> = (metaData.bound as any).value.slice(0);
       boundArgs.unshift(null); // this
       resolvedValue = resolvedValue.bind.apply(resolvedValue, boundArgs);
@@ -5193,7 +5193,7 @@ export function processStringChunk(
   }
   const response = unwrapWeakResponse(weakResponse);
   // This is a fork of processBinaryChunk that takes a string as input.
-  // This can't be just any binary chunk coverted to a string. It needs to be
+  // This can't be just any binary chunk converted to a string. It needs to be
   // in the same offsets given from the Flight Server. E.g. if it's shifted by
   // one byte then it won't line up to the UCS-2 encoding. It also needs to
   // be valid Unicode. Also binary chunks cannot use this even if they're
@@ -5298,7 +5298,7 @@ export function processStringChunk(
       // We found the last chunk of the row
       if (buffer.length > 0) {
         // If we had a buffer already, it means that this chunk was split up into
-        // binary chunks preceeding it.
+        // binary chunks preceding it.
         throw new Error(
           'String chunks need to be passed in their original shape. ' +
             'Not split into smaller string chunks. ' +

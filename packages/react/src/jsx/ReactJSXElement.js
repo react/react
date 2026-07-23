@@ -637,7 +637,7 @@ export function createElement(type, config, children) {
       if (
         !didWarnAboutOldJSXRuntime &&
         '__self' in config &&
-        // Do not assume this is the result of an oudated JSX transform if key
+        // Do not assume this is the result of an outdated JSX transform if key
         // is present, because the modern JSX transform sometimes outputs
         // createElement to preserve precedence between a static key and a
         // spread key. To avoid false positive warnings, we never warn if

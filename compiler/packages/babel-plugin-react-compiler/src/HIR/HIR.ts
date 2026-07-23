@@ -743,7 +743,7 @@ export enum InstructionKind {
   Const = 'Const',
   // let declaration
   Let = 'Let',
-  // assing a new value to a let binding
+  // assign a new value to a let binding
   Reassign = 'Reassign',
   // catch clause binding
   Catch = 'Catch',
@@ -1226,7 +1226,7 @@ export type MutableRange = {
 export type VariableBinding =
   // let, const, etc declared within the current component/hook
   | {kind: 'Identifier'; identifier: Identifier; bindingKind: BindingKind}
-  // bindings declard outside the current component/hook
+  // bindings declared outside the current component/hook
   | NonLocalBinding;
 
 // `import {bar as baz} from 'foo'`: name=baz, module=foo, imported=bar

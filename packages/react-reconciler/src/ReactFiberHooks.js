@@ -2028,7 +2028,7 @@ function rerenderOptimistic<S, A>(
   // the passthrough value changed.
   //
   // So instead of a forked re-render implementation that knows how to handle
-  // render phase udpates, we can use the same implementation as during a
+  // render phase updates, we can use the same implementation as during a
   // regular mount or update.
   const hook = updateWorkInProgressHook();
 
@@ -2541,7 +2541,7 @@ function rerenderActionState<S, P>(
   // the passthrough value changed.
   //
   // So instead of a forked re-render implementation that knows how to handle
-  // render phase udpates, we can use the same implementation as during a
+  // render phase updates, we can use the same implementation as during a
   // regular mount or update.
   const stateHook = updateWorkInProgressHook();
   const currentStateHook = currentHook;
@@ -3477,7 +3477,7 @@ function mountId(): string {
   if (getIsHydrating()) {
     const treeId = getTreeId();
 
-    // Use a captial R prefix for server-generated ids.
+    // Use a capital R prefix for server-generated ids.
     id = '_' + identifierPrefix + 'R_' + treeId;
 
     // Unless this is the first id at this level, append a number at the end
@@ -3784,7 +3784,7 @@ function dispatchOptimisticSetState<S, A>(
       throw new Error('Cannot update optimistic state while rendering.');
     } else {
       // startTransition was called during render. We don't need to do anything
-      // besides warn here because the render phase update would be overidden by
+      // besides warn here because the render phase update would be overridden by
       // the second update, anyway. We can remove this branch and make it throw
       // in a future release.
       if (__DEV__) {

@@ -28,7 +28,7 @@ function hasModule(name: string): boolean {
 
 /**
  * Tries to detect if reanimated is installed by first looking for the presence of the babel plugin.
- * However, babel-preset-expo includes it by default so it is occasionally ommitted. If so, we do
+ * However, babel-preset-expo includes it by default so it is occasionally omitted. If so, we do
  * a check to see if `react-native-animated` is requireable.
  *
  * See https://github.com/expo/expo/blob/e4b8d86442482c7316365a6b7ec1141eec73409d/packages/babel-preset-expo/src/index.ts#L300-L301

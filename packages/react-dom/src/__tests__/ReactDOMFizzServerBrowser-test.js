@@ -393,7 +393,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     // an exact view boundary. it's not critical to test this edge case but
     // since we are setting up a test in general for larger chunks I contrived it
     // as such for now. I don't think it needs to be maintained if in the future
-    // the view sizes change or become dynamic becasue of the use of byobRequest
+    // the view sizes change or become dynamic because of the use of byobRequest
     let stream;
     stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(

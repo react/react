@@ -1459,7 +1459,7 @@ function updateFunctionComponent(
 
     if (current === null) {
       // Some validations were previously done in mountIndeterminateComponent however and are now run
-      // in updateFuntionComponent but only on mount
+      // in updateFunctionComponent but only on mount
       validateFunctionComponentInDev(workInProgress, workInProgress.type);
 
       if (Component.contextTypes) {
@@ -2052,7 +2052,7 @@ function updateHostHoistable(
   // the host implementation of getResource to consider children in the
   // resource construction but they will otherwise be discarded. In practice
   // this precludes all but the simplest children and Host specific warnings
-  // should be implemented to warn when children are passsed when otherwise not
+  // should be implemented to warn when children are passed when otherwise not
   // expected
   return null;
 }
@@ -4258,7 +4258,7 @@ function beginWork(
     didReceiveUpdate = false;
 
     if (getIsHydrating() && isForkedChild(workInProgress)) {
-      // Check if this child belongs to a list of muliple children in
+      // Check if this child belongs to a list of multiple children in
       // its parent.
       //
       // In a true multi-threaded implementation, we would render children on

@@ -118,7 +118,7 @@ export type ProfilingDataFrontend = {
   // Legacy profiling data is per renderer + root.
   dataForRoots: Map<number, ProfilingDataForRootFrontend>,
 
-  // Timeline data is per rederer.
+  // Timeline data is per renderer.
   timelineData: Array<TimelineData>,
 
   // Some functionality should be disabled for imported data.
@@ -158,7 +158,7 @@ export type ProfilingDataExport = {
   // Legacy profiling data is per renderer + root.
   dataForRoots: Array<ProfilingDataForRootExport>,
 
-  // Timeline data is per rederer.
+  // Timeline data is per renderer.
   // Note that old exported profiles won't contain this key.
   timelineData?: Array<TimelineDataExport>,
 };

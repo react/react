@@ -42,7 +42,7 @@ export default function estimateBandwidth(): number {
         !duration ||
         !isLikelyStaticResource(initiatorType)
       ) {
-        // Skip cached, cross-orgin entries and resources likely to be dynamically generated.
+        // Skip cached, cross-origin entries and resources likely to be dynamically generated.
         continue;
       }
       // Find any overlapping entries that were transferring at the same time since the total
@@ -65,7 +65,7 @@ export default function estimateBandwidth(): number {
           !overlapTransferSize ||
           !isLikelyStaticResource(overlapInitiatorType)
         ) {
-          // Skip cached, cross-orgin entries and resources likely to be dynamically generated.
+          // Skip cached, cross-origin entries and resources likely to be dynamically generated.
           continue;
         }
         // $FlowFixMe[prop-missing]
@@ -107,6 +107,6 @@ export default function estimateBandwidth(): number {
 
   // Otherwise, use a default of 5mbps to compute heuristics.
   // This can happen commonly in Safari if all static resources and images are loaded
-  // cross-orgin.
+  // cross-origin.
   return 5;
 }

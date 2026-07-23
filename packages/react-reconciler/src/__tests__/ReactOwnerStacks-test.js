@@ -191,12 +191,12 @@ describe('ReactOwnerStacks', () => {
     }).toEqual({
       pendingTimers: 0,
       stackOne: __VARIANT__
-        ? // We re-rendered immediately so not enough time has ellapsed to reset the limit.
+        ? // We re-rendered immediately so not enough time has elapsed to reset the limit.
           '\n    in UnknownOwner (at **)'
         : // We never hit the limit outside __VARIANT__
           '\n    in App (at **)',
       stackTwo: __VARIANT__
-        ? // We re-rendered immediately so not enough time has ellapsed to reset the limit.
+        ? // We re-rendered immediately so not enough time has elapsed to reset the limit.
           '\n    in UnknownOwner (at **)'
         : // We never hit the limit outside __VARIANT__
           '\n    in App (at **)',

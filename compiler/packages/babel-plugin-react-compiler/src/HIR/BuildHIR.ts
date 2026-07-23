@@ -1035,7 +1035,7 @@ function lowerStatement(
       const conditionalBlock = builder.reserve('loop');
       //  Block for code following the loop
       const continuationBlock = builder.reserve('block');
-      //  Loop body, executed at least once uncondtionally prior to exit
+      //  Loop body, executed at least once unconditionally prior to exit
       const loopBlock = builder.enter('block', _loopBlockId => {
         return builder.loop(
           label,

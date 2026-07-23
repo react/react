@@ -965,7 +965,7 @@ describe('ReactDeferredValue', () => {
       // we should not skip the preview state.
       revealContent();
       // Because the preview state was already prerendered, we can reveal it
-      // without any addditional work.
+      // without any additional work.
       if (gate(flags => flags.enableYieldingBeforePassive)) {
         // Passive effects.
         await waitForPaint([]);

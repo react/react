@@ -153,7 +153,7 @@ class SSABuilder {
 
     if (block.preds.size == 0) {
       /*
-       * We're at the entry block and haven't found our defintion yet.
+       * We're at the entry block and haven't found our definition yet.
        * console.log(
        *   `Unable to find "${printPlace(
        *     oldPlace

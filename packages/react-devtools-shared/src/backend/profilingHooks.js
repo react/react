@@ -315,7 +315,7 @@ export function createProfilingHooks({
       // Some metadata only needs to be logged once per session,
       // but if profiling information is being recorded via the Performance tab,
       // DevTools has no way of knowing when the recording starts.
-      // Because of that, we log thie type of data periodically (once per commit).
+      // Because of that, we log this type of data periodically (once per commit).
       markMetadata();
     }
   }

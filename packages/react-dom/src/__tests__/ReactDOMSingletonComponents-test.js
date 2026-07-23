@@ -276,7 +276,7 @@ describe('ReactDOM HostSingleton', () => {
     // Render into the document completely different html. Observe that styles
     // are retained as are html, body, and head referential identities. Because this was
     // server rendered and we are not hydrating we lose the semantic placement of the original
-    // head contents and everything gets preprended. In a future update we might emit an insertion
+    // head contents and everything gets prepended. In a future update we might emit an insertion
     // edge from the server and make client rendering reslilient to interstitial placement
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -647,7 +647,7 @@ describe('ReactDOM HostSingleton', () => {
     );
     await waitForAll([]);
 
-    // We construct and insert some artificial stylesheets mimicing what a 3rd party script might do
+    // We construct and insert some artificial stylesheets mimicking what a 3rd party script might do
     // In the future we could hydrate with these already in the document but the rules are restrictive
     // still so it would fail and fall back to client rendering
     const [a, b, c, d, e, f, g, h] = 'abcdefgh'.split('').map(letter => {

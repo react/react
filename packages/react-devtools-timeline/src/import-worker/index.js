@@ -7,7 +7,7 @@
  * @flow
  */
 
-// This file uses workerize to load ./importFile.worker as a webworker and instanciates it,
+// This file uses workerize to load ./importFile.worker as a webworker and instantiates it,
 // exposing flow typed functions that can be used on other files.
 
 import * as importFileModule from './importFile';

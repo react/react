@@ -75,7 +75,7 @@ export function updateTextarea(
     if (newValue !== node.value) {
       node.value = newValue;
     }
-    // TOOO: This should respect disableInputAttributeSyncing flag.
+    // TODO: This should respect disableInputAttributeSyncing flag.
     if (defaultValue == null) {
       if (node.defaultValue !== newValue) {
         node.defaultValue = newValue;

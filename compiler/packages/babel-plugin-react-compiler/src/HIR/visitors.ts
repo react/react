@@ -1017,7 +1017,7 @@ export function terminalFallthrough(terminal: Terminal): BlockId | null {
 /*
  * Iterates over the successor block ids of the provided terminal. The function is called
  * specifically for the successors that define the standard control flow, and not
- * pseduo-successors such as fallthroughs.
+ * pseudo-successors such as fallthroughs.
  */
 export function* eachTerminalSuccessor(terminal: Terminal): Iterable<BlockId> {
   switch (terminal.kind) {

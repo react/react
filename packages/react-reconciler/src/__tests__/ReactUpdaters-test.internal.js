@@ -265,7 +265,7 @@ describe('updaters', () => {
     await waitForAll([]);
   });
 
-  // This test should be convertable to createRoot but the allScheduledTypes assertions are no longer the same
+  // This test should be convertible to createRoot but the allScheduledTypes assertions are no longer the same
   // So I'm leaving it in legacy mode for now and just disabling if legacy mode is turned off
   // @gate !disableLegacyMode
   it('should cover suspense pings', async () => {

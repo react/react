@@ -2437,7 +2437,7 @@ function hydrateSrcObjectAttribute(
     if (typeof size === 'number' && typeof type === 'string') {
       if (serverValue.indexOf('data:' + type + ';base64,') === 0) {
         // For Blobs we don't bother reading the actual data but just diff by checking if
-        // the byte length size of the Blob maches the length of the data url.
+        // the byte length size of the Blob matches the length of the data url.
         const prefixLength = 5 + type.length + 8;
         let byteLength = ((serverValue.length - prefixLength) / 4) * 3;
         if (serverValue[serverValue.length - 1] === '=') {

@@ -8,7 +8,7 @@
  */
 
 // This is the parsed shape of the wire format which is why it is
-// condensed to only the essentialy information
+// condensed to only the essentially information
 export type ImportMetadata = [
   // eslint does not understand Flow tuple syntax.
   /* eslint-disable */
