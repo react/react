@@ -227,7 +227,14 @@ function findHoistedContextDeclarations(
   fn: HIRFunction,
 ): Map<DeclarationId, Place | null> {
   const hoisted = new Map<DeclarationId, Place | null>();
+  const initialized = new Set<DeclarationId>();
+  const selfReferentialMemoizedCallbackCaptures =
+    findSelfReferentialMemoizedCallbackCaptures(fn);
+
   function visit(place: Place): void {
+    if (initialized.has(place.identifier.declarationId)) {
+      return;
+    }
     if (
       hoisted.has(place.identifier.declarationId) &&
       hoisted.get(place.identifier.declarationId) == null
@@ -239,13 +246,37 @@ function findHoistedContextDeclarations(
   for (const block of fn.body.blocks.values()) {
     for (const instr of block.instructions) {
       if (instr.value.kind === 'DeclareContext') {
+        const declarationId = instr.value.lvalue.place.identifier.declarationId;
         const kind = instr.value.lvalue.kind;
         if (
           kind == InstructionKind.HoistedConst ||
           kind == InstructionKind.HoistedFunction ||
           kind == InstructionKind.HoistedLet
         ) {
-          hoisted.set(instr.value.lvalue.place.identifier.declarationId, null);
+          hoisted.set(declarationId, null);
+        } else if (hoisted.has(declarationId)) {
+          initialized.add(declarationId);
+        }
+      } else if (instr.value.kind === 'FunctionExpression') {
+        const skipDeclarations =
+          instr.lvalue != null
+            ? selfReferentialMemoizedCallbackCaptures.get(
+                instr.lvalue.identifier.id,
+              ) ?? null
+            : null;
+        for (const operand of instr.value.loweredFunc.func.context) {
+          if (skipDeclarations?.has(operand.identifier.declarationId)) {
+            continue;
+          }
+          visit(operand);
+        }
+      } else if (instr.value.kind === 'StoreContext') {
+        visit(instr.value.value);
+        if (
+          hoisted.has(instr.value.lvalue.place.identifier.declarationId) &&
+          instr.value.lvalue.kind !== InstructionKind.Reassign
+        ) {
+          initialized.add(instr.value.lvalue.place.identifier.declarationId);
         }
       } else {
         for (const operand of eachInstructionValueOperand(instr.value)) {
@@ -257,7 +288,114 @@ function findHoistedContextDeclarations(
       visit(operand);
     }
   }
+  for (const [declarationId, firstAccess] of hoisted) {
+    if (firstAccess == null) {
+      hoisted.delete(declarationId);
+    }
+  }
   return hoisted;
+}
+
+function findSelfReferentialMemoizedCallbackCaptures(
+  fn: HIRFunction,
+): Map<IdentifierId, Set<DeclarationId>> {
+  const values = new Map<IdentifierId, InstructionValue>();
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      if (instr.lvalue != null) {
+        values.set(instr.lvalue.identifier.id, instr.value);
+      }
+    }
+  }
+
+  const captures = new Map<IdentifierId, Set<DeclarationId>>();
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      if (
+        instr.value.kind !== 'StoreContext' ||
+        instr.value.lvalue.kind === InstructionKind.Reassign
+      ) {
+        continue;
+      }
+
+      const declarationId = instr.value.lvalue.place.identifier.declarationId;
+      const functionExpressions = findSelfReferentialMemoizedFunctions(
+        fn,
+        values,
+        declarationId,
+        instr.value.value.identifier.id,
+      );
+      for (const functionExpression of functionExpressions) {
+        getOrInsertDefault(captures, functionExpression, new Set()).add(
+          declarationId,
+        );
+      }
+    }
+  }
+  return captures;
+}
+
+function findSelfReferentialMemoizedFunctions(
+  fn: HIRFunction,
+  values: ReadonlyMap<IdentifierId, InstructionValue>,
+  declarationId: DeclarationId,
+  startId: IdentifierId,
+): Set<IdentifierId> {
+  const matches = new Set<IdentifierId>();
+  const seen = new Set<IdentifierId>();
+  const queue = [startId];
+  while (queue.length !== 0) {
+    const identifierId = queue.pop()!;
+    if (seen.has(identifierId)) {
+      continue;
+    }
+    seen.add(identifierId);
+
+    const value = values.get(identifierId);
+    if (value == null) {
+      continue;
+    }
+
+    switch (value.kind) {
+      case 'CallExpression':
+      case 'MethodCall': {
+        const callee =
+          value.kind === 'CallExpression' ? value.callee : value.property;
+        if (getHookKind(fn.env, callee.identifier) === 'useCallback') {
+          const callback = value.args[0];
+          if (callback != null && callback.kind === 'Identifier') {
+            queue.push(callback.identifier.id);
+          }
+        }
+        break;
+      }
+      case 'FinishMemoize': {
+        queue.push(value.decl.identifier.id);
+        break;
+      }
+      case 'LoadContext':
+      case 'LoadLocal': {
+        queue.push(value.place.identifier.id);
+        break;
+      }
+      case 'StoreLocal':
+      case 'StoreContext': {
+        queue.push(value.value.identifier.id);
+        break;
+      }
+      case 'FunctionExpression': {
+        if (
+          value.loweredFunc.func.context.some(
+            place => place.identifier.declarationId === declarationId,
+          )
+        ) {
+          matches.add(identifierId);
+        }
+        break;
+      }
+    }
+  }
+  return matches;
 }
 
 class Context {

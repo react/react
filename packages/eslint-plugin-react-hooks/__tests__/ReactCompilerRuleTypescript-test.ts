@@ -37,6 +37,29 @@ const tests: CompilerTestCases = {
       `,
     },
     {
+      name: 'Allows stable callback self-reference inside useCallback',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useEffect} from 'react';
+
+        function Test() {
+          const onMouseDown = useCallback(() => {
+            window.removeEventListener('mousedown', onMouseDown);
+          }, []);
+
+          useEffect(() => {
+            window.addEventListener('mousedown', onMouseDown);
+
+            return () => {
+              window.removeEventListener('mousedown', onMouseDown);
+            };
+          }, [onMouseDown]);
+
+          return <div>Hello</div>;
+        }
+      `,
+    },
+    {
       name: 'Repro for hooks as normal values',
       filename: 'test.tsx',
       code: normalizeIndent`
@@ -94,6 +117,27 @@ const tests: CompilerTestCases = {
         {
           message: /Modifying a value returned from 'useState\(\)'/,
           line: 7,
+        },
+      ],
+    },
+    {
+      name: 'Still rejects later variable capture inside useCallback',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback} from 'react';
+
+        function Test({content, refetch}) {
+          const onRefetch = useCallback(() => {
+            refetch(data);
+          }, [refetch]);
+
+          const {data = null} = content;
+          return <button onClick={onRefetch}>Refetch</button>;
+        }
+      `,
+      errors: [
+        {
+          message: /Cannot access variable before it is declared/,
         },
       ],
     },
