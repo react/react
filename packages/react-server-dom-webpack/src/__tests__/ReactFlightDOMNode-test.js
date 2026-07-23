@@ -2229,6 +2229,116 @@ describe('ReactFlightDOMNode', () => {
           '    in App (at **)',
       );
     });
+
+    // @gate __DEV__ && enableAsyncDebugInfo
+    it('filters parsed debug info on the lazy wrapper, not only the resolved value', async () => {
+      let resolveFirst;
+      let resolveSecond;
+      function firstIO() {
+        const promise = new Promise(resolve => {
+          resolveFirst = resolve;
+        });
+        // $FlowFixMe[prop-missing]
+        promise.displayName = 'firstIO';
+        return promise;
+      }
+      function secondIO() {
+        const promise = new Promise(resolve => {
+          resolveSecond = resolve;
+        });
+        // $FlowFixMe[prop-missing]
+        promise.displayName = 'secondIO';
+        return promise;
+      }
+      async function Dynamic() {
+        await firstIO(); // awaited before the static stage ends
+        await secondIO(); // awaited after the static stage ends — should be filtered
+        return ReactServer.createElement('p', null, 'done');
+      }
+
+      // Render to a Flight stream, marking the static-stage boundary in between
+      // the two awaits (the first is initiated before it, the second after).
+      let staticEndTime = -1;
+      const chunks = [];
+
+      await new Promise(resolve => {
+        setTimeout(() => {
+          const stream = ReactServerDOMServer.renderToPipeableStream(
+            {dynamic: ReactServer.createElement(Dynamic)},
+            webpackMap,
+            {filterStackFrame},
+          );
+          const passThrough = new Stream.PassThrough(streamOptions);
+          passThrough.on('data', chunk => {
+            chunks.push(chunk);
+          });
+          passThrough.on('end', resolve);
+          stream.pipe(passThrough);
+        });
+        // The first await is pending now. Mark the boundary before resolving it
+        // so the second await is initiated strictly after the boundary.
+        setTimeout(() => {
+          staticEndTime = performance.now() + performance.timeOrigin;
+        });
+        setTimeout(() => {
+          resolveFirst('a');
+        });
+        setTimeout(() => {
+          resolveSecond('b');
+        });
+      });
+
+      const serverConsumerManifest = {
+        moduleMap: null,
+        moduleLoading: null,
+        serverModuleMap: null,
+      };
+
+      function awaitNames(debugInfo) {
+        return (debugInfo || [])
+          .filter(info => info.awaited)
+          .map(info => info.awaited.name);
+      }
+
+      async function decode(endTime) {
+        const stream = new Stream.Readable({...streamOptions, read() {}});
+        for (let i = 0; i < chunks.length; i++) {
+          stream.push(chunks[i]);
+        }
+        stream.push(null);
+        const rootModel = await ReactServerDOMClient.createFromNodeStream(
+          stream,
+          serverConsumerManifest,
+          {endTime},
+        );
+        const lazyWrapper = rootModel.dynamic;
+        // Snapshot the lazy's debug info before initializing the chunk (i.e.
+        // before the endTime filter runs).
+        const lazyBeforeInit = awaitNames(lazyWrapper._debugInfo);
+        const resolved = lazyWrapper._init(lazyWrapper._payload);
+        return {lazyWrapper, resolved, lazyBeforeInit};
+      }
+
+      // Sanity: without an endTime, both awaits are present on the lazy wrapper.
+      const unfiltered = await decode(undefined);
+      expect(unfiltered.lazyBeforeInit).toEqual(
+        expect.arrayContaining(['firstIO', 'secondIO']),
+      );
+
+      // With an endTime between the two awaits, the late await is filtered out
+      // of the resolved value (this already works today)...
+      const filtered = await decode(staticEndTime);
+      expect(awaitNames(filtered.resolved._debugInfo)).toContain('firstIO');
+      expect(awaitNames(filtered.resolved._debugInfo)).not.toContain('secondIO');
+
+      // ...and it must also be filtered out of the lazy wrapper. Fizz reads the
+      // lazy's _debugInfo to attribute a halted async component's await location,
+      // and createLazyChunkWrapper aliases the chunk's debug-info array, so
+      // filterDebugInfo has to mutate it in place rather than reassigning.
+      expect(awaitNames(filtered.lazyWrapper._debugInfo)).not.toContain(
+        'secondIO',
+      );
+    });
   });
 
   it('warns with a tailored message if eval is not available in dev', async () => {
