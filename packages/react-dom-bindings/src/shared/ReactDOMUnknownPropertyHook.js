@@ -199,6 +199,7 @@ function validateProperty(tagName, name, value, eventRegistry) {
           case 'contentEditable':
           case 'spellCheck':
           case 'draggable':
+          case 'writingsuggestions':
           case 'value':
           case 'autoReverse':
           case 'externalResourcesRequired':

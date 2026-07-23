@@ -162,6 +162,7 @@ const possibleStandardNames = {
   width: 'width',
   wmode: 'wmode',
   wrap: 'wrap',
+  writingsuggestions: 'writingsuggestions',
 
   // SVG
   about: 'about',

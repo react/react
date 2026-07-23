@@ -2723,6 +2723,16 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
+    it('should warn about incorrect casing on the writingsuggestions property (ssr)', () => {
+      ReactDOMServer.renderToString(
+        React.createElement('div', {WritingSuggestions: 'false'}),
+      );
+      assertConsoleErrorDev([
+        'Invalid DOM property `WritingSuggestions`. Did you mean `writingsuggestions`?\n' +
+          '    in div (at **)',
+      ]);
+    });
+
     it('should warn about incorrect casing on event handlers (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('input', {type: 'text', oninput: '1'}),
@@ -3649,6 +3659,32 @@ describe('ReactDOMComponent', () => {
       const el = container.firstChild;
 
       expect(el.getAttribute('spellCheck')).toBe('true');
+    });
+
+    it('stringifies the boolean true for writingsuggestions', async function () {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<div writingsuggestions={true} />);
+      });
+
+      const el = container.firstChild;
+
+      expect(el.getAttribute('writingsuggestions')).toBe('true');
+    });
+
+    it('stringifies the boolean false for writingsuggestions', async function () {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<div writingsuggestions={false} />);
+      });
+
+      const el = container.firstChild;
+
+      expect(el.getAttribute('writingsuggestions')).toBe('false');
     });
   });
 

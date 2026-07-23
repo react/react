@@ -199,6 +199,18 @@ describe('ReactDOMServerIntegration', () => {
       });
     });
 
+    describe('writingsuggestions property', function () {
+      itRenders('writingsuggestions prop with true value', async render => {
+        const e = await render(<div writingsuggestions={true} />);
+        expect(e.getAttribute('writingsuggestions')).toBe('true');
+      });
+
+      itRenders('writingsuggestions prop with false value', async render => {
+        const e = await render(<div writingsuggestions={false} />);
+        expect(e.getAttribute('writingsuggestions')).toBe('false');
+      });
+    });
+
     describe('download property (combined boolean/string attribute)', function () {
       itRenders('download prop with true value', async render => {
         const e = await render(<a download={true} />);
