@@ -88,6 +88,7 @@ let didWarnFormActionTarget = false;
 let didWarnFormActionMethod = false;
 let didWarnForNewBooleanPropsWithEmptyValue: {[string]: boolean};
 let didWarnPopoverTargetObject = false;
+let didWarnCommandForObject = false;
 if (__DEV__) {
   didWarnForNewBooleanPropsWithEmptyValue = {};
 }
@@ -619,6 +620,15 @@ function setProp(
       }
       return;
     }
+    case 'onCommand': {
+      if (value != null) {
+        if (__DEV__ && typeof value !== 'function') {
+          warnForInvalidEventListener(key, value);
+        }
+        listenToNonDelegatedEvent('command', domElement);
+      }
+      return;
+    }
     case 'onScroll': {
       if (value != null) {
         if (__DEV__ && typeof value !== 'function') {
@@ -952,22 +962,43 @@ function setProp(
     case 'innerText':
     case 'textContent':
       return;
-    case 'popoverTarget':
-      if (__DEV__) {
-        if (
-          !didWarnPopoverTargetObject &&
-          value != null &&
-          typeof value === 'object'
-        ) {
-          didWarnPopoverTargetObject = true;
-          console.error(
-            'The `popoverTarget` prop expects the ID of an Element as a string. Received %s instead.',
-            value,
-          );
-        }
-      }
     // Fall through
     default: {
+      switch (key) {
+        case 'commandFor': {
+          if (__DEV__) {
+            if (
+              !didWarnCommandForObject &&
+              value != null &&
+              typeof value === 'object'
+            ) {
+              didWarnCommandForObject = true;
+              console.error(
+                'The `commandFor` prop expects the ID of an Element as a string. Received %s instead.',
+                value,
+              );
+            }
+          }
+          break;
+        }
+        case 'popoverTarget': {
+          if (__DEV__) {
+            if (
+              !didWarnPopoverTargetObject &&
+              value != null &&
+              typeof value === 'object'
+            ) {
+              didWarnPopoverTargetObject = true;
+              console.error(
+                'The `popoverTarget` prop expects the ID of an Element as a string. Received %s instead.',
+                value,
+              );
+            }
+          }
+          break;
+        }
+      }
+
       if (
         key.length > 2 &&
         (key[0] === 'o' || key[0] === 'O') &&
@@ -1041,6 +1072,15 @@ function setPropOnCustomElement(
         return;
       }
       break;
+    }
+    case 'onCommand': {
+      if (value != null) {
+        if (__DEV__ && typeof value !== 'function') {
+          warnForInvalidEventListener(key, value);
+        }
+        listenToNonDelegatedEvent('command', domElement);
+      }
+      return;
     }
     case 'onScroll': {
       if (value != null) {
@@ -3263,6 +3303,10 @@ export function hydrateProperties(
     // listeners still fire for the toggle event.
     listenToNonDelegatedEvent('beforetoggle', domElement);
     listenToNonDelegatedEvent('toggle', domElement);
+  }
+
+  if (props.onCommand != null) {
+    listenToNonDelegatedEvent('command', domElement);
   }
 
   if (props.onScroll != null) {

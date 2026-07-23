@@ -241,12 +241,15 @@ const UNKNOWN_HTML_TAGS = new Set(['keygen', 'time', 'command']);
 async function getRenderedAttributeValue(
   react,
   renderer,
+  clientRenderer,
   serverRenderer,
   attribute,
   type
 ) {
   const originalConsoleError = console.error;
   console.error = warn;
+  const originalConsoleWarn = console.warn;
+  console.warn = warn;
 
   const containerTagName = attribute.containerTagName || 'div';
   const tagName = attribute.tagName || 'div';
@@ -303,7 +306,7 @@ async function getRenderedAttributeValue(
   try {
     let container = createContainer();
     renderer.flushSync(() => {
-      renderer
+      clientRenderer
         .createRoot(container)
         .render(react.createElement(tagName, baseProps));
     });
@@ -313,7 +316,7 @@ async function getRenderedAttributeValue(
     container = createContainer();
 
     renderer.flushSync(() => {
-      renderer
+      clientRenderer
         .createRoot(container)
         .render(react.createElement(tagName, props));
     });
@@ -386,6 +389,7 @@ async function getRenderedAttributeValue(
   }
 
   console.error = originalConsoleError;
+  console.warn = originalConsoleWarn;
 
   if (hasTagMismatch) {
     throw new Error('Tag mismatch. Expected: ' + tagName);
@@ -433,14 +437,17 @@ async function prepareState(initGlobals) {
     const {
       ReactStable,
       ReactDOMStable,
+      ReactDOMClientStable,
       ReactDOMServerStable,
       ReactNext,
       ReactDOMNext,
+      ReactDOMClientNext,
       ReactDOMServerNext,
-    } = initGlobals(attribute, type);
+    } = await initGlobals(attribute, type);
     const reactStableValue = await getRenderedAttributeValue(
       ReactStable,
       ReactDOMStable,
+      ReactDOMClientStable,
       ReactDOMServerStable,
       attribute,
       type
@@ -448,6 +455,7 @@ async function prepareState(initGlobals) {
     const reactNextValue = await getRenderedAttributeValue(
       ReactNext,
       ReactDOMNext,
+      ReactDOMClientNext,
       ReactDOMServerNext,
       attribute,
       type
@@ -799,23 +807,69 @@ class App extends React.Component {
   };
 
   async componentDidMount() {
-    const sources = {
-      ReactStable: 'https://unpkg.com/react@latest/umd/react.development.js',
-      ReactDOMStable:
-        'https://unpkg.com/react-dom@latest/umd/react-dom.development.js',
-      ReactDOMServerStable:
-        'https://unpkg.com/react-dom@latest/umd/react-dom-server.browser.development.js',
-      ReactNext: '/react.development.js',
-      ReactDOMNext: '/react-dom.development.js',
-      ReactDOMServerNext: '/react-dom-server.browser.development.js',
-    };
-    const codePromises = Object.values(sources).map(src =>
-      fetch(src).then(res => res.text())
+    /**
+     * @type (readonly {namespace: string; specifier: string; url: string}[])
+     */
+    const sources = [
+      {
+        namespace: 'SchedulerStable',
+        specifier: 'scheduler',
+        url: 'https://unpkg.com/scheduler@latest/cjs/scheduler.development.js',
+      },
+      {
+        namespace: 'ReactStable',
+        specifier: 'react',
+        url: 'https://unpkg.com/react@latest/cjs/react.development.js',
+      },
+      {
+        namespace: 'ReactDOMStable',
+        specifier: 'react-dom',
+        url: 'https://unpkg.com/react-dom@latest/cjs/react-dom.development.js',
+      },
+      {
+        namespace: 'ReactDOMClientStable',
+        specifier: 'react-dom/client',
+        url: 'https://unpkg.com/react-dom@latest/cjs/react-dom-client.development.js',
+      },
+      {
+        namespace: 'ReactDOMServerStable',
+        specifier: 'react-dom/server',
+        url: 'https://unpkg.com/react-dom@latest/cjs/react-dom-server.browser.development.js',
+      },
+      {
+        namespace: 'SchedulerNext',
+        specifier: 'scheduler',
+        url: '/scheduler.development.js',
+      },
+      {
+        namespace: 'ReactNext',
+        specifier: 'react',
+        url: '/react.development.js',
+      },
+      {
+        namespace: 'ReactDOMNext',
+        specifier: 'react-dom',
+        url: '/react-dom.development.js',
+      },
+      {
+        namespace: 'ReactDOMClientNext',
+        specifier: 'react-dom/client',
+        url: '/react-dom-client.development.js',
+      },
+      {
+        namespace: 'ReactDOMServerNext',
+        specifier: 'react-dom/server',
+        url: '/react-dom-server.browser.development.js',
+      },
+    ];
+
+    const codePromises = sources.map(({url}) =>
+      fetch(url).then(res => res.text())
     );
     const codesByIndex = await Promise.all(codePromises);
 
     const pool = [];
-    function initGlobals(attribute, type) {
+    async function initGlobals(attribute, type) {
       if (useFastMode) {
         // Note: this is not giving correct results for warnings.
         // But it's much faster.
@@ -838,10 +892,27 @@ class App extends React.Component {
       }
 
       let globals = {};
-      Object.keys(sources).forEach((name, i) => {
-        eval.call(window, codesByIndex[i]); // eslint-disable-line
-        globals[name] = window[name.replace(/Stable|Next/g, '')];
-      });
+
+      for (let i = 0; i < sources.length; i++) {
+        const {namespace, specifier} = sources[i];
+        const code = codesByIndex[i].replaceAll(
+          'process.env.NODE_ENV',
+          '"development"'
+        );
+
+        window.requirejs.undef(specifier);
+        // eslint-disable-next-line no-eval
+        eval.call(
+          window,
+          `window.define("${specifier}", function (require, exports, module) {${code}});`
+        );
+
+        await new Promise(resolve => {
+          window.require([specifier], resolve);
+        }).then(module => {
+          globals[namespace] = module;
+        });
+      }
 
       // Cache for future use (for different attributes).
       pool.push({
