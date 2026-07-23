@@ -3136,6 +3136,8 @@ export function hydrateProperties(
   // TODO: Make sure that we check isMounted before firing any of these events.
   switch (tag) {
     case 'dialog':
+      listenToNonDelegatedEvent('beforetoggle', domElement);
+      listenToNonDelegatedEvent('toggle', domElement);
       listenToNonDelegatedEvent('cancel', domElement);
       listenToNonDelegatedEvent('close', domElement);
       break;
