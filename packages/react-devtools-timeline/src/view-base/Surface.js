@@ -54,8 +54,8 @@ const getCanvasContext = memoize(
 type ResetHoveredEventFn = () => void;
 
 /**
- * Represents the canvas surface and a view heirarchy. A surface is also the
- * place where all interactions enter the view heirarchy.
+ * Represents the canvas surface and a view hierarchy. A surface is also the
+ * place where all interactions enter the view hierarchy.
  */
 export class Surface {
   rootView: ?View;

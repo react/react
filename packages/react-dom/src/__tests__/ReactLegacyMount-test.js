@@ -145,7 +145,7 @@ describe('ReactMount', () => {
     const iFrame = document.createElement('iframe');
     document.body.appendChild(iFrame);
 
-    // HostSingletons make the warning for document.body unecessary
+    // HostSingletons make the warning for document.body unnecessary
     ReactDOM.render(<div />, iFrame.contentDocument.body);
   });
 

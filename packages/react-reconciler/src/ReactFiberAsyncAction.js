@@ -143,7 +143,7 @@ export function chainThenableValue<T>(
   result: T,
 ): Thenable<T> {
   // Equivalent to: Promise.resolve(thenable).then(() => result), except we can
-  // cheat a bit since we know that that this thenable is only ever consumed
+  // cheat a bit since we know that this thenable is only ever consumed
   // by React.
   //
   // We don't technically require promise support on the client yet, hence this

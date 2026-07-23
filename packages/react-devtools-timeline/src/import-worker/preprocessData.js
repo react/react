@@ -1050,7 +1050,7 @@ export default async function preprocessData(
   // We'll thus expect there to be a 'Profile' event; if there is not one, we
   // can deduce that there are no flame chart events. As we expect React
   // scheduling profiling user timing marks to be recorded together with browser
-  // flame chart events, we can futher deduce that the data is invalid and we
+  // flame chart events, we can further deduce that the data is invalid and we
   // don't bother finding React events.
   const indexOfProfileEvent = timeline.findIndex(
     event => event.name === 'Profile',

@@ -90,7 +90,7 @@ export type SuspenseNode = {
   suspendedBy: Map<ReactIOInfo, Set<DevToolsInstance>>, // Tracks which data we're suspended by and the children that suspend it.
   environments: Map<string, number>, // Tracks the Flight environment names that suspended this. I.e. if the server blocked this.
   endTime: number, // Track a short cut to the maximum end time value within the suspendedBy set.
-  // Track whether any of the items in suspendedBy are unique this this Suspense boundaries or if they're all
+  // Track whether any of the items in suspendedBy are unique to this Suspense boundary or if they're all
   // also in the parent sets. This determine whether this could contribute in the loading sequence.
   hasUniqueSuspenders: boolean,
   // Track whether anything suspended in this boundary that we can't track either because it was using throw

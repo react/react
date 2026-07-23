@@ -4806,7 +4806,7 @@ export function acquireSingletonInstance(
       // aligned with the actual fix you need to make so we omit the warning in this case
       !isContainerMarkedAsRoot(instance) &&
       // If this instance isn't the root but is currently owned by a different HostSingleton instance then
-      // we we need to warn that you are rendering more than one singleton at a time.
+      // we need to warn that you are rendering more than one singleton at a time.
       getInstanceFromNodeDOMTree(instance)
     ) {
       const tagName = instance.tagName.toLowerCase();

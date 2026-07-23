@@ -733,7 +733,7 @@ const ResponderEventPlugin = {
     // finger that move/start/end, dispatched directly to whoever is the
     // current responder at that moment, until the responder is "released".
     //
-    // These multiple individual change touch events are are always bookended
+    // These multiple individual change touch events are always bookended
     // by `onResponderGrant`, and one of
     // (`onResponderRelease/onResponderTerminate`).
     const isResponderTouchStart = responderInst && isStartish(topLevelType);

@@ -2177,7 +2177,7 @@ describe('ReactUse', () => {
 
   it(
     'regression: does not get stuck in pending state after `use` suspends ' +
-      '(when `use` in in the middle of hook list)',
+      '(when `use` is in the middle of hook list)',
     async () => {
       // Same as previous test but `use` comes in between two hooks.
       let update;

@@ -1080,7 +1080,7 @@ export default class Agent extends EventEmitter<{
 
       // Due to the component filters changing, we might be able
       // to select a closer match for the currently selected host element.
-      // The store will already select a suitable parent if the the current
+      // The store will already select a suitable parent if the current
       // selection is now filtered out in which cases this will be a no-op.
       const target = window.__REACT_DEVTOOLS_GLOBAL_HOOK__.$0;
       if (target != null) {

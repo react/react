@@ -154,7 +154,7 @@ describe('ReactDOMFloat', () => {
         bufferedContent.startsWith('<html ')
       ) {
         throw new Error(
-          'Recieved <html> without a <!DOCTYPE html> which is almost certainly a bug in React',
+          'Received <html> without a <!DOCTYPE html> which is almost certainly a bug in React',
         );
       }
 
@@ -8280,14 +8280,14 @@ body {
       assertConsoleErrorDev(
         [
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
-            'expected the `href` prop to be a non-empty string but ecountered `undefined` instead. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'expected the `href` prop to be a non-empty string but encountered `undefined` instead. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop ensure there is a non-empty string `href` prop as well, ' +
             'otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
-            'expected the `href` prop to be a non-empty string but ecountered an empty string instead. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'expected the `href` prop to be a non-empty string but encountered an empty string instead. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop ensure there is a non-empty string `href` prop as well, ' +
             'otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
@@ -8297,28 +8297,28 @@ body {
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
             '`onLoad` and `onError` props. The presence of loading and error handlers indicates ' +
-            'an intent to manage the stylesheet loading state from your from your Component code ' +
+            'an intent to manage the stylesheet loading state from your Component code ' +
             'and React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop remove the `onLoad` and `onError` props, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
             '`onLoad` prop. The presence of loading and error handlers indicates an intent to ' +
-            'manage the stylesheet loading state from your from your Component code and ' +
+            'manage the stylesheet loading state from your Component code and ' +
             'React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop remove the `onLoad` prop, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and `onError` prop. ' +
             'The presence of loading and error handlers indicates an intent to manage the stylesheet loading state ' +
-            'from your from your Component code and React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` ' +
+            'from your Component code and React will not hoist or deduplicate this stylesheet. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` ' +
             'prop remove the `onError` prop, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and a `disabled` prop. ' +
             'The presence of the `disabled` prop indicates an intent to manage the stylesheet active state from ' +
-            'your from your Component code and React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` ' +
+            'your Component code and React will not hoist or deduplicate this stylesheet. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` ' +
             'prop remove the `disabled` prop, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
         ].filter(Boolean),
@@ -8343,8 +8343,8 @@ body {
         'React encountered a <link rel="stylesheet" href="foo" ... /> with a `precedence` ' +
           'prop that also included the `onLoad` and `onError` props. ' +
           'The presence of loading and error handlers indicates an intent to manage the stylesheet ' +
-          'loading state from your from your Component code and React will not hoist or deduplicate this stylesheet. ' +
-          'If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` ' +
+          'loading state from your Component code and React will not hoist or deduplicate this stylesheet. ' +
+          'If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` ' +
           'prop remove the `onLoad` and `onError` props, otherwise remove the `precedence` prop.\n' +
           '    in body (at **)',
       ]);
@@ -8935,9 +8935,9 @@ background-color: green;
       });
       assertConsoleErrorDev([
         'React expected the `href` prop for a <style> tag opting into hoisting semantics ' +
-          'using the `precedence` prop to not have any spaces but ecountered spaces instead. ' +
-          'using spaces in this prop will cause hydration of this style to fail on the client. ' +
-          'The href for the <style> where this ocurred is "foo bar".\n' +
+          'using the `precedence` prop to not have any spaces but encountered spaces instead. ' +
+          'Using spaces in this prop will cause hydration of this style to fail on the client. ' +
+          'The href for the <style> where this occurred is "foo bar".\n' +
           '    in style (at **)',
       ]);
     });
