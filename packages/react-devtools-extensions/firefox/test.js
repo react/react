@@ -2,7 +2,7 @@
 
 'use strict';
 
-const {exec} = require('child-process-promise');
+const {spawn} = require('child_process');
 const {Finder} = require('firefox-profile');
 const {resolve} = require('path');
 const {argv} = require('yargs');
@@ -11,6 +11,23 @@ const EXTENSION_PATH = resolve('./firefox/build/unpacked');
 const START_URL = argv.url || 'https://react.dev/';
 
 const firefoxVersion = process.env.WEB_EXT_FIREFOX;
+
+function runWebExt(options) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('web-ext', ['run', ...options], {
+      stdio: 'inherit',
+    });
+
+    child.on('error', rejectPromise);
+    child.on('close', code => {
+      if (code === 0) {
+        resolvePromise();
+      } else {
+        rejectPromise(new Error(`web-ext run exited with code ${code}`));
+      }
+    });
+  });
+}
 
 const getFirefoxProfileName = () => {
   // Keys are pulled from https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#--firefox
@@ -52,16 +69,15 @@ const main = async () => {
 
   try {
     const path = await findPathPromise;
-    const trimmedPath = path.replace(' ', '\\ ');
-    options.push(`--firefox-profile=${trimmedPath}`);
+    options.push(`--firefox-profile=${path}`);
   } catch (err) {
     console.warn('Could not find default profile, using temporary profile.');
   }
 
   try {
-    await exec(`web-ext run ${options.join(' ')}`);
+    await runWebExt(options);
   } catch (err) {
-    console.error('`web-ext run` failed', err.stdout, err.stderr);
+    console.error('`web-ext run` failed', err);
   }
 };
 
