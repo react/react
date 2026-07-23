@@ -133,6 +133,11 @@ describe('ReactDOMServerIntegration', () => {
         expect(e.getAttribute('hidden')).toBe('');
       });
 
+      itRenders('hidden until-found value', async render => {
+        const e = await render(<div hidden="until-found" />);
+        expect(e.getAttribute('hidden')).toBe('until-found');
+      });
+
       // this does not seem like correct behavior, since hidden="" in HTML indicates
       // that the boolean property is present. however, it is how the current code
       // behaves, so the test is included here.

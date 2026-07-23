@@ -1745,6 +1745,20 @@ function pushAttribute(
       }
       return;
     }
+    case 'hidden': {
+      if (value === 'until-found') {
+        target.push(
+          attributeSeparator,
+          stringToChunk(name),
+          attributeAssign,
+          stringToChunk('until-found'),
+          attributeEnd,
+        );
+        return;
+      }
+      pushBooleanAttribute(target, name, value);
+      return;
+    }
     case 'inert': {
       if (__DEV__) {
         if (value === '' && !didWarnForNewBooleanPropsWithEmptyValue[name]) {
@@ -1771,7 +1785,6 @@ function pushAttribute(
     case 'disablePictureInPicture':
     case 'disableRemotePlayback':
     case 'formNoValidate':
-    case 'hidden':
     case 'loop':
     case 'noModule':
     case 'noValidate':
@@ -5925,7 +5938,7 @@ function writeStyleResourceAttributeInJS(
       if (value === false) {
         return;
       }
-      attributeValue = '';
+      attributeValue = value === 'until-found' ? 'until-found' : '';
       break;
     }
     // Santized URLs
@@ -6120,7 +6133,7 @@ function writeStyleResourceAttributeInAttr(
       if (value === false) {
         return;
       }
-      attributeValue = '';
+      attributeValue = value === 'until-found' ? 'until-found' : '';
       break;
     }
 
