@@ -77,8 +77,9 @@ function useFoo() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = () => {
-      count.current = count.current + 1;
-      const id = count.current;
+      const t0 = count.current;
+      count.current = t0 + 1;
+      const id = t0;
       return id;
     };
     $[0] = t0;

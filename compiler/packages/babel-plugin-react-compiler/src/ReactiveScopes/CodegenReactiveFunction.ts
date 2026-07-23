@@ -9,6 +9,7 @@ import * as t from '@babel/types';
 import {createHmac} from 'crypto';
 import {
   pruneHoistedContexts,
+  promoteUsedTemporaries,
   pruneUnusedLValues,
   pruneUnusedLabels,
   renameVariables,
@@ -311,6 +312,7 @@ export function codegenFunction(
     const reactiveFunction = buildReactiveFunction(outlinedFunction);
     pruneUnusedLabels(reactiveFunction);
     pruneUnusedLValues(reactiveFunction);
+    promoteUsedTemporaries(reactiveFunction);
     pruneHoistedContexts(reactiveFunction);
 
     const identifiers = renameVariables(reactiveFunction);
@@ -1665,11 +1667,16 @@ function codegenInstructionValue(
               const reactiveFunction = buildReactiveFunction(loweredFunc.func);
               pruneUnusedLabels(reactiveFunction);
               pruneUnusedLValues(reactiveFunction);
+              promoteUsedTemporaries(reactiveFunction);
+              const identifiers = new Set([
+                ...cx.uniqueIdentifiers,
+                ...renameVariables(reactiveFunction),
+              ]);
               const fn = codegenReactiveFunction(
                 new Context(
                   cx.env,
                   reactiveFunction.id ?? '[[ anonymous ]]',
-                  cx.uniqueIdentifiers,
+                  identifiers,
                   cx.fbtOperands,
                   cx.temp,
                 ),
@@ -1863,12 +1870,17 @@ function codegenInstructionValue(
       const reactiveFunction = buildReactiveFunction(loweredFunc);
       pruneUnusedLabels(reactiveFunction);
       pruneUnusedLValues(reactiveFunction);
+      promoteUsedTemporaries(reactiveFunction);
       pruneHoistedContexts(reactiveFunction);
+      const identifiers = new Set([
+        ...cx.uniqueIdentifiers,
+        ...renameVariables(reactiveFunction),
+      ]);
       const fn = codegenReactiveFunction(
         new Context(
           cx.env,
           reactiveFunction.id ?? '[[ anonymous ]]',
-          cx.uniqueIdentifiers,
+          identifiers,
           cx.fbtOperands,
           cx.temp,
         ),
