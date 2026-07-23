@@ -330,7 +330,11 @@ describe('react-devtools-cdt-mcp', () => {
       type: 'object',
       properties: {
         traceName: {type: 'string', description: expect.any(String)},
-        commitIndex: {type: 'number', description: expect.any(String)},
+        commitIndex: {
+          type: 'integer',
+          minimum: 0,
+          description: expect.any(String),
+        },
       },
       required: ['traceName', 'commitIndex'],
     });

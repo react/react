@@ -2107,14 +2107,18 @@ describe('react-devtools-facade', () => {
       });
     });
 
-    it('getCommitReport returns an error for an out-of-range commit index', () => {
+    it('getCommitReport returns an error for an invalid commit index', () => {
+      const root = ReactDOMClient.createRoot(container);
       startProfiling('range-trace');
-      stopProfiling();
-      expect(getCommitReport('range-trace', 5)).toEqual({
-        error: 'Commit index out of range',
+      act(() => {
+        root.render(<div />);
       });
-      expect(getCommitReport('range-trace', -1)).toEqual({
-        error: 'Commit index out of range',
+      stopProfiling();
+
+      [5, -1, 0.5, NaN].forEach(commitIndex => {
+        expect(getCommitReport('range-trace', commitIndex)).toEqual({
+          error: 'Commit index out of range',
+        });
       });
     });
 
