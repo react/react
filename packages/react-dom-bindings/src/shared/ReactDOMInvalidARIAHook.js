@@ -29,7 +29,8 @@ function validateProperty(tagName, name) {
       // DOM properties, then it is an invalid aria-* attribute.
       if (correctName == null) {
         console.error(
-          'Invalid ARIA attribute `%s`. ARIA attributes follow the pattern aria-* and must be lowercase.',
+          'Invalid ARIA attribute `%s`. ARIA attributes follow the pattern aria-* and must be lowercase. ' +
+            'For a list of valid ARIA attributes, see https://react.dev/link/invalid-aria-props',
           name,
         );
         warnedProperties[name] = true;
