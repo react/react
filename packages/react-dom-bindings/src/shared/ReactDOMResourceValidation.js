@@ -28,7 +28,7 @@ export function validateLinkPropsForStyleResource(props: any): boolean {
         'React encountered a <link rel="stylesheet" href="%s" ... /> with a `precedence` prop that' +
           ' also included %s. The presence of loading and error handlers indicates an intent to manage' +
           ' the stylesheet loading state from your from your Component code and React will not hoist or' +
-          ' deduplicate this stylesheet. If your intent was to have React hoist and deduplciate this stylesheet' +
+          ' deduplicate this stylesheet. If your intent was to have React hoist and deduplicate this stylesheet' +
           ' using the `precedence` prop remove the %s, otherwise remove the `precedence` prop.',
         href,
         withArticlePhrase,
