@@ -244,6 +244,59 @@ describe('ReactDOMFizzStatic', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Hello</div>);
   });
 
+  // Regression test for https://github.com/facebook/react/issues/36169
+  // A non-async <script> (including one with `defer`) rendered inside the <head>
+  // of a fully prerendered document should hydrate without a mismatch. The issue
+  // was reported using happy-dom, whose parser injects an extra text node into
+  // the <script> element; React's own (JSDOM-based) test environment does not
+  // exhibit that, and hydrates cleanly. This test guards that behavior.
+  it('hydrates a <script defer> inside the <head> without a mismatch', async () => {
+    function App() {
+      return (
+        <html>
+          <head>
+            <script src="app.js" defer={true} />
+          </head>
+          <body />
+        </html>
+      );
+    }
+
+    const result = await ReactDOMFizzStatic.prerenderToNodeStream(<App />);
+
+    let html = '';
+    const collector = new Stream.Writable({
+      write(chunk, encoding, callback) {
+        html += chunk;
+        callback();
+      },
+    });
+    await new Promise((resolve, reject) => {
+      result.prelude.pipe(collector);
+      collector.on('finish', resolve);
+      collector.on('error', reject);
+    });
+
+    // Load the prerendered document, mirroring the client setup from the issue.
+    document.open();
+    document.write(html);
+    document.close();
+
+    const recoverableErrors = [];
+    await act(async () => {
+      ReactDOMClient.hydrateRoot(document, <App />, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error.message);
+        },
+      });
+    });
+
+    expect(recoverableErrors).toEqual([]);
+    const script = document.querySelector('script');
+    expect(script.getAttribute('src')).toBe('app.js');
+    expect(script.hasAttribute('defer')).toBe(true);
+  });
+
   it('should support importMap option', async () => {
     const importMap = {
       foo: 'path/to/foo.js',
