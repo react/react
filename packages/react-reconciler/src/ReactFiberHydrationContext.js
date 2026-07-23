@@ -93,6 +93,17 @@ let hydrationErrors: Array<CapturedValue<mixed>> | null = null;
 
 let rootOrSingletonContext = false;
 
+// Stack to save hydration state when traversing into a portal. Portals render
+// into a separate container that was not server-rendered, so hydration must be
+// suspended for the portal's subtree and resumed afterward.
+type PortalHydrationState = {
+  hydrationParentFiber: null | Fiber,
+  nextHydratableInstance: null | HydratableInstance,
+  isHydrating: boolean,
+  rootOrSingletonContext: boolean,
+};
+const hydrationPortalStateStack: Array<PortalHydrationState> = [];
+
 // Builds a common ancestor tree from the root down for collecting diffs.
 function buildHydrationDiffNode(
   fiber: Fiber,
@@ -854,6 +865,38 @@ function warnIfUnhydratedTailNodes(fiber: Fiber) {
   }
 }
 
+export function prepareToHydrateHostPortal(fiber: Fiber): void {
+  if (!supportsHydration) {
+    return;
+  }
+  // Save the current hydration state so we can restore it after the portal.
+  hydrationPortalStateStack.push({
+    hydrationParentFiber,
+    nextHydratableInstance,
+    isHydrating,
+    rootOrSingletonContext,
+  });
+  // Portals render into a separate container that is never server-rendered.
+  // Disable hydration for the portal's children so they are inserted fresh.
+  hydrationParentFiber = null;
+  nextHydratableInstance = null;
+  isHydrating = false;
+  rootOrSingletonContext = false;
+}
+
+export function popHydrationStateAfterPortal(fiber: Fiber): void {
+  if (!supportsHydration) {
+    return;
+  }
+  const savedState = hydrationPortalStateStack.pop();
+  if (savedState !== undefined) {
+    hydrationParentFiber = savedState.hydrationParentFiber;
+    nextHydratableInstance = savedState.nextHydratableInstance;
+    isHydrating = savedState.isHydrating;
+    rootOrSingletonContext = savedState.rootOrSingletonContext;
+  }
+}
+
 function resetHydrationState(): void {
   // $FlowFixMe[constant-condition]
   if (!supportsHydration) {
@@ -864,6 +907,7 @@ function resetHydrationState(): void {
   nextHydratableInstance = null;
   isHydrating = false;
   didSuspendOrErrorDEV = false;
+  hydrationPortalStateStack.length = 0;
 }
 
 // Restore the hydration cursor when unwinding a HostComponent that already

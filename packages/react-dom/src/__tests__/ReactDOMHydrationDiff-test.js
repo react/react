@@ -10,6 +10,7 @@
 'use strict';
 
 let React;
+let ReactDOM;
 let ReactDOMClient;
 let ReactDOMServer;
 let act;
@@ -28,6 +29,7 @@ describe('ReactDOMServerHydration', () => {
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
+    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     act = React.act;
@@ -1711,6 +1713,48 @@ describe('ReactDOMServerHydration', () => {
             in Mismatch (at **)",
         ]
       `);
+    });
+  });
+
+  describe('portal', () => {
+    // @gate __DEV__
+    it('does not produce a false mismatch warning when a component renders null on server but a portal on client', () => {
+      const portalContainer = document.createElement('div');
+      document.body.appendChild(portalContainer);
+      try {
+        function HoverMenu({isClient}) {
+          if (!isClient) return null;
+          return ReactDOM.createPortal(<div>Hello World</div>, portalContainer);
+        }
+        function Mismatch({isClient}) {
+          return (
+            <span>
+              Some Text
+              <HoverMenu isClient={isClient} />
+            </span>
+          );
+        }
+        expect(testMismatch(Mismatch)).toEqual([]);
+      } finally {
+        document.body.removeChild(portalContainer);
+      }
+    });
+
+    // @gate __DEV__
+    it('does not produce a false mismatch warning when the portal target is the hydration root', () => {
+      function HoverMenu({isClient}) {
+        if (!isClient) return null;
+        return ReactDOM.createPortal(<div>Hello World</div>, container);
+      }
+      function Mismatch({isClient}) {
+        return (
+          <span>
+            Some Text
+            <HoverMenu isClient={isClient} />
+          </span>
+        );
+      }
+      expect(testMismatch(Mismatch)).toEqual([]);
     });
   });
 });
