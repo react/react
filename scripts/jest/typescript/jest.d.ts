@@ -2,28 +2,37 @@ declare const __DEV__: boolean;
 declare const __TEST__: boolean;
 declare const __EXTENSION__: boolean;
 
-declare function afterEach(fn: any): any;
-declare function beforeEach(fn: any): any;
-declare function describe(name: string, fn: any): void;
+declare function afterEach(fn: () => void | Promise<void>): void;
+declare function beforeEach(fn: () => void | Promise<void>): void;
+declare function describe(name: string, fn: () => void): void;
 declare const it: {
-  (name: string, fn: any): void;
-  only: (name: string, fn: any) => void;
+  (name: string, fn: () => void | Promise<void>): void;
+  only: (name: string, fn: () => void | Promise<void>) => void;
 };
-declare function expect(val: any): Expect;
+declare function expect<T = any>(val: T): Expect<T>;
 declare const jest: Jest;
-declare function pit(name: string, fn: any): void;
-declare function spyOnDev(obj: any, key: string): any;
-declare function spyOnDevAndProd(obj: any, key: string): any;
-declare function spyOnProd(obj: any, key: string): any;
-declare function xdescribe(name: string, fn: any): void;
-declare function xit(name: string, fn: any): void;
+declare function pit(name: string, fn: () => Promise<void>): void;
+declare function spyOnDev<T extends object, M extends keyof T>(
+  obj: T,
+  key: M
+): MockFunction<T[M]>;
+declare function spyOnDevAndProd<T extends object, M extends keyof T>(
+  obj: T,
+  key: M
+): MockFunction<T[M]>;
+declare function spyOnProd<T extends object, M extends keyof T>(
+  obj: T,
+  key: M
+): MockFunction<T[M]>;
+declare function xdescribe(name: string, fn: () => void): void;
+declare function xit(name: string, fn: () => void | Promise<void>): void;
 
-interface Expect {
-  not: Expect;
+interface Expect<T = any> {
+  not: Expect<T>;
   toThrow(message?: string): void;
   toThrowError(message?: string): void;
-  toBe(value: any): void;
-  toEqual(value: any): void;
+  toBe(value: T): void;
+  toEqual(value: T): void;
   toBeFalsy(): void;
   toBeTruthy(): void;
   toBeNull(): void;
@@ -35,8 +44,8 @@ interface Expect {
   toBeGreaterThan(number: number): void;
   toBeLessThan(number: number): void;
   toBeCalled(): void;
-  toBeCalledWith(...arguments): void;
-  lastCalledWith(...arguments): void;
+  toBeCalledWith(...args: any[]): void;
+  lastCalledWith(...args: any[]): void;
 }
 
 interface Jest {
@@ -44,28 +53,28 @@ interface Jest {
   autoMockOn(): void;
   clearAllTimers(): void;
   dontMock(moduleName: string): void;
-  genMockFromModule(moduleObj: Object): Object;
-  genMockFunction(): MockFunction;
-  genMockFn(): MockFunction;
+  genMockFromModule(moduleObj: object): object;
+  genMockFunction<T = any>(): MockFunction<T>;
+  genMockFn<T = any>(): MockFunction<T>;
   mock(moduleName: string): void;
   runAllTicks(): void;
   runAllTimers(): void;
   runOnlyPendingTimers(): void;
-  setMock(moduleName: string, moduleExports: Object): void;
+  setMock(moduleName: string, moduleExports: object): void;
 }
 
-interface MockFunction {
-  (...arguments): any;
+interface MockFunction<T = any> {
+  (...args: any[]): any;
   mock: {
     calls: Array<Array<any>>;
-    instances: Array<Object>;
+    instances: Array<object>;
   };
-  mockClear(): void;
-  mockImplementation(fn: Function): MockFunction;
-  mockImpl(fn: Function): MockFunction;
-  mockReturnThis(): MockFunction;
-  mockReturnValue(value: any): MockFunction;
-  mockReturnValueOnce(value: any): MockFunction;
+  mockClear(): MockFunction<T>;
+  mockImplementation(fn: (...args: any[]) => any): MockFunction<T>;
+  mockImpl(fn: (...args: any[]) => any): MockFunction<T>;
+  mockReturnThis(): MockFunction<T>;
+  mockReturnValue(value: any): MockFunction<T>;
+  mockReturnValueOnce(value: any): MockFunction<T>;
 }
 
 declare const check: any;

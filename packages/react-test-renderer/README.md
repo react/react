@@ -20,7 +20,7 @@ This package provides an experimental React renderer that can be used to render 
 
 Essentially, this package makes it easy to grab a snapshot of the "DOM tree" rendered by a React DOM or React Native component without using a browser or jsdom.
 
-Documentation: [https://reactjs.org/docs/test-renderer.html](https://reactjs.org/docs/test-renderer.html)
+Documentation: [https://react.dev/reference/react-dom/test-utils](https://react.dev/reference/react-dom/test-utils)
 
 Usage:
 

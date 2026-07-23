@@ -6,7 +6,7 @@ If you're looking for the standalone React DevTools UI, **we suggest using [`rea
 
 ---
 
-> **Note** that this package (and the DevTools UI) relies on several _experimental_ APIs that are **only available in the [experimental release channel](https://reactjs.org/docs/release-channels.html#experimental-channel)**. This means that you will need to install `react@experimental` and `react-dom@experimental`.
+> **Note** that this package (and the DevTools UI) relies on several _experimental_ APIs that are **only available in the [experimental release channel](https://react.dev/community/versioning-policy#experimental-channel)**. This means that you will need to install `react@experimental` and `react-dom@experimental`.
 
 ---
 
