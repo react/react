@@ -5580,8 +5580,6 @@ function forwardDebugInfo(
     const info = debugInfo[i];
     if (typeof info.time === 'number') {
       // When forwarding time we need to ensure to convert it to the time space of the payload.
-      // We clamp the time to the starting render of the current component. It's as if it took
-      // no time to render and await if we reuse cached content.
       markOperationEndTime(request, task, info.time);
     } else {
       if (typeof info.name === 'string') {
@@ -5817,11 +5815,11 @@ function markOperationEndTime(request: Request, task: Task, timestamp: number) {
     // If we're aborting then we don't emit any end times that happened after.
     return;
   }
+  emitTimingChunk(request, task.id, timestamp);
+  // We may be forwarding a debug info entry that happened in the past.
+  // Only advance the task's time if this isn't the case.
   if (timestamp > task.time) {
-    emitTimingChunk(request, task.id, timestamp);
     task.time = timestamp;
-  } else {
-    emitTimingChunk(request, task.id, task.time);
   }
 }
 
