@@ -8,6 +8,7 @@
  */
 
 import * as React from 'react';
+import { analyzeError } from 'shared/ReactErrorAnalyzer';
 import {Component, Suspense} from 'react';
 import Store from 'react-devtools-shared/src/devtools/store';
 import UnsupportedBridgeOperationView from './UnsupportedBridgeOperationView';
@@ -183,22 +184,31 @@ export default class ErrorBoundary extends Component<Props, State> {
           />
         );
       } else {
+        const suggestion = errorMessage ? analyzeError(errorMessage) : null;
         return (
-          <ErrorView
-            callStack={callStack}
-            componentStack={componentStack}
-            dismissError={
-              canDismissProp || canDismissState ? this._dismissError : null
-            }
-            errorMessage={errorMessage}>
-            <Suspense fallback={<SearchingGitHubIssues />}>
-              <SuspendingErrorView
-                callStack={callStack}
-                componentStack={componentStack}
-                errorMessage={errorMessage}
-              />
-            </Suspense>
-          </ErrorView>
+          <>
+            {suggestion && (
+              <div style={{ padding: '10px', backgroundColor: '#e6f7ff', borderLeft: '4px solid #1890ff', marginBottom: '10px', color: '#000' }}>
+                <strong>💡 Suggested Fix:</strong> {suggestion}
+              </div>
+            )}
+            <ErrorView
+              callStack={callStack}
+              componentStack={componentStack}
+              dismissError={
+                canDismissProp || canDismissState ? this._dismissError : null
+              }
+              errorMessage={errorMessage}
+            >
+              <Suspense fallback={<SearchingGitHubIssues />}>
+                <SuspendingErrorView
+                  callStack={callStack}
+                  componentStack={componentStack}
+                  errorMessage={errorMessage}
+                />
+              </Suspense>
+            </ErrorView>
+          </>
         );
       }
     }
