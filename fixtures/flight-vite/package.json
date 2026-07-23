@@ -1,0 +1,30 @@
+{
+  "name": "flight-vite",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build-dep": "cd ../.. && node ./scripts/rollup/build.js react-server-dom-vite/ --type=NODE_DEV,NODE_PROD",
+    "dev": "vite",
+    "build": "vite build --app",
+    "preview": "vite preview",
+    "test-e2e": "playwright test",
+    "test-e2e-preview": "E2E_PREVIEW=1 playwright test"
+  },
+  "dependencies": {
+    "@mjackson/node-fetch-server": "^0.6.1",
+    "react": "experimental",
+    "react-dom": "experimental",
+    "react-server-dom-vite": "file:../../build/node_modules/react-server-dom-vite",
+    "rsc-html-stream": "^0.0.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/estree": "^1.0.7",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "^4.5.0",
+    "magic-string": "^0.30.17",
+    "vite": "^6.3.5",
+    "vite-plugin-inspect": "^11.0.1"
+  }
+}

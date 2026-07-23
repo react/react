@@ -330,6 +330,7 @@ module.exports = {
         'packages/react-server-dom-webpack/**/*.js',
         'packages/react-server-dom-turbopack/**/*.js',
         'packages/react-server-dom-parcel/**/*.js',
+        'packages/react-server-dom-vite/**/*.js',
         'packages/react-server-dom-fb/**/*.js',
         'packages/react-flight-server-fb/**/*.js',
         'packages/react-server-dom-unbundled/**/*.js',
@@ -487,6 +488,9 @@ module.exports = {
       globals: {
         parcelRequire: 'readonly',
       },
+    },
+    {
+      files: ['packages/react-server-dom-vite/**/*.js'],
     },
     {
       files: ['packages/scheduler/**/*.js'],
