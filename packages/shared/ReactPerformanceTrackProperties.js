@@ -7,11 +7,11 @@
  * @flow
  */
 
-import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
+import { OMITTED_PROP_ERROR } from 'shared/ReactFlightPropertyAccess';
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 import isArray from 'shared/isArray';
-import {REACT_ELEMENT_TYPE} from './ReactSymbols';
+import { REACT_ELEMENT_TYPE } from './ReactSymbols';
 import getComponentNameFromType from './getComponentNameFromType';
 
 const EMPTY_ARRAY = 0;
@@ -70,7 +70,25 @@ export function addObjectToProperties(
     return;
   }
   let addedProperties = 0;
-  for (const key in object) {
+
+  // Collect keys safely — cross-origin objects (e.g. iframe.contentWindow)
+  // throw SecurityError on any property enumeration.
+  let keys: Array<string>;
+  try {
+    keys = [];
+    for (const key in object) {
+      keys.push(key);
+    }
+  } catch (e) {
+    // Cross-origin object: show a placeholder and bail out early.
+    properties.push([
+      prefix + '\xa0\xa0'.repeat(indent) + '[cross-origin object]',
+      '',
+    ]);
+    return;
+  }
+
+  for (const key of keys) {
     if (hasOwnProperty.call(object, key) && key[0] !== '_') {
       addedProperties++;
       const value = object[key];
@@ -78,10 +96,10 @@ export function addObjectToProperties(
       if (addedProperties >= OBJECT_WIDTH_LIMIT) {
         properties.push([
           prefix +
-            '\xa0\xa0'.repeat(indent) +
-            'Only ' +
-            OBJECT_WIDTH_LIMIT +
-            ' properties are shown. React will not log more properties of this object.',
+          '\xa0\xa0'.repeat(indent) +
+          'Only ' +
+          OBJECT_WIDTH_LIMIT +
+          ' properties are shown. React will not log more properties of this object.',
           '',
         ]);
         break;
@@ -265,9 +283,14 @@ export function addValueToProperties(
           return;
         }
         if (objectName === 'Object') {
-          const proto: any = Object.getPrototypeOf(value);
-          if (proto && typeof proto.constructor === 'function') {
-            objectName = proto.constructor.name;
+          // Object.getPrototypeOf can throw SecurityError on cross-origin objects.
+          try {
+            const proto: any = Object.getPrototypeOf(value);
+            if (proto && typeof proto.constructor === 'function') {
+              objectName = proto.constructor.name;
+            }
+          } catch (e) {
+            // Cross-origin object — leave objectName as 'Object'.
           }
         }
         properties.push([
@@ -334,8 +357,8 @@ export function addObjectDiffToProperties(
     if (prevPropertiesChecked > OBJECT_WIDTH_LIMIT) {
       properties.push([
         'Previous object has more than ' +
-          OBJECT_WIDTH_LIMIT +
-          ' properties. React will not attempt to diff objects with too many properties.',
+        OBJECT_WIDTH_LIMIT +
+        ' properties. React will not attempt to diff objects with too many properties.',
         '',
       ]);
       isDeeplyEqual = false;
@@ -354,8 +377,8 @@ export function addObjectDiffToProperties(
     if (nextPropertiesChecked > OBJECT_WIDTH_LIMIT) {
       properties.push([
         'Next object has more than ' +
-          OBJECT_WIDTH_LIMIT +
-          ' properties. React will not attempt to diff objects with too many properties.',
+        OBJECT_WIDTH_LIMIT +
+        ' properties. React will not attempt to diff objects with too many properties.',
         '',
       ]);
       isDeeplyEqual = false;
@@ -384,7 +407,7 @@ export function addObjectDiffToProperties(
           prevValue !== null &&
           nextValue !== null &&
           readReactElementTypeof(prevValue) ===
-            readReactElementTypeof(nextValue)
+          readReactElementTypeof(nextValue)
         ) {
           if (readReactElementTypeof(nextValue) === REACT_ELEMENT_TYPE) {
             if (
@@ -455,7 +478,7 @@ export function addObjectDiffToProperties(
             properties.push([
               UNCHANGED + '\xa0\xa0'.repeat(indent) + key,
               desc +
-                ' Referentially unequal function closure. Consider memoization.',
+              ' Referentially unequal function closure. Consider memoization.',
             ]);
             continue;
           }
