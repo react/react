@@ -1,6 +1,6 @@
 {
   "root": true,
-  "extends": ["plugin:react-hooks/recommended"],
+  "extends": ["plugin:react-hooks/recommended-legacy"],
   "parserOptions": {
     "ecmaVersion": 2020,
     "sourceType": "module",

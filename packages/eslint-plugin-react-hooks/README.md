@@ -24,7 +24,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import { defineConfig } from 'eslint/config';
 
 export default defineConfig([
-  reactHooks.configs.flat.recommended,
+  reactHooks.configs.recommended,
 ]);
 ```
 
@@ -36,17 +36,17 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import { defineConfig } from 'eslint/config';
 
 export default defineConfig([
-  reactHooks.configs.flat['recommended-latest'],
+  reactHooks.configs['recommended-latest'],
 ]);
 ```
 
 ### Legacy Config (.eslintrc)
 
-If you are still using ESLint below 9.0.0, the `recommended` preset can also be used to enable all recommended rules.
+If you are still using ESLint below 9.0.0, the `recommended-legacy` preset can also be used to enable all recommended rules.
 
 ```js
 {
-  "extends": ["plugin:react-hooks/recommended"],
+  "extends": ["plugin:react-hooks/recommended-legacy"],
   // ...
 }
 
