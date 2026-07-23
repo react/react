@@ -8012,6 +8012,21 @@ const testsTypescript = {
     {
       code: normalizeIndent`
         function MyComponent() {
+          const [foo, setFoo] = React.useState<{bar: number}>({bar: 42});
+
+          useEffect(() => {
+            const square = (x: typeof foo.bar) => x * x;
+            setFoo(previous => ({
+              ...previous,
+              bar: square(previous.bar),
+            }));
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
           const [state, setState] = React.useState<number>(0);
 
           useSpecialEffect(() => {
