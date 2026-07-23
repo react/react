@@ -1865,4 +1865,162 @@ describe('ReactAsyncActions', () => {
       </div>,
     );
   });
+
+  // Regression test for https://github.com/facebook/react/issues/36318
+  //
+  // This test verifies that useOptimistic's revert mechanism is isolated to
+  // the specific action that triggered it, rather than being blocked by
+  // the global entangled pending count.
+  //
+  // Scenario:
+  // - Component A has a slow async action
+  // - Component B has a fast async action
+  // - Component B's optimistic UI should revert when its own action finishes,
+  //   not when Component A's slow action finishes
+  it(
+    'useOptimistic reverts when its own action finishes, not when other ' +
+      'overlapping async actions finish',
+    async () => {
+      const startTransition = React.startTransition;
+
+      // Component A: Has a slow async action
+      let setTextA;
+      let setOptimisticTextA;
+      function ComponentA() {
+        const [canonicalText, _setText] = useState('A-Initial');
+        setTextA = _setText;
+
+        const [text, _setOptimisticText] = useOptimistic(
+          canonicalText,
+          (_, optimisticText) => `${optimisticText} (loading...)`,
+        );
+        setOptimisticTextA = _setOptimisticText;
+
+        return (
+          <span>
+            <Text text={text} />
+          </span>
+        );
+      }
+
+      // Component B: Has a fast async action
+      let setTextB;
+      let setOptimisticTextB;
+      function ComponentB() {
+        const [canonicalText, _setText] = useState('B-Initial');
+        setTextB = _setText;
+
+        const [text, _setOptimisticText] = useOptimistic(
+          canonicalText,
+          (_, optimisticText) => `${optimisticText} (loading...)`,
+        );
+        setOptimisticTextB = _setOptimisticText;
+
+        return (
+          <span>
+            <Text text={text} />
+          </span>
+        );
+      }
+
+      function App() {
+        return (
+          <>
+            <ComponentA />
+            <ComponentB />
+          </>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => {
+        root.render(<App />);
+      });
+      assertLog(['A-Initial', 'B-Initial']);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span>A-Initial</span>
+          <span>B-Initial</span>
+        </>,
+      );
+
+      // Start Component A's slow async action first
+      await act(() => {
+        startTransition(async () => {
+          Scheduler.log('Component A async action started');
+          setOptimisticTextA('A-Updated');
+          await getText('Component A: Slow operation');
+          Scheduler.log('Component A async action ended');
+          startTransition(() => setTextA('A-Updated'));
+        });
+      });
+      // Component A's optimistic UI is shown
+      assertLog([
+        'Component A async action started',
+        'A-Updated (loading...)',
+        'B-Initial',
+      ]);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span>A-Updated (loading...)</span>
+          <span>B-Initial</span>
+        </>,
+      );
+
+      // Start Component B's fast async action while Component A's action is still pending
+      await act(() => {
+        startTransition(async () => {
+          Scheduler.log('Component B async action started');
+          setOptimisticTextB('B-Updated');
+          await getText('Component B: Fast operation');
+          Scheduler.log('Component B async action ended');
+          startTransition(() => setTextB('B-Updated'));
+        });
+      });
+      // Component B's optimistic UI is shown
+      assertLog([
+        'Component B async action started',
+        'A-Updated (loading...)',
+        'B-Updated (loading...)',
+      ]);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span>A-Updated (loading...)</span>
+          <span>B-Updated (loading...)</span>
+        </>,
+      );
+
+      // Finish Component B's fast action. Component B's optimistic UI should
+      // revert now, even though Component A's slow action is still pending.
+      //
+      // This is the key assertion for the fix: Component B's optimistic state
+      // should not be blocked by Component A's pending action.
+      await act(() => resolveText('Component B: Fast operation'));
+      assertLog([
+        'Component B async action ended',
+        'A-Updated (loading...)',
+        'B-Updated',
+      ]);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span>A-Updated (loading...)</span>
+          <span>B-Updated</span>
+        </>,
+      );
+
+      // Now finish Component A's slow action
+      await act(() => resolveText('Component A: Slow operation'));
+      assertLog([
+        'Component A async action ended',
+        'A-Updated',
+        'B-Updated',
+      ]);
+      expect(root).toMatchRenderedOutput(
+        <>
+          <span>A-Updated</span>
+          <span>B-Updated</span>
+        </>,
+      );
+    },
+  );
 });
