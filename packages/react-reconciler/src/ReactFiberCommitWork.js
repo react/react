@@ -2662,11 +2662,20 @@ function commitMutationEffectsOnFiber(
           if (current === null) {
             // This is a new mount. We should have handled this as part of the
             // Placement effect or it is deeper inside a entering transition.
-          } else if (viewTransitionMutationContext) {
+          } else if (
+            viewTransitionMutationContext ||
+            current.memoizedProps.name !== finishedWork.memoizedProps.name
+          ) {
             // Something mutated in this tree so we need to animate this regardless
             // what the measurements say. We use the Update flag to track this.
             // If diffing was done in the render phase, like we used, this could have
             // been done in the render already.
+            // A change to the `name` prop is itself a semantically meaningful view
+            // transition change (a shared-element/morph handoff), so we treat it as
+            // an update even without a child DOM mutation or a measured layout change
+            // — a real browser won't produce one for a name-only change. The measure
+            // and snapshot phases gate the actual name application on the resolved
+            // class name, so this flag is a no-op when the boundary opts out.
             finishedWork.flags |= Update;
           }
         }
