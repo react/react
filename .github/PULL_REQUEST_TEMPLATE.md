@@ -15,7 +15,7 @@
   9. Run the [Flow](https://flowtype.org/) type checks (`yarn flow`).
   10. If you haven't already, complete the CLA.
 
-  Learn more about contributing: https://reactjs.org/docs/how-to-contribute.html
+  Learn more about contributing: https://legacy.reactjs.org/docs/how-to-contribute.html
 -->
 
 ## Summary
