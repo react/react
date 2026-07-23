@@ -3061,6 +3061,19 @@ function updateDehydratedSuspenseComponent(
           // a new real Suspense boundary to take its place, which may render content
           // or fallback. This might suspend for a while and if it does we might still have
           // an opportunity to hydrate before this pass commits.
+
+          if (
+            !didReceiveUpdate &&
+            !isSuspenseInstancePending(suspenseInstance) &&
+            !isSuspenseInstanceFallback(suspenseInstance)
+          ) {
+            // This is a resolved dehydrated boundary, and the only reason
+            // we're here is that context changed. Keep the dehydrated
+            // fragment in place and retry hydration later.
+            workInProgress.flags |= DidCapture | Callback;
+            workInProgress.child = current.child;
+            return null;
+          }
         }
       }
 
