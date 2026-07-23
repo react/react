@@ -313,7 +313,41 @@ export function addImportsToProgram(
       }
     }
   }
+  preserveLeadingJsxPragmaCommentsOnInsertedStatements(path.node, stmts);
   path.unshiftContainer('body', stmts);
+}
+
+function preserveLeadingJsxPragmaCommentsOnInsertedStatements(
+  program: t.Program,
+  stmts: Array<t.ImportDeclaration | t.VariableDeclaration>,
+): void {
+  const firstInsertedStmt = stmts[0];
+  const firstExistingStmt = program.body[0];
+  if (
+    firstInsertedStmt == null ||
+    firstExistingStmt == null ||
+    firstExistingStmt.leadingComments == null
+  ) {
+    return;
+  }
+  const remainingComments = [];
+  const jsxPragmaComments = [];
+  for (const comment of firstExistingStmt.leadingComments) {
+    if (/@jsx(?:ImportSource|Runtime|Frag)?\b/.test(comment.value)) {
+      jsxPragmaComments.push(comment);
+    } else {
+      remainingComments.push(comment);
+    }
+  }
+  if (jsxPragmaComments.length === 0) {
+    return;
+  }
+  firstInsertedStmt.leadingComments = [
+    ...(firstInsertedStmt.leadingComments ?? []),
+    ...jsxPragmaComments,
+  ];
+  firstExistingStmt.leadingComments =
+    remainingComments.length === 0 ? null : remainingComments;
 }
 
 /*
