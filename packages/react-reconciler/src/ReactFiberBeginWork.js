@@ -4001,6 +4001,30 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       const state: SuspenseState | null = workInProgress.memoizedState;
       if (state !== null) {
         if (state.dehydrated !== null) {
+          // Before we bail out on a dehydrated boundary, we need to check
+          // whether a parent provider's context changed. The boundary's
+          // children only exist as server-rendered HTML, so normal propagation
+          // can't find context consumers inside it. If we bail out without
+          // propagating, a context change in an already-hydrated ancestor
+          // (e.g. a `useState` update in a provider with referentially stable
+          // children) will never be recorded on this boundary. When the
+          // streamed content later arrives and hydrates, it would read the
+          // updated context value and mismatch the server HTML. By propagating
+          // now, the boundary's childLanes records the change and
+          // `updateDehydratedSuspenseComponent` can recover instead of
+          // producing a hydration mismatch.
+          const contextChanged = lazilyPropagateParentContextChanges(
+            current,
+            workInProgress,
+            renderLanes,
+          );
+          if (contextChanged) {
+            return updateSuspenseComponent(
+              current,
+              workInProgress,
+              renderLanes,
+            );
+          }
           // We're not going to render the children, so this is just to maintain
           // push/pop symmetry
           pushPrimaryTreeSuspenseHandler(workInProgress);

@@ -476,6 +476,101 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('does not produce a hydration mismatch when context updates in an already-hydrated ancestor before a streamed boundary hydrates', async () => {
+    // Regression test: Updating a context value in an already-hydrated ancestor
+    // (via a state update on a provider with referentially stable children)
+    // before a streamed Suspense child that reads that context finishes
+    // streaming used to cause a hydration mismatch. The streamed segment was
+    // rendered on the server with the initial context value, but the client
+    // hydrated it against the updated context. React should recover without a
+    // mismatch error.
+
+    const NumberContext = React.createContext(0);
+    let setNumberExternal = null;
+
+    function NumberProvider({children}) {
+      const [number, setNumber] = React.useState(0);
+      setNumberExternal = setNumber;
+      return (
+        <NumberContext.Provider value={number}>
+          {children}
+        </NumberContext.Provider>
+      );
+    }
+
+    function DisplayNumber() {
+      const number = React.useContext(NumberContext);
+      readText('display');
+      return <div>Number: {number}</div>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <NumberProvider>
+            <Suspense fallback={<div>Loading...</div>}>
+              <DisplayNumber />
+            </Suspense>
+          </NumberProvider>
+        </div>
+      );
+    }
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div>Loading...</div>
+      </div>,
+    );
+
+    // Hydration uses a different renderer runtime (Fiber instead of Fizz).
+    // We reset _currentRenderer here to not trigger a warning about multiple
+    // renderers concurrently using these contexts
+    NumberContext._currentRenderer = null;
+
+    const errors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        errors.push(normalizeError(error.message));
+      },
+    });
+    await waitForAll([]);
+
+    // Shell hydrated, boundary still pending.
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div>Loading...</div>
+      </div>,
+    );
+
+    // Update the context value in the already-hydrated ancestor BEFORE the
+    // streamed boundary content arrives and hydrates.
+    await clientAct(() => {
+      React.startTransition(() => {
+        setNumberExternal(1);
+      });
+    });
+
+    // Now the boundary content becomes available.
+    await act(() => {
+      resolveText('display');
+    });
+    await clientAct(async () => {});
+
+    // No hydration mismatch error should have been reported, and the boundary
+    // should reflect the updated context value.
+    expect(errors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <div>Number: {'1'}</div>
+      </div>,
+    );
+  });
+
   it('#23331: does not warn about hydration mismatches if something suspended in an earlier sibling', async () => {
     const makeApp = () => {
       let resolve;
