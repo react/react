@@ -3233,6 +3233,29 @@ export function hydrateProperties(
       break;
   }
 
+  // Custom elements need their props (including event handlers) re-applied
+  // during hydration because the server markup cannot capture property-based
+  // listeners. Mirror the client mount path used in setInitialProperties.
+  if (isCustomElement(tag, props)) {
+    for (const propKey in props) {
+      if (!props.hasOwnProperty(propKey)) {
+        continue;
+      }
+      const propValue = props[propKey];
+      if (propValue === undefined) {
+        continue;
+      }
+      setPropOnCustomElement(
+        domElement,
+        tag,
+        propKey,
+        propValue,
+        props,
+        undefined,
+      );
+    }
+  }
+
   const children = props.children;
   // For text content children we compare against textContent. This
   // might match additional HTML that is hidden when we read it using
