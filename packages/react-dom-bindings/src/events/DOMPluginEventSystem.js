@@ -627,6 +627,15 @@ export function dispatchEventForPluginEventSystem(
       // sub-tree for that root and make that our ancestor instance.
       let node: null | Fiber = targetInst;
 
+      // Tracks the host fibers we have already climbed to as ancestor
+      // candidates. In a well-formed tree each candidate is only ever visited
+      // once. If a document singleton (<html>/<head>/<body>) is rendered
+      // outside its own root container, the host hierarchy becomes inverted
+      // (the singleton resolves to a node that is an ancestor of the root
+      // container), which makes this traversal revisit the same fiber forever.
+      // Guarding against a revisit keeps the loop terminating in that case.
+      let visitedAncestors: null | Set<Fiber> = null;
+
       mainLoop: while (true) {
         if (node === null) {
           return;
@@ -676,6 +685,20 @@ export function dispatchEventForPluginEventSystem(
               parentTag === HostHoistable ||
               parentTag === HostSingleton
             ) {
+              if (
+                visitedAncestors !== null &&
+                visitedAncestors.has(parentNode)
+              ) {
+                // We have already climbed to this fiber, so the host hierarchy
+                // is inverted (see the comment where visitedAncestors is
+                // declared). Stop climbing and dispatch at the current
+                // ancestor instead of looping forever.
+                break mainLoop;
+              }
+              if (visitedAncestors === null) {
+                visitedAncestors = new Set();
+              }
+              visitedAncestors.add(parentNode);
               node = ancestorInst = parentNode;
               continue mainLoop;
             }
