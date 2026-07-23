@@ -171,6 +171,46 @@ pub struct EnvironmentConfig {
     pub enable_treat_ref_like_identifiers_as_refs: bool,
     #[serde(default)]
     pub enable_treat_set_identifiers_as_state_setters: bool,
+
+    /// When a value has an unresolved/unknown type (no inferred shape) and a
+    /// known non-mutating builtin collection method is called on it (e.g.
+    /// `unknownValue.map(...)`, `.filter`, `.slice`, `.at`, ...), optimistically
+    /// resolve that method against the builtin `Array` shape so its precise,
+    /// receiver-non-mutating signature is used, instead of falling back to the
+    /// conservative default that treats the method as potentially mutating the
+    /// receiver.
+    ///
+    /// This relies on the same soundness argument that motivates
+    /// `BuiltInMixedReadonly` (used for hook return values): assuming builtins are
+    /// not patched, the only way `value.map` can exist and be callable is if
+    /// `value` is an Array (or array-like), so `Array.prototype.map` semantics
+    /// apply. See the doc comment on `BuiltInMixedReadonlyId` in ObjectShape.ts.
+    /// The `Array` shape is used rather than `MixedReadonly` because its `map`
+    /// (and siblings) carry an explicit aliasing signature that reads — rather
+    /// than conditionally mutates — the receiver, which is what keeps the
+    /// receiver out of the method call's reactive scope.
+    ///
+    /// Soundness tradeoff: this assumes the receiver is a real collection whose
+    /// builtin (non-patched) method is being invoked. If user code shadows a
+    /// collection method with a mutating implementation of the same name, this
+    /// would under-approximate mutation. That risk is why this is default-off.
+    ///
+    /// Note the optimism compounds through return types: resolving against the
+    /// Array shape also asserts the method's *return* is a real Array, so e.g.
+    /// `unknown.slice()` becomes Array-typed and later methods on that result
+    /// (including mutating ones like `.push`) resolve against the builtin Array
+    /// shape with full confidence, without any further flag check.
+    ///
+    /// Motivating case (facebook/react#35902): the result of a plain function
+    /// call (`const processedData = expensiveProcessing(data)`) has an unknown
+    /// type, so `processedData.map(cb)` is treated conservatively and the map's
+    /// mutable range extends over `processedData`, merging it into the same
+    /// reactive scope as an unrelated captured value in `cb`. With this flag the
+    /// `.map` is known to be non-mutating and `expensiveProcessing(data)` gets its
+    /// own scope keyed only on `data`.
+    #[serde(default)]
+    pub enable_optimistic_builtin_method_shapes: bool,
+
     #[serde(default = "default_true")]
     pub validate_no_void_use_memo: bool,
     #[serde(default = "default_true")]
@@ -220,6 +260,7 @@ impl Default for EnvironmentConfig {
             enable_custom_type_definition_for_reanimated: false,
             enable_treat_ref_like_identifiers_as_refs: true,
             enable_treat_set_identifiers_as_state_setters: false,
+            enable_optimistic_builtin_method_shapes: false,
             validate_no_void_use_memo: true,
             enable_allow_set_state_from_refs_in_effects: true,
             enable_verbose_no_set_state_in_effect: false,

@@ -547,13 +547,32 @@ class Unifier {
         return;
       }
       const objectType = this.get(tB.objectType);
-      const propertyType =
+      let propertyType =
         tB.propertyName.kind === 'literal'
           ? this.env.getPropertyType(objectType, tB.propertyName.value)
           : this.env.getFallthroughPropertyType(
               objectType,
               tB.propertyName.value,
             );
+      if (
+        propertyType === null &&
+        this.env.config.enableOptimisticBuiltinMethodShapes &&
+        objectType.kind === 'Type' &&
+        tB.propertyName.kind === 'literal' &&
+        isOptimisticNonMutatingBuiltinMethod(tB.propertyName.value)
+      ) {
+        /**
+         * The receiver has an unresolved/unknown type but a known non-mutating
+         * builtin collection method is being accessed on it. Optimistically
+         * resolve the method against the Array shape so its non-mutating
+         * signature (which does not mutate the receiver) is used.
+         * See enableOptimisticBuiltinMethodShapes.
+         */
+        propertyType = this.env.getPropertyType(
+          {kind: 'Object', shapeId: BuiltInArrayId},
+          tB.propertyName.value,
+        );
+      }
       if (propertyType !== null) {
         this.unify(tA, propertyType);
       }
@@ -778,6 +797,44 @@ class Unifier {
 
     return type;
   }
+}
+
+/**
+ * Non-mutating builtin collection methods that are also defined on the
+ * MixedReadonly shape (see BuiltInMixedReadonlyId in ObjectShape.ts) and carry
+ * a non-mutating signature on the builtin Array shape. When
+ * enableOptimisticBuiltinMethodShapes is set and one of these is called on a
+ * value with an unknown type, we resolve the method against the Array shape so
+ * its non-mutating signature applies instead of the conservative default.
+ *
+ * `toString` is deliberately excluded: every object inherits it from
+ * `Object.prototype`, so its presence implies nothing about the receiver being
+ * a builtin collection, and custom mutating/lazy `toString` implementations
+ * exist in the wild.
+ */
+const OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS: ReadonlySet<string> = new Set([
+  'at',
+  'concat',
+  'every',
+  'filter',
+  'find',
+  'findIndex',
+  'flatMap',
+  'includes',
+  'indexOf',
+  'join',
+  'map',
+  'slice',
+  'some',
+]);
+
+function isOptimisticNonMutatingBuiltinMethod(
+  property: string | number,
+): boolean {
+  return (
+    typeof property === 'string' &&
+    OPTIMISTIC_NON_MUTATING_BUILTIN_METHODS.has(property)
+  );
 }
 
 const RefLikeNameRE = /^(?:[a-zA-Z$_][a-zA-Z$_0-9]*)Ref$|^ref$/;
