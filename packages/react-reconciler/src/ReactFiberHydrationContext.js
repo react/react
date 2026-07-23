@@ -283,7 +283,18 @@ function tryHydrateInstance(
     }
 
     hydrationParentFiber = fiber;
-    nextHydratableInstance = getFirstHydratableChild(instance);
+    // Skip hydrating children if this element has both suppressHydrationWarning
+    // and dangerouslySetInnerHTML - this allows developers to opt-out of
+    // hydration validation for elements where server/client HTML intentionally differs
+    const props = fiber.pendingProps;
+    if (
+      props.dangerouslySetInnerHTML != null &&
+      props.suppressHydrationWarning === true
+    ) {
+      nextHydratableInstance = null;
+    } else {
+      nextHydratableInstance = getFirstHydratableChild(instance);
+    }
     rootOrSingletonContext = false;
     return true;
   }

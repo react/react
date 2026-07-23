@@ -2640,6 +2640,10 @@ function diffHydratedGenericElement(
         // Noop
         continue;
       case 'dangerouslySetInnerHTML':
+        // Skip innerHTML comparison only when suppressHydrationWarning is also set
+        if (props.suppressHydrationWarning === true) {
+          continue;
+        }
         const serverHTML = domElement.innerHTML;
         const nextHtml = value ? value.__html : undefined;
         if (nextHtml != null) {
@@ -3243,10 +3247,12 @@ export function hydrateProperties(
   // even listeners these nodes might be wired up to.
   // TODO: Warn if there is more than a single textNode as a child.
   // TODO: Should we use domElement.firstChild.nodeValue to compare?
+  // Skip text content check if both dangerouslySetInnerHTML and suppressHydrationWarning are present
   if (
-    typeof children === 'string' ||
-    typeof children === 'number' ||
-    typeof children === 'bigint'
+    !(props.dangerouslySetInnerHTML != null && props.suppressHydrationWarning === true) &&
+    (typeof children === 'string' ||
+      typeof children === 'number' ||
+      typeof children === 'bigint')
   ) {
     if (
       // $FlowFixMe[unsafe-addition] Flow doesn't want us to use `+` operator with string and bigint
