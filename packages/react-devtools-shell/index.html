@@ -11,10 +11,22 @@
       gap: 5px;
       position: relative;
       overflow: hidden;
+      --divider-size: 5px;
+      --top-row-height: 50%;
+      --left-column-width: 50%;
+    }
+
+    #panes.leftright {
+      grid-template-rows: 1fr;
+      grid-template-columns: var(--left-column-width) var(--divider-size) 1fr;
+    }
+
+    #panes.topbottom {
+      grid-template-rows: var(--top-row-height) var(--divider-size) 1fr;
+      grid-template-columns: 1fr;
     }
 
     #divider {
-      position: absolute;
       z-index: 10000002;
       background-color: #ccc;
       transition: background-color 0.2s;
@@ -27,12 +39,12 @@
 
     #divider.horizontal-divider {
       width: 100%;
-      height: 5px;
+      height: var(--divider-size);
       cursor: row-resize;
     }
 
     #divider.vertical-divider {
-      width: 5px;
+      width: var(--divider-size);
       height: 100%;
       cursor: col-resize;
     }
@@ -129,12 +141,12 @@
       const panes = document.getElementById('panes');
       if (layoutType === 'topbottom') {
         panes.style.setProperty('--top-row-height', `${splitRatio * 100}%`);
-        panes.style.gridTemplateRows = "var(--top-row-height) 1fr";
-        panes.style.gridTemplateColumns = null;
+        panes.classList.remove('leftright');
+        panes.classList.add('topbottom');
       } else if (layoutType === 'leftright') {
         panes.style.setProperty('--left-column-width', `${splitRatio * 100}%`);
-        panes.style.gridTemplateRows = null;
-        panes.style.gridTemplateColumns = "var(--left-column-width) 1fr";
+        panes.classList.remove('topbottom');
+        panes.classList.add('leftright');
       }
     }
     layout.addEventListener('change', () => {
@@ -149,13 +161,9 @@
       if (layoutType === 'topbottom') {
         // For top/bottom layout, divider should be horizontal (spanning across)
         divider.className = 'horizontal-divider';
-        divider.style.top = `calc(${splitRatio * 100}%)`;
-        divider.style.left = '0';
       } else {
         // For left/right layout, divider should be vertical (spanning down)
         divider.className = 'vertical-divider';
-        divider.style.left = `calc(${splitRatio * 100}%)`;
-        divider.style.top = '0';
       }
     }
 
