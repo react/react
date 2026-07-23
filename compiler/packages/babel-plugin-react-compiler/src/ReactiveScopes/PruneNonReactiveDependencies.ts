@@ -97,7 +97,23 @@ class Visitor extends ReactiveFunctionVisitor<ReactiveIdentifiers> {
     this.traverseScope(scopeBlock, state);
     for (const dep of scopeBlock.scope.dependencies) {
       const isReactive = state.has(dep.identifier.id);
-      if (!isReactive) {
+      /*
+       * Stable values (state setters, dispatch functions, etc.) are guaranteed
+       * to have a stable identity across renders and should never be scope
+       * dependencies. Even if they appear reactive due to how they're captured
+       * in closures, including them as deps produces unnecessary cache checks.
+       */
+      /*
+       * Stable values (state setters, dispatch functions, etc.) are guaranteed
+       * to have a stable identity across renders and should never be scope
+       * dependencies. Even if they appear reactive due to how they're captured
+       * in closures, including them as deps produces unnecessary cache checks.
+       *
+       * Note: we guard on !dep.reactive to preserve reactive identifiers that
+       * happen to have a stable type (e.g. `const ref = cond ? ref1 : ref2`),
+       * which DO change identity based on reactive inputs.
+       */
+      if (!isReactive || (!dep.reactive && isStableType(dep.identifier))) {
         scopeBlock.scope.dependencies.delete(dep);
       }
     }

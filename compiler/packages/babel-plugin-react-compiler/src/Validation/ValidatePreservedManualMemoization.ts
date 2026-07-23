@@ -26,6 +26,7 @@ import {
   ReactiveValue,
   ScopeId,
   SourceLocation,
+  isStableType,
 } from '../HIR';
 import {Environment} from '../HIR/Environment';
 import {printIdentifier, printManualMemoDependency} from '../HIR/PrintHIR';
@@ -233,6 +234,22 @@ function validateInferredDep(
   env: Environment,
   memoLocation: SourceLocation,
 ): void {
+  /*
+   * Stable values (state setters, dispatch functions, refs, etc.) that are
+   * not reactive are guaranteed to never change identity across renders. The
+   * Rules of React and exhaustive-deps rules do not require them in
+   * dependency arrays, so the preserve-manual-memoization validation should
+   * not require them either. Requiring stable, non-reactive values causes
+   * false-positive skips when user code correctly omits them from a manual
+   * `useCallback`/`useMemo` deps list.
+   *
+   * Note: we only skip non-reactive stable values. Reactive identifiers that
+   * happen to have a stable type (e.g. `const ref = cond ? ref1 : ref2`)
+   * still need to appear in the deps array because their identity changes.
+   */
+  if (!dep.reactive && isStableType(dep.identifier)) {
+    return;
+  }
   let normalizedDep: ManualMemoDependency;
   const maybeNormalizedRoot = temporaries.get(dep.identifier.id);
   if (maybeNormalizedRoot != null) {
