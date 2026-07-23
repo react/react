@@ -865,6 +865,49 @@ describe('ReactInternalTestUtils console assertions', () => {
       ]);
     });
 
+    it('passes if the error message matches', () => {
+      if (__DEV__) {
+        console.warn(new Error('Hello'));
+      }
+      assertConsoleWarnDev(['Hello']);
+    });
+
+    it('passes if a subset of the stack matches', () => {
+      function log() {
+        if (__DEV__) {
+          console.warn(new Error('Hello'));
+        }
+      }
+      log();
+      assertConsoleWarnDev(['Hello\n   in log (at **)']);
+    });
+
+    // @gate __DEV__
+    it('fails on stack mismatch', () => {
+      function log() {
+        if (__DEV__) {
+          console.warn(new Error('Hello'));
+        }
+      }
+      log();
+      const message = expectToThrowFailure(() => {
+        assertConsoleWarnDev(['Hello\n   in notLog (at **)']);
+      });
+      // Includes Jest internals in stack trace so just matching a subset
+      expect(message).toContain(
+        '' +
+          'assertConsoleWarnDev(expected)' +
+          '\n' +
+          '\nUnexpected warning(s) recorded.' +
+          '\n' +
+          '\n- Expected warnings' +
+          '\n+ Received warnings' +
+          '\n' +
+          '\n- Hello    in notLog (at **)' +
+          '\n+ Error: Hello     in log (at **)'
+      );
+    });
+
     it('fails if act is called without assertConsoleWarnDev', async () => {
       const Yield = ({id}) => {
         console.warn(id);
@@ -907,11 +950,11 @@ describe('ReactInternalTestUtils console assertions', () => {
           "asserConsoleLogsCleared(expected)
 
           console.warn was called without assertConsoleWarnDev:
-          + A%s,
+          + A
           +     in App (at **)
-          + B%s,
+          + B
           +     in App (at **)
-          + C%s,
+          + C
           +     in App (at **)
 
           You must call one of the assertConsoleDev helpers between each act call."
@@ -978,19 +1021,19 @@ describe('ReactInternalTestUtils console assertions', () => {
           + C
 
           console.warn was called without assertConsoleWarnDev:
-          + A%s,
+          + A
           +     in App (at **)
-          + B%s,
+          + B
           +     in App (at **)
-          + C%s,
+          + C
           +     in App (at **)
 
           console.error was called without assertConsoleErrorDev:
-          + A%s,
+          + A
           +     in App (at **)
-          + B%s,
+          + B
           +     in App (at **)
-          + C%s,
+          + C
           +     in App (at **)
 
           You must call one of the assertConsoleDev helpers between each act call."
@@ -1572,11 +1615,11 @@ describe('ReactInternalTestUtils console assertions', () => {
           "asserConsoleLogsCleared(expected)
 
           console.warn was called without assertConsoleWarnDev:
-          + Not asserted%s,
+          + Not asserted
           +     in Yield (at **)
-          + Not asserted%s,
+          + Not asserted
           +     in Yield (at **)
-          + Not asserted%s,
+          + Not asserted
           +     in Yield (at **)
 
           You must call one of the assertConsoleDev helpers between each act call."
@@ -1606,6 +1649,49 @@ describe('ReactInternalTestUtils console assertions', () => {
         'Good day\n    in div',
         'Bye\n    in div',
       ]);
+    });
+
+    it('passes if the error message matches', () => {
+      if (__DEV__) {
+        console.error(new Error('Hello'));
+      }
+      assertConsoleErrorDev(['Hello']);
+    });
+
+    it('passes if a subset of the stack matches', () => {
+      function log() {
+        if (__DEV__) {
+          console.error(new Error('Hello'));
+        }
+      }
+      log();
+      assertConsoleErrorDev(['Hello\n   in log (at **)']);
+    });
+
+    // @gate __DEV__
+    it('fails on stack mismatch', () => {
+      function log() {
+        if (__DEV__) {
+          console.error(new Error('Hello'));
+        }
+      }
+      log();
+      const message = expectToThrowFailure(() => {
+        assertConsoleErrorDev(['Hello\n   in notLog (at **)']);
+      });
+      // Includes Jest internals in stack trace so just matching a subset
+      expect(message).toContain(
+        '' +
+          'assertConsoleErrorDev(expected)' +
+          '\n' +
+          '\nUnexpected error(s) recorded.' +
+          '\n' +
+          '\n- Expected errors' +
+          '\n+ Received errors' +
+          '\n' +
+          '\n- Hello    in notLog (at **)' +
+          '\n+ Error: Hello     in log (at **)'
+      );
     });
 
     it('fails if act is called without assertConsoleErrorDev', async () => {
@@ -1647,18 +1733,18 @@ describe('ReactInternalTestUtils console assertions', () => {
         `);
       } else {
         expect(message).toMatchInlineSnapshot(`
-                  "asserConsoleLogsCleared(expected)
+          "asserConsoleLogsCleared(expected)
 
-                  console.error was called without assertConsoleErrorDev:
-                  + A%s,
-                  +     in App (at **)
-                  + B%s,
-                  +     in App (at **)
-                  + C%s,
-                  +     in App (at **)
+          console.error was called without assertConsoleErrorDev:
+          + A
+          +     in App (at **)
+          + B
+          +     in App (at **)
+          + C
+          +     in App (at **)
 
-                  You must call one of the assertConsoleDev helpers between each act call."
-              `);
+          You must call one of the assertConsoleDev helpers between each act call."
+        `);
       }
     });
 
@@ -1713,31 +1799,31 @@ describe('ReactInternalTestUtils console assertions', () => {
         `);
       } else {
         expect(message).toMatchInlineSnapshot(`
-                  "asserConsoleLogsCleared(expected)
+          "asserConsoleLogsCleared(expected)
 
-                  console.log was called without assertConsoleLogDev:
-                  + A
-                  + B
-                  + C
+          console.log was called without assertConsoleLogDev:
+          + A
+          + B
+          + C
 
-                  console.warn was called without assertConsoleWarnDev:
-                  + A%s,
-                  +     in App (at **)
-                  + B%s,
-                  +     in App (at **)
-                  + C%s,
-                  +     in App (at **)
+          console.warn was called without assertConsoleWarnDev:
+          + A
+          +     in App (at **)
+          + B
+          +     in App (at **)
+          + C
+          +     in App (at **)
 
-                  console.error was called without assertConsoleErrorDev:
-                  + A%s,
-                  +     in App (at **)
-                  + B%s,
-                  +     in App (at **)
-                  + C%s,
-                  +     in App (at **)
+          console.error was called without assertConsoleErrorDev:
+          + A
+          +     in App (at **)
+          + B
+          +     in App (at **)
+          + C
+          +     in App (at **)
 
-                  You must call one of the assertConsoleDev helpers between each act call."
-              `);
+          You must call one of the assertConsoleDev helpers between each act call."
+        `);
       }
     });
 
@@ -2389,11 +2475,11 @@ describe('ReactInternalTestUtils console assertions', () => {
           "asserConsoleLogsCleared(expected)
 
           console.error was called without assertConsoleErrorDev:
-          + Not asserted%s,
+          + Not asserted
           +     in Yield (at **)
-          + Not asserted%s,
+          + Not asserted
           +     in Yield (at **)
-          + Not asserted%s,
+          + Not asserted
           +     in Yield (at **)
 
           You must call one of the assertConsoleDev helpers between each act call."
