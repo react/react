@@ -2943,7 +2943,7 @@ function pushLink(
       if (rel === 'stylesheet' && typeof props.precedence === 'string') {
         if (typeof href !== 'string' || !href) {
           console.error(
-            'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and expected the `href` prop to be a non-empty string but ecountered %s instead. If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` prop ensure there is a non-empty string `href` prop as well, otherwise remove the `precedence` prop.',
+            'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and expected the `href` prop to be a non-empty string but encountered %s instead. If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` prop ensure there is a non-empty string `href` prop as well, otherwise remove the `precedence` prop.',
             getValueDescriptorExpectingObjectForWarning(href),
           );
         }
@@ -3183,7 +3183,7 @@ function pushStyle(
   if (__DEV__) {
     if (href.includes(' ')) {
       console.error(
-        'React expected the `href` prop for a <style> tag opting into hoisting semantics using the `precedence` prop to not have any spaces but ecountered spaces instead. using spaces in this prop will cause hydration of this style to fail on the client. The href for the <style> where this ocurred is "%s".',
+        'React expected the `href` prop for a <style> tag opting into hoisting semantics using the `precedence` prop to not have any spaces but encountered spaces instead. using spaces in this prop will cause hydration of this style to fail on the client. The href for the <style> where this occurred is "%s".',
         href,
       );
     }
