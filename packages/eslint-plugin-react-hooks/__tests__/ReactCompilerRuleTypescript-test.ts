@@ -37,6 +37,69 @@ const tests: CompilerTestCases = {
       `,
     },
     {
+      name: 'Local mutation within filter callback is allowed during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import React from 'react';
+        function Component({items}) {
+          const stuff = React.useMemo(() => {
+            let isCool = false;
+            const someItems = items.filter(cause => {
+              if (cause.foo) {
+                isCool = true;
+              }
+              return true;
+            });
+            if (someItems.length > 0) {
+              return {someItems, isCool};
+            }
+          }, [items]);
+          return <div>{stuff?.isCool ? 'cool' : 'not cool'}</div>;
+        }
+      `,
+    },
+    {
+      name: 'Local mutation within map callback is allowed during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import React from 'react';
+        function Component({items}) {
+          const stuff = React.useMemo(() => {
+            let isCool = false;
+            const mappedItems = items.map(cause => {
+              if (cause.foo) {
+                isCool = true;
+              }
+              return cause;
+            });
+            if (mappedItems.length > 0) {
+              return {mappedItems, isCool};
+            }
+          }, [items]);
+          return <div>{stuff?.isCool ? 'cool' : 'not cool'}</div>;
+        }
+      `,
+    },
+    {
+      name: 'Local mutation within forEach callback is allowed during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import React from 'react';
+        function Component({items}) {
+          const stuff = React.useMemo(() => {
+            let isCool = false;
+            items.forEach(cause => {
+              if (cause.foo) {
+                isCool = true;
+              }
+            });
+            return {isCool};
+          }, [items]);
+          return <div>{stuff.isCool ? 'cool' : 'not cool'}</div>;
+        }
+      `,
+    },
+    {
       name: 'Repro for hooks as normal values',
       filename: 'test.tsx',
       code: normalizeIndent`

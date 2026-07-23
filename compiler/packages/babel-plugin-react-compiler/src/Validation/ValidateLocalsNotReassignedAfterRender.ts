@@ -161,6 +161,14 @@ function getContextReassignment(
           }
           break;
         }
+        case 'PropertyLoad': {
+          /*
+           * Property loads should not inherit reassignment from their receiver.
+           * A value like `someItems.length` is not itself a reassigning function,
+           * even if `someItems` originated from a callback that mutates context.
+           */
+          break;
+        }
         default: {
           let operands = eachInstructionValueOperand(value);
           // If we're calling a function that doesn't let its arguments escape, only test the callee
