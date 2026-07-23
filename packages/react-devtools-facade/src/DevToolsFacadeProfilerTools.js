@@ -301,7 +301,11 @@ export function createProfilerTools(
     if (trace == null) {
       return {error: 'Unknown trace "' + traceName + '"'};
     }
-    if (commitIndex < 0 || commitIndex >= trace.commits.length) {
+    if (
+      !Number.isInteger(commitIndex) ||
+      commitIndex < 0 ||
+      commitIndex >= trace.commits.length
+    ) {
       return {error: 'Commit index out of range'};
     }
     const commit = trace.commits[commitIndex];
