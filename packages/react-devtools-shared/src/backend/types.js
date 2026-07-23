@@ -232,6 +232,57 @@ export type ProfilingDataBackend = {
   dataForRoots: Array<ProfilingDataForRootBackend>,
   rendererID: number,
   timelineData: TimelineDataExport | null,
+  memoryProfilingData?: MemoryProfilingData,
+};
+
+// Memory profiling data collected during a profiling session
+export type MemoryProfilingData = {
+  snapshots: Array<MemorySnapshot>,
+  leaks: LeakDetectionResult,
+  trend: MemoryTrend,
+};
+
+export type MemorySnapshot = {
+  timestamp: number,
+  usedJSHeapSize: number,
+  totalJSHeapSize: number,
+  jsHeapSizeLimit: number,
+  detachedDOMNodes: number,
+  eventListenerCount: number,
+  componentCount: number,
+};
+
+export type MemoryTrend = {
+  snapshots: Array<MemorySnapshot>,
+  growthRate: number,
+  isLeaking: boolean,
+  leakConfidence: number,
+  peakMemory: number,
+  averageMemory: number,
+};
+
+export type LeakDetectionResult = {
+  leaks: Array<LeakPattern>,
+  confidence: number,
+  timestamp: number,
+  totalLeaksFound: number,
+};
+
+export type LeakPattern = {
+  type:
+    | 'detached-dom'
+    | 'event-listeners'
+    | 'component-lifecycle'
+    | 'timer'
+    | 'subscription'
+    | 'closure'
+    | 'growing-memory',
+  severity: 'low' | 'medium' | 'high' | 'critical',
+  description: string,
+  affectedComponent: string | null,
+  suggestion: string,
+  codeExample?: string,
+  metadata?: {[key: string]: mixed},
 };
 
 export type PathFrame = {
@@ -547,6 +598,9 @@ export type DevToolsBackend = {
 export type ProfilingSettings = {
   recordChangeDescriptions: boolean,
   recordTimeline: boolean,
+  enableMemoryProfiling?: boolean,
+  memorySnapshotInterval?: number,
+  memoryLeakThreshold?: number,
 };
 
 export type DevToolsHook = {

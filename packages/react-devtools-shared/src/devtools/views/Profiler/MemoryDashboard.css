@@ -1,0 +1,88 @@
+.Dashboard {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 1rem;
+}
+
+.Title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  color: var(--color-text);
+}
+
+.Loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--color-dimmer);
+}
+
+/* Stats Grid */
+.StatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.Stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.StatLabel {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.StatValue {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.StatValue.Increase {
+  color: var(--color-record);
+}
+
+.StatValue.Decrease {
+  color: var(--color-bridge-color-accent-1);
+}
+
+.StatValue.Warning {
+  color: var(--color-warning-background);
+}
+
+/* Chart */
+.ChartContainer {
+  margin-top: 1rem;
+}
+
+.ChartTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--color-text);
+}
+
+.Chart {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  display: block;
+}
+
+.NoChartData {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-dimmer);
+  font-size: 0.9rem;
+  background-color: var(--color-background-hover);
+  border-radius: 0.25rem;
+}

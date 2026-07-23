@@ -17,8 +17,13 @@ import type {
   RendererID,
   DevToolsHookSettings,
   ProfilingSettings,
+  MemoryProfilingData,
 } from 'react-devtools-shared/src/backend/types';
 import type {StyleAndLayout as StyleAndLayoutPayload} from 'react-devtools-shared/src/backend/NativeStyleEditor/types';
+import type {
+  MemorySnapshot,
+  LeakDetectionResult,
+} from 'react-devtools-shared/src/backend/memoryLeakDetector';
 
 // This message specifies the version of the DevTools protocol currently supported by the backend,
 // as well as the earliest NPM version (e.g. "4.13.0") that protocol is supported by on the frontend.
@@ -233,6 +238,12 @@ export type BackendEvents = {
   NativeStyleEditor_styleAndLayout: [StyleAndLayoutPayload],
 
   hookSettings: [$ReadOnly<DevToolsHookSettings>],
+
+  // Memory profiling events
+  memoryProfilingData: [MemoryProfilingData],
+  memorySnapshot: [MemorySnapshot],
+  memoryLeakDetected: [LeakDetectionResult],
+  memoryProfilingStatus: [boolean],
 };
 
 type StartProfilingParams = ProfilingSettings;
@@ -303,6 +314,12 @@ export type FrontendEvents = {
   overrideState: [OverrideValue],
 
   getHookSettings: [],
+
+  // Memory profiling commands
+  startMemoryProfiling: [ProfilingSettings],
+  stopMemoryProfiling: [],
+  getMemoryProfilingStatus: [],
+  requestMemorySnapshot: [],
 };
 
 class Bridge<
