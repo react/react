@@ -8,6 +8,7 @@
 import * as t from '@babel/types';
 import {createHmac} from 'crypto';
 import {
+  promoteUsedTemporaries,
   pruneHoistedContexts,
   pruneUnusedLValues,
   pruneUnusedLabels,
@@ -311,6 +312,13 @@ export function codegenFunction(
     const reactiveFunction = buildReactiveFunction(outlinedFunction);
     pruneUnusedLabels(reactiveFunction);
     pruneUnusedLValues(reactiveFunction);
+    /*
+     * Outlined functions are codegen'd outside the main pipeline, which
+     * runs PromoteUsedTemporaries before codegen. Without it, temporaries
+     * here can be inlined past an interposing store (e.g. the write-back
+     * of a postfix update), reordering effects and changing semantics.
+     */
+    promoteUsedTemporaries(reactiveFunction);
     pruneHoistedContexts(reactiveFunction);
 
     const identifiers = renameVariables(reactiveFunction);
