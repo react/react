@@ -25,6 +25,7 @@ import {
   stopFlowing,
   abort,
   getPostponedState,
+  getFinalizedPostponedState,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -89,9 +90,17 @@ function prerender(
       );
 
       const result: StaticResult = {
-        postponed: getPostponedState(request),
+        postponed: null,
         prelude: stream,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
 
@@ -175,10 +184,18 @@ function resumeAndPrerender(
         {highWaterMark: 0},
       );
 
-      const result = {
-        postponed: getPostponedState(request),
+      const result: StaticResult = {
+        postponed: null,
         prelude: stream,
       };
+
+      const postponed = getPostponedState(request);
+      if (postponed !== null) {
+        Object.defineProperty(result, 'postponed', {
+          get: getFinalizedPostponedState.bind(null, request, postponed),
+        });
+      }
+
       resolve(result);
     }
 
