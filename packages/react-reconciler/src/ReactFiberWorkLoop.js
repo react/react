@@ -2285,6 +2285,8 @@ function resetSuspendedWorkLoopOnUnwind(fiber: Fiber) {
   resetChildReconcilerOnUnwind();
 }
 
+let didWarnForThrowAPromise = false;
+
 function handleThrow(root: FiberRoot, thrownValue: any): void {
   // A component threw an exception. Usually this is because it suspended, but
   // it also includes regular program errors.
@@ -2338,19 +2340,34 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
     // case where we think this should happen.
     workInProgressSuspendedReason = SuspendedOnHydration;
   } else {
-    // This is a regular error.
     const isWakeable =
       thrownValue !== null &&
       typeof thrownValue === 'object' &&
       typeof thrownValue.then === 'function';
-
-    workInProgressSuspendedReason = isWakeable
-      ? // A wakeable object was thrown by a legacy Suspense implementation.
-        // This has slightly different behavior than suspending with `use`.
-        SuspendedOnDeprecatedThrowPromise
-      : // This is a regular error. If something earlier in the component already
-        // suspended, we must clear the thenable state to unblock the work loop.
-        SuspendedOnError;
+    if (isWakeable) {
+      // A wakeable object was thrown by a legacy Suspense implementation.
+      // This has slightly different behavior than suspending with `use`.
+      workInProgressSuspendedReason = SuspendedOnDeprecatedThrowPromise;
+      if (__DEV__) {
+        if (!didWarnForThrowAPromise && workInProgress !== null) {
+          didWarnForThrowAPromise = true;
+          const componentName =
+            getComponentNameFromFiber(workInProgress) || 'unknown';
+          runWithFiberInDEV(workInProgress, () => {
+            console.warn(
+              'Throwing a Promise to cause it to suspend is deprecated in React.\n' +
+                'Please update your library to call use(promise) instead.\n' +
+                'See https://react.dev/reference/react/use\n\n  in %s',
+              componentName,
+            );
+          });
+        }
+      }
+    } else {
+      // This is a regular error. If something earlier in the component already
+      // suspended, we must clear the thenable state to unblock the work loop.
+      workInProgressSuspendedReason = SuspendedOnError;
+    }
   }
 
   workInProgressThrownValue = thrownValue;
