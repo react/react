@@ -27,6 +27,7 @@ export const {
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode,
+  enableConditionalUseWarning,
 } = dynamicFlags;
 
 // The rest of the flags are static for better dead code elimination.

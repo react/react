@@ -16,6 +16,7 @@ import type {
 } from 'shared/ReactTypes';
 
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
+import type {Fiber} from './ReactInternalTypes';
 
 import {callLazyInitInDEV} from './ReactFiberCallUserSpace';
 
@@ -23,9 +24,14 @@ import {getWorkInProgressRoot} from './ReactFiberWorkLoop';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 
-import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
+import {
+  enableAsyncDebugInfo,
+  enableConditionalUseWarning,
+} from 'shared/ReactFeatureFlags';
 
 import noop from 'shared/noop';
+
+import {HostRoot} from './ReactWorkTags';
 
 opaque type ThenableStateDev = {
   didWarnAboutUncachedPromise: boolean,
@@ -104,10 +110,23 @@ export function isThenableResolved(thenable: Thenable<mixed>): boolean {
   return status === 'fulfilled' || status === 'rejected';
 }
 
+// DEV-only
+let lastSuspendedFiber: null | Fiber = null;
+let lastSuspendedStack: null | Error = null;
+let didIssueUseWarning = false;
+
+export function hasPotentialUseWarnings(): boolean {
+  return enableConditionalUseWarning && lastSuspendedFiber !== null;
+}
+export function clearUseWarnings() {
+  lastSuspendedFiber = null;
+}
+
 export function trackUsedThenable<T>(
   thenableState: ThenableState,
   thenable: Thenable<T>,
   index: number,
+  fiber: null | Fiber, // DEV-only
 ): T {
   if (__DEV__ && ReactSharedInternals.actQueue !== null) {
     ReactSharedInternals.didUsePromise = true;
@@ -298,6 +317,26 @@ export function trackUsedThenable<T>(
       suspendedThenable = thenable;
       if (__DEV__) {
         needsToResetSuspendedThenableDEV = true;
+        if (
+          enableConditionalUseWarning &&
+          !didIssueUseWarning &&
+          fiber !== null &&
+          // Only track initial mount for now to avoid warning too much for updates.
+          fiber.alternate === null
+        ) {
+          lastSuspendedFiber = fiber;
+          // Stash an error in case we end up triggering the use() warning.
+          // This ensures that we have a stack trace at the location of the first use()
+          // call since there won't be a second one we have to do that eagerly.
+          lastSuspendedStack = new Error(
+            'This library called use() to suspend in a previous render but ' +
+              'did not call use() when it finished. This indicates an incorrect use of use(). ' +
+              'A common mistake is to call use() only when something is not cached.\n\n' +
+              '  if (cache.value !== undefined) use(cache.promise) else return cache.value\n\n' +
+              'The correct way is to always call use() with a Promise and resolve it with the value.\n\n' +
+              '  return use(cache.promise)',
+          );
+        }
       }
       throw SuspenseException;
     }
@@ -388,5 +427,56 @@ export function checkIfUseWrappedInAsyncCatch(rejectedReason: any) {
         "error is often caused by accidentally adding `'use client'` " +
         'to a module that was originally written for the server.',
     );
+  }
+}
+
+function areSameKeyPath(a: Fiber, b: Fiber): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (
+    a.tag !== b.tag ||
+    a.type !== b.type ||
+    a.key !== b.key ||
+    a.index !== b.index
+  ) {
+    return false;
+  }
+  if (a.tag === HostRoot && a.stateNode !== b.stateNode) {
+    // These are both roots but they're different roots so they're not in the same tree.
+    return false;
+  }
+  if (a.return === null || b.return === null) {
+    return false;
+  }
+  return areSameKeyPath(a.return, b.return);
+}
+
+export function checkIfUseWasUsedBefore(
+  unsuspendedFiber: Fiber,
+  thenableState: null | ThenableState,
+): void {
+  if (__DEV__ && enableConditionalUseWarning) {
+    if (
+      lastSuspendedFiber !== null &&
+      areSameKeyPath(lastSuspendedFiber, unsuspendedFiber)
+    ) {
+      if (thenableState !== null) {
+        // It's still using use() ever after resolving. We could warn for different number of them but for
+        // now we treat this as ok and clear the state.
+        lastSuspendedFiber = null;
+        lastSuspendedStack = null;
+      } else {
+        // The last suspended Fiber using use() is no longer using use() in the same position.
+        // That's suspicious. Likely it was unblocked by conditionally using use() which is incorrect.
+        if (lastSuspendedStack !== null && !didIssueUseWarning) {
+          didIssueUseWarning = true;
+          // We pass the error object instead of custom message so that the browser displays the error natively.
+          console['error'](lastSuspendedStack);
+        }
+        lastSuspendedFiber = null;
+        lastSuspendedStack = null;
+      }
+    }
   }
 }

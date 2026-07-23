@@ -53,6 +53,7 @@ export const disableClientCache: boolean = true;
 
 export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
+export const enableConditionalUseWarning: boolean = false;
 
 export const enableEffectEventMutationPhase: boolean = true;
 
