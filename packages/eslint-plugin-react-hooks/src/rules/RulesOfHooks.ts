@@ -235,7 +235,9 @@ const rule = {
           parent.init &&
           parent.init.type === 'CallExpression' &&
           parent.init.callee &&
-          isUseEffectEventIdentifier(parent.init.callee)
+          isUseEffectEventIdentifier(
+            getNodeWithoutReactNamespace(parent.init.callee),
+          )
         ) {
           if (reference.resolved === null) {
             throw new Error('Unexpected null reference.resolved');

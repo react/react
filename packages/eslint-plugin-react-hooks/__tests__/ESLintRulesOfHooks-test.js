@@ -1758,6 +1758,17 @@ const allTests = {
     {
       code: normalizeIndent`
         function MyComponent({ theme }) {
+          const onClick = React.useEffectEvent(() => {
+            showNotification(theme);
+          });
+          return <Child onClick={onClick}></Child>;
+        }
+      `,
+      errors: [useEffectEventError('onClick', false)],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent({ theme }) {
           const onClick = useEffectEvent(() => {
             showNotification(theme);
           });
