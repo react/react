@@ -108,6 +108,9 @@ function equation(left: Type, right: Type): TypeEquation {
   };
 }
 
+// These method names only exist on arrays in the MixedReadonly model.
+const ARRAY_METHODS_ON_MIXED_READONLY = new Set(['filter']);
+
 function* generate(
   func: HIRFunction,
 ): Generator<TypeEquation, void, undefined> {
@@ -321,6 +324,12 @@ function* generateInstructionTypes(
     }
 
     case 'PropertyLoad': {
+      if (ARRAY_METHODS_ON_MIXED_READONLY.has(String(value.property))) {
+        yield equation(value.object.identifier.type, {
+          kind: 'Object',
+          shapeId: BuiltInMixedReadonlyId,
+        });
+      }
       yield equation(left, {
         kind: 'Property',
         objectType: value.object.identifier.type,
