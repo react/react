@@ -195,7 +195,66 @@ const tests: CompilerTestCases = {
   ],
 };
 
+const setStateInEffectTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Allows setState after an await in an effect-called async callback',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useEffect, useState} from 'react';
+
+        function Component() {
+          const [ready, setReady] = useState(false);
+          const load = useCallback(async () => {
+            await fetch('/data');
+            setReady(true);
+          }, []);
+
+          useEffect(() => {
+            load();
+          }, [load]);
+
+          return <div>{ready ? 'Ready' : 'Loading'}</div>;
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Reports setState before an await in an effect-called async callback',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useEffect, useState} from 'react';
+
+        function Component() {
+          const [ready, setReady] = useState(false);
+          const load = useCallback(async () => {
+            setReady(true);
+            await fetch('/data');
+          }, []);
+
+          useEffect(() => {
+            load();
+          }, [load]);
+
+          return <div>{ready ? 'Ready' : 'Loading'}</div>;
+        }
+      `,
+      errors: [
+        {
+          message: /Avoid calling setState\(\) directly within an effect/,
+        },
+      ],
+    },
+  ],
+};
+
 const eslintTester = new ESLintTesterV8({
   parser: require.resolve('@typescript-eslint/parser-v5'),
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
+eslintTester.run(
+  'react-compiler set-state-in-effect',
+  allRules['set-state-in-effect'].rule,
+  setStateInEffectTests,
+);

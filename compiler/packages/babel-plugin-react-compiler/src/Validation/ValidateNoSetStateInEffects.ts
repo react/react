@@ -24,6 +24,7 @@ import {
   Place,
   Effect,
   BlockId,
+  InstructionId,
 } from '../HIR';
 import {
   eachInstructionLValue,
@@ -193,6 +194,7 @@ function getSetStateCall(
   const enableAllowSetStateFromRefsInEffects =
     env.config.enableAllowSetStateFromRefsInEffects;
   const refDerivedValues: Set<IdentifierId> = new Set();
+  const postAwaitInstructions = collectPostAwaitInstructions(fn);
 
   const isDerivedFromRef = (place: Place): boolean => {
     return (
@@ -316,6 +318,9 @@ function getSetStateCall(
             isSetStateType(callee.identifier) ||
             setStateFunctions.has(callee.identifier.id)
           ) {
+            if (postAwaitInstructions.has(instr.id)) {
+              break;
+            }
             if (enableAllowSetStateFromRefsInEffects) {
               const arg = instr.value.args.at(0);
               if (
@@ -344,4 +349,60 @@ function getSetStateCall(
     }
   }
   return null;
+}
+
+function collectPostAwaitInstructions(fn: HIRFunction): Set<InstructionId> {
+  const postAwaitInstructions = new Set<InstructionId>();
+  if (!fn.async) {
+    return postAwaitInstructions;
+  }
+
+  const startAfterAwait: Map<BlockId, boolean> = new Map();
+  for (const [id] of fn.body.blocks) {
+    startAfterAwait.set(id, id !== fn.body.entry);
+  }
+  startAfterAwait.set(fn.body.entry, false);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const endAfterAwait: Map<BlockId, boolean> = new Map();
+
+    for (const [id, block] of fn.body.blocks) {
+      let afterAwait = startAfterAwait.get(id) ?? false;
+      for (const instr of block.instructions) {
+        if (instr.value.kind === 'Await') {
+          afterAwait = true;
+        }
+      }
+      endAfterAwait.set(id, afterAwait);
+    }
+
+    for (const [id, block] of fn.body.blocks) {
+      if (id === fn.body.entry) {
+        continue;
+      }
+      const startsAfterAwait =
+        block.preds.size > 0 &&
+        [...block.preds].every(pred => endAfterAwait.get(pred) === true);
+      if ((startAfterAwait.get(id) ?? false) !== startsAfterAwait) {
+        startAfterAwait.set(id, startsAfterAwait);
+        changed = true;
+      }
+    }
+  }
+
+  for (const [id, block] of fn.body.blocks) {
+    let afterAwait = startAfterAwait.get(id) ?? false;
+    for (const instr of block.instructions) {
+      if (afterAwait) {
+        postAwaitInstructions.add(instr.id);
+      }
+      if (instr.value.kind === 'Await') {
+        afterAwait = true;
+      }
+    }
+  }
+
+  return postAwaitInstructions;
 }
