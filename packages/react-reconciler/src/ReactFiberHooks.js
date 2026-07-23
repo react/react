@@ -244,11 +244,25 @@ type EventFunctionPayload<Args, Return, F: (...Array<Args>) => Return> = {
   nextImpl: F,
 };
 
+export type OwnedHostTransitionStatusDependency = {
+  kind: 'form',
+  owner: Fiber,
+  provider: Fiber | null,
+  // The most recently observed status of the bound provider. Updated by
+  // commitOwnedHostTransitionStatusChanged when a status change commits.
+  value: TransitionStatus,
+  // The status the owner actually rendered with. When this differs from
+  // `value` on a subsequent render, the owner cannot bail out.
+  renderedValue: TransitionStatus,
+  ambiguous: boolean,
+};
+
 export type FunctionComponentUpdateQueue = {
   lastEffect: Effect | null,
   events: Array<EventFunctionPayload<any, any, any>> | null,
   stores: Array<StoreConsistencyCheck<any>> | null,
   memoCache: MemoCache | null,
+  ownedHostTransitionStatus: Array<OwnedHostTransitionStatusDependency> | null,
 };
 
 type BasicStateAction<S> = (S => S) | S;
@@ -1075,6 +1089,7 @@ function createFunctionComponentUpdateQueue(): FunctionComponentUpdateQueue {
     events: null,
     stores: null,
     memoCache: null,
+    ownedHostTransitionStatus: null,
   };
 }
 
@@ -1084,11 +1099,179 @@ function resetFunctionComponentUpdateQueue(
   updateQueue.lastEffect = null;
   updateQueue.events = null;
   updateQueue.stores = null;
+  updateQueue.ownedHostTransitionStatus = null;
   if (updateQueue.memoCache != null) {
     // NOTE: this function intentionally does not reset memoCache data. We reuse updateQueue for the memo
     // cache to avoid increasing the size of fibers that don't need a cache, but we don't want to reset
     // the cache when other properties are reset.
     updateQueue.memoCache.index = 0;
+  }
+}
+
+function recordOwnedHostTransitionStatusDependency(): TransitionStatus {
+  let updateQueue: FunctionComponentUpdateQueue | null =
+    currentlyRenderingFiber.updateQueue as any;
+  if (updateQueue === null) {
+    updateQueue = createFunctionComponentUpdateQueue();
+    currentlyRenderingFiber.updateQueue = updateQueue as any;
+  }
+
+  const dependency: OwnedHostTransitionStatusDependency = {
+    kind: 'form',
+    owner: currentlyRenderingFiber,
+    provider: null,
+    value: NoPendingHostTransition,
+    renderedValue: NoPendingHostTransition,
+    ambiguous: false,
+  };
+
+  let index;
+  if (updateQueue.ownedHostTransitionStatus === null) {
+    index = 0;
+    updateQueue.ownedHostTransitionStatus = [dependency];
+  } else {
+    index = updateQueue.ownedHostTransitionStatus.length;
+    updateQueue.ownedHostTransitionStatus.push(dependency);
+  }
+
+  // The owner's hooks run before its returned children are reconciled, so a
+  // freshly recorded dependency is always unbound. If a previous render
+  // already observed an owned form's status, carry that value forward.
+  // Dependencies are recorded in hook call order, so matching by index pairs
+  // this read with the same read from the previous render.
+  const current = currentlyRenderingFiber.alternate;
+  if (current !== null) {
+    const currentUpdateQueue: FunctionComponentUpdateQueue | null =
+      current.updateQueue as any;
+    const currentDependencies =
+      currentUpdateQueue !== null
+        ? currentUpdateQueue.ownedHostTransitionStatus
+        : null;
+    if (currentDependencies != null && index < currentDependencies.length) {
+      const currentDependency = currentDependencies[index];
+      if (currentDependency.kind === 'form') {
+        dependency.value = currentDependency.value;
+        dependency.renderedValue = currentDependency.value;
+        if (currentDependency.renderedValue !== currentDependency.value) {
+          // The bound form's status changed since the owner last rendered.
+          // The owner must reconcile its children instead of bailing out,
+          // the same way a changed state hook prevents a bailout.
+          markWorkInProgressReceivedUpdate();
+        }
+      }
+    }
+  }
+
+  return dependency.value;
+}
+
+export function bindOwnedHostTransitionStatusDependencies(
+  owner: Fiber,
+  provider: Fiber,
+): void {
+  const updateQueue: FunctionComponentUpdateQueue | null =
+    owner.updateQueue as any;
+  const dependencies =
+    updateQueue !== null ? updateQueue.ownedHostTransitionStatus : null;
+  if (dependencies == null) {
+    return;
+  }
+
+  for (let i = 0; i < dependencies.length; i++) {
+    const dependency = dependencies[i];
+    if (dependency.kind !== 'form') {
+      continue;
+    }
+    if (dependency.provider === null && !dependency.ambiguous) {
+      dependency.provider = provider;
+      dependency.value = getTransitionStatusFromHostFiber(provider);
+      dependency.renderedValue = dependency.value;
+    } else if (dependency.provider !== provider) {
+      dependency.ambiguous = true;
+      dependency.provider = null;
+      dependency.value = NoPendingHostTransition;
+      dependency.renderedValue = NoPendingHostTransition;
+    }
+  }
+}
+
+function getTransitionStatusFromHostFiber(provider: Fiber): TransitionStatus {
+  const stateHook: Hook | null = provider.memoizedState;
+  if (stateHook === null) {
+    return NoPendingHostTransition;
+  }
+  return stateHook.memoizedState;
+}
+
+export function commitOwnedHostTransitionStatusChanged(
+  finishedWork: Fiber,
+): void {
+  // Called during the commit phase when a stateful host component committed
+  // a render in which its transition status changed. Owners are notified
+  // from the commit phase rather than during render because render attempts
+  // at the transition lane compute a reverted (not pending) status and then
+  // suspend until the action resolves. Those attempts never commit, so they
+  // must not be observable to owner components.
+  const stateHook: Hook | null = finishedWork.memoizedState;
+  if (stateHook === null) {
+    return;
+  }
+  const newState: TransitionStatus = stateHook.memoizedState;
+  // The provider flips between its two alternates across render passes, so a
+  // dependency bound during an earlier render can point at either one.
+  const alternateProvider = finishedWork.alternate;
+  let owner = finishedWork.return;
+  while (owner !== null) {
+    const updateQueue: FunctionComponentUpdateQueue | null =
+      owner.updateQueue as any;
+    // Non-function fibers reuse the updateQueue field for other data
+    // structures, so this property may be undefined rather than null.
+    const dependencies =
+      updateQueue !== null ? updateQueue.ownedHostTransitionStatus : null;
+    if (dependencies != null) {
+      for (let i = 0; i < dependencies.length; i++) {
+        const dependency = dependencies[i];
+        if (
+          (dependency.provider === finishedWork ||
+            (alternateProvider !== null &&
+              dependency.provider === alternateProvider)) &&
+          dependency.value !== newState
+        ) {
+          dependency.value = newState;
+          // Schedule the owner to re-render with the committed status. This
+          // is the same mechanism useSyncExternalStore uses to recover from
+          // an inconsistent external store read.
+          const root = enqueueConcurrentRenderForLane(owner, SyncLane);
+          if (root !== null) {
+            scheduleUpdateOnFiber(root, owner, SyncLane);
+          }
+        }
+      }
+    }
+    owner = owner.return;
+  }
+}
+
+export function warnIfOwnedHostTransitionStatusIsAmbiguous(owner: Fiber): void {
+  if (__DEV__) {
+    const updateQueue: FunctionComponentUpdateQueue | null =
+      owner.updateQueue as any;
+    const dependencies =
+      updateQueue !== null ? updateQueue.ownedHostTransitionStatus : null;
+    if (dependencies == null) {
+      return;
+    }
+    for (let i = 0; i < dependencies.length; i++) {
+      if (dependencies[i].ambiguous) {
+        console.error(
+          'useFormStatus() was called in a component that returns multiple ' +
+            '<form> elements. React cannot infer which form status to read. ' +
+            'Move useFormStatus() into a child of the form, or use an explicit ' +
+            'form scope when that API is available.',
+        );
+        return;
+      }
+    }
   }
 }
 
@@ -3459,7 +3642,11 @@ function rerenderTransition(): [
 }
 
 function useHostTransitionStatus(): TransitionStatus {
-  return readContext(HostTransitionContext);
+  const status = readContext(HostTransitionContext);
+  if (status !== NoPendingHostTransition) {
+    return status;
+  }
+  return recordOwnedHostTransitionStatusDependency();
 }
 
 function mountId(): string {
