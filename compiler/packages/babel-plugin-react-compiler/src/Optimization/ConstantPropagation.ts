@@ -169,7 +169,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
   let value: Constant | null = null;
   for (const [, operand] of phi.operands) {
     const operandValue = constants.get(operand.identifier.id) ?? null;
-    // did not find a constant, can't constant propogate
+    // did not find a constant, can't constant propagate
     if (operandValue === null) {
       return null;
     }
@@ -183,7 +183,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
       continue;
     }
 
-    // found different kinds of constants, can't constant propogate
+    // found different kinds of constants, can't constant propagate
     if (operandValue.kind !== value.kind) {
       return null;
     }
@@ -195,7 +195,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
           loc: GeneratedSource,
         });
 
-        // different constant values, can't constant propogate
+        // different constant values, can't constant propagate
         if (operandValue.value !== value.value) {
           return null;
         }
@@ -207,7 +207,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
           loc: GeneratedSource,
         });
 
-        // different global values, can't constant propogate
+        // different global values, can't constant propagate
         if (operandValue.binding.name !== value.binding.name) {
           return null;
         }

@@ -5298,7 +5298,7 @@ export function processStringChunk(
       // We found the last chunk of the row
       if (buffer.length > 0) {
         // If we had a buffer already, it means that this chunk was split up into
-        // binary chunks preceeding it.
+        // binary chunks preceding it.
         throw new Error(
           'String chunks need to be passed in their original shape. ' +
             'Not split into smaller string chunks. ' +
