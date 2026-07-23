@@ -895,12 +895,12 @@ function getParent(inst: Fiber | null): Fiber | null {
 
 function accumulateEnterLeaveListenersForEvent(
   dispatchQueue: DispatchQueue,
-  event: KnownReactSyntheticEvent,
+  registrationName: string,
+  createEvent: () => KnownReactSyntheticEvent,
   target: Fiber,
   common: Fiber | null,
   inCapturePhase: boolean,
 ): void {
-  const registrationName = event._reactName;
   const listeners: Array<DispatchListener> = [];
 
   let instance: null | Fiber = target;
@@ -939,7 +939,9 @@ function accumulateEnterLeaveListenersForEvent(
     instance = instance.return;
   }
   if (listeners.length !== 0) {
-    dispatchQueue.push({event, listeners});
+    // Create the synthetic event lazily, only once we know there is at least
+    // one listener to dispatch it to.
+    dispatchQueue.push({event: createEvent(), listeners});
   }
 }
 
@@ -950,8 +952,10 @@ function accumulateEnterLeaveListenersForEvent(
 // phase event listeners.
 export function accumulateEnterLeaveTwoPhaseListeners(
   dispatchQueue: DispatchQueue,
-  leaveEvent: KnownReactSyntheticEvent,
-  enterEvent: null | KnownReactSyntheticEvent,
+  leaveRegistrationName: string,
+  createLeaveEvent: () => KnownReactSyntheticEvent,
+  enterRegistrationName: string,
+  createEnterEvent: null | (() => KnownReactSyntheticEvent),
   from: Fiber | null,
   to: Fiber | null,
 ): void {
@@ -961,16 +965,18 @@ export function accumulateEnterLeaveTwoPhaseListeners(
   if (from !== null) {
     accumulateEnterLeaveListenersForEvent(
       dispatchQueue,
-      leaveEvent,
+      leaveRegistrationName,
+      createLeaveEvent,
       from,
       common,
       false,
     );
   }
-  if (to !== null && enterEvent !== null) {
+  if (to !== null && createEnterEvent !== null) {
     accumulateEnterLeaveListenersForEvent(
       dispatchQueue,
-      enterEvent,
+      enterRegistrationName,
+      createEnterEvent,
       to,
       common,
       true,
