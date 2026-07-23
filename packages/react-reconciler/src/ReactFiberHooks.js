@@ -1099,7 +1099,7 @@ function useThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  const result = trackUsedThenable(thenableState, thenable, index);
+  const result = trackUsedThenable(thenableState, thenable, index, true);
 
   // When something suspends with `use`, we replay the component with the
   // "re-render" dispatcher instead of the "mount" or "update" dispatcher.

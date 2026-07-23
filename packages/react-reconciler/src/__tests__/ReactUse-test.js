@@ -287,6 +287,65 @@ describe('ReactUse', () => {
     expect(root).toMatchRenderedOutput('ABC');
   });
 
+  it('warns for an uncached use() promise that resolves in a later task', async () => {
+    const uncachedPromiseErrorMessage =
+      'A component was suspended by an uncached promise. Creating ' +
+      'promises inside a Client Component or hook is not yet ' +
+      'supported, except via a Suspense-compatible library or framework.';
+
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+      render() {
+        if (this.state.error) {
+          return <Text text={this.state.error.message} />;
+        }
+        return this.props.children;
+      }
+    }
+
+    function Async() {
+      return <Text text={use(getAsyncText('Async'))} />;
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(
+        <ErrorBoundary>
+          <Async />
+        </ErrorBoundary>,
+      );
+    });
+    assertLog(['Async text requested [Async]', 'Async text requested [Async]']);
+
+    let finalLog;
+    // Keep resolving each uncached request until the existing shell ping-loop
+    // guard trips. This is the path that used to misdiagnose the uncached
+    // use() promise as an async Client Component.
+    for (let i = 0; i < 100; i++) {
+      await act(() => {
+        resolveTextRequests('Async');
+      });
+      const log = Scheduler.unstable_clearLog();
+      if (log.includes(uncachedPromiseErrorMessage)) {
+        finalLog = log;
+        break;
+      }
+      expect(log).toEqual([
+        'Async text requested [Async]',
+        'Async text requested [Async]',
+      ]);
+    }
+    expect(finalLog).toContain(uncachedPromiseErrorMessage);
+    assertConsoleErrorDev([
+      uncachedPromiseErrorMessage + '\n' + '    in Async (at **)',
+      uncachedPromiseErrorMessage + '\n' + '    in Async (at **)',
+    ]);
+    expect(root).toMatchRenderedOutput(uncachedPromiseErrorMessage);
+  });
+
   it('using a rejected promise will throw', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
