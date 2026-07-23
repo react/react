@@ -759,19 +759,11 @@ function getAssumedInvokedFunctions(
         }
       } else if (value.kind === 'JsxExpression') {
         /**
-         * Assume JSX attributes and children are safe to invoke
+         * The JSX tag is invoked during render, but props and children may be
+         * event handlers or opaque values that are only consumed later.
          */
-        for (const attr of value.props) {
-          if (attr.kind === 'JsxSpreadAttribute') {
-            continue;
-          }
-          const maybeLoweredFunc = temporaries.get(attr.place.identifier.id);
-          if (maybeLoweredFunc != null) {
-            hoistableFunctions.add(maybeLoweredFunc.fn);
-          }
-        }
-        for (const child of value.children ?? []) {
-          const maybeLoweredFunc = temporaries.get(child.identifier.id);
+        if (value.tag.kind === 'Identifier') {
+          const maybeLoweredFunc = temporaries.get(value.tag.identifier.id);
           if (maybeLoweredFunc != null) {
             hoistableFunctions.add(maybeLoweredFunc.fn);
           }
