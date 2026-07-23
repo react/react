@@ -72,6 +72,9 @@ const rule = {
           requireExplicitEffectDeps: {
             type: 'boolean',
           },
+          reactCompiler: {
+            type: 'boolean',
+          },
         },
       },
     ],
@@ -100,11 +103,17 @@ const rule = {
     const requireExplicitEffectDeps: boolean =
       (rawOptions && rawOptions.requireExplicitEffectDeps) || false;
 
+    const reactCompiler: boolean =
+      (rawOptions && rawOptions.reactCompiler) ||
+      (settings && settings.reactCompiler) ||
+      false;  
+
     const options = {
       additionalHooks,
       experimental_autoDependenciesHooks,
       enableDangerousAutofixThisMayCauseInfiniteLoops,
       requireExplicitEffectDeps,
+      reactCompiler,
     };
 
     function reportProblem(problem: Rule.ReportDescriptor) {
@@ -910,78 +919,81 @@ const rule = {
       if (problemCount === 0) {
         // If nothing else to report, check if some dependencies would
         // invalidate on every render.
-        const constructions = scanForConstructions({
-          declaredDependencies,
-          declaredDependenciesNode,
-          componentScope,
-          scope,
-        });
-        constructions.forEach(
-          ({construction, isUsedOutsideOfHook, depType}) => {
-            const wrapperHook =
-              depType === 'function' ? 'useCallback' : 'useMemo';
+        // Skip this check if React Compiler is enabled since it auto-memoizes
+        if (!options.reactCompiler) {
+          const constructions = scanForConstructions({
+            declaredDependencies,
+            declaredDependenciesNode,
+            componentScope,
+            scope,
+          });
+          constructions.forEach(
+            ({construction, isUsedOutsideOfHook, depType}) => {
+              const wrapperHook =
+                depType === 'function' ? 'useCallback' : 'useMemo';
 
-            const constructionType =
-              depType === 'function' ? 'definition' : 'initialization';
+              const constructionType =
+                depType === 'function' ? 'definition' : 'initialization';
 
-            const defaultAdvice = `wrap the ${constructionType} of '${construction.name.name}' in its own ${wrapperHook}() Hook.`;
+              const defaultAdvice = `wrap the ${constructionType} of '${construction.name.name}' in its own ${wrapperHook}() Hook.`;
 
-            const advice = isUsedOutsideOfHook
-              ? `To fix this, ${defaultAdvice}`
-              : `Move it inside the ${reactiveHookName} callback. Alternatively, ${defaultAdvice}`;
+              const advice = isUsedOutsideOfHook
+                ? `To fix this, ${defaultAdvice}`
+                : `Move it inside the ${reactiveHookName} callback. Alternatively, ${defaultAdvice}`;
 
-            const causation =
-              depType === 'conditional' || depType === 'logical expression'
-                ? 'could make'
-                : 'makes';
+              const causation =
+                depType === 'conditional' || depType === 'logical expression'
+                  ? 'could make'
+                  : 'makes';
 
-            const message =
-              `The '${construction.name.name}' ${depType} ${causation} the dependencies of ` +
-              `${reactiveHookName} Hook (at line ${declaredDependenciesNode.loc?.start.line}) ` +
-              `change on every render. ${advice}`;
+              const message =
+                `The '${construction.name.name}' ${depType} ${causation} the dependencies of ` +
+                `${reactiveHookName} Hook (at line ${declaredDependenciesNode.loc?.start.line}) ` +
+                `change on every render. ${advice}`;
 
-            let suggest: Rule.ReportDescriptor['suggest'];
-            // Only handle the simple case of variable assignments.
-            // Wrapping function declarations can mess up hoisting.
-            if (
-              isUsedOutsideOfHook &&
-              construction.type === 'Variable' &&
-              // Objects may be mutated after construction, which would make this
-              // fix unsafe. Functions _probably_ won't be mutated, so we'll
-              // allow this fix for them.
-              depType === 'function'
-            ) {
-              suggest = [
-                {
-                  desc: `Wrap the ${constructionType} of '${construction.name.name}' in its own ${wrapperHook}() Hook.`,
-                  fix(fixer) {
-                    const [before, after] =
-                      wrapperHook === 'useMemo'
-                        ? [`useMemo(() => { return `, '; })']
-                        : ['useCallback(', ')'];
-                    return [
-                      // TODO: also add an import?
-                      fixer.insertTextBefore(construction.node.init!, before),
-                      // TODO: ideally we'd gather deps here but it would require
-                      // restructuring the rule code. This will cause a new lint
-                      // error to appear immediately for useCallback. Note we're
-                      // not adding [] because would that changes semantics.
-                      fixer.insertTextAfter(construction.node.init!, after),
-                    ];
+              let suggest: Rule.ReportDescriptor['suggest'];
+              // Only handle the simple case of variable assignments.
+              // Wrapping function declarations can mess up hoisting.
+              if (
+                isUsedOutsideOfHook &&
+                construction.type === 'Variable' &&
+                // Objects may be mutated after construction, which would make this
+                // fix unsafe. Functions _probably_ won't be mutated, so we'll
+                // allow this fix for them.
+                depType === 'function'
+              ) {
+                suggest = [
+                  {
+                    desc: `Wrap the ${constructionType} of '${construction.name.name}' in its own ${wrapperHook}() Hook.`,
+                    fix(fixer) {
+                      const [before, after] =
+                        wrapperHook === 'useMemo'
+                          ? [`useMemo(() => { return `, '; })']
+                          : ['useCallback(', ')'];
+                      return [
+                        // TODO: also add an import?
+                        fixer.insertTextBefore(construction.node.init!, before),
+                        // TODO: ideally we'd gather deps here but it would require
+                        // restructuring the rule code. This will cause a new lint
+                        // error to appear immediately for useCallback. Note we're
+                        // not adding [] because would that changes semantics.
+                        fixer.insertTextAfter(construction.node.init!, after),
+                      ];
+                    },
                   },
-                },
-              ];
-            }
-            // TODO: What if the function needs to change on every render anyway?
-            // Should we suggest removing effect deps as an appropriate fix too?
-            reportProblem({
-              // TODO: Why not report this at the dependency site?
-              node: construction.node,
-              message,
-              suggest,
-            });
-          },
-        );
+                ];
+              }
+              // TODO: What if the function needs to change on every render anyway?
+              // Should we suggest removing effect deps as an appropriate fix too?
+              reportProblem({
+                // TODO: Why not report this at the dependency site?
+                node: construction.node,
+                message,
+                suggest,
+              });
+            },
+          );
+        }
         return;
       }
 
