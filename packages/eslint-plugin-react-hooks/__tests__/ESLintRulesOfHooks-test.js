@@ -1002,6 +1002,16 @@ const allTests = {
     },
     {
       code: normalizeIndent`
+        // Invalid because optional chaining makes the hook call conditional.
+        // This *must* be invalid.
+        function ComponentWithConditionalHook(props) {
+          props.namespace?.useConditionalHook();
+        }
+      `,
+      errors: [conditionalError('props.namespace?.useConditionalHook')],
+    },
+    {
+      code: normalizeIndent`
         // Invalid because it's dangerous and might not warn otherwise.
         // This *must* be invalid.
         function createComponent() {

@@ -256,6 +256,7 @@ function preprocess(analyzer, node) {
   switch (parent.type) {
     // The `arguments.length == 0` case is in `postprocess` function.
     case 'CallExpression':
+    case 'OptionalCallExpression':
       if (
         parent.optional === true &&
         parent.arguments.length >= 1 &&
@@ -265,6 +266,7 @@ function preprocess(analyzer, node) {
       }
       break;
     case 'MemberExpression':
+    case 'OptionalMemberExpression':
       if (parent.optional === true && parent.property === node) {
         state.makeOptionalRight();
       }
@@ -448,11 +450,13 @@ function processCodePathToEnter(analyzer, node) {
       state.pushChainContext();
       break;
     case 'CallExpression':
+    case 'OptionalCallExpression':
       if (node.optional === true) {
         state.makeOptionalNode();
       }
       break;
     case 'MemberExpression':
+    case 'OptionalMemberExpression':
       if (node.optional === true) {
         state.makeOptionalNode();
       }
@@ -606,8 +610,10 @@ function processCodePathToExit(analyzer, node) {
       break;
 
     case 'CallExpression':
+    case 'OptionalCallExpression':
     case 'ImportExpression':
     case 'MemberExpression':
+    case 'OptionalMemberExpression':
     case 'NewExpression':
     case 'YieldExpression':
       state.makeFirstThrowablePathInTryBlock();
@@ -681,6 +687,7 @@ function postprocess(analyzer, node) {
 
     // The `arguments.length >= 1` case is in `preprocess` function.
     case 'CallExpression':
+    case 'OptionalCallExpression':
       if (node.optional === true && node.arguments.length === 0) {
         CodePath.getState(analyzer.codePath).makeOptionalRight();
       }
