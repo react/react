@@ -252,6 +252,18 @@ const updateVersionsForNext = async (cwd, reactVersion, version) => {
     }
 
     await writeJson(packageJSONPath, packageJSON, {spaces: 2});
+
+    // eslint-plugin-react-hooks hardcodes its version in src/index.ts because
+    // the rollup build does not inject it. Keep that string in sync with
+    // package.json so plugin.meta.version is never stale after a release.
+    if (packageName === 'eslint-plugin-react-hooks') {
+      const pluginSrcPath = join(packagePath, 'src', 'index.ts');
+      const pluginSrc = readFileSync(pluginSrcPath, 'utf8');
+      writeFileSync(
+        pluginSrcPath,
+        pluginSrc.replace(/version: '[^']+'/, `version: '${version}'`)
+      );
+    }
   }
 };
 
