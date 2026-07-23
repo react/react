@@ -483,6 +483,283 @@ struct LoweredMemberExpression {
     value: InstructionValue,
 }
 
+enum LogicalAssignmentTarget {
+    Identifier,
+    Member {
+        object: Place,
+        property: MemberProperty,
+        loc: Option<SourceLocation>,
+    },
+}
+
+/// Copies `place` into a freshly promoted const temporary and returns it.
+/// Codegen re-emits unpromoted temporaries at each use site, so a temporary
+/// whose defining expression may have effects must be copied to a named
+/// temporary before it can be referenced more than once.
+fn copy_to_promoted_temporary(
+    builder: &mut HirBuilder,
+    place: Place,
+) -> Result<Place, CompilerError> {
+    let temporary = build_temporary_place(builder, place.loc.clone());
+    promote_temporary(builder, temporary.identifier);
+    lower_value_to_temporary(
+        builder,
+        InstructionValue::StoreLocal {
+            lvalue: LValue {
+                kind: InstructionKind::Const,
+                place: temporary.clone(),
+            },
+            value: place,
+            type_annotation: None,
+            loc: temporary.loc.clone(),
+        },
+    )?;
+    Ok(temporary)
+}
+
+/// Lowers `a ??= b` as `a ?? (a = b)` (and likewise for `&&=` / `||=`),
+/// reusing the value-block structure of LogicalExpression lowering so that the
+/// right-hand side and the store only evaluate when the assignment is taken.
+/// The target reference (including the object and key of member targets) is
+/// lowered exactly once, before the logical terminal.
+fn lower_logical_assignment(
+    builder: &mut HirBuilder,
+    expr: &react_compiler_ast::expressions::AssignmentExpression,
+    operator: LogicalOperator,
+    loc: Option<SourceLocation>,
+) -> Result<InstructionValue, CompilerError> {
+    use react_compiler_ast::patterns::PatternLike;
+
+    let left_loc = pattern_like_hir_loc(&expr.left);
+    let (previous_value, target) = match &*expr.left {
+        PatternLike::Identifier(ident) => {
+            let previous_value = lower_expression_to_temporary(
+                builder,
+                &react_compiler_ast::expressions::Expression::Identifier(ident.clone()),
+            )?;
+            (previous_value, LogicalAssignmentTarget::Identifier)
+        }
+        PatternLike::MemberExpression(member) => {
+            let member_loc = convert_opt_loc(&member.base.loc);
+            let lowered = lower_member_expression(builder, member)?;
+            // The object (and computed key) of the target are referenced by both
+            // the load and the conditional store, but codegen re-emits unpromoted
+            // temporaries at each use site. Unless re-emitting the reference is
+            // harmless (a plain identifier), copy it into a promoted const
+            // temporary so that effectful expressions evaluate exactly once.
+            let mut target_object = lowered.object;
+            let mut target_property = lowered.property;
+            let mut load_value = lowered.value;
+            if !matches!(load_value, InstructionValue::UnsupportedNode { .. }) {
+                let object_hopped = !matches!(
+                    &*member.object,
+                    react_compiler_ast::expressions::Expression::Identifier(_)
+                );
+                if object_hopped {
+                    target_object = copy_to_promoted_temporary(builder, target_object)?;
+                }
+                let mut property_hopped = false;
+                if let MemberProperty::Computed(prop_place) = &target_property {
+                    if !matches!(
+                        &*member.property,
+                        react_compiler_ast::expressions::Expression::Identifier(_)
+                    ) {
+                        let promoted = copy_to_promoted_temporary(builder, prop_place.clone())?;
+                        target_property = MemberProperty::Computed(promoted);
+                        property_hopped = true;
+                    }
+                }
+                if object_hopped || property_hopped {
+                    load_value = match &target_property {
+                        MemberProperty::Literal(prop_literal) => InstructionValue::PropertyLoad {
+                            object: target_object.clone(),
+                            property: prop_literal.clone(),
+                            loc: member_loc.clone(),
+                        },
+                        MemberProperty::Computed(prop_place) => InstructionValue::ComputedLoad {
+                            object: target_object.clone(),
+                            property: prop_place.clone(),
+                            loc: member_loc.clone(),
+                        },
+                    };
+                }
+            }
+            let previous_value = lower_value_to_temporary(builder, load_value)?;
+            (
+                previous_value,
+                LogicalAssignmentTarget::Member {
+                    object: target_object,
+                    property: target_property,
+                    loc: member_loc,
+                },
+            )
+        }
+        other => {
+            builder.record_error(CompilerErrorDetail {
+                reason: format!(
+                    "(BuildHIR::lowerExpression) Expected Identifier or MemberExpression, got {} lval in AssignmentExpression",
+                    match other {
+                        PatternLike::ObjectPattern(_) => "ObjectPattern",
+                        PatternLike::ArrayPattern(_) => "ArrayPattern",
+                        PatternLike::AssignmentPattern(_) => "AssignmentPattern",
+                        PatternLike::RestElement(_) => "RestElement",
+                        _ => "unknown",
+                    }
+                ),
+                category: ErrorCategory::Todo,
+                loc: loc.clone(),
+                description: None,
+                suggestions: None,
+            })?;
+            return Ok(InstructionValue::UnsupportedNode {
+                node_type: Some("AssignmentExpression".to_string()),
+                original_node: serialize_expression(
+                    &react_compiler_ast::expressions::Expression::AssignmentExpression(
+                        expr.clone(),
+                    ),
+                ),
+                loc,
+            });
+        }
+    };
+
+    let continuation_block = builder.reserve(builder.current_block_kind());
+    let continuation_id = continuation_block.id;
+    let test_block = builder.reserve(BlockKind::Value);
+    let test_block_id = test_block.id;
+    let place = build_temporary_place(builder, loc.clone());
+    let previous_value_place = build_temporary_place(builder, left_loc.clone());
+
+    // Short-circuit case: keep the previous value as the expression result
+    let consequent_block = builder.try_enter(BlockKind::Value, |builder, _block_id| {
+        lower_value_to_temporary(
+            builder,
+            InstructionValue::StoreLocal {
+                lvalue: LValue {
+                    kind: InstructionKind::Const,
+                    place: place.clone(),
+                },
+                value: previous_value_place.clone(),
+                type_annotation: None,
+                loc: previous_value_place.loc.clone(),
+            },
+        )?;
+        Ok(Terminal::Goto {
+            block: continuation_id,
+            variant: GotoVariant::Break,
+            id: EvaluationOrder(0),
+            loc: previous_value_place.loc.clone(),
+        })
+    });
+
+    // Assignment case: evaluate the right side and store it to the target
+    let alternate_block = builder.try_enter(BlockKind::Value, |builder, _block_id| {
+        let right = lower_expression_to_temporary(builder, &expr.right)?;
+        let assigned_value = match &target {
+            LogicalAssignmentTarget::Identifier => {
+                let result = lower_assignment(
+                    builder,
+                    left_loc.clone(),
+                    InstructionKind::Reassign,
+                    &expr.left,
+                    right.clone(),
+                    AssignmentStyle::Assignment,
+                )?;
+                match result {
+                    Some(assigned) => lower_value_to_temporary(
+                        builder,
+                        InstructionValue::LoadLocal {
+                            place: assigned.clone(),
+                            loc: assigned.loc.clone(),
+                        },
+                    )?,
+                    // Error already recorded by lower_assignment
+                    None => right,
+                }
+            }
+            LogicalAssignmentTarget::Member {
+                object,
+                property,
+                loc: member_loc,
+            } => {
+                let store_value = match property {
+                    MemberProperty::Literal(prop_literal) => InstructionValue::PropertyStore {
+                        object: object.clone(),
+                        property: prop_literal.clone(),
+                        value: right,
+                        loc: member_loc.clone(),
+                    },
+                    MemberProperty::Computed(prop_place) => InstructionValue::ComputedStore {
+                        object: object.clone(),
+                        property: prop_place.clone(),
+                        value: right,
+                        loc: member_loc.clone(),
+                    },
+                };
+                lower_value_to_temporary(builder, store_value)?
+            }
+        };
+        lower_value_to_temporary(
+            builder,
+            InstructionValue::StoreLocal {
+                lvalue: LValue {
+                    kind: InstructionKind::Const,
+                    place: place.clone(),
+                },
+                value: assigned_value,
+                type_annotation: None,
+                loc: loc.clone(),
+            },
+        )?;
+        Ok(Terminal::Goto {
+            block: continuation_id,
+            variant: GotoVariant::Break,
+            id: EvaluationOrder(0),
+            loc: loc.clone(),
+        })
+    });
+
+    builder.terminate_with_continuation(
+        Terminal::Logical {
+            operator,
+            test: test_block_id,
+            fallthrough: continuation_id,
+            id: EvaluationOrder(0),
+            loc: loc.clone(),
+        },
+        test_block,
+    );
+
+    // Now in test block: load the previously-read target value and branch
+    builder.push(Instruction {
+        id: EvaluationOrder(0),
+        lvalue: previous_value_place.clone(),
+        value: InstructionValue::LoadLocal {
+            place: previous_value,
+            loc: left_loc.clone(),
+        },
+        effects: None,
+        loc: left_loc,
+    });
+
+    builder.terminate_with_continuation(
+        Terminal::Branch {
+            test: previous_value_place,
+            consequent: consequent_block?,
+            alternate: alternate_block?,
+            fallthrough: continuation_id,
+            id: EvaluationOrder(0),
+            loc: loc.clone(),
+        },
+        continuation_block,
+    );
+
+    Ok(InstructionValue::LoadLocal {
+        place: place.clone(),
+        loc: place.loc.clone(),
+    })
+}
+
 fn lower_member_expression(
     builder: &mut HirBuilder,
     member: &react_compiler_ast::expressions::MemberExpression,
@@ -1430,26 +1707,19 @@ fn lower_expression(
                     AssignmentOperator::BitOrAssign => Some(BinaryOperator::BitwiseOr),
                     AssignmentOperator::BitXorAssign => Some(BinaryOperator::BitwiseXor),
                     AssignmentOperator::BitAndAssign => Some(BinaryOperator::BitwiseAnd),
-                    AssignmentOperator::OrAssign
-                    | AssignmentOperator::AndAssign
-                    | AssignmentOperator::NullishAssign => {
-                        // Logical assignment operators (||=, &&=, ??=) - not yet supported
-                        builder.record_error(CompilerErrorDetail {
-                            reason:
-                                "Logical assignment operators (||=, &&=, ??=) are not yet supported"
-                                    .to_string(),
-                            category: ErrorCategory::Todo,
-                            loc: loc.clone(),
-                            description: None,
-                            suggestions: None,
-                        })?;
-                        return Ok(InstructionValue::UnsupportedNode {
-                            node_type: Some("AssignmentExpression".to_string()),
-                            original_node: serialize_expression(&Expression::AssignmentExpression(
-                                expr.clone(),
-                            )),
+                    AssignmentOperator::OrAssign => {
+                        return lower_logical_assignment(builder, expr, LogicalOperator::Or, loc);
+                    }
+                    AssignmentOperator::AndAssign => {
+                        return lower_logical_assignment(builder, expr, LogicalOperator::And, loc);
+                    }
+                    AssignmentOperator::NullishAssign => {
+                        return lower_logical_assignment(
+                            builder,
+                            expr,
+                            LogicalOperator::NullishCoalescing,
                             loc,
-                        });
+                        );
                     }
                     AssignmentOperator::Assign => unreachable!(),
                 };
