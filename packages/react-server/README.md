@@ -146,7 +146,7 @@ createResponse(
 ```
 
 #### Server References
-Similarly When a React Server Component framework bundles an application and encounters a `"use server"` directive in a file or in a function body, including closures, it must implement that function as as a server entrypoint that can be called from the client. To make `Flight` aware that a function is a Server Reference the function should be registered with `registerServerReference()`.
+Similarly, when a React Server Component framework bundles an application and encounters a `"use server"` directive in a file or in a function body, including closures, it must implement that function as a server entrypoint that can be called from the client. To make `Flight` aware that a function is a Server Reference the function should be registered with `registerServerReference()`.
 
 ```js
 
