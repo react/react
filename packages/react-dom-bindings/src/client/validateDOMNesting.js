@@ -307,8 +307,11 @@ function isTagValidWithParent(
   // First, let's check if we're in an unusual parsing mode...
   switch (parentTag) {
     // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inselect
+    // https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Forms/Customizable_select#what_features_comprise_a_customizable_select
+    // allowing button for customizable selects
     case 'select':
       return (
+        tag === 'button' ||
         tag === 'hr' ||
         tag === 'option' ||
         tag === 'optgroup' ||
