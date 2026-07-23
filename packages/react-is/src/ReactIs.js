@@ -12,6 +12,7 @@
 import {
   REACT_CONTEXT_TYPE,
   REACT_ELEMENT_TYPE,
+  REACT_LEGACY_ELEMENT_TYPE,
   REACT_FORWARD_REF_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_LAZY_TYPE,
@@ -42,6 +43,7 @@ export function typeOf(object: any): mixed {
     const $$typeof = object.$$typeof;
     switch ($$typeof) {
       case REACT_ELEMENT_TYPE:
+      case REACT_LEGACY_ELEMENT_TYPE:
         const type = object.type;
 
         switch (type) {
@@ -140,7 +142,8 @@ export function isElement(object: any): boolean {
   return (
     typeof object === 'object' &&
     object !== null &&
-    object.$$typeof === REACT_ELEMENT_TYPE
+    (object.$$typeof === REACT_ELEMENT_TYPE ||
+      object.$$typeof === REACT_LEGACY_ELEMENT_TYPE)
   );
 }
 export function isForwardRef(object: any): boolean {
