@@ -155,6 +155,13 @@ const allTests = {
     },
     {
       code: normalizeIndent`
+        // Valid because hook names may use JavaScript identifier symbols.
+        function use$() { useState(); }
+        function use_() { useState(); }
+      `,
+    },
+    {
+      code: normalizeIndent`
         // Valid because hooks can call hooks.
         function useHook() {
           useHook1();

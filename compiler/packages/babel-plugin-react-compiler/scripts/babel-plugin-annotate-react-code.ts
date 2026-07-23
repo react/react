@@ -137,7 +137,7 @@ function isComponentOrHookLike(
 }
 
 function isHookName(s: string): boolean {
-  return /^use[A-Z0-9]/.test(s);
+  return /^use[A-Z0-9]/.test(s) || s === 'use$' || s === 'use_';
 }
 
 /*

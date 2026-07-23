@@ -1038,9 +1038,9 @@ export class Environment {
 
 const REANIMATED_MODULE_NAME = 'react-native-reanimated';
 
-// From https://github.com/facebook/react/blob/main/packages/eslint-plugin-react-hooks/src/RulesOfHooks.js#LL18C1-L23C2
+// From packages/eslint-plugin-react-hooks/src/rules/RulesOfHooks.ts
 export function isHookName(name: string): boolean {
-  return /^use[A-Z0-9]/.test(name);
+  return /^use[A-Z0-9]/.test(name) || name === 'use$' || name === 'use_';
 }
 
 export function parseEnvironmentConfig(

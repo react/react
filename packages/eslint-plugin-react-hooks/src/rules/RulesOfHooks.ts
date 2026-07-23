@@ -24,10 +24,12 @@ import {getAdditionalEffectHooksFromSettings} from '../shared/Utils';
 
 /**
  * Catch all identifiers that begin with "use" followed by an uppercase Latin
- * character to exclude identifiers like "user".
+ * character or number, or the symbol-only hook names use$ and use_, to exclude
+ * identifiers like "user" and preserve existing behavior for names like
+ * "use_hook".
  */
 function isHookName(s: string): boolean {
-  return s === 'use' || /^use[A-Z0-9]/.test(s);
+  return s === 'use' || /^use[A-Z0-9]/.test(s) || s === 'use$' || s === 'use_';
 }
 
 /**
