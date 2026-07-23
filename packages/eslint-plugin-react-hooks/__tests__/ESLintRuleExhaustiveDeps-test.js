@@ -2866,8 +2866,8 @@ const tests = {
       ],
     },
     {
-      // Effects are allowed to over-specify deps. We'll complain about missing
-      // 'local', but we won't remove the already-specified 'local.id' from your list.
+      // When adding a missing parent dep like 'local', we remove the
+      // now-redundant child dep 'local.id' from the suggestion.
       code: normalizeIndent`
         function MyComponent() {
           const local = {id: 42};
@@ -2883,13 +2883,13 @@ const tests = {
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc: 'Update the dependencies array to be: [local, local.id]',
+              desc: 'Update the dependencies array to be: [local]',
               output: normalizeIndent`
                 function MyComponent() {
                   const local = {id: 42};
                   useEffect(() => {
                     console.log(local);
-                  }, [local, local.id]);
+                  }, [local]);
                 }
               `,
             },
