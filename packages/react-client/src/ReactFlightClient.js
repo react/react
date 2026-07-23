@@ -957,6 +957,7 @@ type InitializationHandler = {
   value: any,
   reason: any,
   deps: number,
+  debugDeps: number,
   errored: boolean,
 };
 let initializingHandler: null | InitializationHandler = null;
@@ -1438,7 +1439,7 @@ function createElement(
       }
       return createLazyChunkWrapper(erroredChunk, validated);
     }
-    if (handler.deps > 0) {
+    if (handler.deps > (__DEV__ ? handler.debugDeps : 0)) {
       // We have blocked references inside this Element but we can turn this into
       // a Lazy node referencing this Element to let everything around it proceed.
       const blockedChunk: BlockedChunk<React$Element<any>> =
@@ -1452,6 +1453,9 @@ function createElement(
         blockedChunk.then(init, init);
       }
       return lazyNode;
+    }
+    if (__DEV__ && handler.debugDeps > 0) {
+      handler.value = element;
     }
   }
   if (__DEV__) {
@@ -1695,6 +1699,19 @@ function fulfillReference(
   if (handler.deps === 0) {
     const chunk = handler.chunk;
     if (chunk === null || chunk.status !== BLOCKED) {
+      if (__DEV__ && chunk === null && handler.debugDeps > 0) {
+        // All debug-only deps (owner/stack from debug channel) have resolved.
+        // Re-initialize the element so _debugStack gets normalized into an Error
+        // object now that the raw stack string is available.
+        const elementValue = handler.value;
+        if (
+          typeof elementValue === 'object' &&
+          elementValue !== null &&
+          elementValue.$$typeof === REACT_ELEMENT_TYPE
+        ) {
+          initializeElement(response, elementValue, null);
+        }
+      }
       return;
     }
     const resolveListeners = chunk.value;
@@ -1771,23 +1788,28 @@ function waitForReference<T>(
   path: Array<string>,
   isAwaitingDebugInfo: boolean, // DEV-only
 ): T {
-  if (
-    __DEV__ &&
-    (response._debugChannel === undefined ||
-      !response._debugChannel.hasReadable)
-  ) {
+  let isDebugOnlyDep = false;
+  if (__DEV__) {
     if (
       referencedChunk.status === PENDING &&
       parentObject[0] === REACT_ELEMENT_TYPE &&
       (key === '4' || key === '5')
     ) {
-      // If the parent object is an unparsed React element tuple, and this is a reference
-      // to the owner or debug stack. Then we expect the chunk to have been emitted earlier
-      // in the stream. It might be blocked on other things but chunk should no longer be pending.
-      // If it's still pending that suggests that it was referencing an object in the debug
-      // channel, but no debug channel was wired up so it's missing. In this case we can just
-      // drop the debug info instead of halting the whole stream.
-      return null as any;
+      // The parent object is an unparsed React element tuple and this is a reference
+      // to the owner (pos 4) or debug stack (pos 5) — dev-only metadata.
+      if (
+        response._debugChannel === undefined ||
+        !response._debugChannel.hasReadable
+      ) {
+        // No debug channel is wired up so this data will never arrive.
+        // Drop the reference instead of halting the stream.
+        return (null: any);
+      }
+      // A debug channel with a readable is active: the data will arrive, but
+      // owner/stack must never block element construction because that would
+      // wrap the element in a lazy chunk ($$typeof: REACT_LAZY_TYPE) and break
+      // isValidElement(), cloneElement(), and hydration.
+      isDebugOnlyDep = true;
     }
   }
 
@@ -1795,6 +1817,9 @@ function waitForReference<T>(
   if (initializingHandler) {
     handler = initializingHandler;
     handler.deps++;
+    if (__DEV__ && isDebugOnlyDep) {
+      handler.debugDeps++;
+    }
   } else {
     handler = initializingHandler = {
       parent: null,
@@ -1802,6 +1827,7 @@ function waitForReference<T>(
       value: null,
       reason: null,
       deps: 1,
+      debugDeps: __DEV__ && isDebugOnlyDep ? 1 : 0,
       errored: false,
     };
   }
@@ -1891,6 +1917,7 @@ function loadServerReference<A: Iterable<any>, T>(
       value: null,
       reason: null,
       deps: 1,
+      debugDeps: 0,
       errored: false,
     };
   }
@@ -2134,6 +2161,7 @@ function getOutlinedModel<T>(
                   value: null,
                   reason: null,
                   deps: 1,
+                  debugDeps: 0,
                   errored: false,
                 };
               }
@@ -2153,6 +2181,7 @@ function getOutlinedModel<T>(
                   value: null,
                   reason: referencedChunk.reason,
                   deps: 0,
+                  debugDeps: 0,
                   errored: true,
                 };
               }
@@ -2231,6 +2260,7 @@ function getOutlinedModel<T>(
           value: null,
           reason: null,
           deps: 1,
+          debugDeps: 0,
           errored: false,
         };
       }
@@ -2250,6 +2280,7 @@ function getOutlinedModel<T>(
           value: null,
           reason: chunk.reason,
           deps: 0,
+          debugDeps: 0,
           errored: true,
         };
       }
@@ -2403,6 +2434,7 @@ function parseModelString(
           value: null,
           reason: null,
           deps: 0,
+          debugDeps: 0,
           errored: false,
         };
       }
