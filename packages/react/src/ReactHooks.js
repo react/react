@@ -91,7 +91,9 @@ export function useEffect(
   if (__DEV__) {
     if (create == null) {
       console.warn(
-        'React Hook useEffect requires an effect callback. Did you forget to pass a callback to the hook?',
+        `React Hook useEffect received a ${create === null ? 'null' : 'undefined'} effect callback. ` +
+          'useEffect must be passed a function that optionally returns a cleanup function. ' +
+          'Did you accidentally pass nothing or the result of a function call instead of the function itself?',
       );
     }
   }
@@ -107,7 +109,9 @@ export function useInsertionEffect(
   if (__DEV__) {
     if (create == null) {
       console.warn(
-        'React Hook useInsertionEffect requires an effect callback. Did you forget to pass a callback to the hook?',
+        `React Hook useInsertionEffect received a ${create === null ? 'null' : 'undefined'} effect callback. ` +
+          'useInsertionEffect must be passed a function that optionally returns a cleanup function. ' +
+          'Did you accidentally pass nothing or the result of a function call instead of the function itself?',
       );
     }
   }
@@ -123,7 +127,9 @@ export function useLayoutEffect(
   if (__DEV__) {
     if (create == null) {
       console.warn(
-        'React Hook useLayoutEffect requires an effect callback. Did you forget to pass a callback to the hook?',
+        `React Hook useLayoutEffect received a ${create === null ? 'null' : 'undefined'} effect callback. ` +
+          'useLayoutEffect must be passed a function that optionally returns a cleanup function. ' +
+          'Did you accidentally pass nothing or the result of a function call instead of the function itself?',
       );
     }
   }
