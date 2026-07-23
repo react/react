@@ -42,6 +42,44 @@ export function getClientReferenceKey(
   return reference.$$async ? reference.$$id + '#async' : reference.$$id;
 }
 
+// Every manifest entry gets its own copy of its chunk list out of
+// JSON.parse. Canonicalize them so the Flight server can write each
+// distinct list once per request.
+const canonicalChunkListsByManifest: WeakMap<
+  ClientManifest,
+  Map<string, Array<string>>,
+> = new WeakMap();
+const canonicalChunkListByInstance: WeakMap<
+  Array<string>,
+  Array<string>,
+> = new WeakMap();
+
+function internChunkList(
+  config: ClientManifest,
+  chunks: Array<string>,
+): Array<string> {
+  if (chunks.length === 0) {
+    return chunks;
+  }
+  const interned = canonicalChunkListByInstance.get(chunks);
+  if (interned !== undefined) {
+    return interned;
+  }
+  let table = canonicalChunkListsByManifest.get(config);
+  if (table === undefined) {
+    table = new Map();
+    canonicalChunkListsByManifest.set(config, table);
+  }
+  const key = JSON.stringify(chunks);
+  let canonical = table.get(key);
+  if (canonical === undefined) {
+    canonical = chunks;
+    table.set(key, canonical);
+  }
+  canonicalChunkListByInstance.set(chunks, canonical);
+  return canonical;
+}
+
 export function resolveClientReferenceMetadata<T>(
   config: ClientManifest,
   clientReference: ClientReference<T>,
@@ -80,9 +118,18 @@ export function resolveClientReferenceMetadata<T>(
     );
   }
   if (resolvedModuleData.async === true || clientReference.$$async === true) {
-    return [resolvedModuleData.id, resolvedModuleData.chunks, name, 1];
+    return [
+      resolvedModuleData.id,
+      internChunkList(config, resolvedModuleData.chunks),
+      name,
+      1,
+    ];
   } else {
-    return [resolvedModuleData.id, resolvedModuleData.chunks, name];
+    return [
+      resolvedModuleData.id,
+      internChunkList(config, resolvedModuleData.chunks),
+      name,
+    ];
   }
 }
 
