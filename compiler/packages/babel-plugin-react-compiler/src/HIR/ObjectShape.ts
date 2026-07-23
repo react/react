@@ -389,6 +389,16 @@ export const BuiltInEffectEventId = 'BuiltInEffectEventFunction';
 // See getReanimatedModuleType() in Globals.ts — this is part of supporting Reanimated's ref-like types
 export const ReanimatedSharedValueId = 'ReanimatedSharedValueId';
 
+// Intl formatter instance shapes
+export const BuiltInIntlDateTimeFormatId = 'BuiltInIntlDateTimeFormat';
+export const BuiltInIntlNumberFormatId = 'BuiltInIntlNumberFormat';
+export const BuiltInIntlCollatorId = 'BuiltInIntlCollator';
+export const BuiltInIntlPluralRulesId = 'BuiltInIntlPluralRules';
+export const BuiltInIntlListFormatId = 'BuiltInIntlListFormat';
+export const BuiltInIntlRelativeTimeFormatId = 'BuiltInIntlRelativeTimeFormat';
+export const BuiltInIntlSegmenterId = 'BuiltInIntlSegmenter';
+export const BuiltInIntlDisplayNamesId = 'BuiltInIntlDisplayNames';
+
 // ShapeRegistry with default definitions for built-ins.
 export const BUILTIN_SHAPES: ShapeRegistry = new Map();
 
@@ -1231,6 +1241,297 @@ addObject(BUILTIN_SHAPES, BuiltInRefValueId, [
 ]);
 
 addObject(BUILTIN_SHAPES, ReanimatedSharedValueId, []);
+
+/**
+ * Intl formatter instance shapes.
+ *
+ * All Intl formatter objects are immutable after construction — calling their
+ * methods does not modify the formatter. Methods like `format()` return
+ * primitives (strings/numbers), `formatToParts()` returns a new array, and
+ * `resolvedOptions()` returns a new object.
+ */
+
+/* Intl.DateTimeFormat instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlDateTimeFormatId, [
+  [
+    'format',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'formatToParts',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInArrayId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'formatRange',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'formatRangeToParts',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInArrayId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.NumberFormat instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlNumberFormatId, [
+  [
+    'format',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'formatToParts',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInArrayId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'formatRange',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'formatRangeToParts',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInArrayId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.Collator instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlCollatorId, [
+  [
+    'compare',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.PluralRules instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlPluralRulesId, [
+  [
+    'select',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'selectRange',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.ListFormat instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlListFormatId, [
+  [
+    'format',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'formatToParts',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInArrayId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.RelativeTimeFormat instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlRelativeTimeFormatId, [
+  [
+    'format',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'formatToParts',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read, Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInArrayId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.Segmenter instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlSegmenterId, [
+  [
+    'segment',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Poly'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
+
+/* Intl.DisplayNames instance */
+addObject(BUILTIN_SHAPES, BuiltInIntlDisplayNamesId, [
+  [
+    'of',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [Effect.Read],
+      restParam: null,
+      returnType: {kind: 'Primitive'},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Primitive,
+    }),
+  ],
+  [
+    'resolvedOptions',
+    addFunction(BUILTIN_SHAPES, [], {
+      positionalParams: [],
+      restParam: null,
+      returnType: {kind: 'Object', shapeId: BuiltInObjectId},
+      calleeEffect: Effect.Read,
+      returnValueKind: ValueKind.Mutable,
+    }),
+  ],
+]);
 
 addFunction(
   BUILTIN_SHAPES,
