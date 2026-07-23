@@ -10,10 +10,13 @@ function compile(flags) {
   return new Promise((resolve, reject) => {
     const closureCompiler = new ClosureCompiler(flags);
     closureCompiler.run(function (exitCode, stdOut, stdErr) {
-      if (!stdErr) {
+      if (exitCode === 0) {
+        if (stdErr) {
+          process.stderr.write(stdErr);
+        }
         resolve(stdOut);
       } else {
-        reject(new Error(stdErr));
+        reject(new Error(stdErr || 'Closure Compiler failed.'));
       }
     });
   });
