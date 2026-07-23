@@ -75,11 +75,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# --- Validate flag combinations ---
+if [[ "$USE_COMPILER" == "true" && "$USE_CLAUDE" == "false" ]]; then
+  error "--compiler requires --claude"
+fi
+
 # Generate worktree name with timestamp prefix
 TIMESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
 
 if [[ -z "$NAME" ]]; then
-  # Word lists for random name generation
+  # Word lists for random name generation.
+  # Note: the timestamp prefix already guarantees uniqueness; these words
+  # exist purely for human readability.
   ADJECTIVES=(
     "quick" "bright" "calm" "dark" "eager" "fair" "gentle" "happy" "idle" "jolly"
     "keen" "lively" "merry" "noble" "orange" "proud" "quiet" "rapid" "silent" "tall"
@@ -97,18 +104,17 @@ if [[ -z "$NAME" ]]; then
     "yonder" "zenith" "aurora" "beacon" "coral"
   )
 
-  # Generate random name: worktree-yyyy-mm-dd-hh-mm-ss-<adjective>-<noun>
   RANDOM_ADJ=${ADJECTIVES[$RANDOM % ${#ADJECTIVES[@]}]}
   RANDOM_NOUN=${NOUNS[$RANDOM % ${#NOUNS[@]}]}
   NAME="worktree-${TIMESTAMP}-${RANDOM_ADJ}-${RANDOM_NOUN}"
   echo "Auto-generated worktree name: $NAME"
 else
-  # Use provided name: worktree-yyyy-mm-dd-hh-mm-ss-<name>
   NAME="worktree-${TIMESTAMP}-${NAME}"
   echo "Worktree name: $NAME"
 fi
 
 # --- Check .gitignore ---
+# Accept any of: .worktrees, /.worktrees, .worktrees/, /.worktrees/
 if ! grep -qE '^/?\.worktrees/?$' "$REPO_ROOT/.gitignore" 2>/dev/null; then
   error "'.worktrees' is not in .gitignore. Add it before creating worktrees."
 fi
@@ -133,11 +139,12 @@ git worktree add "$WORKTREE_PATH" -b "$NAME"
 WORKTREE_CREATED=true
 
 # --- Install dependencies ---
+# Run yarn installs directly (not in subshells) so ERR trap fires on failure.
 echo "Installing compiler dependencies..."
-(cd "$WORKTREE_PATH/compiler" && yarn install)
+cd "$WORKTREE_PATH/compiler" && yarn install
 
 echo "Installing root dependencies..."
-(cd "$WORKTREE_PATH" && yarn install)
+cd "$WORKTREE_PATH" && yarn install
 
 echo "Worktree '$NAME' created successfully at $WORKTREE_PATH"
 
