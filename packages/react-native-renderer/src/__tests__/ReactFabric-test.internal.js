@@ -35,9 +35,9 @@ describe('ReactFabric', () => {
     React = require('react');
     StrictMode = React.StrictMode;
     ReactFabric = require('react-native-renderer/fabric');
-    ReactNativePrivateInterface = require('react-native/Libraries/ReactPrivate/ReactNativePrivateInterface');
+    ReactNativePrivateInterface = require('react-native/react-private-interface');
     createReactNativeComponentClass =
-      require('react-native/Libraries/ReactPrivate/ReactNativePrivateInterface')
+      require('react-native/react-private-interface')
         .ReactNativeViewConfigRegistry.register;
     ({act, assertConsoleErrorDev} = require('internal-test-utils'));
   });

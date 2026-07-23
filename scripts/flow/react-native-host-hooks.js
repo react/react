@@ -54,7 +54,7 @@ declare opaque type __PublicInstance;
 declare opaque type __PublicTextInstance;
 declare opaque type __PublicRootInstance;
 
-declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface' {
+declare module 'react-native/react-private-interface' {
   declare export function deepFreezeAndThrowOnMutationInDev<T>(obj: T): T;
   declare export const ReactFiberErrorDialog: {
     showErrorDialog: (error: __CapturedError) => boolean,
