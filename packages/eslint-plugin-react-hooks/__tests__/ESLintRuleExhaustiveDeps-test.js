@@ -1757,6 +1757,40 @@ const tests = {
     },
     {
       code: normalizeIndent`
+        function MyComponent({foo, one}) {
+          useEffect(() => {
+            console.log(one);
+            if (foo?.bar) {
+              console.log(foo.bar);
+            }
+          }, [one]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'foo?.bar'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [foo?.bar, one]',
+              output: normalizeIndent`
+                function MyComponent({foo, one}) {
+                  useEffect(() => {
+                    console.log(one);
+                    if (foo?.bar) {
+                      console.log(foo.bar);
+                    }
+                  }, [foo?.bar, one]);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
         function MyComponent() {
           const local = someFunc();
           useEffect(() => {
@@ -8191,11 +8225,11 @@ const testsTypescript = {
       errors: [
         {
           message:
-            "React Hook useEffect has a missing dependency: 'pizza.crust'. " +
+            "React Hook useEffect has a missing dependency: 'pizza?.crust'. " +
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc: 'Update the dependencies array to be: [pizza.crust]',
+              desc: 'Update the dependencies array to be: [pizza?.crust]',
               output: normalizeIndent`
                 function MyComponent() {
                   const pizza = {};
@@ -8203,7 +8237,7 @@ const testsTypescript = {
                   useEffect(() => ({
                     crust: pizza?.crust,
                     density: pizza.crust.density,
-                  }), [pizza.crust]);
+                  }), [pizza?.crust]);
                 }
               `,
             },
@@ -8225,11 +8259,11 @@ const testsTypescript = {
       errors: [
         {
           message:
-            "React Hook useEffect has a missing dependency: 'pizza.crust'. " +
+            "React Hook useEffect has a missing dependency: 'pizza?.crust'. " +
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc: 'Update the dependencies array to be: [pizza.crust]',
+              desc: 'Update the dependencies array to be: [pizza?.crust]',
               output: normalizeIndent`
                 function MyComponent() {
                   const pizza = {};
@@ -8237,7 +8271,7 @@ const testsTypescript = {
                   useEffect(() => ({
                     crust: pizza.crust,
                     density: pizza?.crust.density,
-                  }), [pizza.crust]);
+                  }), [pizza?.crust]);
                 }
               `,
             },
