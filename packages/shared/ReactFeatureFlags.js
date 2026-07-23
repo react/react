@@ -105,7 +105,7 @@ export const enableOptimisticKey = __EXPERIMENTAL__;
  */
 export const enableObjectFiber: boolean = false;
 
-export const enableTransitionTracing: boolean = false;
+export const enableTransitionTracing: boolean = true;
 
 // FB-only usage. The new API has different semantics.
 export const enableLegacyHidden: boolean = false;
