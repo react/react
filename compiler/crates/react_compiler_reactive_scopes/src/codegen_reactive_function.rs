@@ -3328,20 +3328,7 @@ fn codegen_place(cx: &mut Context, place: &Place) -> Result<ExpressionOrJsxText,
     let mut ast_ident = convert_identifier(place.identifier, cx.env)?;
     // Override identifier loc with place.loc, matching TS: identifier.loc = place.loc
     if let Some(loc) = place.loc {
-        ast_ident.base.loc = Some(AstSourceLocation {
-            start: AstPosition {
-                line: loc.start.line,
-                column: loc.start.column,
-                index: None,
-            },
-            end: AstPosition {
-                line: loc.end.line,
-                column: loc.end.column,
-                index: None,
-            },
-            filename: None,
-            identifier_name: None,
-        });
+        apply_diag_loc_to_base(&mut ast_ident.base, loc);
     }
     Ok(ExpressionOrJsxText::Expression(Expression::Identifier(
         ast_ident,
@@ -3557,26 +3544,53 @@ fn convert_update_operator(op: &react_compiler_hir::UpdateOperator) -> AstUpdate
 /// option to insert blank lines at correct positions.
 fn base_node_with_loc(type_name: &str, loc: Option<DiagSourceLocation>) -> BaseNode {
     match loc {
-        Some(loc) => BaseNode {
-            node_type: Some(type_name.to_string()),
-            loc: Some(AstSourceLocation {
-                start: AstPosition {
-                    line: loc.start.line,
-                    column: loc.start.column,
-                    index: loc.start.index,
-                },
-                end: AstPosition {
-                    line: loc.end.line,
-                    column: loc.end.column,
-                    index: loc.end.index,
-                },
-                filename: None,
-                identifier_name: None,
-            }),
-            ..Default::default()
-        },
+        Some(loc) => {
+            let mut base = BaseNode {
+                node_type: Some(type_name.to_string()),
+                ..Default::default()
+            };
+            apply_diag_loc_to_base(&mut base, loc);
+            base
+        }
         None => BaseNode::typed(type_name),
     }
+}
+
+fn ast_loc_from_diag(loc: DiagSourceLocation) -> AstSourceLocation {
+    AstSourceLocation {
+        start: AstPosition {
+            line: loc.start.line,
+            column: loc.start.column,
+            index: loc.start.index,
+        },
+        end: AstPosition {
+            line: loc.end.line,
+            column: loc.end.column,
+            index: loc.end.index,
+        },
+        filename: None,
+        identifier_name: None,
+    }
+}
+
+fn apply_ast_loc_to_base(
+    base: &mut BaseNode,
+    loc: AstSourceLocation,
+    start_offset: Option<u32>,
+    end_offset: Option<u32>,
+) {
+    base.start = start_offset;
+    base.end = end_offset;
+    base.loc = Some(loc);
+}
+
+fn apply_diag_loc_to_base(base: &mut BaseNode, loc: DiagSourceLocation) {
+    apply_ast_loc_to_base(
+        base,
+        ast_loc_from_diag(loc),
+        loc.start_offset,
+        loc.end_offset,
+    );
 }
 
 fn make_identifier(name: &str) -> AstIdentifier {
@@ -3602,12 +3616,13 @@ fn make_identifier_with_loc(name: &str, loc: Option<DiagSourceLocation>) -> AstI
 fn make_var_declarator(id: PatternLike, init: Option<Expression>) -> VariableDeclarator {
     // Reconstruct VariableDeclarator.loc from id.loc.start and init.loc.end,
     // matching TS createVariableDeclarator behavior for retainLines support.
-    let loc = get_pattern_loc(&id).and_then(|id_loc| {
-        let end = match &init {
-            Some(expr) => get_expression_loc(expr)
-                .map(|l| l.end.clone())
-                .unwrap_or_else(|| id_loc.end.clone()),
-            None => id_loc.end.clone(),
+    let loc = get_pattern_base(&id).and_then(|id_base| {
+        let id_loc = id_base.loc.as_ref()?;
+        let (end, end_offset) = match &init {
+            Some(expr) => get_expression_base(expr)
+                .and_then(|base| base.loc.as_ref().map(|loc| (loc.end.clone(), base.end)))
+                .unwrap_or_else(|| (id_loc.end.clone(), id_base.end)),
+            None => (id_loc.end.clone(), id_base.end),
         };
         Some(AstSourceLocation {
             start: id_loc.start.clone(),
@@ -3615,14 +3630,16 @@ fn make_var_declarator(id: PatternLike, init: Option<Expression>) -> VariableDec
             filename: id_loc.filename.clone(),
             identifier_name: None,
         })
+        .map(|loc| (loc, id_base.start, end_offset))
     });
     VariableDeclarator {
-        base: if let Some(loc) = loc {
-            BaseNode {
+        base: if let Some((loc, start_offset, end_offset)) = loc {
+            let mut base = BaseNode {
                 node_type: Some("VariableDeclarator".to_string()),
-                loc: Some(loc),
                 ..Default::default()
-            }
+            };
+            apply_ast_loc_to_base(&mut base, loc, start_offset, end_offset);
+            base
         } else {
             BaseNode::typed("VariableDeclarator")
         },
@@ -3632,81 +3649,83 @@ fn make_var_declarator(id: PatternLike, init: Option<Expression>) -> VariableDec
     }
 }
 
-/// Extract the loc from a PatternLike's base node.
-fn get_pattern_loc(pattern: &PatternLike) -> Option<&AstSourceLocation> {
+/// Extract the base node from a PatternLike.
+fn get_pattern_base(pattern: &PatternLike) -> Option<&BaseNode> {
     match pattern {
-        PatternLike::Identifier(id) => id.base.loc.as_ref(),
-        PatternLike::ObjectPattern(p) => p.base.loc.as_ref(),
-        PatternLike::ArrayPattern(p) => p.base.loc.as_ref(),
-        PatternLike::AssignmentPattern(p) => p.base.loc.as_ref(),
-        PatternLike::RestElement(p) => p.base.loc.as_ref(),
+        PatternLike::Identifier(id) => Some(&id.base),
+        PatternLike::ObjectPattern(p) => Some(&p.base),
+        PatternLike::ArrayPattern(p) => Some(&p.base),
+        PatternLike::AssignmentPattern(p) => Some(&p.base),
+        PatternLike::RestElement(p) => Some(&p.base),
         _ => None,
     }
 }
 
-/// Extract the loc from an Expression's base node.
-fn get_expression_loc(expr: &Expression) -> Option<&AstSourceLocation> {
+/// Extract the base node from an Expression.
+fn get_expression_base(expr: &Expression) -> Option<&BaseNode> {
     match expr {
-        Expression::Identifier(e) => e.base.loc.as_ref(),
-        Expression::StringLiteral(e) => e.base.loc.as_ref(),
-        Expression::NumericLiteral(e) => e.base.loc.as_ref(),
-        Expression::BooleanLiteral(e) => e.base.loc.as_ref(),
-        Expression::NullLiteral(e) => e.base.loc.as_ref(),
-        Expression::CallExpression(e) => e.base.loc.as_ref(),
-        Expression::MemberExpression(e) => e.base.loc.as_ref(),
-        Expression::OptionalMemberExpression(e) => e.base.loc.as_ref(),
-        Expression::ArrayExpression(e) => e.base.loc.as_ref(),
-        Expression::ObjectExpression(e) => e.base.loc.as_ref(),
-        Expression::ArrowFunctionExpression(e) => e.base.loc.as_ref(),
-        Expression::FunctionExpression(e) => e.base.loc.as_ref(),
-        Expression::BinaryExpression(e) => e.base.loc.as_ref(),
-        Expression::UnaryExpression(e) => e.base.loc.as_ref(),
-        Expression::UpdateExpression(e) => e.base.loc.as_ref(),
-        Expression::LogicalExpression(e) => e.base.loc.as_ref(),
-        Expression::ConditionalExpression(e) => e.base.loc.as_ref(),
-        Expression::SequenceExpression(e) => e.base.loc.as_ref(),
-        Expression::AssignmentExpression(e) => e.base.loc.as_ref(),
-        Expression::TemplateLiteral(e) => e.base.loc.as_ref(),
-        Expression::TaggedTemplateExpression(e) => e.base.loc.as_ref(),
-        Expression::SpreadElement(e) => e.base.loc.as_ref(),
-        Expression::RegExpLiteral(e) => e.base.loc.as_ref(),
-        Expression::JSXElement(e) => e.base.loc.as_ref(),
-        Expression::JSXFragment(e) => e.base.loc.as_ref(),
-        Expression::NewExpression(e) => e.base.loc.as_ref(),
-        Expression::OptionalCallExpression(e) => e.base.loc.as_ref(),
-        _ => None,
+        Expression::Identifier(e) => Some(&e.base),
+        Expression::StringLiteral(e) => Some(&e.base),
+        Expression::NumericLiteral(e) => Some(&e.base),
+        Expression::BooleanLiteral(e) => Some(&e.base),
+        Expression::NullLiteral(e) => Some(&e.base),
+        Expression::CallExpression(e) => Some(&e.base),
+        Expression::MemberExpression(e) => Some(&e.base),
+        Expression::OptionalMemberExpression(e) => Some(&e.base),
+        Expression::ArrayExpression(e) => Some(&e.base),
+        Expression::ObjectExpression(e) => Some(&e.base),
+        Expression::ArrowFunctionExpression(e) => Some(&e.base),
+        Expression::FunctionExpression(e) => Some(&e.base),
+        Expression::BinaryExpression(e) => Some(&e.base),
+        Expression::UnaryExpression(e) => Some(&e.base),
+        Expression::UpdateExpression(e) => Some(&e.base),
+        Expression::LogicalExpression(e) => Some(&e.base),
+        Expression::ConditionalExpression(e) => Some(&e.base),
+        Expression::SequenceExpression(e) => Some(&e.base),
+        Expression::AssignmentExpression(e) => Some(&e.base),
+        Expression::TemplateLiteral(e) => Some(&e.base),
+        Expression::TaggedTemplateExpression(e) => Some(&e.base),
+        Expression::SpreadElement(e) => Some(&e.base),
+        Expression::RegExpLiteral(e) => Some(&e.base),
+        Expression::JSXElement(e) => Some(&e.base),
+        Expression::JSXFragment(e) => Some(&e.base),
+        Expression::NewExpression(e) => Some(&e.base),
+        Expression::OptionalCallExpression(e) => Some(&e.base),
+        Expression::BigIntLiteral(e) => Some(&e.base),
+        Expression::AwaitExpression(e) => Some(&e.base),
+        Expression::YieldExpression(e) => Some(&e.base),
+        Expression::MetaProperty(e) => Some(&e.base),
+        Expression::ClassExpression(e) => Some(&e.base),
+        Expression::PrivateName(e) => Some(&e.base),
+        Expression::Super(e) => Some(&e.base),
+        Expression::Import(e) => Some(&e.base),
+        Expression::ThisExpression(e) => Some(&e.base),
+        Expression::ParenthesizedExpression(e) => Some(&e.base),
+        Expression::AssignmentPattern(e) => Some(&e.base),
+        Expression::TSAsExpression(e) => Some(&e.base),
+        Expression::TSSatisfiesExpression(e) => Some(&e.base),
+        Expression::TSNonNullExpression(e) => Some(&e.base),
+        Expression::TSTypeAssertion(e) => Some(&e.base),
+        Expression::TSInstantiationExpression(e) => Some(&e.base),
+        Expression::TypeCastExpression(e) => Some(&e.base),
     }
 }
 
 /// Apply a source location to an ExpressionOrJsxText value, matching the TS behavior
 /// where `value.loc = instrValue.loc` is set at the end of codegenInstructionValue.
 fn apply_loc_to_value(value: &mut ExpressionOrJsxText, loc: DiagSourceLocation) {
-    let ast_loc = AstSourceLocation {
-        start: AstPosition {
-            line: loc.start.line,
-            column: loc.start.column,
-            index: None,
-        },
-        end: AstPosition {
-            line: loc.end.line,
-            column: loc.end.column,
-            index: None,
-        },
-        filename: None,
-        identifier_name: None,
-    };
     match value {
         ExpressionOrJsxText::Expression(expr) => {
-            apply_loc_to_expression(expr, ast_loc);
+            apply_loc_to_expression(expr, loc);
         }
         ExpressionOrJsxText::JsxText(text) => {
-            text.base.loc = Some(ast_loc);
+            apply_diag_loc_to_base(&mut text.base, loc);
         }
     }
 }
 
 /// Apply a source location to an Expression's base node.
-fn apply_loc_to_expression(expr: &mut Expression, loc: AstSourceLocation) {
+fn apply_loc_to_expression(expr: &mut Expression, loc: DiagSourceLocation) {
     let base = match expr {
         Expression::Identifier(e) => &mut e.base,
         Expression::StringLiteral(e) => &mut e.base,
@@ -3735,9 +3754,25 @@ fn apply_loc_to_expression(expr: &mut Expression, loc: AstSourceLocation) {
         Expression::JSXFragment(e) => &mut e.base,
         Expression::NewExpression(e) => &mut e.base,
         Expression::OptionalCallExpression(e) => &mut e.base,
-        _ => return,
+        Expression::BigIntLiteral(e) => &mut e.base,
+        Expression::AwaitExpression(e) => &mut e.base,
+        Expression::YieldExpression(e) => &mut e.base,
+        Expression::MetaProperty(e) => &mut e.base,
+        Expression::ClassExpression(e) => &mut e.base,
+        Expression::PrivateName(e) => &mut e.base,
+        Expression::Super(e) => &mut e.base,
+        Expression::Import(e) => &mut e.base,
+        Expression::ThisExpression(e) => &mut e.base,
+        Expression::ParenthesizedExpression(e) => &mut e.base,
+        Expression::AssignmentPattern(e) => &mut e.base,
+        Expression::TSAsExpression(e) => &mut e.base,
+        Expression::TSSatisfiesExpression(e) => &mut e.base,
+        Expression::TSNonNullExpression(e) => &mut e.base,
+        Expression::TSTypeAssertion(e) => &mut e.base,
+        Expression::TSInstantiationExpression(e) => &mut e.base,
+        Expression::TypeCastExpression(e) => &mut e.base,
     };
-    base.loc = Some(loc);
+    apply_diag_loc_to_base(base, loc);
 }
 
 fn codegen_label(id: BlockId) -> String {
@@ -3955,6 +3990,8 @@ fn get_statement_loc(stmt: &Statement) -> Option<DiagSourceLocation> {
             column: loc.end.column,
             index: loc.end.index,
         },
+        start_offset: base.start,
+        end_offset: base.end,
     })
 }
 
@@ -4238,10 +4275,251 @@ fn apply_renames_to_json_inner(
 
 #[cfg(test)]
 mod tests {
+    use react_compiler_ast::common::BaseNode;
+    use react_compiler_ast::common::RawNode;
+    use react_compiler_ast::expressions::Expression;
+    use react_compiler_ast::expressions::Identifier;
+    use react_compiler_ast::expressions::TSAsExpression;
+    use react_compiler_ast::expressions::TSSatisfiesExpression;
+    use react_compiler_ast::expressions::TypeCastExpression;
+    use react_compiler_ast::jsx::JSXText;
+    use react_compiler_ast::patterns::PatternLike;
     use react_compiler_ast::statements::Statement;
+    use react_compiler_diagnostics::Position as DiagPosition;
+    use react_compiler_diagnostics::SourceLocation as DiagSourceLocation;
     use serde_json::json;
 
-    use super::{UnsupportedOriginalNode, codegen_unsupported_original_node};
+    use super::{
+        ExpressionOrJsxText, UnsupportedOriginalNode, apply_loc_to_value, base_node_with_loc,
+        codegen_unsupported_original_node, make_var_declarator,
+    };
+
+    #[test]
+    fn base_node_with_loc_preserves_offsets_as_start_end() {
+        let node = base_node_with_loc(
+            "ExpressionStatement",
+            Some(DiagSourceLocation {
+                start: DiagPosition {
+                    line: 2,
+                    column: 4,
+                    index: Some(1700),
+                },
+                end: DiagPosition {
+                    line: 2,
+                    column: 21,
+                    index: Some(3400),
+                },
+                start_offset: Some(17),
+                end_offset: Some(34),
+            }),
+        );
+
+        assert_eq!(node.node_type.as_deref(), Some("ExpressionStatement"));
+        assert_eq!(node.start, Some(17));
+        assert_eq!(node.end, Some(34));
+        assert_eq!(node.loc.as_ref().unwrap().start.index, Some(1700));
+        assert_eq!(node.loc.as_ref().unwrap().end.index, Some(3400));
+
+        let node_without_offsets = base_node_with_loc(
+            "ExpressionStatement",
+            Some(DiagSourceLocation {
+                start: DiagPosition {
+                    line: 2,
+                    column: 4,
+                    index: Some(17),
+                },
+                end: DiagPosition {
+                    line: 2,
+                    column: 21,
+                    index: Some(34),
+                },
+                start_offset: None,
+                end_offset: None,
+            }),
+        );
+
+        assert_eq!(node_without_offsets.start, None);
+        assert_eq!(node_without_offsets.end, None);
+    }
+
+    #[test]
+    fn loc_overwrite_preserves_loc_index_and_offsets_separately() {
+        let loc = DiagSourceLocation {
+            start: DiagPosition {
+                line: 2,
+                column: 4,
+                index: Some(1700),
+            },
+            end: DiagPosition {
+                line: 2,
+                column: 21,
+                index: Some(3400),
+            },
+            start_offset: Some(17),
+            end_offset: Some(34),
+        };
+        let mut expr_value = ExpressionOrJsxText::Expression(Expression::Identifier(Identifier {
+            base: BaseNode::typed("Identifier"),
+            name: "x".to_string(),
+            type_annotation: None,
+            optional: None,
+            decorators: None,
+        }));
+
+        apply_loc_to_value(&mut expr_value, loc);
+
+        let ExpressionOrJsxText::Expression(Expression::Identifier(identifier)) = &expr_value
+        else {
+            panic!("expected identifier expression");
+        };
+        assert_eq!(identifier.base.start, Some(17));
+        assert_eq!(identifier.base.end, Some(34));
+        assert_eq!(
+            identifier.base.loc.as_ref().unwrap().start.index,
+            Some(1700)
+        );
+        assert_eq!(identifier.base.loc.as_ref().unwrap().end.index, Some(3400));
+
+        let mut text_value = ExpressionOrJsxText::JsxText(JSXText {
+            base: BaseNode::typed("JSXText"),
+            value: "text".to_string(),
+        });
+
+        apply_loc_to_value(&mut text_value, loc);
+
+        let ExpressionOrJsxText::JsxText(text) = &text_value else {
+            panic!("expected jsx text");
+        };
+        assert_eq!(text.base.start, Some(17));
+        assert_eq!(text.base.end, Some(34));
+        assert_eq!(text.base.loc.as_ref().unwrap().start.index, Some(1700));
+        assert_eq!(text.base.loc.as_ref().unwrap().end.index, Some(3400));
+    }
+
+    #[test]
+    fn loc_overwrite_applies_to_ts_and_flow_cast_wrappers() {
+        fn ident_expr() -> Box<Expression> {
+            Box::new(Expression::Identifier(Identifier {
+                base: BaseNode::typed("Identifier"),
+                name: "x".to_string(),
+                type_annotation: None,
+                optional: None,
+                decorators: None,
+            }))
+        }
+
+        let loc = DiagSourceLocation {
+            start: DiagPosition {
+                line: 2,
+                column: 4,
+                index: Some(1700),
+            },
+            end: DiagPosition {
+                line: 2,
+                column: 21,
+                index: Some(3400),
+            },
+            start_offset: Some(17),
+            end_offset: Some(34),
+        };
+
+        let cases = [
+            Expression::TSAsExpression(TSAsExpression {
+                base: BaseNode::typed("TSAsExpression"),
+                expression: ident_expr(),
+                type_annotation: RawNode::null(),
+            }),
+            Expression::TSSatisfiesExpression(TSSatisfiesExpression {
+                base: BaseNode::typed("TSSatisfiesExpression"),
+                expression: ident_expr(),
+                type_annotation: RawNode::null(),
+            }),
+            Expression::TypeCastExpression(TypeCastExpression {
+                base: BaseNode::typed("TypeCastExpression"),
+                expression: ident_expr(),
+                type_annotation: RawNode::null(),
+            }),
+        ];
+
+        for expr in cases {
+            let mut value = ExpressionOrJsxText::Expression(expr);
+            apply_loc_to_value(&mut value, loc);
+            let ExpressionOrJsxText::Expression(expr) = value else {
+                panic!("expected expression");
+            };
+            let base = match expr {
+                Expression::TSAsExpression(expr) => expr.base,
+                Expression::TSSatisfiesExpression(expr) => expr.base,
+                Expression::TypeCastExpression(expr) => expr.base,
+                _ => panic!("expected cast wrapper"),
+            };
+
+            assert_eq!(base.start, Some(17));
+            assert_eq!(base.end, Some(34));
+            assert_eq!(base.loc.as_ref().unwrap().start.index, Some(1700));
+            assert_eq!(base.loc.as_ref().unwrap().end.index, Some(3400));
+        }
+    }
+
+    #[test]
+    fn variable_declarator_uses_cast_init_offsets_for_end() {
+        let id_loc = DiagSourceLocation {
+            start: DiagPosition {
+                line: 1,
+                column: 6,
+                index: Some(6),
+            },
+            end: DiagPosition {
+                line: 1,
+                column: 7,
+                index: Some(7),
+            },
+            start_offset: Some(6),
+            end_offset: Some(7),
+        };
+        let init_loc = DiagSourceLocation {
+            start: DiagPosition {
+                line: 1,
+                column: 10,
+                index: Some(10),
+            },
+            end: DiagPosition {
+                line: 1,
+                column: 16,
+                index: Some(16),
+            },
+            start_offset: Some(10),
+            end_offset: Some(16),
+        };
+        let id = PatternLike::Identifier(Identifier {
+            base: base_node_with_loc("Identifier", Some(id_loc)),
+            name: "y".to_string(),
+            type_annotation: None,
+            optional: None,
+            decorators: None,
+        });
+        let init = Expression::TSAsExpression(TSAsExpression {
+            base: base_node_with_loc("TSAsExpression", Some(init_loc)),
+            expression: Box::new(Expression::Identifier(Identifier {
+                base: BaseNode::typed("Identifier"),
+                name: "x".to_string(),
+                type_annotation: None,
+                optional: None,
+                decorators: None,
+            })),
+            type_annotation: RawNode::null(),
+        });
+
+        let declarator = make_var_declarator(id, Some(init));
+
+        assert_eq!(declarator.base.start, Some(6));
+        assert_eq!(declarator.base.end, Some(16));
+        assert_eq!(
+            declarator.base.loc.as_ref().unwrap().start.index,
+            Some(6)
+        );
+        assert_eq!(declarator.base.loc.as_ref().unwrap().end.index, Some(16));
+    }
 
     /// The Fast Refresh source hash must match Node's
     /// `createHmac('sha256', code).digest('hex')` byte-for-byte, or hot-reload
