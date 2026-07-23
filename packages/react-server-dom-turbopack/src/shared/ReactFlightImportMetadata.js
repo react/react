@@ -7,10 +7,20 @@
  * @flow
  */
 
+// A chunk is either a plain chunk filename, or a merged chunk that bundles
+// several component chunks together, emitted as
+// `[mergedChunkFilename, componentChunkFilenames, componentChunkSizes]`.
+export type Chunk =
+  | string
+  | [
+      /* merged chunk filename */ string,
+      /* component chunk filenames */ Array<string>,
+      /* component chunk sizes */ Array<number>,
+    ];
+
 export type ImportManifestEntry = {
   id: string,
-  // chunks is an array of filenames
-  chunks: Array<string>,
+  chunks: Array<Chunk>,
   name: string,
   async?: boolean,
 };
@@ -20,11 +30,11 @@ export type ImportManifestEntry = {
 export type ImportMetadata =
   | [
       /* id */ string,
-      /* chunk filenames */ Array<string>,
+      /* chunks */ Array<Chunk>,
       /* name */ string,
       /* async */ 1,
     ]
-  | [/* id */ string, /* chunk filenames */ Array<string>, /* name */ string];
+  | [/* id */ string, /* chunks */ Array<Chunk>, /* name */ string];
 
 export const ID = 0;
 export const CHUNKS = 1;
