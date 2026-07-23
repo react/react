@@ -101,7 +101,7 @@ function updateOptions(
         defaultSelected = options[i];
       }
     }
-    if (defaultSelected !== null) {
+    if (defaultSelected !== null && node.size <= 1) {
       defaultSelected.selected = true;
     }
   }
