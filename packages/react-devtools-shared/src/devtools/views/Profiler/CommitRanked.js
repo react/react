@@ -8,7 +8,14 @@
  */
 
 import * as React from 'react';
-import {useCallback, useContext, useMemo, useState} from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {FixedSizeList} from 'react-window';
 import {ProfilerContext} from './ProfilerContext';
@@ -151,6 +158,14 @@ function CommitRanked({chartData, commitTree, height, width}: Props) {
     [hoveredFiberData],
   );
 
+  // Scroll the selected fiber into view (e.g. when navigating search results).
+  const listRef = useRef<FixedSizeList | null>(null);
+  useEffect(() => {
+    if (selectedFiberID !== null && listRef.current !== null) {
+      listRef.current.scrollToItem(selectedFiberIndex, 'smart');
+    }
+  }, [selectedFiberID, selectedFiberIndex]);
+
   return (
     <Tooltip label={tooltipLabel}>
       <FixedSizeList
@@ -159,6 +174,7 @@ function CommitRanked({chartData, commitTree, height, width}: Props) {
         itemCount={chartData.nodes.length}
         itemData={itemData}
         itemSize={lineHeight}
+        ref={listRef}
         width={width}>
         {CommitRankedListItem}
       </FixedSizeList>

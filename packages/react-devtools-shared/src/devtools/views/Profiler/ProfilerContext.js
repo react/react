@@ -24,12 +24,15 @@ import {
   TreeStateContext,
 } from '../Components/TreeContext';
 import {StoreContext} from '../context';
+import {createRegExp} from '../utils';
 import {logEvent} from 'react-devtools-shared/src/Logger';
 import {useCommitFilteringAndNavigation} from './useCommitFilteringAndNavigation';
 
 import type {CommitDataFrontend, ProfilingDataFrontend} from './types';
 
 export type TabID = 'flame-chart' | 'ranked-chart' | 'timeline';
+
+type SearchResult = {id: number, name: string | null};
 
 export type Context = {
   // Which tab is selected in the Profiler UI?
@@ -80,6 +83,19 @@ export type Context = {
   selectedFiberID: number | null,
   selectedFiberName: string | null,
   selectFiber: (id: number | null, name: string | null) => void,
+
+  // Component search within the currently selected commit.
+  // Toggled by Cmd/Ctrl+F in the flame graph and ranked charts.
+  // Unlike the Components tab, results are scoped to the selected commit only.
+  isSearchInputVisible: boolean,
+  showSearchInput(): void,
+  hideSearchInput(): void,
+  searchText: string,
+  setSearchText: (text: string) => void,
+  searchResults: Array<SearchResult>,
+  searchIndex: number,
+  goToNextSearchResult(): void,
+  goToPreviousSearchResult(): void,
 };
 
 const ProfilerContext: ReactContext<Context> = createContext<Context>(
@@ -143,6 +159,12 @@ function ProfilerContextController({children}: Props): React.Node {
   const [rootID, setRootID] = useState<number | null>(null);
   const [selectedFiberID, selectFiberID] = useState<number | null>(null);
   const [selectedFiberName, selectFiberName] = useState<string | null>(null);
+
+  // Component search (scoped to the currently selected commit).
+  const [isSearchInputVisible, setIsSearchInputVisible] =
+    useState<boolean>(false);
+  const [searchText, setSearchTextState] = useState<string>('');
+  const [searchIndex, setSearchIndex] = useState<number>(-1);
 
   const selectFiber = useCallback(
     (id: number | null, name: string | null) => {
@@ -250,6 +272,111 @@ function ProfilerContextController({children}: Props): React.Node {
     selectPrevCommitIndex,
   } = useCommitFilteringAndNavigation(commitData);
 
+  // Fibers in the selected commit matching `text`, in tree order.
+  // Always scoped to the current commit, never the whole trace.
+  const findMatches = useCallback(
+    (text: string): Array<SearchResult> => {
+      if (
+        text === '' ||
+        rootID === null ||
+        selectedCommitIndex === null ||
+        !didRecordCommits
+      ) {
+        return [];
+      }
+
+      const commitTree = profilerStore.profilingCache.getCommitTree({
+        commitIndex: selectedCommitIndex,
+        rootID,
+      });
+      const regExp = createRegExp(text);
+      const matches: Array<SearchResult> = [];
+      const walk = (id: number) => {
+        const node = commitTree.nodes.get(id);
+        if (node == null) {
+          return;
+        }
+        const {displayName, hocDisplayNames, key} = node;
+        if (
+          (displayName !== null && regExp.test(displayName)) ||
+          (hocDisplayNames !== null &&
+            hocDisplayNames.some(name => regExp.test(name))) ||
+          (key !== null && regExp.test(String(key)))
+        ) {
+          matches.push({id, name: displayName});
+        }
+        node.children.forEach(walk);
+      };
+      walk(commitTree.rootID);
+      return matches;
+    },
+    [rootID, selectedCommitIndex, didRecordCommits, profilerStore],
+  );
+
+  const searchResults = useMemo<Array<SearchResult>>(
+    () => findMatches(searchText),
+    [findMatches, searchText],
+  );
+
+  const selectMatch = useCallback(
+    (matches: Array<SearchResult>, index: number) => {
+      if (index >= 0 && index < matches.length) {
+        selectFiber(matches[index].id, matches[index].name);
+      }
+    },
+    [selectFiber],
+  );
+
+  const setSearchText = useCallback(
+    (text: string) => {
+      setSearchTextState(text);
+      // Match eagerly to jump to the first result; the memo above only updates
+      // on the next render.
+      const matches = findMatches(text);
+      setSearchIndex(matches.length === 0 ? -1 : 0);
+      if (matches.length > 0) {
+        selectMatch(matches, 0);
+      } else if (text !== '') {
+        // A non-empty query with no matches: clear the now-stale selection so
+        // the chart isn't left zoomed on an unrelated fiber.
+        selectFiber(null, null);
+      }
+    },
+    [findMatches, selectMatch, selectFiber],
+  );
+
+  const goToNextSearchResult = useCallback(() => {
+    const count = searchResults.length;
+    if (count === 0) {
+      return;
+    }
+    // Clamp: the selected commit may have changed and shrunk the result set.
+    const current = searchIndex < 0 || searchIndex >= count ? -1 : searchIndex;
+    const nextIndex = current < 0 ? 0 : (current + 1) % count;
+    setSearchIndex(nextIndex);
+    selectMatch(searchResults, nextIndex);
+  }, [searchResults, searchIndex, selectMatch]);
+
+  const goToPreviousSearchResult = useCallback(() => {
+    const count = searchResults.length;
+    if (count === 0) {
+      return;
+    }
+    const current =
+      searchIndex < 0 || searchIndex >= count ? count : searchIndex;
+    const prevIndex = current <= 0 ? count - 1 : current - 1;
+    setSearchIndex(prevIndex);
+    selectMatch(searchResults, prevIndex);
+  }, [searchResults, searchIndex, selectMatch]);
+
+  const showSearchInput = useCallback(() => setIsSearchInputVisible(true), []);
+
+  const hideSearchInput = useCallback(() => {
+    setIsSearchInputVisible(false);
+    setSearchTextState('');
+    setSearchIndex(-1);
+  }, []);
+
   const startProfiling = useCallback(() => {
     logEvent({
       event_name: 'profiling-start',
@@ -260,6 +387,11 @@ function ProfilerContextController({children}: Props): React.Node {
     selectCommitIndex(null);
     selectFiberID(null);
     selectFiberName(null);
+
+    // Clear any active search from the previous session.
+    setIsSearchInputVisible(false);
+    setSearchTextState('');
+    setSearchIndex(-1);
 
     store.profilerStore.startProfiling();
   }, [store, selectedTabID, selectCommitIndex]);
@@ -309,6 +441,16 @@ function ProfilerContextController({children}: Props): React.Node {
       selectedFiberID,
       selectedFiberName,
       selectFiber,
+
+      isSearchInputVisible,
+      showSearchInput,
+      hideSearchInput,
+      searchText,
+      setSearchText,
+      searchResults,
+      searchIndex,
+      goToNextSearchResult,
+      goToPreviousSearchResult,
     }),
     [
       selectedTabID,
@@ -340,6 +482,16 @@ function ProfilerContextController({children}: Props): React.Node {
       selectedFiberID,
       selectedFiberName,
       selectFiber,
+
+      isSearchInputVisible,
+      showSearchInput,
+      hideSearchInput,
+      searchText,
+      setSearchText,
+      searchResults,
+      searchIndex,
+      goToNextSearchResult,
+      goToPreviousSearchResult,
     ],
   );
 

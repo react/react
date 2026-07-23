@@ -22,6 +22,7 @@ import RecordToggle from './RecordToggle';
 import ReloadAndProfileButton from './ReloadAndProfileButton';
 import ProfilingImportExportButtons from './ProfilingImportExportButtons';
 import SnapshotSelector from './SnapshotSelector';
+import ProfilerSearchInput from './ProfilerSearchInput';
 import SidebarCommitInfo from './SidebarCommitInfo';
 import NoProfilingData from './NoProfilingData';
 import RecordingInProgress from './RecordingInProgress';
@@ -56,6 +57,9 @@ function Profiler(_: {}) {
     stopProfiling,
     selectPrevCommitIndex,
     selectNextCommitIndex,
+    isSearchInputVisible,
+    showSearchInput,
+    hideSearchInput,
   } = useContext(ProfilerContext);
 
   const {file: timelineTraceEventData, searchInputContainerRef} =
@@ -74,6 +78,21 @@ function Profiler(_: {}) {
       } else {
         startProfiling();
       }
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (
+      isLegacyProfilerSelected &&
+      didRecordCommits &&
+      correctModifier &&
+      event.key === 'f'
+    ) {
+      // Cmd+F (Mac) or Ctrl+F (Windows/Linux) to search components in the commit
+      showSearchInput();
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (isSearchInputVisible && event.key === 'Escape') {
+      // Escape closes the search input.
+      hideSearchInput();
       event.preventDefault();
       event.stopPropagation();
     } else if (
@@ -103,9 +122,11 @@ function Profiler(_: {}) {
       return;
     }
     const ownerWindow = div.ownerDocument.defaultView;
-    ownerWindow.addEventListener('keydown', handleKeyDown);
+    // Capture phase: Cmd/Ctrl+F is a reserved browser shortcut (Find), so we
+    // must intercept it before the browser to open our own search instead.
+    ownerWindow.addEventListener('keydown', handleKeyDown, true);
     return () => {
-      ownerWindow.removeEventListener('keydown', handleKeyDown);
+      ownerWindow.removeEventListener('keydown', handleKeyDown, true);
     };
   }, []);
 
@@ -197,6 +218,13 @@ function Profiler(_: {}) {
             )}
           </div>
           <div className={styles.Content}>
+            {isLegacyProfilerSelected &&
+              didRecordCommits &&
+              isSearchInputVisible && (
+                <div className={styles.SearchInputOverlay}>
+                  <ProfilerSearchInput />
+                </div>
+              )}
             {view}
             <ModalDialog />
           </div>

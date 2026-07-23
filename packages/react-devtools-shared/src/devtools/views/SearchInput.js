@@ -22,8 +22,10 @@ import AutoSizeInput from './Components/NativeStyleEditor/AutoSizeInput';
 import styles from './SearchInput.css';
 
 type Props = {
+  autoFocus?: boolean,
   goToNextResult: () => void,
   goToPreviousResult: () => void,
+  onClose?: () => void,
   goToResult: (index: number) => void,
   placeholder: string,
   search: (text: string) => void,
@@ -34,8 +36,10 @@ type Props = {
 };
 
 export default function SearchInput({
+  autoFocus,
   goToNextResult,
   goToPreviousResult,
+  onClose,
   goToResult,
   placeholder,
   search,
@@ -96,26 +100,28 @@ export default function SearchInput({
 
   // Auto-focus search input
   useEffect(() => {
-    if (inputRef.current === null) {
+    const input = inputRef.current;
+    if (input === null) {
       return () => {};
+    }
+
+    if (autoFocus) {
+      input.focus();
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const {key, metaKey} = event;
       if (key === 'f' && metaKey) {
-        const inputElement = inputRef.current;
-        if (inputElement !== null) {
-          inputElement.focus();
-          event.preventDefault();
-          event.stopPropagation();
-        }
+        input.focus();
+        event.preventDefault();
+        event.stopPropagation();
       }
     };
 
     // It's important to listen to the ownerDocument to support the browser extension.
     // Here we use portals to render individual tabs (e.g. Profiler),
     // and the root document might belong to a different window.
-    const ownerDocumentElement = inputRef.current.ownerDocument.documentElement;
+    const ownerDocumentElement = input.ownerDocument.documentElement;
     if (ownerDocumentElement === null) {
       return;
     }
@@ -123,7 +129,7 @@ export default function SearchInput({
 
     return () =>
       ownerDocumentElement.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [autoFocus]);
 
   return (
     <div className={styles.SearchInput} data-testname={testName}>
@@ -183,14 +189,24 @@ export default function SearchInput({
             }>
             <ButtonIcon type="down" />
           </Button>
-          <Button
-            data-testname={testName ? `${testName}-ResetButton` : undefined}
-            disabled={!searchText}
-            onClick={resetSearch}
-            title="Reset search">
-            <ButtonIcon type="close" />
-          </Button>
+          {onClose == null && (
+            <Button
+              data-testname={testName ? `${testName}-ResetButton` : undefined}
+              disabled={!searchText}
+              onClick={resetSearch}
+              title="Reset search">
+              <ButtonIcon type="close" />
+            </Button>
+          )}
         </React.Fragment>
+      )}
+      {onClose != null && (
+        <Button
+          data-testname={testName ? `${testName}-CloseButton` : undefined}
+          onClick={onClose}
+          title="Close search (Esc)">
+          <ButtonIcon type="close" />
+        </Button>
       )}
     </div>
   );
