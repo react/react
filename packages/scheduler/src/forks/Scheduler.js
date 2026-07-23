@@ -549,6 +549,14 @@ if (typeof localSetImmediate === 'function') {
   const channel = new MessageChannel();
   const port = channel.port2;
   channel.port1.onmessage = performWorkUntilDeadline;
+  // In environments where MessagePort supports unref (e.g. Node.js with
+  // worker_threads), call it so the port does not keep the process alive.
+  if (typeof channel.port1.unref === 'function') {
+    channel.port1.unref();
+  }
+  if (typeof port.unref === 'function') {
+    port.unref();
+  }
   schedulePerformWorkUntilDeadline = () => {
     port.postMessage(null);
   };
