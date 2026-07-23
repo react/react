@@ -30,9 +30,20 @@ function shallowEqual(objA: mixed, objB: mixed): boolean {
   }
 
   const keysA = Object.keys(objA);
-  const keysB = Object.keys(objB);
 
-  if (keysA.length !== keysB.length) {
+  // Count B's own enumerable string keys without allocating an array. Bail
+  // as soon as B's count exceeds A's so we don't enumerate further than
+  // needed when the sizes differ.
+  let keysBCount = 0;
+  for (const key in objB) {
+    if (hasOwnProperty.call(objB, key)) {
+      keysBCount++;
+      if (keysBCount > keysA.length) {
+        return false;
+      }
+    }
+  }
+  if (keysBCount !== keysA.length) {
     return false;
   }
 
@@ -40,6 +51,7 @@ function shallowEqual(objA: mixed, objB: mixed): boolean {
   for (let i = 0; i < keysA.length; i++) {
     const currentKey = keysA[i];
     if (
+      // $FlowFixMe[incompatible-use] lost refinement of `objB`
       !hasOwnProperty.call(objB, currentKey) ||
       // $FlowFixMe[incompatible-use] lost refinement of `objB`
       !is(objA[currentKey], objB[currentKey])
