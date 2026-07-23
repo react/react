@@ -3538,6 +3538,22 @@ function lowerJsxElement(
       text = exprPath.node.value;
     } else {
       text = trimJsxText(exprPath.node.value);
+      /*
+       * If the decoded value trimmed to null, the text may still contain
+       * meaningful content that Babel decoded from HTML entity references
+       * (e.g. `&#32;` → space). In that case, trimming the decoded value
+       * discards the intentional whitespace. Preserve it by trimming the
+       * raw source instead so that the entity reference is retained in the
+       * output JSX and decoded correctly by the standard JSX transform.
+       */
+      if (text === null) {
+        const rawValue = (
+          exprPath.node.extra as {raw?: string} | undefined
+        )?.raw;
+        if (rawValue != null) {
+          text = trimJsxText(rawValue);
+        }
+      }
     }
 
     if (text === null) {
