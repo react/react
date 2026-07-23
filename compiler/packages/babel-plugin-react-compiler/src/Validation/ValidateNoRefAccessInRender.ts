@@ -455,11 +455,14 @@ function validateNoRefAccessInRenderImpl(
             break;
           }
           case 'MethodCall':
+          case 'NewExpression':
           case 'CallExpression': {
             const callee =
               instr.value.kind === 'CallExpression'
                 ? instr.value.callee
-                : instr.value.property;
+                : instr.value.kind === 'NewExpression'
+                  ? instr.value.callee
+                  : instr.value.property;
             const hookKind = getHookKindForType(fn.env, callee.identifier.type);
             let returnType: RefAccessType = {kind: 'None'};
             const fnType = env.get(callee.identifier.id);
