@@ -486,6 +486,45 @@ describe('ReactDOMSelect', () => {
     expect(select.selectedIndex).toBe(-1);
   });
 
+  it('does not select an item when size is greater than 1 and value does not match', async () => {
+    const stub = (
+      <select size="2" value="giraffe" onChange={noop}>
+        <option value="monkey">A monkey!</option>
+        <option value="giraffe">A giraffe!</option>
+        <option value="gorilla">A gorilla!</option>
+      </select>
+    );
+    const options = stub.props.children;
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(stub);
+    });
+
+    const select = container.firstChild;
+
+    expect(select.options[0].selected).toBe(false);
+    expect(select.options[1].selected).toBe(true);
+    expect(select.options[2].selected).toBe(false);
+    expect(select.value).toBe('giraffe');
+    expect(select.selectedIndex).toBe(1);
+
+    await act(() => {
+      root.render(
+        <select size="2" value="not-an-option" onChange={noop}>
+          {options}
+        </select>,
+      );
+    });
+
+    expect(select.options[0].selected).toBe(false);
+    expect(select.options[1].selected).toBe(false);
+    expect(select.options[2].selected).toBe(false);
+    expect(select.value).toBe('');
+    expect(select.selectedIndex).toBe(-1);
+  });
+
   it('should remember value when switching to uncontrolled', async () => {
     const stub = (
       <select value={'giraffe'} onChange={noop}>
