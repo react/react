@@ -364,6 +364,7 @@ type Response = {
   _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
   _debugFindSourceMapURL?: void | FindSourceMapURLCallback, // DEV-only
+  _debugFakeFunctionCache?: Map<string, FakeFunction<any>>, // DEV-only
   _debugChannel?: void | DebugChannel, // DEV-only
   _blockedConsole?: null | SomeChunk<ConsoleEntry>, // DEV-only
   _replayConsole: boolean, // DEV-only
@@ -2789,6 +2790,7 @@ function ResponseInstance(
     }
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
     this._debugFindSourceMapURL = findSourceMapURL;
+    this._debugFakeFunctionCache = new Map();
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
     this._replayConsole = replayConsole;
@@ -3673,9 +3675,6 @@ function resolveHint<Code: HintCode>(
 const supportsCreateTask = __DEV__ && !!(console as any).createTask;
 
 type FakeFunction<T> = (() => T) => T;
-const fakeFunctionCache: Map<string, FakeFunction<any>> = __DEV__
-  ? new Map()
-  : (null as any);
 
 let fakeFunctionIdx = 0;
 function createFakeFunction<T>(
@@ -3869,7 +3868,13 @@ function buildFakeCallStack<T>(
       '-' +
       environmentName +
       (useEnclosingLine ? '-e' : '-n');
-    let fn = fakeFunctionCache.get(frameKey);
+    // The cache lives on the response since the _debugFindSourceMapURL
+    // function is an input and can vary by response.
+    const fakeFunctionCache = response._debugFakeFunctionCache;
+    let fn =
+      fakeFunctionCache !== undefined
+        ? fakeFunctionCache.get(frameKey)
+        : undefined;
     if (fn === undefined) {
       const [name, filename, line, col, enclosingLine, enclosingCol] = frame;
       const findSourceMapURL = response._debugFindSourceMapURL;
@@ -3886,9 +3891,9 @@ function buildFakeCallStack<T>(
         useEnclosingLine ? col : enclosingCol,
         environmentName,
       );
-      // TODO: This cache should technically live on the response since the _debugFindSourceMapURL
-      // function is an input and can vary by response.
-      fakeFunctionCache.set(frameKey, fn);
+      if (fakeFunctionCache !== undefined) {
+        fakeFunctionCache.set(frameKey, fn);
+      }
     }
     callStack = fn.bind(null, callStack);
   }
