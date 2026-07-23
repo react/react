@@ -8937,7 +8937,7 @@ background-color: green;
         'React expected the `href` prop for a <style> tag opting into hoisting semantics ' +
           'using the `precedence` prop to not have any spaces but ecountered spaces instead. ' +
           'using spaces in this prop will cause hydration of this style to fail on the client. ' +
-          'The href for the <style> where this ocurred is "foo bar".\n' +
+          'The href for the <style> where this occurred is "foo bar".\n' +
           '    in style (at **)',
       ]);
     });
