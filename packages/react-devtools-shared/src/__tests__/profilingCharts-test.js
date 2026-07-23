@@ -10,6 +10,8 @@
 import type Store from 'react-devtools-shared/src/devtools/store';
 
 import {getVersionedRenderImplementation} from './utils';
+import {ElementTypeFunction} from 'react-devtools-shared/src/frontend/types';
+import {getChartData as getRankedChartDataFromBuilder} from 'react-devtools-shared/src/devtools/views/Profiler/RankedChartBuilder';
 
 describe('profiling charts', () => {
   let React;
@@ -30,6 +32,72 @@ describe('profiling charts', () => {
   });
 
   const {render} = getVersionedRenderImplementation();
+
+  it('ranked chart should ignore durations for nodes missing from the commit tree', () => {
+    const commitTree = {
+      rootID: 1,
+      nodes: new Map([
+        [
+          1,
+          {
+            children: [2],
+            compiledWithForget: false,
+            displayName: null,
+            hocDisplayNames: null,
+            id: 1,
+            key: null,
+            parentID: 0,
+            treeBaseDuration: 0,
+            type: ElementTypeFunction,
+          },
+        ],
+        [
+          2,
+          {
+            children: [],
+            compiledWithForget: false,
+            displayName: 'Parent',
+            hocDisplayNames: null,
+            id: 2,
+            key: null,
+            parentID: 1,
+            treeBaseDuration: 10,
+            type: ElementTypeFunction,
+          },
+        ],
+      ]),
+    };
+    const profilerStore = {
+      getCommitData() {
+        return {
+          fiberActualDurations: new Map([
+            [2, 10],
+            [3, 5],
+          ]),
+          fiberSelfDurations: new Map([
+            [2, 10],
+            [3, 5],
+          ]),
+        };
+      },
+    };
+
+    const chartData = getRankedChartDataFromBuilder({
+      commitIndex: 0,
+      commitTree,
+      profilerStore,
+      rootID: 123,
+    });
+
+    expect(chartData.nodes).toEqual([
+      {
+        id: 2,
+        label: 'Parent (10ms)',
+        name: 'Parent',
+        value: 10,
+      },
+    ]);
+  });
 
   function getFlamegraphChartData(rootID, commitIndex) {
     const commitTree = store.profilerStore.profilingCache.getCommitTree({
