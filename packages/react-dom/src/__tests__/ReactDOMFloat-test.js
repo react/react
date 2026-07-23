@@ -9021,6 +9021,72 @@ background-color: green;
         </html>,
       );
     });
+
+    it('re-inserts a style resource when its portal container is removed from the DOM', async () => {
+      // Regression test for https://github.com/facebook/react/issues/36373:
+      // When a <style precedence> lives inside a portal container that gets
+      // removed from the DOM, React kept a stale reference to the detached
+      // node in the hoistable-styles cache. Any subsequent render of the same
+      // href silently skipped insertion, leaving styles permanently missing.
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      // A portal container that we will later remove.
+      const portalTarget = document.createElement('div');
+      document.body.appendChild(portalTarget);
+
+      let setState;
+      function App() {
+        const [showPortal, setShow] = React.useState(true);
+        setState = setShow;
+        return (
+          <>
+            {showPortal &&
+              ReactDOM.createPortal(
+                <style href="x" precedence="custom">
+                  {'.a{color:red}'}
+                </style>,
+                portalTarget,
+              )}
+            <style href="x" precedence="custom">
+              {'.a{color:red}'}
+            </style>
+            <div className="a">content</div>
+          </>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await clientAct(() => {
+        root.render(<App />);
+      });
+
+      // Both the portal render and the main-tree render share the same resource.
+      // After the first render the style should be in the document head.
+      const stylesBefore = document.head.querySelectorAll(
+        '[data-href="x"][data-precedence="custom"]',
+      );
+      expect(stylesBefore.length).toBe(1);
+
+      // Remove the portal target (simulates unmounting a detached portal container).
+      portalTarget.remove();
+
+      // Re-render to force a fresh acquireResource call with the same href.
+      await clientAct(() => {
+        setState(false); // hide portal, only main-tree style remains
+      });
+
+      // The style should still exist in the document — if the fix is absent,
+      // the cached-but-disconnected instance would be returned and the style
+      // would be gone from the document.
+      const stylesAfter = document.head.querySelectorAll(
+        '[data-href="x"][data-precedence="custom"]',
+      );
+      expect(stylesAfter.length).toBeGreaterThanOrEqual(1);
+
+      root.unmount();
+      container.remove();
+    });
   });
 
   describe('Script Resources', () => {

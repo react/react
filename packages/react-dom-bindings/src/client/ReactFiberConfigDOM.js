@@ -5719,6 +5719,14 @@ export function acquireResource(
   props: any,
 ): null | Instance {
   resource.count++;
+  // If a previously-created instance has been removed from the document
+  // (e.g. because it lived inside a portal container that was later
+  // removed from the DOM), we must treat it as if it were never created.
+  // Otherwise React would reuse the disconnected node and the styles it
+  // represents would be permanently lost for the rest of the session.
+  if (resource.instance !== null && !resource.instance.isConnected) {
+    resource.instance = null;
+  }
   if (resource.instance === null) {
     switch (resource.type) {
       case 'style': {
