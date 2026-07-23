@@ -356,8 +356,41 @@ function validateNoRefAccessInRenderImpl(
         switch (instr.value.kind) {
           case 'JsxExpression':
           case 'JsxFragment': {
-            for (const operand of eachInstructionValueOperand(instr.value)) {
-              validateNoDirectRefValueAccess(errors, operand, env);
+            if (instr.value.kind === 'JsxExpression') {
+              if (instr.value.tag.kind === 'Identifier') {
+                validateNoDirectRefValueAccess(errors, instr.value.tag, env);
+              }
+              for (const attribute of instr.value.props) {
+                switch (attribute.kind) {
+                  case 'JsxAttribute': {
+                    if (attribute.name !== 'ref') {
+                      validateNoDirectRefValueAccess(
+                        errors,
+                        attribute.place,
+                        env,
+                      );
+                    }
+                    break;
+                  }
+                  case 'JsxSpreadAttribute': {
+                    validateNoDirectRefValueAccess(
+                      errors,
+                      attribute.argument,
+                      env,
+                    );
+                    break;
+                  }
+                }
+              }
+              if (instr.value.children != null) {
+                for (const child of instr.value.children) {
+                  validateNoDirectRefValueAccess(errors, child, env);
+                }
+              }
+            } else {
+              for (const operand of eachInstructionValueOperand(instr.value)) {
+                validateNoDirectRefValueAccess(errors, operand, env);
+              }
             }
             break;
           }
