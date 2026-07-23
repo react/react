@@ -446,6 +446,26 @@ const rule = {
           if (ref.resolved == null) {
             continue;
           }
+          const referenceNode = fastFindReferenceWithParent(
+            fnNode,
+            ref.identifier,
+          );
+          if (
+            referenceNode?.parent?.type === 'TSTypeQuery' ||
+            referenceNode?.parent?.type === 'TSTypeReference' ||
+            // @ts-expect-error Flow-specific AST node type
+            referenceNode?.parent?.type === 'GenericTypeAnnotation'
+          ) {
+            continue;
+          }
+          const def = ref.resolved.defs[0];
+          if (
+            def != null &&
+            // @ts-expect-error We don't have flow types
+            def.type === 'TypeParameter'
+          ) {
+            continue;
+          }
           if (
             pureScopes.has(ref.resolved.scope) &&
             // Stable values are fine though,
