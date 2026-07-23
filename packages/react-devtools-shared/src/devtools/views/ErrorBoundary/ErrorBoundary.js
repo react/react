@@ -7,6 +7,8 @@
  * @flow
  */
 
+import {logEvent} from 'react-devtools-shared/src/Logger';
+import { analyzeError } from 'shared/ReactErrorAnalyzer';
 import * as React from 'react';
 import {Component, Suspense} from 'react';
 import Store from 'react-devtools-shared/src/devtools/store';
@@ -131,6 +133,8 @@ export default class ErrorBoundary extends Component<Props, State> {
       isUnknownHookError,
     } = this.state;
 
+    const analysis = errorMessage ? analyzeError(errorMessage) : null;
+
     if (hasError) {
       if (isTimeout) {
         return (
@@ -191,6 +195,27 @@ export default class ErrorBoundary extends Component<Props, State> {
               canDismissProp || canDismissState ? this._dismissError : null
             }
             errorMessage={errorMessage}>
+            
+            {/* --- ADDED FIX START --- */}
+            {analysis && (
+              <div style={{
+                backgroundColor: 'var(--color-error-background, #282828)',
+                borderLeft: '4px solid #00bcd4',
+                padding: '12px',
+                marginBottom: '10px',
+                borderRadius: '4px',
+                color: 'var(--color-text, #fff)'
+              }}>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '14px', color: '#00bcd4' }}>
+                   Suggested Fix: {analysis.type}
+                </h4>
+                <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.4' }}>
+                  {analysis.suggestion}
+                </p>
+              </div>
+            )}
+            {/* --- ADDED FIX END --- */}
+
             <Suspense fallback={<SearchingGitHubIssues />}>
               <SuspendingErrorView
                 callStack={callStack}
