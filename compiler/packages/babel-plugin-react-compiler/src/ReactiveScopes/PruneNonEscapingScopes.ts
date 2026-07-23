@@ -100,7 +100,7 @@ import {getFunctionCallSignature} from '../Inference/InferMutationAliasingEffect
  *     scopes and inputs involved in creating that identifier. Individual nodes are marked
  *     as definitely aliased, conditionally aliased, or unaliased:
  *       a. Arrays, objects, function calls all produce a new value and are always marked as aliased
- *       b. Conditional and logical expressions (and a few others) are conditinally aliased,
+ *       b. Conditional and logical expressions (and a few others) are conditionally aliased,
  *          depending on whether their result value is aliased.
  *       c. JSX is always unaliased (though its props children may be)
  * 2. The same pass which builds the graph also stores the set of returned identifiers and set of
@@ -1026,7 +1026,7 @@ class PruneScopesTransform extends ReactiveFunctionTransform<
 
     /**
      * Scopes may initially appear "empty" because the value being memoized
-     * is early-returned from within the scope. For now we intentionaly keep
+     * is early-returned from within the scope. For now we intentionally keep
      * these scopes, and let them get pruned later by PruneUnusedScopes
      * _after_ handling the early-return case in PropagateEarlyReturns.
      *

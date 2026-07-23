@@ -17,7 +17,7 @@ module.exports = {
   extends: ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
   rules: {
     /*
-     * We prefer using const where variables are not reassigned, but occassional mistakes
+     * We prefer using const where variables are not reassigned, but occasional mistakes
      * aren't a major issue
      */
     "prefer-const": "off",
@@ -99,7 +99,7 @@ module.exports = {
   },
   /*
    * If rules need to be disabled then the rule is insufficiently high signal
-   * and should be diasbled altogether or customized (in either case via a standalone PR)
+   * and should be disabled altogether or customized (in either case via a standalone PR)
    */
   noInlineConfig: true,
   reportUnusedDisableDirectives: true,

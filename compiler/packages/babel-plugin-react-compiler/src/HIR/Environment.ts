@@ -349,7 +349,7 @@ export const EnvironmentConfigSchema = z.object({
    * When enabled, the compiler assumes that any values are not subsequently
    * modified after they are captured by a function passed to React. For example,
    * if a value `x` is referenced inside a function expression passed to `useEffect`,
-   * then this flag will assume that `x` is not subusequently modified.
+   * then this flag will assume that `x` is not subsequently modified.
    */
   enableTransitivelyFreezeFunctionExpressions: z.boolean().default(true),
   enableEmitHookGuards: ExternalFunctionSchema.nullable().default(null),

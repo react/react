@@ -106,7 +106,7 @@ export function validateNoSetStateInEffects(
               const setState = setStateFunctions.get(arg.identifier.id);
               if (setState !== undefined) {
                 /**
-                 * This effect event function calls setState synchonously,
+                 * This effect event function calls setState synchronously,
                  * treat it as a setState function for transitive tracking
                  */
                 setStateFunctions.set(instr.lvalue.identifier.id, setState);
