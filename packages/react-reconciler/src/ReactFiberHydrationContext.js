@@ -74,6 +74,7 @@ import {queueRecoverableErrors} from './ReactFiberWorkLoop';
 import {getRootHostContainer, getHostContext} from './ReactFiberHostContext';
 import {describeDiff} from './ReactFiberHydrationDiffs';
 import {runWithFiberInDEV} from './ReactCurrentFiber';
+import getComponentNameFromFiber from './getComponentNameFromFiber';
 
 // The deepest Fiber on the stack involved in a hydration context.
 // This may have been an insertion or a hydration.
@@ -396,20 +397,37 @@ function throwOnHydrationMismatch(fiber: Fiber, fromText: boolean = false) {
       diff = describeDiff(diffRoot);
     }
   }
+
+  // Get component name for better context
+  const componentName = getComponentNameFromFiber(fiber);
+  const componentContext = componentName ? ` in <${componentName}>` : '';
+
+  // Determine mismatch type for more specific guidance
+  const mismatchType = fromText ? 'text' : 'HTML';
+  const specificGuidance = fromText
+    ? '\n- Text content differs (check Date.now(), Math.random(), locale-specific formatting)'
+    : '\n- HTML structure differs (check tag nesting, element attributes)';
+
   const error = new Error(
-    `Hydration failed because the server rendered ${fromText ? 'text' : 'HTML'} didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
-` +
-      '\n' +
-      "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
-      "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
-      "- Date formatting in a user's locale which doesn't match the server.\n" +
-      '- External changing data without sending a snapshot of it along with the HTML.\n' +
-      '- Invalid HTML tag nesting.\n' +
-      '\n' +
-      'It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n' +
-      '\n' +
-      'https://react.dev/link/hydration-mismatch' +
-      diff,
+    `Hydration mismatch: The server rendered ${mismatchType} didn't match the client${componentContext}. This tree will be regenerated on the client.
+
+Common causes of hydration mismatches:
+- Conditional rendering: Using ${fromText ? 'random text' : 'different HTML'} based on \`typeof window !== 'undefined'\`
+- Dynamic content: Using Date.now(), Math.random(), or other time-dependent values
+- Locale-specific formatting: Formatting dates/numbers differently on server and client
+- External data changes: Data that changes between server render and client hydration
+${specificGuidance}
+
+Browser extensions may also modify the HTML before React loads.
+
+To debug this:
+1. Check if your component renders differently on server vs client
+2. Ensure all hooks follow the Rules of Hooks
+3. Verify \`suppressHydrationWarning\` prop is used correctly if intentional
+4. Look for \`useLayoutEffect\` or \`useInsertionEffect\` modifying the DOM
+
+Learn more: https://react.dev/link/hydration-mismatch
+${diff}`,
   );
   queueHydrationError(createCapturedValueAtFiber(error, fiber));
   throw HydrationMismatchException;
@@ -947,18 +965,27 @@ export function emitPendingHydrationWarnings() {
       }
 
       runWithFiberInDEV(diffOwner.fiber, () => {
+        const componentName = getComponentNameFromFiber(diffOwner.fiber);
+        const componentContext = componentName ? ` in <${componentName}>` : '';
         console.error(
-          "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. " +
-            'This can happen if a SSR-ed Client Component used:\n' +
+          `Warning: Hydration attribute mismatch${componentContext}\n` +
             '\n' +
-            "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
-            "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
-            "- Date formatting in a user's locale which doesn't match the server.\n" +
-            '- External changing data without sending a snapshot of it along with the HTML.\n' +
-            '- Invalid HTML tag nesting.\n' +
+            'The HTML attributes rendered on the server differed from the client. ' +
+            "React won't patch up these mismatched attributes, even though the tree structure matched, " +
+            'so this can cause visual or behavioral inconsistencies.\n' +
             '\n' +
-            'It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n' +
+            'This typically happens when a Client Component uses:\n' +
+            "- Conditional attributes based on `typeof window !== 'undefined'`\n" +
+            '- Time-dependent values like Date.now() or Math.random()\n' +
+            '- Locale-specific formatting for dates, numbers, or strings\n' +
+            '- Data that changes between server render and client hydration\n' +
             '\n' +
+            'To fix this:\n' +
+            '1. Ensure server and client render identical attributes\n' +
+            '2. Use suppressHydrationWarning prop if the mismatch is intentional\n' +
+            '3. Move dynamic content into useEffect or useLayoutEffect\n' +
+            '\n' +
+            'Learn more: https://react.dev/link/hydration-mismatch\n' +
             '%s%s',
           'https://react.dev/link/hydration-mismatch',
           diff,
