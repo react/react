@@ -55,6 +55,18 @@ function getArrayKind(array: Object): 0 | 1 | 2 | 3 {
   return kind;
 }
 
+function safeRead(object: Object, key: string): mixed {
+  // Reading a prop's value can run a user-defined getter which may throw or
+  // have side effects. The DEV-only perf logger walks prop objects unconditionally,
+  // so the read has to be guarded — otherwise an arbitrary getter would throw
+  // out of the commit phase and corrupt the fiber tree (issue #35126).
+  try {
+    return object[key];
+  } catch (x) {
+    return OMITTED_PROP_ERROR;
+  }
+}
+
 export function addObjectToProperties(
   object: Object,
   properties: Array<[string, string]>,
@@ -73,7 +85,7 @@ export function addObjectToProperties(
   for (const key in object) {
     if (hasOwnProperty.call(object, key) && key[0] !== '_') {
       addedProperties++;
-      const value = object[key];
+      const value = safeRead(object, key);
       addValueToProperties(key, value, properties, indent, prefix);
       if (addedProperties >= OBJECT_WIDTH_LIMIT) {
         properties.push([
@@ -363,8 +375,8 @@ export function addObjectDiffToProperties(
     }
 
     if (key in prev) {
-      const prevValue = prev[key];
-      const nextValue = next[key];
+      const prevValue = safeRead(prev, key);
+      const nextValue = safeRead(next, key);
       if (prevValue !== nextValue) {
         if (indent === 0 && key === 'children') {
           // Omit any change inside the top level children prop since it's expected to change
