@@ -760,7 +760,7 @@ function decodeReplyFromAsyncIterable<T>(
       } else {
         resolveFile(response, name, value);
       }
-      iterator.next().then(progress, error);
+      iterator.next().then(progress).catch(error);
     }
   }
   function error(reason: Error) {
@@ -772,7 +772,7 @@ function decodeReplyFromAsyncIterable<T>(
     }
   }
 
-  iterator.next().then(progress, error);
+  iterator.next().then(progress).catch(error);
 
   return getRoot(response);
 }
