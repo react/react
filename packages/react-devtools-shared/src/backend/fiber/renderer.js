@@ -4237,7 +4237,19 @@ export function attach(
           // We let the previous instance remain in the "remaining queue" it is
           // in to be deleted at the end since it'll have no match.
 
-          mountFiberRecursively(nextChild, traceNearestHostComponentUpdate);
+          // Distinguish a *re-mount* from genuinely *new* content for trace
+          // updates ("highlight updates when components render"). A re-mount
+          // replaces a Fiber that previously occupied this slot (e.g. a `key`
+          // change, or a filtered ancestor re-mounting its children): the old
+          // instance is being deleted and a fresh one created. That subtree did
+          // not re-render, so an updating ancestor's highlight flag must not
+          // flash it. When no previous child occupied this slot the content is
+          // genuinely new, and we keep flashing it as before.
+          const isRemount = prevChildAtSameIndex !== null;
+          mountFiberRecursively(
+            nextChild,
+            isRemount ? false : traceNearestHostComponentUpdate,
+          );
           // Need to mark the parent set to remount the new instance.
           updateFlags |= ShouldResetChildren | ShouldResetSuspenseChildren;
         }
