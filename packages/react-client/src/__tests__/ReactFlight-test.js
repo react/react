@@ -2518,6 +2518,25 @@ describe('ReactFlight', () => {
   });
 
   // @gate enableTaint
+  it('does not throw RangeError for large binary values (>65535 bytes)', () => {
+    // String.fromCharCode.apply(String, largeArray) throws a RangeError when
+    // the array length exceeds the JS engine's call-argument limit (~65535).
+    // A Uint32Array of 25000 elements is 100000 bytes, which when viewed as
+    // Uint8Array has 100000 elements — well above the limit.
+    // This test ensures chunked processing avoids that error.
+    const largeToken = new Uint32Array(25000);
+    const obj = {secret: largeToken};
+    // Should not throw a RangeError.
+    expect(() => {
+      ReactServer.experimental_taintUniqueValue(
+        'Cannot pass a large secret to the client',
+        obj,
+        obj.secret,
+      );
+    }).not.toThrow();
+  });
+
+  // @gate enableTaint
   it('keep a tainted value tainted until the end of any pending requests', async () => {
     function UserClient({user}) {
       return <span>{user.name}</span>;

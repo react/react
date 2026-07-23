@@ -9,11 +9,14 @@
 
 // Turns a TypedArray or ArrayBuffer into a string that can be used for comparison
 // in a Map to see if the bytes are the same.
+let latin1Decoder: TextDecoder | void;
 export default function binaryToComparableString(
   view: $ArrayBufferView,
 ): string {
-  return String.fromCharCode.apply(
-    String,
-    new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
-  );
+  // Lazily initialize to avoid ReferenceError in environments where TextDecoder
+  // is not yet available at module load time (e.g. some Jest setups).
+  if (latin1Decoder === undefined) {
+    latin1Decoder = new TextDecoder('latin1');
+  }
+  return latin1Decoder.decode(view);
 }
