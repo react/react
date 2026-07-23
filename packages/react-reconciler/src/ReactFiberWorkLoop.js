@@ -1353,7 +1353,7 @@ function recoverFromConcurrentError(
       // During the synchronous render, we attached additional ping listeners.
       // This is highly suggestive of an uncached promise (though it's not the
       // only reason this would happen). If it was an uncached promise, then
-      // it may have masked a downstream error from ocurring without actually
+      // it may have masked a downstream error from occurring without actually
       // fixing it. Example:
       //
       //    use(Promise.resolve('uncached'))
