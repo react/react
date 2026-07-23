@@ -3520,8 +3520,7 @@ describe('ReactFlight', () => {
       // Test only the first rows since there's a lot of noise after that is eliminated.
       .split('\n')
       .slice(0, 4)
-      .join('\n')
-      .replaceAll(' (/', ' (file:///'); // The eval will end up normalizing these
+      .join('\n');
 
     let sawReactPrefix = false;
     const environments = [];
@@ -3560,6 +3559,149 @@ describe('ReactFlight', () => {
   });
 
   // @gate !__DEV__ || enableComponentPerformanceTrack
+  it('round-trips special-character filenames across server-to-server passes', async () => {
+    async function ServerComponent({transport}) {
+      // This is a Server Component that receives other Server Components from a third party.
+      const thirdParty = ReactServer.use(
+        ReactNoopFlightClient.read(transport, {
+          findSourceMapURL(url) {
+            // By giving a source map url we're saying that we can't use the original
+            // file as the sourceURL, which gives stack traces a about://React/ prefix.
+            // encodeURI because the sourceMappingURL comment ends at whitespace and
+            // some of the filenames below contain spaces.
+            return 'source-map://' + encodeURI(url);
+          },
+        }),
+      );
+      await thirdParty.model;
+      return 'Should never render';
+    }
+
+    const error = new Error('third-party-error');
+    // Fake a stack with filenames that have a special meaning in URLs. The
+    // fake eval:ed frames embed the filename in their virtual sourceURL, so
+    // if the encoding isn't reversed exactly, the next serialization pass
+    // sees a different filename and its source map can no longer be found.
+    error.stack = [
+      'Error: third-party-error',
+      '    at hash (/code/dir#fragment/page.js:10:5)',
+      '    at space (/code/my project/page.js:11:5)',
+      '    at percent (/code/50%off/page.js:12:5)',
+      '    at question (/code/what?/page.js:13:5)',
+      // Sequences that collide with the escaped forms of '#' and '?'.
+      '    at escapedHash (/code/a%23b/page.js:14:5)',
+      '    at escapedQuestion (/code/a%3Fb/page.js:15:5)',
+      '    at unicode (file:///プロジェクト/ページ.js:16:5)',
+    ].join('\n');
+    const rejectedPromise = Promise.reject(error);
+
+    const thirdPartyTransport = ReactNoopFlightServer.render(
+      {model: rejectedPromise},
+      {
+        // The environment name is also embedded in the virtual sourceURL and
+        // a '/' in it must not shift where the filename starts.
+        environmentName: 'third/party',
+        onError(x) {
+          return __DEV__ ? 'a dev digest' : `digest("${x.message}")`;
+        },
+      },
+    );
+
+    await rejectedPromise.catch(() => {});
+
+    const transport = ReactNoopFlightServer.render(
+      <ServerComponent transport={thirdPartyTransport} />,
+      {
+        onError(x) {
+          return __DEV__ ? 'a dev digest' : x.digest;
+        },
+      },
+    );
+
+    await 0;
+    await 0;
+    await 0;
+
+    const errors = [];
+    class MyErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(caughtError) {
+        return {error: caughtError};
+      }
+      componentDidCatch(caughtError, componentInfo) {
+        errors.push(caughtError);
+      }
+      render() {
+        if (this.state.error) {
+          return null;
+        }
+        return this.props.children;
+      }
+    }
+
+    const findSourceMapURL = jest.fn(url => 'source-map://' + encodeURI(url));
+    await act(async () => {
+      ReactNoop.render(
+        <MyErrorBoundary>
+          {ReactNoopFlightClient.read(transport, {findSourceMapURL})}
+        </MyErrorBoundary>,
+      );
+    });
+
+    expect(errors.length).toBe(1);
+    if (__DEV__) {
+      // The filenames must come back in their original form, not in whatever
+      // form the previous pass embedded them in its sourceURLs, so that this
+      // pass can find their source maps. (Other calls happen too, e.g. for
+      // ServerComponent itself.)
+      expect(findSourceMapURL.mock.calls).toEqual(
+        expect.arrayContaining([
+          ['/code/dir#fragment/page.js', 'third/party'],
+          ['/code/my project/page.js', 'third/party'],
+          ['/code/50%off/page.js', 'third/party'],
+          ['/code/what?/page.js', 'third/party'],
+          ['/code/a%23b/page.js', 'third/party'],
+          ['/code/a%3Fb/page.js', 'third/party'],
+          ['file:///プロジェクト/ページ.js', 'third/party'],
+        ]),
+      );
+
+      // In the revived stack, each frame's virtual sourceURL escapes the
+      // filename such that the whole thing stays a well-formed URL: '#' and
+      // '?' would otherwise read as the URL's fragment/query, and a literal
+      // '%23' in a filename has to stay distinct from an escaped '#'. The
+      // trailing '?' is where the unique query that follows the filename
+      // starts.
+      const stack = errors[0].stack;
+      expect(stack).toContain(
+        '(about://React/third%2Fparty//code/dir%23fragment/page.js?',
+      );
+      expect(stack).toContain(
+        '(about://React/third%2Fparty//code/my%20project/page.js?',
+      );
+      expect(stack).toContain(
+        '(about://React/third%2Fparty//code/50%25off/page.js?',
+      );
+      expect(stack).toContain(
+        '(about://React/third%2Fparty//code/what%3F/page.js?',
+      );
+      expect(stack).toContain(
+        '(about://React/third%2Fparty//code/a%2523b/page.js?',
+      );
+      expect(stack).toContain(
+        '(about://React/third%2Fparty//code/a%253Fb/page.js?',
+      );
+      expect(stack).not.toContain('/code/dir#fragment');
+    } else {
+      expect(errors[0].message).toBe(
+        'An error occurred in the Server Components render. The specific message is omitted in production' +
+          ' builds to avoid leaking sensitive details. A digest property is included on this error instance which' +
+          ' may provide additional details about the nature of the error.',
+      );
+      expect(errors[0].digest).toBe('digest("third-party-error")');
+    }
+  });
+
   it('can change the environment name inside a component', async () => {
     let env = 'A';
     function Component(props) {
