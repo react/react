@@ -19,6 +19,8 @@ import {
 } from 'react';
 import {
   LOCAL_STORAGE_BROWSER_THEME,
+  LOCAL_STORAGE_HIDE_PROFILER_TAB_KEY,
+  LOCAL_STORAGE_HIDE_SUSPENSE_TAB_KEY,
   LOCAL_STORAGE_PARSE_HOOK_NAMES_KEY,
   LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY,
 } from 'react-devtools-shared/src/constants';
@@ -53,6 +55,12 @@ type Context = {
 
   traceUpdatesEnabled: boolean,
   setTraceUpdatesEnabled: (value: boolean) => void,
+
+  hideProfilerTab: boolean,
+  setHideProfilerTab: (value: boolean) => void,
+
+  hideSuspenseTab: boolean,
+  setHideSuspenseTab: (value: boolean) => void,
 };
 
 const SettingsContext: ReactContext<Context> = createContext<Context>(
@@ -113,6 +121,10 @@ function SettingsContextController({
       LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY,
       false,
     );
+  const [hideProfilerTab, setHideProfilerTab] =
+    useLocalStorageWithLog<boolean>(LOCAL_STORAGE_HIDE_PROFILER_TAB_KEY, false);
+  const [hideSuspenseTab, setHideSuspenseTab] =
+    useLocalStorageWithLog<boolean>(LOCAL_STORAGE_HIDE_SUSPENSE_TAB_KEY, false);
 
   const documentElements = useMemo<DocumentElements>(() => {
     const array: Array<HTMLElement> = [
@@ -183,8 +195,12 @@ function SettingsContextController({
         displayDensity === 'compact'
           ? COMPACT_LINE_HEIGHT
           : COMFORTABLE_LINE_HEIGHT,
+      hideProfilerTab,
+      hideSuspenseTab,
       parseHookNames,
       setDisplayDensity,
+      setHideProfilerTab,
+      setHideSuspenseTab,
       setParseHookNames,
       setTheme,
       setTraceUpdatesEnabled,
@@ -194,8 +210,12 @@ function SettingsContextController({
     }),
     [
       displayDensity,
+      hideProfilerTab,
+      hideSuspenseTab,
       parseHookNames,
       setDisplayDensity,
+      setHideProfilerTab,
+      setHideSuspenseTab,
       setParseHookNames,
       setTheme,
       setTraceUpdatesEnabled,

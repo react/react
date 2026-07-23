@@ -37,7 +37,9 @@ function getChangeLogUrl(version: ?string): string | null {
 export default function GeneralSettings(_: {}): React.Node {
   const {
     displayDensity,
+    hideSuspenseTab,
     setDisplayDensity,
+    setHideSuspenseTab,
     setTheme,
     setTraceUpdatesEnabled,
     theme,
@@ -119,6 +121,26 @@ export default function GeneralSettings(_: {}): React.Node {
           </label>
         </div>
       )}
+
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <input
+            type="checkbox"
+            checked={hideSuspenseTab}
+            onChange={({currentTarget}) =>
+              setHideSuspenseTab(currentTarget.checked)
+            }
+            className={styles.SettingRowCheckbox}
+          />
+          Hide Suspense tab
+        </label>
+        {hideSuspenseTab && (
+          <div className={styles.SettingHint}>
+            The Suspense tab will be hidden when DevTools is opened in a new
+            tab, or when DevTools is reopened in the current tab.
+          </div>
+        )}
+      </div>
 
       <div className={styles.ReleaseNotes}>
         {showBackendVersion && (

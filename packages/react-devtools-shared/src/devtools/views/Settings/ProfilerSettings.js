@@ -11,6 +11,7 @@ import * as React from 'react';
 import {useCallback, useContext, useMemo, useRef} from 'react';
 import {useSubscription} from '../hooks';
 import {StoreContext} from '../context';
+import {SettingsContext} from './SettingsContext';
 import {ProfilerContext} from 'react-devtools-shared/src/devtools/views/Profiler/ProfilerContext';
 
 import styles from './SettingsShared.css';
@@ -23,6 +24,7 @@ export default function ProfilerSettings(_: {}): React.Node {
     setIsCommitFilterEnabled,
     setMinCommitDuration,
   } = useContext(ProfilerContext);
+  const {hideProfilerTab, setHideProfilerTab} = useContext(SettingsContext);
   const store = useContext(StoreContext);
 
   const recordChangeDescriptionsSubscription = useMemo(
@@ -101,6 +103,25 @@ export default function ProfilerSettings(_: {}): React.Node {
           />
           &nbsp;(ms)
         </label>
+      </div>
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <input
+            type="checkbox"
+            checked={hideProfilerTab}
+            onChange={({currentTarget}) =>
+              setHideProfilerTab(currentTarget.checked)
+            }
+            className={styles.SettingRowCheckbox}
+          />
+          Hide Profiler tab
+        </label>
+        {hideProfilerTab && (
+          <div className={styles.SettingHint}>
+            The Profiler tab will be hidden when DevTools is opened in a new
+            tab, or when DevTools is reopened in the current tab.
+          </div>
+        )}
       </div>
     </div>
   );

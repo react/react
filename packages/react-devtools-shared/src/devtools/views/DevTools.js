@@ -13,7 +13,14 @@ import '@reach/menu-button/styles.css';
 import '@reach/tooltip/styles.css';
 
 import * as React from 'react';
-import {useCallback, useEffect, useLayoutEffect, useMemo, useRef} from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import Store from '../store';
 import {
   BridgeContext,
@@ -27,7 +34,10 @@ import SuspenseTab from './SuspenseTab/SuspenseTab';
 import TabBar from './TabBar';
 import EditorPane from './Editor/EditorPane';
 import InspectedElementPane from './InspectedElement/InspectedElementPane';
-import {SettingsContextController} from './Settings/SettingsContext';
+import {
+  SettingsContext,
+  SettingsContextController,
+} from './Settings/SettingsContext';
 import {TreeContextController} from './Components/TreeContext';
 import ViewElementSourceContext from './Components/ViewElementSourceContext';
 import FetchFileWithCachingContext from './Components/FetchFileWithCachingContext';
@@ -135,7 +145,64 @@ const suspenseTab = {
   title: 'React Suspense',
 };
 
-const tabs = [componentsTab, profilerTab, suspenseTab];
+const allTabs = [componentsTab, profilerTab, suspenseTab];
+
+function DevToolsNavigationTabBar({
+  currentTab,
+  selectTab,
+}: {
+  currentTab: TabID,
+  selectTab: (tabId: TabID) => void,
+}): React.Node {
+  const {hideProfilerTab, hideSuspenseTab} = useContext(SettingsContext);
+  const visibleTabs = useMemo(
+    () =>
+      allTabs.filter(
+        t =>
+          !(hideProfilerTab && t.id === 'profiler') &&
+          !(hideSuspenseTab && t.id === 'suspense'),
+      ),
+    [hideProfilerTab, hideSuspenseTab],
+  );
+
+  // If the active tab is hidden, switch to components
+  useEffect(() => {
+    if (
+      (hideProfilerTab && currentTab === 'profiler') ||
+      (hideSuspenseTab && currentTab === 'suspense')
+    ) {
+      selectTab('components');
+    }
+  }, [hideProfilerTab, hideSuspenseTab, currentTab, selectTab]);
+
+  // Override keyboard shortcuts to use visible tabs only
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        const tabIndex = parseInt(event.key, 10) - 1;
+        if (tabIndex >= 0 && tabIndex < visibleTabs.length) {
+          selectTab(visibleTabs[tabIndex].id);
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [visibleTabs, selectTab]);
+
+  return (
+    <TabBar
+      currentTab={currentTab}
+      id="DevTools"
+      selectTab={selectTab}
+      tabs={visibleTabs}
+      type="navigation"
+    />
+  );
+}
 
 export default function DevTools({
   bridge,
@@ -233,45 +300,8 @@ export default function DevTools({
 
   const devToolsRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    if (!showTabBar) {
-      return;
-    }
-
-    const div = devToolsRef.current;
-    if (div === null) {
-      return;
-    }
-
-    const ownerWindow = div.ownerDocument.defaultView;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey) {
-        switch (event.key) {
-          case '1':
-            selectTab(tabs[0].id);
-            event.preventDefault();
-            event.stopPropagation();
-            break;
-          case '2':
-            selectTab(tabs[1].id);
-            event.preventDefault();
-            event.stopPropagation();
-            break;
-          case '3':
-            if (tabs.length > 2) {
-              selectTab(tabs[2].id);
-              event.preventDefault();
-              event.stopPropagation();
-            }
-            break;
-        }
-      }
-    };
-    ownerWindow.addEventListener('keydown', handleKeyDown);
-    return () => {
-      ownerWindow.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [showTabBar]);
+  // Keyboard shortcuts (Ctrl/Cmd+1/2/3) are handled in
+  // DevToolsNavigationTabBar to operate on visible tabs only.
 
   useLayoutEffect(() => {
     return () => {
@@ -321,12 +351,9 @@ export default function DevTools({
                                           {process.env.DEVTOOLS_VERSION}
                                         </span>
                                         <div className={styles.Spacer} />
-                                        <TabBar
+                                        <DevToolsNavigationTabBar
                                           currentTab={tab}
-                                          id="DevTools"
                                           selectTab={selectTab}
-                                          tabs={tabs}
-                                          type="navigation"
                                         />
                                       </div>
                                     )}

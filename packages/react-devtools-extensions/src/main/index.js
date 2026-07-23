@@ -22,6 +22,8 @@ import {
 } from 'react-devtools-shared/src/storage';
 import DevTools from 'react-devtools-shared/src/devtools/views/DevTools';
 import {
+  LOCAL_STORAGE_HIDE_PROFILER_TAB_KEY,
+  LOCAL_STORAGE_HIDE_SUSPENSE_TAB_KEY,
   LOCAL_STORAGE_SUPPORTS_PROFILING_KEY,
   LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY,
 } from 'react-devtools-shared/src/constants';
@@ -351,6 +353,10 @@ function createProfilerPanel() {
     return;
   }
 
+  if (localStorageGetItem(LOCAL_STORAGE_HIDE_PROFILER_TAB_KEY) === 'true') {
+    return;
+  }
+
   chrome.devtools.panels.create(
     __IS_CHROME__ || __IS_EDGE__ ? 'Profiler ⚛' : 'Profiler',
     __IS_EDGE__ ? 'icons/production.svg' : '',
@@ -424,6 +430,10 @@ function createSuspensePanel() {
 
   if (suspensePanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
+    return;
+  }
+
+  if (localStorageGetItem(LOCAL_STORAGE_HIDE_SUSPENSE_TAB_KEY) === 'true') {
     return;
   }
 
