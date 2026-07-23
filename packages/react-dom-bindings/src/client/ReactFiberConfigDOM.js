@@ -86,6 +86,7 @@ import {
   getPropsFromElement,
   diffHydratedText,
   trapClickOnNonInteractiveElement,
+  restoreControlledState,
 } from './ReactDOMComponent';
 import {hydrateInput} from './ReactDOMInput';
 import {hydrateTextarea} from './ReactDOMTextarea';
@@ -6775,8 +6776,27 @@ export const HostTransitionContext: ReactContext<TransitionStatus> = {
 };
 
 export type FormInstance = HTMLFormElement;
+
+function restoreControlledFormControlState(element: Element) {
+  const internalInstance = getInstanceFromNode(element);
+  if (internalInstance === null || internalInstance.tag !== HostComponent) {
+    return;
+  }
+  const stateNode = internalInstance.stateNode;
+  if (stateNode !== element) {
+    return;
+  }
+  const props = getFiberCurrentPropsFromNode(stateNode);
+  restoreControlledState(stateNode, internalInstance.type, props);
+}
+
 export function resetFormInstance(form: FormInstance): void {
   ReactBrowserEventEmitterSetEnabled(true);
   form.reset();
   ReactBrowserEventEmitterSetEnabled(false);
+
+  const elements = form.elements;
+  for (let i = 0; i < elements.length; i++) {
+    restoreControlledFormControlState((elements[i]: any));
+  }
 }

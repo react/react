@@ -1647,6 +1647,52 @@ describe('ReactDOMForm', () => {
     expect(inputRef.current.value).toEqual('0');
   });
 
+  it('should restore a controlled select after automatic form reset', async () => {
+    const formRef = React.createRef();
+    const selectRef = React.createRef();
+
+    function App() {
+      const [value, setValue] = useState('2');
+
+      return (
+        <form
+          ref={formRef}
+          action={async formData => {
+            Scheduler.log(`Async action started`);
+            await getText('Wait');
+          }}>
+          <select
+            ref={selectRef}
+            name="type"
+            value={value}
+            onChange={event => setValue(event.currentTarget.value)}>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    expect(selectRef.current.value).toEqual('2');
+
+    // Submit the form. This will trigger an async action.
+    await submit(formRef.current);
+    assertLog(['Async action started']);
+
+    // We haven't reset yet.
+    expect(selectRef.current.value).toEqual('2');
+
+    // Action completes. The controlled select is restored after the native
+    // form reset runs.
+    await act(() => resolveText('Wait'));
+    assertLog([]);
+    expect(selectRef.current.value).toEqual('2');
+  });
+
   it('requestFormReset schedules a form reset after transition completes', async () => {
     // This is the same as the previous test, except the form is updated with
     // a userspace action instead of a built-in form action.
