@@ -29,6 +29,26 @@
               animation: fadeIn .5s ease-in-out forwards;
             }
 
+            /* Additional CSS for the dismissable banner */
+            .dismissable-banner {
+                background-color: #4B5563;
+                color: white;
+                padding: 8px;
+                text-align: center;
+                position: fixed;
+                width: 100%;
+                top: 0;
+                z-index: 1000;
+            }
+            .dismissable-banner a {
+                color: #61dafb;
+            }
+            .dismissable-banner .close {
+                float: right;
+                cursor: pointer;
+                margin-right: 16px;
+            }
+
             @keyframes fadeIn {
               0% {
                 opacity: 0;
@@ -56,6 +76,10 @@
         </style>
     </head>
     <body>
+        <div id="banner" class="dismissable-banner">
+            <span>Join us for React Conf on May 15-16. <a href="https://conf.react.dev" target="_blank">Learn more</a>.</span>
+            <span class="close">X</span>
+        </div>
         <!-- main react mount point -->
         <div id="container">
           <h1 class="no-react-disclaimer">Looks like this page doesn't have React, or it hasn't been loaded yet.</h1>
