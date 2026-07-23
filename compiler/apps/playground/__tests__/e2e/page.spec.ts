@@ -313,6 +313,27 @@ test('error is displayed when source has syntax error', async ({page}) => {
   );
 });
 
+test('typescript `as const` does not produce a JS-service error squiggle', async ({
+  page,
+}) => {
+  const store: Store = {
+    source: ["let noError = '' as const;", 'let error = '].join('\n'),
+    config: defaultConfig,
+    showInternals: false,
+  };
+  const hash = encodeStore(store);
+  await page.goto(`/#${hash}`, {waitUntil: 'networkidle'});
+  await page.waitForFunction(isMonacoLoaded);
+
+  const editorInput = page.locator('.monaco-editor-input');
+  await expect(editorInput).toBeVisible();
+  await editorInput.click();
+
+  await expect(page.locator('.squiggly-error')).toHaveCount(1, {
+    timeout: 10_000,
+  });
+});
+
 TEST_CASE_INPUTS.forEach((t, idx) =>
   test(`playground compiles: ${t.name}`, async ({page}) => {
     const store: Store = {

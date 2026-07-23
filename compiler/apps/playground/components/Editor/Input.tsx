@@ -39,10 +39,14 @@ export default function Input({errors, language}: Props): JSX.Element {
   const store = useStore();
   const dispatchStore = useStoreDispatch();
 
+  const isTypeScript = language === 'typescript';
+  const editorPath = isTypeScript ? 'index.tsx' : 'index.js';
+  const editorLanguage = isTypeScript ? 'typescript' : 'javascript';
+
   // Set tab width to 2 spaces for the selected input file.
   useEffect(() => {
     if (!monaco) return;
-    const uri = monaco.Uri.parse(`file:///index.js`);
+    const uri = monaco.Uri.parse(`file:///${editorPath}`);
     const model = monaco.editor.getModel(uri);
     invariant(model, 'Model must exist for the selected input file.');
     renderReactCompilerMarkers({
@@ -51,13 +55,14 @@ export default function Input({errors, language}: Props): JSX.Element {
       details: errors,
       source: store.source,
     });
-  }, [monaco, errors, store.source]);
+  }, [monaco, errors, store.source, editorPath]);
 
   useEffect(() => {
     /**
-     * Ignore "can only be used in TypeScript files." errors, since
-     * we want to support syntax highlighting for Flow (*.js) files
-     * and Flow is not a built-in language.
+     * For Flow (*.js) files, suppress the "can only be used in TypeScript
+     * files." diagnostics emitted by Monaco's JS service so Flow type syntax
+     * doesn't squiggle. TS sources use a *.tsx model instead, which lets
+     * Monaco's TS service parse TS syntax natively without these diagnostics.
      */
     if (!monaco) return;
     monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
@@ -80,6 +85,10 @@ export default function Input({errors, language}: Props): JSX.Element {
       noSemanticValidation: true,
       // Monaco can't validate Flow component syntax
       noSyntaxValidation: language === 'flow',
+    });
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false,
     });
   }, [monaco, language]);
 
@@ -141,13 +150,8 @@ export default function Input({errors, language}: Props): JSX.Element {
 
   const editorContent = (
     <MonacoEditor
-      path={'index.js'}
-      /**
-       * .js and .jsx files are specified to be TS so that Monaco can actually
-       * check their syntax using its TS language service. They are still JS files
-       * due to their extensions, so TS language features don't work.
-       */
-      language={'javascript'}
+      path={editorPath}
+      language={editorLanguage}
       value={store.source}
       onMount={handleMount}
       onChange={handleChange}
