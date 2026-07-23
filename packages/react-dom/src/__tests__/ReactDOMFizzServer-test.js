@@ -1150,6 +1150,111 @@ describe('ReactDOMFizzServer', () => {
     expect(loggedErrors).toEqual([theError]);
   });
 
+  it('Errors in boundaries should not be logged when new, unrelated Suspense boundaries commit', async () => {
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+
+      render() {
+        if (this.state.error) {
+          return <Text text="did error" />;
+        }
+        return this.props.children;
+      }
+    }
+
+    const theError = new Error('Boom');
+    function Page() {
+      throw theError;
+    }
+
+    let renderSuspense;
+    function Sibling() {
+      const [state, setState] = React.useState(false);
+      renderSuspense = () => setState(true);
+
+      return state ? <Suspense /> : null;
+    }
+
+    function App({isClient}) {
+      return (
+        <>
+          <ErrorBoundary>
+            <Suspense>
+              <Page />
+            </Suspense>
+          </ErrorBoundary>
+          <Sibling />
+        </>
+      );
+    }
+
+    const ssrErrors = [];
+    function onError(x) {
+      ssrErrors.push(x);
+      return 'hash(' + x.message + ')';
+    }
+    const expectedDigest = onError(theError);
+    ssrErrors.length = 0;
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <App />,
+
+        {
+          onError,
+        },
+      );
+      pipe(writable);
+    });
+    expect(ssrErrors).toEqual([theError]);
+
+    const errors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error, errorInfo) {
+        errors.push({error, errorInfo});
+      },
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual('did error');
+    expectErrors(errors, [], []);
+
+    renderSuspense();
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual('did error');
+    expectErrors(
+      errors,
+      [
+        [
+          'Switched to client rendering because the server rendering errored:\n\n' +
+            theError.message,
+          expectedDigest,
+          componentStack(['Page', 'Suspense', 'ErrorBoundary', 'App']),
+        ],
+        [
+          'Switched to client rendering because the server rendering errored:\n\n' +
+            theError.message,
+          expectedDigest,
+          componentStack(['Page', 'Suspense', 'ErrorBoundary', 'App']),
+        ],
+      ],
+      [
+        [
+          'The server could not finish this Suspense boundary, likely due to an error during server rendering. Switched to client rendering.',
+          expectedDigest,
+        ],
+        [
+          'The server could not finish this Suspense boundary, likely due to an error during server rendering. Switched to client rendering.',
+          expectedDigest,
+        ],
+      ],
+    );
+  });
+
   it('should asynchronously load the suspense boundary', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
