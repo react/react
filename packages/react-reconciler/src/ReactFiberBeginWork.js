@@ -1137,8 +1137,15 @@ function updateActivityComponent(
   const didSuspend = (workInProgress.flags & DidCapture) !== NoFlags;
   workInProgress.flags &= ~DidCapture;
 
+  // Initial mount
   if (current === null) {
-    // Initial mount
+    // Special path for hydration mismatch when no Activity Boundary was found.
+    // This path is available only when mode='visible'.
+    if (didSuspend) {
+      workInProgress.memoizedState = null;
+      popSuspenseHandler(workInProgress);
+      return mountActivityChildren(workInProgress, nextProps, renderLanes);
+    }
 
     // Special path for hydration
     // If we're currently hydrating, try to hydrate this boundary.
