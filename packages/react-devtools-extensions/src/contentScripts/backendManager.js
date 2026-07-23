@@ -177,6 +177,17 @@ function activateBackend(version: string, hook: DevToolsHook) {
   // This covers the case of syncing saved values after reloading/navigating while DevTools remain open.
   bridge.send('extensionBackendInitialized');
 
+  // Listen for hotkey commands (e.g. Ctrl+Shift+X to start inspecting)
+  window.addEventListener('message', event => {
+    if (
+      event.data?.source === 'react-devtools-content-script' &&
+      event.data?.payload?.type === 'command' &&
+      event.data?.payload?.command === 'inspect_node'
+    ) {
+      agent.startInspectingNative();
+    }
+  });
+
   // this backend is activated
   requiredBackends.delete(version);
 }
