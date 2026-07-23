@@ -127,6 +127,35 @@ describe('Activity StrictMode', () => {
     ]);
   });
 
+  // @gate __DEV__
+  it('calls passive cleanup when unmounting in a transition', async () => {
+    const root = ReactNoop.createRoot();
+
+    await act(() => {
+      root.render(
+        <React.StrictMode>
+          <Activity mode="visible">
+            <Component label="A" />
+          </Activity>
+        </React.StrictMode>,
+      );
+    });
+
+    log = [];
+
+    await act(() => {
+      React.startTransition(() => {
+        root.render(
+          <React.StrictMode>
+            <Activity mode="visible" />
+          </React.StrictMode>,
+        );
+      });
+    });
+
+    expect(log).toContain('A: useEffect unmount');
+  });
+
   it('should not cause infinite render loop when StrictMode is used with Suspense and synchronous set states', async () => {
     // This is a regression test, see https://github.com/facebook/react/pull/25179 for more details.
     function App() {

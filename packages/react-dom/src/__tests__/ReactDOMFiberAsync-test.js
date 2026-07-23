@@ -638,6 +638,61 @@ describe('ReactDOMFiberAsync', () => {
     });
   });
 
+  it('calls effect cleanup when unmounting in a transition inside StrictMode', async () => {
+    let handlerCalls = 0;
+    let cleanupCalls = 0;
+    let setShow;
+
+    function Child() {
+      React.useEffect(() => {
+        const onResize = () => {
+          handlerCalls++;
+        };
+        window.addEventListener('resize', onResize);
+        return () => {
+          cleanupCalls++;
+          window.removeEventListener('resize', onResize);
+        };
+      }, []);
+
+      return <div>Child</div>;
+    }
+
+    function App() {
+      const [show, _setShow] = React.useState(true);
+      setShow = _setShow;
+      return <>{show ? <Child /> : null}</>;
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>,
+      );
+    });
+
+    await act(async () => {
+      React.startTransition(() => {
+        setShow(false);
+      });
+    });
+
+    // Cleanup should remove the listener before any post-unmount event.
+    window.dispatchEvent(new Event('resize'));
+    expect(handlerCalls).toBe(0);
+    if (__DEV__) {
+      expect(cleanupCalls).toBe(2);
+    } else {
+      expect(cleanupCalls).toBe(1);
+    }
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('Should not flush transition lanes if there is no transition scheduled in popState', async () => {
     let setHasNavigated;
     function App() {
