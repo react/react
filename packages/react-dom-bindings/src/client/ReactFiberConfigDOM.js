@@ -3984,11 +3984,12 @@ export function canHydrateInstance(
             // This script is for a different src/type/crossOrigin. It may be a script resource
             // or it may just be a mistmatch
             if (
-              srcAttr &&
-              element.hasAttribute('async') &&
-              !element.hasAttribute('itemprop')
+              (srcAttr &&
+                element.hasAttribute('async') &&
+                !element.hasAttribute('itemprop')) ||
+              element.getAttribute('type') === 'importmap'
             ) {
-              // This is an async script resource
+              // This is an async script resource, or React's own injected import map
               break;
             }
           }
