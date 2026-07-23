@@ -2234,6 +2234,70 @@ describe('ReactFlightDOM', () => {
     );
   });
 
+  it('does not emit duplicate preload links in SSR when Flight hints preload a resource that is also rendered as JSX', async () => {
+    function Component() {
+      return <p>hello world</p>;
+    }
+
+    const ClientComponent = clientExports(Component);
+
+    function ServerComponent() {
+      return (
+        <div>
+          <link
+            rel="preload"
+            href="/font.woff2"
+            as="font"
+            type="font/woff2"
+            crossOrigin="anonymous"
+          />
+          <ClientComponent />
+        </div>
+      );
+    }
+
+    const {writable: flightWritable, readable: flightReadable} =
+      getTestStream();
+    const {writable: fizzWritable, readable: fizzReadable} = getTestStream();
+
+    const {pipe} = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        <ServerComponent />,
+        webpackMap,
+      ),
+    );
+    pipe(flightWritable);
+
+    let response = null;
+    function getResponse() {
+      if (response === null) {
+        response =
+          ReactServerDOMClient.createFromReadableStream(flightReadable);
+      }
+      return response;
+    }
+
+    function App() {
+      return (
+        <html>
+          <body>{getResponse()}</body>
+        </html>
+      );
+    }
+
+    await serverAct(async () => {
+      ReactDOMFizzServer.renderToPipeableStream(<App />).pipe(fizzWritable);
+    });
+
+    await readInto(document, fizzReadable);
+
+    // The font preload should appear only once, not twice
+    const preloadLinks = document.querySelectorAll(
+      'link[rel="preload"][as="font"]',
+    );
+    expect(preloadLinks.length).toBe(1);
+  });
+
   it('should be able to include a client reference in printed errors', async () => {
     const reportedErrors = [];
 
