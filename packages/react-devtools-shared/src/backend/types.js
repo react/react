@@ -44,6 +44,11 @@ export type WorkTag = number;
 export type WorkFlags = number;
 export type ExpirationTime = number;
 
+export type _Window = {
+  addEventListener: Function,
+  removeEventListener: Function,
+};
+
 export type WorkTagMap = {
   CacheComponent: WorkTag,
   ClassComponent: WorkTag,
