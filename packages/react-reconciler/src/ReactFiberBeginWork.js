@@ -170,6 +170,7 @@ import {
 import {
   shouldSetTextContent,
   isSuspenseInstancePending,
+  isSuspenseInstanceQueued,
   isSuspenseInstanceFallback,
   getSuspenseInstanceFallbackErrorDetails,
   supportsHydration,
@@ -3069,7 +3070,20 @@ function updateDehydratedSuspenseComponent(
       // outside a transition.
       //
       // This path should only happen if the hydration lane already suspended.
-      if (isSuspenseInstancePending(suspenseInstance)) {
+      if (isSuspenseInstanceQueued(suspenseInstance)) {
+        // The Fizz runtime has already streamed in the completed content for
+        // this boundary and queued it for a batched reveal (it's not waiting
+        // on the server anymore, just on the throttled DOM swap). If we
+        // discard the dehydrated content now and mount a fresh client render,
+        // we race that in-flight reveal: both the client-rendered tree and
+        // the still-unrevealed streamed segment would exist in the DOM until
+        // the queued reveal runs and cleans up. Leave the dehydrated content
+        // in place instead and let the queued reveal complete; the retry
+        // callback registered below will give us another chance to hydrate.
+        workInProgress.flags |= DidCapture | Callback;
+        workInProgress.child = current.child;
+        return null;
+      } else if (isSuspenseInstancePending(suspenseInstance)) {
         // This is a dehydrated suspense instance. We don't need to suspend
         // because we're already showing a fallback.
         // TODO: The Fizz runtime might still stream in completed HTML, out-of-

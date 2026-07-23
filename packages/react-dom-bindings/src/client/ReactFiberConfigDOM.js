@@ -4111,6 +4111,13 @@ export function isSuspenseInstancePending(instance: SuspenseInstance): boolean {
   );
 }
 
+export function isSuspenseInstanceQueued(instance: SuspenseInstance): boolean {
+  // The Fizz runtime has already streamed in the completed content for this
+  // boundary and queued it for reveal (rAF/throttled). It's no longer
+  // waiting on the server, it's just waiting for the batched DOM swap.
+  return instance.data === SUSPENSE_QUEUED_START_DATA;
+}
+
 export function isSuspenseInstanceFallback(
   instance: SuspenseInstance,
 ): boolean {
