@@ -13,7 +13,7 @@ const warnedProperties = {};
 const rARIA = new RegExp('^(aria)-[' + ATTRIBUTE_NAME_CHAR + ']*$');
 const rARIACamel = new RegExp('^(aria)[A-Z][' + ATTRIBUTE_NAME_CHAR + ']*$');
 
-function validateProperty(tagName, name) {
+function validateProperty(tagName, name, value) {
   if (__DEV__) {
     if (hasOwnProperty.call(warnedProperties, name) && warnedProperties[name]) {
       return true;
@@ -69,6 +69,19 @@ function validateProperty(tagName, name) {
         warnedProperties[name] = true;
         return true;
       }
+      // NaN and Infinity are never valid aria attribute values. The DOM will
+      // stringify them (e.g. "NaN", "Infinity") which violates the ARIA spec
+      // for every attribute type.
+      if (typeof value === 'number' && !isFinite(value)) {
+        console.error(
+          'Received `%s` for the `%s` attribute. If this is expected, cast ' +
+            'the value to a string.',
+          value,
+          name,
+        );
+        warnedProperties[name] = true;
+        return true;
+      }
     }
   }
 
@@ -80,7 +93,7 @@ export function validateProperties(type, props) {
     const invalidProps = [];
 
     for (const key in props) {
-      const isValid = validateProperty(type, key);
+      const isValid = validateProperty(type, key, props[key]);
       if (!isValid) {
         invalidProps.push(key);
       }

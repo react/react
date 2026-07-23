@@ -106,5 +106,47 @@ describe('ReactDOMInvalidARIAHook', () => {
           '    in div (at **)',
       ]);
     });
+
+    it('should warn when a valid aria-* attribute receives a NaN value', async () => {
+      await mountComponent({'aria-valuenow': NaN});
+      assertConsoleErrorDev([
+        'Received `NaN` for the `aria-valuenow` attribute. If this is expected, cast ' +
+          'the value to a string.\n' +
+          '    in div (at **)',
+      ]);
+    });
+
+    it('should warn when a string-type aria-* attribute receives a NaN value', async () => {
+      await mountComponent({'aria-label': NaN});
+      assertConsoleErrorDev([
+        'Received `NaN` for the `aria-label` attribute. If this is expected, cast ' +
+          'the value to a string.\n' +
+          '    in div (at **)',
+      ]);
+    });
+
+    it('should warn when a valid aria-* attribute receives an Infinity value', async () => {
+      await mountComponent({'aria-valuenow': Infinity});
+      assertConsoleErrorDev([
+        'Received `Infinity` for the `aria-valuenow` attribute. If this is expected, cast ' +
+          'the value to a string.\n' +
+          '    in div (at **)',
+      ]);
+    });
+
+    it('should warn when a valid aria-* attribute receives a -Infinity value', async () => {
+      await mountComponent({'aria-valuemin': -Infinity});
+      assertConsoleErrorDev([
+        'Received `-Infinity` for the `aria-valuemin` attribute. If this is expected, cast ' +
+          'the value to a string.\n' +
+          '    in div (at **)',
+      ]);
+    });
+
+    it('should not warn for valid numeric values in aria-* attributes', async () => {
+      await mountComponent({'aria-valuenow': 42});
+      await mountComponent({'aria-level': 3});
+      await mountComponent({'aria-colcount': -1});
+    });
   });
 });
