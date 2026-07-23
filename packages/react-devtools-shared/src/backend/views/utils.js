@@ -112,6 +112,38 @@ export function getNestedBoundingClientRect(
   }
 }
 
+// CSS `zoom` on an ancestor scales the rendered position and size of all
+// descendants — including position: fixed ones — while getBoundingClientRect()
+// keeps returning unscaled viewport coordinates. Overlays injected into a
+// zoomed document need to know the accumulated zoom to stay aligned.
+// See https://github.com/facebook/react/issues/36904
+export function getEffectiveZoom(node: HTMLElement): number {
+  // Modern browsers expose the accumulated zoom directly.
+  const currentCSSZoom = (node as any).currentCSSZoom;
+  if (typeof currentCSSZoom === 'number') {
+    return currentCSSZoom;
+  }
+
+  // Fall back to accumulating `zoom` from the ancestor chain.
+  let zoom = 1;
+  let current: HTMLElement | null = node;
+  while (current != null) {
+    const ownerWindow = getOwnerWindow(current);
+    if (ownerWindow == null) {
+      break;
+    }
+    // Browsers without CSS zoom support report an empty string.
+    const styleZoom = parseFloat(
+      (ownerWindow.getComputedStyle(current) as any).zoom,
+    );
+    if (!isNaN(styleZoom) && styleZoom > 0) {
+      zoom *= styleZoom;
+    }
+    current = current.parentElement;
+  }
+  return zoom;
+}
+
 export function getElementDimensions(domElement: HTMLElement): {
   borderBottom: number,
   borderLeft: number,
