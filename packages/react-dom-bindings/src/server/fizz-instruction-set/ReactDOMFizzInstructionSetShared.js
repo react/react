@@ -30,7 +30,8 @@ const TARGET_VANITY_METRIC = 2300;
 // urgent issue.
 
 export function revealCompletedBoundaries(batch) {
-  window['$RT'] = performance.now();
+  let hasUpdatedRevealTime = false;
+  
   for (let i = 0; i < batch.length; i += 2) {
     const suspenseIdNode = batch[i];
     const contentNode = batch[i + 1];
@@ -54,6 +55,21 @@ export function revealCompletedBoundaries(batch) {
       // We may have client-rendered this boundary already. Skip it.
       continue;
     }
+
+    const parentRect = parentInstance.getBoundingClientRect();
+    if (
+      !parentRect.left &&
+      !parentRect.top &&
+      !parentRect.width &&
+      !parentRect.height
+    ) {
+      // If the parent instance is display: none then we don't consider this for the "$RT" time which was the last time we "showed content"
+      // to use for the 300ms throttle. Using the same logic we use for the ViewTransitions version below.
+    } else if(!hasUpdatedRevealTime) {
+      window['$RT'] = performance.now();
+      hasUpdatedRevealTime = true;
+    }
+    
 
     // Find the boundary around the fallback. This is always the previous node.
     const suspenseNode = suspenseIdNode.previousSibling;
