@@ -265,7 +265,7 @@ export type ResumableState = {
   nextFormID: number,
   streamingFormat: StreamingFormat,
 
-  // We carry the bootstrap intializers in resumable state in case we postpone in the shell
+  // We carry the bootstrap initializers in resumable state in case we postpone in the shell
   // of a prerender. On resume we will reinitialize the bootstrap scripts if necessary.
   // If we end up flushing the bootstrap scripts we void these on the resumable state
   bootstrapScriptContent?: string | void,
@@ -330,7 +330,7 @@ const startInlineStyle = stringToPrecomputedChunk('<style');
  * This escaping function is designed to work with with inline scripts where the entire
  * contents are escaped. Because we know we are escaping the entire script we can avoid for instance
  * escaping html comment string sequences that are valid javascript as well because
- * if there are no sebsequent <script sequences the html parser will never enter
+ * if there are no subsequent <script sequences the html parser will never enter
  * script data double escaped state (see: https://www.w3.org/TR/html53/syntax.html#script-data-double-escaped-state)
  *
  * While untrusted script content should be made safe before using this api it will
@@ -2880,7 +2880,7 @@ function pushMeta(
 
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
-      // because they are likely superceded by primary content and we want to avoid needing to clean
+      // because they are likely superseded by primary content and we want to avoid needing to clean
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
@@ -3016,7 +3016,7 @@ function pushLink(
         };
 
         if (resourceState) {
-          // When resourceState is truty it is a Preload state. We cast it for clarity
+          // When resourceState is truthy it is a Preload state. We cast it for clarity
           const preloadState: Preloaded | PreloadedWithCredentials =
             resourceState;
           if (preloadState.length === 2) {
@@ -3083,7 +3083,7 @@ function pushLink(
 
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
-      // because they are likely superceded by primary content and we want to avoid needing to clean
+      // because they are likely superseded by primary content and we want to avoid needing to clean
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
@@ -3154,7 +3154,7 @@ function pushStyle(
           typeof child === 'function'
             ? 'a Function'
             : typeof child === 'symbol'
-              ? 'a Sybmol'
+              ? 'a Symbol'
               : 'an Array';
         console.error(
           'React expect children of <style> tags to be a string, number, or object with a `toString` method but found %s instead. ' +
@@ -3622,7 +3622,7 @@ function pushTitle(
         );
       } else if (typeof child === 'function' || typeof child === 'symbol') {
         const childType =
-          typeof child === 'function' ? 'a Function' : 'a Sybmol';
+          typeof child === 'function' ? 'a Function' : 'a Symbol';
         console.error(
           'React expect children of <title> tags to be a string, number, bigint, or object with a novel `toString` method but found %s instead.' +
             ' Browsers treat all child Nodes of <title> tags as Text content and React expects to be able to convert children of <title>' +
@@ -3658,7 +3658,7 @@ function pushTitle(
   ) {
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
-      // because they are likely superceded by primary content and we want to avoid needing to clean
+      // because they are likely superseded by primary content and we want to avoid needing to clean
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
@@ -3754,7 +3754,7 @@ function pushStartHead(
     );
   } else {
     // This <head> is deep and is likely just an error. we emit it inline though.
-    // Validation should warn that this tag is the the wrong spot.
+    // Validation should warn that this tag is the wrong spot.
     return pushStartGenericElement(target, props, 'head', formatContext);
   }
 }
@@ -3788,7 +3788,7 @@ function pushStartBody(
     );
   } else {
     // This <head> is deep and is likely just an error. we emit it inline though.
-    // Validation should warn that this tag is the the wrong spot.
+    // Validation should warn that this tag is the wrong spot.
     return pushStartGenericElement(target, props, 'body', formatContext);
   }
 }
@@ -3822,7 +3822,7 @@ function pushStartHtml(
     );
   } else {
     // This <html> is deep and is likely just an error. we emit it inline though.
-    // Validation should warn that this tag is the the wrong spot.
+    // Validation should warn that this tag is the wrong spot.
     return pushStartGenericElement(target, props, 'html', formatContext);
   }
 }
@@ -3876,7 +3876,7 @@ function pushScript(
 
     let scriptProps = props;
     if (resourceState) {
-      // When resourceState is truty it is a Preload state. We cast it for clarity
+      // When resourceState is truthy it is a Preload state. We cast it for clarity
       const preloadState: Preloaded | PreloadedWithCredentials = resourceState;
       if (preloadState.length === 2) {
         scriptProps = {...props};
@@ -3962,7 +3962,7 @@ function pushScriptImpl(
 }
 
 // This is a fork of pushStartGenericElement because we don't ever want to do
-// the children as strign optimization on that path when rendering singletons.
+// the children as string optimization on that path when rendering singletons.
 // When we eliminate that special path we can delete this fork and unify it again
 function pushStartSingletonElement(
   target: Array<Chunk | PrecomputedChunk>,
@@ -4109,7 +4109,7 @@ function pushStartCustomElement(
     }
   }
 
-  // TODO: ViewTransition attributes gets observed by the Custom Element which is a bit sketchy.
+  // TODO: ViewTransition attributes get observed by the Custom Element which is a bit sketchy.
   pushViewTransitionAttributes(target, formatContext);
 
   target.push(endOfStartTag);
@@ -6709,7 +6709,7 @@ function preinitStyle(
       };
 
       if (resourceState) {
-        // When resourceState is truty it is a Preload state. We cast it for clarity
+        // When resourceState is truthy it is a Preload state. We cast it for clarity
         const preloadState: Preloaded | PreloadedWithCredentials =
           resourceState;
         if (preloadState.length === 2) {
@@ -6775,7 +6775,7 @@ function preinitScript(src: string, options?: ?PreinitScriptOptions): void {
         options,
       );
       if (resourceState) {
-        // When resourceState is truty it is a Preload state. We cast it for clarity
+        // When resourceState is truthy it is a Preload state. We cast it for clarity
         const preloadState: Preloaded | PreloadedWithCredentials =
           resourceState;
         if (preloadState.length === 2) {
@@ -6838,7 +6838,7 @@ function preinitModuleScript(
         options,
       );
       if (resourceState) {
-        // When resourceState is truty it is a Preload state. We cast it for clarity
+        // When resourceState is truthy it is a Preload state. We cast it for clarity
         const preloadState: Preloaded | PreloadedWithCredentials =
           resourceState;
         if (preloadState.length === 2) {
