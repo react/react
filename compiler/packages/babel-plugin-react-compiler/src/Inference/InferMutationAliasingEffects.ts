@@ -227,15 +227,6 @@ function findHoistedContextDeclarations(
   fn: HIRFunction,
 ): Map<DeclarationId, Place | null> {
   const hoisted = new Map<DeclarationId, Place | null>();
-  function visit(place: Place): void {
-    if (
-      hoisted.has(place.identifier.declarationId) &&
-      hoisted.get(place.identifier.declarationId) == null
-    ) {
-      // If this is the first load of the value, store the location
-      hoisted.set(place.identifier.declarationId, place);
-    }
-  }
   for (const block of fn.body.blocks.values()) {
     for (const instr of block.instructions) {
       if (instr.value.kind === 'DeclareContext') {
@@ -247,6 +238,45 @@ function findHoistedContextDeclarations(
         ) {
           hoisted.set(instr.value.lvalue.place.identifier.declarationId, null);
         }
+      }
+    }
+  }
+  const safeSelfReferences = findSelfReferentialEffectEventInitializers(
+    fn,
+    hoisted,
+  );
+  const initialized = new Set<DeclarationId>();
+  function visit(place: Place): void {
+    if (
+      hoisted.has(place.identifier.declarationId) &&
+      !initialized.has(place.identifier.declarationId) &&
+      hoisted.get(place.identifier.declarationId) == null
+    ) {
+      // If this is the first load of the value, store the location
+      hoisted.set(place.identifier.declarationId, place);
+    }
+  }
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      if (instr.value.kind === 'StoreContext') {
+        visit(instr.value.value);
+        if (instr.value.lvalue.kind === InstructionKind.Const) {
+          initialized.add(instr.value.lvalue.place.identifier.declarationId);
+        }
+      } else if (
+        instr.value.kind === 'FunctionExpression' ||
+        instr.value.kind === 'ObjectMethod'
+      ) {
+        for (const operand of eachInstructionValueOperand(instr.value)) {
+          if (
+            safeSelfReferences
+              .get(instr.lvalue.identifier.id)
+              ?.has(operand.identifier.declarationId)
+          ) {
+            continue;
+          }
+          visit(operand);
+        }
       } else {
         for (const operand of eachInstructionValueOperand(instr.value)) {
           visit(operand);
@@ -257,7 +287,82 @@ function findHoistedContextDeclarations(
       visit(operand);
     }
   }
+  for (const [declaration, place] of hoisted) {
+    if (place === null) {
+      hoisted.delete(declaration);
+    }
+  }
   return hoisted;
+}
+
+function findSelfReferentialEffectEventInitializers(
+  fn: HIRFunction,
+  hoisted: Map<DeclarationId, Place | null>,
+): Map<IdentifierId, Set<DeclarationId>> {
+  const functionCapturesHoisted = new Map<IdentifierId, Set<DeclarationId>>();
+  const effectEventCallCaptures = new Map<
+    IdentifierId,
+    Map<DeclarationId, Set<IdentifierId>>
+  >();
+  const safeSelfReferences = new Map<IdentifierId, Set<DeclarationId>>();
+
+  for (const block of fn.body.blocks.values()) {
+    for (const instr of block.instructions) {
+      const {value} = instr;
+      if (
+        value.kind === 'FunctionExpression' ||
+        value.kind === 'ObjectMethod'
+      ) {
+        for (const operand of eachInstructionValueOperand(value)) {
+          if (hoisted.has(operand.identifier.declarationId)) {
+            getOrInsertDefault(
+              functionCapturesHoisted,
+              instr.lvalue.identifier.id,
+              new Set(),
+            ).add(operand.identifier.declarationId);
+          }
+        }
+      } else if (value.kind === 'CallExpression') {
+        const hookKind = getHookKind(fn.env, value.callee.identifier);
+        if (hookKind === 'useEffectEvent') {
+          const captures = new Map<DeclarationId, Set<IdentifierId>>();
+          for (const arg of value.args) {
+            if (arg.kind !== 'Identifier') {
+              continue;
+            }
+            const captured = functionCapturesHoisted.get(arg.identifier.id);
+            if (captured == null) {
+              continue;
+            }
+            for (const declaration of captured) {
+              getOrInsertDefault(captures, declaration, new Set()).add(
+                arg.identifier.id,
+              );
+            }
+          }
+          if (captures.size !== 0) {
+            effectEventCallCaptures.set(instr.lvalue.identifier.id, captures);
+          }
+        }
+      } else if (
+        value.kind === 'StoreContext' &&
+        value.lvalue.kind === InstructionKind.Const
+      ) {
+        const declaration = value.lvalue.place.identifier.declarationId;
+        const captures = effectEventCallCaptures.get(value.value.identifier.id);
+        const functionIds = captures?.get(declaration);
+        if (functionIds != null) {
+          for (const functionId of functionIds) {
+            getOrInsertDefault(safeSelfReferences, functionId, new Set()).add(
+              declaration,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return safeSelfReferences;
 }
 
 class Context {
