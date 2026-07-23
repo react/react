@@ -351,9 +351,13 @@ const rule = {
           name === 'useActionState'
         ) {
           // Only consider second value in initializing tuple stable.
+          // useState and useReducer return a 2-element tuple, while
+          // useActionState additionally returns `isPending` as a third element:
+          // const [state, dispatch, isPending] = useActionState(...)
           if (
             id.type === 'ArrayPattern' &&
-            id.elements.length === 2 &&
+            (id.elements.length === 2 ||
+              (name === 'useActionState' && id.elements.length === 3)) &&
             isArray(resolved.identifiers)
           ) {
             // Is second tuple value the same reference we're checking?
