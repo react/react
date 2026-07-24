@@ -249,9 +249,9 @@ import {
   commitMutationEffects,
   commitPassiveMountEffects,
   commitPassiveUnmountEffects,
-  disappearLayoutEffects,
+  disappearLayoutEffectsForDEVValidation,
   reconnectPassiveEffects,
-  reappearLayoutEffects,
+  reappearLayoutEffectsForDEVValidation,
   disconnectPassiveEffect,
   invokeLayoutEffectMountInDEV,
   invokePassiveEffectMountInDEV,
@@ -5314,9 +5314,9 @@ function recursivelyTraverseAndDoubleInvokeEffectsInDEV(
 function doubleInvokeEffectsOnFiber(root: FiberRoot, fiber: Fiber) {
   setIsStrictModeForDevtools(true);
   try {
-    disappearLayoutEffects(fiber);
+    disappearLayoutEffectsForDEVValidation(fiber);
     disconnectPassiveEffect(fiber);
-    reappearLayoutEffects(root, fiber.alternate, fiber, false);
+    reappearLayoutEffectsForDEVValidation(root, fiber.alternate, fiber);
     reconnectPassiveEffects(root, fiber, NoLanes, null, false, 0);
   } finally {
     setIsStrictModeForDevtools(false);
