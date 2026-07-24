@@ -24,6 +24,7 @@ import {
   Place,
   Effect,
   BlockId,
+  computeDominatorTree,
 } from '../HIR';
 import {
   eachInstructionLValue,
@@ -207,7 +208,40 @@ function getSetStateCall(
       ? createControlDominators(fn, place => isDerivedFromRef(place))
       : (): boolean => false;
 
+  /*
+   * setState calls that are only reachable after an `await` has executed run
+   * as a later continuation of the (async) effect function, not synchronously
+   * during its initial execution. Such calls don't cause the effect to
+   * synchronously trigger a cascading render the way a truly synchronous call
+   * does, so we exclude them from this validation.
+   *
+   * A block is "definitely past an await" if every path from the function
+   * entry to that block passes through a block containing an Await
+   * instruction, ie if it is dominated by such a block.
+   */
+  const blocksWithAwait: Set<BlockId> = new Set();
+  for (const [id, block] of fn.body.blocks) {
+    for (const instr of block.instructions) {
+      if (instr.value.kind === 'Await') {
+        blocksWithAwait.add(id);
+        break;
+      }
+    }
+  }
+  const dominatorTree = computeDominatorTree(fn);
+  const isDominatedByAwait = (blockId: BlockId): boolean => {
+    let current = dominatorTree.get(blockId);
+    while (current !== null) {
+      if (blocksWithAwait.has(current)) {
+        return true;
+      }
+      current = dominatorTree.get(current);
+    }
+    return false;
+  };
+
   for (const [, block] of fn.body.blocks) {
+    let pastAwait = isDominatedByAwait(block.id);
     if (enableAllowSetStateFromRefsInEffects) {
       for (const phi of block.phis) {
         if (isDerivedFromRef(phi.place)) {
@@ -288,6 +322,10 @@ function getSetStateCall(
       }
 
       switch (instr.value.kind) {
+        case 'Await': {
+          pastAwait = true;
+          break;
+        }
         case 'LoadLocal': {
           if (setStateFunctions.has(instr.value.place.identifier.id)) {
             setStateFunctions.set(
@@ -316,6 +354,9 @@ function getSetStateCall(
             isSetStateType(callee.identifier) ||
             setStateFunctions.has(callee.identifier.id)
           ) {
+            if (pastAwait) {
+              continue;
+            }
             if (enableAllowSetStateFromRefsInEffects) {
               const arg = instr.value.args.at(0);
               if (
