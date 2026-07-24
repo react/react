@@ -256,7 +256,7 @@ function ReactPromise(status: any, value: any, reason: any) {
 // We subclass Promise.prototype so that we get other methods like .catch
 ReactPromise.prototype = Object.create(Promise.prototype) as any;
 // TODO: This doesn't return a new Promise chain unlike the real .then
-ReactPromise.prototype.then = function <T>(
+function reactPromiseThen<T>(
   this: SomeChunk<T>,
   resolve: (value: T) => mixed,
   reject?: (reason: mixed) => mixed,
@@ -326,7 +326,17 @@ ReactPromise.prototype.then = function <T>(
       }
       break;
   }
-};
+}
+// The shadowing `then` must be defined with `Object.defineProperty` instead of
+// assignment. Assignment would throw when `Promise.prototype` is frozen (e.g.
+// by SES lockdown) because assigning over an inherited non-writable property
+// is rejected.
+Object.defineProperty(ReactPromise.prototype, 'then', {
+  writable: true,
+  enumerable: true,
+  configurable: true,
+  value: reactPromiseThen,
+});
 
 export type FindSourceMapURLCallback = (
   fileName: string,
