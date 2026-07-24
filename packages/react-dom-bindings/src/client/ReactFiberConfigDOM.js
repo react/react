@@ -77,15 +77,18 @@ import {compareDocumentPositionForEmptyFragment} from 'shared/ReactDOMFragmentRe
 
 export {detachDeletedInstance};
 import {hasRole} from './DOMAccessibilityRoles';
+import type {SingletonType} from './ReactDOMComponent';
 import {
   setInitialProperties,
   updateProperties,
+  clearSingletonProperties,
   hydrateProperties,
   hydrateText,
   diffHydratedProperties,
   getPropsFromElement,
   diffHydratedText,
   trapClickOnNonInteractiveElement,
+  clearClickListener,
 } from './ReactDOMComponent';
 import {hydrateInput} from './ReactDOMInput';
 import {hydrateTextarea} from './ReactDOMTextarea';
@@ -1269,18 +1272,18 @@ function clearHydrationBoundary(
         // then it contributed to the html tag and we need to reset it.
         const ownerDocument = parentInstance.ownerDocument;
         const documentElement: Element = ownerDocument.documentElement as any;
-        releaseSingletonInstance(documentElement);
+        clearSingletonPreambleContribution(documentElement);
       } else if (data === PREAMBLE_CONTRIBUTION_HEAD) {
         const ownerDocument = parentInstance.ownerDocument;
         const head: Element = ownerDocument.head as any;
-        releaseSingletonInstance(head);
+        clearSingletonPreambleContribution(head);
         // We need to clear the head because this is the only singleton that can have children that
         // were part of this boundary but are not inside this boundary.
         clearHead(head);
       } else if (data === PREAMBLE_CONTRIBUTION_BODY) {
         const ownerDocument = parentInstance.ownerDocument;
         const body: Element = ownerDocument.body as any;
-        releaseSingletonInstance(body);
+        clearSingletonPreambleContribution(body);
       }
     }
     // $FlowFixMe[incompatible-type] we bail out when we get a null
@@ -4844,7 +4847,40 @@ export function acquireSingletonInstance(
   updateFiberProps(instance, props);
 }
 
-export function releaseSingletonInstance(instance: Instance): void {
+export function releaseSingletonInstance(
+  instance: Instance,
+  type: SingletonType,
+  props: Props,
+): void {
+  // Remove the attributes and property-backed state owned by this Fiber.
+  clearSingletonProperties(instance, type, props);
+
+  // These properties aren't cleared by updateProperties when their next
+  // value is null. Normally that is handled by replacing/removing the host
+  // instance, but a singleton cannot be removed.
+  // TODO: HostSingleton updates do not currently schedule ContentReset when
+  // dangerouslySetInnerHTML becomes undefined, so an ordinary update can leave
+  // the previous HTML in place. This only handles the release path.
+  if (props.dangerouslySetInnerHTML != null) {
+    instance.textContent = '';
+  }
+  clearClickListener(instance as any as HTMLElement);
+
+  // Only remove state that was represented by this Fiber's props. Attributes
+  // added imperatively while React owned the singleton must be preserved.
+  detachDeletedInstance(instance);
+}
+
+function clearSingletonPreambleContribution(instance: Instance): void {
+  // This path is only used when clearing a dehydrated boundary that contains a
+  // Fizz preamble contribution marker. The marker tells us which singleton the
+  // boundary contributed to, but it does not include the contributed props and
+  // there is no HostSingleton Fiber to provide them. We therefore cannot tell
+  // which attributes came from React and which were added imperatively by a
+  // script or third party. For now, clearing every attribute is an accepted
+  // edge case.
+  // TODO: Include the contributed properties in the marker so this cleanup can
+  // remove only the attributes owned by the boundary.
   const attributes = instance.attributes;
   while (attributes.length) {
     instance.removeAttributeNode(attributes[0]);

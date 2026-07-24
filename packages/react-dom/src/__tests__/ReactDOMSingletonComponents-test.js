@@ -225,6 +225,272 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
+  it('resets property-backed state when a singleton is released', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const head = document.head;
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head onClick={() => {}} />
+        <body
+          data-react-owned="true"
+          onClick={() => {}}
+          style={{color: 'red'}}
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.body).toBe(body);
+    expect(head.onclick).not.toBe(null);
+    expect(body.onclick).not.toBe(null);
+    expect(body.textContent).toBe('managed content');
+    expect(body.getAttribute('data-react-owned')).toBe('true');
+    expect(body.style.color).toBe('red');
+
+    // Simulate an inline script or third-party code adding its own attribute,
+    // style, and click listener while React owns the singleton.
+    const externalClickHandler = jest.fn();
+    body.setAttribute('data-external', 'true');
+    body.style.backgroundColor = 'blue';
+    body.onclick = externalClickHandler;
+
+    root.render(<html />);
+    await waitForAll([]);
+
+    expect(document.head).toBe(head);
+    expect(document.body).toBe(body);
+    expect(head.onclick).toBe(null);
+    expect(body.onclick).toBe(externalClickHandler);
+    expect(body.textContent).toBe('');
+    expect(body.hasAttribute('data-react-owned')).toBe(false);
+    expect(body.getAttribute('data-external')).toBe('true');
+    expect(body.style.color).toBe('');
+    expect(body.style.backgroundColor).toBe('blue');
+  });
+
+  // @gate TODO
+  it('clears dangerouslySetInnerHTML when it becomes undefined', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+    const undefinedHTML = undefined;
+
+    root.render(
+      <html>
+        <head />
+        <body
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.textContent).toBe('managed content');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={undefinedHTML} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.textContent).toBe('');
+  });
+
+  // @gate TODO
+  it('clears dangerouslySetInnerHTML when __html becomes undefined', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.textContent).toBe('managed content');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: undefined}} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.textContent).toBe('');
+  });
+
+  it('updates dangerouslySetInnerHTML on a singleton', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: '<div>first</div>'}} />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.innerHTML).toBe('<div>first</div>');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: '<span>second</span>'}} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.innerHTML).toBe('<span>second</span>');
+  });
+
+  it('replaces singleton children with dangerouslySetInnerHTML', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body>
+          <div>managed child</div>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.innerHTML).toBe('<div>managed child</div>');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: '<span>managed HTML</span>'}} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.innerHTML).toBe('<span>managed HTML</span>');
+  });
+
+  // @gate TODO
+  it('replaces dangerouslySetInnerHTML with singleton children', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.innerHTML).toBe('<div>managed content</div>');
+
+    root.render(
+      <html>
+        <head />
+        <body>
+          <span>managed child</span>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.innerHTML).toBe('<span>managed child</span>');
+  });
+
+  // @gate TODO
+  it('preserves imperative attributes when acquiring a singleton', async () => {
+    const body = document.body;
+    body.setAttribute('data-external', 'true');
+
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <head />
+        <body />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.body).toBe(body);
+    expect(body.getAttribute('data-external')).toBe('true');
+  });
+
+  // @gate TODO
+  it('preserves imperative attributes when clearing a preamble contribution', async () => {
+    const body = document.body;
+    body.setAttribute('data-react-owned', 'true');
+    body.setAttribute('data-external', 'true');
+    // This is the shape Fizz emits when a completed Suspense boundary
+    // contributes props to the body singleton.
+    body.innerHTML = '<!--$--><!--body--><div>server</div><!--/$-->';
+
+    ReactDOMClient.hydrateRoot(
+      document,
+      <html>
+        <head />
+        <body data-react-owned="true" suppressHydrationWarning={true}>
+          <React.Suspense fallback={null}>
+            <span>client</span>
+          </React.Suspense>
+        </body>
+      </html>,
+      {
+        onRecoverableError() {},
+      },
+    );
+    await waitForAll([]);
+
+    expect(body.textContent).toBe('client');
+    expect(body.getAttribute('data-external')).toBe('true');
+  });
+
+  it('does not duplicate native listeners when a singleton is reacquired', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+    const onScroll = jest.fn();
+
+    root.render(
+      <html>
+        <head />
+        <body onScroll={onScroll} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    body.dispatchEvent(new document.defaultView.Event('scroll'));
+    expect(onScroll).toHaveBeenCalledTimes(1);
+
+    root.render(
+      <html>
+        <head />
+      </html>,
+    );
+    await waitForAll([]);
+
+    body.dispatchEvent(new document.defaultView.Event('scroll'));
+    expect(onScroll).toHaveBeenCalledTimes(1);
+
+    root.render(
+      <html>
+        <head />
+        <body onScroll={onScroll} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.body).toBe(body);
+    body.dispatchEvent(new document.defaultView.Event('scroll'));
+    expect(onScroll).toHaveBeenCalledTimes(2);
+  });
+
   it('renders into html, head, and body persistently so the node identities never change and extraneous styles are retained', async () => {
     // Server render some html that will get replaced with a client render
     await actIntoEmptyDocument(() => {
