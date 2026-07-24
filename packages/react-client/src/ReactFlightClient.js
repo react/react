@@ -95,6 +95,7 @@ import {
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 
 import {getOwnerStackByComponentInfoInDev} from 'shared/ReactComponentInfoStack';
+import {makeVirtualSourceURL} from 'shared/ReactFlightVirtualSourceURL';
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 
@@ -364,6 +365,7 @@ type Response = {
   _debugEndTime: null | number, // DEV-only
   _debugIOStarted: boolean, // DEV-only
   _debugFindSourceMapURL?: void | FindSourceMapURLCallback, // DEV-only
+  _debugFakeFunctionCache?: Map<string, FakeFunction<any>>, // DEV-only
   _debugChannel?: void | DebugChannel, // DEV-only
   _blockedConsole?: null | SomeChunk<ConsoleEntry>, // DEV-only
   _replayConsole: boolean, // DEV-only
@@ -2789,6 +2791,7 @@ function ResponseInstance(
     }
     this._debugEndTime = debugEndTime === undefined ? null : debugEndTime;
     this._debugFindSourceMapURL = findSourceMapURL;
+    this._debugFakeFunctionCache = new Map();
     this._debugChannel = debugChannel;
     this._blockedConsole = null;
     this._replayConsole = replayConsole;
@@ -3673,9 +3676,6 @@ function resolveHint<Code: HintCode>(
 const supportsCreateTask = __DEV__ && !!(console as any).createTask;
 
 type FakeFunction<T> = (() => T) => T;
-const fakeFunctionCache: Map<string, FakeFunction<any>> = __DEV__
-  ? new Map()
-  : (null as any);
 
 let fakeFunctionIdx = 0;
 function createFakeFunction<T>(
@@ -3801,29 +3801,10 @@ function createFakeFunction<T>(
     code = comment + code;
   }
 
-  if (filename.startsWith('/')) {
-    // If the filename starts with `/` we assume that it is a file system file
-    // rather than relative to the current host. Since on the server fully qualified
-    // stack traces use the file path.
-    // TODO: What does this look like on Windows?
-    filename = 'file://' + filename;
-  }
-
   if (sourceMap) {
-    // We use the prefix about://React/ to separate these from other files listed in
-    // the Chrome DevTools. We need a "host name" and not just a protocol because
-    // otherwise the group name becomes the root folder. Ideally we don't want to
-    // show these at all but there's two reasons to assign a fake URL.
-    // 1) A printed stack trace string needs a unique URL to be able to source map it.
-    // 2) If source maps are disabled or fails, you should at least be able to tell
-    //    which file it was.
     code +=
-      '\n//# sourceURL=about://React/' +
-      encodeURIComponent(environmentName) +
-      '/' +
-      encodeURI(filename) +
-      '?' +
-      fakeFunctionIdx++;
+      '\n//# sourceURL=' +
+      makeVirtualSourceURL(environmentName, filename, '' + fakeFunctionIdx++);
     code += '\n//# sourceMappingURL=' + sourceMap;
   } else if (filename) {
     code += '\n//# sourceURL=' + encodeURI(filename);
@@ -3869,7 +3850,13 @@ function buildFakeCallStack<T>(
       '-' +
       environmentName +
       (useEnclosingLine ? '-e' : '-n');
-    let fn = fakeFunctionCache.get(frameKey);
+    // The cache lives on the response since the _debugFindSourceMapURL
+    // function is an input and can vary by response.
+    const fakeFunctionCache = response._debugFakeFunctionCache;
+    let fn =
+      fakeFunctionCache !== undefined
+        ? fakeFunctionCache.get(frameKey)
+        : undefined;
     if (fn === undefined) {
       const [name, filename, line, col, enclosingLine, enclosingCol] = frame;
       const findSourceMapURL = response._debugFindSourceMapURL;
@@ -3886,9 +3873,9 @@ function buildFakeCallStack<T>(
         useEnclosingLine ? col : enclosingCol,
         environmentName,
       );
-      // TODO: This cache should technically live on the response since the _debugFindSourceMapURL
-      // function is an input and can vary by response.
-      fakeFunctionCache.set(frameKey, fn);
+      if (fakeFunctionCache !== undefined) {
+        fakeFunctionCache.set(frameKey, fn);
+      }
     }
     callStack = fn.bind(null, callStack);
   }

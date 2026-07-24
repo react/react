@@ -119,6 +119,7 @@ import {resolveOwner, setCurrentOwner} from './flight/ReactFlightCurrentOwner';
 
 import {getOwnerStackByComponentInfoInDev} from 'shared/ReactComponentInfoStack';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
+import {devirtualizeSourceURL} from 'shared/ReactFlightVirtualSourceURL';
 
 import noop from 'shared/noop';
 
@@ -177,21 +178,6 @@ function defaultFilterStackFrame(
     !filename.startsWith('node:') &&
     !filename.includes('node_modules')
   );
-}
-
-function devirtualizeURL(url: string): string {
-  if (url.startsWith('about://React/')) {
-    // This callsite is a virtual fake callsite that came from another Flight client.
-    // We need to reverse it back into the original location by stripping its prefix
-    // and suffix. We don't need the environment name because it's available on the
-    // parent object that will contain the stack.
-    const envIdx = url.indexOf('/', 'about://React/'.length);
-    const suffixIdx = url.lastIndexOf('?');
-    if (envIdx > -1 && suffixIdx > -1) {
-      return decodeURI(url.slice(envIdx + 1, suffixIdx));
-    }
-  }
-  return url;
 }
 
 function isPromiseCreationInternal(url: string, functionName: string): boolean {
@@ -256,7 +242,7 @@ function findCalledFunctionNameFromStackTrace(
   for (let i = 0; i < stack.length; i++) {
     const callsite = stack[i];
     const functionName = callsite[0];
-    const url = devirtualizeURL(callsite[1]);
+    const url = devirtualizeSourceURL(callsite[1]);
     const lineNumber = callsite[2];
     const columnNumber = callsite[3];
     if (
@@ -290,7 +276,7 @@ function filterStackTrace(
   for (let i = 0; i < stack.length; i++) {
     const callsite = stack[i];
     const functionName = callsite[0];
-    const url = devirtualizeURL(callsite[1]);
+    const url = devirtualizeSourceURL(callsite[1]);
     const lineNumber = callsite[2];
     const columnNumber = callsite[3];
     if (filterStackFrame(url, functionName, lineNumber, columnNumber)) {
@@ -309,7 +295,7 @@ function hasUnfilteredFrame(request: Request, stack: ReactStackTrace): boolean {
   for (let i = 0; i < stack.length; i++) {
     const callsite = stack[i];
     const functionName = callsite[0];
-    const url = devirtualizeURL(callsite[1]);
+    const url = devirtualizeSourceURL(callsite[1]);
     const lineNumber = callsite[2];
     const columnNumber = callsite[3];
     // Ignore async stack frames because they're not "real". We'd expect to have at least
@@ -390,7 +376,7 @@ export function isAwaitInUserspace(
     const filterStackFrame = request.filterStackFrame;
     const callsite = stack[firstFrame];
     const functionName = callsite[0];
-    const url = devirtualizeURL(callsite[1]);
+    const url = devirtualizeSourceURL(callsite[1]);
     const lineNumber = callsite[2];
     const columnNumber = callsite[3];
     return (

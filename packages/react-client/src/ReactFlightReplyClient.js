@@ -36,6 +36,7 @@ import {writeTemporaryReference} from './ReactFlightTemporaryReferences';
 
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
+import {makeVirtualSourceURL} from 'shared/ReactFlightVirtualSourceURL';
 
 const ObjectPrototype = Object.prototype;
 
@@ -1148,29 +1149,15 @@ function createFakeServerFunction<A: Iterable<any>, T>(
       '})';
   }
 
-  if (filename.startsWith('/')) {
-    // If the filename starts with `/` we assume that it is a file system file
-    // rather than relative to the current host. Since on the server fully qualified
-    // stack traces use the file path.
-    // TODO: What does this look like on Windows?
-    filename = 'file://' + filename;
-  }
-
   if (sourceMap) {
-    // We use the prefix about://React/ to separate these from other files listed in
-    // the Chrome DevTools. We need a "host name" and not just a protocol because
-    // otherwise the group name becomes the root folder. Ideally we don't want to
-    // show these at all but there's two reasons to assign a fake URL.
-    // 1) A printed stack trace string needs a unique URL to be able to source map it.
-    // 2) If source maps are disabled or fails, you should at least be able to tell
-    //    which file it was.
     code +=
-      '\n//# sourceURL=about://React/' +
-      encodeURIComponent(environmentName) +
-      '/' +
-      encodeURI(filename) +
-      '?s' + // We add an extra s here to distinguish from the fake stack frames
-      fakeServerFunctionIdx++;
+      '\n//# sourceURL=' +
+      makeVirtualSourceURL(
+        environmentName,
+        filename,
+        // We add an extra s here to distinguish from the fake stack frames
+        's' + fakeServerFunctionIdx++,
+      );
     code += '\n//# sourceMappingURL=' + sourceMap;
   } else if (filename) {
     code += '\n//# sourceURL=' + filename;
