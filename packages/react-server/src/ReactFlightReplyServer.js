@@ -201,7 +201,7 @@ function reactPromiseThen<T>(
 // The shadowing `then` must be defined with `Object.defineProperty` instead of
 // assignment. Assignment would throw when `Promise.prototype` is frozen (e.g.
 // by SES lockdown) because assigning over an inherited non-writable property
-// is rejected (the "override mistake").
+// is rejected.
 Object.defineProperty(ReactPromise.prototype, 'then', {
   writable: true,
   enumerable: true,

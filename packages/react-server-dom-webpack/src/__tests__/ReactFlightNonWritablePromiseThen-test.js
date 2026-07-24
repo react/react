@@ -17,11 +17,6 @@ global.ReadableStream =
 global.TextEncoder = require('util').TextEncoder;
 global.TextDecoder = require('util').TextDecoder;
 
-// When Promise.prototype is frozen (e.g. by SES lockdown()), its `then`
-// becomes a non-writable data property. Assigning a shadowing `then` to an
-// object that inherits from Promise.prototype then throws (the "override
-// mistake"), which used to crash react-server-dom-* at module evaluation
-// because the Flight chunk classes subclass Promise this way.
 describe('ReactFlight with a non-writable Promise.prototype.then', () => {
   let originalThen;
 
@@ -40,7 +35,7 @@ describe('ReactFlight with a non-writable Promise.prototype.then', () => {
     Object.defineProperty(Promise.prototype, 'then', originalThen);
   });
 
-  it('can require the Flight server and client', () => {
+  it('can require Server and Client entrypoints', () => {
     patchMessageChannel(require('scheduler'));
     // Simulate the condition resolution
     jest.mock('react', () => require('react/react.react-server'));
