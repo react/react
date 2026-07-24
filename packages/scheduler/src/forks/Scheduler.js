@@ -496,6 +496,14 @@ function forceFrameRate(fps: number) {
 }
 
 const performWorkUntilDeadline = () => {
+  if (isPerformingWork) {
+    // Firefox and IE don't pause MessageChannel event delivery during
+    // alert(), confirm(), prompt(), or debugger statements. If we re-enter
+    // while work is already in progress, bail out and let the outer call
+    // handle remaining work when the stack unwinds.
+    return;
+  }
+
   // $FlowFixMe[constant-condition]
   if (enableRequestPaint) {
     needsPaint = false;

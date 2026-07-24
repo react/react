@@ -11,6 +11,7 @@ import {preinitScriptForSSR} from 'react-client/src/ReactFlightClientConfig';
 
 export type ModuleLoading = null | {
   prefix: string,
+  suffix?: string,
   crossOrigin?: 'use-credentials' | '',
 };
 
@@ -23,7 +24,9 @@ export function prepareDestinationWithChunks(
   if (moduleLoading !== null) {
     for (let i = 1; i < chunks.length; i += 2) {
       preinitScriptForSSR(
-        moduleLoading.prefix + chunks[i],
+        moduleLoading.prefix +
+          chunks[i] +
+          (moduleLoading.suffix != null ? moduleLoading.suffix : ''),
         nonce,
         moduleLoading.crossOrigin,
       );

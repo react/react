@@ -161,6 +161,9 @@ describe('SchedulerBrowser', () => {
       eventLog = [];
       expect(actual).toEqual(expected);
     }
+    function clearLog() {
+      eventLog = [];
+    }
     return {
       advanceTime,
       resetTime,
@@ -168,6 +171,7 @@ describe('SchedulerBrowser', () => {
       log,
       isLogEmpty,
       assertLog,
+      clearLog,
       scheduleDiscreteEvent,
       scheduleContinuousEvent,
     };
@@ -347,5 +351,34 @@ describe('SchedulerBrowser', () => {
 
     runtime.fireMessageEvent();
     runtime.assertLog(['Message Event', 'Continuation Task']);
+  });
+
+  // Regression test for https://github.com/facebook/react/issues/17355
+  it('does not re-enter performWorkUntilDeadline', () => {
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('First Task');
+      // Schedule additional work while inside a running task.
+      scheduleCallback(NormalPriority, () => {
+        runtime.log('Nested Task');
+      });
+      // Port1.onmessage is performWorkUntilDeadline. Under Firefox/IE,
+      // a pending MessageChannel event can be delivered during alert() or
+      // debugger while isPerformingWork is still true. The guard should
+      // bail out and let the outer call continue.
+      runtime.clearLog();
+      port1.onmessage();
+      runtime.log('After Re-entrant Call');
+    });
+    runtime.assertLog(['Post Message']);
+
+    runtime.fireMessageEvent();
+    runtime.assertLog([
+      'Message Event',
+      'First Task',
+      // The re-entrant performWorkUntilDeadline should bail out (no log).
+      'After Re-entrant Call',
+      // The nested task scheduled inside First Task should still run.
+      'Nested Task',
+    ]);
   });
 });
