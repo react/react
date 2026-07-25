@@ -48,7 +48,10 @@ export function addChunkDebugInfo(
   }
   let ioInfo = chunkIOInfoCache.get(chunkId);
   if (ioInfo === undefined) {
-    const scriptFilename = __webpack_get_script_filename__(chunkId);
+    const scriptFilename =
+      typeof __webpack_get_script_filename__ === 'function'
+        ? __webpack_get_script_filename__(chunkId)
+        : __webpack_require__.u(chunkId);
     let href;
     try {
       // $FlowFixMe[incompatible-type]
