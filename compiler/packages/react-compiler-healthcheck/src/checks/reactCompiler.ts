@@ -55,16 +55,14 @@ const COMPILER_OPTIONS: PluginOptions = {
 
 function isActionableDiagnostic(detail: CompilerErrorDetailOptions) {
   switch (detail.severity) {
-    case ErrorSeverity.InvalidReact:
-    case ErrorSeverity.InvalidJS:
+    case ErrorSeverity.Error:
       return true;
-    case ErrorSeverity.InvalidConfig:
-    case ErrorSeverity.Invariant:
-    case ErrorSeverity.CannotPreserveMemoization:
-    case ErrorSeverity.Todo:
+    case ErrorSeverity.Warning:
+    case ErrorSeverity.Hint:
+    case ErrorSeverity.Off:
       return false;
     default:
-      throw new Error(`Unhandled error severity \`${detail.severity}\``);
+      return false;
   }
 }
 
