@@ -32,7 +32,7 @@ export function createBridge(wall?: Wall): FrontendBridge {
     return new Bridge(wall);
   }
 
-  return new Bridge({listen: () => {}, send: () => {}});
+  return new Bridge({listen: () => () => {}, send: () => {}});
 }
 
 export function createStore(bridge: FrontendBridge, config?: Config): Store {

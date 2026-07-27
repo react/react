@@ -232,6 +232,12 @@ export function revealCompletedBoundariesWithViewTransitions(
               appearingViewTransitions.set(name, null); // mark claimed
             }
           }
+          // Relay the exit to nested ViewTransitions that opted in
+          const relayExitElements =
+            exitElement.querySelectorAll('[vt-parent-exit]');
+          for (let j = 0; j < relayExitElements.length; j++) {
+            applyViewTransitionName(relayExitElements[j], 'vt-parent-exit');
+          }
         }
         node = node.nextSibling;
       }
@@ -245,6 +251,12 @@ export function revealCompletedBoundariesWithViewTransitions(
           null;
         if (!paired) {
           applyViewTransitionName(enterElement, 'vt-enter');
+        }
+        // Relay the enter to nested ViewTransitions that opted in
+        const relayEnterElements =
+          enterElement.querySelectorAll('[vt-parent-enter]');
+        for (let j = 0; j < relayEnterElements.length; j++) {
+          applyViewTransitionName(relayEnterElements[j], 'vt-parent-enter');
         }
         enterElement = enterElement.nextElementSibling;
       }
