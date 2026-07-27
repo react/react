@@ -1437,22 +1437,6 @@ describe('ReactDOMEventListener', () => {
 
     it('onCommand', async () => {
       await testNonBubblingEvent({
-        type: 'img',
-        reactEvent: 'onCommand',
-        reactEventType: 'command',
-        nativeEvent: 'command',
-        dispatch(node) {
-          const e = new Event('command', {
-            bubbles: false,
-            cancelable: true,
-          });
-          node.dispatchEvent(e);
-        },
-      });
-    });
-
-    it('onCommand Invoker Commands API', async () => {
-      await testNonBubblingEvent({
         type: 'div',
         reactEvent: 'onCommand',
         reactEventType: 'command',

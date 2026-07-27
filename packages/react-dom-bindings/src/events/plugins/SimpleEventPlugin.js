@@ -208,6 +208,8 @@ function extractEvents(
     // In the past, React has always bubbled them, but this can be surprising.
     // We're going to try aligning closer to the browser behavior by not bubbling
     // them in React either. We'll start by not bubbling onScroll, and then expand.
+    // Unlike toggle/beforetoggle (which still emulate bubbling for back-compat),
+    // command is new so we match the platform and do not emulate bubbling.
     const accumulateTargetOnly =
       !inCapturePhase &&
       // TODO: ideally, we'd eventually add all events from

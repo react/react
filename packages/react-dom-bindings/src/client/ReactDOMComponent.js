@@ -982,11 +982,11 @@ function setProp(
           );
         }
       }
-    // Fall through
+      setValueForAttribute(domElement, getAttributeAlias(key), value);
+      break;
     case 'commandFor':
       if (__DEV__) {
         if (
-          key === 'commandFor' &&
           !didWarnCommandForObject &&
           value != null &&
           typeof value === 'object'
@@ -998,7 +998,8 @@ function setProp(
           );
         }
       }
-    // Fall through
+      setValueForAttribute(domElement, getAttributeAlias(key), value);
+      break;
     default: {
       if (
         key.length > 2 &&
