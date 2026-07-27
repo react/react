@@ -169,6 +169,7 @@ import {
   acquireResource,
   releaseResource,
   hydrateHoistable,
+  createHoistableInstance,
   mountHoistable,
   unmountHoistable,
   prepareToCommitHoistables,
@@ -1501,7 +1502,13 @@ function commitDeletionEffectsOnFiber(
         if (deletedFiber.memoizedState) {
           releaseResource(deletedFiber.memoizedState);
         } else if (deletedFiber.stateNode) {
-          unmountHoistable(deletedFiber.stateNode);
+          // A Hoistable Instance lives in document.head only when its enclosing
+          // Activity is visible. If the Activity is hidden (or has been hidden
+          // since mount), the instance was either never inserted or was
+          // detached by the disappear traversal. Skip in those cases.
+          if (!offscreenSubtreeWasHidden) {
+            unmountHoistable(deletedFiber.stateNode);
+          }
         }
         break;
       }
@@ -2140,13 +2147,32 @@ function commitMutationEffectsOnFiber(
             // or a Hoistable Resource
             if (newResource === null) {
               if (finishedWork.stateNode === null) {
-                finishedWork.stateNode = hydrateHoistable(
-                  hoistableRoot,
-                  finishedWork.type,
-                  finishedWork.memoizedProps,
-                  finishedWork,
-                );
-              } else {
+                // Initial mount. The instance has not been created yet, which
+                // happens during hydration (createHoistableInstance is normally
+                // called in beginWork's updateHostHoistable, but is skipped
+                // when hydrating).
+                if (offscreenSubtreeIsHidden) {
+                  // We're inside a hidden Activity boundary. Create the
+                  // instance off-document so we don't leak metadata into
+                  // the head. It will be mounted by the reappear path when
+                  // the Activity becomes visible.
+                  finishedWork.stateNode = createHoistableInstance(
+                    finishedWork.type,
+                    finishedWork.memoizedProps,
+                    root.containerInfo,
+                    finishedWork,
+                  );
+                } else {
+                  finishedWork.stateNode = hydrateHoistable(
+                    hoistableRoot,
+                    finishedWork.type,
+                    finishedWork.memoizedProps,
+                    finishedWork,
+                  );
+                }
+              } else if (!offscreenSubtreeIsHidden) {
+                // The instance was created in beginWork. Only mount it into
+                // the document if we're not inside a hidden Activity boundary.
                 mountHoistable(
                   hoistableRoot,
                   finishedWork.type,
@@ -2163,18 +2189,27 @@ function commitMutationEffectsOnFiber(
           } else if (currentResource !== newResource) {
             // We are moving to or from Hoistable Resource, or between different Hoistable Resources
             if (currentResource === null) {
-              if (current.stateNode !== null) {
-                unmountHoistable(current.stateNode);
+              // Transitioning from Instance to Resource. Only unmount when the
+              // Instance is currently mounted in the document; hidden Activity
+              // boundaries keep instances off-document or detach them before
+              // this update is processed.
+              const instance = current.stateNode;
+              if (instance !== null && !offscreenSubtreeWasHidden) {
+                unmountHoistable(instance);
               }
             } else {
               releaseResource(currentResource);
             }
             if (newResource === null) {
-              mountHoistable(
-                hoistableRoot,
-                finishedWork.type,
-                finishedWork.stateNode,
-              );
+              // Transitioning to an Instance. Only mount if visible; hidden
+              // Activity boundaries will mount via the reappear path.
+              if (!offscreenSubtreeIsHidden) {
+                mountHoistable(
+                  hoistableRoot,
+                  finishedWork.type,
+                  finishedWork.stateNode,
+                );
+              }
             } else {
               acquireResource(
                 hoistableRoot,
@@ -2581,6 +2616,14 @@ function commitMutationEffectsOnFiber(
               (finishedWork.mode & ConcurrentMode) !== NoMode
             ) {
               // Disappear the layout effects of all the children
+              const newOffscreenSubtreeIsHidden =
+                isHidden || offscreenSubtreeIsHidden;
+              const newOffscreenSubtreeWasHidden =
+                wasHidden || offscreenSubtreeWasHidden;
+              const prevOffscreenSubtreeIsHidden = offscreenSubtreeIsHidden;
+              const prevOffscreenSubtreeWasHidden = offscreenSubtreeWasHidden;
+              offscreenSubtreeIsHidden = newOffscreenSubtreeIsHidden;
+              offscreenSubtreeWasHidden = newOffscreenSubtreeWasHidden;
               recursivelyTraverseDisappearLayoutEffects(finishedWork);
 
               if (
@@ -2598,6 +2641,8 @@ function commitMutationEffectsOnFiber(
                   componentEffectEndTime,
                 );
               }
+              offscreenSubtreeIsHidden = prevOffscreenSubtreeIsHidden;
+              offscreenSubtreeWasHidden = prevOffscreenSubtreeWasHidden;
             }
           }
         }
@@ -3050,7 +3095,6 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
       }
       // Expected fallthrough to HostComponent
     }
-    case HostHoistable:
     case HostComponent: {
       // TODO (Offscreen) Check: flags & RefStatic
       safelyDetachRef(finishedWork, finishedWork.return);
@@ -3061,6 +3105,28 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
           (enableFragmentRefsTextNodes && finishedWork.tag === HostText))
       ) {
         commitFragmentInstanceDeletionEffects(finishedWork);
+      }
+
+      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      break;
+    }
+    case HostHoistable: {
+      // TODO (Offscreen) Check: flags & RefStatic
+      safelyDetachRef(finishedWork, finishedWork.return);
+
+      if (supportsResources) {
+        // We only act on Hoistable Instances (memoizedState === null).
+        // Resources (memoizedState !== null) are ref-counted and intentionally
+        // remain in the document across Activity visibility transitions;
+        // they are released only on actual deletion.
+        const instance = finishedWork.stateNode;
+        if (
+          finishedWork.memoizedState === null &&
+          instance !== null &&
+          !offscreenSubtreeWasHidden
+        ) {
+          unmountHoistable(instance);
+        }
       }
 
       recursivelyTraverseDisappearLayoutEffects(finishedWork);
@@ -3202,7 +3268,6 @@ export function reappearLayoutEffects(
       }
       // Fallthrough
     }
-    case HostHoistable:
     case HostComponent: {
       // TODO: Enable HostText for RN
       if (enableFragmentRefs && finishedWork.tag === HostComponent) {
@@ -3218,6 +3283,56 @@ export function reappearLayoutEffects(
       // (eg DOM renderer may schedule auto-focus for inputs and form controls).
       // These effects should only be committed when components are first mounted,
       // aka when there is no current/alternate.
+      if (includeWorkInProgressEffects && current === null && flags & Update) {
+        commitHostMount(finishedWork);
+      }
+
+      // TODO: Check flags & Ref
+      safelyAttachRef(finishedWork, finishedWork.return);
+      break;
+    }
+    case HostHoistable: {
+      if (supportsResources) {
+        // The reappear traversal runs whenever an Activity transitions from
+        // hidden to visible. We piggy-back on it (rather than adding a
+        // separate recursive traversal) to insert hoistable metadata such as
+        // <title> and <meta> into the document.
+        //
+        // We only act on Hoistable Instances (memoizedState === null).
+        // Resources stay mounted across Activity visibility transitions.
+        //
+        // The parentNode guard makes this idempotent and safe under StrictMode
+        // dev double-invoke: if the instance is already attached we skip.
+        //
+        // Note: this runs in the layout phase. A useLayoutEffect on an earlier
+        // sibling can therefore observe document.title before the hoistable
+        // is re-attached. Moving this to the mutation phase would require an
+        // additional unconditional traversal of the Activity subtree (the
+        // mutation traversal is gated by subtreeFlags and would skip an
+        // unchanged hoistable). This is the same tradeoff as for HostSingleton.
+        const instance = finishedWork.stateNode;
+        if (
+          finishedWork.memoizedState === null &&
+          instance !== null &&
+          !offscreenSubtreeIsHidden
+        ) {
+          // currentHoistableRoot is only maintained during the mutation phase.
+          // Derive the hoistable root from the instance's owner document so
+          // this works in the layout phase too. Hoistable Instances are
+          // hoisted to document.head, which always lives in ownerDocument.
+          mountHoistable(
+            getHoistableRoot(instance.ownerDocument),
+            finishedWork.type,
+            instance,
+          );
+        }
+      }
+      recursivelyTraverseReappearLayoutEffects(
+        finishedRoot,
+        finishedWork,
+        includeWorkInProgressEffects,
+      );
+
       if (includeWorkInProgressEffects && current === null && flags & Update) {
         commitHostMount(finishedWork);
       }
