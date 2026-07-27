@@ -4031,11 +4031,24 @@ const createFakeJSXCallStackInDEV: (
     ) as any)
   : (null as any);
 
+// v8 (Chromium, Node.js) defaults to 10
+// SpiderMonkey (Firefox) does not support Error.stackTraceLimit
+// JSC (Safari) defaults to 100
+// The lower the limit, the more likely we'll not reach react_stack_bottom_frame
+// The higher the limit, the slower Error() is when not inspecting with a debugger.
+// When inspecting with a debugger, Error.stackTraceLimit has no impact on Error() performance (in v8).
+const ownerStackTraceLimit = 10;
+
 /** @noinline */
 function fakeJSXCallSite() {
   // This extra call frame represents the JSX creation function. We always pop this frame
   // off before presenting so it needs to be part of the stack.
-  return new Error('react-stack-top-frame');
+  let error;
+  const previousStackTraceLimit = Error.stackTraceLimit;
+  Error.stackTraceLimit = ownerStackTraceLimit;
+  error = Error('react-stack-top-frame'); // eslint-disable-line prefer-const
+  Error.stackTraceLimit = previousStackTraceLimit;
+  return error;
 }
 
 function initializeFakeStack(

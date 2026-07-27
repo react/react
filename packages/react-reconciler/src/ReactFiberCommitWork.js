@@ -288,6 +288,12 @@ import {
 import {markIndicatorHandled} from './ReactFiberRootScheduler';
 import type {Flags} from './ReactFiberFlags';
 
+type LayoutEffectTraversalFlags = number;
+
+const NoLayoutEffectTraversalFlags = /*        */ 0b00;
+const IncludeWorkInProgressEffects = /*       */ 0b01;
+const IncludeHostSingletons = /*              */ 0b10;
+
 // Used during the commit phase to track the state of the Offscreen component stack.
 // Allows us to avoid traversing the return path to find the nearest Offscreen ancestor.
 let offscreenSubtreeIsHidden: boolean = false;
@@ -795,12 +801,20 @@ function commitLayoutEffectOnFiber(
             // traversing the layout effects, we must also re-mount layout
             // effects that were unmounted when the Offscreen subtree was
             // hidden. So this is a superset of the normal commitLayoutEffects.
-            const includeWorkInProgressEffects =
-              (finishedWork.subtreeFlags & LayoutMask) !== NoFlags;
+            let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
+            // $FlowFixMe[constant-condition]
+            if (supportsSingletons) {
+              layoutEffectTraversalFlags = IncludeHostSingletons;
+            } else {
+              layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
+            }
+            if ((finishedWork.subtreeFlags & LayoutMask) !== NoFlags) {
+              layoutEffectTraversalFlags |= IncludeWorkInProgressEffects;
+            }
             recursivelyTraverseReappearLayoutEffects(
               finishedRoot,
               finishedWork,
-              includeWorkInProgressEffects,
+              layoutEffectTraversalFlags,
             );
             if (
               enableProfilerTimer &&
@@ -2581,7 +2595,17 @@ function commitMutationEffectsOnFiber(
               (finishedWork.mode & ConcurrentMode) !== NoMode
             ) {
               // Disappear the layout effects of all the children
-              recursivelyTraverseDisappearLayoutEffects(finishedWork);
+              let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
+              // $FlowFixMe[constant-condition]
+              if (supportsSingletons) {
+                layoutEffectTraversalFlags = IncludeHostSingletons;
+              } else {
+                layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
+              }
+              recursivelyTraverseDisappearLayoutEffects(
+                finishedWork,
+                layoutEffectTraversalFlags,
+              );
 
               if (
                 enableProfilerTimer &&
@@ -3007,7 +3031,16 @@ function recursivelyTraverseLayoutEffects(
   }
 }
 
-export function disappearLayoutEffects(finishedWork: Fiber) {
+export function disappearLayoutEffectsForDEVValidation(finishedWork: Fiber) {
+  if (__DEV__) {
+    disappearLayoutEffects(finishedWork, NoLayoutEffectTraversalFlags);
+  }
+}
+
+function disappearLayoutEffects(
+  finishedWork: Fiber,
+  layoutEffectTraversalFlags: LayoutEffectTraversalFlags,
+) {
   const prevEffectStart = pushComponentEffectStart();
   const prevEffectDuration = pushComponentEffectDuration();
   const prevEffectErrors = pushComponentEffectErrors();
@@ -3023,7 +3056,10 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
         finishedWork.return,
         HookLayout,
       );
-      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
       break;
     }
     case ClassComponent: {
@@ -3039,14 +3075,22 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
         );
       }
 
-      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
       break;
     }
     case HostSingleton: {
       // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
-        // TODO (Offscreen) Check: flags & RefStatic
-        commitHostSingletonRelease(finishedWork);
+        const includeHostSingletons =
+          (layoutEffectTraversalFlags & IncludeHostSingletons) !==
+          NoLayoutEffectTraversalFlags;
+        if (includeHostSingletons) {
+          // TODO (Offscreen) Check: flags & RefStatic
+          commitHostSingletonRelease(finishedWork);
+        }
       }
       // Expected fallthrough to HostComponent
     }
@@ -3063,7 +3107,10 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
         commitFragmentInstanceDeletionEffects(finishedWork);
       }
 
-      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
       break;
     }
     case OffscreenComponent: {
@@ -3072,7 +3119,10 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
         // Nested Offscreen tree is already hidden. Don't disappear
         // its effects.
       } else {
-        recursivelyTraverseDisappearLayoutEffects(finishedWork);
+        recursivelyTraverseDisappearLayoutEffects(
+          finishedWork,
+          layoutEffectTraversalFlags,
+        );
       }
       break;
     }
@@ -3085,7 +3135,10 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
         }
         safelyDetachRef(finishedWork, finishedWork.return);
       }
-      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
       break;
     }
     case Fragment: {
@@ -3095,7 +3148,10 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
       // Fallthrough
     }
     default: {
-      recursivelyTraverseDisappearLayoutEffects(finishedWork);
+      recursivelyTraverseDisappearLayoutEffects(
+        finishedWork,
+        layoutEffectTraversalFlags,
+      );
       break;
     }
   }
@@ -3124,23 +3180,41 @@ export function disappearLayoutEffects(finishedWork: Fiber) {
   popComponentEffectDidSpawnUpdate(prevEffectDidSpawnUpdate);
 }
 
-function recursivelyTraverseDisappearLayoutEffects(parentFiber: Fiber) {
+function recursivelyTraverseDisappearLayoutEffects(
+  parentFiber: Fiber,
+  layoutEffectTraversalFlags: LayoutEffectTraversalFlags,
+) {
   // TODO (Offscreen) Check: subtreeflags & (RefStatic | LayoutStatic)
   let child = parentFiber.child;
   while (child !== null) {
-    disappearLayoutEffects(child);
+    disappearLayoutEffects(child, layoutEffectTraversalFlags);
     child = child.sibling;
   }
 }
 
-export function reappearLayoutEffects(
+export function reappearLayoutEffectsForDEVValidation(
+  finishedRoot: FiberRoot,
+  current: Fiber | null,
+  finishedWork: Fiber,
+) {
+  if (__DEV__) {
+    reappearLayoutEffects(
+      finishedRoot,
+      current,
+      finishedWork,
+      NoLayoutEffectTraversalFlags,
+    );
+  }
+}
+
+function reappearLayoutEffects(
   finishedRoot: FiberRoot,
   current: Fiber | null,
   finishedWork: Fiber,
   // This function visits both newly finished work and nodes that were re-used
   // from a previously committed tree. We cannot check non-static flags if the
   // node was reused.
-  includeWorkInProgressEffects: boolean,
+  layoutEffectTraversalFlags: LayoutEffectTraversalFlags,
 ) {
   const prevEffectStart = pushComponentEffectStart();
   const prevEffectDuration = pushComponentEffectDuration();
@@ -3148,6 +3222,9 @@ export function reappearLayoutEffects(
   const prevEffectDidSpawnUpdate = pushComponentEffectDidSpawnUpdate();
   // Turn on layout effects in a tree that previously disappeared.
   const flags = finishedWork.flags;
+  const includeWorkInProgressEffects =
+    (layoutEffectTraversalFlags & IncludeWorkInProgressEffects) !==
+    NoLayoutEffectTraversalFlags;
   switch (finishedWork.tag) {
     case FunctionComponent:
     case ForwardRef:
@@ -3155,7 +3232,7 @@ export function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
       // TODO: Check flags & LayoutStatic
       commitHookLayoutEffects(finishedWork, HookLayout);
@@ -3165,7 +3242,7 @@ export function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
 
       commitClassDidMount(finishedWork);
@@ -3190,15 +3267,20 @@ export function reappearLayoutEffects(
     case HostSingleton: {
       // $FlowFixMe[constant-condition]
       if (supportsSingletons) {
-        // We acquire the singleton instance first so it has appropriate
-        // styles before other layout effects run. This isn't perfect because
-        // an early sibling of the singleton may have an effect that can
-        // observe the singleton before it is acquired.
-        // @TODO move this to the mutation phase. The reason it isn't there yet
-        // is it seemingly requires an extra traversal because we need to move the
-        // disappear effect into a phase before the appear phase
-        commitHostSingletonAcquisition(finishedWork);
-        // We fall through to the HostComponent case below.
+        const includeHostSingletons =
+          (layoutEffectTraversalFlags & IncludeHostSingletons) !==
+          NoLayoutEffectTraversalFlags;
+        if (includeHostSingletons) {
+          // We acquire the singleton instance first so it has appropriate
+          // styles before other layout effects run. This isn't perfect because
+          // an early sibling of the singleton may have an effect that can
+          // observe the singleton before it is acquired.
+          // @TODO move this to the mutation phase. The reason it isn't there yet
+          // is it seemingly requires an extra traversal because we need to move the
+          // disappear effect into a phase before the appear phase
+          commitHostSingletonAcquisition(finishedWork);
+          // We fall through to the HostComponent case below.
+        }
       }
       // Fallthrough
     }
@@ -3211,7 +3293,7 @@ export function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
 
       // Renderers may schedule work to be done after host components are mounted
@@ -3234,7 +3316,7 @@ export function reappearLayoutEffects(
         recursivelyTraverseReappearLayoutEffects(
           finishedRoot,
           finishedWork,
-          includeWorkInProgressEffects,
+          layoutEffectTraversalFlags,
         );
 
         const profilerInstance = finishedWork.stateNode;
@@ -3257,7 +3339,7 @@ export function reappearLayoutEffects(
         recursivelyTraverseReappearLayoutEffects(
           finishedRoot,
           finishedWork,
-          includeWorkInProgressEffects,
+          layoutEffectTraversalFlags,
         );
       }
       break;
@@ -3266,7 +3348,7 @@ export function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
 
       if (includeWorkInProgressEffects && flags & Update) {
@@ -3279,7 +3361,7 @@ export function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
 
       if (includeWorkInProgressEffects && flags & Update) {
@@ -3298,7 +3380,7 @@ export function reappearLayoutEffects(
         recursivelyTraverseReappearLayoutEffects(
           finishedRoot,
           finishedWork,
-          includeWorkInProgressEffects,
+          layoutEffectTraversalFlags,
         );
       }
       // TODO: Check flags & Ref
@@ -3310,7 +3392,7 @@ export function reappearLayoutEffects(
         recursivelyTraverseReappearLayoutEffects(
           finishedRoot,
           finishedWork,
-          includeWorkInProgressEffects,
+          layoutEffectTraversalFlags,
         );
         if (__DEV__) {
           if (flags & ViewTransitionNamedStatic) {
@@ -3332,7 +3414,7 @@ export function reappearLayoutEffects(
       recursivelyTraverseReappearLayoutEffects(
         finishedRoot,
         finishedWork,
-        includeWorkInProgressEffects,
+        layoutEffectTraversalFlags,
       );
       break;
     }
@@ -3365,14 +3447,15 @@ export function reappearLayoutEffects(
 function recursivelyTraverseReappearLayoutEffects(
   finishedRoot: FiberRoot,
   parentFiber: Fiber,
-  includeWorkInProgressEffects: boolean,
+  layoutEffectTraversalFlags: LayoutEffectTraversalFlags,
 ) {
   // This function visits both newly finished work and nodes that were re-used
   // from a previously committed tree. We cannot check non-static flags if the
   // node was reused.
-  const childShouldIncludeWorkInProgressEffects =
-    includeWorkInProgressEffects &&
-    (parentFiber.subtreeFlags & LayoutMask) !== NoFlags;
+  const childLayoutEffectTraversalFlags =
+    (parentFiber.subtreeFlags & LayoutMask) !== NoFlags
+      ? layoutEffectTraversalFlags
+      : layoutEffectTraversalFlags & ~IncludeWorkInProgressEffects;
 
   // TODO (Offscreen) Check: flags & (RefStatic | LayoutStatic)
   let child = parentFiber.child;
@@ -3382,7 +3465,7 @@ function recursivelyTraverseReappearLayoutEffects(
       finishedRoot,
       current,
       child,
-      childShouldIncludeWorkInProgressEffects,
+      childLayoutEffectTraversalFlags,
     );
     child = child.sibling;
   }

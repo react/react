@@ -34,7 +34,11 @@ export function createBridge(contentWindow: any, wall?: Wall): FrontendBridge {
           window.removeEventListener('message', onMessage);
         };
       },
-      send(event: string, payload: any, transferable?: Array<any>) {
+      send(
+        event: string,
+        payload: mixed,
+        transferable?: $ReadOnlyArray<mixed>,
+      ) {
         contentWindow.postMessage({event, payload}, '*', transferable);
       },
     };

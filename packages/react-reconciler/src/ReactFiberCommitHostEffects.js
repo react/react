@@ -826,8 +826,14 @@ export function commitHostSingletonRelease(releasingWork: Fiber) {
       releasingWork,
       releaseSingletonInstance,
       releasingWork.stateNode,
+      releasingWork.type,
+      releasingWork.memoizedProps,
     );
   } else {
-    releaseSingletonInstance(releasingWork.stateNode);
+    releaseSingletonInstance(
+      releasingWork.stateNode,
+      releasingWork.type,
+      releasingWork.memoizedProps,
+    );
   }
 }

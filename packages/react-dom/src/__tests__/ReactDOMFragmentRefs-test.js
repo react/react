@@ -22,6 +22,7 @@ let simulateIntersection;
 let setClientRects;
 let mockRangeClientRects;
 let assertConsoleErrorDev;
+let assertConsoleWarnDev;
 
 function Wrapper({children}) {
   return children;
@@ -44,6 +45,7 @@ describe('FragmentRefs', () => {
     mockRangeClientRects = IntersectionMocks.mockRangeClientRects;
     assertConsoleErrorDev =
       require('internal-test-utils').assertConsoleErrorDev;
+    assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
 
     container = document.createElement('div');
     document.body.innerHTML = '';
@@ -2588,6 +2590,45 @@ describe('FragmentRefs', () => {
         fragmentRef.current.scrollIntoView();
         expect(parentRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
       });
+
+      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+      it('scrolls the host element when the fallback target is a ShadowRoot container', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+        await act(() => {
+          root.render(<Fragment ref={fragmentRef} />);
+        });
+
+        // The ShadowRoot's host element marks where the fragment's content
+        // would appear
+        host.scrollIntoView = jest.fn();
+        fragmentRef.current.scrollIntoView();
+        expect(host.scrollIntoView).toHaveBeenCalledTimes(1);
+      });
+
+      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+      it('warns without scrolling when the fallback target is a detached DocumentFragment container', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(
+          document.createDocumentFragment(),
+        );
+        await act(() => {
+          root.render(<Fragment ref={fragmentRef} />);
+        });
+
+        expect(() => fragmentRef.current.scrollIntoView()).not.toThrow();
+        assertConsoleWarnDev(
+          [
+            'You are attempting to scroll a FragmentInstance that is only ' +
+              'mounted inside a detached DocumentFragment. No scroll was ' +
+              'performed.',
+          ],
+          {withoutStack: true},
+        );
+      });
     });
   });
 
@@ -2750,6 +2791,48 @@ describe('FragmentRefs', () => {
 
       // Should have called window.scrollTo for the text node
       expect(scrollToMock).toHaveBeenCalled();
+
+      window.scrollTo = originalScrollTo;
+      restoreRange();
+    });
+
+    // @gate enableFragmentRefs && enableFragmentRefsTextNodes && enableFragmentRefsScrollIntoView
+    it('scrollIntoView scrolls to text siblings of an empty fragment using the Range API', async () => {
+      const restoreRange = mockRangeClientRects([
+        {x: 100, y: 200, width: 80, height: 16},
+      ]);
+      const fragmentRef = React.createRef();
+      const parentRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() =>
+        root.render(
+          <div ref={parentRef}>
+            Text before
+            <Fragment ref={fragmentRef} />
+            Text after
+          </div>,
+        ),
+      );
+
+      const parentScrollMock = jest.fn();
+      parentRef.current.scrollIntoView = parentScrollMock;
+      // Mock window.scrollTo to verify Range-based text scrolling
+      const originalScrollTo = window.scrollTo;
+      const scrollToMock = jest.fn();
+      window.scrollTo = scrollToMock;
+
+      // Default call scrolls to the following text sibling
+      fragmentRef.current.scrollIntoView();
+      expect(scrollToMock).toHaveBeenCalledTimes(1);
+      expect(parentScrollMock).toHaveBeenCalledTimes(0);
+
+      scrollToMock.mockClear();
+
+      // alignToTop=false scrolls to the preceding text sibling
+      fragmentRef.current.scrollIntoView(false);
+      expect(scrollToMock).toHaveBeenCalledTimes(1);
+      expect(parentScrollMock).toHaveBeenCalledTimes(0);
 
       window.scrollTo = originalScrollTo;
       restoreRange();
