@@ -2976,4 +2976,55 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       '<div>1</div><span>client</span><div>2</div>',
     );
   });
+
+  it('does not block event loop when sibling before Activity has hydration mismatch', async () => {
+    let isClient = false;
+
+    // Simulates a component or lib that renders on SSR but returns null on client
+    function FaultedComponent() {
+      if (isClient) {
+        return null;
+      }
+      return (
+        <section>
+          <div>Product Title</div>
+        </section>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <FaultedComponent />
+          <Activity>
+            <div>content</div>
+          </Activity>
+        </div>
+      );
+    }
+
+    const finalHTML = ReactDOMServer.renderToString(<App />);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    container.innerHTML = finalHTML;
+
+    isClient = true;
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
+        },
+      });
+    });
+
+    // Two recoverable errors: one for FaultedComponent mismatch, one for Activity
+    assertLog([
+      "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
+      "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
+    ]);
+
+    // Activity content should be client-rendered after the mismatch recovery.
+    expect(container.innerHTML).toContain('content');
+  });
 });
