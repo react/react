@@ -284,7 +284,7 @@ export function commitFragmentInstanceInsertionEffects(fiber: Fiber): void {
       commitNewChildToFragmentInstance(fiber.stateNode, fragmentInstance);
     }
 
-    if (isFragmentInstanceHostParent(parent)) {
+    if (isFragmentInstanceHostBoundary(parent)) {
       return;
     }
 
@@ -300,7 +300,7 @@ export function commitFragmentInstanceDeletionEffects(fiber: Fiber): void {
       deleteChildFromFragmentInstance(fiber.stateNode, fragmentInstance);
     }
 
-    if (isFragmentInstanceHostParent(parent)) {
+    if (isFragmentInstanceHostBoundary(parent)) {
       return;
     }
 
@@ -322,21 +322,22 @@ function isHostParent(fiber: Fiber): boolean {
   );
 }
 
-function isFragmentInstanceParent(fiber: Fiber): boolean {
-  return fiber && fiber.tag === Fragment && fiber.stateNode !== null;
-}
-
-// Fragments collect HostSingleton children regardless of whether the
-// singleton is a scope for placement, so their host parent boundary is
-// wider than `isHostParent`.
-function isFragmentInstanceHostParent(fiber: Fiber): boolean {
+// HostPortal / HostHoistable are host parents for placement, but not for
+// fragment instance ancestry — commit bookkeeping walks past them so it
+// matches getFragmentParentInstanceOrContainerFiber. HostSingleton is a
+// fragment host boundary (and a collected child) even when it is not a
+// placement scope.
+function isFragmentInstanceHostBoundary(fiber: Fiber): boolean {
   return (
     fiber.tag === HostComponent ||
-    // $FlowFixMe[constant-condition]
-    (supportsSingletons ? fiber.tag === HostSingleton : false) ||
     fiber.tag === HostRoot ||
-    fiber.tag === HostPortal
+    // $FlowFixMe[constant-condition]
+    (supportsSingletons ? fiber.tag === HostSingleton : false)
   );
+}
+
+function isFragmentInstanceParent(fiber: Fiber): boolean {
+  return fiber && fiber.tag === Fragment && fiber.stateNode !== null;
 }
 
 function getHostSibling(fiber: Fiber): ?Instance {
@@ -535,16 +536,18 @@ function commitPlacement(finishedWork: Fiber): void {
         parentFragmentInstances.push(fragmentInstance);
       }
     }
-    if (collectFragmentInstances && isFragmentInstanceHostParent(parentFiber)) {
-      // Fragments collect children only down to the nearest host fiber.
-      // The search for the placement parent can continue past host fibers
-      // that are not valid placement parents, like HostSingletons outside
-      // a singleton scope, but fragments above them own that host fiber
-      // as a child, not the placed node.
+    if (hostParentFiber === undefined && isHostParent(parentFiber)) {
+      // Nearest host parent for placement. Portals still win here so
+      // children insert into the portal container.
+      hostParentFiber = parentFiber;
+    }
+    if (collectFragmentInstances && isFragmentInstanceHostBoundary(parentFiber)) {
+      // Stop collecting at HostComponent / HostRoot / HostSingleton.
+      // Placement can continue past non-scope singletons to HostRoot, and
+      // past portals (already recorded above) to fragment ancestors.
       collectFragmentInstances = false;
     }
-    if (isHostParent(parentFiber)) {
-      hostParentFiber = parentFiber;
+    if (hostParentFiber !== undefined && !collectFragmentInstances) {
       break;
     }
     parentFiber = parentFiber.return;

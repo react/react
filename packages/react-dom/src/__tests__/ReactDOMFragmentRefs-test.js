@@ -1075,6 +1075,56 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['child-b']);
       });
 
+      // @gate enableFragmentRefs
+      it('applies event listeners to children portaled in after registration', async () => {
+        const fragmentRef = React.createRef();
+        const childARef = React.createRef();
+        const childBRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let showChildB;
+
+        function Test() {
+          const [shouldShowChildB, setShouldShowChildB] = React.useState(false);
+          showChildB = () => {
+            setShouldShowChildB(true);
+          };
+
+          return (
+            <Fragment ref={fragmentRef}>
+              {createPortal(
+                <>
+                  <div id="child-a" ref={childARef} />
+                  {shouldShowChildB && <div id="child-b" ref={childBRef} />}
+                </>,
+                document.body,
+              )}
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener('click', e => {
+          logs.push(e.target.id);
+        });
+
+        childARef.current.click();
+        expect(logs).toEqual(['child-a']);
+
+        // child-b is inserted into the same portal after the listener was
+        // registered, so it should be treated like its sibling child-a.
+        await act(() => {
+          showChildB();
+        });
+
+        logs.length = 0;
+        childBRef.current.click();
+        expect(logs).toEqual(['child-b']);
+      });
+
       describe('with activity', () => {
         // @gate enableFragmentRefs
         it('does not apply event listeners to hidden trees', async () => {
