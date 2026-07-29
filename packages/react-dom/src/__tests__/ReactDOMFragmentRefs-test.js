@@ -809,6 +809,100 @@ describe('FragmentRefs', () => {
         expect(hasClicked).toBe(true);
       });
 
+      // @gate enableFragmentRefs
+      it('fires a once listener only once across existing children', async () => {
+        const fragmentRef = React.createRef();
+        const childARef = React.createRef();
+        const childBRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        await act(() => {
+          root.render(
+            <div>
+              <Fragment ref={fragmentRef}>
+                <div ref={childARef} id="a">
+                  A
+                </div>
+                <div ref={childBRef} id="b">
+                  B
+                </div>
+              </Fragment>
+            </div>,
+          );
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener(
+          'click',
+          () => {
+            logs.push('once');
+          },
+          {once: true},
+        );
+
+        childARef.current.click();
+        expect(logs).toEqual(['once']);
+
+        logs.length = 0;
+        childBRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
+      // @gate enableFragmentRefs
+      it('does not re-arm a once listener when a new child is inserted', async () => {
+        const fragmentRef = React.createRef();
+        const childARef = React.createRef();
+        const childBRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let showChildB;
+
+        function Component() {
+          const [shouldShowChildB, setShouldShowChildB] = React.useState(false);
+          showChildB = () => {
+            setShouldShowChildB(true);
+          };
+
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                <div ref={childARef} id="a">
+                  A
+                </div>
+                {shouldShowChildB && (
+                  <div ref={childBRef} id="b">
+                    B
+                  </div>
+                )}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Component />);
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener(
+          'click',
+          () => {
+            logs.push('once');
+          },
+          {once: true},
+        );
+
+        childARef.current.click();
+        expect(logs).toEqual(['once']);
+
+        await act(() => {
+          showChildB();
+        });
+
+        logs.length = 0;
+        childBRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
       // @gate enableFragmentRefs && enableFragmentRefsTextNodes
       it('adds an event listener to a newly added text child', async () => {
         const fragmentRef = React.createRef();
