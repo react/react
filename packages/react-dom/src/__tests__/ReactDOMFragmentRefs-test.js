@@ -852,6 +852,60 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['fragment']);
       });
 
+      // @gate enableFragmentRefs && enableFragmentRefsTextNodes
+      it('removes event listeners from a deleted text child', async () => {
+        const fragmentRef = React.createRef();
+        const parentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let hideText;
+
+        function Component() {
+          const [shouldShowText, setShouldShowText] = React.useState(true);
+          hideText = () => {
+            setShouldShowText(false);
+          };
+
+          return (
+            <div ref={parentRef}>
+              <Fragment ref={fragmentRef}>
+                {shouldShowText ? 'Hello' : null}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Component />);
+        });
+
+        const textNode = Array.from(parentRef.current.childNodes).find(
+          node => node.nodeType === 3,
+        );
+        expect(textNode).not.toBe(undefined);
+
+        const logs = [];
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+
+        textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        expect(logs).toEqual(['fragment']);
+
+        await act(() => {
+          hideText();
+        });
+
+        const detachedHost = document.createElement('div');
+        document.body.appendChild(detachedHost);
+        detachedHost.appendChild(textNode);
+
+        logs.length = 0;
+        textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        expect(logs).toEqual([]);
+
+        document.body.removeChild(detachedHost);
+      });
+
       // @gate enableFragmentRefs
       it('applies event listeners to host children nested within non-host children', async () => {
         const fragmentRef = React.createRef();
@@ -1249,6 +1303,66 @@ describe('FragmentRefs', () => {
           parentRef.current.lastChild.click();
           // Event order is flipped here because the nested child re-registers first
           expect(logs).toEqual(['clicked 2', 'clicked 1']);
+        });
+
+        // @gate enableFragmentRefs && enableFragmentRefsTextNodes
+        it('does not dispatch fragment events from text children while hidden', async () => {
+          const parentRef = React.createRef();
+          const fragmentRef = React.createRef();
+          const root = ReactDOMClient.createRoot(container);
+
+          function Test({mode}) {
+            return (
+              <div ref={parentRef}>
+                <Fragment ref={fragmentRef}>
+                  <Activity mode={mode}>
+                    <div id="child">Element</div>
+                    Text
+                  </Activity>
+                </Fragment>
+              </div>
+            );
+          }
+
+          await act(() => {
+            root.render(<Test mode="visible" />);
+          });
+
+          const logs = [];
+          fragmentRef.current.addEventListener('click', e => {
+            logs.push(
+              e.target.nodeType === 3
+                ? 'text'
+                : e.target.id || e.target.tagName,
+            );
+          });
+
+          const textNode = Array.from(parentRef.current.childNodes).find(
+            node => node.nodeType === 3,
+          );
+          expect(textNode).not.toBe(undefined);
+
+          document.getElementById('child').click();
+          textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          expect(logs).toEqual(['child', 'text']);
+
+          logs.length = 0;
+          await act(() => {
+            root.render(<Test mode="hidden" />);
+          });
+
+          document.getElementById('child').click();
+          textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          expect(logs).toEqual([]);
+
+          logs.length = 0;
+          await act(() => {
+            root.render(<Test mode="visible" />);
+          });
+
+          document.getElementById('child').click();
+          textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          expect(logs).toEqual(['child', 'text']);
         });
       });
     });
