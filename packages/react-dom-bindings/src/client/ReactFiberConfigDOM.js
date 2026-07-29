@@ -3156,7 +3156,14 @@ FragmentInstance.prototype.dispatchEvent = function (
     (eventListeners !== null && eventListeners.length > 0) ||
     !event.bubbles
   ) {
-    const temp = document.createTextNode('');
+    // The temporary node stands in for the fragment's position so that its own
+    // listeners fire before the event propagates to the parent. A Document can
+    // only hold comments and processing instructions alongside its
+    // documentElement, so a Text node would be an invalid child there.
+    const temp =
+      parentHostInstance.nodeType === DOCUMENT_NODE
+        ? (parentHostInstance as any as Document).createComment('')
+        : document.createTextNode('');
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
         const {type, listener, optionsOrUseCapture} = eventListeners[i];
