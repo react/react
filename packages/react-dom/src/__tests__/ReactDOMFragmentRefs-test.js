@@ -809,6 +809,49 @@ describe('FragmentRefs', () => {
         expect(hasClicked).toBe(true);
       });
 
+      // @gate enableFragmentRefs && enableFragmentRefsTextNodes
+      it('adds an event listener to a newly added text child', async () => {
+        const fragmentRef = React.createRef();
+        const parentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let showText;
+
+        function Component() {
+          const [shouldShowText, setShouldShowText] = React.useState(false);
+          showText = () => {
+            setShouldShowText(true);
+          };
+
+          return (
+            <div ref={parentRef}>
+              <Fragment ref={fragmentRef}>
+                {shouldShowText ? 'Hello' : null}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Component />);
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+
+        await act(() => {
+          showText();
+        });
+
+        const textNode = Array.from(parentRef.current.childNodes).find(
+          node => node.nodeType === 3,
+        );
+        expect(textNode).not.toBe(undefined);
+        textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        expect(logs).toEqual(['fragment']);
+      });
+
       // @gate enableFragmentRefs
       it('applies event listeners to host children nested within non-host children', async () => {
         const fragmentRef = React.createRef();
