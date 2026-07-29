@@ -3224,7 +3224,6 @@ function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
-  // Early exit if activeElement is not within the fragment's parent
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
     this._fragmentFiber,
   );
@@ -3239,13 +3238,9 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
     parentInstanceOrContainer,
   );
   const activeElement = ownerDocument.activeElement;
-  if (
-    activeElement === null ||
-    !parentInstanceOrContainer.contains(activeElement)
-  ) {
+  if (activeElement === null) {
     return;
   }
-
   traverseFragmentInstancesAndTextInstances(
     this._fragmentFiber,
     blurActiveElementWithinFragment,

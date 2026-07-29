@@ -485,6 +485,41 @@ describe('FragmentRefs', () => {
       });
 
       // @gate enableFragmentRefs
+      it('removes focus from a portaled element inside of the Fragment', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                {createPortal(
+                  <div>
+                    <input id="portaled-input" />
+                  </div>,
+                  document.body,
+                )}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(document.activeElement.id).toEqual('portaled-input');
+
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(document.activeElement).toEqual(document.body);
+      });
+
+      // @gate enableFragmentRefs
       it('does not remove focus from elements outside of the Fragment', async () => {
         const fragmentRefA = React.createRef();
         const fragmentRefB = React.createRef();
