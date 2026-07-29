@@ -15,6 +15,7 @@ import type {Destination} from 'react-server/src/ReactServerStreamConfigNode';
 import type {ServerManifest} from 'react-client/src/forks/ReactFlightClientConfig.dom-node-rspack';
 import {
   type ClientManifest,
+  type ServerReferenceId,
   setServerActionBoundArgsEncryption,
   encryptServerActionBoundArgs,
   decryptServerActionBoundArgs,
@@ -24,7 +25,7 @@ import {
 } from './ReactFlightServerConfigRspackBundler';
 import type {Busboy} from 'busboy';
 import type {Writable} from 'stream';
-import type {Thenable} from 'shared/ReactTypes';
+import type {ReactFormState, Thenable} from 'shared/ReactTypes';
 
 import type {Duplex} from 'stream';
 
@@ -57,8 +58,8 @@ import {
 } from 'react-server/src/ReactFlightReplyServer';
 
 import {
-  decodeAction,
-  decodeFormState,
+  decodeAction as decodeActionImpl,
+  decodeFormState as decodeFormStateImpl,
 } from 'react-server/src/ReactFlightActionServer';
 
 export {
@@ -685,6 +686,21 @@ function decodeReplyFromAsyncIterable<T>(
   iterator.next().then(progress, error);
 
   return getRoot(response);
+}
+
+function decodeAction<T>(body: FormData): Promise<() => T> | null {
+  return decodeActionImpl(body, __rspack_rsc_manifest__.serverManifest);
+}
+
+function decodeFormState<S>(
+  actionResult: S,
+  body: FormData,
+): Promise<ReactFormState<S, ServerReferenceId> | null> {
+  return decodeFormStateImpl(
+    actionResult,
+    body,
+    __rspack_rsc_manifest__.serverManifest,
+  );
 }
 
 export {

@@ -17,7 +17,7 @@ import type {
   ClientReference,
   ServerReference,
 } from '../ReactFlightRspackReferences';
-import type {ServerManifest} from 'react-client/src/forks/ReactFlightClientConfig.dom-edge-rspack';
+import type {ServerManifest} from '../client/ReactFlightClientConfigBundlerRspack';
 
 export type {ClientReference, ServerReference};
 
