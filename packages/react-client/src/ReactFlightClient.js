@@ -5443,7 +5443,7 @@ export function processStringChunk(
         // we are looking for but we can assume that the raw string will be its own
         // chunk. We add extra validation that the length is at least within the
         // possible byte range it could possibly be to catch mistakes.
-        if (rowLength < chunk.length || chunk.length > rowLength * 3) {
+        if (rowLength < chunk.length || rowLength > chunk.length * 3) {
           throw new Error(
             'String chunks need to be passed in their original shape. ' +
               'Not split into smaller string chunks. ' +
