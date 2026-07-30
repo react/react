@@ -1232,6 +1232,46 @@ describe('ReactFlightDOMEdge', () => {
     expect(result).toEqual(props);
   });
 
+  it('should not count deduped strings against the row size limit', async () => {
+    // A className shared by every row of a list, which is the common shape.
+    const testString = 'a'.repeat(250);
+    const elements = [];
+    for (let i = 0; i < 60; i++) {
+      elements.push(
+        <p key={i} className={testString}>
+          {'row ' + i}
+        </p>,
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<div>{elements}</div>),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // A reference is a few bytes, so the list stays in one row instead of
+    // being split up as if each element still carried the whole string.
+    const modelRows = serializedContent
+      .split('\n')
+      .filter(row => row !== '')
+      // Skip the tagged rows, which includes the debug info emitted in DEV.
+      .filter(row => !/^[0-9a-f]+:[A-Z]/.test(row));
+    // In DEV each element is outlined anyway to give its debug info an ID.
+    expect(modelRows.length).toBeLessThan(__DEV__ ? 70 : 10);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result.props.children.length).toBe(60);
+  });
+
   function clientComponent(name, chunkFilename) {
     return clientExports(
       function Client() {

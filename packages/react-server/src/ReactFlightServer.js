@@ -3613,8 +3613,13 @@ function serializeDeduplicatedString(request: Request, value: string): string {
   const writtenStrings = request.writtenStrings;
   const existing = writtenStrings.get(value);
   if (existing !== undefined && existing !== null) {
+    // The row it refers to was already emitted so only the reference is new here.
+    serializedSize += existing.length;
     return existing;
   }
+  // The string still has to arrive before this row can be used, whether it's
+  // written inline or into its own row, so either way it counts in full.
+  serializedSize += value.length;
   // $FlowFixMe[invalid-compare]
   const isLarge = value.length >= 1024 && byteLengthOfChunk !== null;
   if (existing === undefined && !isLarge) {
@@ -4270,19 +4275,21 @@ function renderModelDestructive(
         throwTaintViolation(tainted.message);
       }
     }
-    serializedSize += value.length;
     // TODO: Maybe too clever. If we support URL there's no similar trick.
     if (value[value.length - 1] === 'Z') {
       // Possibly a Date, whose toJSON automatically calls toISOString
       // $FlowFixMe[incompatible-use]
       const originalValue = parent[parentPropertyName];
       if (originalValue instanceof Date) {
+        serializedSize += value.length;
         return serializeDateFromDateJSON(value);
       }
     }
     if (value.length >= MIN_DEDUPLICATED_STRING_LENGTH) {
+      // This path does its own accounting since it might only write a reference.
       return serializeDeduplicatedString(request, value);
     }
+    serializedSize += value.length;
     return escapeStringValue(value);
   }
 
