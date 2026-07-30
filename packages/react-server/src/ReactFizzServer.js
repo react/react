@@ -1325,8 +1325,10 @@ function encodeErrorForBoundary(
   boundary.errorDigest = digest;
   if (__DEV__) {
     if (error === RecoverableException) {
-      boundary.errorMessage =
-        'Switched to client rendering because it was explicitly requested.';
+      boundary.errorMessage = wasAborted
+        ? 'Switched to client rendering because the server render was aborted ' +
+          'with a request to render on the client.'
+        : 'Switched to client rendering because a component requested it.';
       boundary.errorComponentStack = thrownInfo.componentStack;
       return;
     }
@@ -4873,7 +4875,7 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
           errorForBoundary,
           errorDigest,
           errorInfo,
-          !isRecoverableAbort,
+          true,
         );
       }
       request.pendingRootTasks--;
@@ -4917,7 +4919,7 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
         errorDigest,
         errorForBoundary,
         errorInfo,
-        !isRecoverableAbort,
+        true,
       );
 
       untrackBoundary(request, boundary);
