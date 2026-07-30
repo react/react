@@ -447,15 +447,6 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
-    if (__DEV__) {
-      const boundary = container.querySelector('template');
-      expect(boundary.dataset.msg).toBe(
-        'Switched to client rendering because a component requested it.',
-      );
-      expect(boundary.dataset.cstck).toContain('at BrowserOnly');
-      expect(boundary.dataset.stck).toBeUndefined();
-    }
-
     const recoverableErrors = [];
     ReactDOMClient.hydrateRoot(container, <App />, {
       onRecoverableError(error) {

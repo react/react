@@ -1326,7 +1326,7 @@ function encodeErrorForBoundary(
   if (__DEV__) {
     if (error === RecoverableException) {
       boundary.errorMessage =
-        'Switched to client rendering because a component requested it.';
+        'Switched to client rendering because it was explicitly requested.';
       boundary.errorComponentStack = thrownInfo.componentStack;
       return;
     }
