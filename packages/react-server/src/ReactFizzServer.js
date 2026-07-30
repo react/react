@@ -134,6 +134,9 @@ import {
   readPreviousThenableFromState,
   getActionStateCount,
   getActionStateMatchingIndex,
+  RecoverableException,
+  getSuspendedRecoverableError,
+  clearSuspendedRecoverableError,
 } from './ReactFizzHooks';
 import {DefaultAsyncDispatcher} from './ReactFizzAsyncDispatcher';
 import {
@@ -191,6 +194,7 @@ import assign from 'shared/assign';
 import noop from 'shared/noop';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import isArray from 'shared/isArray';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {
   SuspenseException,
   getSuspendedThenable,
@@ -1317,6 +1321,12 @@ function encodeErrorForBoundary(
 ) {
   boundary.errorDigest = digest;
   if (__DEV__) {
+    if (error === RecoverableException) {
+      boundary.errorMessage =
+        'Switched to client rendering because a component requested it.';
+      boundary.errorComponentStack = thrownInfo.componentStack;
+      return;
+    }
     let message, stack;
     // In dev we additionally encode the error message and component stack on the boundary
     if (error instanceof Error) {
@@ -1347,6 +1357,11 @@ function logRecoverableError(
   errorInfo: ThrownInfo,
   debugTask: null | ConsoleTask,
 ): ?string {
+  if (error === RecoverableException) {
+    clearSuspendedRecoverableError();
+    return REACT_RECOVERABLE_DIGEST;
+  }
+
   // If this callback errors, we intentionally let that error bubble up to become a fatal error
   // so that someone fixes the error reporting instead of hiding it.
   const onError = request.onError;
@@ -1365,7 +1380,10 @@ function logRecoverableError(
     }
     return;
   }
-  return errorDigest;
+  // An empty digest is reserved for React's internal client-render signal.
+  // Historically an empty digest was omitted from the wire format, so
+  // normalizing it to undefined preserves the existing user-space semantics.
+  return errorDigest === '' ? undefined : errorDigest;
 }
 
 function fatalError(
@@ -4524,19 +4542,34 @@ function erroredTask(
 
   request.allPendingTasks--;
 
-  // Report the error to a global handler.
   // We don't handle halts here because we only halt when prerendering and
   // when prerendering we should be finishing tasks not erroring them when
   // they halt or postpone
-  const errorDigest = logRecoverableError(request, error, errorInfo, debugTask);
   if (boundary === null) {
-    fatalError(request, error, errorInfo, debugTask);
+    // Recoverables can remain silent when a Suspense boundary lets us emit a
+    // shell and defer its content to a downstream renderer. At the root there
+    // is no shell to stream, so this is a fatal error and must be reported like
+    // any other root error.
+    if (error === RecoverableException) {
+      const useError = getSuspendedRecoverableError();
+      logRecoverableError(request, useError, errorInfo, debugTask);
+      fatalError(request, useError, errorInfo, debugTask);
+    } else {
+      logRecoverableError(request, error, errorInfo, debugTask);
+      fatalError(request, error, errorInfo, debugTask);
+    }
     // The shell fatally errored, so the render can never complete. Return before
     // the completeAll check below so we don't fire onAllReady for a render that
     // produced nothing. This mirrors finishAbortedTask, which also returns after
     // a fatalError on the root.
     return;
   } else {
+    const errorDigest = logRecoverableError(
+      request,
+      error,
+      errorInfo,
+      debugTask,
+    );
     boundary.pendingTasks--;
     if (boundary.status !== CLIENT_RENDERED) {
       boundary.status = CLIENT_RENDERED;

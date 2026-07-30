@@ -46,6 +46,8 @@ export const REACT_VIEW_TRANSITION_TYPE: symbol = Symbol.for(
   'react.view_transition',
 );
 
+export const REACT_RECOVERABLE_TYPE: symbol = Symbol.for('react.recoverable');
+
 const MAYBE_ITERATOR_SYMBOL = Symbol.iterator;
 const FAUX_ITERATOR_SYMBOL = '@@iterator';
 

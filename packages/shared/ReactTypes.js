@@ -144,11 +144,19 @@ export type Thenable<T> =
   | FulfilledThenable<T>
   | RejectedThenable<T>;
 
+// A recoverable lets an intermediate renderer defer a subtree to a downstream
+// renderer. It does not produce a value: a renderer either continues through
+// it or interrupts the current render so that a later renderer can recover the
+// subtree.
+export type ReactRecoverable = Error & {
+  $$typeof: symbol,
+};
+
 export type StartTransitionOptions = {
   name?: string,
 };
 
-export type Usable<T> = Thenable<T> | ReactContext<T>;
+export type Usable<T> = Thenable<T> | ReactContext<T> | ReactRecoverable;
 
 export type ReactCustomFormAction = {
   name?: string,

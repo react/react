@@ -406,6 +406,261 @@ describe('ReactDOMFizzServer', () => {
     );
   }
 
+  it('can opt a component into browser-only rendering', async () => {
+    let resolveBrowserText;
+    const browserText = new Promise(resolve => {
+      resolveBrowserText = resolve;
+    });
+    const browserOnly = ReactDOM.browser();
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(browserText);
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+    const boundary = container.querySelector('template');
+    expect(boundary.dataset.msg).toBe(
+      'Switched to client rendering because a component requested it.',
+    );
+    expect(boundary.dataset.cstck).toContain('at BrowserOnly');
+    expect(boundary.dataset.stck).toBeUndefined();
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await clientAct(() => {
+      resolveBrowserText('Browser');
+    });
+    assertLog(['Browser']);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  it('can opt a component into browser-only rendering after streaming the fallback', async () => {
+    let resolveServerReady;
+    const serverReady = new Promise(resolve => {
+      resolveServerReady = resolve;
+    });
+
+    function BrowserOnly() {
+      use(serverReady);
+      use(ReactDOM.browser());
+      return <span>Browser</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveServerReady();
+    });
+
+    expect(serverErrors).toEqual([]);
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  it('errors if browser-only content is rendered outside Suspense', async () => {
+    function createBrowserValue() {
+      return ReactDOM.browser();
+    }
+    const browserValue = createBrowserValue();
+
+    function BrowserOnly() {
+      use(browserValue);
+      return <span>Browser</span>;
+    }
+
+    const reportedErrors = [];
+    let shellReady = false;
+    let shellError;
+    await act(() => {
+      renderToPipeableStream(<BrowserOnly />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onShellReady() {
+          shellReady = true;
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.stack).toContain('BrowserOnly');
+    expect(shellError.cause).toBe(browserValue);
+    expect(shellError.cause.stack).toContain('createBrowserValue');
+    expect(shellError.cause.message).toContain(
+      '`use(browser())` can only be used inside a `<Suspense>` boundary',
+    );
+    expect(shellReady).toBe(false);
+    expect(reportedErrors).toEqual([shellError]);
+  });
+
+  it('reports the browser value if it is thrown instead of passed to use', async () => {
+    const browserValue = ReactDOM.browser();
+
+    function BrowserOnly() {
+      throw browserValue;
+    }
+
+    const reportedErrors = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <Suspense fallback={<span>Fallback</span>}>
+          <BrowserOnly />
+        </Suspense>,
+        {
+          onError(error) {
+            reportedErrors.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(reportedErrors).toEqual([browserValue]);
+    expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+  });
+
+  ['', 'BROWSER'].forEach(userDigest => {
+    it(`does not reserve the ${JSON.stringify(
+      userDigest,
+    )} user error digest for browser rendering`, async () => {
+      let isClient = false;
+      const serverError = new Error('Server error');
+
+      function ServerError() {
+        if (!isClient) {
+          throw serverError;
+        }
+        return <span>Client</span>;
+      }
+
+      function App() {
+        return (
+          <Suspense fallback={<span>Fallback</span>}>
+            <ServerError />
+          </Suspense>
+        );
+      }
+
+      const serverErrors = [];
+      await act(() => {
+        const {pipe} = renderToPipeableStream(<App />, {
+          onError(error) {
+            serverErrors.push(error);
+            return userDigest;
+          },
+        });
+        pipe(writable);
+      });
+
+      expect(serverErrors).toEqual([serverError]);
+      expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+
+      isClient = true;
+      const recoverableErrors = [];
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error);
+        },
+      });
+      await waitForAll([]);
+
+      expect(recoverableErrors).toHaveLength(1);
+      expect(recoverableErrors[0].digest).toBe(userDigest || undefined);
+      expect(getVisibleChildren(container)).toEqual(<span>Client</span>);
+    });
+  });
+
   it('should asynchronously load a lazy component', async () => {
     let resolveA;
     const LazyA = React.lazy(() => {

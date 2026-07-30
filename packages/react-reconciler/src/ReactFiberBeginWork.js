@@ -131,6 +131,7 @@ import {
   REACT_MEMO_TYPE,
   REACT_CONTEXT_TYPE,
 } from 'shared/ReactSymbols';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {setCurrentFiber} from './ReactCurrentFiber';
 import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 
@@ -3001,25 +3002,29 @@ function updateDehydratedSuspenseComponent(
         ({digest} = getSuspenseInstanceFallbackErrorDetails(suspenseInstance));
       }
 
-      let error: Error;
-      if (__DEV__ && message) {
-        // eslint-disable-next-line react-internal/prod-error-codes
-        error = new Error(message);
-      } else {
-        error = new Error(
-          'The server could not finish this Suspense boundary, likely ' +
-            'due to an error during server rendering. ' +
-            'Switched to client rendering.',
+      // This is unreachable in renderers that do not support hydration.
+      // $FlowFixMe[invalid-compare]
+      if (digest !== REACT_RECOVERABLE_DIGEST) {
+        let error: Error;
+        if (__DEV__ && message) {
+          // eslint-disable-next-line react-internal/prod-error-codes
+          error = new Error(message);
+        } else {
+          error = new Error(
+            'The server could not finish this Suspense boundary, likely ' +
+              'due to an error during server rendering. ' +
+              'Switched to client rendering.',
+          );
+        }
+        // Replace the stack with the server stack
+        error.stack = (__DEV__ && stack) || '';
+        (error as any).digest = digest;
+        const capturedValue = createCapturedValueFromError(
+          error,
+          componentStack === undefined ? null : componentStack,
         );
+        queueHydrationError(capturedValue);
       }
-      // Replace the stack with the server stack
-      error.stack = (__DEV__ && stack) || '';
-      (error as any).digest = digest;
-      const capturedValue = createCapturedValueFromError(
-        error,
-        componentStack === undefined ? null : componentStack,
-      );
-      queueHydrationError(capturedValue);
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
