@@ -109,7 +109,7 @@ function SettingsModalImpl({store}: ImplProps) {
             currentTab={selectedTabID}
             id="Settings"
             selectTab={selectTab}
-            tabs={tabs}
+            tabs={allTabs}
             type="settings"
           />
           <div className={styles.Spacer} />
@@ -123,7 +123,7 @@ function SettingsModalImpl({store}: ImplProps) {
   );
 }
 
-const tabs = [
+const allTabs = [
   {
     id: 'general',
     icon: 'settings',

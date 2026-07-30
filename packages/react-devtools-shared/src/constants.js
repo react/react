@@ -66,6 +66,10 @@ export const LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY =
   'React::DevTools::traceUpdatesEnabled';
 export const LOCAL_STORAGE_SUPPORTS_PROFILING_KEY =
   'React::DevTools::supportsProfiling';
+export const LOCAL_STORAGE_HIDE_PROFILER_TAB_KEY =
+  'React::DevTools::hideProfilerTab';
+export const LOCAL_STORAGE_HIDE_SUSPENSE_TAB_KEY =
+  'React::DevTools::hideSuspenseTab';
 
 export const PROFILER_EXPORT_VERSION = 5;
 

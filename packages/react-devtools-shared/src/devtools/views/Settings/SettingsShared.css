@@ -73,6 +73,12 @@
   margin-right: 0.25rem;
 }
 
+.SettingHint {
+  font-size: var(--font-size-sans-small);
+  color: var(--color-dim);
+  margin-top: 0.25rem;
+}
+
 .NoFiltersCell {
   padding: 0.25rem 0;
   color: var(--color-dim);
