@@ -42,6 +42,7 @@ export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
 export const enableCPUSuspense: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableBrowserAPI: boolean = true;
 export const enableEffectEventMutationPhase: boolean = true;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;

@@ -9,9 +9,10 @@
 
 import type {ReactRecoverable} from 'shared/ReactTypes';
 
+import {enableBrowserAPI} from 'shared/ReactFeatureFlags';
 import {REACT_RECOVERABLE_TYPE} from 'shared/ReactSymbols';
 
-export function browser(): ReactRecoverable {
+const browserImpl = function browser(): ReactRecoverable {
   // Recoverables are Errors so that a renderer can preserve the browser() call
   // site as the cause if no downstream renderer can recover the subtree.
   const recoverable = new Error(
@@ -26,4 +27,8 @@ export function browser(): ReactRecoverable {
     value: REACT_RECOVERABLE_TYPE,
   });
   return recoverable as any;
-}
+};
+
+export const browser: (() => ReactRecoverable) | void = enableBrowserAPI
+  ? browserImpl
+  : undefined;

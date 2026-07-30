@@ -22,6 +22,9 @@
 // when it rolls out to prod. We should remove these as soon as possible.
 // -----------------------------------------------------------------------------
 
+// Enables the browser() API exported from react-dom.
+export const enableBrowserAPI: boolean = true;
+
 // -----------------------------------------------------------------------------
 // Land or remove (moderate effort)
 //

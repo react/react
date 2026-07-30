@@ -406,6 +406,7 @@ describe('ReactDOMFizzServer', () => {
     );
   }
 
+  // @gate enableBrowserAPI
   it('can opt a component into browser-only rendering', async () => {
     let resolveBrowserText;
     const browserText = new Promise(resolve => {
@@ -482,6 +483,7 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  // @gate enableBrowserAPI
   it('can opt a component into browser-only rendering after streaming the fallback', async () => {
     let resolveServerReady;
     const serverReady = new Promise(resolve => {
@@ -542,6 +544,7 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  // @gate enableBrowserAPI
   it('errors if browser-only content is rendered outside Suspense', async () => {
     function createBrowserValue() {
       return ReactDOM.browser();
@@ -586,6 +589,7 @@ describe('ReactDOMFizzServer', () => {
     expect(reportedErrors).toEqual([shellError]);
   });
 
+  // @gate enableBrowserAPI
   it('can abort all pending boundaries into browser-only rendering', async () => {
     const never = new Promise(() => {});
     let isClient = false;
@@ -656,6 +660,7 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  // @gate enableBrowserAPI
   it('errors if aborted with browser() before the shell completes', async () => {
     const never = new Promise(() => {});
     const browserValue = ReactDOM.browser();
@@ -699,6 +704,7 @@ describe('ReactDOMFizzServer', () => {
     expect(reportedErrors).toEqual([shellError]);
   });
 
+  // @gate enableBrowserAPI
   it('reports the browser value if it is thrown instead of passed to use', async () => {
     const browserValue = ReactDOM.browser();
 

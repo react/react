@@ -14,6 +14,7 @@ describe('ReactDOM.browser', () => {
     jest.resetModules();
   });
 
+  // @gate enableBrowserAPI
   it('can create browser-only content before the browser renderer is initialized', async () => {
     const React = require('react');
     const ReactDOM = require('react-dom');
