@@ -22,7 +22,7 @@ export function browser(): ReactRecoverable {
       'component that called `use(browser())` does not have a `<Suspense>` ' +
       'boundary above it.',
   );
-  Object.defineProperty(recoverable, '$$typeof', {
+  Object.defineProperty(recoverable as any, '$$typeof', {
     value: REACT_RECOVERABLE_TYPE,
   });
   return recoverable as any;

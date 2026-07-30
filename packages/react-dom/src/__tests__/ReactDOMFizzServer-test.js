@@ -446,12 +446,14 @@ describe('ReactDOMFizzServer', () => {
         <span>Fallback</span>
       </div>,
     );
-    const boundary = container.querySelector('template');
-    expect(boundary.dataset.msg).toBe(
-      'Switched to client rendering because a component requested it.',
-    );
-    expect(boundary.dataset.cstck).toContain('at BrowserOnly');
-    expect(boundary.dataset.stck).toBeUndefined();
+    if (__DEV__) {
+      const boundary = container.querySelector('template');
+      expect(boundary.dataset.msg).toBe(
+        'Switched to client rendering because a component requested it.',
+      );
+      expect(boundary.dataset.cstck).toContain('at BrowserOnly');
+      expect(boundary.dataset.stck).toBeUndefined();
+    }
 
     const recoverableErrors = [];
     ReactDOMClient.hydrateRoot(container, <App />, {
@@ -580,6 +582,119 @@ describe('ReactDOMFizzServer', () => {
     expect(shellError.cause.message).toContain(
       '`use(browser())` can only be used inside a `<Suspense>` boundary',
     );
+    expect(shellReady).toBe(false);
+    expect(reportedErrors).toEqual([shellError]);
+  });
+
+  it('can abort all pending boundaries into browser-only rendering', async () => {
+    const never = new Promise(() => {});
+    let isClient = false;
+
+    function Pending({children}) {
+      if (!isClient) {
+        use(never);
+      }
+      return <span>{children}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>Shell</span>
+          <Suspense fallback={<span>Loading A</span>}>
+            <Pending>A</Pending>
+          </Suspense>
+          <Suspense fallback={<span>Loading B</span>}>
+            <Pending>B</Pending>
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+      });
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Shell</span>
+        <span>Loading A</span>
+        <span>Loading B</span>
+      </div>,
+    );
+
+    await act(() => {
+      abort(ReactDOM.browser());
+    });
+
+    expect(serverErrors).toEqual([]);
+
+    isClient = true;
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Shell</span>
+        <span>A</span>
+        <span>B</span>
+      </div>,
+    );
+  });
+
+  it('errors if aborted with browser() before the shell completes', async () => {
+    const never = new Promise(() => {});
+    const browserValue = ReactDOM.browser();
+
+    function PendingRoot() {
+      use(never);
+      return <span>Root</span>;
+    }
+
+    const reportedErrors = [];
+    let shellReady = false;
+    let shellError;
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<PendingRoot />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onShellReady() {
+          shellReady = true;
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+      abort = controls.abort;
+    });
+
+    await act(() => {
+      abort(browserValue);
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.cause).toBe(browserValue);
     expect(shellReady).toBe(false);
     expect(reportedErrors).toEqual([shellError]);
   });

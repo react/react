@@ -112,7 +112,7 @@ function getPrimitiveStackCache(): Map<string, Array<any>> {
           _currentValue: null,
         } as any);
         const recoverable = new Error();
-        Object.defineProperty(recoverable, '$$typeof', {
+        Object.defineProperty(recoverable as any, '$$typeof', {
           value: REACT_RECOVERABLE_TYPE,
         });
         Dispatcher.use(recoverable as any);

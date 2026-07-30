@@ -103,6 +103,18 @@ export const RecoverableException: mixed = new Error(
     'rethrowing will lead to unexpected behavior.',
 );
 let suspendedRecoverableError: Error | null = null;
+
+export function createFatalRecoverableError(
+  recoverable: ReactRecoverable,
+): Error {
+  return new Error(
+    'The server render could not complete because client rendering was ' +
+      "requested outside a Suspense boundary. See this error's cause for " +
+      'additional details.',
+    {cause: recoverable},
+  );
+}
+
 // Lazily created map of render-phase updates
 let renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null = null;
 // Counter to prevent infinite loops.
@@ -793,12 +805,7 @@ function use<T>(usable: Usable<T>): T {
       // that if there is no Suspense boundary, the fatal error points here and
       // its cause points to where the recoverable was created.
       const recoverable: ReactRecoverable = usable as any;
-      suspendedRecoverableError = new Error(
-        'The server render could not complete because client rendering was ' +
-          "requested outside a Suspense boundary. See this error's cause for " +
-          'additional details.',
-        {cause: recoverable},
-      );
+      suspendedRecoverableError = createFatalRecoverableError(recoverable);
       throw RecoverableException;
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
       const context: ReactContext<T> = usable as any;

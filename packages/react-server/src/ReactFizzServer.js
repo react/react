@@ -28,6 +28,7 @@ import type {
   SuspenseListProps,
   SuspenseListRevealOrder,
   ReactKey,
+  ReactRecoverable,
 } from 'shared/ReactTypes';
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {
@@ -135,6 +136,7 @@ import {
   getActionStateCount,
   getActionStateMatchingIndex,
   RecoverableException,
+  createFatalRecoverableError,
   getSuspendedRecoverableError,
   clearSuspendedRecoverableError,
 } from './ReactFizzHooks';
@@ -176,6 +178,7 @@ import {
   REACT_VIEW_TRANSITION_TYPE,
   REACT_ACTIVITY_TYPE,
   REACT_OPTIMISTIC_KEY,
+  REACT_RECOVERABLE_TYPE,
 } from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
@@ -4802,19 +4805,43 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
   }
 
   const errorInfo = getThrownInfo(task.componentStack);
+  // Only abort reasons get this interpretation. Throwing a recoverable
+  // directly is still an application error; it must be passed to use() or
+  // abort() for a renderer to recover it.
+  const isRecoverableAbort =
+    typeof error === 'object' &&
+    error !== null &&
+    // $FlowFixMe[prop-missing]
+    error.$$typeof === REACT_RECOVERABLE_TYPE;
 
   if (boundary === null) {
     const replay: null | ReplaySet = task.replay;
     if (replay === null) {
       // We didn't complete the root so we have nothing to show. We can close
       // the request;
-      if (request.trackedPostpones !== null && segment !== null) {
+      if (
+        !isRecoverableAbort &&
+        request.trackedPostpones !== null &&
+        segment !== null
+      ) {
         const trackedPostpones = request.trackedPostpones;
         // We are aborting a prerender and must treat the shell as halted
         // We log the error but we still resolve the prerender
         logRecoverableError(request, error, errorInfo, task.debugTask);
         trackPostpone(request, trackedPostpones, task, segment);
         finishedTask(request, null, task.row, segment);
+      } else if (isRecoverableAbort) {
+        const recoverable: ReactRecoverable = error as any;
+        const fatalRecoverableError = createFatalRecoverableError(recoverable);
+        logRecoverableError(
+          request,
+          fatalRecoverableError,
+          errorInfo,
+          task.debugTask,
+        );
+        if (request.status !== CLOSING && request.status !== CLOSED) {
+          fatalError(request, fatalRecoverableError, errorInfo, task.debugTask);
+        }
       } else {
         logRecoverableError(request, error, errorInfo, task.debugTask);
         if (request.status !== CLOSING && request.status !== CLOSED) {
@@ -4829,21 +4856,24 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       // the ReplaySet.
       replay.pendingTasks--;
       if (replay.pendingTasks === 0 && replay.nodes.length > 0) {
-        const errorDigest = logRecoverableError(
-          request,
-          error,
-          errorInfo,
-          null,
-        );
+        let errorDigest;
+        let errorForBoundary;
+        if (isRecoverableAbort) {
+          errorDigest = REACT_RECOVERABLE_DIGEST;
+          errorForBoundary = RecoverableException;
+        } else {
+          errorDigest = logRecoverableError(request, error, errorInfo, null);
+          errorForBoundary = error;
+        }
         abortRemainingReplayNodes(
           request,
           null,
           replay.nodes,
           replay.slots,
-          error,
+          errorForBoundary,
           errorDigest,
           errorInfo,
-          true,
+          !isRecoverableAbort,
         );
       }
       request.pendingRootTasks--;
@@ -4856,7 +4886,11 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
     // boundary the message is referring to
     const trackedPostpones = request.trackedPostpones;
     if (boundary.status !== CLIENT_RENDERED) {
-      if (trackedPostpones !== null && segment !== null) {
+      if (
+        !isRecoverableAbort &&
+        trackedPostpones !== null &&
+        segment !== null
+      ) {
         // We are aborting a prerender and must halt this boundary.
         // We treat this like other postpones during prerendering
         logRecoverableError(request, error, errorInfo, task.debugTask);
@@ -4872,14 +4906,19 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       boundary.status = CLIENT_RENDERED;
       // We are aborting a render or resume which should put boundaries
       // into an explicitly client rendered state
-      const errorDigest = logRecoverableError(
-        request,
-        error,
+      const errorDigest = isRecoverableAbort
+        ? REACT_RECOVERABLE_DIGEST
+        : logRecoverableError(request, error, errorInfo, task.debugTask);
+      const errorForBoundary = isRecoverableAbort
+        ? RecoverableException
+        : error;
+      encodeErrorForBoundary(
+        boundary,
+        errorDigest,
+        errorForBoundary,
         errorInfo,
-        task.debugTask,
+        !isRecoverableAbort,
       );
-      boundary.status = CLIENT_RENDERED;
-      encodeErrorForBoundary(boundary, errorDigest, error, errorInfo, true);
 
       untrackBoundary(request, boundary);
 
