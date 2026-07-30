@@ -209,7 +209,7 @@ function onError({code, message}: $FlowFixMe) {
 
 function openProfiler() {
   // Mocked up bridge and store to allow the DevTools to be rendered
-  bridge = new Bridge({listen: () => {}, send: () => {}});
+  bridge = new Bridge({listen: () => () => {}, send: () => {}});
   store = new Store(bridge, {});
 
   // Ensure the Profiler tab is shown initially.
@@ -260,7 +260,7 @@ function initialize(socket: WebSocket) {
         }
       };
     },
-    send(event: string, payload: any, transferable?: Array<any>) {
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
       if (socket.readyState === socket.OPEN) {
         socket.send(JSON.stringify({event, payload}));
       }

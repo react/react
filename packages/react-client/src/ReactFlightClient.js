@@ -98,6 +98,8 @@ import {getOwnerStackByComponentInfoInDev} from 'shared/ReactComponentInfoStack'
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 
+import getPrototypeOf from 'shared/getPrototypeOf';
+
 import {injectInternals} from './ReactFlightClientDevToolsHook';
 
 import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
@@ -156,6 +158,9 @@ const ERRORED = 'rejected';
 const HALTED = 'halted'; // DEV-only. Means it never resolves even if connection closes.
 
 const __PROTO__ = '__proto__';
+
+const ObjectPrototype = Object.prototype;
+const ArrayPrototype = Array.prototype;
 
 type PendingChunk<T> = {
   status: 'pending',
@@ -256,7 +261,7 @@ function ReactPromise(status: any, value: any, reason: any) {
 // We subclass Promise.prototype so that we get other methods like .catch
 ReactPromise.prototype = Object.create(Promise.prototype) as any;
 // TODO: This doesn't return a new Promise chain unlike the real .then
-ReactPromise.prototype.then = function <T>(
+function reactPromiseThen<T>(
   this: SomeChunk<T>,
   resolve: (value: T) => mixed,
   reject?: (reason: mixed) => mixed,
@@ -326,7 +331,17 @@ ReactPromise.prototype.then = function <T>(
       }
       break;
   }
-};
+}
+// The shadowing `then` must be defined with `Object.defineProperty` instead of
+// assignment. Assignment would throw when `Promise.prototype` is frozen (e.g.
+// by SES lockdown) because assigning over an inherited non-writable property
+// is rejected.
+Object.defineProperty(ReactPromise.prototype, 'then', {
+  writable: true,
+  enumerable: true,
+  configurable: true,
+  value: reactPromiseThen,
+});
 
 export type FindSourceMapURLCallback = (
   fileName: string,
@@ -2160,7 +2175,18 @@ function getOutlinedModel<T>(
             }
           }
         }
-        value = value[path[i]];
+        const name = path[i];
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          (getPrototypeOf(value) === ObjectPrototype ||
+            getPrototypeOf(value) === ArrayPrototype) &&
+          hasOwnProperty.call(value, name)
+        ) {
+          value = value[name];
+        } else {
+          throw new Error('Invalid reference.');
+        }
       }
 
       while (
@@ -4031,11 +4057,24 @@ const createFakeJSXCallStackInDEV: (
     ) as any)
   : (null as any);
 
+// v8 (Chromium, Node.js) defaults to 10
+// SpiderMonkey (Firefox) does not support Error.stackTraceLimit
+// JSC (Safari) defaults to 100
+// The lower the limit, the more likely we'll not reach react_stack_bottom_frame
+// The higher the limit, the slower Error() is when not inspecting with a debugger.
+// When inspecting with a debugger, Error.stackTraceLimit has no impact on Error() performance (in v8).
+const ownerStackTraceLimit = 10;
+
 /** @noinline */
 function fakeJSXCallSite() {
   // This extra call frame represents the JSX creation function. We always pop this frame
   // off before presenting so it needs to be part of the stack.
-  return new Error('react-stack-top-frame');
+  let error;
+  const previousStackTraceLimit = Error.stackTraceLimit;
+  Error.stackTraceLimit = ownerStackTraceLimit;
+  error = Error('react-stack-top-frame'); // eslint-disable-line prefer-const
+  Error.stackTraceLimit = previousStackTraceLimit;
+  return error;
 }
 
 function initializeFakeStack(
@@ -5359,14 +5398,16 @@ function reviveModel(
   }
   // Plain object
   for (const k in value) {
-    if (k === __PROTO__) {
-      delete (value as any)[k];
-    } else {
-      const walked = reviveModel(response, (value as any)[k], value, k);
-      if (walked !== undefined) {
-        (value as any)[k] = walked;
-      } else {
+    if (hasOwnProperty.call(value, k)) {
+      if (k === __PROTO__) {
         delete (value as any)[k];
+      } else {
+        const walked = reviveModel(response, (value as any)[k], value, k);
+        if (walked !== undefined) {
+          (value as any)[k] = walked;
+        } else {
+          delete (value as any)[k];
+        }
       }
     }
   }

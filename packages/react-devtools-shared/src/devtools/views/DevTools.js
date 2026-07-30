@@ -275,12 +275,8 @@ export default function DevTools({
 
   useLayoutEffect(() => {
     return () => {
-      try {
-        // Shut the Bridge down synchronously (during unmount).
-        bridge.shutdown();
-      } catch (error) {
-        // Attempting to use a disconnected port.
-      }
+      // Shut the Bridge down synchronously (during unmount).
+      bridge.shutdown();
     };
   }, [bridge]);
 

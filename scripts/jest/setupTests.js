@@ -140,6 +140,10 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
           if (key === 'message') {
             return ReflectSet(target, key, decodeErrorMessage(value), receiver);
           }
+          if (key === 'stack') {
+            // https://github.com/nodejs/node/issues/60862
+            return ReflectSet(target, key, value);
+          }
           return ReflectSet(target, key, value, receiver);
         },
         get(target, key, receiver) {

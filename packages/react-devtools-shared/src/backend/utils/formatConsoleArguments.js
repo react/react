@@ -45,18 +45,36 @@ export default function formatConsoleArguments(
       }
       case 'd':
       case 'i': {
+        if (argumentsPointer >= args.length) {
+          // No argument left for this specifier. Keep it as a literal, like
+          // the browser console does, rather than emitting 'NaN'.
+          template += `%${nextChar}`;
+          break;
+        }
         const [arg] = args.splice(argumentsPointer, 1);
         template += parseInt(arg, 10).toString();
 
         break;
       }
       case 'f': {
+        if (argumentsPointer >= args.length) {
+          // No argument left for this specifier. Keep it as a literal, like
+          // the browser console does, rather than emitting 'NaN'.
+          template += `%${nextChar}`;
+          break;
+        }
         const [arg] = args.splice(argumentsPointer, 1);
         template += parseFloat(arg).toString();
 
         break;
       }
       case 's': {
+        if (argumentsPointer >= args.length) {
+          // No argument left for this specifier. Keep it as a literal, like
+          // the browser console does, rather than emitting 'undefined'.
+          template += `%${nextChar}`;
+          break;
+        }
         const [arg] = args.splice(argumentsPointer, 1);
         template += String(arg);
 
