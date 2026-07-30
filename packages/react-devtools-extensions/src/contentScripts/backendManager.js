@@ -22,6 +22,37 @@ import {
 
 let welcomeHasInitialized = false;
 const requiredBackends = new Set<string>();
+const activeBackendsShutdownCallbacks = new Set<() => void>();
+let cleanupBackendManagerSetup: (() => void) | null = null;
+let hasShutdownBackendManager = false;
+
+function finishBackendManagerShutdown() {
+  if (hasShutdownBackendManager) {
+    return;
+  }
+  hasShutdownBackendManager = true;
+
+  window.removeEventListener('message', welcome);
+  window.removeEventListener('pagehide', handlePageHide);
+
+  const cleanup = cleanupBackendManagerSetup;
+  cleanupBackendManagerSetup = null;
+  cleanup?.();
+
+  delete window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__;
+}
+
+function handlePageHide() {
+  // A document in the back-forward cache keeps its JavaScript heap but loses
+  // its extension messaging port. Shut down locally while the document is
+  // still active so a restored page can attach a new Agent and replay its tree.
+  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+  for (const shutdownBackend of activeBackendsShutdownCallbacks) {
+    shutdownBackend();
+  }
+
+  finishBackendManagerShutdown();
+}
 
 function welcome(event: $FlowFixMe) {
   if (
@@ -89,11 +120,26 @@ function setup(hook: ?DevToolsHook) {
     },
   );
 
-  const unsubscribeShutdownListener: () => void = hook.sub('shutdown', () => {
+  let didCleanup = false;
+  let unsubscribeShutdownListener: (() => void) | null = null;
+  const cleanup = () => {
+    if (didCleanup) {
+      return;
+    }
+    didCleanup = true;
+
     unsubscribeRendererListener();
     unsubscribeBackendInstallationListener();
-    unsubscribeShutdownListener();
-  });
+    unsubscribeShutdownListener?.();
+    unsubscribeShutdownListener = null;
+
+    if (cleanupBackendManagerSetup === cleanup) {
+      cleanupBackendManagerSetup = null;
+    }
+  };
+
+  unsubscribeShutdownListener = hook.sub('shutdown', cleanup);
+  cleanupBackendManagerSetup = cleanup;
 }
 
 function registerRenderer(renderer: ReactRenderer, hook: DevToolsHook) {
@@ -115,6 +161,7 @@ function activateBackend(version: string, hook: DevToolsHook) {
   }
 
   const {Agent, Bridge, initBackend, setupNativeStyleEditor} = backend;
+  let shouldSendMessages = true;
   const bridge = new Bridge({
     listen(fn) {
       const listener = (event: $FlowFixMe) => {
@@ -134,6 +181,10 @@ function activateBackend(version: string, hook: DevToolsHook) {
       };
     },
     send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
+      if (!shouldSendMessages) {
+        return;
+      }
+
       window.postMessage(
         {
           source: 'react-devtools-bridge',
@@ -154,11 +205,28 @@ function activateBackend(version: string, hook: DevToolsHook) {
   // Clean up flags, so that next reload won't start profiling
   onReloadAndProfileFlagsReset();
 
+  let hasShutdownBackend = false;
+  const shutdownBackend = () => {
+    if (hasShutdownBackend) {
+      return;
+    }
+    hasShutdownBackend = true;
+    shouldSendMessages = false;
+
+    bridge.shutdown();
+  };
+  activeBackendsShutdownCallbacks.add(shutdownBackend);
+
   agent.addListener('shutdown', () => {
-    // If we received 'shutdown' from `agent`, we assume the `bridge` is already shutting down,
-    // and that caused the 'shutdown' event on the `agent`, so we don't need to call `bridge.shutdown()` here.
+    hasShutdownBackend = true;
+    shouldSendMessages = false;
+    activeBackendsShutdownCallbacks.delete(shutdownBackend);
+
     hook.emit('shutdown');
-    delete window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__;
+
+    if (activeBackendsShutdownCallbacks.size === 0) {
+      finishBackendManagerShutdown();
+    }
   });
 
   initBackend(hook, agent, window, getIsReloadAndProfileSupported());
@@ -207,4 +275,5 @@ if (!window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__) {
   window.__REACT_DEVTOOLS_BACKEND_MANAGER_INJECTED__ = true;
 
   window.addEventListener('message', welcome);
+  window.addEventListener('pagehide', handlePageHide);
 }
