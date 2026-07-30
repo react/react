@@ -136,7 +136,7 @@ function addBridgePortListener(nextPort: ExtensionRuntimePort): void {
 }
 
 function createBridge(): FrontendBridge {
-  const bridge = new Bridge({
+  const bridge: FrontendBridge = new Bridge({
     listen(fn) {
       const currentPort = port;
       if (currentPort === null) {
