@@ -344,15 +344,7 @@ function ensureInitialHTMLIsCleared(
   container._hasInitialHTMLBeenCleared = true;
 }
 
-function createComponentsPanel(instance: DevToolsInstance) {
-  if (componentsPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(componentsPortalContainer);
-    instance.render('components');
-
-    return;
-  }
-
+function createComponentsPanel() {
   if (componentsPanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -368,13 +360,15 @@ function createComponentsPanel(instance: DevToolsInstance) {
       createdPanel.onShown.addListener(portal => {
         componentsPortalContainer = portal.container;
         const currentInstance = devToolsInstance;
-        if (componentsPortalContainer != null && currentInstance !== null) {
-          ensureInitialHTMLIsCleared(componentsPortalContainer);
+        if (componentsPortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(componentsPortalContainer);
 
-          currentInstance.render('components');
+            currentInstance.render('components');
+
+            logEvent({event_name: 'selected-components-tab'});
+          }
           portal.injectStyles(cloneStyleTags);
-
-          logEvent({event_name: 'selected-components-tab'});
         }
       });
 
@@ -388,15 +382,7 @@ function createComponentsPanel(instance: DevToolsInstance) {
   );
 }
 
-function createElementsInspectPanel(instance: DevToolsInstance) {
-  if (inspectedElementPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
-    instance.render();
-
-    return;
-  }
-
+function createElementsInspectPanel() {
   if (inspectedElementPane) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -422,28 +408,22 @@ function createElementsInspectPanel(instance: DevToolsInstance) {
     createdPane.onShown.addListener(portal => {
       inspectedElementPortalContainer = portal.container;
       const currentInstance = devToolsInstance;
-      if (inspectedElementPortalContainer != null && currentInstance !== null) {
-        ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
-        currentInstance.bridge.send('syncSelectionFromBuiltinElementsPanel');
+      if (inspectedElementPortalContainer != null) {
+        if (currentInstance !== null) {
+          ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
+          currentInstance.bridge.send('syncSelectionFromBuiltinElementsPanel');
 
-        currentInstance.render();
+          currentInstance.render();
+
+          logEvent({event_name: 'selected-inspected-element-pane'});
+        }
         portal.injectStyles(cloneStyleTags);
-
-        logEvent({event_name: 'selected-inspected-element-pane'});
       }
     });
   });
 }
 
-function createProfilerPanel(instance: DevToolsInstance) {
-  if (profilerPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(profilerPortalContainer);
-    instance.render('profiler');
-
-    return;
-  }
-
+function createProfilerPanel() {
   if (profilerPanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -459,28 +439,22 @@ function createProfilerPanel(instance: DevToolsInstance) {
       createdPanel.onShown.addListener(portal => {
         profilerPortalContainer = portal.container;
         const currentInstance = devToolsInstance;
-        if (profilerPortalContainer != null && currentInstance !== null) {
-          ensureInitialHTMLIsCleared(profilerPortalContainer);
+        if (profilerPortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(profilerPortalContainer);
 
-          currentInstance.render('profiler');
+            currentInstance.render('profiler');
+
+            logEvent({event_name: 'selected-profiler-tab'});
+          }
           portal.injectStyles(cloneStyleTags);
-
-          logEvent({event_name: 'selected-profiler-tab'});
         }
       });
     },
   );
 }
 
-function createSourcesEditorPanel(instance: DevToolsInstance) {
-  if (editorPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(editorPortalContainer);
-    instance.render();
-
-    return;
-  }
-
+function createSourcesEditorPanel() {
   if (editorPane) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -501,27 +475,21 @@ function createSourcesEditorPanel(instance: DevToolsInstance) {
     createdPane.onShown.addListener(portal => {
       editorPortalContainer = portal.container;
       const currentInstance = devToolsInstance;
-      if (editorPortalContainer != null && currentInstance !== null) {
-        ensureInitialHTMLIsCleared(editorPortalContainer);
+      if (editorPortalContainer != null) {
+        if (currentInstance !== null) {
+          ensureInitialHTMLIsCleared(editorPortalContainer);
 
-        currentInstance.render();
+          currentInstance.render();
+
+          logEvent({event_name: 'selected-editor-pane'});
+        }
         portal.injectStyles(cloneStyleTags);
-
-        logEvent({event_name: 'selected-editor-pane'});
       }
     });
   });
 }
 
-function createSuspensePanel(instance: DevToolsInstance) {
-  if (suspensePortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(suspensePortalContainer);
-    instance.render('suspense');
-
-    return;
-  }
-
+function createSuspensePanel() {
   if (suspensePanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -537,17 +505,55 @@ function createSuspensePanel(instance: DevToolsInstance) {
       createdPanel.onShown.addListener(portal => {
         suspensePortalContainer = portal.container;
         const currentInstance = devToolsInstance;
-        if (suspensePortalContainer != null && currentInstance !== null) {
-          ensureInitialHTMLIsCleared(suspensePortalContainer);
+        if (suspensePortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(suspensePortalContainer);
 
-          currentInstance.render('suspense');
+            currentInstance.render('suspense');
+
+            logEvent({event_name: 'selected-suspense-tab'});
+          }
           portal.injectStyles(cloneStyleTags);
-
-          logEvent({event_name: 'selected-suspense-tab'});
         }
       });
     },
   );
+}
+
+function createDevToolsPanels(): void {
+  createComponentsPanel();
+  createProfilerPanel();
+  createSourcesEditorPanel();
+  createElementsInspectPanel();
+  createSuspensePanel();
+}
+
+function renderOpenedDevToolsPanels(instance: DevToolsInstance): void {
+  if (componentsPortalContainer) {
+    ensureInitialHTMLIsCleared(componentsPortalContainer);
+    instance.render('components');
+  }
+
+  if (profilerPortalContainer) {
+    ensureInitialHTMLIsCleared(profilerPortalContainer);
+    instance.render('profiler');
+  }
+
+  if (editorPortalContainer) {
+    ensureInitialHTMLIsCleared(editorPortalContainer);
+    instance.render();
+  }
+
+  if (inspectedElementPortalContainer) {
+    ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
+    instance.bridge.send('syncSelectionFromBuiltinElementsPanel');
+    instance.render();
+  }
+
+  if (suspensePortalContainer) {
+    ensureInitialHTMLIsCleared(suspensePortalContainer);
+    instance.render('suspense');
+  }
 }
 
 function performInTabNavigationCleanup() {
@@ -666,11 +672,7 @@ function mountReactDevTools() {
   const instance = createDevToolsInstance();
   devToolsInstance = instance;
 
-  createComponentsPanel(instance);
-  createProfilerPanel(instance);
-  createSourcesEditorPanel(instance);
-  createElementsInspectPanel(instance);
-  createSuspensePanel(instance);
+  renderOpenedDevToolsPanels(instance);
 }
 
 let reactPollingInstance = null;
@@ -743,7 +745,7 @@ const debouncedMountReactDevToolsCallback = debounce(
   500,
 );
 
-// Clean up everything, but start mounting React DevTools panels if user stays at this page
+// Clean up everything, but remount React DevTools if user stays at this page
 function onNavigatedToOtherPage() {
   performInTabNavigationCleanup();
   debouncedMountReactDevToolsCallback();
@@ -761,6 +763,8 @@ if (__IS_FIREFOX__) {
 }
 
 connectExtensionPort();
+
+createDevToolsPanels();
 
 mountReactDevToolsWhenReactHasLoaded();
 
