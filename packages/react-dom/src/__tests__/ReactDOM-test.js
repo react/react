@@ -459,6 +459,62 @@ describe('ReactDOM', () => {
     }
   });
 
+  // @gate __DEV__
+  it('logs a DevTools download prompt when DevTools is not installed', () => {
+    const originalUserAgent = navigator.userAgent;
+    const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+
+    try {
+      delete global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      Object.defineProperty(navigator, 'userAgent', {
+        value: 'Chrome',
+        configurable: true,
+      });
+
+      jest.resetModules();
+      require('react-dom/client');
+
+      expect(info).toHaveBeenCalledWith(
+        expect.stringContaining('Download the React DevTools'),
+        'font-weight:bold',
+      );
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', {
+        value: originalUserAgent,
+        configurable: true,
+      });
+      info.mockRestore();
+    }
+  });
+
+  // @gate __DEV__
+  it('does not log a DevTools download prompt when suppressLogMessage is set', () => {
+    const originalUserAgent = navigator.userAgent;
+    const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+
+    try {
+      global.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        suppressLogMessage: true,
+      };
+      Object.defineProperty(navigator, 'userAgent', {
+        value: 'Chrome',
+        configurable: true,
+      });
+
+      jest.resetModules();
+      require('react-dom/client');
+
+      expect(info).not.toHaveBeenCalled();
+    } finally {
+      delete global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      Object.defineProperty(navigator, 'userAgent', {
+        value: originalUserAgent,
+        configurable: true,
+      });
+      info.mockRestore();
+    }
+  });
+
   it('should not crash calling findDOMNode inside a function component', async () => {
     class Component extends React.Component {
       render() {
