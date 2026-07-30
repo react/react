@@ -67,6 +67,13 @@ type PendingBridgeMessage = {
   transferable?: $ReadOnlyArray<mixed>,
 };
 
+type DevToolsInstance = {
+  bridge: FrontendBridge,
+  store: Store,
+  render: (overrideTab?: TabID) => void,
+  root: RootType,
+};
+
 function flushPendingBridgeMessages(): void {
   const currentPort = port;
   if (!isBridgeConnected || currentPort === null) {
@@ -128,8 +135,8 @@ function addBridgePortListener(nextPort: ExtensionRuntimePort): void {
   bridgePortListener = nextBridgePortListener;
 }
 
-function createBridge() {
-  bridge = new Bridge({
+function createBridge(): FrontendBridge {
+  const bridge = new Bridge({
     listen(fn) {
       const currentPort = port;
       if (currentPort === null) {
@@ -199,7 +206,13 @@ function createBridge() {
         },
       };
       // Rerender with the new file selection.
-      render();
+      const instance = devToolsInstance;
+      if (instance === null) {
+        throw new Error(
+          'Cannot sync source selection: DevTools instance is not initialized.',
+        );
+      }
+      instance.render();
     } else {
       // Update the ref to the latest position without updating the url. No need to rerender.
       const selectionRef = currentSelectedSource.selectionRef;
@@ -229,14 +242,16 @@ function createBridge() {
       onBrowserSourceSelectionChanged,
     );
   }
+
+  return bridge;
 }
 
-function createBridgeAndStore() {
-  createBridge();
+function createDevToolsInstance(): DevToolsInstance {
+  const bridge = createBridge();
 
   const {isProfiling} = getProfilingFlags();
 
-  store = new Store(bridge, {
+  const store = new Store(bridge, {
     isProfiling,
     supportsReloadAndProfile: __IS_CHROME__ || __IS_EDGE__,
     // At this time, the timeline can only parse Chrome performance profiles.
@@ -285,9 +300,9 @@ function createBridgeAndStore() {
     );
   };
 
-  root = createRoot(document.createElement('div'));
+  const root = createRoot(document.createElement('div'));
 
-  render = (overrideTab: TabID | null = mostRecentOverrideTab) => {
+  const render = (overrideTab: TabID | null = mostRecentOverrideTab) => {
     mostRecentOverrideTab = overrideTab;
 
     root.render(
@@ -314,6 +329,8 @@ function createBridgeAndStore() {
       }),
     );
   };
+
+  return {bridge, store, render, root};
 }
 
 function ensureInitialHTMLIsCleared(
@@ -327,11 +344,11 @@ function ensureInitialHTMLIsCleared(
   container._hasInitialHTMLBeenCleared = true;
 }
 
-function createComponentsPanel() {
+function createComponentsPanel(instance: DevToolsInstance) {
   if (componentsPortalContainer) {
     // Panel is created and user opened it at least once
     ensureInitialHTMLIsCleared(componentsPortalContainer);
-    render('components');
+    instance.render('components');
 
     return;
   }
@@ -350,10 +367,11 @@ function createComponentsPanel() {
 
       createdPanel.onShown.addListener(portal => {
         componentsPortalContainer = portal.container;
-        if (componentsPortalContainer != null && render) {
+        const currentInstance = devToolsInstance;
+        if (componentsPortalContainer != null && currentInstance !== null) {
           ensureInitialHTMLIsCleared(componentsPortalContainer);
 
-          render('components');
+          currentInstance.render('components');
           portal.injectStyles(cloneStyleTags);
 
           logEvent({event_name: 'selected-components-tab'});
@@ -361,20 +379,20 @@ function createComponentsPanel() {
       });
 
       createdPanel.onShown.addListener(() => {
-        bridge.emit('extensionComponentsPanelShown');
+        devToolsInstance?.bridge.emit('extensionComponentsPanelShown');
       });
       createdPanel.onHidden.addListener(() => {
-        bridge.emit('extensionComponentsPanelHidden');
+        devToolsInstance?.bridge.emit('extensionComponentsPanelHidden');
       });
     },
   );
 }
 
-function createElementsInspectPanel() {
+function createElementsInspectPanel(instance: DevToolsInstance) {
   if (inspectedElementPortalContainer) {
     // Panel is created and user opened it at least once
     ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
-    render();
+    instance.render();
 
     return;
   }
@@ -403,11 +421,12 @@ function createElementsInspectPanel() {
 
     createdPane.onShown.addListener(portal => {
       inspectedElementPortalContainer = portal.container;
-      if (inspectedElementPortalContainer != null && render) {
+      const currentInstance = devToolsInstance;
+      if (inspectedElementPortalContainer != null && currentInstance !== null) {
         ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
-        bridge.send('syncSelectionFromBuiltinElementsPanel');
+        currentInstance.bridge.send('syncSelectionFromBuiltinElementsPanel');
 
-        render();
+        currentInstance.render();
         portal.injectStyles(cloneStyleTags);
 
         logEvent({event_name: 'selected-inspected-element-pane'});
@@ -416,11 +435,11 @@ function createElementsInspectPanel() {
   });
 }
 
-function createProfilerPanel() {
+function createProfilerPanel(instance: DevToolsInstance) {
   if (profilerPortalContainer) {
     // Panel is created and user opened it at least once
     ensureInitialHTMLIsCleared(profilerPortalContainer);
-    render('profiler');
+    instance.render('profiler');
 
     return;
   }
@@ -439,10 +458,11 @@ function createProfilerPanel() {
 
       createdPanel.onShown.addListener(portal => {
         profilerPortalContainer = portal.container;
-        if (profilerPortalContainer != null && render) {
+        const currentInstance = devToolsInstance;
+        if (profilerPortalContainer != null && currentInstance !== null) {
           ensureInitialHTMLIsCleared(profilerPortalContainer);
 
-          render('profiler');
+          currentInstance.render('profiler');
           portal.injectStyles(cloneStyleTags);
 
           logEvent({event_name: 'selected-profiler-tab'});
@@ -452,11 +472,11 @@ function createProfilerPanel() {
   );
 }
 
-function createSourcesEditorPanel() {
+function createSourcesEditorPanel(instance: DevToolsInstance) {
   if (editorPortalContainer) {
     // Panel is created and user opened it at least once
     ensureInitialHTMLIsCleared(editorPortalContainer);
-    render();
+    instance.render();
 
     return;
   }
@@ -480,10 +500,11 @@ function createSourcesEditorPanel() {
 
     createdPane.onShown.addListener(portal => {
       editorPortalContainer = portal.container;
-      if (editorPortalContainer != null && render) {
+      const currentInstance = devToolsInstance;
+      if (editorPortalContainer != null && currentInstance !== null) {
         ensureInitialHTMLIsCleared(editorPortalContainer);
 
-        render();
+        currentInstance.render();
         portal.injectStyles(cloneStyleTags);
 
         logEvent({event_name: 'selected-editor-pane'});
@@ -492,11 +513,11 @@ function createSourcesEditorPanel() {
   });
 }
 
-function createSuspensePanel() {
+function createSuspensePanel(instance: DevToolsInstance) {
   if (suspensePortalContainer) {
     // Panel is created and user opened it at least once
     ensureInitialHTMLIsCleared(suspensePortalContainer);
-    render('suspense');
+    instance.render('suspense');
 
     return;
   }
@@ -515,10 +536,11 @@ function createSuspensePanel() {
 
       createdPanel.onShown.addListener(portal => {
         suspensePortalContainer = portal.container;
-        if (suspensePortalContainer != null && render) {
+        const currentInstance = devToolsInstance;
+        if (suspensePortalContainer != null && currentInstance !== null) {
           ensureInitialHTMLIsCleared(suspensePortalContainer);
 
-          render('suspense');
+          currentInstance.render('suspense');
           portal.injectStyles(cloneStyleTags);
 
           logEvent({event_name: 'selected-suspense-tab'});
@@ -532,10 +554,10 @@ function performInTabNavigationCleanup() {
   // Potentially, if react hasn't loaded yet and user performs in-tab navigation
   clearReactPollingInstance();
 
-  // $FlowFixMe[invalid-compare]
-  if (store !== null) {
+  const instance = devToolsInstance;
+  if (instance !== null) {
     // Store profiling data, so it can be used later
-    profilingData = store.profilerStore.profilingData;
+    profilingData = instance.store.profilerStore.profilingData;
   }
 
   // If panels were already created, and we have already mounted React root to display
@@ -544,17 +566,17 @@ function performInTabNavigationCleanup() {
     (componentsPortalContainer ||
       profilerPortalContainer ||
       suspensePortalContainer) &&
-    root
+    instance !== null
   ) {
     // It's easiest to recreate the DevTools panel (to clean up potential stale state).
     // We can revisit this in the future as a small optimization.
     // This should also emit bridge.shutdown, but only if this root was mounted
-    flushSync(() => root.unmount());
+    flushSync(() => instance.root.unmount());
   } else {
     // In case Browser DevTools were opened, but user never pressed on extension panels
     // They were never mounted and there is nothing to unmount, but we need to emit shutdown event
     // because bridge was already created
-    bridge?.shutdown();
+    instance?.bridge.shutdown();
   }
 
   // Do not nullify componentsPanelPortal and profilerPanelPortal on purpose,
@@ -565,10 +587,7 @@ function performInTabNavigationCleanup() {
   // Do not clean mostRecentOverrideTab on purpose, so we remember last opened
   // React DevTools tab, when user does in-tab navigation
 
-  store = null as $FlowFixMe;
-  bridge = null as $FlowFixMe;
-  render = null as $FlowFixMe;
-  root = null as $FlowFixMe;
+  devToolsInstance = null;
   pendingBridgeMessages.length = 0;
 }
 
@@ -576,27 +595,25 @@ function performFullCleanup() {
   // Potentially, if react hasn't loaded yet and user closed the browser DevTools
   clearReactPollingInstance();
 
+  const instance = devToolsInstance;
   if (
     (componentsPortalContainer ||
       profilerPortalContainer ||
       suspensePortalContainer) &&
-    root
+    instance !== null
   ) {
     // This should also emit bridge.shutdown, but only if this root was mounted
-    flushSync(() => root.unmount());
+    flushSync(() => instance.root.unmount());
   } else {
-    bridge?.shutdown();
+    instance?.bridge.shutdown();
   }
 
   componentsPortalContainer = null;
   profilerPortalContainer = null;
   suspensePortalContainer = null;
-  root = null as $FlowFixMe;
 
   mostRecentOverrideTab = null;
-  store = null as $FlowFixMe;
-  bridge = null as $FlowFixMe;
-  render = null as $FlowFixMe;
+  devToolsInstance = null;
   pendingBridgeMessages.length = 0;
 
   port?.disconnect();
@@ -646,13 +663,14 @@ function mountReactDevTools() {
 
   registerEventsLogger();
 
-  createBridgeAndStore();
+  const instance = createDevToolsInstance();
+  devToolsInstance = instance;
 
-  createComponentsPanel();
-  createProfilerPanel();
-  createSourcesEditorPanel();
-  createElementsInspectPanel();
-  createSuspensePanel();
+  createComponentsPanel(instance);
+  createProfilerPanel(instance);
+  createSourcesEditorPanel(instance);
+  createElementsInspectPanel(instance);
+  createSuspensePanel(instance);
 }
 
 let reactPollingInstance = null;
@@ -689,11 +707,10 @@ function mountReactDevToolsWhenReactHasLoaded() {
   );
 }
 
-let bridge: FrontendBridge = null as $FlowFixMe;
+let devToolsInstance: DevToolsInstance | null = null;
 let lastSubscribedBridgeListener: ((message: mixed) => void) | null = null;
 let subscribedBridgePort: ExtensionRuntimePort | null = null;
 let bridgePortListener: ((message: mixed) => void) | null = null;
-let store: Store = null as $FlowFixMe;
 
 let profilingData = null;
 
@@ -709,8 +726,6 @@ let editorPortalContainer = null;
 let inspectedElementPortalContainer = null;
 
 let mostRecentOverrideTab: null | TabID = null;
-let render: (overrideTab?: TabID) => void = null as $FlowFixMe;
-let root: RootType = null as $FlowFixMe;
 
 let currentSelectedSource: null | SourceSelection = null;
 
@@ -751,7 +766,7 @@ mountReactDevToolsWhenReactHasLoaded();
 
 function onThemeChanged() {
   // Rerender with the new theme
-  render();
+  devToolsInstance?.render();
 }
 
 if (chrome.devtools.panels.setThemeChangeHandler) {
