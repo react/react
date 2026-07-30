@@ -16,6 +16,7 @@ import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
   enableAsyncDebugInfo,
+  enableFlightWeakThenables,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -1078,12 +1079,12 @@ function emitRequestedDebugThenable(
   );
 }
 
-function serializeThenable(
+function createThenableTask(
   request: Request,
   task: Task,
   thenable: Thenable<any>,
-): number {
-  const newTask = createTask(
+): Task {
+  return createTask(
     request,
     thenable as any, // will be replaced by the value before we retry. used for debug info.
     task.keyPath, // the server component sequence continues through Promise-as-a-child.
@@ -1098,9 +1099,16 @@ function serializeThenable(
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
   );
+}
 
+function serializeThenable(
+  request: Request,
+  task: Task,
+  thenable: Thenable<any>,
+): number {
   switch (thenable.status) {
     case 'fulfilled': {
+      const newTask = createThenableTask(request, task, thenable);
       forwardDebugInfoFromThenable(request, newTask, thenable, null, null);
       // We have the resolved value, we can go ahead and schedule it for serialization.
       newTask.model = thenable.value;
@@ -1108,12 +1116,102 @@ function serializeThenable(
       return newTask.id;
     }
     case 'rejected': {
+      const newTask = createThenableTask(request, task, thenable);
       forwardDebugInfoFromThenable(request, newTask, thenable, null, null);
       const x = thenable.reason;
       erroredTask(request, newTask, x);
       return newTask.id;
     }
+    case 'pending_weak': {
+      if (enableFlightWeakThenables) {
+        // A weak-pending thenable doesn't block the stream from closing, so
+        // we don't create a task for it yet. We only reserve an id for its
+        // reference. If it settles while the stream is still open, we
+        // create the task at that point, the same as if we had serialized
+        // an already settled thenable.
+        //
+        // Delivery is driven by the thenable's notification. If the stream
+        // closes before the listeners are notified, the value is dropped
+        // and the reference is left unfulfilled. Since the stream may close
+        // synchronously when the last task completes, a thenable that
+        // notifies its listeners synchronously (unlike a native Promise,
+        // which notifies in a microtask) is guaranteed delivery of any
+        // value it settles with before the stream closes.
+        const id = request.nextChunkId++;
+        // The parent task is mutated as serialization continues, so we
+        // snapshot the context that the new task needs if it's created
+        // later.
+        const keyPath = task.keyPath;
+        const implicitSlot = task.implicitSlot;
+        const formatContext = task.formatContext;
+        const lastTimestamp =
+          enableProfilerTimer &&
+          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+            ? task.time
+            : 0;
+        const debugOwner = __DEV__ ? task.debugOwner : null;
+        const debugStack = __DEV__ ? task.debugStack : null;
+        const debugTask = __DEV__ ? task.debugTask : null;
+        let settled = false;
+        thenable.then(
+          (value: any) => {
+            if (settled || request.status > OPEN) {
+              // Too late. The stream already closed (or the request was
+              // aborted), so the reference stays unfulfilled.
+              return;
+            }
+            settled = true;
+            const newTask = createTaskWithID(
+              request,
+              id,
+              value,
+              keyPath,
+              implicitSlot,
+              formatContext,
+              request.abortableTasks,
+              lastTimestamp,
+              debugOwner,
+              debugStack,
+              debugTask,
+            );
+            forwardDebugInfoFromCurrentContext(request, newTask, thenable);
+            pingTask(request, newTask);
+          },
+          (reason: mixed) => {
+            if (settled || request.status > OPEN) {
+              return;
+            }
+            settled = true;
+            const newTask = createTaskWithID(
+              request,
+              id,
+              thenable as any, // never rendered. used for debug info.
+              keyPath,
+              implicitSlot,
+              formatContext,
+              request.abortableTasks,
+              lastTimestamp,
+              debugOwner,
+              debugStack,
+              debugTask,
+            );
+            if (
+              enableProfilerTimer &&
+              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+            ) {
+              // If this is async we need to time when this task finishes.
+              newTask.timed = true;
+            }
+            erroredTask(request, newTask, reason);
+            enqueueFlush(request);
+          },
+        );
+        return id;
+      }
+      // Fallthrough
+    }
     default: {
+      const newTask = createThenableTask(request, task, thenable);
       if (request.status === ABORTING) {
         // We can no longer accept any resolved values
         request.abortableTasks.delete(newTask);
@@ -1127,59 +1225,56 @@ function serializeThenable(
         }
         return newTask.id;
       }
-      if (typeof thenable.status === 'string') {
+      if (typeof thenable.status !== 'string') {
         // Only instrument the thenable if the status if not defined. If
         // it's defined, but an unknown value, assume it's been instrumented by
         // some custom userspace implementation. We treat it as "pending".
-        break;
+        const pendingThenable: PendingThenable<mixed> = thenable as any;
+        pendingThenable.status = 'pending';
+        pendingThenable.then(
+          fulfilledValue => {
+            if (thenable.status === 'pending') {
+              const fulfilledThenable: FulfilledThenable<mixed> =
+                thenable as any;
+              fulfilledThenable.status = 'fulfilled';
+              fulfilledThenable.value = fulfilledValue;
+            }
+          },
+          (error: mixed) => {
+            if (thenable.status === 'pending') {
+              const rejectedThenable: RejectedThenable<mixed> = thenable as any;
+              rejectedThenable.status = 'rejected';
+              rejectedThenable.reason = error;
+            }
+          },
+        );
       }
-      const pendingThenable: PendingThenable<mixed> = thenable as any;
-      pendingThenable.status = 'pending';
-      pendingThenable.then(
-        fulfilledValue => {
-          if (thenable.status === 'pending') {
-            const fulfilledThenable: FulfilledThenable<mixed> = thenable as any;
-            fulfilledThenable.status = 'fulfilled';
-            fulfilledThenable.value = fulfilledValue;
-          }
+      thenable.then(
+        value => {
+          forwardDebugInfoFromCurrentContext(request, newTask, thenable);
+          newTask.model = value;
+          pingTask(request, newTask);
         },
-        (error: mixed) => {
-          if (thenable.status === 'pending') {
-            const rejectedThenable: RejectedThenable<mixed> = thenable as any;
-            rejectedThenable.status = 'rejected';
-            rejectedThenable.reason = error;
+        reason => {
+          if (newTask.status === PENDING) {
+            if (
+              enableProfilerTimer &&
+              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+            ) {
+              // If this is async we need to time when this task finishes.
+              newTask.timed = true;
+            }
+            // We expect that the only status it might be otherwise is ABORTED.
+            // When we abort we emit chunks in each pending task slot and don't need
+            // to do so again here.
+            erroredTask(request, newTask, reason);
+            enqueueFlush(request);
           }
         },
       );
-      break;
+      return newTask.id;
     }
   }
-
-  thenable.then(
-    value => {
-      forwardDebugInfoFromCurrentContext(request, newTask, thenable);
-      newTask.model = value;
-      pingTask(request, newTask);
-    },
-    reason => {
-      if (newTask.status === PENDING) {
-        if (
-          enableProfilerTimer &&
-          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-        ) {
-          // If this is async we need to time when this task finishes.
-          newTask.timed = true;
-        }
-        // We expect that the only status it might be otherwise is ABORTED.
-        // When we abort we emit chunks in each pending task slot and don't need
-        // to do so again here.
-        erroredTask(request, newTask, reason);
-        enqueueFlush(request);
-      }
-    },
-  );
-
-  return newTask.id;
 }
 
 function serializeReadableStream(
@@ -2761,8 +2856,35 @@ function createTask(
   debugStack: null | Error, // DEV-only
   debugTask: null | ConsoleTask, // DEV-only
 ): Task {
+  return createTaskWithID(
+    request,
+    request.nextChunkId++,
+    model,
+    keyPath,
+    implicitSlot,
+    formatContext,
+    abortSet,
+    lastTimestamp,
+    debugOwner,
+    debugStack,
+    debugTask,
+  );
+}
+
+function createTaskWithID(
+  request: Request,
+  id: number,
+  model: ReactClientValue,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
+  formatContext: FormatContext,
+  abortSet: Set<Task>,
+  lastTimestamp: number, // Profiling-only
+  debugOwner: null | ReactComponentInfo, // DEV-only
+  debugStack: null | Error, // DEV-only
+  debugTask: null | ConsoleTask, // DEV-only
+): Task {
   request.pendingChunks++;
-  const id = request.nextChunkId++;
   if (typeof model === 'object' && model !== null) {
     // If we're about to write this into a new task we can assign it an ID early so that
     // any other references can refer to the value we're about to write.
@@ -2940,6 +3062,10 @@ function serializeLazyID(id: number): string {
 
 function serializePromiseID(id: number): string {
   return '$@' + id.toString(16);
+}
+
+function serializeWeakPromiseID(id: number): string {
+  return '$w' + id.toString(16);
 }
 
 function serializeServerReferenceID(id: number): string {
@@ -3828,13 +3954,20 @@ function renderModelDestructive(
     const existingReference = writtenObjects.get(value);
     // $FlowFixMe[method-unbinding]
     if (typeof value.then === 'function') {
+      // A weak-pending thenable may never emit, so its reference is marked
+      // on the wire ($w instead of $@). That way the client knows to leave
+      // it forever pending, instead of erroring it, if the stream closes
+      // first.
       if (existingReference !== undefined) {
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
           // previous renders of this element. We only reuse Promises if they're not wrapped
           // by another Server Component.
           const promiseId = serializeThenable(request, task, value as any);
-          return serializePromiseID(promiseId);
+          return enableFlightWeakThenables &&
+            (value as any).status === 'pending_weak'
+            ? serializeWeakPromiseID(promiseId)
+            : serializePromiseID(promiseId);
         } else if (modelRoot === value) {
           // This is the ID we're currently emitting so we need to write it
           // once but if we discover it again, we refer to it by id.
@@ -3847,7 +3980,10 @@ function renderModelDestructive(
       // We assume that any object with a .then property is a "Thenable" type,
       // or a Promise type. Either of which can be represented by a Promise.
       const promiseId = serializeThenable(request, task, value as any);
-      const promiseReference = serializePromiseID(promiseId);
+      const promiseReference =
+        enableFlightWeakThenables && (value as any).status === 'pending_weak'
+          ? serializeWeakPromiseID(promiseId)
+          : serializePromiseID(promiseId);
       writtenObjects.set(value, promiseReference);
       return promiseReference;
     }
@@ -6157,6 +6293,12 @@ function finishAbortedTask(
   request.completedErrorChunks.push(processedChunk);
 }
 
+// "Halting" a task means finishing it without emitting anything into its
+// slot: the reference is intentionally left unfulfilled and never resolves
+// on the client. This is how an aborted prerender leaves its pending work.
+// It's also the same outcome as a weak-pending thenable that never settles
+// (see serializeThenable) — halting is initiated by the request aborting,
+// weakness by the value itself.
 function haltTask(task: Task, request: Request): void {
   if (task.status !== PENDING) {
     // If this is already completed/errored we don't abort it.

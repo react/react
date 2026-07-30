@@ -76,6 +76,12 @@ export const enableLegacyCache = __EXPERIMENTAL__;
 
 export const enableAsyncIterableChildren = __EXPERIMENTAL__;
 
+// Support thenables with status 'pending_weak' in Flight. A weak-pending
+// thenable doesn't keep the stream open; if it resolves before the stream
+// closes for other reasons, its value is emitted, otherwise its reference is
+// left unfulfilled.
+export const enableFlightWeakThenables = __EXPERIMENTAL__;
+
 export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;

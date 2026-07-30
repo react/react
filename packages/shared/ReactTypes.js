@@ -126,6 +126,11 @@ export interface PendingThenable<T> extends ThenableImpl<T> {
   _debugInfo?: null | ReactDebugInfo;
 }
 
+export interface WeakPendingThenable<T> extends ThenableImpl<T> {
+  status: 'pending_weak';
+  _debugInfo?: null | ReactDebugInfo;
+}
+
 export interface FulfilledThenable<T> extends ThenableImpl<T> {
   status: 'fulfilled';
   value: T;
@@ -141,6 +146,7 @@ export interface RejectedThenable<T> extends ThenableImpl<T> {
 export type Thenable<T> =
   | UntrackedThenable<T>
   | PendingThenable<T>
+  | WeakPendingThenable<T>
   | FulfilledThenable<T>
   | RejectedThenable<T>;
 
