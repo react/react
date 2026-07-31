@@ -1,0 +1,155 @@
+.MemoryProfiler {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.Toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-background);
+  flex-shrink: 0;
+}
+
+.Content {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 1rem;
+  padding: 1rem;
+  overflow: hidden;
+  flex: 1;
+}
+
+.MainColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+}
+
+.SideColumn {
+  overflow-y: auto;
+}
+
+/* No Data State */
+.NoData {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 2rem;
+}
+
+.NoDataContent {
+  max-width: 500px;
+  text-align: center;
+}
+
+.NoDataTitle {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--color-text);
+}
+
+.NoDataDescription {
+  font-size: 0.9rem;
+  color: var(--color-dimmer);
+  margin: 0 0 1.5rem 0;
+}
+
+.NoDataActions {
+  margin-bottom: 2rem;
+}
+
+.NoDataInfo {
+  text-align: left;
+  background-color: var(--color-background-hover);
+  border-radius: 0.25rem;
+  padding: 1rem;
+  margin-top: 1.5rem;
+}
+
+.NoDataInfo h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--color-text);
+}
+
+.NoDataInfo ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--color-dimmer);
+}
+
+.NoDataInfo li {
+  margin-bottom: 0.25rem;
+}
+
+/* Recording State */
+.Recording {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 2rem;
+}
+
+.RecordingContent {
+  text-align: center;
+  max-width: 400px;
+}
+
+.RecordingIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 1rem;
+}
+
+.RecordingDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--color-record);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.RecordingDescription {
+  font-size: 0.9rem;
+  color: var(--color-dimmer);
+  margin: 0 0 1.5rem 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .Content {
+    grid-template-columns: 1fr;
+  }
+  
+  .SideColumn {
+    order: -1;
+  }
+}

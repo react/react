@@ -1,0 +1,150 @@
+.Container {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 1rem;
+}
+
+.Title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.Badge {
+  background-color: var(--color-bridge-color-accent-1);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 1rem;
+}
+
+/* Suggestions List */
+.SuggestionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.Suggestion {
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: 0.25rem;
+  padding: 1rem;
+  background-color: var(--color-background);
+}
+
+.PriorityHigh {
+  border-left-color: #dc2626;
+}
+
+.PriorityMedium {
+  border-left-color: #ca8a04;
+}
+
+.PriorityLow {
+  border-left-color: #2563eb;
+}
+
+.SuggestionHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.PriorityIcon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.SuggestionTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.SuggestionDescription {
+  font-size: 0.85rem;
+  color: var(--color-dimmer);
+  margin: 0 0 0.75rem 0;
+  line-height: 1.5;
+}
+
+.CodeExample {
+  margin-bottom: 0.75rem;
+}
+
+.CodeLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-dimmer);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.Code {
+  background-color: var(--color-background-hover);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  font-family: var(--font-family-monospace);
+  color: var(--color-text);
+  overflow-x: auto;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.LearnMore {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: var(--color-bridge-color-accent-1);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.LearnMore:hover {
+  color: var(--color-bridge-color-accent-1-dimmed);
+  text-decoration: underline;
+}
+
+/* General Tips */
+.GeneralTips {
+  background-color: var(--color-background-hover);
+  border-radius: 0.25rem;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.TipsTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: var(--color-text);
+}
+
+.TipsList {
+  margin: 0;
+  padding-left: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--color-dimmer);
+  line-height: 1.6;
+}
+
+.TipsList li {
+  margin-bottom: 0.5rem;
+}
+
+.TipsList li:last-child {
+  margin-bottom: 0;
+}

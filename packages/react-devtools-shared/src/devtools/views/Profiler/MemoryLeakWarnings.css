@@ -1,0 +1,272 @@
+.Container {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.Header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.Title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.Badge {
+  background-color: var(--color-record);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 1rem;
+}
+
+/* No Leaks State */
+.NoLeaks {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.NoLeaksIcon {
+  font-size: 3rem;
+  color: var(--color-bridge-color-accent-1);
+  margin-bottom: 0.5rem;
+}
+
+.NoLeaksText {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 0.25rem 0;
+}
+
+.NoLeaksSubtext {
+  font-size: 0.85rem;
+  color: var(--color-dimmer);
+  margin: 0;
+}
+
+/* Summary */
+.Summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background-color: var(--color-background-hover);
+  border-radius: 0.25rem;
+}
+
+.SummaryItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.SummaryIcon {
+  font-size: 1.25rem;
+}
+
+.SummaryCount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.SummaryLabel {
+  font-size: 0.7rem;
+  color: var(--color-dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Filters */
+.Filters {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.Filter,
+.FilterActive {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.Filter:hover {
+  background-color: var(--color-background-hover);
+}
+
+.FilterActive {
+  background-color: var(--color-record);
+  color: white;
+  border-color: var(--color-record);
+}
+
+/* Leaks List */
+.LeaksList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.LeakItem {
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: 0.25rem;
+  background-color: var(--color-background);
+  overflow: hidden;
+}
+
+.SeverityCritical {
+  border-left-color: #dc2626;
+}
+
+.SeverityHigh {
+  border-left-color: #ea580c;
+}
+
+.SeverityMedium {
+  border-left-color: #ca8a04;
+}
+
+.SeverityLow {
+  border-left-color: #2563eb;
+}
+
+.LeakHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.LeakHeader:hover {
+  background-color: var(--color-background-hover);
+}
+
+.SeverityIcon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.LeakInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.LeakType {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 0.25rem;
+}
+
+.LeakDescription {
+  font-size: 0.85rem;
+  color: var(--color-dimmer);
+  margin-bottom: 0.25rem;
+}
+
+.LeakComponent {
+  font-size: 0.75rem;
+  color: var(--color-dimmer);
+}
+
+.LeakComponent code {
+  background-color: var(--color-background-hover);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.125rem;
+  font-family: var(--font-family-monospace);
+}
+
+/* Leak Details */
+.LeakDetails {
+  padding: 0.75rem;
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-background-hover);
+}
+
+.Suggestion {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.Suggestion strong {
+  color: var(--color-text);
+}
+
+.CodeExample {
+  margin-bottom: 1rem;
+}
+
+.CodeLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-dimmer);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.Code {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  font-family: var(--font-family-monospace);
+  color: var(--color-text);
+  overflow-x: auto;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.Metadata {
+  margin-top: 1rem;
+}
+
+.MetadataLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-dimmer);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.MetadataContent {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  font-size: 0.75rem;
+  font-family: var(--font-family-monospace);
+  color: var(--color-dimmer);
+  overflow-x: auto;
+  margin: 0;
+}

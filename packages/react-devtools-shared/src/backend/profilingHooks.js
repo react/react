@@ -36,6 +36,20 @@ import {
   SCHEDULING_PROFILER_VERSION,
 } from 'react-devtools-timeline/src/constants';
 import {describeFiber} from './fiber/DevToolsFiberComponentStack';
+import {
+  initMemoryProfiler,
+  startMemoryMonitoring,
+  stopMemoryMonitoring,
+  analyzeMemoryTrend,
+  updateComponentCount,
+} from './memoryProfiler';
+import {
+  detectMemoryLeaks,
+  trackComponentMount,
+  trackComponentUnmount,
+  resetLeakDetection,
+} from './memoryLeakDetector';
+import type {MemoryProfilingData, MemorySnapshot} from './types';
 
 // Add padding to the start/stop time of the profile.
 // This makes the UI nicer to use.
@@ -101,11 +115,22 @@ export type ToggleProfilingStatus = (
   value: boolean,
   recordTimeline?: boolean,
 ) => void;
+export type StartMemoryProfiling = (settings: {
+  snapshotInterval?: number,
+  leakThreshold?: number,
+}) => void;
+export type StopMemoryProfiling = () => MemoryProfilingData | null;
+export type OnComponentMount = (fiber: Fiber) => void;
+export type OnComponentUnmount = (fiber: Fiber) => void;
 
 type Response = {
   getTimelineData: GetTimelineData,
   profilingHooks: DevToolsProfilingHooks,
   toggleProfilingStatus: ToggleProfilingStatus,
+  startMemoryProfiling: StartMemoryProfiling,
+  stopMemoryProfiling: StopMemoryProfiling,
+  onComponentMount: OnComponentMount,
+  onComponentUnmount: OnComponentUnmount,
 };
 
 export function createProfilingHooks({
@@ -130,6 +155,14 @@ export function createProfilingHooks({
   let currentFiberStacks: Map<SchedulingEvent, Array<Fiber>> = new Map();
   let isProfiling: boolean = false;
   let nextRenderShouldStartNewBatch: boolean = false;
+
+  // Memory profiling state
+  let isMemoryProfilingEnabled: boolean = false;
+  let memorySnapshots: Array<MemorySnapshot> = [];
+  let memoryProfilingSettings: {
+    snapshotInterval: number,
+    leakThreshold: number,
+  } | null = null;
 
   function getRelativeTime() {
     const currentTime = getCurrentTime();
@@ -956,6 +989,96 @@ export function createProfilingHooks({
     }
   }
 
+  function startMemoryProfiling(settings: {
+    snapshotInterval?: number,
+    leakThreshold?: number,
+  }) {
+    if (isMemoryProfilingEnabled) {
+      return;
+    }
+
+    isMemoryProfilingEnabled = true;
+    memorySnapshots = [];
+    memoryProfilingSettings = {
+      snapshotInterval: settings.snapshotInterval || 1000,
+      leakThreshold: settings.leakThreshold || 1024 * 100, // 100KB/s default
+    };
+
+    // Initialize memory profiler
+    initMemoryProfiler({
+      snapshotInterval: memoryProfilingSettings.snapshotInterval,
+      maxSnapshots: 300,
+      leakThreshold: memoryProfilingSettings.leakThreshold,
+    });
+
+    // Reset leak detection
+    resetLeakDetection();
+
+    // Start monitoring
+    startMemoryMonitoring((snapshot: MemorySnapshot) => {
+      memorySnapshots.push(snapshot);
+    });
+  }
+
+  function stopMemoryProfiling(): MemoryProfilingData | null {
+    if (!isMemoryProfilingEnabled) {
+      return null;
+    }
+
+    isMemoryProfilingEnabled = false;
+
+    // Stop monitoring
+    const finalSnapshots = stopMemoryMonitoring();
+
+    // Analyze trends
+    const trend = analyzeMemoryTrend(finalSnapshots);
+
+    // Detect leaks
+    const leaks = detectMemoryLeaks(finalSnapshots);
+
+    const memoryData: MemoryProfilingData = {
+      snapshots: finalSnapshots,
+      trend,
+      leaks,
+    };
+
+    // Cleanup
+    memorySnapshots = [];
+    memoryProfilingSettings = null;
+
+    return memoryData;
+  }
+
+  function onComponentMount(fiber: Fiber) {
+    if (isMemoryProfilingEnabled) {
+      const id = getFiberIDUnsafe(fiber) || 0;
+      const displayName = getDisplayNameForFiber(fiber) || 'Unknown';
+      trackComponentMount(id, displayName);
+
+      // Update component count in latest snapshot
+      updateComponentCount(id);
+    }
+  }
+
+  function onComponentUnmount(fiber: Fiber) {
+    if (isMemoryProfilingEnabled) {
+      const id = getFiberIDUnsafe(fiber) || 0;
+      trackComponentUnmount(id);
+    }
+  }
+
+  // Helper to get fiber ID safely
+  function getFiberIDUnsafe(fiber: Fiber): number | null {
+    try {
+      // Try to get fiber ID from various possible sources
+      // This is a simplified approach - actual implementation would need
+      // to match the fiber ID system used in DevTools
+      return fiber._debugID || fiber.index || null;
+    } catch {
+      return null;
+    }
+  }
+
   return {
     getTimelineData,
     profilingHooks: {
@@ -985,5 +1108,9 @@ export function createProfilingHooks({
       markStateUpdateScheduled,
     },
     toggleProfilingStatus,
+    startMemoryProfiling,
+    stopMemoryProfiling,
+    onComponentMount,
+    onComponentUnmount,
   };
 }
