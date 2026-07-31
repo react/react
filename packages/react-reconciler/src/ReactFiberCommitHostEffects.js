@@ -541,7 +541,10 @@ function commitPlacement(finishedWork: Fiber): void {
       // children insert into the portal container.
       hostParentFiber = parentFiber;
     }
-    if (collectFragmentInstances && isFragmentInstanceHostBoundary(parentFiber)) {
+    if (
+      collectFragmentInstances &&
+      isFragmentInstanceHostBoundary(parentFiber)
+    ) {
       // Stop collecting at HostComponent / HostRoot / HostSingleton.
       // Placement can continue past non-scope singletons to HostRoot, and
       // past portals (already recorded above) to fragment ancestors.
