@@ -2391,7 +2391,7 @@ describe('FragmentRefs', () => {
         expectPosition(
           fragmentRef.current.compareDocumentPosition(document.body),
           {
-            preceding: true,
+            preceding: false,
             following: false,
             contains: true,
             containedBy: false,
@@ -2415,6 +2415,50 @@ describe('FragmentRefs', () => {
           {
             preceding: false,
             following: true,
+            contains: false,
+            containedBy: false,
+            disconnected: false,
+            implementationSpecific: true,
+          },
+        );
+      });
+
+      // @gate enableFragmentRefs
+      it('positions empty portaled fragments against the portal container', async () => {
+        const fragmentRef = React.createRef();
+        const reactParentRef = React.createRef();
+        const portalTarget = document.createElement('div');
+        portalTarget.id = 'portal-target';
+        document.body.appendChild(portalTarget);
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <div id="react-parent" ref={reactParentRef}>
+              {createPortal(<Fragment ref={fragmentRef} />, portalTarget)}
+            </div>
+          );
+        }
+
+        await act(() => root.render(<Test />));
+
+        // Empty CDP must use the portal container as parent
+        expectPosition(
+          fragmentRef.current.compareDocumentPosition(portalTarget),
+          {
+            preceding: false,
+            following: false,
+            contains: true,
+            containedBy: false,
+            disconnected: false,
+            implementationSpecific: true,
+          },
+        );
+        expectPosition(
+          fragmentRef.current.compareDocumentPosition(reactParentRef.current),
+          {
+            preceding: true,
+            following: false,
             contains: false,
             containedBy: false,
             disconnected: false,

@@ -459,6 +459,24 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
   return foundPortalParent;
 }
 
+export function getFragmentPortalContainerInfo(fiber: Fiber): null | Container {
+  let parent = fiber.return;
+  while (parent !== null) {
+    if (parent.tag === HostPortal) {
+      return (parent.stateNode.containerInfo as Container);
+    }
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
+      break;
+    }
+    parent = parent.return;
+  }
+  return null;
+}
+
 export function getFragmentInstanceOrTextInstanceSiblings(
   fiber: Fiber,
 ): [Fiber | null, Fiber | null] {
