@@ -7,7 +7,7 @@
 //!
 //! Port of ValidateNoSetStateInRender.ts.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
 use react_compiler_hir::dominator::compute_unconditional_blocks;
@@ -18,7 +18,7 @@ pub fn validate_no_set_state_in_render(
     func: &HirFunction,
     env: &mut Environment,
 ) -> Result<(), CompilerDiagnostic> {
-    let mut unconditional_set_state_functions: HashSet<IdentifierId> = HashSet::new();
+    let mut unconditional_set_state_functions: FxHashSet<IdentifierId> = FxHashSet::default();
     let next_block_id = env.next_block_id().0;
     let diagnostics = validate_impl(
         func,
@@ -52,9 +52,9 @@ fn validate_impl(
     functions: &[HirFunction],
     next_block_id_counter: u32,
     enable_use_keyed_state: bool,
-    unconditional_set_state_functions: &mut HashSet<IdentifierId>,
+    unconditional_set_state_functions: &mut FxHashSet<IdentifierId>,
 ) -> Result<Vec<CompilerDiagnostic>, CompilerDiagnostic> {
-    let unconditional_blocks: HashSet<BlockId> =
+    let unconditional_blocks: FxHashSet<BlockId> =
         compute_unconditional_blocks(func, next_block_id_counter)?;
     let mut active_manual_memo_id: Option<u32> = None;
     let mut errors: Vec<CompilerDiagnostic> = Vec::new();

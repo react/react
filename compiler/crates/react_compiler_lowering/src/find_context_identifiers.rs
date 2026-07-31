@@ -4,8 +4,7 @@
 //! walking the AST with scope tracking to find variables that cross
 //! function boundaries.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::expressions::*;
 use react_compiler_ast::patterns::*;
@@ -35,7 +34,7 @@ struct ContextIdentifierVisitor<'a> {
     /// Stack of inner function scopes encountered during traversal.
     /// Empty when at the top level of the function being compiled.
     function_stack: Vec<ScopeId>,
-    binding_info: HashMap<BindingId, BindingInfo>,
+    binding_info: FxHashMap<BindingId, BindingInfo>,
     error: Option<CompilerError>,
 }
 
@@ -313,8 +312,8 @@ fn is_captured_by_function(
 /// ref_node_id_to_binding. These are entries where the reference's node_id
 /// matches the binding's declaration_node_id — i.e., the "reference" is
 /// actually the declaration itself.
-fn build_declaration_node_ids(scope_info: &ScopeInfo) -> HashSet<(BindingId, u32)> {
-    let mut result = HashSet::new();
+fn build_declaration_node_ids(scope_info: &ScopeInfo) -> FxHashSet<(BindingId, u32)> {
+    let mut result = FxHashSet::default();
     for (&ref_nid, &binding_id) in &scope_info.ref_node_id_to_binding {
         let binding = &scope_info.bindings[binding_id.0 as usize];
         if binding.declaration_node_id == Some(ref_nid) {
@@ -338,7 +337,7 @@ pub fn find_context_identifiers(
     scope_info: &ScopeInfo,
     env: &mut Environment,
     identifier_locs: &crate::identifier_loc_index::IdentifierLocIndex,
-) -> Result<HashSet<BindingId>, CompilerError> {
+) -> Result<FxHashSet<BindingId>, CompilerError> {
     let func_scope = scope_info
         .resolve_scope_for_node(func.node_id())
         .unwrap_or(scope_info.program_scope);
@@ -347,7 +346,7 @@ pub fn find_context_identifiers(
         scope_info,
         env,
         function_stack: Vec::new(),
-        binding_info: HashMap::new(),
+        binding_info: FxHashMap::default(),
         error: None,
     };
     let mut walker = AstWalker::with_initial_scope(scope_info, func_scope);

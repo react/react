@@ -11,7 +11,7 @@
 //!
 //! Conditional on `env.config.enable_name_anonymous_functions`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::object_shape::HookKind;
@@ -63,7 +63,7 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
     if updates.is_empty() {
         return;
     }
-    let update_map: HashMap<FunctionId, &String> =
+    let update_map: FxHashMap<FunctionId, &String> =
         updates.iter().map(|(fid, name)| (*fid, name)).collect();
 
     // Apply name updates to the inner HirFunction in the arena
@@ -86,7 +86,7 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
 /// Apply name hints to FunctionExpression instruction values.
 fn apply_name_hints_to_instructions(
     instructions: &mut [Instruction],
-    update_map: &HashMap<FunctionId, &String>,
+    update_map: &FxHashMap<FunctionId, &String>,
 ) {
     for instr in instructions.iter_mut() {
         if let InstructionValue::FunctionExpression {
@@ -117,9 +117,9 @@ struct Node {
 
 fn name_anonymous_functions_impl(func: &HirFunction, env: &Environment) -> Vec<Node> {
     // Functions that we track to generate names for
-    let mut functions: HashMap<IdentifierId, usize> = HashMap::new();
+    let mut functions: FxHashMap<IdentifierId, usize> = FxHashMap::default();
     // Tracks temporaries that read from variables/globals/properties
-    let mut names: HashMap<IdentifierId, String> = HashMap::new();
+    let mut names: FxHashMap<IdentifierId, String> = FxHashMap::default();
     // Tracks all function nodes
     let mut nodes: Vec<Node> = Vec::new();
 
@@ -256,8 +256,8 @@ fn handle_call(
     _func: &HirFunction,
     callee_id: IdentifierId,
     args: &[PlaceOrSpread],
-    functions: &mut HashMap<IdentifierId, usize>,
-    names: &HashMap<IdentifierId, String>,
+    functions: &mut FxHashMap<IdentifierId, usize>,
+    names: &FxHashMap<IdentifierId, String>,
     nodes: &mut Vec<Node>,
 ) {
     let callee_ident = &env.identifiers[callee_id.0 as usize];

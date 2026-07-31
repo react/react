@@ -11,7 +11,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/PruneAlwaysInvalidatingScopes.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::{
     IdentifierId, InstructionValue, PrunedReactiveScopeBlock, ReactiveFunction,
@@ -30,8 +30,8 @@ pub fn prune_always_invalidating_scopes(
 ) -> Result<(), react_compiler_diagnostics::CompilerError> {
     let mut transform = Transform {
         env,
-        always_invalidating_values: HashSet::new(),
-        unmemoized_values: HashSet::new(),
+        always_invalidating_values: FxHashSet::default(),
+        unmemoized_values: FxHashSet::default(),
     };
     let mut state = false; // withinScope
     transform_reactive_function(func, &mut transform, &mut state)
@@ -39,8 +39,8 @@ pub fn prune_always_invalidating_scopes(
 
 struct Transform<'a> {
     env: &'a Environment,
-    always_invalidating_values: HashSet<IdentifierId>,
-    unmemoized_values: HashSet<IdentifierId>,
+    always_invalidating_values: FxHashSet<IdentifierId>,
+    unmemoized_values: FxHashSet<IdentifierId>,
 }
 
 impl<'a> ReactiveFunctionTransform for Transform<'a> {

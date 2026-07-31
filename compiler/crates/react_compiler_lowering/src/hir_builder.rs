@@ -1,5 +1,4 @@
-use indexmap::IndexMap;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use react_compiler_ast::scope::BindingId;
 use react_compiler_ast::scope::ImportBindingKind;
 use react_compiler_ast::scope::ScopeId;
@@ -13,6 +12,7 @@ use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors::each_terminal_successor;
 use react_compiler_hir::visitors::terminal_fallthrough;
 use react_compiler_hir::*;
+use rustc_hash::FxBuildHasher;
 
 use crate::identifier_loc_index::IdentifierLocIndex;
 
@@ -139,18 +139,18 @@ fn new_block(id: BlockId, kind: BlockKind) -> WipBlock {
 // ---------------------------------------------------------------------------
 
 pub struct HirBuilder<'a> {
-    completed: IndexMap<BlockId, BasicBlock>,
+    completed: IndexMap<BlockId, BasicBlock, FxBuildHasher>,
     current: WipBlock,
     entry: BlockId,
     scopes: Vec<Scope>,
     /// Context identifiers: variables captured from an outer scope.
     /// Maps the outer scope's BindingId to the source location where it was referenced.
-    context: IndexMap<BindingId, Option<SourceLocation>>,
+    context: IndexMap<BindingId, Option<SourceLocation>, FxBuildHasher>,
     /// Resolved bindings: maps a BindingId to the HIR IdentifierId created for it.
-    bindings: IndexMap<BindingId, IdentifierId>,
+    bindings: IndexMap<BindingId, IdentifierId, FxBuildHasher>,
     /// Names already used by bindings, for collision avoidance.
     /// Maps name string -> how many times it has been used (for appending _0, _1, ...).
-    used_names: IndexMap<String, BindingId>,
+    used_names: IndexMap<String, BindingId, FxBuildHasher>,
     env: &'a mut Environment,
     scope_info: &'a ScopeInfo,
     exception_handler_stack: Vec<BlockId>,
@@ -166,10 +166,10 @@ pub struct HirBuilder<'a> {
     /// Set of BindingIds for variables declared in scopes between component_scope
     /// and any inner function scope, that are referenced from an inner function scope.
     /// These need StoreContext/LoadContext instead of StoreLocal/LoadLocal.
-    context_identifiers: std::collections::HashSet<BindingId>,
+    context_identifiers: rustc_hash::FxHashSet<BindingId>,
     /// Set of ScopeIds that have been matched to synthetic blocks/functions.
     /// Prevents the same scope from being reused for different synthetic nodes.
-    claimed_synthetic_scopes: std::collections::HashSet<ScopeId>,
+    claimed_synthetic_scopes: rustc_hash::FxHashSet<ScopeId>,
     /// Index mapping identifier byte offsets to source locations and JSX status.
     identifier_locs: &'a IdentifierLocIndex,
 }
@@ -192,17 +192,17 @@ impl<'a> HirBuilder<'a> {
         scope_info: &'a ScopeInfo,
         function_scope: ScopeId,
         component_scope: ScopeId,
-        context_identifiers: std::collections::HashSet<BindingId>,
-        bindings: Option<IndexMap<BindingId, IdentifierId>>,
-        context: Option<IndexMap<BindingId, Option<SourceLocation>>>,
+        context_identifiers: rustc_hash::FxHashSet<BindingId>,
+        bindings: Option<IndexMap<BindingId, IdentifierId, FxBuildHasher>>,
+        context: Option<IndexMap<BindingId, Option<SourceLocation>, FxBuildHasher>>,
         entry_block_kind: Option<BlockKind>,
-        used_names: Option<IndexMap<String, BindingId>>,
+        used_names: Option<IndexMap<String, BindingId, FxBuildHasher>>,
         identifier_locs: &'a IdentifierLocIndex,
     ) -> Self {
         let entry = env.next_block_id();
         let kind = entry_block_kind.unwrap_or(BlockKind::Block);
         HirBuilder {
-            completed: IndexMap::new(),
+            completed: IndexMap::default(),
             current: new_block(entry, kind),
             entry,
             scopes: Vec::new(),
@@ -217,7 +217,7 @@ impl<'a> HirBuilder<'a> {
             function_scope,
             component_scope,
             context_identifiers,
-            claimed_synthetic_scopes: std::collections::HashSet::new(),
+            claimed_synthetic_scopes: rustc_hash::FxHashSet::default(),
             identifier_locs,
         }
     }
@@ -290,12 +290,12 @@ impl<'a> HirBuilder<'a> {
     }
 
     /// Access the context map.
-    pub fn context(&self) -> &IndexMap<BindingId, Option<SourceLocation>> {
+    pub fn context(&self) -> &IndexMap<BindingId, Option<SourceLocation>, FxBuildHasher> {
         &self.context
     }
 
     /// Access the pre-computed context identifiers set.
-    pub fn context_identifiers(&self) -> &std::collections::HashSet<BindingId> {
+    pub fn context_identifiers(&self) -> &rustc_hash::FxHashSet<BindingId> {
         &self.context_identifiers
     }
 
@@ -326,18 +326,21 @@ impl<'a> HirBuilder<'a> {
     }
 
     /// Access the bindings map.
-    pub fn bindings(&self) -> &IndexMap<BindingId, IdentifierId> {
+    pub fn bindings(&self) -> &IndexMap<BindingId, IdentifierId, FxBuildHasher> {
         &self.bindings
     }
 
     /// Access the used names map.
-    pub fn used_names(&self) -> &IndexMap<String, BindingId> {
+    pub fn used_names(&self) -> &IndexMap<String, BindingId, FxBuildHasher> {
         &self.used_names
     }
 
     /// Merge used names from a child builder back into this builder.
     /// This ensures name deduplication works across function scopes.
-    pub fn merge_used_names(&mut self, child_used_names: IndexMap<String, BindingId>) {
+    pub fn merge_used_names(
+        &mut self,
+        child_used_names: IndexMap<String, BindingId, FxBuildHasher>,
+    ) {
         for (name, binding_id) in child_used_names {
             self.used_names.entry(name).or_insert(binding_id);
         }
@@ -346,7 +349,10 @@ impl<'a> HirBuilder<'a> {
     /// Merge bindings (binding_id -> IdentifierId) from a child builder back into this builder.
     /// This matches TS behavior where parent and child share the same #bindings map by reference,
     /// so bindings resolved by the child are automatically visible to the parent.
-    pub fn merge_bindings(&mut self, child_bindings: IndexMap<BindingId, IdentifierId>) {
+    pub fn merge_bindings(
+        &mut self,
+        child_bindings: IndexMap<BindingId, IdentifierId, FxBuildHasher>,
+    ) {
         for (binding_id, identifier_id) in child_bindings {
             self.bindings.entry(binding_id).or_insert(identifier_id);
         }
@@ -403,7 +409,7 @@ impl<'a> HirBuilder<'a> {
                 id: block_id,
                 instructions: wip.instructions,
                 terminal,
-                preds: IndexSet::new(),
+                preds: IndexSet::default(),
                 phis: Vec::new(),
             },
         );
@@ -427,7 +433,7 @@ impl<'a> HirBuilder<'a> {
                 id: block_id,
                 instructions: wip.instructions,
                 terminal,
-                preds: IndexSet::new(),
+                preds: IndexSet::default(),
                 phis: Vec::new(),
             },
         );
@@ -451,7 +457,7 @@ impl<'a> HirBuilder<'a> {
                 id: block_id,
                 instructions: block.instructions,
                 terminal,
-                preds: IndexSet::new(),
+                preds: IndexSet::default(),
                 phis: Vec::new(),
             },
         );
@@ -471,7 +477,7 @@ impl<'a> HirBuilder<'a> {
                 id: completed_wip.id,
                 instructions: completed_wip.instructions,
                 terminal,
-                preds: IndexSet::new(),
+                preds: IndexSet::default(),
                 phis: Vec::new(),
             },
         );
@@ -493,7 +499,7 @@ impl<'a> HirBuilder<'a> {
                 id: completed_wip.id,
                 instructions: completed_wip.instructions,
                 terminal,
-                preds: IndexSet::new(),
+                preds: IndexSet::default(),
                 phis: Vec::new(),
             },
         );
@@ -743,6 +749,11 @@ impl<'a> HirBuilder<'a> {
             .scope_info
             .find_binding_in_descendants(name, self.component_scope)
         {
+            // When component_scope == program_scope (e2e path where scope info
+            // is extracted from the function itself), any binding found is local.
+            if self.component_scope == self.scope_info.program_scope {
+                return true;
+            }
             return binding.scope != self.scope_info.program_scope;
         }
         false
@@ -769,8 +780,8 @@ impl<'a> HirBuilder<'a> {
         (
             HIR,
             Vec<Instruction>,
-            IndexMap<String, BindingId>,
-            IndexMap<BindingId, IdentifierId>,
+            IndexMap<String, BindingId, FxBuildHasher>,
+            IndexMap<BindingId, IdentifierId, FxBuildHasher>,
         ),
         CompilerError,
     > {
@@ -1150,19 +1161,19 @@ impl<'a> HirBuilder<'a> {
 pub fn get_reverse_postordered_blocks(
     hir: &HIR,
     _instructions: &[Instruction],
-) -> IndexMap<BlockId, BasicBlock> {
-    let mut visited: IndexSet<BlockId> = IndexSet::new();
-    let mut used: IndexSet<BlockId> = IndexSet::new();
-    let mut used_fallthroughs: IndexSet<BlockId> = IndexSet::new();
+) -> IndexMap<BlockId, BasicBlock, FxBuildHasher> {
+    let mut visited: IndexSet<BlockId, FxBuildHasher> = IndexSet::default();
+    let mut used: IndexSet<BlockId, FxBuildHasher> = IndexSet::default();
+    let mut used_fallthroughs: IndexSet<BlockId, FxBuildHasher> = IndexSet::default();
     let mut postorder: Vec<BlockId> = Vec::new();
 
     fn visit(
         hir: &HIR,
         block_id: BlockId,
         is_used: bool,
-        visited: &mut IndexSet<BlockId>,
-        used: &mut IndexSet<BlockId>,
-        used_fallthroughs: &mut IndexSet<BlockId>,
+        visited: &mut IndexSet<BlockId, FxBuildHasher>,
+        used: &mut IndexSet<BlockId, FxBuildHasher>,
+        used_fallthroughs: &mut IndexSet<BlockId, FxBuildHasher>,
         postorder: &mut Vec<BlockId>,
     ) {
         let was_used = used.contains(&block_id);
@@ -1222,7 +1233,7 @@ pub fn get_reverse_postordered_blocks(
         &mut postorder,
     );
 
-    let mut blocks = IndexMap::new();
+    let mut blocks = IndexMap::default();
     for block_id in postorder.into_iter().rev() {
         let block = hir.blocks.get(&block_id).unwrap();
         if used.contains(&block_id) {
@@ -1252,7 +1263,7 @@ pub fn get_reverse_postordered_blocks(
 /// For each block with a `For` terminal whose update block is not in the
 /// blocks map, set update to None.
 pub fn remove_unreachable_for_updates(hir: &mut HIR) {
-    let block_ids: IndexSet<BlockId> = hir.blocks.keys().copied().collect();
+    let block_ids: IndexSet<BlockId, FxBuildHasher> = hir.blocks.keys().copied().collect();
     for block in hir.blocks.values_mut() {
         if let Terminal::For { update, .. } = &mut block.terminal {
             if let Some(update_id) = *update {
@@ -1267,7 +1278,7 @@ pub fn remove_unreachable_for_updates(hir: &mut HIR) {
 /// For each block with a `DoWhile` terminal whose test block is not in
 /// the blocks map, replace the terminal with a Goto to the loop block.
 pub fn remove_dead_do_while_statements(hir: &mut HIR) {
-    let block_ids: IndexSet<BlockId> = hir.blocks.keys().copied().collect();
+    let block_ids: IndexSet<BlockId, FxBuildHasher> = hir.blocks.keys().copied().collect();
     for block in hir.blocks.values_mut() {
         let should_replace = if let Terminal::DoWhile { test, .. } = &block.terminal {
             !block_ids.contains(test)
@@ -1304,7 +1315,7 @@ pub fn remove_dead_do_while_statements(hir: &mut HIR) {
 /// Also cleans up the fallthrough block's predecessors if the handler
 /// was the only path to it.
 pub fn remove_unnecessary_try_catch(hir: &mut HIR) {
-    let block_ids: IndexSet<BlockId> = hir.blocks.keys().copied().collect();
+    let block_ids: IndexSet<BlockId, FxBuildHasher> = hir.blocks.keys().copied().collect();
 
     // Collect the blocks that need replacement and their associated data
     let replacements: Vec<(BlockId, BlockId, BlockId, BlockId, Option<SourceLocation>)> = hir
@@ -1376,13 +1387,13 @@ pub fn mark_predecessors(hir: &mut HIR) {
         block.preds.clear();
     }
 
-    let mut visited: IndexSet<BlockId> = IndexSet::new();
+    let mut visited: IndexSet<BlockId, FxBuildHasher> = IndexSet::default();
 
     fn visit(
         hir: &mut HIR,
         block_id: BlockId,
         prev_block_id: Option<BlockId>,
-        visited: &mut IndexSet<BlockId>,
+        visited: &mut IndexSet<BlockId, FxBuildHasher>,
     ) {
         // Add predecessor
         if let Some(prev_id) = prev_block_id {

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
 use indexmap::IndexMap;
 use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
@@ -16,35 +16,35 @@ struct IncompletePhi {
 }
 
 struct State {
-    defs: HashMap<IdentifierId, IdentifierId>,
+    defs: FxHashMap<IdentifierId, IdentifierId>,
     incomplete_phis: Vec<IncompletePhi>,
 }
 
 struct SSABuilder {
-    states: HashMap<BlockId, State>,
+    states: FxHashMap<BlockId, State>,
     current: Option<BlockId>,
-    unsealed_preds: HashMap<BlockId, u32>,
-    block_preds: HashMap<BlockId, Vec<BlockId>>,
-    unknown: HashSet<IdentifierId>,
-    context: HashSet<IdentifierId>,
-    pending_phis: HashMap<BlockId, Vec<Phi>>,
+    unsealed_preds: FxHashMap<BlockId, u32>,
+    block_preds: FxHashMap<BlockId, Vec<BlockId>>,
+    unknown: FxHashSet<IdentifierId>,
+    context: FxHashSet<IdentifierId>,
+    pending_phis: FxHashMap<BlockId, Vec<Phi>>,
     processed_functions: Vec<FunctionId>,
 }
 
 impl SSABuilder {
-    fn new(blocks: &IndexMap<BlockId, BasicBlock>) -> Self {
-        let mut block_preds = HashMap::new();
+    fn new(blocks: &IndexMap<BlockId, BasicBlock, FxBuildHasher>) -> Self {
+        let mut block_preds = FxHashMap::default();
         for (id, block) in blocks {
             block_preds.insert(*id, block.preds.iter().copied().collect());
         }
         SSABuilder {
-            states: HashMap::new(),
+            states: FxHashMap::default(),
             current: None,
-            unsealed_preds: HashMap::new(),
+            unsealed_preds: FxHashMap::default(),
             block_preds,
-            unknown: HashSet::new(),
-            context: HashSet::new(),
-            pending_phis: HashMap::new(),
+            unknown: FxHashSet::default(),
+            context: FxHashSet::default(),
+            pending_phis: FxHashMap::default(),
             processed_functions: Vec::new(),
         }
     }
@@ -226,7 +226,7 @@ impl SSABuilder {
     ) {
         let preds = self.block_preds.get(&block_id).cloned().unwrap_or_default();
 
-        let mut pred_defs: IndexMap<BlockId, Place> = IndexMap::new();
+        let mut pred_defs: IndexMap<BlockId, Place, FxBuildHasher> = IndexMap::default();
         for pred_block_id in &preds {
             let pred_id = self.get_id_at(old_place, *pred_block_id, env);
             pred_defs.insert(
@@ -266,7 +266,7 @@ impl SSABuilder {
         self.states.insert(
             block_id,
             State {
-                defs: HashMap::new(),
+                defs: FxHashMap::default(),
                 incomplete_phis: Vec::new(),
             },
         );
@@ -310,7 +310,7 @@ fn enter_ssa_impl(
     env: &mut Environment,
     root_entry: BlockId,
 ) -> Result<(), CompilerDiagnostic> {
-    let mut visited_blocks: HashSet<BlockId> = HashSet::new();
+    let mut visited_blocks: FxHashSet<BlockId> = FxHashSet::default();
     let block_ids: Vec<BlockId> = func.body.blocks.keys().copied().collect();
 
     for block_id in &block_ids {
@@ -520,7 +520,7 @@ pub fn placeholder_function() -> HirFunction {
         context: Vec::new(),
         body: HIR {
             entry: BlockId(0),
-            blocks: IndexMap::new(),
+            blocks: IndexMap::default(),
         },
         instructions: Vec::new(),
         generator: false,

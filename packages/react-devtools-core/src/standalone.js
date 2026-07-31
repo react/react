@@ -176,37 +176,40 @@ function onDisconnected() {
   disconnectedCallback();
 }
 
+function showErrorMessage(headerText: string, contentText: string) {
+  const box = document.createElement('div');
+  box.className = 'box';
+
+  const header = document.createElement('div');
+  header.className = 'box-header';
+  header.textContent = headerText;
+  box.appendChild(header);
+
+  const content = document.createElement('div');
+  content.className = 'box-content';
+  content.textContent = contentText;
+  box.appendChild(content);
+
+  node.textContent = '';
+  node.appendChild(box);
+}
+
 function onError({code, message}: $FlowFixMe) {
   safeUnmount();
 
   if (code === 'EADDRINUSE') {
-    node.innerHTML = `
-      <div class="box">
-        <div class="box-header">
-          Another instance of DevTools is running.
-        </div>
-        <div class="box-content">
-          Only one copy of DevTools can be used at a time.
-        </div>
-      </div>
-    `;
+    showErrorMessage(
+      'Another instance of DevTools is running.',
+      'Only one copy of DevTools can be used at a time.',
+    );
   } else {
-    node.innerHTML = `
-      <div class="box">
-        <div class="box-header">
-          Unknown error
-        </div>
-        <div class="box-content">
-          ${message}
-        </div>
-      </div>
-    `;
+    showErrorMessage('Unknown error', String(message));
   }
 }
 
 function openProfiler() {
   // Mocked up bridge and store to allow the DevTools to be rendered
-  bridge = new Bridge({listen: () => {}, send: () => {}});
+  bridge = new Bridge({listen: () => () => {}, send: () => {}});
   store = new Store(bridge, {});
 
   // Ensure the Profiler tab is shown initially.
@@ -257,7 +260,7 @@ function initialize(socket: WebSocket) {
         }
       };
     },
-    send(event: string, payload: any, transferable?: Array<any>) {
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
       if (socket.readyState === socket.OPEN) {
         socket.send(JSON.stringify({event, payload}));
       }

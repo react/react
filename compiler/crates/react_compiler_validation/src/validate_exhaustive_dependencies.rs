@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerSuggestion, CompilerSuggestionOperation,
@@ -33,7 +33,7 @@ pub fn validate_exhaustive_dependencies(
     let validate_memo = env.config.validate_exhaustive_memoization_dependencies;
     let validate_effect = env.config.validate_exhaustive_effect_dependencies.clone();
 
-    let mut temporaries: HashMap<IdentifierId, Temporary> = HashMap::new();
+    let mut temporaries: FxHashMap<IdentifierId, Temporary> = FxHashMap::default();
     for param in &func.params {
         let place = match param {
             ParamPattern::Place(p) => p,
@@ -51,7 +51,7 @@ pub fn validate_exhaustive_dependencies(
     }
 
     let mut start_memo: Option<StartMemoInfo> = None;
-    let mut memo_locals: HashSet<IdentifierId> = HashSet::new();
+    let mut memo_locals: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Callbacks struct holding the mutable state
     let mut callbacks = Callbacks {
@@ -61,7 +61,7 @@ pub fn validate_exhaustive_dependencies(
         validate_effect: validate_effect.clone(),
         reactive: &reactive,
         diagnostics: Vec::new(),
-        invalid_memo_ids: HashSet::new(),
+        invalid_memo_ids: FxHashSet::default(),
     };
 
     collect_dependencies(
@@ -180,13 +180,13 @@ fn path_to_string(path: &[DependencyPathEntry]) -> String {
 struct Callbacks<'a> {
     start_memo: &'a mut Option<StartMemoInfo>,
     #[allow(dead_code)]
-    memo_locals: &'a mut HashSet<IdentifierId>,
+    memo_locals: &'a mut FxHashSet<IdentifierId>,
     validate_memo: bool,
     validate_effect: ExhaustiveEffectDepsMode,
-    reactive: &'a HashSet<IdentifierId>,
+    reactive: &'a FxHashSet<IdentifierId>,
     diagnostics: Vec<CompilerDiagnostic>,
     /// manual_memo_ids that had validation errors (to set has_invalid_deps)
-    invalid_memo_ids: HashSet<u32>,
+    invalid_memo_ids: FxHashSet<u32>,
 }
 
 // =============================================================================
@@ -283,8 +283,8 @@ fn is_sub_path_ignoring_optionals(
 fn collect_reactive_identifiers(
     func: &HirFunction,
     functions: &[HirFunction],
-) -> HashSet<IdentifierId> {
-    let mut reactive = HashSet::new();
+) -> FxHashSet<IdentifierId> {
+    let mut reactive = FxHashSet::default();
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
             let instr = &func.instructions[instr_id.0 as usize];
@@ -319,9 +319,9 @@ fn collect_reactive_identifiers(
 // findOptionalPlaces
 // =============================================================================
 
-fn find_optional_places(func: &HirFunction) -> HashMap<IdentifierId, bool> {
-    let mut optionals: HashMap<IdentifierId, bool> = HashMap::new();
-    let mut visited: HashSet<BlockId> = HashSet::new();
+fn find_optional_places(func: &HirFunction) -> FxHashMap<IdentifierId, bool> {
+    let mut optionals: FxHashMap<IdentifierId, bool> = FxHashMap::default();
+    let mut visited: FxHashSet<BlockId> = FxHashSet::default();
 
     for (_block_id, block) in &func.body.blocks {
         if visited.contains(&block.id) {
@@ -418,8 +418,8 @@ fn find_optional_places(func: &HirFunction) -> HashMap<IdentifierId, bool> {
 fn add_dependency(
     dep: &Temporary,
     dependencies: &mut Vec<InferredDependency>,
-    dep_keys: &mut HashSet<InferredDependencyKey>,
-    locals: &HashSet<IdentifierId>,
+    dep_keys: &mut FxHashSet<InferredDependencyKey>,
+    locals: &FxHashSet<IdentifierId>,
 ) {
     match dep {
         Temporary::Aggregate {
@@ -464,8 +464,8 @@ fn add_dependency(
 fn add_dependency_inferred(
     dep: &InferredDependency,
     dependencies: &mut Vec<InferredDependency>,
-    dep_keys: &mut HashSet<InferredDependencyKey>,
-    locals: &HashSet<IdentifierId>,
+    dep_keys: &mut FxHashSet<InferredDependencyKey>,
+    locals: &FxHashSet<IdentifierId>,
 ) {
     match dep {
         InferredDependency::Global { .. } => {
@@ -487,10 +487,10 @@ fn add_dependency_inferred(
 
 fn visit_candidate_dependency(
     place: &Place,
-    temporaries: &HashMap<IdentifierId, Temporary>,
+    temporaries: &FxHashMap<IdentifierId, Temporary>,
     dependencies: &mut Vec<InferredDependency>,
-    dep_keys: &mut HashSet<InferredDependencyKey>,
-    locals: &HashSet<IdentifierId>,
+    dep_keys: &mut FxHashSet<InferredDependencyKey>,
+    locals: &FxHashSet<IdentifierId>,
 ) {
     if let Some(dep) = temporaries.get(&place.identifier) {
         add_dependency(dep, dependencies, dep_keys, locals);
@@ -502,12 +502,12 @@ fn collect_dependencies(
     identifiers: &[Identifier],
     types: &[Type],
     functions: &[HirFunction],
-    temporaries: &mut HashMap<IdentifierId, Temporary>,
+    temporaries: &mut FxHashMap<IdentifierId, Temporary>,
     callbacks: &mut Option<&mut Callbacks<'_>>,
     is_function_expression: bool,
 ) -> Result<Temporary, CompilerDiagnostic> {
     let optionals = find_optional_places(func);
-    let mut locals: HashSet<IdentifierId> = HashSet::new();
+    let mut locals: FxHashSet<IdentifierId> = FxHashSet::default();
 
     if is_function_expression {
         for param in &func.params {
@@ -520,15 +520,15 @@ fn collect_dependencies(
     }
 
     let mut dependencies: Vec<InferredDependency> = Vec::new();
-    let mut dep_keys: HashSet<InferredDependencyKey> = HashSet::new();
+    let mut dep_keys: FxHashSet<InferredDependencyKey> = FxHashSet::default();
 
     // Saved state for when we're inside a memo block (StartMemoize..FinishMemoize).
     // In TS, `dependencies` and `locals` are shared by reference between the main
     // collection loop and the callbacks — StartMemoize clears them, FinishMemoize
     // reads and clears them. We simulate this by saving/restoring.
     let mut saved_dependencies: Option<Vec<InferredDependency>> = None;
-    let mut saved_dep_keys: Option<HashSet<InferredDependencyKey>> = None;
-    let mut saved_locals: Option<HashSet<IdentifierId>> = None;
+    let mut saved_dep_keys: Option<FxHashSet<InferredDependencyKey>> = None;
+    let mut saved_locals: Option<FxHashSet<IdentifierId>> = None;
 
     for (_block_id, block) in &func.body.blocks {
         // Process phis
@@ -906,8 +906,8 @@ fn collect_dependencies(
                 }
                 InstructionValue::ArrayExpression { elements, loc, .. } => {
                     let mut array_deps: Vec<InferredDependency> = Vec::new();
-                    let mut array_keys: HashSet<InferredDependencyKey> = HashSet::new();
-                    let empty_locals = HashSet::new();
+                    let mut array_keys: FxHashSet<InferredDependencyKey> = FxHashSet::default();
+                    let empty_locals = FxHashSet::default();
                     for elem in elements {
                         let place = match elem {
                             ArrayElement::Place(p) => Some(p),
@@ -1224,7 +1224,7 @@ fn collect_dependencies(
 fn validate_dependencies(
     mut inferred: Vec<InferredDependency>,
     manual_dependencies: &[ManualMemoDependency],
-    reactive: &HashSet<IdentifierId>,
+    reactive: &FxHashSet<IdentifierId>,
     manual_memo_loc: Option<SourceLocation>,
     category: ErrorCategory,
     exhaustive_deps_report_mode: &str,
@@ -1360,7 +1360,7 @@ fn validate_dependencies(
     }
 
     // Validate manual deps
-    let mut matched: HashSet<usize> = HashSet::new(); // indices into manual_dependencies
+    let mut matched: FxHashSet<usize> = FxHashSet::default(); // indices into manual_dependencies
     let mut missing: Vec<&InferredDependency> = Vec::new();
     let mut extra: Vec<&ManualMemoDependency> = Vec::new();
 
@@ -1646,7 +1646,7 @@ fn print_manual_memo_dependency(dep: &ManualMemoDependency, identifiers: &[Ident
 
 fn is_optional_dependency(
     identifier: IdentifierId,
-    reactive: &HashSet<IdentifierId>,
+    reactive: &FxHashSet<IdentifierId>,
     identifiers: &[Identifier],
     types: &[Type],
 ) -> bool {
@@ -1659,7 +1659,7 @@ fn is_optional_dependency(
 
 fn is_optional_dependency_inferred(
     dep: &InferredDependency,
-    reactive: &HashSet<IdentifierId>,
+    reactive: &FxHashSet<IdentifierId>,
     identifiers: &[Identifier],
     types: &[Type],
 ) -> bool {

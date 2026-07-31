@@ -8,8 +8,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/RenameVariables.ts`.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::DeclarationId;
 use react_compiler_hir::EvaluationOrder;
@@ -33,19 +32,19 @@ use crate::visitors::{self};
 // =============================================================================
 
 struct Scopes {
-    seen: HashMap<DeclarationId, IdentifierName>,
-    stack: Vec<HashMap<String, DeclarationId>>,
-    globals: HashSet<String>,
-    names: HashSet<String>,
+    seen: FxHashMap<DeclarationId, IdentifierName>,
+    stack: Vec<FxHashMap<String, DeclarationId>>,
+    globals: FxHashSet<String>,
+    names: FxHashSet<String>,
 }
 
 impl Scopes {
-    fn new(globals: HashSet<String>) -> Self {
+    fn new(globals: FxHashSet<String>) -> Self {
         Self {
-            seen: HashMap::new(),
-            stack: vec![HashMap::new()],
+            seen: FxHashMap::default(),
+            stack: vec![FxHashMap::default()],
             globals,
-            names: HashSet::new(),
+            names: FxHashSet::default(),
         }
     }
 
@@ -114,7 +113,7 @@ impl Scopes {
     }
 
     fn enter(&mut self) {
-        self.stack.push(HashMap::new());
+        self.stack.push(FxHashMap::default());
     }
 
     fn leave(&mut self) {
@@ -202,15 +201,15 @@ impl ReactiveFunctionVisitor for Visitor<'_> {
 /// Renames variables for output — assigns unique names, handles SSA renames.
 /// Returns a Set of all unique variable names used.
 /// TS: `renameVariables`
-pub fn rename_variables(func: &mut ReactiveFunction, env: &mut Environment) -> HashSet<String> {
+pub fn rename_variables(func: &mut ReactiveFunction, env: &mut Environment) -> FxHashSet<String> {
     rename_variables_with_parent(func, env, None)
 }
 
 fn rename_variables_with_parent(
     func: &mut ReactiveFunction,
     env: &mut Environment,
-    parent_names: Option<&HashSet<String>>,
-) -> HashSet<String> {
+    parent_names: Option<&FxHashSet<String>>,
+) -> FxHashSet<String> {
     let globals = collect_referenced_globals(&func.body, env);
 
     // Phase 1: Use ReactiveFunctionVisitor to compute the rename mapping.
@@ -242,7 +241,7 @@ fn rename_variables_with_parent(
         }
     }
 
-    let mut result: HashSet<String> = scopes.names;
+    let mut result: FxHashSet<String> = scopes.names;
     result.extend(globals);
     result
 }
@@ -267,13 +266,17 @@ fn rename_variables_impl(func: &ReactiveFunction, visitor: &Visitor, scopes: &mu
 
 /// Collects all globally referenced names from the reactive function.
 /// TS: `collectReferencedGlobals`
-fn collect_referenced_globals(block: &ReactiveBlock, env: &Environment) -> HashSet<String> {
-    let mut globals = HashSet::new();
+fn collect_referenced_globals(block: &ReactiveBlock, env: &Environment) -> FxHashSet<String> {
+    let mut globals = FxHashSet::default();
     collect_globals_block(block, &mut globals, env);
     globals
 }
 
-fn collect_globals_block(block: &ReactiveBlock, globals: &mut HashSet<String>, env: &Environment) {
+fn collect_globals_block(
+    block: &ReactiveBlock,
+    globals: &mut FxHashSet<String>,
+    env: &Environment,
+) {
     for stmt in block {
         match stmt {
             react_compiler_hir::ReactiveStatement::Instruction(instr) => {
@@ -292,7 +295,11 @@ fn collect_globals_block(block: &ReactiveBlock, globals: &mut HashSet<String>, e
     }
 }
 
-fn collect_globals_value(value: &ReactiveValue, globals: &mut HashSet<String>, env: &Environment) {
+fn collect_globals_value(
+    value: &ReactiveValue,
+    globals: &mut FxHashSet<String>,
+    env: &Environment,
+) {
     match value {
         ReactiveValue::Instruction(iv) => {
             if let InstructionValue::LoadGlobal { binding, .. } = iv {
@@ -340,7 +347,7 @@ fn collect_globals_value(value: &ReactiveValue, globals: &mut HashSet<String>, e
 /// Recursively collects LoadGlobal names from an inner HIR function.
 fn collect_globals_hir_function(
     func_id: FunctionId,
-    globals: &mut HashSet<String>,
+    globals: &mut FxHashSet<String>,
     env: &Environment,
 ) {
     let inner_func = &env.functions[func_id.0 as usize];
@@ -367,7 +374,7 @@ fn collect_globals_hir_function(
 
 fn collect_globals_terminal(
     stmt: &react_compiler_hir::ReactiveTerminalStatement,
-    globals: &mut HashSet<String>,
+    globals: &mut FxHashSet<String>,
     env: &Environment,
 ) {
     match &stmt.terminal {

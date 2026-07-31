@@ -11,3 +11,4 @@ react_compiler_optimization = { path = "../react_compiler_optimization" }
 react_compiler_ssa = { path = "../react_compiler_ssa" }
 react_compiler_utils = { path = "../react_compiler_utils" }
 indexmap = "2"
+rustc-hash = "2"

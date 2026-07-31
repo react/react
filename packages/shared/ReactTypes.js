@@ -144,11 +144,19 @@ export type Thenable<T> =
   | FulfilledThenable<T>
   | RejectedThenable<T>;
 
+// A recoverable lets an intermediate renderer defer a subtree to a downstream
+// renderer. It does not produce a value: a renderer either continues through
+// it or interrupts the current render so that a later renderer can recover the
+// subtree.
+export type ReactRecoverable = Error & {
+  $$typeof: symbol,
+};
+
 export type StartTransitionOptions = {
   name?: string,
 };
 
-export type Usable<T> = Thenable<T> | ReactContext<T>;
+export type Usable<T> = Thenable<T> | ReactContext<T> | ReactRecoverable;
 
 export type ReactCustomFormAction = {
   name?: string,
@@ -313,11 +321,21 @@ export type ViewTransitionProps = {
   exit?: ViewTransitionClass,
   share?: ViewTransitionClass,
   update?: ViewTransitionClass,
+  parentEnter?: ViewTransitionClass,
+  parentExit?: ViewTransitionClass,
   onEnter?: (
     instance: ViewTransitionInstance,
     types: Array<string>,
   ) => void | (() => void),
   onExit?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentEnter?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentExit?: (
     instance: ViewTransitionInstance,
     types: Array<string>,
   ) => void | (() => void),
@@ -336,6 +354,18 @@ export type ViewTransitionProps = {
     types: Array<string>,
   ) => void | (() => void),
   onGestureExit?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentEnter?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentExit?: (
     timeline: GestureProvider,
     options: GestureOptionsRequired,
     instance: ViewTransitionInstance,

@@ -11,7 +11,7 @@
 //!
 //! Ported from TypeScript `src/Optimization/DeadCodeElimination.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_hir::environment::{Environment, OutputMode};
 use react_compiler_hir::object_shape::HookKind;
@@ -69,16 +69,16 @@ pub fn dead_code_elimination(func: &mut HirFunction, env: &Environment) {
 /// State for tracking referenced identifiers during mark phase.
 struct State {
     /// SSA-specific usages (by IdentifierId)
-    identifiers: HashSet<IdentifierId>,
+    identifiers: FxHashSet<IdentifierId>,
     /// Named variable usages (any version)
-    named: HashSet<String>,
+    named: FxHashSet<String>,
 }
 
 impl State {
     fn new() -> Self {
         State {
-            identifiers: HashSet::new(),
-            named: HashSet::new(),
+            identifiers: FxHashSet::default(),
+            named: FxHashSet::default(),
         }
     }
 
@@ -409,7 +409,7 @@ fn pruneable_value(value: &InstructionValue, state: &State, env: &Environment) -
 
 /// Check if the CFG has any back edges (indicating loops).
 fn has_back_edge(func: &HirFunction) -> bool {
-    let mut visited: HashSet<BlockId> = HashSet::new();
+    let mut visited: FxHashSet<BlockId> = FxHashSet::default();
     for (block_id, block) in &func.body.blocks {
         for pred_id in &block.preds {
             if !visited.contains(pred_id) {

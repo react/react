@@ -9,7 +9,7 @@
 //! accurately preserved, and that no originally memoized values became
 //! unmemoized in the output.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
@@ -25,11 +25,11 @@ use react_compiler_hir::{
 /// State tracked during manual memo validation within a StartMemoize..FinishMemoize range.
 struct ManualMemoBlockState {
     /// Reassigned temporaries (declaration_id -> set of identifier ids that were reassigned to it).
-    reassignments: HashMap<DeclarationId, HashSet<IdentifierId>>,
+    reassignments: FxHashMap<DeclarationId, FxHashSet<IdentifierId>>,
     /// Source location of the StartMemoize instruction.
     loc: Option<SourceLocation>,
     /// Declarations produced within this manual memo block.
-    decls: HashSet<DeclarationId>,
+    decls: FxHashSet<DeclarationId>,
     /// Normalized deps from source (useMemo/useCallback dep array).
     deps_from_source: Option<Vec<ManualMemoDependency>>,
     /// Manual memo id from StartMemoize.
@@ -41,11 +41,11 @@ struct VisitorState<'a> {
     env: &'a mut Environment,
     manual_memo_state: Option<ManualMemoBlockState>,
     /// Completed (non-pruned) scope IDs.
-    scopes: HashSet<ScopeId>,
+    scopes: FxHashSet<ScopeId>,
     /// Completed pruned scope IDs.
-    pruned_scopes: HashSet<ScopeId>,
+    pruned_scopes: FxHashSet<ScopeId>,
     /// Map from identifier ID to its normalized manual memo dependency.
-    temporaries: HashMap<IdentifierId, ManualMemoDependency>,
+    temporaries: FxHashMap<IdentifierId, ManualMemoDependency>,
 }
 
 /// Validate that manual memoization (useMemo/useCallback) is preserved.
@@ -59,9 +59,9 @@ pub fn validate_preserved_manual_memoization(func: &ReactiveFunction, env: &mut 
     let mut state = VisitorState {
         env,
         manual_memo_state: None,
-        scopes: HashSet::new(),
-        pruned_scopes: HashSet::new(),
-        temporaries: HashMap::new(),
+        scopes: FxHashSet::default(),
+        pruned_scopes: FxHashSet::default(),
+        temporaries: FxHashMap::default(),
     };
     visit_block(&func.body, &mut state);
 }
@@ -203,10 +203,10 @@ fn visit_instruction(instr: &ReactiveInstruction, state: &mut VisitorState) {
 
             state.manual_memo_state = Some(ManualMemoBlockState {
                 loc: instr.loc,
-                decls: HashSet::new(),
+                decls: FxHashSet::default(),
                 deps_from_source,
                 manual_memo_id: *manual_memo_id,
-                reassignments: HashMap::new(),
+                reassignments: FxHashMap::default(),
             });
 
             // Check that each dependency's scope has completed before the memo
@@ -518,7 +518,7 @@ fn destructure_lvalue_places(pattern: &react_compiler_hir::Pattern) -> Vec<&Plac
 /// Check if an identifier is unmemoized (has a scope that hasn't completed).
 fn is_unmemoized(
     id: IdentifierId,
-    completed_scopes: &HashSet<ScopeId>,
+    completed_scopes: &FxHashSet<ScopeId>,
     identifiers: &[Identifier],
 ) -> bool {
     let ident = &identifiers[id.0 as usize];
@@ -675,8 +675,8 @@ fn get_compare_dependency_result_description(result: CompareDependencyResult) ->
 fn validate_inferred_dep(
     dep_id: IdentifierId,
     dep_path: &[DependencyPathEntry],
-    temporaries: &HashMap<IdentifierId, ManualMemoDependency>,
-    decls_within_memo_block: &HashSet<DeclarationId>,
+    temporaries: &FxHashMap<IdentifierId, ManualMemoDependency>,
+    decls_within_memo_block: &FxHashSet<DeclarationId>,
     valid_deps_in_memo_block: &[ManualMemoDependency],
     env: &mut Environment,
     memo_location: Option<SourceLocation>,

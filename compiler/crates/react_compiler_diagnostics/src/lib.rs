@@ -1,4 +1,7 @@
 pub mod code_frame;
+pub mod js_string;
+
+pub use js_string::JsString;
 
 use serde::{Deserialize, Serialize};
 

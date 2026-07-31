@@ -46,8 +46,6 @@ module.exports = {
     // Fabric. See https://github.com/facebook/react/pull/15490
     // for more information
     nativeFabricUIManager: 'readonly',
-    // RN flag to enable microtasks
-    RN$enableMicrotasksInReact: 'readonly',
     RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
     // Trusted Types
     trustedTypes: 'readonly',

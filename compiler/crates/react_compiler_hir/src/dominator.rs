@@ -9,7 +9,7 @@
 //! Uses the Cooper/Harvey/Kennedy algorithm from
 //! https://www.cs.rice.edu/~keith/Embed/dom.pdf
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 
@@ -24,7 +24,7 @@ use crate::{BlockId, HirFunction, Terminal};
 pub struct PostDominator {
     /// The exit node (synthetic node representing function exit).
     pub exit: BlockId,
-    nodes: HashMap<BlockId, BlockId>,
+    nodes: FxHashMap<BlockId, BlockId>,
 }
 
 impl PostDominator {
@@ -50,8 +50,8 @@ impl PostDominator {
 struct Node {
     id: BlockId,
     index: usize,
-    preds: HashSet<BlockId>,
-    succs: HashSet<BlockId>,
+    preds: FxHashSet<BlockId>,
+    succs: FxHashSet<BlockId>,
 }
 
 struct Graph {
@@ -59,7 +59,7 @@ struct Graph {
     /// Nodes stored in iteration order (RPO for reverse graph).
     nodes: Vec<Node>,
     /// Map from BlockId to index in the nodes vec.
-    node_index: HashMap<BlockId, usize>,
+    node_index: FxHashMap<BlockId, usize>,
 }
 
 impl Graph {
@@ -112,7 +112,7 @@ fn build_reverse_graph(
     let exit_id = BlockId(next_block_id_counter);
 
     // Build initial nodes with reversed edges
-    let mut raw_nodes: HashMap<BlockId, Node> = HashMap::new();
+    let mut raw_nodes: FxHashMap<BlockId, Node> = FxHashMap::default();
 
     // Create exit node
     raw_nodes.insert(
@@ -120,15 +120,15 @@ fn build_reverse_graph(
         Node {
             id: exit_id,
             index: 0,
-            preds: HashSet::new(),
-            succs: HashSet::new(),
+            preds: FxHashSet::default(),
+            succs: FxHashSet::default(),
         },
     );
 
     for (id, block) in &func.body.blocks {
         let successors = each_terminal_successor(&block.terminal);
-        let mut preds_set: HashSet<BlockId> = successors.into_iter().collect();
-        let succs_set: HashSet<BlockId> = block.preds.iter().copied().collect();
+        let mut preds_set: FxHashSet<BlockId> = successors.into_iter().collect();
+        let succs_set: FxHashSet<BlockId> = block.preds.iter().copied().collect();
 
         let is_return = matches!(&block.terminal, Terminal::Return { .. });
         let is_throw = matches!(&block.terminal, Terminal::Throw { .. });
@@ -150,7 +150,7 @@ fn build_reverse_graph(
     }
 
     // DFS from exit to compute RPO
-    let mut visited = HashSet::new();
+    let mut visited = FxHashSet::default();
     let mut postorder = Vec::new();
     dfs_postorder(exit_id, &raw_nodes, &mut visited, &mut postorder);
 
@@ -158,7 +158,7 @@ fn build_reverse_graph(
     postorder.reverse();
 
     let mut nodes = Vec::with_capacity(postorder.len());
-    let mut node_index = HashMap::new();
+    let mut node_index = FxHashMap::default();
     for (idx, id) in postorder.into_iter().enumerate() {
         let mut node = raw_nodes.remove(&id).unwrap();
         node.index = idx;
@@ -175,8 +175,8 @@ fn build_reverse_graph(
 
 fn dfs_postorder(
     id: BlockId,
-    nodes: &HashMap<BlockId, Node>,
-    visited: &mut HashSet<BlockId>,
+    nodes: &FxHashMap<BlockId, Node>,
+    visited: &mut FxHashSet<BlockId>,
     postorder: &mut Vec<BlockId>,
 ) {
     if !visited.insert(id) {
@@ -196,8 +196,8 @@ fn dfs_postorder(
 
 fn compute_immediate_dominators(
     graph: &Graph,
-) -> Result<HashMap<BlockId, BlockId>, CompilerDiagnostic> {
-    let mut doms: HashMap<BlockId, BlockId> = HashMap::new();
+) -> Result<FxHashMap<BlockId, BlockId>, CompilerDiagnostic> {
+    let mut doms: FxHashMap<BlockId, BlockId> = FxHashMap::default();
     doms.insert(graph.entry, graph.entry);
 
     let mut changed = true;
@@ -249,7 +249,7 @@ fn compute_immediate_dominators(
     Ok(doms)
 }
 
-fn intersect(a: BlockId, b: BlockId, graph: &Graph, doms: &HashMap<BlockId, BlockId>) -> BlockId {
+fn intersect(a: BlockId, b: BlockId, graph: &Graph, doms: &FxHashMap<BlockId, BlockId>) -> BlockId {
     let mut block1 = graph.get_node(a);
     let mut block2 = graph.get_node(b);
     while block1.id != block2.id {
@@ -277,10 +277,10 @@ pub fn post_dominator_frontier(
     func: &HirFunction,
     post_dominators: &PostDominator,
     target_id: BlockId,
-) -> HashSet<BlockId> {
+) -> FxHashSet<BlockId> {
     let target_post_dominators = post_dominators_of(func, post_dominators, target_id);
-    let mut visited = HashSet::new();
-    let mut frontier = HashSet::new();
+    let mut visited = FxHashSet::default();
+    let mut frontier = FxHashSet::default();
 
     let mut to_visit: Vec<BlockId> = target_post_dominators.iter().copied().collect();
     to_visit.push(target_id);
@@ -305,9 +305,9 @@ pub fn post_dominators_of(
     func: &HirFunction,
     post_dominators: &PostDominator,
     target_id: BlockId,
-) -> HashSet<BlockId> {
-    let mut result = HashSet::new();
-    let mut visited = HashSet::new();
+) -> FxHashSet<BlockId> {
+    let mut result = FxHashSet::default();
+    let mut visited = FxHashSet::default();
     let mut queue = vec![target_id];
 
     while let Some(current_id) = queue.pop() {
@@ -339,8 +339,8 @@ pub fn post_dominators_of(
 pub fn compute_unconditional_blocks(
     func: &HirFunction,
     next_block_id_counter: u32,
-) -> Result<HashSet<BlockId>, CompilerDiagnostic> {
-    let mut unconditional = HashSet::new();
+) -> Result<FxHashSet<BlockId>, CompilerDiagnostic> {
+    let mut unconditional = FxHashSet::default();
     let dominators = compute_post_dominator_tree(func, next_block_id_counter, false)?;
     let exit = dominators.exit;
     let mut current: Option<BlockId> = Some(func.body.entry);

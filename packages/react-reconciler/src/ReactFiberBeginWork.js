@@ -131,12 +131,9 @@ import {
   REACT_MEMO_TYPE,
   REACT_CONTEXT_TYPE,
 } from 'shared/ReactSymbols';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {setCurrentFiber} from './ReactCurrentFiber';
-import {
-  resolveFunctionForHotReloading,
-  resolveForwardRefForHotReloading,
-  resolveClassForHotReloading,
-} from './ReactFiberHotReloading';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 
 import {
   mountChildFibers,
@@ -208,6 +205,7 @@ import {
 import {
   pushHiddenContext,
   reuseHiddenContextOnStack,
+  isCurrentTreeHidden,
 } from './ReactFiberHiddenContext';
 import {findFirstSuspended} from './ReactFiberSuspenseComponent';
 import {
@@ -413,7 +411,16 @@ function updateForwardRef(
   // TODO: current can be non-null here even if the component
   // hasn't yet mounted. This happens after the first render suspends.
   // We'll need to figure out if this is fine or can cause issues.
-  const render = Component.render;
+  let render = Component.render;
+  if (__DEV__) {
+    const resolvedRender = resolveTypeForHotReloading(render);
+    if (resolvedRender !== render) {
+      render = resolvedRender;
+      if (current !== null) {
+        didReceiveUpdate = true;
+      }
+    }
+  }
   const ref = workInProgress.ref;
 
   let propsWithoutRef;
@@ -481,7 +488,7 @@ function updateMemoComponent(
     if (isSimpleFunctionComponent(type) && Component.compare === null) {
       let resolvedType = type;
       if (__DEV__) {
-        resolvedType = resolveFunctionForHotReloading(type);
+        resolvedType = resolveTypeForHotReloading(type);
       }
       // If this is a plain function component without default props,
       // and with only the default shallow comparison, we upgrade it
@@ -1014,6 +1021,19 @@ function updateDehydratedActivityComponent(
     if (didReceiveUpdate || hasContextChanged) {
       // This boundary has changed since the first render. This means that we are now unable to
       // hydrate it. We might still be able to hydrate it using a higher priority lane.
+      if (isCurrentTreeHidden()) {
+        // This boundary is inside a hidden subtree, where all work is
+        // deferred until the tree is revealed. Selective hydration works by
+        // rendering the boundary at a higher priority before the update
+        // applies, so it can't make progress here; delaying the commit to
+        // wait for it would deadlock. Replacing hidden content isn't
+        // visible, so give up and client render.
+        return retryActivityComponentWithoutHydrating(
+          current,
+          workInProgress,
+          renderLanes,
+        );
+      }
       const root = getWorkInProgressRoot();
       if (root !== null) {
         const attemptHydrationAtLane = getBumpedLaneForHydration(
@@ -2094,6 +2114,9 @@ function mountLazyComponent(
   const props = workInProgress.pendingProps;
   const lazyComponent: LazyComponentType<any, any> = elementType;
   let Component = resolveLazy(lazyComponent);
+  if (__DEV__) {
+    Component = resolveTypeForHotReloading(Component);
+  }
   // Store the unwrapped component in the type.
   workInProgress.type = Component;
 
@@ -2101,10 +2124,6 @@ function mountLazyComponent(
     if (isFunctionClassComponent(Component)) {
       const resolvedProps = resolveClassComponentProps(Component, props);
       workInProgress.tag = ClassComponent;
-      if (__DEV__) {
-        workInProgress.type = Component =
-          resolveClassForHotReloading(Component);
-      }
       return updateClassComponent(
         null,
         workInProgress,
@@ -2116,8 +2135,6 @@ function mountLazyComponent(
       workInProgress.tag = FunctionComponent;
       if (__DEV__) {
         validateFunctionComponentInDev(workInProgress, Component);
-        workInProgress.type = Component =
-          resolveFunctionForHotReloading(Component);
       }
       return updateFunctionComponent(
         null,
@@ -2133,10 +2150,6 @@ function mountLazyComponent(
     // $FlowFixMe[invalid-compare]
     if ($$typeof === REACT_FORWARD_REF_TYPE) {
       workInProgress.tag = ForwardRef;
-      if (__DEV__) {
-        workInProgress.type = Component =
-          resolveForwardRefForHotReloading(Component);
-      }
       return updateForwardRef(
         null,
         workInProgress,
@@ -2989,25 +3002,29 @@ function updateDehydratedSuspenseComponent(
         ({digest} = getSuspenseInstanceFallbackErrorDetails(suspenseInstance));
       }
 
-      let error: Error;
-      if (__DEV__ && message) {
-        // eslint-disable-next-line react-internal/prod-error-codes
-        error = new Error(message);
-      } else {
-        error = new Error(
-          'The server could not finish this Suspense boundary, likely ' +
-            'due to an error during server rendering. ' +
-            'Switched to client rendering.',
+      // This is unreachable in renderers that do not support hydration.
+      // $FlowFixMe[invalid-compare]
+      if (digest !== REACT_RECOVERABLE_DIGEST) {
+        let error: Error;
+        if (__DEV__ && message) {
+          // eslint-disable-next-line react-internal/prod-error-codes
+          error = new Error(message);
+        } else {
+          error = new Error(
+            'The server could not finish this Suspense boundary, likely ' +
+              'due to an error during server rendering. ' +
+              'Switched to client rendering.',
+          );
+        }
+        // Replace the stack with the server stack
+        error.stack = (__DEV__ && stack) || '';
+        (error as any).digest = digest;
+        const capturedValue = createCapturedValueFromError(
+          error,
+          componentStack === undefined ? null : componentStack,
         );
+        queueHydrationError(capturedValue);
       }
-      // Replace the stack with the server stack
-      error.stack = (__DEV__ && stack) || '';
-      (error as any).digest = digest;
-      const capturedValue = createCapturedValueFromError(
-        error,
-        componentStack === undefined ? null : componentStack,
-      );
-      queueHydrationError(capturedValue);
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
@@ -3030,6 +3047,19 @@ function updateDehydratedSuspenseComponent(
     if (didReceiveUpdate || hasContextChanged) {
       // This boundary has changed since the first render. This means that we are now unable to
       // hydrate it. We might still be able to hydrate it using a higher priority lane.
+      if (isCurrentTreeHidden()) {
+        // This boundary is inside a hidden subtree, where all work is
+        // deferred until the tree is revealed. Selective hydration works by
+        // rendering the boundary at a higher priority before the update
+        // applies, so it can't make progress here; delaying the commit to
+        // wait for it would deadlock. Replacing hidden content isn't
+        // visible, so give up and client render.
+        return retrySuspenseComponentWithoutHydrating(
+          current,
+          workInProgress,
+          renderLanes,
+        );
+      }
       const root = getWorkInProgressRoot();
       if (root !== null) {
         const attemptHydrationAtLane = getBumpedLaneForHydration(
@@ -4195,7 +4225,9 @@ function beginWork(
     if (workInProgress._debugNeedsRemount && current !== null) {
       // This will restart the begin phase with a new fiber.
       const copiedFiber = createFiberFromTypeAndProps(
-        workInProgress.type,
+        // Remount from the fiber's outermost identity; mounting resolves
+        // any inner types to their latest implementations.
+        resolveTypeForHotReloading(workInProgress.elementType),
         workInProgress.key,
         workInProgress.pendingProps,
         workInProgress._debugOwner || null,

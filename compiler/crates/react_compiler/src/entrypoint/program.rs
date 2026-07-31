@@ -14,8 +14,7 @@
 //! 5. Processing each function through the compilation pipeline
 //! 6. Applying compiled functions back to the AST
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::File;
 use react_compiler_ast::Program;
@@ -1651,10 +1650,10 @@ fn has_memo_cache_function_import(program: &Program, module_name: &str) -> bool 
                 for specifier in &import.specifiers {
                     if let ImportSpecifier::ImportSpecifier(data) = specifier {
                         let imported_name = match &data.imported {
-                            ModuleExportName::Identifier(id) => &id.name,
-                            ModuleExportName::StringLiteral(s) => &s.value,
+                            ModuleExportName::Identifier(id) => Some(id.name.as_str()),
+                            ModuleExportName::StringLiteral(s) => s.value.as_str(),
                         };
-                        if imported_name == "c" {
+                        if imported_name == Some("c") {
                             return true;
                         }
                     }
@@ -2084,9 +2083,9 @@ struct CompiledFnForReplacement {
 fn get_functions_referenced_before_declaration(
     program: &Program,
     compiled_fns: &[CompiledFnForReplacement],
-) -> HashSet<u32> {
+) -> FxHashSet<u32> {
     // Collect function names and their node_ids for compiled FunctionDeclarations
-    let mut fn_names: HashMap<String, u32> = HashMap::new();
+    let mut fn_names: FxHashMap<String, u32> = FxHashMap::default();
     for compiled in compiled_fns {
         if compiled.original_kind == OriginalFnKind::FunctionDeclaration {
             if let Some(ref name) = compiled.fn_name {
@@ -2098,10 +2097,10 @@ fn get_functions_referenced_before_declaration(
     }
 
     if fn_names.is_empty() {
-        return HashSet::new();
+        return FxHashSet::default();
     }
 
-    let mut referenced_before_decl: HashSet<u32> = HashSet::new();
+    let mut referenced_before_decl: FxHashSet<u32> = FxHashSet::default();
 
     // Walk through program body in order. For each statement, check if it references
     // any of the function names before the function's declaration.
@@ -2597,7 +2596,7 @@ fn apply_compiled_functions(
     let referenced_before_decl = if has_gating {
         get_functions_referenced_before_declaration(program, compiled_fns)
     } else {
-        HashSet::new()
+        FxHashSet::default()
     };
 
     // For gated functions, we need to clone the original function expressions

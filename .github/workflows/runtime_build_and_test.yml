@@ -44,7 +44,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
 
       - uses: actions/setup-node@v4
@@ -71,7 +71,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -116,7 +116,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -142,7 +142,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -170,7 +170,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
@@ -224,7 +224,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -251,7 +251,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
       - name: Install runtime dependencies
         run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
@@ -290,7 +290,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -372,7 +372,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-and-compiler-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
+          key: runtime-and-compiler-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock', 'compiler/yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -417,7 +417,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -455,7 +455,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -516,7 +516,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -552,7 +552,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -696,7 +696,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -737,9 +737,45 @@ jobs:
           name: react-devtools
           pattern: react-devtools-*
 
+  runtime_playwright_chromium_cache:
+    name: Cache Runtime Playwright Chromium
+    needs: runtime_node_modules_cache
+    runs-on: ubuntu-latest
+    outputs:
+      playwright_version: ${{ steps.playwright_version.outputs.playwright_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - name: Restore cached node_modules
+        uses: actions/cache/restore@v4
+        id: node_modules
+        with:
+          path: |
+            **/node_modules
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          # Don't use restore-keys here. Otherwise the cache grows indefinitely.
+      - run: yarn install --frozen-lockfile
+        if: steps.node_modules.outputs.cache-hit != 'true'
+      - name: Check Playwright version
+        id: playwright_version
+        run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
+        id: cache_playwright_browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
+      - name: Install Playwright Chromium
+        if: steps.cache_playwright_browsers.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
   run_devtools_e2e_tests:
-    name: Run DevTools e2e tests
-    needs: [build_and_lint, runtime_node_modules_cache]
+    name: Run React DevTools browser extension e2e tests
+    needs: [build_and_lint, runtime_playwright_chromium_cache]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -754,7 +790,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
           # Don't use restore-keys here. Otherwise the cache grows indefinitely.
       - name: Ensure clean build directory
         run: rm -rf build
@@ -766,18 +802,12 @@ jobs:
           pattern: _build_*
           path: build
           merge-multiple: true
-      - name: Check Playwright version
-        id: playwright_version
-        run: echo "playwright_version=$(npm ls @playwright/test | grep @playwright | sed 's/.*@//' | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright Browsers for version ${{ steps.playwright_version.outputs.playwright_version }}
-        id: cache_playwright_browsers
-        uses: actions/cache@v4
+      - name: Restore Playwright Chromium
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
-      - name: Playwright install deps
-        if: steps.cache_playwright_browsers.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+          key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ needs.runtime_playwright_chromium_cache.outputs.playwright_version }}
+          fail-on-cache-miss: true
       - run: ./scripts/ci/run_devtools_e2e_tests.js
         env:
           RELEASE_CHANNEL: experimental
@@ -786,6 +816,58 @@ jobs:
         with:
           name: devtools-playwright-artifacts
           path: tmp/playwright-artifacts
+          if-no-files-found: warn
+
+  run_react_devtools_cdt_mcp_e2e_tests:
+    name: Run react-devtools-cdt-mcp e2e tests
+    needs: [build_and_lint, runtime_playwright_chromium_cache]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - name: Restore cached node_modules
+        uses: actions/cache/restore@v4
+        id: node_modules
+        with:
+          path: |
+            **/node_modules
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          # Don't use restore-keys here. Otherwise the cache grows indefinitely.
+      - name: Ensure clean build directory
+        run: rm -rf build
+      - run: yarn install --frozen-lockfile
+        if: steps.node_modules.outputs.cache-hit != 'true'
+      - name: Restore archived build
+        uses: actions/download-artifact@v4
+        with:
+          pattern: _build_*
+          path: build
+          merge-multiple: true
+      - name: Restore Playwright Chromium
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ needs.runtime_playwright_chromium_cache.outputs.playwright_version }}
+          fail-on-cache-miss: true
+      - name: Check Playwright Chromium version
+        id: playwright_chromium
+        run: |
+          echo "executable_path=$(node -e 'process.stdout.write(require("playwright").chromium.executablePath())')" >> "$GITHUB_OUTPUT"
+          "$(node -e 'process.stdout.write(require("playwright").chromium.executablePath())')" --version
+      - name: Run React DevTools CDT MCP e2e tests
+        run: yarn --cwd packages/react-devtools-cdt-mcp test:e2e:ci
+        env:
+          CHROME_EXECUTABLE_PATH: ${{ steps.playwright_chromium.outputs.executable_path }}
+      - name: Archive React DevTools CDT MCP e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-devtools-cdt-mcp-e2e-logs
+          path: tmp/react-devtools-cdt-mcp-e2e
           if-no-files-found: warn
 
   # ----- SIZEBOT -----

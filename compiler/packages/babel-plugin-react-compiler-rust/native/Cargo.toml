@@ -7,8 +7,8 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "2", features = ["napi4"] }
-napi-derive = "2"
+napi = { version = "3", features = ["napi4"] }
+napi-derive = "3"
 react_compiler = { path = "../../../crates/react_compiler" }
 react_compiler_ast = { path = "../../../crates/react_compiler_ast" }
 serde = "1"

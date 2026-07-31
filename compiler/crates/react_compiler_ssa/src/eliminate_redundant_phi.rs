@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors;
@@ -10,7 +10,7 @@ use crate::enter_ssa::placeholder_function;
 // Helper: rewrite_place
 // =============================================================================
 
-fn rewrite_place(place: &mut Place, rewrites: &HashMap<IdentifierId, IdentifierId>) {
+fn rewrite_place(place: &mut Place, rewrites: &FxHashMap<IdentifierId, IdentifierId>) {
     if let Some(&rewrite) = rewrites.get(&place.identifier) {
         place.identifier = rewrite;
     }
@@ -21,7 +21,7 @@ fn rewrite_place(place: &mut Place, rewrites: &HashMap<IdentifierId, IdentifierI
 // =============================================================================
 
 pub fn eliminate_redundant_phi(func: &mut HirFunction, env: &mut Environment) {
-    let mut rewrites: HashMap<IdentifierId, IdentifierId> = HashMap::new();
+    let mut rewrites: FxHashMap<IdentifierId, IdentifierId> = FxHashMap::default();
     eliminate_redundant_phi_impl(func, env, &mut rewrites);
 }
 
@@ -32,12 +32,12 @@ pub fn eliminate_redundant_phi(func: &mut HirFunction, env: &mut Environment) {
 fn eliminate_redundant_phi_impl(
     func: &mut HirFunction,
     env: &mut Environment,
-    rewrites: &mut HashMap<IdentifierId, IdentifierId>,
+    rewrites: &mut FxHashMap<IdentifierId, IdentifierId>,
 ) {
     let ir = &mut func.body;
 
     let mut has_back_edge = false;
-    let mut visited: HashSet<BlockId> = HashSet::new();
+    let mut visited: FxHashSet<BlockId> = FxHashSet::default();
 
     let mut size;
     loop {

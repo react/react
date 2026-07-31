@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{CompilerError, CompilerErrorDetail, ErrorCategory};
 use react_compiler_hir::environment::Environment;
@@ -12,15 +12,15 @@ pub fn validate_no_capitalized_calls(
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
     // Build the allow list from global registry keys + config entries
-    let mut allow_list: HashSet<String> = env.globals().keys().cloned().collect();
+    let mut allow_list: FxHashSet<String> = env.globals().keys().cloned().collect();
     if let Some(config_entries) = &env.config.validate_no_capitalized_calls {
         for entry in config_entries {
             allow_list.insert(entry.clone());
         }
     }
 
-    let mut capital_load_globals: HashMap<IdentifierId, String> = HashMap::new();
-    let mut capitalized_properties: HashMap<IdentifierId, String> = HashMap::new();
+    let mut capital_load_globals: FxHashMap<IdentifierId, String> = FxHashMap::default();
+    let mut capitalized_properties: FxHashMap<IdentifierId, String> = FxHashMap::default();
 
     let reason = "Capitalized functions are reserved for components, which must be invoked with JSX. If this is a component, render it with JSX. Otherwise, ensure that it has no hook calls and rename it to begin with a lowercase letter. Alternatively, if you know for a fact that this function is not a component, you can allowlist it via the compiler config";
 

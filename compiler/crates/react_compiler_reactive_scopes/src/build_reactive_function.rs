@@ -7,7 +7,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/BuildReactiveFunction.ts`.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
@@ -108,10 +108,10 @@ impl ControlFlowTarget {
 struct Context<'a> {
     ir: &'a HirFunction,
     next_schedule_id: u32,
-    emitted: HashSet<BlockId>,
-    scope_fallthroughs: HashSet<BlockId>,
-    scheduled: HashSet<BlockId>,
-    catch_handlers: HashSet<BlockId>,
+    emitted: FxHashSet<BlockId>,
+    scope_fallthroughs: FxHashSet<BlockId>,
+    scheduled: FxHashSet<BlockId>,
+    catch_handlers: FxHashSet<BlockId>,
     control_flow_stack: Vec<ControlFlowTarget>,
 }
 
@@ -120,10 +120,10 @@ impl<'a> Context<'a> {
         Self {
             ir,
             next_schedule_id: 0,
-            emitted: HashSet::new(),
-            scope_fallthroughs: HashSet::new(),
-            scheduled: HashSet::new(),
-            catch_handlers: HashSet::new(),
+            emitted: FxHashSet::default(),
+            scope_fallthroughs: FxHashSet::default(),
+            scheduled: FxHashSet::default(),
+            catch_handlers: FxHashSet::default(),
             control_flow_stack: Vec::new(),
         }
     }

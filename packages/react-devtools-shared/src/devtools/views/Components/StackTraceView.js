@@ -10,6 +10,7 @@
 import * as React from 'react';
 import {use, useContext} from 'react';
 
+import Button from '../Button';
 import useOpenResource from '../useOpenResource';
 
 import ElementBadges from './ElementBadges';
@@ -29,11 +30,13 @@ import formatLocationForDisplay from './formatLocationForDisplay';
 type CallSiteViewProps = {
   callSite: ReactCallSite,
   environmentName: null | string,
+  showIgnoreList: boolean,
 };
 
 export function CallSiteView({
   callSite,
   environmentName,
+  showIgnoreList,
 }: CallSiteViewProps): React.Node {
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
 
@@ -60,16 +63,14 @@ export function CallSiteView({
     symbolicatedCallSite !== null ? symbolicatedCallSite.location : callSite;
   const ignored =
     symbolicatedCallSite !== null ? symbolicatedCallSite.ignored : false;
-  // TODO: Make an option to be able to toggle the display of ignore listed rows.
-  // Ideally this UI should be higher than a single Stack Trace so that there's not
-  // multiple buttons in a single inspection taking up space.
 
   const isBuiltIn = url === '' || url.startsWith('<anonymous>'); // This looks like a fake anonymous through eval.
   return (
     <div
       className={
         ignored
-          ? styles.IgnoredCallSite
+          ? styles.IgnoredCallSite +
+            (showIgnoreList ? ' ' + styles.CallSite : '')
           : isBuiltIn
             ? styles.BuiltInCallSite
             : styles.CallSite
@@ -94,15 +95,75 @@ export function CallSiteView({
   );
 }
 
+type IgnoreListToggleButtonProps = {
+  onClick: () => void,
+  showIgnoreList: boolean,
+};
+
+export function IgnoreListToggleButton({
+  onClick,
+  showIgnoreList,
+}: IgnoreListToggleButtonProps): React.Node {
+  const label = showIgnoreList
+    ? 'Hide ignore-listed frames'
+    : 'Show ignore-listed frames';
+
+  return (
+    <div className={styles.IgnoreListToggleContainer}>
+      <Button
+        className={styles.IgnoreListToggleButton}
+        onClick={onClick}
+        title={label}>
+        {label}
+      </Button>
+    </div>
+  );
+}
+
 type Props = {
   stack: ReactStackTrace,
   environmentName: null | string,
+  showIgnoreList: boolean,
 };
 
 export default function StackTraceView({
   stack,
   environmentName,
+  showIgnoreList,
 }: Props): React.Node {
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  let lastMeaningfulFrameIndex = -1;
+  // Reverse loop to find the last non-ignored, non-built-in index
+  for (let index = stack.length - 1; index >= 0; index--) {
+    const callSite = stack[index];
+    const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+    // symbolicated output is cached
+    const symbolicatedCallSite: null | SourceMappedLocation =
+      fetchFileWithCaching !== null
+        ? use(
+            symbolicateSourceWithCache(
+              fetchFileWithCaching,
+              virtualURL,
+              virtualLine,
+              virtualColumn,
+            ),
+          )
+        : null;
+    const [, url] =
+      symbolicatedCallSite !== null ? symbolicatedCallSite.location : callSite;
+    const ignored =
+      symbolicatedCallSite !== null ? symbolicatedCallSite.ignored : false;
+    // This looks like a fake anonymous through eval.
+    const isBuiltIn = url === '' || url.startsWith('<anonymous>');
+
+    if (!ignored && !isBuiltIn) {
+      lastMeaningfulFrameIndex = index;
+      break;
+    }
+  }
+
   return (
     <div className={styles.StackTraceView}>
       {stack.map((callSite, index) => (
@@ -110,11 +171,10 @@ export default function StackTraceView({
           key={index}
           callSite={callSite}
           environmentName={
-            // Badge last row
-            // TODO: If we start ignore listing the last row, we should badge the last
-            // non-ignored row.
-            index === stack.length - 1 ? environmentName : null
+            // Badge last meaningful frame (non-ignored, non-built-in)
+            index === lastMeaningfulFrameIndex ? environmentName : null
           }
+          showIgnoreList={showIgnoreList}
         />
       ))}
     </div>

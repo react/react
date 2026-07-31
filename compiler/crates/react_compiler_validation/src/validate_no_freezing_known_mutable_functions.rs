@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, SourceLocation,
@@ -53,7 +53,7 @@ fn check_no_freezing_known_mutable_functions(
     env: &Environment,
 ) -> Vec<CompilerDiagnostic> {
     // Maps an identifier to the mutation effect that makes it "known mutable"
-    let mut context_mutation_effects: HashMap<IdentifierId, MutationInfo> = HashMap::new();
+    let mut context_mutation_effects: FxHashMap<IdentifierId, MutationInfo> = FxHashMap::default();
     let mut diagnostics: Vec<CompilerDiagnostic> = Vec::new();
 
     for (_block_id, block) in &func.body.blocks {
@@ -83,7 +83,7 @@ fn check_no_freezing_known_mutable_functions(
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
                     let inner_function = &functions[lowered_func.func.0 as usize];
                     if let Some(ref aliasing_effects) = inner_function.aliasing_effects {
-                        let context_ids: HashSet<IdentifierId> = inner_function
+                        let context_ids: FxHashSet<IdentifierId> = inner_function
                             .context
                             .iter()
                             .map(|place| place.identifier)
@@ -170,7 +170,7 @@ fn check_no_freezing_known_mutable_functions(
 /// If an operand with Effect::Freeze is a known-mutable function, emit a diagnostic.
 fn check_operand_for_freeze_violation(
     operand: &Place,
-    context_mutation_effects: &HashMap<IdentifierId, MutationInfo>,
+    context_mutation_effects: &FxHashMap<IdentifierId, MutationInfo>,
     identifiers: &[Identifier],
     diagnostics: &mut Vec<CompilerDiagnostic>,
 ) {

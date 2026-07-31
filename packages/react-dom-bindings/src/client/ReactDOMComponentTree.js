@@ -69,10 +69,12 @@ const internalPropsMap:
   | Map<InstanceUnion, Props> = new PossiblyWeakMap();
 
 export function detachDeletedInstance(node: Instance): void {
+  // Don't delete the event listener set. The native event listeners it tracks
+  // remain attached to the node, so this bookkeeping needs to last for the
+  // lifetime of the node to prevent duplicate listeners if it is reused.
   if (enableInternalInstanceMap) {
     internalInstanceMap.delete(node);
     internalPropsMap.delete(node);
-    delete (node as any)[internalEventHandlersKey];
     delete (node as any)[internalEventHandlerListenersKey];
     delete (node as any)[internalEventHandlesSetKey];
     delete (node as any)[internalRootNodeResourcesKey];
@@ -85,7 +87,6 @@ export function detachDeletedInstance(node: Instance): void {
   // these fields are relevant.
   delete (node as any)[internalInstanceKey];
   delete (node as any)[internalPropsKey];
-  delete (node as any)[internalEventHandlersKey];
   delete (node as any)[internalEventHandlerListenersKey];
   delete (node as any)[internalEventHandlesSetKey];
 }

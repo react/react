@@ -19,6 +19,11 @@ import {
   handleReactDevToolsHookMessage,
   handleFetchResourceContentScriptMessage,
 } from './messageHandlers';
+import {
+  EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+  EXTENSION_BRIDGE_CONNECTION_READY,
+} from '../constants';
+import type {ExtensionBridgeConnectionType} from '../constants';
 
 const ports: {
   // TODO: Check why we convert tab IDs to strings, and if we can avoid it
@@ -156,6 +161,20 @@ function connectExtensionAndProxyPorts(
   }
   const proxyPort = maybeProxyPort;
 
+  function sendBridgeConnectionMessage(
+    port: ExtensionRuntimePort,
+    type: ExtensionBridgeConnectionType,
+  ) {
+    try {
+      port.postMessage({
+        source: 'react-devtools-background',
+        payload: {type},
+      });
+    } catch (error) {
+      // The port disconnected before the status update could be delivered.
+    }
+  }
+
   // $FlowFixMe[incompatible-type]
   if (ports[tabId].disconnectPipe) {
     throw new Error(
@@ -163,7 +182,9 @@ function connectExtensionAndProxyPorts(
     );
   }
 
-  function extensionPortMessageListener(message: any) {
+  let didDisconnect = false;
+
+  function extensionPortMessageListener(message: mixed) {
     try {
       proxyPort.postMessage(message);
     } catch (e) {
@@ -175,7 +196,7 @@ function connectExtensionAndProxyPorts(
     }
   }
 
-  function proxyPortMessageListener(message: any) {
+  function proxyPortMessageListener(message: mixed) {
     try {
       extensionPort.postMessage(message);
     } catch (e) {
@@ -188,8 +209,22 @@ function connectExtensionAndProxyPorts(
   }
 
   function disconnectListener() {
+    if (didDisconnect) {
+      return;
+    }
+    didDisconnect = true;
+
     extensionPort.onMessage.removeListener(extensionPortMessageListener);
     proxyPort.onMessage.removeListener(proxyPortMessageListener);
+
+    sendBridgeConnectionMessage(
+      extensionPort,
+      EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+    );
+    sendBridgeConnectionMessage(
+      proxyPort,
+      EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+    );
 
     // We handle disconnect() calls manually, based on each specific case
     // No need to disconnect other port here
@@ -205,6 +240,11 @@ function connectExtensionAndProxyPorts(
 
   extensionPort.onDisconnect.addListener(disconnectListener);
   proxyPort.onDisconnect.addListener(disconnectListener);
+
+  // The proxy owns the backend message queue. Once both forwarding listeners
+  // are installed, tell it to flush that queue through this pipe. It echoes the
+  // message to the frontend after the queued backend messages have been sent.
+  sendBridgeConnectionMessage(proxyPort, EXTENSION_BRIDGE_CONNECTION_READY);
 }
 
 chrome.runtime.onMessage.addListener((message, sender) => {

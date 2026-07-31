@@ -1,3 +1,4 @@
+use react_compiler_diagnostics::JsString;
 use serde::{Deserialize, Serialize};
 
 use crate::common::BaseNode;
@@ -6,7 +7,8 @@ use crate::common::BaseNode;
 pub struct StringLiteral {
     #[serde(flatten)]
     pub base: BaseNode,
-    pub value: String,
+    /// JS string values may contain unpaired surrogates; see [`JsString`].
+    pub value: JsString,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

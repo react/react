@@ -11,10 +11,9 @@
 //! creation, aliasing, mutation, freezing, and error conditions for each
 //! instruction and terminal in the HIR.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use indexmap::{IndexMap, IndexSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-use indexmap::IndexSet;
 use react_compiler_diagnostics::CompilerDiagnostic;
 use react_compiler_diagnostics::CompilerDiagnosticDetail;
 use react_compiler_diagnostics::ErrorCategory;
@@ -61,7 +60,7 @@ pub fn infer_mutation_aliasing_effects(
     let mut initial_state = InferenceState::empty(env, is_function_expression);
 
     // Map of blocks to the last (merged) incoming state that was processed
-    let mut states_by_block: HashMap<BlockId, InferenceState> = HashMap::new();
+    let mut states_by_block: FxHashMap<BlockId, InferenceState> = FxHashMap::default();
 
     // Initialize context variables
     for ctx_place in &func.context {
@@ -115,12 +114,12 @@ pub fn infer_mutation_aliasing_effects(
         }
     }
 
-    let mut queued_states: indexmap::IndexMap<BlockId, InferenceState> = indexmap::IndexMap::new();
+    let mut queued_states: IndexMap<BlockId, InferenceState, FxBuildHasher> = IndexMap::default();
 
     // Queue helper
     fn queue(
-        queued_states: &mut indexmap::IndexMap<BlockId, InferenceState>,
-        states_by_block: &HashMap<BlockId, InferenceState>,
+        queued_states: &mut IndexMap<BlockId, InferenceState, FxBuildHasher>,
+        states_by_block: &FxHashMap<BlockId, InferenceState>,
         block_id: BlockId,
         state: InferenceState,
     ) {
@@ -152,16 +151,16 @@ pub fn infer_mutation_aliasing_effects(
     let non_mutating_spreads = find_non_mutated_destructure_spreads(func, env);
 
     let mut context = Context {
-        interned_effects: HashMap::new(),
-        instruction_signature_cache: HashMap::new(),
-        catch_handlers: HashMap::new(),
+        interned_effects: FxHashMap::default(),
+        instruction_signature_cache: FxHashMap::default(),
+        catch_handlers: FxHashMap::default(),
         is_function_expression,
         hoisted_context_declarations,
         non_mutating_spreads,
-        effect_value_id_cache: HashMap::new(),
-        function_values: HashMap::new(),
-        function_signature_cache: HashMap::new(),
-        aliasing_config_temp_cache: HashMap::new(),
+        effect_value_id_cache: FxHashMap::default(),
+        function_values: FxHashMap::default(),
+        function_signature_cache: FxHashMap::default(),
+        aliasing_config_temp_cache: FxHashMap::default(),
     };
 
     let mut iteration_count = 0;
@@ -262,11 +261,11 @@ impl ValueId {
 #[derive(Debug, Clone)]
 struct AbstractValue {
     kind: ValueKind,
-    reason: IndexSet<ValueReason>,
+    reason: IndexSet<ValueReason, FxBuildHasher>,
 }
 
-fn hashset_of(r: ValueReason) -> IndexSet<ValueReason> {
-    let mut s = IndexSet::new();
+fn hashset_of(r: ValueReason) -> IndexSet<ValueReason, FxBuildHasher> {
+    let mut s = IndexSet::default();
     s.insert(r);
     s
 }
@@ -282,9 +281,9 @@ fn hashset_of(r: ValueReason) -> IndexSet<ValueReason> {
 struct InferenceState {
     is_function_expression: bool,
     /// The kind of each value, based on its allocation site
-    values: HashMap<ValueId, AbstractValue>,
+    values: FxHashMap<ValueId, AbstractValue>,
     /// The set of values pointed to by each identifier
-    variables: HashMap<IdentifierId, HashSet<ValueId>>,
+    variables: FxHashMap<IdentifierId, FxHashSet<ValueId>>,
     /// Tracks uninitialized identifier access errors (matches TS invariant).
     /// Uses Cell so it can be set from `&self` methods like `kind()`.
     /// Stores (IdentifierId, usage_loc) where usage_loc is the source location
@@ -296,8 +295,8 @@ impl InferenceState {
     fn empty(_env: &Environment, is_function_expression: bool) -> Self {
         InferenceState {
             is_function_expression,
-            values: HashMap::new(),
-            variables: HashMap::new(),
+            values: FxHashMap::default(),
+            variables: FxHashMap::default(),
             uninitialized_access: std::cell::Cell::new(None),
         }
     }
@@ -342,7 +341,7 @@ impl InferenceState {
     }
 
     fn define(&mut self, place_id: IdentifierId, value_id: ValueId) {
-        let mut set = HashSet::new();
+        let mut set = FxHashSet::default();
         set.insert(value_id);
         self.variables.insert(place_id, set);
     }
@@ -354,7 +353,7 @@ impl InferenceState {
                 // Create a stable value for uninitialized identifiers
                 // Use a deterministic ID based on the from identifier
                 let vid = ValueId(from.0 | 0x80000000);
-                let mut set = HashSet::new();
+                let mut set = FxHashSet::default();
                 set.insert(vid);
                 if !self.values.contains_key(&vid) {
                     self.values.insert(
@@ -380,7 +379,7 @@ impl InferenceState {
             Some(v) => v.clone(),
             None => return,
         };
-        let merged: HashSet<ValueId> = prev_values.union(&new_values).copied().collect();
+        let merged: FxHashSet<ValueId> = prev_values.union(&new_values).copied().collect();
         self.variables.insert(place, merged);
     }
 
@@ -486,8 +485,8 @@ impl InferenceState {
     }
 
     fn merge(&self, other: &InferenceState) -> Option<InferenceState> {
-        let mut next_values: Option<HashMap<ValueId, AbstractValue>> = None;
-        let mut next_variables: Option<HashMap<IdentifierId, HashSet<ValueId>>> = None;
+        let mut next_values: Option<FxHashMap<ValueId, AbstractValue>> = None;
+        let mut next_variables: Option<FxHashMap<IdentifierId, FxHashSet<ValueId>>> = None;
 
         // Merge values present in both
         for (id, this_value) in &self.values {
@@ -521,7 +520,7 @@ impl InferenceState {
                 }
                 if has_new {
                     let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                    let merged: HashSet<ValueId> =
+                    let merged: FxHashSet<ValueId> =
                         this_values.union(other_values).copied().collect();
                     nvars.insert(*id, merged);
                 }
@@ -550,9 +549,9 @@ impl InferenceState {
     fn infer_phi(
         &mut self,
         phi_place_id: IdentifierId,
-        phi_operands: &indexmap::IndexMap<BlockId, Place>,
+        phi_operands: &IndexMap<BlockId, Place, FxBuildHasher>,
     ) {
-        let mut values: HashSet<ValueId> = HashSet::new();
+        let mut values: FxHashSet<ValueId> = FxHashSet::default();
         for (_, operand) in phi_operands {
             if let Some(operand_values) = self.variables.get(&operand.identifier) {
                 for v in operand_values {
@@ -567,7 +566,10 @@ impl InferenceState {
     }
 }
 
-fn is_superset(a: &IndexSet<ValueReason>, b: &IndexSet<ValueReason>) -> bool {
+fn is_superset(
+    a: &IndexSet<ValueReason, FxBuildHasher>,
+    b: &IndexSet<ValueReason, FxBuildHasher>,
+) -> bool {
     b.iter().all(|x| a.contains(x))
 }
 
@@ -593,24 +595,24 @@ enum MutationResult {
 // =============================================================================
 
 struct Context {
-    interned_effects: HashMap<String, AliasingEffect>,
-    instruction_signature_cache: HashMap<u32, InstructionSignature>,
-    catch_handlers: HashMap<BlockId, Place>,
+    interned_effects: FxHashMap<String, AliasingEffect>,
+    instruction_signature_cache: FxHashMap<u32, InstructionSignature>,
+    catch_handlers: FxHashMap<BlockId, Place>,
     is_function_expression: bool,
-    hoisted_context_declarations: HashMap<DeclarationId, Option<Place>>,
-    non_mutating_spreads: HashSet<IdentifierId>,
+    hoisted_context_declarations: FxHashMap<DeclarationId, Option<Place>>,
+    non_mutating_spreads: FxHashSet<IdentifierId>,
     /// Cache of ValueIds keyed by effect hash, ensuring stable allocation-site identity
     /// across fixpoint iterations. Mirrors TS `effectInstructionValueCache`.
-    effect_value_id_cache: HashMap<String, ValueId>,
+    effect_value_id_cache: FxHashMap<String, ValueId>,
     /// Maps ValueId to FunctionId for function expressions, so we can look up
     /// locally-declared functions when processing Apply effects.
-    function_values: HashMap<ValueId, FunctionId>,
+    function_values: FxHashMap<ValueId, FunctionId>,
     /// Cache of function expression signatures, keyed by FunctionId
-    function_signature_cache: HashMap<FunctionId, AliasingSignature>,
+    function_signature_cache: FxHashMap<FunctionId, AliasingSignature>,
     /// Cache of temporary places created for aliasing signature config temporaries.
     /// Keyed by (lvalue_identifier_id, temp_name) to ensure stable allocation
     /// across fixpoint iterations.
-    aliasing_config_temp_cache: HashMap<(IdentifierId, String), Place>,
+    aliasing_config_temp_cache: FxHashMap<(IdentifierId, String), Place>,
 }
 
 impl Context {
@@ -785,11 +787,11 @@ fn merge_value_kinds(a: ValueKind, b: ValueKind) -> ValueKind {
 fn find_hoisted_context_declarations(
     func: &HirFunction,
     env: &Environment,
-) -> HashMap<DeclarationId, Option<Place>> {
-    let mut hoisted: HashMap<DeclarationId, Option<Place>> = HashMap::new();
+) -> FxHashMap<DeclarationId, Option<Place>> {
+    let mut hoisted: FxHashMap<DeclarationId, Option<Place>> = FxHashMap::default();
 
     fn visit(
-        hoisted: &mut HashMap<DeclarationId, Option<Place>>,
+        hoisted: &mut FxHashMap<DeclarationId, Option<Place>>,
         place: &Place,
         env: &Environment,
     ) {
@@ -831,8 +833,8 @@ fn find_hoisted_context_declarations(
 fn find_non_mutated_destructure_spreads(
     func: &HirFunction,
     env: &Environment,
-) -> HashSet<IdentifierId> {
-    let mut known_frozen: HashSet<IdentifierId> = HashSet::new();
+) -> FxHashSet<IdentifierId> {
+    let mut known_frozen: FxHashSet<IdentifierId> = FxHashSet::default();
     if func.fn_type == ReactFunctionType::Component {
         if let Some(param) = func.params.first() {
             if let ParamPattern::Place(p) = param {
@@ -847,7 +849,8 @@ fn find_non_mutated_destructure_spreads(
         }
     }
 
-    let mut candidate_non_mutating_spreads: HashMap<IdentifierId, IdentifierId> = HashMap::new();
+    let mut candidate_non_mutating_spreads: FxHashMap<IdentifierId, IdentifierId> =
+        FxHashMap::default();
     for (_block_id, block) in &func.body.blocks {
         if !candidate_non_mutating_spreads.is_empty() {
             for phi in &block.phis {
@@ -954,7 +957,7 @@ fn find_non_mutated_destructure_spreads(
         }
     }
 
-    let mut non_mutating: HashSet<IdentifierId> = HashSet::new();
+    let mut non_mutating: FxHashSet<IdentifierId> = FxHashSet::default();
     for (key, value) in &candidate_non_mutating_spreads {
         if key == value {
             non_mutating.insert(*key);
@@ -991,7 +994,7 @@ fn infer_block(
     let block = &func.body.blocks[&block_id];
 
     // Process phis
-    let phis: Vec<(IdentifierId, indexmap::IndexMap<BlockId, Place>)> = block
+    let phis: Vec<(IdentifierId, IndexMap<BlockId, Place, FxBuildHasher>)> = block
         .phis
         .iter()
         .map(|phi| (phi.place.identifier, phi.operands.clone()))
@@ -1144,7 +1147,7 @@ fn apply_signature(
         | InstructionValue::ObjectMethod { lowered_func, .. } => {
             let inner_func = &env.functions[lowered_func.func.0 as usize];
             if let Some(ref aliasing_effects) = inner_func.aliasing_effects {
-                let context_ids: HashSet<IdentifierId> =
+                let context_ids: FxHashSet<IdentifierId> =
                     inner_func.context.iter().map(|p| p.identifier).collect();
                 for effect in aliasing_effects {
                     let (mutate_value, is_mutate) = match effect {
@@ -1203,7 +1206,7 @@ fn apply_signature(
     }
 
     // Track which values we've already initialized
-    let mut initialized: HashSet<IdentifierId> = HashSet::new();
+    let mut initialized: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Get the cached signature effects
     let sig = context.instruction_signature_cache.get(&instr_idx).unwrap();
@@ -1296,7 +1299,7 @@ fn apply_effect(
     context: &mut Context,
     state: &mut InferenceState,
     effect: AliasingEffect,
-    initialized: &mut HashSet<IdentifierId>,
+    initialized: &mut FxHashSet<IdentifierId>,
     effects: &mut Vec<AliasingEffect>,
     env: &mut Environment,
     func: &HirFunction,
@@ -1484,7 +1487,7 @@ fn apply_effect(
                     } else {
                         ValueKind::Frozen
                     },
-                    reason: IndexSet::new(),
+                    reason: IndexSet::default(),
                 },
             );
             state.define(into.identifier, value_id);
@@ -2582,7 +2585,7 @@ fn compute_effects_for_legacy_signature(
     args: &[PlaceOrSpreadOrHole],
     _loc: Option<&SourceLocation>,
     env: &Environment,
-    function_values: &HashMap<ValueId, FunctionId>,
+    function_values: &FxHashMap<ValueId, FunctionId>,
     todo_errors: &mut Vec<react_compiler_diagnostics::CompilerErrorDetail>,
 ) -> Vec<AliasingEffect> {
     let return_value_reason = signature.return_value_reason.unwrap_or(ValueReason::Other);
@@ -2786,7 +2789,7 @@ fn are_arguments_immutable_and_non_mutating(
     state: &InferenceState,
     args: &[PlaceOrSpreadOrHole],
     env: &Environment,
-    function_values: &HashMap<ValueId, FunctionId>,
+    function_values: &FxHashMap<ValueId, FunctionId>,
 ) -> bool {
     for arg in args {
         match arg {
@@ -2870,14 +2873,14 @@ fn compute_effects_for_aliasing_signature_config(
     args: &[PlaceOrSpreadOrHole],
     context: &[Place],
     _loc: Option<&SourceLocation>,
-    temp_cache: &mut HashMap<(IdentifierId, String), Place>,
+    temp_cache: &mut FxHashMap<(IdentifierId, String), Place>,
 ) -> Result<Option<Vec<AliasingEffect>>, CompilerDiagnostic> {
     // Build substitutions from config strings to places
-    let mut substitutions: HashMap<String, Vec<Place>> = HashMap::new();
+    let mut substitutions: FxHashMap<String, Vec<Place>> = FxHashMap::default();
     substitutions.insert(config.receiver.clone(), vec![receiver.clone()]);
     substitutions.insert(config.returns.clone(), vec![lvalue.clone()]);
 
-    let mut mutable_spreads: HashSet<IdentifierId> = HashSet::new();
+    let mut mutable_spreads: FxHashSet<IdentifierId> = FxHashSet::default();
 
     for (i, arg) in args.iter().enumerate() {
         match arg {
@@ -3113,8 +3116,8 @@ fn compute_effects_for_aliasing_signature(
         return Ok(None);
     }
 
-    let mut mutable_spreads: HashSet<IdentifierId> = HashSet::new();
-    let mut substitutions: HashMap<IdentifierId, Vec<Place>> = HashMap::new();
+    let mut mutable_spreads: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut substitutions: FxHashMap<IdentifierId, Vec<Place>> = FxHashMap::default();
     substitutions.insert(signature.receiver, vec![receiver.clone()]);
     substitutions.insert(signature.returns, vec![lvalue.clone()]);
 
@@ -3407,7 +3410,7 @@ fn compute_effects_for_aliasing_signature(
 /// since the primary reason is always inserted first, this effectively
 /// picks the most specific non-Other reason. We replicate this by
 /// preferring any non-Other reason over Other.
-fn primary_reason(reasons: &IndexSet<ValueReason>) -> ValueReason {
+fn primary_reason(reasons: &IndexSet<ValueReason, FxBuildHasher>) -> ValueReason {
     for &r in reasons {
         if r != ValueReason::Other {
             return r;

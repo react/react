@@ -8,7 +8,7 @@
 //! Defines the shape registry used by Environment to resolve property types
 //! and function call signatures for built-in objects, hooks, and user-defined types.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::Effect;
 use crate::Type;
@@ -119,21 +119,21 @@ pub struct FunctionSignature {
 /// Ported from TS `ObjectShape`.
 #[derive(Debug, Clone)]
 pub struct ObjectShape {
-    pub properties: HashMap<String, Type>,
+    pub properties: FxHashMap<String, Type>,
     pub function_type: Option<FunctionSignature>,
 }
 
 /// Registry mapping shape IDs to their ObjectShape definitions.
 ///
 /// Supports two modes:
-/// - **Builder mode** (`base=None`): wraps a single HashMap, used during
+/// - **Builder mode** (`base=None`): wraps a single FxHashMap, used during
 ///   `build_builtin_shapes` / `build_default_globals` to construct the static base.
-/// - **Overlay mode** (`base=Some`): holds a `&'static HashMap` base plus a small
-///   extras HashMap. Lookups check extras first, then base. Inserts go into extras.
+/// - **Overlay mode** (`base=Some`): holds a `&'static FxHashMap` base plus a small
+///   extras FxHashMap. Lookups check extras first, then base. Inserts go into extras.
 ///   Cloning only copies the extras map (the base pointer is shared).
 pub struct ShapeRegistry {
-    base: Option<&'static HashMap<String, ObjectShape>>,
-    entries: HashMap<String, ObjectShape>,
+    base: Option<&'static FxHashMap<String, ObjectShape>>,
+    entries: FxHashMap<String, ObjectShape>,
 }
 
 impl ShapeRegistry {
@@ -141,15 +141,15 @@ impl ShapeRegistry {
     pub fn new() -> Self {
         Self {
             base: None,
-            entries: HashMap::new(),
+            entries: FxHashMap::default(),
         }
     }
 
     /// Create an overlay-mode registry backed by a static base.
-    pub fn with_base(base: &'static HashMap<String, ObjectShape>) -> Self {
+    pub fn with_base(base: &'static FxHashMap<String, ObjectShape>) -> Self {
         Self {
             base: Some(base),
-            entries: HashMap::new(),
+            entries: FxHashMap::default(),
         }
     }
 
@@ -163,9 +163,9 @@ impl ShapeRegistry {
         self.entries.insert(key, value);
     }
 
-    /// Consume the registry and return the inner HashMap.
+    /// Consume the registry and return the inner FxHashMap.
     /// Only valid in builder mode (no base).
-    pub fn into_inner(self) -> HashMap<String, ObjectShape> {
+    pub fn into_inner(self) -> FxHashMap<String, ObjectShape> {
         debug_assert!(
             self.base.is_none(),
             "into_inner() called on overlay-mode ShapeRegistry"

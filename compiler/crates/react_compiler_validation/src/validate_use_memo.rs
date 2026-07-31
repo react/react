@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory, SourceLocation,
@@ -38,11 +38,11 @@ fn validate_use_memo_impl(
     validate_no_void_use_memo: bool,
 ) -> CompilerError {
     let mut void_memo_errors = CompilerError::new();
-    let mut use_memos: HashSet<IdentifierId> = HashSet::new();
-    let mut react: HashSet<IdentifierId> = HashSet::new();
-    let mut func_exprs: HashMap<IdentifierId, FuncExprInfo> = HashMap::new();
-    let mut unused_use_memos: HashMap<IdentifierId, (SourceLocation, Option<String>)> =
-        HashMap::new();
+    let mut use_memos: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut react: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut func_exprs: FxHashMap<IdentifierId, FuncExprInfo> = FxHashMap::default();
+    let mut unused_use_memos: FxHashMap<IdentifierId, (SourceLocation, Option<String>)> =
+        FxHashMap::default();
 
     for (_block_id, block) in &func.body.blocks {
         for &instr_id in &block.instructions {
@@ -157,9 +157,9 @@ fn handle_possible_use_memo_call(
     functions: &[HirFunction],
     errors: &mut CompilerError,
     void_memo_errors: &mut CompilerError,
-    use_memos: &HashSet<IdentifierId>,
-    func_exprs: &HashMap<IdentifierId, FuncExprInfo>,
-    unused_use_memos: &mut HashMap<IdentifierId, (SourceLocation, Option<String>)>,
+    use_memos: &FxHashSet<IdentifierId>,
+    func_exprs: &FxHashMap<IdentifierId, FuncExprInfo>,
+    unused_use_memos: &mut FxHashMap<IdentifierId, (SourceLocation, Option<String>)>,
     callee: &Place,
     args: &[PlaceOrSpread],
     lvalue: &Place,
@@ -254,7 +254,7 @@ fn handle_possible_use_memo_call(
 }
 
 fn validate_no_context_variable_assignment(func: &HirFunction, errors: &mut CompilerError) {
-    let context: HashSet<IdentifierId> =
+    let context: FxHashSet<IdentifierId> =
         func.context.iter().map(|place| place.identifier).collect();
 
     for (_block_id, block) in &func.body.blocks {

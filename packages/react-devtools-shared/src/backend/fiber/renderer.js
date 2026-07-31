@@ -171,8 +171,6 @@ import type {
   RendererInterface,
   SerializedElement,
   SerializedAsyncInfo,
-  CurrentDispatcherRef,
-  LegacyDispatcherRef,
   ProfilingSettings,
 } from '../types';
 import type {
@@ -194,6 +192,7 @@ import {
   VIRTUAL_INSTANCE,
   FILTERED_FIBER_INSTANCE,
 } from './shared/DevToolsFiberTypes';
+import {getDispatcherRef} from '../shared/DevToolsReactDispatcher';
 import {getSourceLocationByFiber} from './DevToolsFiberComponentStack';
 import {formatOwnerStack} from '../shared/DevToolsOwnerStack';
 
@@ -273,31 +272,6 @@ function createSuspenseNode(
     hasUniqueSuspenders: false,
     hasUnknownSuspenders: false,
   });
-}
-
-export function getDispatcherRef(renderer: {
-  +currentDispatcherRef?: LegacyDispatcherRef | CurrentDispatcherRef,
-  ...
-}): void | CurrentDispatcherRef {
-  if (renderer.currentDispatcherRef === undefined) {
-    return undefined;
-  }
-  const injectedRef = renderer.currentDispatcherRef;
-  if (
-    typeof injectedRef.H === 'undefined' &&
-    typeof injectedRef.current !== 'undefined'
-  ) {
-    // We got a legacy dispatcher injected, let's create a wrapper proxy to translate.
-    return {
-      get H() {
-        return (injectedRef as any).current;
-      },
-      set H(value) {
-        (injectedRef as any).current = value;
-      },
-    };
-  }
-  return injectedRef as any;
 }
 
 // All environment names we've seen so far. This lets us create a list of filters to apply.
