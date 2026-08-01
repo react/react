@@ -1,0 +1,63 @@
+{
+  "name": "react-server-dom-comet",
+  "description": "React Server Components bindings for DOM tailored for CometJS: native ESM base plus a Relay-store delta carrier for differential piggyback. Intended to be integrated into the CometJS meta-framework; not imported directly. SCAFFOLD — derives from react-server-dom-esm; see README.",
+  "version": "19.3.0",
+  "keywords": ["react", "cometjs"],
+  "homepage": "https://react.dev/",
+  "bugs": "https://github.com/facebook/react/issues",
+  "license": "MIT",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "index.js",
+    "client.js",
+    "client.browser.js",
+    "client.node.js",
+    "server.js",
+    "server.node.js",
+    "static.js",
+    "static.node.js",
+    "delta.js",
+    "cjs/",
+    "esm/"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": {
+      "node": "./client.node.js",
+      "default": "./client.browser.js"
+    },
+    "./client.browser": "./client.browser.js",
+    "./client.node": "./client.node.js",
+    "./server": {
+      "react-server": "./server.node.js",
+      "default": "./server.js"
+    },
+    "./server.node": "./server.node.js",
+    "./static": {
+      "react-server": "./static.node.js",
+      "default": "./static.js"
+    },
+    "./static.node": "./static.node.js",
+    "./delta": "./delta.js",
+    "./package.json": "./package.json"
+  },
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/facebook/react.git",
+    "directory": "packages/react-server-dom-comet"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "acorn-loose": "^8.3.0",
+    "webpack-sources": "^3.2.0",
+    "react-server-dom-esm": "19.3.0"
+  }
+}
