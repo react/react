@@ -22,6 +22,7 @@ import {currentBridgeProtocol} from 'react-devtools-shared/src/bridge';
 
 import type {BackendBridge} from 'react-devtools-shared/src/bridge';
 import type {
+  _Window,
   InstanceAndStyle,
   HostInstance,
   OwnersList,
@@ -293,6 +294,7 @@ export default class Agent extends EventEmitter<{
       recordChangeDescriptions: boolean,
       recordTimeline: boolean,
     ) => void,
+    _window?: _Window,
   ) {
     super();
 
@@ -361,7 +363,7 @@ export default class Agent extends EventEmitter<{
     bridge.addListener('overrideProps', this.overrideProps);
     bridge.addListener('overrideState', this.overrideState);
 
-    setupHighlighter(bridge, this);
+    setupHighlighter(bridge, this, _window);
     setupTraceUpdates(this);
 
     // By this time, Store should already be initialized and intercept events
