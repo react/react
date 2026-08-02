@@ -732,6 +732,61 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
+    it(
+      'preserves pending updates on later hooks that were not processed ' +
+        'before unwind',
+      async () => {
+        const thenable = {then() {}};
+
+        let setLabel;
+        function Foo({suspend}) {
+          return (
+            <Suspense fallback="Loading...">
+              <Bar suspend={suspend} />
+            </Suspense>
+          );
+        }
+
+        function Bar({suspend}) {
+          const [counter, setCounter] = useState(0);
+
+          if (suspend) {
+            setCounter(c => c + 1);
+            Scheduler.log('Suspend!');
+            throw thenable;
+          }
+
+          const [label, _setLabel] = useState('A');
+          setLabel = _setLabel;
+
+          return <Text text={`${label}:${counter}`} />;
+        }
+
+        const root = ReactNoop.createRoot();
+        root.render(<Foo suspend={false} />);
+
+        await waitForAll(['A:0']);
+        expect(root).toMatchRenderedOutput(<span prop="A:0" />);
+
+        await act(async () => {
+          React.startTransition(() => {
+            root.render(<Foo suspend={true} />);
+            setLabel('B');
+          });
+
+          await waitForAll(['Suspend!']);
+          expect(root).toMatchRenderedOutput(<span prop="A:0" />);
+
+          React.startTransition(() => {
+            root.render(<Foo suspend={false} />);
+          });
+
+          await waitForAll(['B:0']);
+          expect(root).toMatchRenderedOutput(<span prop="B:0" />);
+        });
+      },
+    );
+
     it('regression: render phase updates cause lower pri work to be dropped', async () => {
       let setRow;
       function ScrollView() {

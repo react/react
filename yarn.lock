@@ -6432,6 +6432,11 @@ chrome-launch@^1.1.4:
     rimraf "^2.2.8"
     shallow-copy "0.0.1"
 
+chrome-devtools-mcp@1.3.0:
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/chrome-devtools-mcp/-/chrome-devtools-mcp-1.3.0.tgz#7aeb4c8dab5d8dc536ef683b75e7a81b3989ad0e"
+  integrity sha512-52NVUwWSL4eW7W9nsDrzYJF96IKVuxEwAn4O7ZfdNRtopS954P9nryJbdYwg7vdqxhLrvioGFlm5e4P41WXsiw==
+
 chrome-launcher@0.15.1:
   version "0.15.1"
   resolved "https://registry.yarnpkg.com/chrome-launcher/-/chrome-launcher-0.15.1.tgz#0a0208037063641e2b3613b7e42b0fcb3fa2d399"

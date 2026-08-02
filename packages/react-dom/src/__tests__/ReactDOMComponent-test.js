@@ -1283,6 +1283,41 @@ describe('ReactDOMComponent', () => {
       expect(container.textContent).toEqual('bonjour');
     });
 
+    it('should not incur unnecessary DOM mutations for equal innerHTML', async () => {
+      // Regression test for https://github.com/facebook/react/issues/30994.
+      // Reassigning equal innerHTML destroys and recreates the child nodes,
+      // which breaks in-progress gestures (e.g. swallows an in-flight click
+      // when a re-render commits between focus and click) and discards state
+      // like text selection.
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div dangerouslySetInnerHTML={{__html: '<span>hi</span>'}} />,
+        );
+      });
+
+      const node = container.firstChild;
+      const child = node.firstChild;
+
+      // A new object with an equal __html string must not touch the DOM.
+      await act(() => {
+        root.render(
+          <div dangerouslySetInnerHTML={{__html: '<span>hi</span>'}} />,
+        );
+      });
+      expect(node.firstChild).toBe(child);
+
+      // A different __html string still updates.
+      await act(() => {
+        root.render(
+          <div dangerouslySetInnerHTML={{__html: '<span>bye</span>'}} />,
+        );
+      });
+      expect(node.firstChild).not.toBe(child);
+      expect(node.innerHTML).toEqual('<span>bye</span>');
+    });
+
     it('should not incur unnecessary DOM mutations for attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);

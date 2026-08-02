@@ -464,7 +464,6 @@ module.exports = {
       files: ['packages/react-native-renderer/**/*.js'],
       globals: {
         nativeFabricUIManager: 'readonly',
-        RN$enableMicrotasksInReact: 'readonly',
         RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
       },
     },
@@ -622,6 +621,7 @@ module.exports = {
     ReadableStreamReader: 'readonly',
     RequestInfo: 'readonly',
     RequestOptions: 'readonly',
+    Required: 'readonly',
     StoreAsGlobal: 'readonly',
     symbol: 'readonly',
     SyntheticEvent: 'readonly',

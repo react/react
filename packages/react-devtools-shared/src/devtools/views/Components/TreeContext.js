@@ -72,6 +72,10 @@ type ACTION_GO_TO_NEXT_SEARCH_RESULT = {
 type ACTION_GO_TO_PREVIOUS_SEARCH_RESULT = {
   type: 'GO_TO_PREVIOUS_SEARCH_RESULT',
 };
+type ACTION_GO_TO_SEARCH_RESULT = {
+  type: 'GO_TO_SEARCH_RESULT',
+  payload: number,
+};
 type ACTION_HANDLE_STORE_MUTATION = {
   type: 'HANDLE_STORE_MUTATION',
   payload: [Array<number>, Map<number, number>, null | Element['id']],
@@ -129,6 +133,7 @@ type ACTION_SET_SEARCH_TEXT = {
 type Action =
   | ACTION_GO_TO_NEXT_SEARCH_RESULT
   | ACTION_GO_TO_PREVIOUS_SEARCH_RESULT
+  | ACTION_GO_TO_SEARCH_RESULT
   | ACTION_HANDLE_STORE_MUTATION
   | ACTION_RESET_OWNER_STACK
   | ACTION_SELECT_CHILD_ELEMENT_IN_TREE
@@ -525,6 +530,19 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
               : numPrevSearchResults - 1;
         }
         break;
+      case 'GO_TO_SEARCH_RESULT':
+        if (numPrevSearchResults > 0) {
+          didRequestSearch = true;
+          // Jump directly to a specific result (0-based), clamped to range.
+          // This lets users skip past large virtualized lists instead of
+          // stepping through results one at a time.
+          const targetIndex = (action as ACTION_GO_TO_SEARCH_RESULT).payload;
+          searchIndex = Math.max(
+            0,
+            Math.min(targetIndex, numPrevSearchResults - 1),
+          );
+        }
+        break;
       case 'HANDLE_STORE_MUTATION':
         if (searchText !== '') {
           const [addedElementIDs, removedElementIDs] = (
@@ -630,13 +648,21 @@ function reduceSearchState(store: Store, state: State, action: Action): State {
   if (searchText !== prevSearchText) {
     // $FlowFixMe[incompatible-type]
     const newSearchIndex = searchResults.indexOf(inspectedElementID);
-    if (newSearchIndex === -1) {
-      // Only move the selection if the new query
-      // doesn't match the current selection anymore.
+    if (prevSearchText === '') {
+      // Starting a fresh search (e.g. after clearing the box). Honor the index
+      // computed above, which uses "find next" semantics so that retyping the
+      // same query advances past the still-selected result instead of snapping
+      // back to it.
+      if (searchIndex !== null) {
+        didRequestSearch = true;
+      }
+    } else if (newSearchIndex === -1) {
+      // Refining an existing query and the current selection no longer matches,
+      // so move the selection to the nearest result.
       didRequestSearch = true;
     } else {
-      // Selected item still matches the new search query.
-      // Adjust the index to reflect its position in new results.
+      // Refining an existing query and the current selection still matches.
+      // Keep it selected and adjust the index to its position in new results.
       searchIndex = newSearchIndex;
     }
   }
@@ -910,6 +936,7 @@ function TreeContextController({
         switch (type) {
           case 'GO_TO_NEXT_SEARCH_RESULT':
           case 'GO_TO_PREVIOUS_SEARCH_RESULT':
+          case 'GO_TO_SEARCH_RESULT':
           case 'HANDLE_STORE_MUTATION':
           case 'RESET_OWNER_STACK':
           case 'SELECT_ELEMENT_AT_INDEX':
@@ -1079,9 +1106,23 @@ function getNearestResultIndex(
   searchResults: Array<number>,
   inspectedElementIndex: number,
 ): number {
+  // When the currently selected element is itself a match for the new query
+  // (e.g. you cleared the search and retyped the same text while a result was
+  // still selected), advance to the *next* match instead of snapping back to
+  // the same component. This mirrors "find next" semantics in browsers/editors
+  // and avoids the search feeling stuck on the same result.
+  const selectedIsResult = searchResults.some(
+    id => store.getIndexOfElementID(id) === inspectedElementIndex,
+  );
+
   const index = searchResults.findIndex(id => {
     const innerIndex = store.getIndexOfElementID(id);
-    return innerIndex !== null && innerIndex >= inspectedElementIndex;
+    if (innerIndex === null) {
+      return false;
+    }
+    return selectedIsResult
+      ? innerIndex > inspectedElementIndex
+      : innerIndex >= inspectedElementIndex;
   });
 
   return index === -1 ? 0 : index;

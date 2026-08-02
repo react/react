@@ -11,7 +11,7 @@
 
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 
-import {getNextSiblingHostFiber} from 'react-reconciler/src/ReactFiberTreeReflection';
+import {getNextSiblingInstanceOrTextInstanceFiber} from 'react-reconciler/src/ReactFiberTreeReflection';
 
 export function compareDocumentPositionForEmptyFragment<TPublicInstance>(
   fragmentFiber: Fiber,
@@ -32,7 +32,8 @@ export function compareDocumentPositionForEmptyFragment<TPublicInstance>(
     if (parentResult & Node.DOCUMENT_POSITION_CONTAINED_BY) {
       // otherNode is one of the fragment's siblings. Use the next
       // sibling to determine if its preceding or following.
-      const nextSiblingFiber = getNextSiblingHostFiber(fragmentFiber);
+      const nextSiblingFiber =
+        getNextSiblingInstanceOrTextInstanceFiber(fragmentFiber);
       if (nextSiblingFiber === null) {
         result = Node.DOCUMENT_POSITION_PRECEDING;
       } else {

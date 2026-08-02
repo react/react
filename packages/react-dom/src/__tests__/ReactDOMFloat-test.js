@@ -6621,6 +6621,29 @@ body {
       );
     });
 
+    it('supports nonce', async () => {
+      function App({ssr}) {
+        const prefix = ssr ? 'ssr ' : 'browser ';
+        ReactDOM.preloadModule(prefix + 'module', {nonce: 'abc'});
+        return <div>hello</div>;
+      }
+      await act(() => {
+        renderToPipeableStream(<App ssr={true} />).pipe(writable);
+      });
+      expect(getMeaningfulChildren(document.body)).toEqual(
+        <div id="container">
+          <link rel="modulepreload" href="ssr module" nonce="abc" />
+          <div>hello</div>
+        </div>,
+      );
+
+      ReactDOMClient.hydrateRoot(container, <App />);
+      await waitForAll([]);
+      expect(getMeaningfulChildren(document.head)).toEqual(
+        <link rel="modulepreload" href="browser module" nonce="abc" />,
+      );
+    });
+
     it('warns if you provide invalid arguments', async () => {
       function App() {
         ReactDOM.preloadModule();

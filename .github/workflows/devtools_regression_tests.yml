@@ -69,7 +69,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
@@ -129,7 +129,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore all archived build artifacts
@@ -163,7 +163,7 @@ jobs:
         with:
           path: |
             **/node_modules
-          key: runtime-node_modules-v9-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          key: runtime-node_modules-v10-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
       - run: yarn install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
       - name: Restore all archived build artifacts

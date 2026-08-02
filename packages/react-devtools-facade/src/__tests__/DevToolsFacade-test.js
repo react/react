@@ -47,6 +47,7 @@ describe('react-devtools-facade', () => {
   });
 
   afterEach(() => {
+    jest.dontMock('react-debug-tools');
     container = null;
   });
 
@@ -1034,6 +1035,106 @@ describe('react-devtools-facade', () => {
     });
   });
 
+  describe('getParentStack', () => {
+    let getParentStack;
+    let getOwnerStack;
+    let getComponentTree;
+
+    beforeEach(() => {
+      const tools = createTools(facade);
+      getParentStack = tools.getParentStack;
+      getOwnerStack = tools.getOwnerStack;
+      getComponentTree = tools.getComponentTree;
+    });
+
+    it('returns structural parents from immediate parent to host root', () => {
+      function Child() {
+        return <span>leaf</span>;
+      }
+      function App() {
+        return (
+          <section>
+            <Child />
+          </section>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const child = getComponentTree().find(n => n.name === 'Child');
+      expect(child).toBeDefined();
+
+      const parents = getParentStack(child.uid);
+      expect(parents).toEqual([
+        {
+          uid: 'r2',
+          name: 'section',
+          type: 'host',
+        },
+        {
+          uid: 'r0',
+          name: 'App',
+          type: 'function',
+        },
+        {
+          uid: 'r1',
+          name: expect.any(String),
+          type: 'root',
+        },
+      ]);
+    });
+
+    it('distinguishes structural parents from JSX owners', () => {
+      function Child() {
+        return <span>leaf</span>;
+      }
+      function App() {
+        return (
+          <section>
+            <Child />
+          </section>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const child = getComponentTree().find(n => n.name === 'Child');
+      const parents = getParentStack(child.uid);
+      const owners = getOwnerStack(child.uid);
+
+      expect(parents[0]).toMatchObject({
+        name: 'section',
+        type: 'host',
+      });
+      expect(owners[0]).toMatchObject({
+        name: 'App',
+        type: 'function',
+      });
+    });
+
+    it('returns an empty array for the host root', () => {
+      function App() {
+        return <div>hello</div>;
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const root = getComponentTree().find(n => n.type === 'root');
+      expect(getParentStack(root.uid)).toEqual([]);
+    });
+
+    it('returns error for non-existent uid', () => {
+      const result = getParentStack('r9999');
+      expect(result.error).toMatch(/Component not found/);
+    });
+  });
+
   describe('getOwnerStack', () => {
     let getOwnerStack;
     let getComponentTree;
@@ -1481,7 +1582,7 @@ describe('react-devtools-facade', () => {
       });
 
       const widget = getComponentTree().find(n => n.name === 'Widget');
-      const info = getComponentByUid(widget.uid);
+      const info = getComponentByUid(widget.uid, true);
 
       // Full structural assertion: every hook node, in order, with its id
       // (sequential per primitive hook; custom hooks are null), name, normalized
@@ -1499,6 +1600,58 @@ describe('react-devtools-facade', () => {
         {id: 4, name: 'Ref', value: 1, subHooks: []},
         {id: 5, name: 'Memo', value: 5, subHooks: []},
       ]);
+    });
+
+    it('does not inspect hooks by default', () => {
+      function Widget() {
+        React.useState(7);
+        return <div>widget</div>;
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<Widget />);
+      });
+
+      const widget = getComponentTree().find(n => n.name === 'Widget');
+      const info = getComponentByUid(widget.uid);
+
+      expect(info.hooks).toBeUndefined();
+    });
+
+    it('returns an error when requested hook inspection fails', () => {
+      jest.resetModules();
+      jest.doMock('react-debug-tools', () => ({
+        inspectHooksOfFiberWithoutDefaultDispatcher() {
+          throw new Error('Cannot inspect hooks');
+        },
+      }));
+      delete globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+
+      const facadeAPI = require('../../index');
+      const mockedFacade = facadeAPI.installFacade();
+      const mockedTools = facadeAPI.createTools(mockedFacade);
+      const MockedReact = require('react');
+      const MockedReactDOMClient = require('react-dom/client');
+
+      function Widget() {
+        MockedReact.useState(7);
+        return MockedReact.createElement('div', null, 'widget');
+      }
+
+      MockedReact.act(() => {
+        MockedReactDOMClient.createRoot(container).render(
+          MockedReact.createElement(Widget),
+        );
+      });
+
+      const widget = mockedTools
+        .getComponentTree()
+        .find(node => node.name === 'Widget');
+      const info = mockedTools.getComponentByUid(widget.uid, true);
+
+      expect(info.error).toBeInstanceOf(Error);
+      expect(info.error.message).toBe('Failed to inspect hooks.');
+      expect(info.error.cause).toEqual(new Error('Cannot inspect hooks'));
     });
 
     it('captures the useContext hook with its provided value', () => {
@@ -1526,7 +1679,7 @@ describe('react-devtools-facade', () => {
       });
 
       const themed = getComponentTree().find(n => n.name === 'Themed');
-      const info = getComponentByUid(themed.uid);
+      const info = getComponentByUid(themed.uid, true);
       // useContext is captured as a "Context" hook holding the provider's value.
       // It does not consume a primitive hook slot, so its id is null; the
       // following useState is the first primitive hook (id 0).
@@ -1546,7 +1699,7 @@ describe('react-devtools-facade', () => {
       });
 
       const plain = getComponentTree().find(n => n.name === 'Plain');
-      const info = getComponentByUid(plain.uid);
+      const info = getComponentByUid(plain.uid, true);
       expect(info.hooks).toEqual([]);
     });
 
@@ -1562,7 +1715,7 @@ describe('react-devtools-facade', () => {
       });
 
       const myClass = getComponentTree().find(n => n.name === 'MyClass');
-      const info = getComponentByUid(myClass.uid);
+      const info = getComponentByUid(myClass.uid, true);
       expect(info.hooks).toBeUndefined();
     });
 
@@ -1576,8 +1729,140 @@ describe('react-devtools-facade', () => {
       });
 
       const div = getComponentTree().find(n => n.name === 'div');
-      const info = getComponentByUid(div.uid);
+      const info = getComponentByUid(div.uid, true);
       expect(info.hooks).toBeUndefined();
+    });
+  });
+
+  describe('getComponentByHostInstance', () => {
+    let getComponentTree;
+    let getComponentByUid;
+    let getComponentByHostInstance;
+
+    beforeEach(() => {
+      const tools = createTools(facade);
+      getComponentTree = tools.getComponentTree;
+      getComponentByUid = tools.getComponentByUid;
+      getComponentByHostInstance = tools.getComponentByHostInstance;
+    });
+
+    it('returns the host component for a DOM host element', () => {
+      function Child({label}) {
+        return <span className="leaf">{label}</span>;
+      }
+      function App() {
+        return (
+          <div>
+            <Child label="leaf" />
+          </div>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const span = container.querySelector('span.leaf');
+      const host = getComponentTree().find(n => n.name === 'span');
+      const result = getComponentByHostInstance(span);
+
+      expect(result).toEqual(getComponentByUid(host.uid));
+      expect(result).toMatchObject({
+        uid: host.uid,
+        type: 'host',
+        name: 'span',
+        props: {className: 'leaf'},
+      });
+    });
+
+    it('returns the host component rather than the tree owner', () => {
+      function Wrapper({children}) {
+        return <section className="wrap">{children}</section>;
+      }
+      function App() {
+        return (
+          <Wrapper>
+            <button className="action">Run</button>
+          </Wrapper>
+        );
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const button = container.querySelector('button.action');
+      const tree = getComponentTree();
+      const host = tree.find(n => n.name === 'button');
+      const wrapper = tree.find(n => n.name === 'Wrapper');
+      const app = tree.find(n => n.name === 'App');
+      const result = getComponentByHostInstance(button);
+
+      expect(result.uid).toBe(host.uid);
+      expect(result.uid).not.toBe(wrapper.uid);
+      expect(result.uid).not.toBe(app.uid);
+      expect(result).toMatchObject({
+        type: 'host',
+        name: 'button',
+        props: {className: 'action'},
+      });
+    });
+
+    it('keeps uids stable across re-renders via alternate fibers', () => {
+      function Counter({count}) {
+        return <div className="counter">{'Count: ' + count}</div>;
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      act(() => {
+        root.render(<Counter count={0} />);
+      });
+
+      const div = container.querySelector('div.counter');
+      const first = getComponentByHostInstance(div);
+
+      act(() => {
+        root.render(<Counter count={1} />);
+      });
+
+      const second = getComponentByHostInstance(div);
+      expect(second.uid).toBe(first.uid);
+      expect(second.name).toBe('div');
+      expect(second.type).toBe('host');
+      expect(second.props.className).toBe('counter');
+    });
+
+    it('does not walk platform parent pointers for unmanaged nested nodes', () => {
+      function App() {
+        return <div className="host" />;
+      }
+
+      act(() => {
+        ReactDOMClient.createRoot(container).render(<App />);
+      });
+
+      const host = container.querySelector('div.host');
+      const unmanagedChild = document.createElement('i');
+      host.appendChild(unmanagedChild);
+
+      expect(getComponentByHostInstance(unmanagedChild)).toEqual({
+        error: 'Host instance is not managed by React',
+      });
+    });
+
+    it('returns an error when no roots are mounted', () => {
+      expect(getComponentByHostInstance({})).toEqual({
+        error: 'No mounted React roots found',
+      });
+    });
+
+    it('returns an error for null or undefined references', () => {
+      expect(getComponentByHostInstance(null)).toEqual({
+        error: 'Host instance is required',
+      });
+      expect(getComponentByHostInstance(undefined)).toEqual({
+        error: 'Host instance is required',
+      });
     });
   });
 
