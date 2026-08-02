@@ -10266,6 +10266,69 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     );
   });
 
+  // Regression test for https://github.com/facebook/react/issues/37178
+  // Same as above but with content large enough to make the inner boundary
+  // eligible for outlining, in which case the suspended fallback is not
+  // cancelled when the boundary completes but when it flushes.
+  it('completes the outer boundary when an outlined boundary abandons its suspended fallback', async () => {
+    function SuspendForever() {
+      React.use(new Promise(() => {}));
+    }
+
+    let resolve = () => {};
+    const suspendPromise = new Promise(r => {
+      resolve = r;
+    });
+    function Suspend() {
+      return React.use(suspendPromise);
+    }
+
+    const bigText = 'x'.repeat(1024);
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="outer">
+            <Suspense fallback={<SuspendForever />}>
+              <span>{bigText}</span>
+              <span>
+                <Suspend />
+              </span>
+            </Suspense>
+          </Suspense>
+        </div>
+      );
+    }
+
+    let allReady = false;
+    await act(async () => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        progressiveChunkSize: 256,
+        onAllReady() {
+          allReady = true;
+        },
+        onError() {},
+      });
+      pipe(writable);
+    });
+
+    // The shell flushed with the outer fallback while the content was pending.
+    expect(getVisibleChildren(container)).toEqual(<div>outer</div>);
+    expect(allReady).toBe(false);
+
+    await act(() => {
+      resolve('!');
+    });
+
+    expect(allReady).toBe(true);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>{bigText}</span>
+        <span>!</span>
+      </div>,
+    );
+  });
+
   // @gate enableCPUSuspense
   it('outlines deferred Suspense boundaries', async () => {
     function Log({text}) {
