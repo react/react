@@ -327,10 +327,10 @@ const endAsyncScript = stringToPrecomputedChunk(' async=""></script>');
 const startInlineStyle = stringToPrecomputedChunk('<style');
 
 /**
- * This escaping function is designed to work with with inline scripts where the entire
+ * This escaping function is designed to work with inline scripts where the entire
  * contents are escaped. Because we know we are escaping the entire script we can avoid for instance
  * escaping html comment string sequences that are valid javascript as well because
- * if there are no sebsequent <script sequences the html parser will never enter
+ * if there are no subsequent <script sequences the html parser will never enter
  * script data double escaped state (see: https://www.w3.org/TR/html53/syntax.html#script-data-double-escaped-state)
  *
  * While untrusted script content should be made safe before using this api it will
@@ -2880,7 +2880,7 @@ function pushMeta(
 
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
-      // because they are likely superceded by primary content and we want to avoid needing to clean
+      // because they are likely superseded by primary content and we want to avoid needing to clean
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
@@ -2943,7 +2943,7 @@ function pushLink(
       if (rel === 'stylesheet' && typeof props.precedence === 'string') {
         if (typeof href !== 'string' || !href) {
           console.error(
-            'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and expected the `href` prop to be a non-empty string but ecountered %s instead. If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` prop ensure there is a non-empty string `href` prop as well, otherwise remove the `precedence` prop.',
+            'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and expected the `href` prop to be a non-empty string but encountered %s instead. If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` prop ensure there is a non-empty string `href` prop as well, otherwise remove the `precedence` prop.',
             getValueDescriptorExpectingObjectForWarning(href),
           );
         }
@@ -2969,7 +2969,7 @@ function pushLink(
         if (typeof precedence === 'string') {
           if (props.disabled != null) {
             console.error(
-              'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and a `disabled` prop. The presence of the `disabled` prop indicates an intent to manage the stylesheet active state from your from your Component code and React will not hoist or deduplicate this stylesheet. If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` prop remove the `disabled` prop, otherwise remove the `precedence` prop.',
+              'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and a `disabled` prop. The presence of the `disabled` prop indicates an intent to manage the stylesheet active state from your Component code and React will not hoist or deduplicate this stylesheet. If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` prop remove the `disabled` prop, otherwise remove the `precedence` prop.',
             );
           } else if (props.onLoad || props.onError) {
             const propDescription =
@@ -2979,7 +2979,7 @@ function pushLink(
                   ? '`onLoad` prop'
                   : '`onError` prop';
             console.error(
-              'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and %s. The presence of loading and error handlers indicates an intent to manage the stylesheet loading state from your from your Component code and React will not hoist or deduplicate this stylesheet. If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` prop remove the %s, otherwise remove the `precedence` prop.',
+              'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and %s. The presence of loading and error handlers indicates an intent to manage the stylesheet loading state from your Component code and React will not hoist or deduplicate this stylesheet. If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` prop remove the %s, otherwise remove the `precedence` prop.',
               propDescription,
               propDescription,
             );
@@ -3083,7 +3083,7 @@ function pushLink(
 
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
-      // because they are likely superceded by primary content and we want to avoid needing to clean
+      // because they are likely superseded by primary content and we want to avoid needing to clean
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
@@ -3183,7 +3183,7 @@ function pushStyle(
   if (__DEV__) {
     if (href.includes(' ')) {
       console.error(
-        'React expected the `href` prop for a <style> tag opting into hoisting semantics using the `precedence` prop to not have any spaces but ecountered spaces instead. using spaces in this prop will cause hydration of this style to fail on the client. The href for the <style> where this ocurred is "%s".',
+        'React expected the `href` prop for a <style> tag opting into hoisting semantics using the `precedence` prop to not have any spaces but encountered spaces instead. Using spaces in this prop will cause hydration of this style to fail on the client. The href for the <style> where this occurred is "%s".',
         href,
       );
     }
@@ -3658,7 +3658,7 @@ function pushTitle(
   ) {
     if (isFallback) {
       // Hoistable Elements for fallbacks are simply omitted. we don't want to emit them early
-      // because they are likely superceded by primary content and we want to avoid needing to clean
+      // because they are likely superseded by primary content and we want to avoid needing to clean
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
@@ -3754,7 +3754,7 @@ function pushStartHead(
     );
   } else {
     // This <head> is deep and is likely just an error. we emit it inline though.
-    // Validation should warn that this tag is the the wrong spot.
+    // Validation should warn that this tag is in the wrong spot.
     return pushStartGenericElement(target, props, 'head', formatContext);
   }
 }
@@ -3788,7 +3788,7 @@ function pushStartBody(
     );
   } else {
     // This <head> is deep and is likely just an error. we emit it inline though.
-    // Validation should warn that this tag is the the wrong spot.
+    // Validation should warn that this tag is in the wrong spot.
     return pushStartGenericElement(target, props, 'body', formatContext);
   }
 }
@@ -3822,7 +3822,7 @@ function pushStartHtml(
     );
   } else {
     // This <html> is deep and is likely just an error. we emit it inline though.
-    // Validation should warn that this tag is the the wrong spot.
+    // Validation should warn that this tag is in the wrong spot.
     return pushStartGenericElement(target, props, 'html', formatContext);
   }
 }
