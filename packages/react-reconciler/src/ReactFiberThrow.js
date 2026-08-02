@@ -417,7 +417,7 @@ function throwException(
                 renderDidSuspendDelayIfPossible();
               } else {
                 // If we suspended deeper than the shell, we don't need to delay
-                // the commmit. However, we still call renderDidSuspend if this is
+                // the commit. However, we still call renderDidSuspend if this is
                 // a new boundary, to tell the work loop that a new fallback has
                 // appeared during this render.
                 // TODO: Theoretically we should be able to delete this branch.

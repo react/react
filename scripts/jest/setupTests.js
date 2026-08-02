@@ -190,7 +190,7 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
     // Install a global error event handler. We treat global error events as
     // test failures, same as Jest's default behavior.
     //
-    // Becaused we installed our own error event handler, Jest will not report a
+    // Because we installed our own error event handler, Jest will not report a
     // test failure. Conceptually it's as if we wrapped the entire test event in
     // a try-catch.
     let didError = false;

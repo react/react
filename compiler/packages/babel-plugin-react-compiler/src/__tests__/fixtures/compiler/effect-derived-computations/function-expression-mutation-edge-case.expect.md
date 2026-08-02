@@ -13,7 +13,7 @@ function Component() {
    * if we don't bail out of effect mutation derivation tracking, isChanged
    * will inherit the sources of the effect's function expression.
    *
-   * This is innacurate and with the multiple passes ends up causing an infinite loop.
+   * This is inaccurate and with the multiple passes ends up causing an infinite loop.
    */
   useEffect(() => {
     let isChanged = false;
@@ -51,7 +51,7 @@ function Component() {
    * if we don't bail out of effect mutation derivation tracking, isChanged
    * will inherit the sources of the effect's function expression.
    *
-   * This is innacurate and with the multiple passes ends up causing an infinite loop.
+   * This is inaccurate and with the multiple passes ends up causing an infinite loop.
    */
   useEffect(() => {
     let isChanged = false;

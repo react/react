@@ -63,7 +63,7 @@ function testStringCoercion(value: mixed) {
   // To find which value is throwing, check the browser or debugger console.
   // Before this exception was thrown, there should be `console.error` output
   // that shows the type (Symbol, Temporal.PlainDate, etc.) that caused the
-  // problem and how that type was used: key, atrribute, input value prop, etc.
+  // problem and how that type was used: key, attribute, input value prop, etc.
   // In most cases, this console output also shows the component and its
   // ancestor components where the exception happened.
   //

@@ -713,7 +713,7 @@ describe('ReactDOMServerSelectiveHydration', () => {
     });
 
     // We should prioritize hydrating D first because we clicked it.
-    // but event isnt replayed
+    // but event isn't replayed
     assertLog([
       'D',
       'B', // Ideally this should be later.
@@ -844,7 +844,7 @@ describe('ReactDOMServerSelectiveHydration', () => {
     });
 
     // We should prioritize hydrating D first because we clicked it.
-    // but event isnt replayed
+    // but event isn't replayed
     assertLog([
       'D',
       'B', // Ideally this should be later.
@@ -1091,7 +1091,7 @@ describe('ReactDOMServerSelectiveHydration', () => {
       });
 
       // Inner is still blocked so when Outer replays the event in capture phase
-      // inner ends up caling stopPropagation
+      // inner ends up calling stopPropagation
       assertLog([]);
       OuterTestUtils.assertLog([]);
       InnerTestUtils.assertLog(['Suspend Inner']);

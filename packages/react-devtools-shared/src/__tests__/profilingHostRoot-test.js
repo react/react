@@ -35,7 +35,7 @@ describe('profiling HostRoot', () => {
     effectDurations = [];
     passiveEffectDurations = [];
 
-    // This is the DevTools hook installed by the env.beforEach()
+    // This is the DevTools hook installed by the env.beforeEach()
     // The hook is installed as a read-only property on the window,
     // so for our test purposes we can just override the commit hook.
     const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;

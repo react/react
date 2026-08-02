@@ -109,7 +109,7 @@ export function pushTreeFork(
 ): void {
   // This is called right after we reconcile an array (or iterator) of child
   // fibers, because that's the only place where we know how many children in
-  // the whole set without doing extra work later, or storing addtional
+  // the whole set without doing extra work later, or storing additional
   // information on the fiber.
   //
   // That's why this function is separate from pushTreeId — it's called during

@@ -1026,7 +1026,7 @@ class PruneScopesTransform extends ReactiveFunctionTransform<
 
     /**
      * Scopes may initially appear "empty" because the value being memoized
-     * is early-returned from within the scope. For now we intentionaly keep
+     * is early-returned from within the scope. For now we intentionally keep
      * these scopes, and let them get pruned later by PruneUnusedScopes
      * _after_ handling the early-return case in PropagateEarlyReturns.
      *

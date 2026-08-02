@@ -464,7 +464,7 @@ export function attach(
     // For example, ASTs cached for the component (for named hooks) may no longer be valid.
     // Send a signal to the frontend to purge this cached information.
     // The "fastRefreshScheduled" dispatched is global (not Fiber or even Renderer specific).
-    // This is less effecient since it means the front-end will need to purge the entire cache,
+    // This is less efficient since it means the front-end will need to purge the entire cache,
     // but this is probably an okay trade off in order to reduce coupling between the DevTools and Fast Refresh.
     renderer.scheduleRefresh = (...args) => {
       try {
@@ -3366,7 +3366,7 @@ export function attach(
         reconcilingParent.source === null
       ) {
         // The new Fiber is directly owned by the parent. Therefore somewhere on the
-        // debugStack will be a stack frame inside parent that we can use as its soruce.
+        // debugStack will be a stack frame inside parent that we can use as its source.
         reconcilingParent.source = fiber._debugStack;
       }
 
@@ -5730,7 +5730,7 @@ export function attach(
       const ioInfo = asyncInfo.awaited;
       if (foundIOEntries.has(ioInfo)) {
         // We have already added this I/O entry to the result. We can dedupe it.
-        // This can happen when an instance depends on the same data in mutliple places.
+        // This can happen when an instance depends on the same data in multiple places.
         continue;
       }
       foundIOEntries.add(ioInfo);

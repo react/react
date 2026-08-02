@@ -1020,7 +1020,7 @@ export function measureUpdateViewTransition(
   gesture: boolean,
 ): boolean {
   // If this was a gesture then which Fiber was used for the "old" vs "new" state is reversed.
-  // We still need to treat "finishedWork" as the Fiber that contains the flags for this commmit.
+  // We still need to treat "finishedWork" as the Fiber that contains the flags for this commit.
   const oldFiber = gesture ? finishedWork : current;
   const newFiber = gesture ? current : finishedWork;
   const props: ViewTransitionProps = newFiber.memoizedProps;

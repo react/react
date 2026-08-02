@@ -110,7 +110,7 @@ function updateLaneToLabelMap(
   laneLabelTuplesString: string,
 ): void {
   // These marks appear multiple times in the data;
-  // We only need to extact them once.
+  // We only need to extract them once.
   if (profilerData.laneToLabelMap.size === 0) {
     const laneLabelTuples = laneLabelTuplesString.split(',');
     for (let laneIndex = 0; laneIndex < laneLabelTuples.length; laneIndex++) {
@@ -288,7 +288,7 @@ function processEventDispatch(
     // $FlowFixMe[incompatible-type]
     profilerData.nativeEvents.push(nativeEvent);
 
-    // Keep track of curent event in case future ones overlap.
+    // Keep track of current event in case future ones overlap.
     // We separate them into different vertical lanes in this case.
     // $FlowFixMe[incompatible-type]
     state.nativeEventStack.push(nativeEvent);
@@ -1050,7 +1050,7 @@ export default async function preprocessData(
   // We'll thus expect there to be a 'Profile' event; if there is not one, we
   // can deduce that there are no flame chart events. As we expect React
   // scheduling profiling user timing marks to be recorded together with browser
-  // flame chart events, we can futher deduce that the data is invalid and we
+  // flame chart events, we can further deduce that the data is invalid and we
   // don't bother finding React events.
   const indexOfProfileEvent = timeline.findIndex(
     event => event.name === 'Profile',

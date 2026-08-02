@@ -40,7 +40,7 @@ export class Color {
     return `rgba(${this.r},${this.g},${this.b},${a})`;
   }
   /**
-   * Redistributes rgb, maintaing hue until its clamped.
+   * Redistributes rgb, maintaining hue until its clamped.
    * https://stackoverflow.com/a/141943
    */
   private static redistribute([r, g, b]: RGB): RGB {

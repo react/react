@@ -70,7 +70,7 @@ export class SnapshotsView extends View {
     while (x < visibleArea.origin.x + visibleArea.size.width) {
       const snapshot = this._findClosestSnapshot(x);
       if (snapshot === null) {
-        // This shold never happen.
+        // This should never happen.
         break;
       }
 
