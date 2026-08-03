@@ -4707,7 +4707,7 @@ export function writeStartClientRenderedSuspenseBoundary(
     startClientRenderedSuspenseBoundary,
   );
   writeChunk(destination, clientRenderedSuspenseBoundaryError1);
-  if (errorDigest) {
+  if (errorDigest != null) {
     writeChunk(destination, clientRenderedSuspenseBoundaryError1A);
     writeChunk(destination, stringToChunk(escapeTextForBrowser(errorDigest)));
     writeChunk(
@@ -5131,6 +5131,7 @@ const clientRenderScript1Full = stringToPrecomputedChunk(
 const clientRenderScript1Partial = stringToPrecomputedChunk('$RX("');
 const clientRenderScript1A = stringToPrecomputedChunk('"');
 const clientRenderErrorScriptArgInterstitial = stringToPrecomputedChunk(',');
+const clientRenderErrorScriptNull = stringToPrecomputedChunk('null');
 const clientRenderScriptEnd = stringToPrecomputedChunk(')</script>');
 
 const clientRenderData1 = stringToPrecomputedChunk(
@@ -5182,21 +5183,27 @@ export function writeClientRenderBoundaryInstruction(
     writeChunk(destination, clientRenderScript1A);
   }
 
-  if (errorDigest || errorMessage || errorStack || errorComponentStack) {
+  if (
+    errorDigest != null ||
+    errorMessage ||
+    errorStack ||
+    errorComponentStack
+  ) {
     if (scriptFormat) {
-      // ,"JSONString"
+      // ,null or ,"JSONString"
       writeChunk(destination, clientRenderErrorScriptArgInterstitial);
-      writeChunk(
-        destination,
-        stringToChunk(escapeJSStringsForInstructionScripts(errorDigest || '')),
-      );
-    } else {
+      if (errorDigest == null) {
+        writeChunk(destination, clientRenderErrorScriptNull);
+      } else {
+        writeChunk(
+          destination,
+          stringToChunk(escapeJSStringsForInstructionScripts(errorDigest)),
+        );
+      }
+    } else if (errorDigest != null) {
       // " data-dgst="HTMLString
       writeChunk(destination, clientRenderData2);
-      writeChunk(
-        destination,
-        stringToChunk(escapeTextForBrowser(errorDigest || '')),
-      );
+      writeChunk(destination, stringToChunk(escapeTextForBrowser(errorDigest)));
     }
   }
   if (errorMessage || errorStack || errorComponentStack) {

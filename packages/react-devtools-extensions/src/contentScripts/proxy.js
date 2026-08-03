@@ -17,6 +17,8 @@ import {
 } from '../constants';
 
 function injectProxy() {
+  isTransportActive = true;
+
   // Firefox's behaviour for injecting this content script can be unpredictable
   // While navigating the history, some content scripts might not be re-injected and still be alive
   if (!window.__REACT_DEVTOOLS_PROXY_INJECTED__) {
@@ -29,9 +31,9 @@ function injectProxy() {
     // The backend waits to install the global hook until notified by the content script.
     // In the event of a page reload, the content script might be loaded before the backend manager is injected.
     // Because of this we need to poll the backend manager until it has been initialized.
-    const intervalID: IntervalID = setInterval(() => {
+    backendManagerHelloIntervalID = setInterval(() => {
       if (backendInitialized) {
-        clearInterval(intervalID);
+        stopPollingForBackendManager();
       } else {
         sayHelloToBackendManager();
       }
@@ -62,14 +64,29 @@ window.addEventListener('pagehide', function ({target}) {
     return;
   }
 
+  isTransportActive = false;
+  backendInitialized = false;
+  isBridgeConnected = false;
+  pendingMessages.length = 0;
+  stopPollingForBackendManager();
+
   delete window.__REACT_DEVTOOLS_PROXY_INJECTED__;
 });
 
 let port: ExtensionRuntimePort | null = null;
+let isTransportActive: boolean = true;
 let backendInitialized: boolean = false;
 let isBridgeConnected: boolean = false;
 let isListeningToMessagesFromBackend: boolean = false;
 const pendingMessages: Array<mixed> = [];
+let backendManagerHelloIntervalID: IntervalID | null = null;
+
+function stopPollingForBackendManager() {
+  if (backendManagerHelloIntervalID !== null) {
+    clearInterval(backendManagerHelloIntervalID);
+    backendManagerHelloIntervalID = null;
+  }
+}
 
 function listenToMessagesFromBackend() {
   if (!isListeningToMessagesFromBackend) {
@@ -116,7 +133,7 @@ function handleMessageFromDevtools(
   sourcePort: ExtensionRuntimePort,
   message: mixed,
 ) {
-  if (port !== sourcePort) {
+  if (!isTransportActive || port !== sourcePort) {
     return;
   }
 
@@ -153,7 +170,7 @@ function handleMessageFromDevtools(
 }
 
 function handleMessageFromPage(event: any) {
-  if (event.source !== window || !event.data) {
+  if (!isTransportActive || event.source !== window || !event.data) {
     return;
   }
 
@@ -206,6 +223,10 @@ function handleDisconnect(disconnectedPort: ExtensionRuntimePort) {
 // Creates port from application page to the React DevTools' service worker
 // Which then connects it with extension port
 function connectPort() {
+  if (!isTransportActive) {
+    return;
+  }
+
   isBridgeConnected = false;
   const nextPort = chrome.runtime.connect({
     name: 'proxy',

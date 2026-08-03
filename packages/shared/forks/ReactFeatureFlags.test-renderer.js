@@ -20,11 +20,13 @@ export const enablePerformanceIssueReporting: boolean = false;
 export const enableUpdaterTracking: boolean = false;
 export const enableLegacyCache: boolean = __EXPERIMENTAL__;
 export const enableAsyncIterableChildren: boolean = false;
+export const enableFlightWeakThenables: boolean = false;
 export const enableTaint: boolean = true;
 export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
 export const enableScopeAPI: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableBrowserAPI: boolean = true;
 export const enableSuspenseCallback: boolean = false;
 export const enableTrustedTypesIntegration: boolean = true;
 export const disableTextareaChildren: boolean = false;
@@ -53,6 +55,7 @@ export const disableClientCache: boolean = true;
 
 export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
+export const enableConditionalUseWarning: boolean = false;
 
 export const enableEffectEventMutationPhase: boolean = true;
 

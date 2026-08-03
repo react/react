@@ -27,6 +27,7 @@ export const {
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode,
+  enableConditionalUseWarning,
 } = dynamicFlags;
 
 // The rest of the flags are static for better dead code elimination.
@@ -40,8 +41,10 @@ export const disableSchedulerTimeoutInWorkLoop: boolean = false;
 export const disableTextareaChildren: boolean = false;
 export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
+export const enableFlightWeakThenables: boolean = false;
 export const enableCPUSuspense: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableBrowserAPI: boolean = true;
 export const enableEffectEventMutationPhase: boolean = true;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;

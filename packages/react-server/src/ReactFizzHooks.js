@@ -14,6 +14,7 @@ import type {
   StartTransitionOptions,
   Thenable,
   Usable,
+  ReactRecoverable,
   ReactCustomFormAction,
   Awaited,
 } from 'shared/ReactTypes';
@@ -41,6 +42,7 @@ import {createFastHash} from './ReactServerStreamConfig';
 import is from 'shared/objectIs';
 import {
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
@@ -89,6 +91,30 @@ let actionStateMatchingIndex: number = -1;
 // Counts the number of use(thenable) calls in this component
 let thenableIndexCounter: number = 0;
 let thenableState: ThenableState | null = null;
+// An opaque exception that lets the Fizz work loop distinguish a recoverable
+// from an Error thrown by application code. The actual errors are stored
+// separately so this implementation detail cannot be mistaken for either
+// diagnostic if it is caught by userspace.
+export const RecoverableException: mixed = new Error(
+  "Recoverable Exception: This is not a real error! It's an implementation " +
+    'detail of `use` to interrupt the current render so a downstream ' +
+    'renderer can recover it. You must either rethrow it immediately, or move ' +
+    'the `use` call outside of the `try/catch` block. Capturing without ' +
+    'rethrowing will lead to unexpected behavior.',
+);
+let suspendedRecoverableError: Error | null = null;
+
+export function createFatalRecoverableError(
+  recoverable: ReactRecoverable,
+): Error {
+  return new Error(
+    'The server render could not complete because client rendering was ' +
+      "requested outside a Suspense boundary. See this error's cause for " +
+      'additional details.',
+    {cause: recoverable},
+  );
+}
+
 // Lazily created map of render-phase updates
 let renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null = null;
 // Counter to prevent infinite loops.
@@ -274,6 +300,22 @@ export function getThenableStateAfterSuspending(): null | ThenableState {
   const state = thenableState;
   thenableState = null;
   return state;
+}
+
+export function getSuspendedRecoverableError(): Error {
+  if (suspendedRecoverableError === null) {
+    throw new Error(
+      'Expected a suspended recoverable. This is a bug in React. Please file ' +
+        'an issue.',
+    );
+  }
+  const error = suspendedRecoverableError;
+  suspendedRecoverableError = null;
+  return error;
+}
+
+export function clearSuspendedRecoverableError(): void {
+  suspendedRecoverableError = null;
 }
 
 export function checkDidRenderIdHook(): boolean {
@@ -756,6 +798,15 @@ function use<T>(usable: Usable<T>): T {
       // This is a thenable.
       const thenable: Thenable<T> = usable as any;
       return unwrapThenable(thenable);
+    } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Fizz can defer this subtree to a downstream renderer. Like a suspended
+      // thenable, keep the actual value out of userspace and throw an opaque
+      // sentinel to unwind the stack. Capture the use() call site eagerly so
+      // that if there is no Suspense boundary, the fatal error points here and
+      // its cause points to where the recoverable was created.
+      const recoverable: ReactRecoverable = usable as any;
+      suspendedRecoverableError = createFatalRecoverableError(recoverable);
+      throw RecoverableException;
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
       const context: ReactContext<T> = usable as any;
       return readContext(context);

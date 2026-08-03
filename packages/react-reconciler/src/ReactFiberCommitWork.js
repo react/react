@@ -1527,6 +1527,9 @@ function commitDeletionEffectsOnFiber(
         if (!offscreenSubtreeWasHidden) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor);
         }
+        if (enableFragmentRefs) {
+          commitFragmentInstanceDeletionEffects(deletedFiber);
+        }
 
         const prevHostParent = hostParent;
         const prevHostParentIsContainer = hostParentIsContainer;
@@ -3102,6 +3105,7 @@ function disappearLayoutEffects(
       if (
         enableFragmentRefs &&
         (finishedWork.tag === HostComponent ||
+          finishedWork.tag === HostSingleton ||
           (enableFragmentRefsTextNodes && finishedWork.tag === HostText))
       ) {
         commitFragmentInstanceDeletionEffects(finishedWork);
@@ -3287,7 +3291,11 @@ function reappearLayoutEffects(
     case HostHoistable:
     case HostComponent: {
       // TODO: Enable HostText for RN
-      if (enableFragmentRefs && finishedWork.tag === HostComponent) {
+      if (
+        enableFragmentRefs &&
+        (finishedWork.tag === HostComponent ||
+          finishedWork.tag === HostSingleton)
+      ) {
         commitFragmentInstanceInsertionEffects(finishedWork);
       }
       recursivelyTraverseReappearLayoutEffects(
