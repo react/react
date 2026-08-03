@@ -8280,13 +8280,13 @@ body {
       assertConsoleErrorDev(
         [
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
-            'expected the `href` prop to be a non-empty string but ecountered `undefined` instead. ' +
+            'expected the `href` prop to be a non-empty string but encountered `undefined` instead. ' +
             'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
             '`precedence` prop ensure there is a non-empty string `href` prop as well, ' +
             'otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
-            'expected the `href` prop to be a non-empty string but ecountered an empty string instead. ' +
+            'expected the `href` prop to be a non-empty string but encountered an empty string instead. ' +
             'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
             '`precedence` prop ensure there is a non-empty string `href` prop as well, ' +
             'otherwise remove the `precedence` prop.\n' +
@@ -8935,9 +8935,9 @@ background-color: green;
       });
       assertConsoleErrorDev([
         'React expected the `href` prop for a <style> tag opting into hoisting semantics ' +
-          'using the `precedence` prop to not have any spaces but ecountered spaces instead. ' +
+          'using the `precedence` prop to not have any spaces but encountered spaces instead. ' +
           'using spaces in this prop will cause hydration of this style to fail on the client. ' +
-          'The href for the <style> where this ocurred is "foo bar".\n' +
+          'The href for the <style> where this occurred is "foo bar".\n' +
           '    in style (at **)',
       ]);
     });
