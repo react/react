@@ -432,16 +432,25 @@ describe('ReactDOMFizzServer', () => {
     }
 
     const serverErrors = [];
+    const browserBailouts = [];
     await act(() => {
       const {pipe} = renderToPipeableStream(<App />, {
         onError(error) {
           serverErrors.push(error);
+        },
+        onBrowserBailout(error, errorInfo) {
+          browserBailouts.push({error, errorInfo});
         },
       });
       pipe(writable);
     });
 
     expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].error).toBe(browserOnly);
+    expect(
+      normalizeCodeLocInfo(browserBailouts[0].errorInfo.componentStack),
+    ).toBe(componentStack(['BrowserOnly', 'Suspense', 'div', 'App']));
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>Fallback</span>
@@ -548,12 +557,16 @@ describe('ReactDOMFizzServer', () => {
     }
 
     const reportedErrors = [];
+    const browserBailouts = [];
     let shellReady = false;
     let shellError;
     await act(() => {
       renderToPipeableStream(<BrowserOnly />, {
         onError(error) {
           reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
         },
         onShellReady() {
           shellReady = true;
@@ -573,11 +586,9 @@ describe('ReactDOMFizzServer', () => {
     expect(shellError.stack).toContain('BrowserOnly');
     expect(shellError.cause).toBe(browserValue);
     expect(shellError.cause.stack).toContain('createBrowserValue');
-    expect(shellError.cause.message).toContain(
-      '`use(browser())` can only be used inside a `<Suspense>` boundary',
-    );
     expect(shellReady).toBe(false);
     expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
   });
 
   // @gate enableBrowserAPI
@@ -607,11 +618,16 @@ describe('ReactDOMFizzServer', () => {
     }
 
     const serverErrors = [];
+    const browserBailouts = [];
+    const browserValue = ReactDOM.browser();
     let abort;
     await act(() => {
       const controls = renderToPipeableStream(<App />, {
         onError(error) {
           serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
         },
       });
       abort = controls.abort;
@@ -627,10 +643,11 @@ describe('ReactDOMFizzServer', () => {
     );
 
     await act(() => {
-      abort(ReactDOM.browser());
+      abort(browserValue);
     });
 
     expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toEqual([browserValue, browserValue]);
 
     isClient = true;
     const recoverableErrors = [];
@@ -662,6 +679,7 @@ describe('ReactDOMFizzServer', () => {
     }
 
     const reportedErrors = [];
+    const browserBailouts = [];
     let shellReady = false;
     let shellError;
     let abort;
@@ -669,6 +687,9 @@ describe('ReactDOMFizzServer', () => {
       const controls = renderToPipeableStream(<PendingRoot />, {
         onError(error) {
           reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
         },
         onShellReady() {
           shellReady = true;
@@ -693,6 +714,7 @@ describe('ReactDOMFizzServer', () => {
     expect(shellError.cause).toBe(browserValue);
     expect(shellReady).toBe(false);
     expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
   });
 
   // @gate enableBrowserAPI
@@ -704,6 +726,7 @@ describe('ReactDOMFizzServer', () => {
     }
 
     const reportedErrors = [];
+    const browserBailouts = [];
     await act(() => {
       const {pipe} = renderToPipeableStream(
         <Suspense fallback={<span>Fallback</span>}>
@@ -713,12 +736,16 @@ describe('ReactDOMFizzServer', () => {
           onError(error) {
             reportedErrors.push(error);
           },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
         },
       );
       pipe(writable);
     });
 
     expect(reportedErrors).toEqual([browserValue]);
+    expect(browserBailouts).toEqual([]);
     expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
   });
 
