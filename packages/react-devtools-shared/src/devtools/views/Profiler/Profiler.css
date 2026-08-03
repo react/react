@@ -68,7 +68,7 @@
 }
 
 .Description {
-  max-width: 26rem;
+  max-width: 100%;
   text-align: center;
   color: var(--color-dim);
 }
@@ -76,6 +76,16 @@
 .DescriptionLink {
   color: var(--color-link);
   text-decoration: underline;
+}
+
+.PerformanceTracksCard {
+  margin-top: 1.5rem;
+  max-width: 80%;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-background-hover);
+  /* Squarer than the CTA's pill, so the two don't read as the same control. */
+  border-radius: 0.25rem;
+  text-align: center;
 }
 
 .CTAButton {
@@ -149,10 +159,4 @@
 
 .Link {
   color: var(--color-button);
-}
-
-.TimelineSearchInputContainer {
-  flex: 1 1;
-  display: flex;
-  align-items: center;
 }

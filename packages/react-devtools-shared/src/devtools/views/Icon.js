@@ -21,7 +21,6 @@ export type IconType =
   | 'flame-chart'
   | 'profiler'
   | 'ranked-chart'
-  | 'timeline'
   | 'search'
   | 'settings'
   | 'store-as-global-variable'
@@ -74,9 +73,6 @@ export default function Icon({
       break;
     case 'ranked-chart':
       pathData = PATH_RANKED_CHART;
-      break;
-    case 'timeline':
-      pathData = PATH_SCHEDULING_PROFILER;
       break;
     case 'search':
       pathData = PATH_SEARCH;
@@ -158,11 +154,6 @@ const PATH_FLAME_CHART = `
 `;
 
 const PATH_PROFILER = 'M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z';
-
-const PATH_SCHEDULING_PROFILER = `
-  M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0
-  16H5V9h14v10zm0-12H5V5h14v2zM7 11h5v5H7z
-`;
 
 const PATH_SEARCH = `
   M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91

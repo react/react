@@ -29,7 +29,7 @@ import {useCommitFilteringAndNavigation} from './useCommitFilteringAndNavigation
 
 import type {CommitDataFrontend, ProfilingDataFrontend} from './types';
 
-export type TabID = 'flame-chart' | 'ranked-chart' | 'timeline';
+export type TabID = 'flame-chart' | 'ranked-chart';
 
 export type Context = {
   // Which tab is selected in the Profiler UI?
@@ -204,7 +204,7 @@ function ProfilerContextController({children}: Props): React.Node {
     }
   }
 
-  const [selectedTabID, selectTab] = useLocalStorage<TabID>(
+  const [persistedTabID, selectTab] = useLocalStorage<TabID>(
     'React::DevTools::Profiler::defaultTab',
     'flame-chart',
     value => {
@@ -216,6 +216,11 @@ function ProfilerContextController({children}: Props): React.Node {
       });
     },
   );
+
+  // The persisted value may name a tab that no longer exists,
+  // e.g. the removed "timeline" tab. Fall back rather than render nothing.
+  const selectedTabID: TabID =
+    persistedTabID === 'ranked-chart' ? persistedTabID : 'flame-chart';
 
   const stopProfiling = useCallback(
     () => store.profilerStore.stopProfiling(),
