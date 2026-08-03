@@ -8,28 +8,34 @@
  */
 
 import * as React from 'react';
-import RecordToggle from './RecordToggle';
+import {useContext} from 'react';
+import {ProfilerContext} from './ProfilerContext';
 
 import styles from './Profiler.css';
 
 export default function NoProfilingData(): React.Node {
+  const {startProfiling} = useContext(ProfilerContext);
+
   return (
     <div className={styles.Column}>
-      <div className={styles.Header}>No profiling data has been recorded.</div>
-      <div className={styles.Row}>
-        Click the record button <RecordToggle /> to start recording.
-      </div>
-      <div className={`${styles.Row} ${styles.LearnMoreRow}`}>
-        Click{' '}
+      <div className={styles.Header}>No profiling data has been recorded</div>
+      <div className={styles.Description}>
+        Record a session to see which components rendered, how long they took,
+        and why.{' '}
         <a
-          className={styles.LearnMoreLink}
-          href="https://fb.me/react-devtools-profiling"
+          className={styles.DescriptionLink}
+          href="https://legacy.reactjs.org/blog/2018/09/10/introducing-the-react-profiler.html"
           rel="noopener noreferrer"
           target="_blank">
-          here
-        </a>{' '}
-        to learn more about profiling.
+          Learn more
+        </a>
       </div>
+      <button
+        className={styles.CTAButton}
+        onClick={startProfiling}
+        type="button">
+        Start recording
+      </button>
     </div>
   );
 }
