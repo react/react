@@ -2123,6 +2123,26 @@ fn get_functions_referenced_before_declaration(
     referenced_before_decl
 }
 
+/// Find the earliest top-level statement that references a function before its
+/// declaration statement.
+fn get_first_top_level_reference_before_declaration_index(
+    program: &Program,
+    function_name: &str,
+    function_node_id: u32,
+) -> Option<usize> {
+    for (idx, stmt) in program.body.iter().enumerate() {
+        if let Statement::FunctionDeclaration(f) = stmt {
+            if f.base.node_id == Some(function_node_id) {
+                return None;
+            }
+        }
+        if stmt_references_identifier_at_top_level(stmt, function_name) {
+            return Some(idx);
+        }
+    }
+    None
+}
+
 /// Check if a statement references an identifier at the top level (not inside nested functions).
 fn stmt_references_identifier_at_top_level(stmt: &Statement, name: &str) -> bool {
     match stmt {
@@ -3016,6 +3036,9 @@ fn apply_gated_function_hoisted(
         Some(idx) => idx,
         None => return,
     };
+    let gating_insert_idx =
+        get_first_top_level_reference_before_declaration_index(program, &original_fn_name, node_id)
+            .unwrap_or(fn_idx);
 
     // Rename the original function to `_unoptimized`
     if let Statement::FunctionDeclaration(f) = &mut program.body[fn_idx] {
@@ -3221,17 +3244,9 @@ fn apply_gated_function_hoisted(
         hook_declaration: false,
     });
 
-    // Insert nodes. The TS code uses insertBefore for the gating result and optimized fn,
-    // and insertAfter for the dispatcher. The order in the output should be:
-    //   ... (existing statements before fn_idx) ...
-    //   const gating_result = gating();       <- inserted before
-    //   function Foo_optimized() { ... }       <- inserted before
-    //   function Foo_unoptimized() { ... }     <- the original (renamed)
-    //   function Foo(arg0) { ... }             <- inserted after
-    //   ... (existing statements after fn_idx) ...
-    //
-    // insertBefore inserts before the target, and insertAfter inserts after.
-    // We insert in reverse order for insertAfter.
+    // Insert nodes. The gating result must come before the earliest top-level
+    // reference to the hoisted dispatcher to avoid TDZ reads from the wrapper.
+    // The optimized function stays adjacent to the original declaration.
 
     // Insert dispatcher after the original (now renamed) function
     program.body.insert(fn_idx + 1, dispatcher_fn);
@@ -3241,8 +3256,8 @@ fn apply_gated_function_hoisted(
         .body
         .insert(fn_idx, Statement::FunctionDeclaration(compiled_fn_decl));
 
-    // Insert gating result before the optimized function
-    program.body.insert(fn_idx, gating_result_stmt);
+    // Insert gating result before the earliest top-level reference.
+    program.body.insert(gating_insert_idx, gating_result_stmt);
 }
 
 /// Recursively search for a function at `start` position and insert `new_stmt`
