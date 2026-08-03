@@ -17,7 +17,7 @@ import React from 'react';
  * const StoreDispatchContext = useContext<Dispatch<ReducerAction>>(null);
  * const dispatchStore = useContext(StoreDispatchContext);
  * ...
- * dipatchStore!({ ... });
+ * dispatchStore!({ ... });
  * ```
  *
  * Instead, it throws an error when `useContext` is not called within a

@@ -218,7 +218,7 @@ function compareDeps(
  *     identifier must be also named in source, as DropManualMemoization, which
  *     runs before any renaming passes, only records loads from named variables.
  *   - and one of the following holds:
- *       - pathA and pathB are identifical
+ *       - pathA and pathB are identical
  *       - pathB is a subpath of pathA and neither read into a `ref` type*
  *
  * We do not allow for partial matches on ref types because they are not immutable
