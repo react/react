@@ -254,8 +254,6 @@ function createDevToolsInstance(): DevToolsInstance {
   const store = new Store(bridge, {
     isProfiling,
     supportsReloadAndProfile: __IS_CHROME__ || __IS_EDGE__,
-    // At this time, the timeline can only parse Chrome performance profiles.
-    supportsTimeline: __IS_CHROME__,
     supportsTraceUpdates: true,
     supportsInspectMatchingDOMElement: true,
     supportsClickToInspect: true,
