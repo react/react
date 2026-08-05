@@ -11,3 +11,6 @@ indexmap = "2"
 rustc-hash = "2"
 serde_json = "1"
 hmac-sha256 = "1"
+
+[lints]
+workspace = true
