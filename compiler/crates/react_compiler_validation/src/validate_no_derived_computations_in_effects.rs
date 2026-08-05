@@ -1271,7 +1271,7 @@ fn validate_effect_non_exp(
         let ctx_ty = &tys[ids[ctx.identifier.0 as usize].type_.0 as usize];
         if is_set_state_type(ctx_ty) {
             continue;
-        } else if effect_deps.iter().any(|d| *d == ctx.identifier) {
+        } else if effect_deps.contains(&ctx.identifier) {
             continue;
         } else {
             return Vec::new();
