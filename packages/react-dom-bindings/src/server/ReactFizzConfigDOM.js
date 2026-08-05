@@ -1346,18 +1346,6 @@ function styleAttributeToString(style: Object): string {
   return '';
 }
 
-function pushStyleAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
-  style: Object,
-): void {
-  const attr = styleAttributeToString(style);
-  if (attr !== '') {
-    target.push(stringToChunk(attr));
-  }
-}
-
-const attributeSeparator = stringToPrecomputedChunk(' ');
-const attributeAssign = stringToPrecomputedChunk('="');
 const attributeEnd = stringToPrecomputedChunk('"');
 
 function booleanAttributeToString(
@@ -1368,17 +1356,6 @@ function booleanAttributeToString(
     return ' ' + name + '=""';
   }
   return '';
-}
-
-function pushBooleanAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
-  name: string,
-  value: string | boolean | number | Function | Object, // not null or undefined
-): void {
-  const attr = booleanAttributeToString(name, value);
-  if (attr !== '') {
-    target.push(stringToChunk(attr));
-  }
 }
 
 function stringAttributeToString(
@@ -1395,17 +1372,6 @@ function stringAttributeToString(
   return '';
 }
 
-function pushStringAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
-  name: string,
-  value: string | boolean | number | Function | Object, // not null or undefined
-): void {
-  const attr = stringAttributeToString(name, value);
-  if (attr !== '') {
-    target.push(stringToChunk(attr));
-  }
-}
-
 function makeFormFieldPrefix(resumableState: ResumableState): string {
   // TODO: Make this deterministic.
   const id = resumableState.nextFormID++;
@@ -1414,14 +1380,10 @@ function makeFormFieldPrefix(resumableState: ResumableState): string {
 
 // Since this will likely be repeated a lot in the HTML, we use a more concise message
 // than on the client and hopefully it's googleable.
-const actionJavaScriptURL = stringToPrecomputedChunk(
-  escapeTextForBrowser(
-    // eslint-disable-next-line no-script-url
-    "javascript:throw new Error('React form unexpectedly submitted.')",
-  ),
+const actionJavaScriptURL = escapeTextForBrowser(
+  // eslint-disable-next-line no-script-url
+  "javascript:throw new Error('React form unexpectedly submitted.')",
 );
-
-const startHiddenInputChunk = stringToPrecomputedChunk('<input type="hidden"');
 
 function pushAdditionalFormField(
   this: Array<Chunk | PrecomputedChunk>,
@@ -1429,11 +1391,15 @@ function pushAdditionalFormField(
   key: string,
 ): void {
   const target: Array<Chunk | PrecomputedChunk> = this;
-  target.push(startHiddenInputChunk);
   validateAdditionalFormField(value, key);
-  pushStringAttribute(target, 'name', key);
-  pushStringAttribute(target, 'value', value);
-  target.push(endOfStartTagSelfClosing);
+  target.push(
+    stringToChunk(
+      '<input type="hidden"' +
+        stringAttributeToString('name', key) +
+        stringAttributeToString('value', value) +
+        '/>',
+    ),
+  );
 }
 
 function pushAdditionalFormFields(
@@ -1496,17 +1462,20 @@ function getCustomFormFields(
   return null;
 }
 
-function pushFormActionAttribute(
-  target: Array<Chunk | PrecomputedChunk>,
+// The caller resolves customFields itself (getCustomFormFields consumes a
+// form ID, so it can only be called once) and reads the FormData from
+// customFields.data; this only serializes the resulting attributes.
+function formActionAttributesToString(
   resumableState: ResumableState,
   renderState: RenderState,
+  customFields: null | ReactCustomFormAction,
   formAction: any,
   formEncType: any,
   formMethod: any,
   formTarget: any,
   name: any,
-): void | null | FormData {
-  let formData = null;
+): string {
+  let attributes = '';
   if (typeof formAction === 'function') {
     // Function form actions cannot control the form properties
     if (__DEV__) {
@@ -1535,7 +1504,6 @@ function pushFormActionAttribute(
         );
       }
     }
-    const customFields = getCustomFormFields(resumableState, formAction);
     if (customFields !== null) {
       // This action has a custom progressive enhancement form that can submit the form
       // back to the server if it's invoked before hydration. Such as a Server Action.
@@ -1544,20 +1512,13 @@ function pushFormActionAttribute(
       formEncType = customFields.encType;
       formMethod = customFields.method;
       formTarget = customFields.target;
-      formData = customFields.data;
     } else {
       // Set a javascript URL that doesn't do anything. We don't expect this to be invoked
       // because we'll preventDefault in the Fizz runtime, but it can happen if a form is
       // manually submitted or if someone calls stopPropagation before React gets the event.
       // If CSP is used to block javascript: URLs that's fine too. It just won't show this
       // error message but the URL will be logged.
-      target.push(
-        attributeSeparator,
-        stringToChunk('formAction'),
-        attributeAssign,
-        actionJavaScriptURL,
-        attributeEnd,
-      );
+      attributes += ' formAction="' + actionJavaScriptURL + '"';
       name = null;
       formAction = null;
       formEncType = null;
@@ -1567,21 +1528,21 @@ function pushFormActionAttribute(
     }
   }
   if (name != null) {
-    pushAttribute(target, 'name', name);
+    attributes += attributeToString('name', name);
   }
   if (formAction != null) {
-    pushAttribute(target, 'formAction', formAction);
+    attributes += attributeToString('formAction', formAction);
   }
   if (formEncType != null) {
-    pushAttribute(target, 'formEncType', formEncType);
+    attributes += attributeToString('formEncType', formEncType);
   }
   if (formMethod != null) {
-    pushAttribute(target, 'formMethod', formMethod);
+    attributes += attributeToString('formMethod', formMethod);
   }
   if (formTarget != null) {
-    pushAttribute(target, 'formTarget', formTarget);
+    attributes += attributeToString('formTarget', formTarget);
   }
-  return formData;
+  return attributes;
 }
 
 let blobCache: null | WeakMap<Blob, Thenable<string>> = null;
@@ -2003,7 +1964,7 @@ function pushStartObject(
   props: Object,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag('object'));
+  let open = startStringForTag('object');
 
   let children = null;
   let innerHTML = null;
@@ -2037,25 +1998,19 @@ function pushStartObject(
             }
             break;
           }
-          target.push(
-            attributeSeparator,
-            stringToChunk('data'),
-            attributeAssign,
-            stringToChunk(escapeTextForBrowser(sanitizedValue)),
-            attributeEnd,
-          );
+          open += ' data="' + escapeTextForBrowser(sanitizedValue) + '"';
           break;
         }
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   pushInnerHTML(target, innerHTML, children);
   if (typeof children === 'string') {
     // Special case children as a string to avoid the unnecessary comment.
@@ -2093,7 +2048,7 @@ function pushStartSelect(
     }
   }
 
-  target.push(startChunkForTag('select'));
+  let open = startStringForTag('select');
 
   let children = null;
   let innerHTML = null;
@@ -2117,15 +2072,15 @@ function pushStartSelect(
           // These are set on the Context instead and applied to the nested options.
           break;
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   pushInnerHTML(target, innerHTML, children);
   return children;
 }
@@ -2157,7 +2112,7 @@ function flattenOptionChildren(children: mixed): string {
   return content;
 }
 
-const selectedMarkerAttribute = stringToPrecomputedChunk(' selected=""');
+const selectedMarkerAttribute = ' selected=""';
 
 function pushStartOption(
   target: Array<Chunk | PrecomputedChunk>,
@@ -2166,7 +2121,7 @@ function pushStartOption(
 ): ReactNodeList {
   const selectedValue = formatContext.selectedValue;
 
-  target.push(startChunkForTag('option'));
+  let open = startStringForTag('option');
 
   let children = null;
   let value = null;
@@ -2203,7 +2158,7 @@ function pushStartOption(
           value = propValue;
         // We intentionally fallthrough to also set the attribute on the node.
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
@@ -2238,7 +2193,7 @@ function pushStartOption(
         }
         const v = '' + selectedValue[i];
         if (v === stringValue) {
-          target.push(selectedMarkerAttribute);
+          open += selectedMarkerAttribute;
           break;
         }
       }
@@ -2247,15 +2202,15 @@ function pushStartOption(
         checkAttributeStringCoercion(selectedValue, 'select.value');
       }
       if ('' + selectedValue === stringValue) {
-        target.push(selectedMarkerAttribute);
+        open += selectedMarkerAttribute;
       }
     }
   } else if (selected) {
-    target.push(selectedMarkerAttribute);
+    open += selectedMarkerAttribute;
   }
 
   // Options never participate as ViewTransitions.
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   pushInnerHTML(target, innerHTML, children);
   return children;
 }
@@ -2326,7 +2281,7 @@ function pushStartForm(
   renderState: RenderState,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag('form'));
+  let open = startStringForTag('form');
 
   let children = null;
   let innerHTML = null;
@@ -2361,7 +2316,7 @@ function pushStartForm(
           formTarget = propValue;
           break;
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
@@ -2407,13 +2362,7 @@ function pushStartForm(
       // manually submitted or if someone calls stopPropagation before React gets the event.
       // If CSP is used to block javascript: URLs that's fine too. It just won't show this
       // error message but the URL will be logged.
-      target.push(
-        attributeSeparator,
-        stringToChunk('action'),
-        attributeAssign,
-        actionJavaScriptURL,
-        attributeEnd,
-      );
+      open += ' action="' + actionJavaScriptURL + '"';
       formAction = null;
       formEncType = null;
       formMethod = null;
@@ -2422,26 +2371,30 @@ function pushStartForm(
     }
   }
   if (formAction != null) {
-    pushAttribute(target, 'action', formAction);
+    open += attributeToString('action', formAction);
   }
   if (formEncType != null) {
-    pushAttribute(target, 'encType', formEncType);
+    open += attributeToString('encType', formEncType);
   }
   if (formMethod != null) {
-    pushAttribute(target, 'method', formMethod);
+    open += attributeToString('method', formMethod);
   }
   if (formTarget != null) {
-    pushAttribute(target, 'target', formTarget);
+    open += attributeToString('target', formTarget);
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
 
   if (formActionName !== null) {
-    target.push(startHiddenInputChunk);
-    pushStringAttribute(target, 'name', formActionName);
-    target.push(endOfStartTagSelfClosing);
+    target.push(
+      stringToChunk(
+        '<input type="hidden"' +
+          stringAttributeToString('name', formActionName) +
+          '/>',
+      ),
+    );
     pushAdditionalFormFields(target, formData);
   }
 
@@ -2466,7 +2419,7 @@ function pushInput(
     checkControlledValueProps('input', props);
   }
 
-  target.push(startChunkForTag('input'));
+  let open = startStringForTag('input');
 
   let name = null;
   let formAction = null;
@@ -2519,7 +2472,7 @@ function pushInput(
           value = propValue;
           break;
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
@@ -2539,10 +2492,15 @@ function pushInput(
     }
   }
 
-  const formData = pushFormActionAttribute(
-    target,
+  const customFields =
+    typeof formAction === 'function'
+      ? getCustomFormFields(resumableState, formAction)
+      : null;
+  const formData = customFields !== null ? customFields.data : null;
+  open += formActionAttributesToString(
     resumableState,
     renderState,
+    customFields,
     formAction,
     formEncType,
     formMethod,
@@ -2580,19 +2538,19 @@ function pushInput(
   }
 
   if (checked !== null) {
-    pushBooleanAttribute(target, 'checked', checked);
+    open += booleanAttributeToString('checked', checked);
   } else if (defaultChecked !== null) {
-    pushBooleanAttribute(target, 'checked', defaultChecked);
+    open += booleanAttributeToString('checked', defaultChecked);
   }
   if (value !== null) {
-    pushAttribute(target, 'value', value);
+    open += attributeToString('value', value);
   } else if (defaultValue !== null) {
-    pushAttribute(target, 'value', defaultValue);
+    open += attributeToString('value', defaultValue);
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTagSelfClosing);
+  target.push(stringToChunk(open + '/>'));
 
   // We place any additional hidden form fields after the input.
   pushAdditionalFormFields(target, formData);
@@ -2607,7 +2565,7 @@ function pushStartButton(
   renderState: RenderState,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag('button'));
+  let open = startStringForTag('button');
 
   let children = null;
   let innerHTML = null;
@@ -2646,7 +2604,7 @@ function pushStartButton(
           formTarget = propValue;
           break;
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
@@ -2666,10 +2624,15 @@ function pushStartButton(
     }
   }
 
-  const formData = pushFormActionAttribute(
-    target,
+  const customFields =
+    typeof formAction === 'function'
+      ? getCustomFormFields(resumableState, formAction)
+      : null;
+  const formData = customFields !== null ? customFields.data : null;
+  open += formActionAttributesToString(
     resumableState,
     renderState,
+    customFields,
     formAction,
     formEncType,
     formMethod,
@@ -2677,9 +2640,9 @@ function pushStartButton(
     name,
   );
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
 
   // We place any additional hidden form fields we need to include inside the button itself.
   pushAdditionalFormFields(target, formData);
@@ -2718,7 +2681,7 @@ function pushStartTextArea(
     }
   }
 
-  target.push(startChunkForTag('textarea'));
+  let open = startStringForTag('textarea');
 
   let value = null;
   let defaultValue = null;
@@ -2744,7 +2707,7 @@ function pushStartTextArea(
             '`dangerouslySetInnerHTML` does not make sense on <textarea>.',
           );
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
@@ -2753,9 +2716,9 @@ function pushStartTextArea(
     value = defaultValue;
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
 
   // TODO (yungsters): Remove support for children content in <textarea>.
   if (children != null) {
@@ -3528,7 +3491,7 @@ function pushStartMenuItem(
   props: Object,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag('menuitem'));
+  let open = startStringForTag('menuitem');
 
   for (const propKey in props) {
     if (hasOwnProperty.call(props, propKey)) {
@@ -3543,15 +3506,15 @@ function pushStartMenuItem(
             'menuitems cannot have `children` nor `dangerouslySetInnerHTML`.',
           );
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   return null;
 }
 
@@ -4016,7 +3979,7 @@ function pushStartCustomElement(
   tag: string,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag(tag));
+  let open = startStringForTag(tag);
 
   let children = null;
   let innerHTML = null;
@@ -4035,7 +3998,7 @@ function pushStartCustomElement(
           innerHTML = propValue;
           break;
         case 'style':
-          pushStyleAttribute(target, propValue);
+          open += styleAttributeToString(propValue);
           break;
         case 'suppressContentEditableWarning':
         case 'suppressHydrationWarning':
@@ -4062,13 +4025,12 @@ function pushStartCustomElement(
             } else if (typeof propValue === 'object') {
               continue;
             }
-            target.push(
-              attributeSeparator,
-              stringToChunk(attributeName),
-              attributeAssign,
-              stringToChunk(escapeTextForBrowser(propValue)),
-              attributeEnd,
-            );
+            open +=
+              ' ' +
+              attributeName +
+              '="' +
+              escapeTextForBrowser(propValue) +
+              '"';
           }
           break;
       }
@@ -4076,9 +4038,9 @@ function pushStartCustomElement(
   }
 
   // TODO: ViewTransition attributes gets observed by the Custom Element which is a bit sketchy.
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
   pushInnerHTML(target, innerHTML, children);
   return children;
 }
@@ -4091,7 +4053,7 @@ function pushStartPreformattedElement(
   tag: string,
   formatContext: FormatContext,
 ): ReactNodeList {
-  target.push(startChunkForTag(tag));
+  let open = startStringForTag(tag);
 
   let children = null;
   let innerHTML = null;
@@ -4109,15 +4071,15 @@ function pushStartPreformattedElement(
           innerHTML = propValue;
           break;
         default:
-          pushAttribute(target, propKey, propValue);
+          open += attributeToString(propKey, propValue);
           break;
       }
     }
   }
 
-  pushViewTransitionAttributes(target, formatContext);
+  open += viewTransitionAttributesToString(formatContext);
 
-  target.push(endOfStartTag);
+  target.push(stringToChunk(open + '>'));
 
   // text/html ignores the first character in these tags if it's a newline
   // Prefer to break application/xml over text/html (for now) by adding
