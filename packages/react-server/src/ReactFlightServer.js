@@ -4525,22 +4525,49 @@ function emitErrorChunk(
   }
 }
 
+// Maps metadata strings through serializeImportString ahead of stringify,
+// which then runs without a replacer (a replacer costs a closure per row
+// and takes stringify off the fast path). Assumes metadata is plain JSON
+// data or unwraps to it via toJSON, which every host config satisfies.
+function transformImportMetadata(request: Request, value: mixed): mixed {
+  if (typeof value === 'string') {
+    return serializeImportString(request, value);
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (typeof (value as any).toJSON === 'function') {
+      // stringify would call toJSON before the replacer saw the value.
+      return transformImportMetadata(request, (value as any).toJSON());
+    }
+    if (isArray(value)) {
+      const copy: Array<mixed> = [];
+      for (let i = 0; i < value.length; i++) {
+        copy.push(transformImportMetadata(request, value[i]));
+      }
+      return copy;
+    }
+    const copy: {[string]: mixed} = {};
+    for (const name in value) {
+      if (hasOwnProperty.call(value, name)) {
+        copy[name] = transformImportMetadata(request, (value as any)[name]);
+      }
+    }
+    return copy;
+  }
+  return value;
+}
+
 function emitImportChunk(
   request: Request,
   id: number,
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
-  // $FlowFixMe[incompatible-type] stringify can return null
   const json: string =
     __DEV__ && debug
       ? // The debug channel can't reference rows in the main stream.
         stringify(clientReferenceMetadata)
-      : stringify(clientReferenceMetadata, (key: string, value: mixed) =>
-          typeof value === 'string'
-            ? serializeImportString(request, value)
-            : value,
-        );
+      : // $FlowFixMe[incompatible-type] stringify can return null
+        stringify(transformImportMetadata(request, clientReferenceMetadata));
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {

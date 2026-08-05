@@ -2071,6 +2071,9 @@ function transferReferencedDebugInfo(
   }
 }
 
+// Never mutated: path walks start at index 1.
+const EMPTY_REFERENCE_PATH: Array<string> = [];
+
 function getOutlinedModel<T>(
   response: Response,
   reference: string,
@@ -2078,8 +2081,10 @@ function getOutlinedModel<T>(
   key: string,
   map: (response: Response, model: any, parentObject: Object, key: string) => T,
 ): T {
-  const path = reference.split(':');
-  const id = parseInt(path[0], 16);
+  // parseInt stops at ':' so the common no-path case needs no split.
+  const id = parseInt(reference, 16);
+  const path =
+    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   const chunk = getChunk(response, id);
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
