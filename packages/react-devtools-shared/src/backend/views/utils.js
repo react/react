@@ -155,9 +155,11 @@ export function extractHOCNames(displayName: string): {
   let match;
 
   while ((match = hocRegex.exec(baseComponentName)) != null) {
-    const [, hocName, inner] = match;
-    hocNames.push(hocName);
-    baseComponentName = inner;
+    if (Array.isArray(match)) {
+      const [, hocName, inner] = match;
+      hocNames.push(hocName);
+      baseComponentName = inner;
+    }
   }
 
   return {
