@@ -1342,7 +1342,7 @@ describe('ReactDOMFizzServer', () => {
     );
 
     // The client rendered HTML is now in place.
-    // expect(getVisibleChildren(container)).toEqual(<div>Hello</div>);
+    expect(getVisibleChildren(container)).toEqual(<div>Hello</div>);
 
     expect(loggedErrors).toEqual([theError]);
   });
