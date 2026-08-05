@@ -33,7 +33,7 @@ export const registrationNameDependencies: {
  */
 export const possibleRegistrationNames: {
   [lowerCasedName: string]: string,
-} = __DEV__ ? {} : (null: any);
+} = __DEV__ ? {} : (null as any);
 // Trust the developer to only use possibleRegistrationNames in __DEV__
 
 export function registerTwoPhaseEvent(

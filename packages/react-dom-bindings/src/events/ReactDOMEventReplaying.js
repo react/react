@@ -168,13 +168,13 @@ export function clearIfContinuousEvent(
       break;
     case 'pointerover':
     case 'pointerout': {
-      const pointerId = ((nativeEvent: any): PointerEventType).pointerId;
+      const pointerId = (nativeEvent as any as PointerEventType).pointerId;
       queuedPointers.delete(pointerId);
       break;
     }
     case 'gotpointercapture':
     case 'lostpointercapture': {
-      const pointerId = ((nativeEvent: any): PointerEventType).pointerId;
+      const pointerId = (nativeEvent as any as PointerEventType).pointerId;
       queuedPointerCaptures.delete(pointerId);
       break;
     }
@@ -216,6 +216,7 @@ function accumulateOrCreateContinuousQueuedReplayableEvent(
   existingQueuedEvent.eventSystemFlags |= eventSystemFlags;
   const targetContainers = existingQueuedEvent.targetContainers;
   if (
+    // $FlowFixMe[invalid-compare]
     targetContainer !== null &&
     targetContainers.indexOf(targetContainer) === -1
   ) {
@@ -236,7 +237,7 @@ export function queueIfContinuousEvent(
   // Instead of mutating we could clone the event.
   switch (domEventName) {
     case 'focusin': {
-      const focusEvent = ((nativeEvent: any): FocusEvent);
+      const focusEvent = nativeEvent as any as FocusEvent;
       queuedFocus = accumulateOrCreateContinuousQueuedReplayableEvent(
         queuedFocus,
         blockedOn,
@@ -248,7 +249,7 @@ export function queueIfContinuousEvent(
       return true;
     }
     case 'dragenter': {
-      const dragEvent = ((nativeEvent: any): DragEvent);
+      const dragEvent = nativeEvent as any as DragEvent;
       queuedDrag = accumulateOrCreateContinuousQueuedReplayableEvent(
         queuedDrag,
         blockedOn,
@@ -260,7 +261,7 @@ export function queueIfContinuousEvent(
       return true;
     }
     case 'mouseover': {
-      const mouseEvent = ((nativeEvent: any): MouseEvent);
+      const mouseEvent = nativeEvent as any as MouseEvent;
       queuedMouse = accumulateOrCreateContinuousQueuedReplayableEvent(
         queuedMouse,
         blockedOn,
@@ -272,7 +273,7 @@ export function queueIfContinuousEvent(
       return true;
     }
     case 'pointerover': {
-      const pointerEvent = ((nativeEvent: any): PointerEventType);
+      const pointerEvent = nativeEvent as any as PointerEventType;
       const pointerId = pointerEvent.pointerId;
       queuedPointers.set(
         pointerId,
@@ -288,7 +289,7 @@ export function queueIfContinuousEvent(
       return true;
     }
     case 'gotpointercapture': {
-      const pointerEvent = ((nativeEvent: any): PointerEventType);
+      const pointerEvent = nativeEvent as any as PointerEventType;
       const pointerId = pointerEvent.pointerId;
       queuedPointerCaptures.set(
         pointerId,
@@ -395,7 +396,7 @@ function attemptReplayContinuousQueuedEvent(
       const nativeEvent = queuedEvent.nativeEvent;
       const nativeEventClone = new nativeEvent.constructor(
         nativeEvent.type,
-        (nativeEvent: any),
+        nativeEvent as any,
       );
       setReplayingEvent(nativeEventClone);
       nativeEvent.target.dispatchEvent(nativeEventClone);
@@ -428,7 +429,7 @@ function attemptReplayContinuousQueuedEventInMap(
 function replayChangeEvent(target: EventTarget): void {
   // Dispatch a fake "change" event for the input.
   const element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =
-    (target: any);
+    target as any;
   if (element.nodeName === 'INPUT') {
     if (element.type === 'checkbox' || element.type === 'radio') {
       // Checkboxes always fire a click event regardless of how the change was made.
@@ -609,7 +610,7 @@ export function retryIfBlockedOn(
   // Check the document if there are any queued form actions.
   // If there's no ownerDocument, then this is the document.
   const root = unblocked.ownerDocument || unblocked;
-  const formReplayingQueue: void | FormReplayingQueue = (root: any)
+  const formReplayingQueue: void | FormReplayingQueue = (root as any)
     .$$reactFormReplay;
   if (formReplayingQueue != null) {
     for (let i = 0; i < formReplayingQueue.length; i += 3) {
@@ -642,7 +643,7 @@ export function retryIfBlockedOn(
           const submitterProps = getFiberCurrentPropsFromNode(submitter);
           if (submitterProps) {
             // The submitter is part of this instance.
-            action = (submitterProps: any).formAction;
+            action = (submitterProps as any).formAction;
           } else {
             const blockedOn = findInstanceBlockingTarget(target);
             if (blockedOn !== null) {
@@ -653,7 +654,7 @@ export function retryIfBlockedOn(
             // Except the form isn't. We don't dispatch actions in this scenario.
           }
         } else {
-          action = (formProps: any).action;
+          action = (formProps as any).action;
         }
         if (typeof action === 'function') {
           formReplayingQueue[i + 1] = action;

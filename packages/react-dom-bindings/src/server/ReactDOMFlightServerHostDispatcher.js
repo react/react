@@ -243,12 +243,12 @@ function trimOptions<
 >(options: ?T): ?T {
   if (options == null) return null;
   let hasProperties = false;
-  const trimmed: T = ({}: any);
+  const trimmed: T = {} as any;
   for (const key in options) {
     // $FlowFixMe[invalid-computed-prop]
     if (options[key] != null) {
       hasProperties = true;
-      (trimmed: any)[key] = options[key];
+      (trimmed as any)[key] = options[key];
     }
   }
   return hasProperties ? trimmed : null;

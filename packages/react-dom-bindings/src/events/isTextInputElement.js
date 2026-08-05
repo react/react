@@ -32,7 +32,7 @@ function isTextInputElement(elem: ?HTMLElement): boolean {
   const nodeName = elem && elem.nodeName && elem.nodeName.toLowerCase();
 
   if (nodeName === 'input') {
-    return !!supportedInputTypes[((elem: any): HTMLInputElement).type];
+    return !!supportedInputTypes[(elem as any as HTMLInputElement).type];
   }
 
   if (nodeName === 'textarea') {

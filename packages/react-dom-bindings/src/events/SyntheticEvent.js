@@ -391,7 +391,7 @@ function getEventKey(nativeEvent: {[propName: string]: mixed}) {
   // Browser does not implement `key`, polyfill as much of it as we can.
   if (nativeEvent.type === 'keypress') {
     const charCode = getEventCharCode(
-      // $FlowFixMe[incompatible-call] unable to narrow to `KeyboardEvent`
+      // $FlowFixMe[incompatible-type] unable to narrow to `KeyboardEvent`
       nativeEvent,
     );
 
@@ -463,7 +463,7 @@ const KeyboardEventInterface: EventInterfaceType = {
     // implemented in any major browser. Only KeyPress has charCode.
     if (event.type === 'keypress') {
       return getEventCharCode(
-        // $FlowFixMe[incompatible-call] unable to narrow to `KeyboardEvent`
+        // $FlowFixMe[incompatible-type] unable to narrow to `KeyboardEvent`
         event,
       );
     }
@@ -487,7 +487,7 @@ const KeyboardEventInterface: EventInterfaceType = {
     // type of the event.
     if (event.type === 'keypress') {
       return getEventCharCode(
-        // $FlowFixMe[incompatible-call] unable to narrow to `KeyboardEvent`
+        // $FlowFixMe[incompatible-type] unable to narrow to `KeyboardEvent`
         event,
       );
     }

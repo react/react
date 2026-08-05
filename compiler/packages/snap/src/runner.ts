@@ -14,10 +14,17 @@ import yargs from 'yargs';
 import {hideBin} from 'yargs/helpers';
 import {BABEL_PLUGIN_ROOT, PROJECT_ROOT} from './constants';
 import {TestFilter, getFixtures} from './fixture-utils';
-import {TestResult, TestResults, report, update} from './reporter';
+import {
+  TestResult,
+  TestResults,
+  normalizeCodeBlankLines,
+  report,
+  update,
+} from './reporter';
 import {
   RunnerAction,
   RunnerState,
+  buildRust,
   makeWatchRunner,
   watchSrc,
 } from './runner-watch';
@@ -25,7 +32,7 @@ import * as runnerWorker from './runner-worker';
 import {execSync} from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import {minimize} from './minimize';
+import {minimize, minimizeRustDelta} from './minimize';
 import {parseInput, parseLanguage, parseSourceType} from './compiler';
 import {
   PARSE_CONFIG_PRAGMA_IMPORT,
@@ -48,9 +55,16 @@ type TestOptions = {
   pattern?: string;
   debug: boolean;
   verbose: boolean;
+  rust: boolean;
 };
 
 type MinimizeOptions = {
+  path: string;
+  update: boolean;
+  rust: boolean;
+};
+
+type MinimizeRustDeltaOptions = {
   path: string;
   update: boolean;
 };
@@ -61,6 +75,12 @@ type CompileOptions = {
 };
 
 async function runTestCommand(opts: TestOptions): Promise<void> {
+  // Rust native module doesn't load in jest-worker child processes,
+  // so force sync mode when using the Rust backend.
+  if (opts.rust) {
+    opts.sync = true;
+  }
+
   const worker: Worker & typeof runnerWorker = new Worker(WORKER_PATH, {
     enableWorkerThreads: opts.workerThreads,
     numWorkers: NUM_WORKERS,
@@ -73,9 +93,10 @@ async function runTestCommand(opts: TestOptions): Promise<void> {
 
   if (shouldWatch) {
     makeWatchRunner(
-      state => onChange(worker, state, opts.sync, opts.verbose),
+      state => onChange(worker, state, opts.sync, opts.verbose, opts.rust),
       opts.debug,
       opts.pattern,
+      opts.rust,
     );
     if (opts.pattern) {
       /**
@@ -101,6 +122,7 @@ async function runTestCommand(opts: TestOptions): Promise<void> {
           0,
           false,
           false,
+          opts.rust,
         );
       }
     }
@@ -121,6 +143,10 @@ async function runTestCommand(opts: TestOptions): Promise<void> {
               execSync('yarn build', {cwd: BABEL_PLUGIN_ROOT});
               console.log('Built compiler successfully with tsup');
 
+              if (opts.rust && !buildRust()) {
+                throw new Error('Failed to build Rust compiler');
+              }
+
               // Determine which filter to use
               let testFilter: TestFilter | null = null;
               if (opts.pattern) {
@@ -136,12 +162,13 @@ async function runTestCommand(opts: TestOptions): Promise<void> {
                 opts.debug,
                 false, // no requireSingleFixture in non-watch mode
                 opts.sync,
+                opts.rust,
               );
               if (opts.update) {
                 update(results);
                 isSuccess = true;
               } else {
-                isSuccess = report(results, opts.verbose);
+                isSuccess = report(results, opts.verbose, opts.rust);
               }
             } catch (e) {
               console.warn('Failed to build compiler with tsup:', e);
@@ -174,12 +201,19 @@ async function runMinimizeCommand(opts: MinimizeOptions): Promise<void> {
   const language = parseLanguage(firstLine);
   const sourceType = parseSourceType(firstLine);
 
-  console.log(`Minimizing: ${inputPath}`);
+  if (opts.rust && !buildRust()) {
+    console.error('Error: Failed to build Rust compiler');
+    process.exit(1);
+  }
+
+  console.log(
+    `Minimizing: ${inputPath}${opts.rust ? ' (using Rust compiler)' : ''}`,
+  );
 
   const originalLines = input.split('\n').length;
 
   // Run the minimization
-  const result = minimize(input, filename, language, sourceType);
+  const result = minimize(input, filename, language, sourceType, opts.rust);
 
   if (result.kind === 'success') {
     console.log('Could not minimize: the input compiles successfully.');
@@ -194,6 +228,65 @@ async function runMinimizeCommand(opts: MinimizeOptions): Promise<void> {
   }
 
   // Output the minimized code
+  console.log('--- Minimized Code ---');
+  console.log(result.source);
+
+  const minimizedLines = result.source.split('\n').length;
+  console.log(
+    `\nReduced from ${originalLines} lines to ${minimizedLines} lines`,
+  );
+
+  if (opts.update) {
+    fs.writeFileSync(inputPath, result.source, 'utf-8');
+    console.log(`\nUpdated ${inputPath} with minimized code.`);
+  }
+}
+
+async function runMinimizeRustDeltaCommand(
+  opts: MinimizeRustDeltaOptions,
+): Promise<void> {
+  const inputPath = path.isAbsolute(opts.path)
+    ? opts.path
+    : path.resolve(PROJECT_ROOT, opts.path);
+
+  if (!fs.existsSync(inputPath)) {
+    console.error(`Error: File not found: ${inputPath}`);
+    process.exit(1);
+  }
+
+  // Build both compilers
+  execSync('yarn build', {cwd: BABEL_PLUGIN_ROOT});
+  if (!buildRust()) {
+    console.error('Error: Failed to build Rust compiler');
+    process.exit(1);
+  }
+
+  const input = fs.readFileSync(inputPath, 'utf-8');
+  const filename = path.basename(inputPath);
+  const firstLine = input.substring(0, input.indexOf('\n'));
+  const language = parseLanguage(firstLine);
+  const sourceType = parseSourceType(firstLine);
+
+  console.log(`Minimizing TS/Rust delta: ${inputPath}`);
+
+  const originalLines = input.split('\n').length;
+
+  const result = minimizeRustDelta(input, filename, language, sourceType);
+
+  if (result.kind === 'no_delta') {
+    console.log(
+      'Could not minimize: TS and Rust compilers produce the same output.',
+    );
+    process.exit(0);
+  }
+
+  if (result.kind === 'minimal') {
+    console.log(
+      'Could not minimize: the delta exists but the input is already minimal.',
+    );
+    process.exit(0);
+  }
+
   console.log('--- Minimized Code ---');
   console.log(result.source);
 
@@ -372,7 +465,10 @@ yargs(hideBin(process.argv))
         .boolean('verbose')
         .alias('v', 'verbose')
         .describe('verbose', 'Print individual test results')
-        .default('verbose', false);
+        .default('verbose', false)
+        .boolean('rust')
+        .describe('rust', 'Use the Rust compiler backend instead of TypeScript')
+        .default('rust', false);
     },
     async argv => {
       await runTestCommand(argv as TestOptions);
@@ -394,10 +490,37 @@ yargs(hideBin(process.argv))
           'update',
           'Update the input file in-place with the minimized version',
         )
-        .default('update', false);
+        .default('update', false)
+        .boolean('rust')
+        .describe('rust', 'Use the Rust compiler backend instead of TypeScript')
+        .default('rust', false);
     },
     async argv => {
       await runMinimizeCommand(argv as unknown as MinimizeOptions);
+    },
+  )
+  .command(
+    'minimize-rust-delta <path>',
+    'Minimize a test case to the smallest code that still produces different output between TS and Rust compilers',
+    yargs => {
+      return yargs
+        .positional('path', {
+          describe: 'Path to the file to minimize',
+          type: 'string',
+          demandOption: true,
+        })
+        .boolean('update')
+        .alias('u', 'update')
+        .describe(
+          'update',
+          'Update the input file in-place with the minimized version',
+        )
+        .default('update', false);
+    },
+    async argv => {
+      await runMinimizeRustDeltaCommand(
+        argv as unknown as MinimizeRustDeltaOptions,
+      );
     },
   )
   .command(
@@ -434,6 +557,7 @@ async function runFixtures(
   debug: boolean,
   requireSingleFixture: boolean,
   sync: boolean,
+  enableRust: boolean = false,
 ): Promise<TestResults> {
   // We could in theory be fancy about tracking the contents of the fixtures
   // directory via our file subscription, but it's simpler to just re-read
@@ -449,7 +573,13 @@ async function runFixtures(
     for (const [fixtureName, fixture] of fixtures) {
       work.push(
         worker
-          .transformFixture(fixture, compilerVersion, shouldLog, true)
+          .transformFixture(
+            fixture,
+            compilerVersion,
+            shouldLog,
+            true,
+            enableRust,
+          )
           .then(result => [fixtureName, result]),
       );
     }
@@ -463,6 +593,7 @@ async function runFixtures(
         compilerVersion,
         shouldLog,
         true,
+        enableRust,
       );
       entries.push([fixtureName, output]);
     }
@@ -477,6 +608,7 @@ async function onChange(
   state: RunnerState,
   sync: boolean,
   verbose: boolean,
+  enableRust: boolean = false,
 ) {
   const {compilerVersion, isCompilerBuildValid, mode, filter, debug} = state;
   if (isCompilerBuildValid) {
@@ -495,13 +627,21 @@ async function onChange(
       debug,
       true, // requireSingleFixture in watch mode
       sync,
+      enableRust,
     );
     const end = performance.now();
 
     // Track fixture status for autocomplete suggestions
     for (const [basename, result] of results) {
-      const failed =
-        result.actual !== result.expected || result.unexpectedError != null;
+      const actual =
+        enableRust && result.actual
+          ? normalizeCodeBlankLines(result.actual)
+          : result.actual;
+      const expected =
+        enableRust && result.expected
+          ? normalizeCodeBlankLines(result.expected)
+          : result.expected;
+      const failed = actual !== expected || result.unexpectedError != null;
       state.fixtureLastRunStatus.set(basename, failed ? 'fail' : 'pass');
     }
 
@@ -509,7 +649,7 @@ async function onChange(
       update(results);
       state.lastUpdate = end;
     } else {
-      report(results, verbose);
+      report(results, verbose, enableRust);
     }
     console.log(`Completed in ${Math.floor(end - start)} ms`);
   } else {

@@ -14,21 +14,20 @@ import typeof * as DynamicExportsType from './ReactFeatureFlags.native-fb-dynami
 // Re-export dynamic flags from the internal module.
 // Intentionally using * because this import is compiled to a `require` call.
 import * as dynamicFlagsUntyped from 'ReactNativeInternalFeatureFlags';
-const dynamicFlags: DynamicExportsType = (dynamicFlagsUntyped: any);
+const dynamicFlags: DynamicExportsType = dynamicFlagsUntyped as any;
 
 // We destructure each value before re-exporting to avoid a dynamic look-up on
 // the exports object every time a flag is read.
 export const {
   alwaysThrottleRetries,
-  enableEffectEventMutationPhase,
   enableObjectFiber,
-  enableEagerAlternateStateNodeCleanup,
   passChildrenWhenCloningPersistedNodes,
   enableFragmentRefs,
   enableFragmentRefsScrollIntoView,
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode,
+  enableConditionalUseWarning,
 } = dynamicFlags;
 
 // The rest of the flags are static for better dead code elimination.
@@ -42,8 +41,11 @@ export const disableSchedulerTimeoutInWorkLoop: boolean = false;
 export const disableTextareaChildren: boolean = false;
 export const enableAsyncDebugInfo: boolean = true;
 export const enableAsyncIterableChildren: boolean = false;
+export const enableFlightWeakThenables: boolean = false;
 export const enableCPUSuspense: boolean = true;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableBrowserAPI: boolean = true;
+export const enableEffectEventMutationPhase: boolean = true;
 export const enableMoveBefore: boolean = true;
 export const enableFizzExternalRuntime: boolean = true;
 export const enableInfiniteRenderLoopDetection: boolean = false;
@@ -71,6 +73,7 @@ export const transitionLaneExpirationMs = 5000;
 export const enableYieldingBeforePassive: boolean = false;
 export const enableThrottledScheduling: boolean = false;
 export const enableViewTransition: boolean = true;
+export const enableViewTransitionParentEnterExit: boolean = true;
 export const enableGestureTransition: boolean = false;
 export const enableScrollEndPolyfill: boolean = true;
 export const enableSuspenseyImages: boolean = false;
@@ -95,4 +98,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

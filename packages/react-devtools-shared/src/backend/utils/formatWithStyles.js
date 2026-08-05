@@ -32,6 +32,7 @@ export default function formatWithStyles(
 ): $ReadOnlyArray<any> {
   if (
     inputArgs === undefined ||
+    // $FlowFixMe[invalid-compare]
     inputArgs === null ||
     inputArgs.length === 0 ||
     // Matches any of %c but not %%c

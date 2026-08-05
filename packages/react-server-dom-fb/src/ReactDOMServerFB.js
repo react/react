@@ -44,7 +44,7 @@ opaque type Stream = {
 };
 
 function renderToStream(children: ReactNodeList, options: Options): Stream {
-  const destination = {
+  const destination: Destination = {
     buffer: '',
     done: false,
     fatal: false,
@@ -103,7 +103,7 @@ function hasFinished(stream: Stream): boolean {
 
 function debug(stream: Stream): any {
   // convert to any to silence flow errors from opaque type
-  const request = (stream.request: any);
+  const request = stream.request as any;
   return {
     pendingRootTasks: request.pendingRootTasks,
     clientRenderedBoundaries: request.clientRenderedBoundaries.length,

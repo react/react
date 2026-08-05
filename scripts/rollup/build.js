@@ -136,7 +136,6 @@ const babelToES5Plugins = [
   '@babel/plugin-transform-arrow-functions',
   '@babel/plugin-transform-block-scoped-functions',
   '@babel/plugin-transform-shorthand-properties',
-  '@babel/plugin-transform-computed-properties',
   ['@babel/plugin-transform-block-scoping', {throwIfClosureRequired: true}],
 ];
 

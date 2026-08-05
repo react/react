@@ -170,7 +170,7 @@ function createFakeWritableFromReadableStreamController(
 ): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       if (typeof chunk === 'string') {
         chunk = textEncoder.encode(chunk);
@@ -191,7 +191,7 @@ function createFakeWritableFromReadableStreamController(
         controller.close();
       }
     },
-  }: any);
+  } as any;
 }
 
 // TODO: Move to sub-classing ReadableStream.
@@ -218,7 +218,7 @@ function renderToReadableStream(
 
     function onShellReady() {
       let writable: Writable;
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'bytes',
           start: (controller): ?Promise<void> => {
@@ -234,8 +234,9 @@ function renderToReadableStream(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -286,10 +287,10 @@ function renderToReadableStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -376,7 +377,7 @@ function resume(
 
     function onShellReady() {
       let writable: Writable;
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'bytes',
           start: (controller): ?Promise<void> => {
@@ -392,8 +393,9 @@ function resume(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -421,10 +423,10 @@ function resume(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

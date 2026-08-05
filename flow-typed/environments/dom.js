@@ -1263,6 +1263,7 @@ declare class HTMLCollection<+Elem: Element> {
   length: number;
   item(nameOrIndex?: any, optionalIndex?: any): Elem | null;
   namedItem(name: string): Elem | null;
+  // $FlowFixMe[incompatible-variance]
   [index: number | string]: Elem;
 }
 

@@ -292,7 +292,7 @@ function updatedAncestorInfoDev(
 
     return ancestorInfo;
   } else {
-    return (null: any);
+    return null as any;
   }
 }
 
@@ -418,6 +418,7 @@ function isTagValidWithParent(
 
     case 'rp':
     case 'rt':
+      // $FlowFixMe[incompatible-type]
       return impliedEndTags.indexOf(parentTag) === -1;
 
     case 'caption':

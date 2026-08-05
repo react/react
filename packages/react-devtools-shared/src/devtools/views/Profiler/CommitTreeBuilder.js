@@ -37,6 +37,7 @@ import type {
 } from 'react-devtools-shared/src/devtools/views/Profiler/types';
 
 const debug = (methodName: string, ...args: Array<string>) => {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `%cCommitTreeBuilder %c${methodName}`,
@@ -62,9 +63,9 @@ export function getCommitTree({
     rootToCommitTreeMap.set(rootID, []);
   }
 
-  const commitTrees = ((rootToCommitTreeMap.get(
+  const commitTrees = rootToCommitTreeMap.get(
     rootID,
-  ): any): Array<CommitTree>);
+  ) as any as Array<CommitTree>;
   if (commitIndex < commitTrees.length) {
     return commitTrees[commitIndex];
   }
@@ -86,7 +87,7 @@ export function getCommitTree({
     );
   }
 
-  let commitTree: CommitTree = ((null: any): CommitTree);
+  let commitTree: CommitTree = null as any as CommitTree;
   for (let index = commitTrees.length; index <= commitIndex; index++) {
     // Commits are generated sequentially and cached.
     // If this is the very first commit, start with the cached snapshot and apply the first mutation.
@@ -101,6 +102,7 @@ export function getCommitTree({
       if (operations != null && index < operations.length) {
         commitTree = updateTree({nodes, rootID}, operations[index]);
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           __printTree(commitTree);
         }
@@ -111,6 +113,7 @@ export function getCommitTree({
       const previousCommitTree = commitTrees[index - 1];
       commitTree = updateTree(previousCommitTree, operations[index]);
 
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         __printTree(commitTree);
       }
@@ -137,9 +140,9 @@ function recursivelyInitializeTree(
       hocDisplayNames: node.hocDisplayNames,
       key: node.key,
       parentID,
-      treeBaseDuration: ((dataForRoot.initialTreeBaseDurations.get(
+      treeBaseDuration: dataForRoot.initialTreeBaseDurations.get(
         id,
-      ): any): number),
+      ) as any as number,
       type: node.type,
       compiledWithForget: node.compiledWithForget,
     });
@@ -172,7 +175,7 @@ function updateTree(
   };
 
   let i = 2;
-  let id: number = ((null: any): number);
+  let id: number = null as any as number;
 
   // Reassemble the string table.
   const stringTable: Array<null | string> = [
@@ -196,8 +199,8 @@ function updateTree(
 
     switch (operation) {
       case TREE_OPERATION_ADD: {
-        id = ((operations[i + 1]: any): number);
-        const type = ((operations[i + 2]: any): ElementType);
+        id = operations[i + 1] as any as number;
+        const type = operations[i + 2] as any as ElementType;
 
         i += 3;
 
@@ -213,6 +216,7 @@ function updateTree(
           i++; // supportsStrictMode flag
           i++; // hasOwnerMetadata flag
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug('Add', `new root fiber ${id}`);
           }
@@ -231,7 +235,7 @@ function updateTree(
 
           nodes.set(id, node);
         } else {
-          const parentID = ((operations[i]: any): number);
+          const parentID = operations[i] as any as number;
           i++;
 
           i++; // ownerID
@@ -247,6 +251,7 @@ function updateTree(
           // skip name prop
           i++;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Add',
@@ -278,11 +283,11 @@ function updateTree(
         break;
       }
       case TREE_OPERATION_REMOVE: {
-        const removeLength = ((operations[i + 1]: any): number);
+        const removeLength = operations[i + 1] as any as number;
         i += 2;
 
         for (let removeIndex = 0; removeIndex < removeLength; removeIndex++) {
-          id = ((operations[i]: any): number);
+          id = operations[i] as any as number;
           i++;
 
           if (!nodes.has(id)) {
@@ -301,6 +306,7 @@ function updateTree(
           } else {
             const parentNode = getClonedNode(parentID);
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               debug('Remove', `fiber ${id} from parent ${parentID}`);
             }
@@ -313,15 +319,16 @@ function updateTree(
         break;
       }
       case TREE_OPERATION_REORDER_CHILDREN: {
-        id = ((operations[i + 1]: any): number);
-        const numChildren = ((operations[i + 2]: any): number);
-        const children = ((operations.slice(
+        id = operations[i + 1] as any as number;
+        const numChildren = operations[i + 2] as any as number;
+        const children = operations.slice(
           i + 3,
           i + 3 + numChildren,
-        ): any): Array<number>);
+        ) as any as Array<number>;
 
         i = i + 3 + numChildren;
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug('Re-order', `fiber ${id} children ${children.join(',')}`);
         }
@@ -337,6 +344,7 @@ function updateTree(
 
         i += 3;
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug('Subtree mode', `Subtree with root ${id} set to mode ${mode}`);
         }
@@ -348,6 +356,7 @@ function updateTree(
         const node = getClonedNode(id);
         node.treeBaseDuration = operations[i + 2] / 1000; // Convert microseconds back to milliseconds;
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug(
             'Update',
@@ -365,6 +374,7 @@ function updateTree(
 
         i += 4;
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug(
             'Warnings and Errors update',
@@ -382,6 +392,7 @@ function updateTree(
         const numRects = operations[i + 5];
         const name = stringTable[nameStringID];
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           let rects: string;
           if (numRects === -1) {
@@ -403,22 +414,23 @@ function updateTree(
       }
 
       case SUSPENSE_TREE_OPERATION_REMOVE: {
-        const removeLength = ((operations[i + 1]: any): number);
+        const removeLength = operations[i + 1] as any as number;
         i += 2 + removeLength;
 
         break;
       }
 
       case SUSPENSE_TREE_OPERATION_REORDER_CHILDREN: {
-        const suspenseID = ((operations[i + 1]: any): number);
-        const numChildren = ((operations[i + 2]: any): number);
-        const children = ((operations.slice(
+        const suspenseID = operations[i + 1] as any as number;
+        const numChildren = operations[i + 2] as any as number;
+        const children = operations.slice(
           i + 3,
           i + 3 + numChildren,
-        ): any): Array<number>);
+        ) as any as Array<number>;
 
         i = i + 3 + numChildren;
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug(
             'Suspense re-order',
@@ -430,17 +442,18 @@ function updateTree(
       }
 
       case SUSPENSE_TREE_OPERATION_RESIZE: {
-        const suspenseID = ((operations[i + 1]: any): number);
-        const numRects = ((operations[i + 2]: any): number);
+        const suspenseID = operations[i + 1] as any as number;
+        const numRects = operations[i + 2] as any as number;
 
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           if (numRects === -1) {
             debug('Suspense resize', `suspense ${suspenseID} rects null`);
           } else {
-            const rects = ((operations.slice(
+            const rects = operations.slice(
               i + 3,
               i + 3 + numRects * 4,
-            ): any): Array<number>);
+            ) as any as Array<number>;
             debug(
               'Suspense resize',
               `suspense ${suspenseID} rects [${rects.join(',')}]`,
@@ -455,7 +468,7 @@ function updateTree(
 
       case SUSPENSE_TREE_OPERATION_SUSPENDERS: {
         i++;
-        const changeLength = ((operations[i++]: any): number);
+        const changeLength = operations[i++] as any as number;
 
         for (let changeIndex = 0; changeIndex < changeLength; changeIndex++) {
           const suspenseNodeId = operations[i++];
@@ -464,6 +477,7 @@ function updateTree(
           const isSuspended = operations[i++] === 1;
           const environmentNamesLength = operations[i++];
           i += environmentNamesLength;
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             debug(
               'Suspender changes',
@@ -478,6 +492,7 @@ function updateTree(
       case TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE: {
         i++;
         const activitySliceIDChange = operations[i++];
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           debug(
             'Applied activity slice change',
@@ -506,6 +521,7 @@ export function invalidateCommitTrees(): void {
 
 // DEBUG
 const __printTree = (commitTree: CommitTree) => {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     const {nodes, rootID} = commitTree;
     console.group('__printTree()');
@@ -515,6 +531,7 @@ const __printTree = (commitTree: CommitTree) => {
       const depth = queue.shift();
 
       // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       const node = nodes.get(id);
       if (node == null) {
         // $FlowFixMe[incompatible-type]
@@ -523,6 +540,7 @@ const __printTree = (commitTree: CommitTree) => {
 
       console.log(
         // $FlowFixMe[incompatible-call]
+        // $FlowFixMe[incompatible-type]
         `${'•'.repeat(depth)}${node.id}:${node.displayName || ''} ${
           node.key ? `key:"${node.key}"` : ''
         } (${node.treeBaseDuration})`,

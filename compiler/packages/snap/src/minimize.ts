@@ -12,7 +12,11 @@ import traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import type {parseConfigPragmaForTests as ParseConfigPragma} from 'babel-plugin-react-compiler/src/Utils/TestUtils';
 import {parseInput} from './compiler.js';
-import {PARSE_CONFIG_PRAGMA_IMPORT, BABEL_PLUGIN_SRC} from './constants.js';
+import {
+  PARSE_CONFIG_PRAGMA_IMPORT,
+  BABEL_PLUGIN_SRC,
+  BABEL_PLUGIN_RUST_SRC,
+} from './constants.js';
 
 type CompileSuccess = {kind: 'success'};
 type CompileParseError = {kind: 'parse_error'; message: string};
@@ -2047,12 +2051,11 @@ export function minimize(
   filename: string,
   language: 'flow' | 'typescript',
   sourceType: 'module' | 'script',
+  useRust: boolean = false,
 ): MinimizeResult {
   // Load the compiler plugin
-  const importedCompilerPlugin = require(BABEL_PLUGIN_SRC) as Record<
-    string,
-    unknown
-  >;
+  const pluginSrc = useRust ? BABEL_PLUGIN_RUST_SRC : BABEL_PLUGIN_SRC;
+  const importedCompilerPlugin = require(pluginSrc) as Record<string, unknown>;
   const BabelPluginReactCompiler = importedCompilerPlugin[
     'default'
   ] as PluginObj;
@@ -2134,6 +2137,160 @@ export function minimize(
   console.log('\n');
 
   // Check if any minimization was achieved
+  if (currentCode === input) {
+    return {kind: 'minimal'};
+  }
+
+  return {kind: 'minimized', source: currentCode};
+}
+
+/**
+ * Compile code with a given plugin and return the output code (or error string).
+ */
+function compileAndGetOutput(
+  code: string,
+  filename: string,
+  language: 'flow' | 'typescript',
+  sourceType: 'module' | 'script',
+  plugin: PluginObj,
+  parseConfigPragmaFn: typeof ParseConfigPragma,
+): string | null {
+  let ast: t.File;
+  try {
+    ast = parseInput(code, filename, language, sourceType);
+  } catch {
+    return null;
+  }
+
+  const firstLine = code.substring(0, code.indexOf('\n'));
+  const config = parseConfigPragmaFn(firstLine, {compilationMode: 'all'});
+  const options = {
+    ...config,
+    environment: {
+      ...config.environment,
+    },
+    logger: {
+      logEvent: () => {},
+      debugLogIRs: () => {},
+    },
+    enableReanimatedCheck: false,
+  };
+
+  try {
+    const result = transformFromAstSync(ast, code, {
+      filename: '/' + filename,
+      highlightCode: false,
+      retainLines: true,
+      compact: true,
+      plugins: [[plugin, options]],
+      sourceType: 'module',
+      ast: false,
+      cloneInputAst: true,
+      configFile: false,
+      babelrc: false,
+    });
+    return result?.code ?? null;
+  } catch (e: unknown) {
+    return `ERROR: ${(e as Error).message}`;
+  }
+}
+
+type MinimizeRustDeltaResult =
+  | {kind: 'no_delta'}
+  | {kind: 'minimal'}
+  | {kind: 'minimized'; source: string};
+
+/**
+ * Core minimization loop that attempts to reduce the input source code
+ * while preserving a delta (difference in output) between the TS and Rust compilers.
+ */
+export function minimizeRustDelta(
+  input: string,
+  filename: string,
+  language: 'flow' | 'typescript',
+  sourceType: 'module' | 'script',
+): MinimizeRustDeltaResult {
+  // Load both compiler plugins
+  const importedTsPlugin = require(BABEL_PLUGIN_SRC) as Record<string, unknown>;
+  const importedRustPlugin = require(BABEL_PLUGIN_RUST_SRC) as Record<
+    string,
+    unknown
+  >;
+  const tsPlugin = importedTsPlugin['default'] as PluginObj;
+  const rustPlugin = importedRustPlugin['default'] as PluginObj;
+  const parseConfigPragmaForTests = importedTsPlugin[
+    PARSE_CONFIG_PRAGMA_IMPORT
+  ] as typeof ParseConfigPragma;
+
+  // Helper: check if TS and Rust outputs differ for given code
+  function hasDelta(code: string): boolean {
+    const tsOutput = compileAndGetOutput(
+      code,
+      filename,
+      language,
+      sourceType,
+      tsPlugin,
+      parseConfigPragmaForTests,
+    );
+    const rustOutput = compileAndGetOutput(
+      code,
+      filename,
+      language,
+      sourceType,
+      rustPlugin,
+      parseConfigPragmaForTests,
+    );
+    // Both null (e.g. parse error) means no delta
+    if (tsOutput == null && rustOutput == null) return false;
+    return tsOutput !== rustOutput;
+  }
+
+  // Verify the initial input has a delta
+  if (!hasDelta(input)) {
+    return {kind: 'no_delta'};
+  }
+
+  // Parse the initial AST
+  let currentAst = parseInput(input, filename, language, sourceType);
+  let currentCode = input;
+  let changed = true;
+  let iterations = 0;
+  const maxIterations = 1000;
+
+  process.stdout.write('\nMinimizing');
+
+  while (changed && iterations < maxIterations) {
+    changed = false;
+    iterations++;
+
+    for (const strategy of simplificationStrategies) {
+      const generator = strategy.generator(currentAst);
+
+      for (const candidateAst of generator) {
+        let candidateCode: string;
+        try {
+          candidateCode = astToCode(candidateAst);
+        } catch {
+          continue;
+        }
+
+        if (hasDelta(candidateCode)) {
+          currentAst = candidateAst;
+          currentCode = candidateCode;
+          changed = true;
+          process.stdout.write('.');
+          break;
+        }
+      }
+
+      if (changed) {
+        break;
+      }
+    }
+  }
+
+  console.log('\n');
+
   if (currentCode === input) {
     return {kind: 'minimal'};
   }
