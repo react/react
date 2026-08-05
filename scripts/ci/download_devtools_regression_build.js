@@ -126,8 +126,11 @@ async function downloadRegressionBuild() {
         `Moving react-compiler-runtime to react/compiler-runtime.js\n`
       )
     );
+    const reactCompilerRuntimePath = require.resolve('react-compiler-runtime', {
+      paths: [regressionBuildPath],
+    });
     await exec(
-      `mv ${REGRESSION_FOLDER}/node_modules/react-compiler-runtime/dist/index.js ${buildPath}/react/compiler-runtime.js`
+      `mv ${reactCompilerRuntimePath} ${buildPath}/react/compiler-runtime.js`
     );
   }
 }

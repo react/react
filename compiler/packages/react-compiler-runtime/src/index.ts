@@ -415,3 +415,14 @@ export function $structuralCheck(
   }
   recur(oldValue, newValue, '', 0);
 }
+
+export default {
+  $dispatcherGuard,
+  $makeReadOnly,
+  $reset,
+  $structuralCheck,
+  c,
+  clearRenderCounterRegistry,
+  renderCounterRegistry,
+  useRenderCounter,
+};
