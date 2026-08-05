@@ -148,17 +148,15 @@ export function extractHOCNames(displayName: string): {
 } {
   if (!displayName) return {baseComponentName: '', hocNames: []};
 
-  const hocRegex = /([A-Z][a-zA-Z0-9]*?)\((.*)\)/g;
+  const hocRegex = /^([A-Za-z_$][A-Za-z0-9_$]*)\((.*)\)$/;
   const hocNames: string[] = [];
   let baseComponentName = displayName;
   let match;
 
   while ((match = hocRegex.exec(baseComponentName)) != null) {
-    if (Array.isArray(match)) {
-      const [, hocName, inner] = match;
-      hocNames.push(hocName);
-      baseComponentName = inner;
-    }
+    const [, hocName, inner] = match;
+    hocNames.push(hocName);
+    baseComponentName = inner;
   }
 
   return {
