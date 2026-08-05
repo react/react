@@ -379,10 +379,16 @@ export function trapClickOnNonInteractiveElement(node: HTMLElement) {
   // listener on the target node.
   // https://www.quirksmode.org/blog/archives/2010/09/click_event_del.html
   // Just set it using the onclick property so that we don't have to manage any
-  // bookkeeping for it. Not sure if we need to clear it when the listener is
-  // removed.
+  // bookkeeping for it. HostSingleton release clears the property only if it
+  // still points to this noop.
   // TODO: Only do this for the relevant Safaris maybe?
   node.onclick = noop;
+}
+
+export function clearClickListener(node: HTMLElement) {
+  if (node.onclick === noop) {
+    node.onclick = null;
+  }
 }
 
 const xlinkNamespace = 'http://www.w3.org/1999/xlink';
@@ -1486,6 +1492,26 @@ export function setInitialProperties(
       continue;
     }
     setProp(domElement, tag, propKey, propValue, props, null);
+  }
+}
+
+export type SingletonType = 'html' | 'head' | 'body';
+
+const emptyProps = {};
+
+export function clearSingletonProperties(
+  domElement: Element,
+  tag: SingletonType,
+  props: Object,
+): void {
+  // This is equivalent to updating to empty props for tags without
+  // tag-specific update logic. Host singletons are limited to html, head, and
+  // body, so they always use this generic path.
+  for (const propKey in props) {
+    const propValue = props[propKey];
+    if (props.hasOwnProperty(propKey) && propValue != null) {
+      setProp(domElement, tag, propKey, null, emptyProps, propValue);
+    }
   }
 }
 

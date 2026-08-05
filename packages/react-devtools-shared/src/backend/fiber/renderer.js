@@ -75,7 +75,6 @@ import {
 import {
   __DEBUG__,
   PROFILING_FLAG_BASIC_SUPPORT,
-  PROFILING_FLAG_TIMELINE_SUPPORT,
   PROFILING_FLAG_PERFORMANCE_TRACKS_SUPPORT,
   TREE_OPERATION_ADD,
   TREE_OPERATION_REMOVE,
@@ -150,9 +149,7 @@ import {
 } from './DevToolsFiberComponentStack';
 
 import {getStyleXData} from '../StyleX/utils';
-import {createProfilingHooks} from '../profilingHooks';
 
-import type {GetTimelineData, ToggleProfilingStatus} from '../profilingHooks';
 import type {Fiber, FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   ChangeDescription,
@@ -436,8 +433,6 @@ export function attach(
   } = ReactPriorityLevels;
 
   const {
-    getLaneLabelMap,
-    injectProfilingHooks,
     overrideHookState,
     overrideHookStateDeletePath,
     overrideHookStateRenamePath,
@@ -473,26 +468,6 @@ export function attach(
         return scheduleRefresh(...args);
       }
     };
-  }
-
-  let getTimelineData: null | GetTimelineData = null;
-  let toggleProfilingStatus: null | ToggleProfilingStatus = null;
-  if (typeof injectProfilingHooks === 'function') {
-    const response = createProfilingHooks({
-      getDisplayNameForFiber,
-      getIsProfiling: () => isProfiling,
-      getLaneLabelMap,
-      currentDispatcherRef: getDispatcherRef(renderer),
-      workTagMap: ReactTypeOfWork,
-      reactVersion: version,
-    });
-
-    // Pass the Profiling hooks to the reconciler for it to call during render.
-    injectProfilingHooks(response.profilingHooks);
-
-    // Hang onto this toggle so we can notify the external methods of profiling status changes.
-    getTimelineData = response.getTimelineData;
-    toggleProfilingStatus = response.toggleProfilingStatus;
   }
 
   type ComponentLogs = {
@@ -1776,9 +1751,6 @@ export function attach(
       let profilingFlags = 0;
       if (isProfilingSupported) {
         profilingFlags = PROFILING_FLAG_BASIC_SUPPORT;
-        if (typeof injectProfilingHooks === 'function') {
-          profilingFlags |= PROFILING_FLAG_TIMELINE_SUPPORT;
-        }
         if (supportsPerformanceTracks) {
           profilingFlags |= PROFILING_FLAG_PERFORMANCE_TRACKS_SUPPORT;
         }
@@ -7251,7 +7223,6 @@ export function attach(
   let isProfiling: boolean = false;
   let profilingStartTime: number = 0;
   let recordChangeDescriptions: boolean = false;
-  let recordTimeline: boolean = false;
   let rootToCommitProfilingMetadataMap: CommitProfilingMetadataMap | null =
     null;
 
@@ -7335,43 +7306,9 @@ export function attach(
       },
     );
 
-    let timelineData = null;
-    if (typeof getTimelineData === 'function') {
-      const currentTimelineData = getTimelineData();
-      if (currentTimelineData) {
-        const {
-          batchUIDToMeasuresMap,
-          internalModuleSourceToRanges,
-          laneToLabelMap,
-          laneToReactMeasureMap,
-          ...rest
-        } = currentTimelineData;
-
-        timelineData = {
-          ...rest,
-
-          // Most of the data is safe to parse as-is,
-          // but we need to convert the nested Arrays back to Maps.
-          // Most of the data is safe to serialize as-is,
-          // but we need to convert the Maps to nested Arrays.
-          batchUIDToMeasuresKeyValueArray: Array.from(
-            batchUIDToMeasuresMap.entries(),
-          ),
-          internalModuleSourceToRanges: Array.from(
-            internalModuleSourceToRanges.entries(),
-          ),
-          laneToLabelKeyValueArray: Array.from(laneToLabelMap.entries()),
-          laneToReactMeasureKeyValueArray: Array.from(
-            laneToReactMeasureMap.entries(),
-          ),
-        };
-      }
-    }
-
     return {
       dataForRoots,
       rendererID,
-      timelineData,
     };
   }
 
@@ -7393,16 +7330,12 @@ export function attach(
     }
   }
 
-  function startProfiling(
-    shouldRecordChangeDescriptions: boolean,
-    shouldRecordTimeline: boolean,
-  ) {
+  function startProfiling(shouldRecordChangeDescriptions: boolean) {
     if (isProfiling) {
       return;
     }
 
     recordChangeDescriptions = shouldRecordChangeDescriptions;
-    recordTimeline = shouldRecordTimeline;
 
     // Capture initial values as of the time profiling starts.
     // It's important we snapshot both the durations and the id-to-root map,
@@ -7434,29 +7367,16 @@ export function attach(
     isProfiling = true;
     profilingStartTime = getCurrentTime();
     rootToCommitProfilingMetadataMap = new Map();
-
-    if (toggleProfilingStatus !== null) {
-      toggleProfilingStatus(true, recordTimeline);
-    }
   }
 
   function stopProfiling() {
     isProfiling = false;
     recordChangeDescriptions = false;
-
-    if (toggleProfilingStatus !== null) {
-      toggleProfilingStatus(false, recordTimeline);
-    }
-
-    recordTimeline = false;
   }
 
   // Automatically start profiling so that we don't miss timing info from initial "mount".
   if (shouldStartProfilingNow) {
-    startProfiling(
-      profilingSettings.recordChangeDescriptions,
-      profilingSettings.recordTimeline,
-    );
+    startProfiling(profilingSettings.recordChangeDescriptions);
   }
 
   function getNearestFiber(devtoolsInstance: DevToolsInstance): null | Fiber {

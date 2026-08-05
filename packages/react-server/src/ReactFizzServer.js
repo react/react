@@ -28,6 +28,7 @@ import type {
   SuspenseListProps,
   SuspenseListRevealOrder,
   ReactKey,
+  ReactRecoverable,
 } from 'shared/ReactTypes';
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {
@@ -134,6 +135,10 @@ import {
   readPreviousThenableFromState,
   getActionStateCount,
   getActionStateMatchingIndex,
+  RecoverableException,
+  createFatalRecoverableError,
+  getSuspendedRecoverableError,
+  clearSuspendedRecoverableError,
 } from './ReactFizzHooks';
 import {DefaultAsyncDispatcher} from './ReactFizzAsyncDispatcher';
 import {
@@ -173,6 +178,7 @@ import {
   REACT_VIEW_TRANSITION_TYPE,
   REACT_ACTIVITY_TYPE,
   REACT_OPTIMISTIC_KEY,
+  REACT_RECOVERABLE_TYPE,
 } from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
@@ -191,6 +197,7 @@ import assign from 'shared/assign';
 import noop from 'shared/noop';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import isArray from 'shared/isArray';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {
   SuspenseException,
   getSuspendedThenable,
@@ -1317,6 +1324,14 @@ function encodeErrorForBoundary(
 ) {
   boundary.errorDigest = digest;
   if (__DEV__) {
+    if (error === RecoverableException) {
+      boundary.errorMessage = wasAborted
+        ? 'Switched to client rendering because the server render was aborted ' +
+          'with a request to render on the client.'
+        : 'Switched to client rendering because a component requested it.';
+      boundary.errorComponentStack = thrownInfo.componentStack;
+      return;
+    }
     let message, stack;
     // In dev we additionally encode the error message and component stack on the boundary
     if (error instanceof Error) {
@@ -1347,6 +1362,11 @@ function logRecoverableError(
   errorInfo: ThrownInfo,
   debugTask: null | ConsoleTask,
 ): ?string {
+  if (error === RecoverableException) {
+    clearSuspendedRecoverableError();
+    return REACT_RECOVERABLE_DIGEST;
+  }
+
   // If this callback errors, we intentionally let that error bubble up to become a fatal error
   // so that someone fixes the error reporting instead of hiding it.
   const onError = request.onError;
@@ -1365,7 +1385,10 @@ function logRecoverableError(
     }
     return;
   }
-  return errorDigest;
+  // An empty digest is reserved for React's internal client-render signal.
+  // Historically an empty digest was omitted from the wire format, so
+  // normalizing it to undefined preserves the existing user-space semantics.
+  return errorDigest === '' ? undefined : errorDigest;
 }
 
 function fatalError(
@@ -4524,19 +4547,34 @@ function erroredTask(
 
   request.allPendingTasks--;
 
-  // Report the error to a global handler.
   // We don't handle halts here because we only halt when prerendering and
   // when prerendering we should be finishing tasks not erroring them when
   // they halt or postpone
-  const errorDigest = logRecoverableError(request, error, errorInfo, debugTask);
   if (boundary === null) {
-    fatalError(request, error, errorInfo, debugTask);
+    // Recoverables can remain silent when a Suspense boundary lets us emit a
+    // shell and defer its content to a downstream renderer. At the root there
+    // is no shell to stream, so this is a fatal error and must be reported like
+    // any other root error.
+    if (error === RecoverableException) {
+      const useError = getSuspendedRecoverableError();
+      logRecoverableError(request, useError, errorInfo, debugTask);
+      fatalError(request, useError, errorInfo, debugTask);
+    } else {
+      logRecoverableError(request, error, errorInfo, debugTask);
+      fatalError(request, error, errorInfo, debugTask);
+    }
     // The shell fatally errored, so the render can never complete. Return before
     // the completeAll check below so we don't fire onAllReady for a render that
     // produced nothing. This mirrors finishAbortedTask, which also returns after
     // a fatalError on the root.
     return;
   } else {
+    const errorDigest = logRecoverableError(
+      request,
+      error,
+      errorInfo,
+      debugTask,
+    );
     boundary.pendingTasks--;
     if (boundary.status !== CLIENT_RENDERED) {
       boundary.status = CLIENT_RENDERED;
@@ -4769,19 +4807,43 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
   }
 
   const errorInfo = getThrownInfo(task.componentStack);
+  // Only abort reasons get this interpretation. Throwing a recoverable
+  // directly is still an application error; it must be passed to use() or
+  // abort() for a renderer to recover it.
+  const isRecoverableAbort =
+    typeof error === 'object' &&
+    error !== null &&
+    // $FlowFixMe[prop-missing]
+    error.$$typeof === REACT_RECOVERABLE_TYPE;
 
   if (boundary === null) {
     const replay: null | ReplaySet = task.replay;
     if (replay === null) {
       // We didn't complete the root so we have nothing to show. We can close
       // the request;
-      if (request.trackedPostpones !== null && segment !== null) {
+      if (
+        !isRecoverableAbort &&
+        request.trackedPostpones !== null &&
+        segment !== null
+      ) {
         const trackedPostpones = request.trackedPostpones;
         // We are aborting a prerender and must treat the shell as halted
         // We log the error but we still resolve the prerender
         logRecoverableError(request, error, errorInfo, task.debugTask);
         trackPostpone(request, trackedPostpones, task, segment);
         finishedTask(request, null, task.row, segment);
+      } else if (isRecoverableAbort) {
+        const recoverable: ReactRecoverable = error as any;
+        const fatalRecoverableError = createFatalRecoverableError(recoverable);
+        logRecoverableError(
+          request,
+          fatalRecoverableError,
+          errorInfo,
+          task.debugTask,
+        );
+        if (request.status !== CLOSING && request.status !== CLOSED) {
+          fatalError(request, fatalRecoverableError, errorInfo, task.debugTask);
+        }
       } else {
         logRecoverableError(request, error, errorInfo, task.debugTask);
         if (request.status !== CLOSING && request.status !== CLOSED) {
@@ -4796,18 +4858,21 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       // the ReplaySet.
       replay.pendingTasks--;
       if (replay.pendingTasks === 0 && replay.nodes.length > 0) {
-        const errorDigest = logRecoverableError(
-          request,
-          error,
-          errorInfo,
-          null,
-        );
+        let errorDigest;
+        let errorForBoundary;
+        if (isRecoverableAbort) {
+          errorDigest = REACT_RECOVERABLE_DIGEST;
+          errorForBoundary = RecoverableException;
+        } else {
+          errorDigest = logRecoverableError(request, error, errorInfo, null);
+          errorForBoundary = error;
+        }
         abortRemainingReplayNodes(
           request,
           null,
           replay.nodes,
           replay.slots,
-          error,
+          errorForBoundary,
           errorDigest,
           errorInfo,
           true,
@@ -4823,7 +4888,11 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
     // boundary the message is referring to
     const trackedPostpones = request.trackedPostpones;
     if (boundary.status !== CLIENT_RENDERED) {
-      if (trackedPostpones !== null && segment !== null) {
+      if (
+        !isRecoverableAbort &&
+        trackedPostpones !== null &&
+        segment !== null
+      ) {
         // We are aborting a prerender and must halt this boundary.
         // We treat this like other postpones during prerendering
         logRecoverableError(request, error, errorInfo, task.debugTask);
@@ -4839,14 +4908,19 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       boundary.status = CLIENT_RENDERED;
       // We are aborting a render or resume which should put boundaries
       // into an explicitly client rendered state
-      const errorDigest = logRecoverableError(
-        request,
-        error,
+      const errorDigest = isRecoverableAbort
+        ? REACT_RECOVERABLE_DIGEST
+        : logRecoverableError(request, error, errorInfo, task.debugTask);
+      const errorForBoundary = isRecoverableAbort
+        ? RecoverableException
+        : error;
+      encodeErrorForBoundary(
+        boundary,
+        errorDigest,
+        errorForBoundary,
         errorInfo,
-        task.debugTask,
+        true,
       );
-      boundary.status = CLIENT_RENDERED;
-      encodeErrorForBoundary(boundary, errorDigest, error, errorInfo, true);
 
       untrackBoundary(request, boundary);
 

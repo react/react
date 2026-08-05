@@ -25,3 +25,4 @@ export const enableFragmentRefsScrollIntoView = __VARIANT__;
 export const enableFragmentRefsInstanceHandles = __VARIANT__;
 export const enableFragmentRefsTextNodes = __VARIANT__;
 export const enableViewTransitionForPersistenceMode = __VARIANT__;
+export const enableConditionalUseWarning = __VARIANT__;

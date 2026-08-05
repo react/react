@@ -2424,4 +2424,354 @@ describe('ReactFlightDOMEdge', () => {
       ).toString(),
     ).toBe('function () { [omitted code] }');
   });
+
+  // A thenable with status 'pending_weak' doesn't keep the Flight stream
+  // open. If it settles before the stream closes for other reasons its value
+  // is emitted like a normal pending thenable; otherwise its reference is
+  // left unfulfilled and stays forever pending on the client.
+  //
+  // A framework-style tracker for whether a page accessed its search params
+  // during a render. The params object is instrumented so that the first
+  // access settles the usedSearchParams thenable. It settles synchronously
+  // at the access point, so an access is guaranteed to be encoded before
+  // the response closes.
+  function createSearchParams(values) {
+    const listeners = [];
+    const usedSearchParams = {
+      status: 'pending_weak',
+      value: undefined,
+      then(onFulfill) {
+        if (usedSearchParams.status === 'fulfilled') {
+          onFulfill(usedSearchParams.value);
+        } else {
+          listeners.push(onFulfill);
+        }
+      },
+    };
+    const searchParams = new Proxy(values, {
+      get(target, key) {
+        if (usedSearchParams.status === 'pending_weak') {
+          usedSearchParams.status = 'fulfilled';
+          usedSearchParams.value = true;
+          for (let i = 0; i < listeners.length; i++) {
+            listeners[i](true);
+          }
+          listeners.length = 0;
+        }
+        return target[key];
+      },
+    });
+    return {searchParams, usedSearchParams};
+  }
+
+  it('emits the value of a weak-pending thenable that settles during the render', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    function Page() {
+      return <div>{'Results for ' + searchParams.q}</div>;
+    }
+
+    let response;
+    await serverAct(() => {
+      const stream = ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Page />,
+      });
+      // Start consuming immediately, like a server that pipes the response
+      // while it renders.
+      response = ReactServerDOMClient.createFromReadableStream(stream, {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      });
+    });
+
+    const result = await response;
+    expect(await result.usedSearchParams).toBe(true);
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result.root),
+    );
+    expect(await readResult(ssrStream)).toBe('<div>Results for react</div>');
+  });
+
+  // @gate enableFlightWeakThenables
+  it('completes the response without waiting for a weak-pending thenable that never settles', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    function Page() {
+      return <div>Static content</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Page />,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+    await serverAct(async () => {});
+    // The response completed even though the weak thenable never settled.
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+
+    // Accessing the params after the response already completed doesn't do
+    // anything.
+    expect(searchParams.q).toBe('react');
+
+    // The reference is left forever pending, without erroring.
+    const raced = await Promise.race([
+      result.usedSearchParams,
+      Promise.resolve('never accessed'),
+    ]);
+    expect(raced).toBe('never accessed');
+  });
+
+  it('emits the value of a weak-pending thenable that settles while the response is still streaming', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    let resolveData;
+    const data = new Promise(res => (resolveData = res));
+    async function Results() {
+      const filter = await data;
+      return <div>{'Results for ' + searchParams[filter]}</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Results />,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+
+    // The response stays open while the data is loading — because of the
+    // async component, not because of the unresolved weak thenable.
+    await serverAct(async () => {});
+    expect(content).toBe(null);
+
+    // The data resolves, the component accesses the search params, and the
+    // response completes.
+    await serverAct(() => resolveData('q'));
+    await serverAct(async () => {});
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(await result.usedSearchParams).toBe(true);
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result.root),
+    );
+    expect(await readResult(ssrStream)).toBe('<div>Results for react</div>');
+  });
+
+  // @gate !enableFlightWeakThenables
+  it('treats a weak-pending thenable like a normal pending thenable when the flag is off', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    function Page() {
+      return <div>Static content</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Page />,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+
+    // Without the flag, the unknown thenable status is treated as an
+    // ordinary pending thenable, which keeps the response open.
+    await serverAct(async () => {});
+    expect(content).toBe(null);
+
+    // Accessing the params settles the thenable and lets the response
+    // complete.
+    await serverAct(() => {
+      expect(searchParams.q).toBe('react');
+    });
+    await serverAct(async () => {});
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(await result.usedSearchParams).toBe(true);
+  });
+
+  // @gate enableFlightWeakThenables
+  it('supports linked lists of weak-pending thenables', async () => {
+    // Weak thenables compose recursively: the value that a weak-pending
+    // thenable settles with can itself contain more weak-pending thenables.
+    // A linked list of them forms an async sequence that never blocks the
+    // response from completing. Modeled here as a framework tracking which
+    // params a page accessed during a dynamic render, encoded into the
+    // response itself as WeakThenable<{value: T, next: WeakThenable<...>}>.
+    function instrumentParams(params) {
+      function createWeakNode() {
+        const listeners = [];
+        const node = {
+          status: 'pending_weak',
+          value: undefined,
+          then(onFulfill) {
+            if (node.status === 'fulfilled') {
+              onFulfill(node.value);
+            } else {
+              listeners.push(onFulfill);
+            }
+          },
+        };
+        return {node, listeners};
+      }
+      let tail = createWeakNode();
+      const head = tail.node;
+      const accessed = new Set();
+      const instrumentedParams = new Proxy(params, {
+        get(target, name) {
+          if (
+            typeof name === 'string' &&
+            name in target &&
+            !accessed.has(name)
+          ) {
+            accessed.add(name);
+            const settledTail = tail;
+            tail = createWeakNode();
+            // Settle the tail of the list synchronously at the access point
+            // so it's guaranteed to be encoded before the response closes.
+            const result = {value: name, next: tail.node};
+            settledTail.node.status = 'fulfilled';
+            settledTail.node.value = result;
+            for (let i = 0; i < settledTail.listeners.length; i++) {
+              settledTail.listeners[i](result);
+            }
+            settledTail.listeners.length = 0;
+          }
+          return target[name];
+        },
+      });
+      return {params: instrumentedParams, accessedParams: head};
+    }
+
+    const {params, accessedParams} = instrumentParams({
+      a: 'value-of-a',
+      b: 'value-of-b',
+      c: 'value-of-c',
+    });
+
+    function Page() {
+      // The page reads param a during the render.
+      return 'Accessed: ' + params.a;
+    }
+
+    let resolveNormal;
+    const pending = new Promise(res => {
+      resolveNormal = res;
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        accessedParams,
+        page: <Page />,
+        pending,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+
+    // While the normal pending promise holds the stream open, param c is
+    // accessed, settling the next node of the list.
+    await serverAct(() => {
+      expect(params.c).toBe('value-of-c');
+    });
+    await serverAct(async () => {});
+    expect(content).toBe(null);
+
+    // Param b is never accessed, so the tail of the list stays unsettled.
+    // It doesn't keep the response open: once the normal promise resolves,
+    // the response completes.
+    await serverAct(() => {
+      resolveNormal('done');
+    });
+    await serverAct(async () => {});
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result.page).toBe('Accessed: value-of-a');
+
+    // Wait until the full response has been processed.
+    await serverAct(async () => {});
+
+    // Read the accessed params off the list, synchronously. A node that
+    // was never settled by the server stays forever pending, without
+    // erroring, which marks the end of the accessed params.
+    function readNode(node) {
+      // Attach a no-op listener to force Flight to synchronously unwrap a
+      // node that was received but not yet initialized.
+      node.then(() => {});
+      if (node.status !== 'fulfilled') {
+        return null;
+      }
+      return node.value;
+    }
+
+    const accessed = [];
+    let node = result.accessedParams;
+    while (node !== null) {
+      const entry = readNode(node);
+      if (entry === null) {
+        break;
+      }
+      accessed.push(entry.value);
+      node = entry.next;
+    }
+    expect(accessed).toEqual(['a', 'c']);
+  });
 });

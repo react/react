@@ -587,5 +587,10 @@
   "599": "Expected an initialized chunk but got an initialized stream chunk instead. This payload may have been submitted by an older version of React.",
   "600": "A rejected Promise was passed to React without a `reason` property. React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`.",
   "601": "A chunk pair is incomplete. This is a bug in React.",
-  "602": "Cannot handle action key. This is a bug in React."
+  "602": "Cannot handle action key. This is a bug in React.",
+  "603": "Recoverable Exception: This is not a real error! It's an implementation detail of `use(browser())` to defer rendering to the browser. `use(browser())` can only be used inside a `<Suspense>` boundary. If a server render errors with this as its cause, the component that called `use(browser())` does not have a `<Suspense>` boundary above it.",
+  "604": "The server render could not complete because client rendering was requested outside a Suspense boundary. See this error's cause for additional details.",
+  "605": "Recoverable Exception: This is not a real error! It's an implementation detail of `use` to interrupt the current render so a downstream renderer can recover it. You must either rethrow it immediately, or move the `use` call outside of the `try/catch` block. Capturing without rethrowing will lead to unexpected behavior.",
+  "606": "Expected a suspended recoverable. This is a bug in React. Please file an issue.",
+  "607": "This library called use() to suspend in a previous render but did not call use() when it finished. This indicates an incorrect use of use(). Learn more: https://react.dev/warnings/conditional-use-of-use"
 }
