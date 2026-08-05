@@ -38,15 +38,11 @@ iter_cloned_collect = "allow"
 map_entry = "allow"
 needless_range_loop = "allow"
 only_used_in_recursion = "allow"
-replace_box = "allow"
 result_large_err = "allow"
 unnecessary_mut_passed = "allow"
-unnecessary_sort_by = "allow"
-unnecessary_unwrap = "allow"
 implicit_saturating_sub = "allow"
 useless_format = "allow"
 useless_conversion = "allow"
-manual_contains = "allow"
 
 # Sizes the shipped napi binary (index.node). Measured on arm64 macOS:
 # default release is 11.2MB; fat LTO + one codegen unit + stripping symbols
