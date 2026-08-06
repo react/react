@@ -20,6 +20,7 @@ import type {
 import type {SuspenseState} from './ReactFiberSuspenseComponent.new';
 import type {TreeContext} from './ReactFiberTreeContext.new';
 import type {CapturedValue} from './ReactCapturedValue';
+import formatProdErrorMessage from 'shared/formatProdErrorMessage';
 
 import {
   HostComponent,
@@ -393,11 +394,14 @@ function shouldClientRenderOnMismatch(fiber: Fiber) {
   );
 }
 
-function throwOnHydrationMismatch(fiber: Fiber) {
-  throw new Error(
+function throwOnHydrationMismatch() {
+  // Suppress hydration error because of tag structure disintegrity (need to do
+  // this because we use react-native-web)
+  console.error(
     'Hydration failed because the initial UI does not match what was ' +
       'rendered on the server.',
   );
+  return;
 }
 
 function tryToClaimNextHydratableInstance(fiber: Fiber): void {
@@ -406,9 +410,21 @@ function tryToClaimNextHydratableInstance(fiber: Fiber): void {
   }
   let nextInstance = nextHydratableInstance;
   if (!nextInstance) {
+    if (!__DEV__) {
+      console.warn(
+        'Suppress ' +
+          formatProdErrorMessage(418) +
+          (__PROFILE__
+            ? ' - suppress flag fiber update'
+            : ' - suppress flag fiber error'),
+      );
+      isHydrating = false;
+      hydrationParentFiber = fiber;
+      return;
+    }
     if (shouldClientRenderOnMismatch(fiber)) {
       warnNonhydratedInstance((hydrationParentFiber: any), fiber);
-      throwOnHydrationMismatch(fiber);
+      throwOnHydrationMismatch();
     }
     // Nothing to hydrate. Make it an insertion.
     insertNonHydratedInstance((hydrationParentFiber: any), fiber);
@@ -418,9 +434,19 @@ function tryToClaimNextHydratableInstance(fiber: Fiber): void {
   }
   const firstAttemptedInstance = nextInstance;
   if (!tryHydrate(fiber, nextInstance)) {
+    if (!__DEV__) {
+      console.warn(
+        'Suppress ' +
+          formatProdErrorMessage(418) +
+          ' - prevent render both server and client nodes',
+      );
+      isHydrating = false;
+      hydrationParentFiber = fiber;
+      return;
+    }
     if (shouldClientRenderOnMismatch(fiber)) {
       warnNonhydratedInstance((hydrationParentFiber: any), fiber);
-      throwOnHydrationMismatch(fiber);
+      throwOnHydrationMismatch();
     }
     // If we can't hydrate this instance let's try the next one.
     // We use this as a heuristic. It's based on intuition and not data so it
@@ -428,8 +454,9 @@ function tryToClaimNextHydratableInstance(fiber: Fiber): void {
     nextInstance = getNextHydratableSibling(firstAttemptedInstance);
     const prevHydrationParentFiber: Fiber = (hydrationParentFiber: any);
     if (!nextInstance || !tryHydrate(fiber, nextInstance)) {
-      // Nothing to hydrate. Make it an insertion.
-      insertNonHydratedInstance((hydrationParentFiber: any), fiber);
+      // This will prevent the non-hydrating node (in this case, server component)
+      // to be added to client component.
+      // TODO: Enable after next14 update
       isHydrating = false;
       hydrationParentFiber = fiber;
       return;
@@ -622,9 +649,15 @@ function popHydrationState(fiber: Fiber): boolean {
   ) {
     let nextInstance = nextHydratableInstance;
     if (nextInstance) {
-      if (shouldClientRenderOnMismatch(fiber)) {
+      if (!__DEV__) {
+        console.warn(
+          'Suppress ' +
+            formatProdErrorMessage(418) +
+            ' - prevent replace client node with server node',
+        );
+      } else if (shouldClientRenderOnMismatch(fiber)) {
         warnIfUnhydratedTailNodes(fiber);
-        throwOnHydrationMismatch(fiber);
+        throwOnHydrationMismatch();
       } else {
         while (nextInstance) {
           deleteHydratableInstance(fiber, nextInstance);

@@ -251,9 +251,9 @@ export function checkForUnmatchedText(
   }
 
   if (isConcurrentMode && enableClientRenderFallbackOnTextMismatch) {
-    // In concurrent roots, we throw when there's a text mismatch and revert to
+    // In concurrent roots, log error when there's a text mismatch and revert to
     // client rendering, up to the nearest Suspense boundary.
-    throw new Error('Text content does not match server-rendered HTML.');
+    console.error('Text content does not match server-rendered HTML.');
   }
 }
 
