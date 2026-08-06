@@ -239,6 +239,18 @@ class State {
     });
   }
 
+  // Records the scope and its dependencies, if not already present
+  declareScope(scope: ReactiveScope): void {
+    if (!this.scopes.has(scope.id)) {
+      this.scopes.set(scope.id, {
+        dependencies: [...scope.dependencies].map(
+          dep => dep.identifier.declarationId,
+        ),
+        seen: false,
+      });
+    }
+  }
+
   /*
    * Associates the identifier with its scope, if there is one and it is active for the given instruction id:
    * - Records the scope and its dependencies
@@ -251,16 +263,7 @@ class State {
   ): void {
     const scope = getPlaceScope(id, place);
     if (scope !== null) {
-      let node = this.scopes.get(scope.id);
-      if (node === undefined) {
-        node = {
-          dependencies: [...scope.dependencies].map(
-            dep => dep.identifier.declarationId,
-          ),
-          seen: false,
-        };
-        this.scopes.set(scope.id, node);
-      }
+      this.declareScope(scope);
       const identifierNode = this.identifiers.get(identifier);
       CompilerError.invariant(identifierNode !== undefined, {
         reason: 'Expected identifier to be initialized',
@@ -984,6 +987,16 @@ class CollectDependenciesVisitor extends ReactiveFunctionVisitor<
     scope: ReactiveScopeBlock,
     scopes: Array<ReactiveScope>,
   ): void {
+    /*
+     * Register the scope up front. `visitOperand` only records a scope when it visits an
+     * operand declared in it, but a scope's only such operands may be somewhere that
+     * `computeMemoizationInputs` never descends into (e.g. a ternary `test`). The scope
+     * is still associated with identifiers below (reassignments) and in `visitTerminal`
+     * (returns within the scope), and `computeMemoizedIdentifiers` expects a node for
+     * every associated scope.
+     */
+    this.state.declareScope(scope.scope);
+
     /*
      * If a scope reassigns any variables, set the chain of active scopes as a dependency
      * of those variables. This ensures that if the variable escapes that we treat the

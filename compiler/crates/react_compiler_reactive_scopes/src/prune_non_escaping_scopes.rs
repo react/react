@@ -166,6 +166,22 @@ impl CollectState {
         );
     }
 
+    /// Records the scope and its dependencies, if not already present.
+    fn declare_scope(&mut self, env: &Environment, scope_id: ScopeId) {
+        self.scopes.entry(scope_id).or_insert_with(|| {
+            let scope_data = &env.scopes[scope_id.0 as usize];
+            let dependencies = scope_data
+                .dependencies
+                .iter()
+                .map(|dep| env.identifiers[dep.identifier.0 as usize].declaration_id)
+                .collect();
+            ScopeNode {
+                dependencies,
+                seen: false,
+            }
+        });
+    }
+
     /// Associates the identifier with its scope, if there is one and it is active for
     /// the given instruction id.
     fn visit_operand(
@@ -176,20 +192,7 @@ impl CollectState {
         identifier: DeclarationId,
     ) {
         if let Some(scope_id) = get_place_scope(env, id, place.identifier) {
-            let node = self.scopes.entry(scope_id).or_insert_with(|| {
-                let scope_data = &env.scopes[scope_id.0 as usize];
-                let dependencies = scope_data
-                    .dependencies
-                    .iter()
-                    .map(|dep| env.identifiers[dep.identifier.0 as usize].declaration_id)
-                    .collect();
-                ScopeNode {
-                    dependencies,
-                    seen: false,
-                }
-            });
-            // Avoid unused variable warning — we needed the entry to exist
-            let _ = node;
+            self.declare_scope(env, scope_id);
             let identifier_node = self
                 .identifiers
                 .get_mut(&identifier)
@@ -1021,6 +1024,14 @@ impl<'a> ReactiveFunctionVisitor for CollectDependenciesVisitor<'a> {
         let env = self.env;
         let scope_id = scope.scope;
         let scope_data = &env.scopes[scope_id.0 as usize];
+
+        // Register the scope up front. `visit_operand` only records a scope when it visits
+        // an operand declared in it, but a scope's only such operands may be somewhere
+        // `compute_memoization_inputs` never descends into (e.g. a ternary `test`). The
+        // scope is still associated with identifiers below (reassignments) and in
+        // `visit_terminal` (returns within the scope), and `compute_memoized_identifiers`
+        // expects a node for every associated scope.
+        state.0.declare_scope(env, scope_id);
 
         // If a scope reassigns any variables, set the chain of active scopes as a dependency
         // of those variables.
