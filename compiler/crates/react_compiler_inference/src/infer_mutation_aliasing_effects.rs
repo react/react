@@ -11,7 +11,7 @@
 //! creation, aliasing, mutation, freezing, and error conditions for each
 //! instruction and terminal in the HIR.
 
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::CompilerDiagnostic;
@@ -69,7 +69,7 @@ pub fn infer_mutation_aliasing_effects(
             value_id,
             AbstractValue {
                 kind: ValueKind::Context,
-                reason: hashset_of(ValueReason::Other),
+                reason: ValueReasonSet::single(ValueReason::Other),
             },
         );
         initial_state.define(ctx_place.identifier, value_id);
@@ -78,12 +78,12 @@ pub fn infer_mutation_aliasing_effects(
     let param_kind: AbstractValue = if is_function_expression {
         AbstractValue {
             kind: ValueKind::Mutable,
-            reason: hashset_of(ValueReason::Other),
+            reason: ValueReasonSet::single(ValueReason::Other),
         }
     } else {
         AbstractValue {
             kind: ValueKind::Frozen,
-            reason: hashset_of(ValueReason::ReactiveFunctionArgument),
+            reason: ValueReasonSet::single(ValueReason::ReactiveFunctionArgument),
         }
     };
 
@@ -103,7 +103,7 @@ pub fn infer_mutation_aliasing_effects(
                 value_id,
                 AbstractValue {
                     kind: ValueKind::Mutable,
-                    reason: hashset_of(ValueReason::Other),
+                    reason: ValueReasonSet::single(ValueReason::Other),
                 },
             );
             initial_state.define(ref_place.identifier, value_id);
@@ -258,16 +258,88 @@ impl ValueId {
 // AbstractValue
 // =============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct AbstractValue {
     kind: ValueKind,
-    reason: IndexSet<ValueReason, FxBuildHasher>,
+    reason: ValueReasonSet,
 }
 
-fn hashset_of(r: ValueReason) -> IndexSet<ValueReason, FxBuildHasher> {
-    let mut s = IndexSet::default();
-    s.insert(r);
-    s
+/// Capacity of [`ValueReasonSet`]. A set holds at most one of each `ValueReason`
+/// variant, of which there are currently 12; the extra slots are headroom so
+/// that adding variants upstream cannot overflow the set.
+const VALUE_REASON_CAPACITY: usize = 16;
+
+/// An insertion-ordered set of [`ValueReason`]s, stored inline.
+///
+/// This is a deliberate replacement for `IndexSet`, enabling insertion-order
+/// memory while avoiding any heap allocation. At `AbstractValue`'s scale, this
+/// has a dramatic impact on heap memory and wall time.
+/// This takes advantage of the format of the data it's actually storing. A set
+/// can hold at most one of each variant, so the members fit into a fixed inline
+/// array. `ValueReason` is implemented as a single byte, so this struct is
+/// ~18 bytes on the stack.
+///
+/// Insertion order is preserved deliberately: [`primary_reason`] returns the
+/// first non-`Other` member, matching the iteration order of the `Set` used by
+/// the TypeScript implementation this is ported from.
+#[derive(Debug, Clone, Copy)]
+struct ValueReasonSet {
+    /// Members in insertion order. Only the first `len` entries are meaningful.
+    members: [ValueReason; VALUE_REASON_CAPACITY],
+    len: u8,
+}
+
+impl Default for ValueReasonSet {
+    fn default() -> Self {
+        ValueReasonSet {
+            members: [ValueReason::Other; VALUE_REASON_CAPACITY],
+            len: 0,
+        }
+    }
+}
+
+impl ValueReasonSet {
+    fn single(reason: ValueReason) -> Self {
+        let mut set = Self::default();
+        set.insert(reason);
+        set
+    }
+
+    fn contains(&self, reason: ValueReason) -> bool {
+        self.members[..self.len as usize].contains(&reason)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = ValueReason> + '_ {
+        self.members[..self.len as usize].iter().copied()
+    }
+
+    /// Appends `reason` if not already present, preserving insertion order.
+    fn insert(&mut self, reason: ValueReason) {
+        if self.contains(reason) {
+            return;
+        }
+        debug_assert!(
+            (self.len as usize) < VALUE_REASON_CAPACITY,
+            "ValueReasonSet capacity must cover every ValueReason variant"
+        );
+        if (self.len as usize) < VALUE_REASON_CAPACITY {
+            self.members[self.len as usize] = reason;
+            self.len += 1;
+        }
+    }
+
+    /// True when every member of `other` is also a member of `self`.
+    fn is_superset_of(&self, other: &ValueReasonSet) -> bool {
+        other.iter().all(|reason| self.contains(reason))
+    }
+
+    /// Adds every member of `other`, keeping `self`'s existing order and
+    /// appending newcomers in `other`'s order — matching `IndexSet::insert`.
+    fn union_with(&mut self, other: &ValueReasonSet) {
+        for reason in other.iter() {
+            self.insert(reason);
+        }
+    }
 }
 
 // =============================================================================
@@ -315,7 +387,7 @@ impl InferenceState {
                 }
                 return AbstractValue {
                     kind: ValueKind::Mutable,
-                    reason: hashset_of(ValueReason::Other),
+                    reason: ValueReasonSet::single(ValueReason::Other),
                 };
             }
         };
@@ -332,7 +404,7 @@ impl InferenceState {
         }
         merged_kind.unwrap_or_else(|| AbstractValue {
             kind: ValueKind::Mutable,
-            reason: hashset_of(ValueReason::Other),
+            reason: ValueReasonSet::single(ValueReason::Other),
         })
     }
 
@@ -360,7 +432,7 @@ impl InferenceState {
                         vid,
                         AbstractValue {
                             kind: ValueKind::Mutable,
-                            reason: hashset_of(ValueReason::Other),
+                            reason: ValueReasonSet::single(ValueReason::Other),
                         },
                     );
                 }
@@ -438,7 +510,7 @@ impl InferenceState {
             value_id,
             AbstractValue {
                 kind: ValueKind::Frozen,
-                reason: hashset_of(reason),
+                reason: ValueReasonSet::single(reason),
             },
         );
         // Note: In TS, this also transitively freezes FunctionExpression captures
@@ -493,7 +565,7 @@ impl InferenceState {
             if let Some(other_value) = other.values.get(id) {
                 let merged = merge_abstract_values(this_value, other_value);
                 if merged.kind != this_value.kind
-                    || !is_superset(&this_value.reason, &merged.reason)
+                    || !this_value.reason.is_superset_of(&merged.reason)
                 {
                     let nv = next_values.get_or_insert_with(|| self.values.clone());
                     nv.insert(*id, merged);
@@ -564,13 +636,6 @@ impl InferenceState {
             self.variables.insert(phi_place_id, values);
         }
     }
-}
-
-fn is_superset(
-    a: &IndexSet<ValueReason, FxBuildHasher>,
-    b: &IndexSet<ValueReason, FxBuildHasher>,
-) -> bool {
-    b.iter().all(|x| a.contains(x))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -738,13 +803,11 @@ fn hash_effect(effect: &AliasingEffect) -> String {
 
 fn merge_abstract_values(a: &AbstractValue, b: &AbstractValue) -> AbstractValue {
     let kind = merge_value_kinds(a.kind, b.kind);
-    if kind == a.kind && kind == b.kind && is_superset(&a.reason, &b.reason) {
+    if kind == a.kind && kind == b.kind && a.reason.is_superset_of(&b.reason) {
         return a.clone();
     }
-    let mut reason = a.reason.clone();
-    for r in &b.reason {
-        reason.insert(*r);
-    }
+    let mut reason = a.reason;
+    reason.union_with(&b.reason);
     AbstractValue { kind, reason }
 }
 
@@ -1233,7 +1296,7 @@ fn apply_signature(
             vid,
             AbstractValue {
                 kind: ValueKind::Mutable,
-                reason: hashset_of(ValueReason::Other),
+                reason: ValueReasonSet::single(ValueReason::Other),
             },
         );
         state.define(instr.lvalue.identifier, vid);
@@ -1341,7 +1404,7 @@ fn apply_effect(
                 value_id,
                 AbstractValue {
                     kind,
-                    reason: hashset_of(reason),
+                    reason: ValueReasonSet::single(reason),
                 },
             );
             state.define(into.identifier, value_id);
@@ -1370,7 +1433,7 @@ fn apply_effect(
                 value_id,
                 AbstractValue {
                     kind: from_value.kind,
-                    reason: from_value.reason.clone(),
+                    reason: from_value.reason,
                 },
             );
             state.define(into.identifier, value_id);
@@ -1487,7 +1550,7 @@ fn apply_effect(
                     } else {
                         ValueKind::Frozen
                     },
-                    reason: IndexSet::default(),
+                    reason: ValueReasonSet::default(),
                 },
             );
             state.define(into.identifier, value_id);
@@ -1599,7 +1662,7 @@ fn apply_effect(
                         value_id,
                         AbstractValue {
                             kind: from_value.kind,
-                            reason: from_value.reason.clone(),
+                            reason: from_value.reason,
                         },
                     );
                     state.define(into.identifier, value_id);
@@ -1615,7 +1678,7 @@ fn apply_effect(
                         value_id,
                         AbstractValue {
                             kind: from_value.kind,
-                            reason: from_value.reason.clone(),
+                            reason: from_value.reason,
                         },
                     );
                     state.define(into.identifier, value_id);
@@ -3410,8 +3473,8 @@ fn compute_effects_for_aliasing_signature(
 /// since the primary reason is always inserted first, this effectively
 /// picks the most specific non-Other reason. We replicate this by
 /// preferring any non-Other reason over Other.
-fn primary_reason(reasons: &IndexSet<ValueReason, FxBuildHasher>) -> ValueReason {
-    for &r in reasons {
+fn primary_reason(reasons: &ValueReasonSet) -> ValueReason {
+    for r in reasons.iter() {
         if r != ValueReason::Other {
             return r;
         }
@@ -3420,32 +3483,32 @@ fn primary_reason(reasons: &IndexSet<ValueReason, FxBuildHasher>) -> ValueReason
 }
 
 fn get_write_error_reason(abstract_value: &AbstractValue) -> String {
-    if abstract_value.reason.contains(&ValueReason::Global) {
+    if abstract_value.reason.contains(ValueReason::Global) {
         "Modifying a variable defined outside a component or hook is not allowed. Consider using an effect".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::JsxCaptured) {
+    } else if abstract_value.reason.contains(ValueReason::JsxCaptured) {
         "Modifying a value used previously in JSX is not allowed. Consider moving the modification before the JSX".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::Context) {
+    } else if abstract_value.reason.contains(ValueReason::Context) {
         "Modifying a value returned from 'useContext()' is not allowed.".to_string()
     } else if abstract_value
         .reason
-        .contains(&ValueReason::KnownReturnSignature)
+        .contains(ValueReason::KnownReturnSignature)
     {
         "Modifying a value returned from a function whose return value should not be mutated"
             .to_string()
     } else if abstract_value
         .reason
-        .contains(&ValueReason::ReactiveFunctionArgument)
+        .contains(ValueReason::ReactiveFunctionArgument)
     {
         "Modifying component props or hook arguments is not allowed. Consider using a local variable instead".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::State) {
+    } else if abstract_value.reason.contains(ValueReason::State) {
         "Modifying a value returned from 'useState()', which should not be modified directly. Use the setter function to update instead".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::ReducerState) {
+    } else if abstract_value.reason.contains(ValueReason::ReducerState) {
         "Modifying a value returned from 'useReducer()', which should not be modified directly. Use the dispatch function to update instead".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::Effect) {
+    } else if abstract_value.reason.contains(ValueReason::Effect) {
         "Modifying a value used previously in an effect function or as an effect dependency is not allowed. Consider moving the modification before calling useEffect()".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::HookCaptured) {
+    } else if abstract_value.reason.contains(ValueReason::HookCaptured) {
         "Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::HookReturn) {
+    } else if abstract_value.reason.contains(ValueReason::HookReturn) {
         "Modifying a value returned from a hook is not allowed. Consider moving the modification into the hook where the value is constructed".to_string()
     } else {
         "This modifies a variable that React considers immutable".to_string()
