@@ -27,6 +27,7 @@ const {asyncRimRaf} = require('./utils');
 const codeFrame = require('@babel/code-frame').default;
 const Wrappers = require('./wrappers');
 const commonjs = require('@rollup/plugin-commonjs');
+const {ReactVersion} = require('../../ReactVersions');
 
 const RELEASE_CHANNEL = process.env.RELEASE_CHANNEL;
 
@@ -439,6 +440,7 @@ function getPlugins(
             ? "'production'"
             : "'development'",
           __EXPERIMENTAL__,
+          __REACT_VERSION__: JSON.stringify(ReactVersion),
         },
       }),
       // For the external runtime we turn global identifiers into local.
