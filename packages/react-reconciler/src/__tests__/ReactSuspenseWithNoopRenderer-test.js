@@ -595,7 +595,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
 
     // Unblock the low-pri text and finish. Nothing in the UI changes because
-    // the update was overriden
+    // the update was overridden
     await act(() => resolveText('2'));
     assertLog(['2']);
     expect(ReactNoop).toMatchRenderedOutput(
