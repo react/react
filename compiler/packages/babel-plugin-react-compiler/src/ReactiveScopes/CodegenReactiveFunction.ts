@@ -52,7 +52,7 @@ import {printIdentifier, printInstruction, printPlace} from '../HIR/PrintHIR';
 import {eachPatternOperand} from '../HIR/visitors';
 
 import {GuardKind} from '../Utils/RuntimeDiagnosticConstants';
-import {assertExhaustive} from '../Utils/utils';
+import {Iterable_some, assertExhaustive} from '../Utils/utils';
 import {buildReactiveFunction} from './BuildReactiveFunction';
 import {SINGLE_CHILD_FBT_TAGS} from './MemoizeFbtAndMacroOperandsInSameScope';
 import {ReactiveFunctionVisitor, visitReactiveFunction} from './visitors';
@@ -564,6 +564,7 @@ function codegenReactiveScope(
   block: ReactiveBlock,
 ): void {
   const cacheStoreStatements: Array<t.Statement> = [];
+  const reassignedDepStoreStatements: Array<t.Statement> = [];
   const cacheLoadStatements: Array<t.Statement> = [];
   const cacheLoads: Array<{
     name: t.Identifier;
@@ -584,23 +585,33 @@ function codegenReactiveScope(
       codegenDependency(cx, dep),
     );
     changeExpressions.push(comparison);
-    /*
-     * Adding directly to cacheStoreStatements rather than cacheLoads, because there
-     * is no corresponding cacheLoadStatement for dependencies
-     */
-    cacheStoreStatements.push(
-      t.expressionStatement(
-        t.assignmentExpression(
-          '=',
-          t.memberExpression(
-            t.identifier(cx.synthesizeName('$')),
-            t.numericLiteral(index),
-            true,
-          ),
-          codegenDependency(cx, dep),
+    const store = t.expressionStatement(
+      t.assignmentExpression(
+        '=',
+        t.memberExpression(
+          t.identifier(cx.synthesizeName('$')),
+          t.numericLiteral(index),
+          true,
         ),
+        codegenDependency(cx, dep),
       ),
     );
+    if (
+      Iterable_some(
+        scope.reassignments,
+        reassignment =>
+          reassignment.declarationId === dep.identifier.declarationId,
+      )
+    ) {
+      // The scope overwrites this dependency as it runs, so cache it beforehand
+      reassignedDepStoreStatements.push(store);
+    } else {
+      /*
+       * Adding directly to cacheStoreStatements rather than cacheLoads, because there
+       * is no corresponding cacheLoadStatement for dependencies
+       */
+      cacheStoreStatements.push(store);
+    }
   }
   let firstOutputIndex: number | null = null;
 
@@ -698,6 +709,7 @@ function codegenReactiveScope(
       ),
     );
   }
+  computationBlock.body.unshift(...reassignedDepStoreStatements);
   computationBlock.body.push(...cacheStoreStatements);
   memoStatement = t.ifStatement(
     testCondition,
