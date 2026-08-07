@@ -15,6 +15,7 @@ import {flushSync} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import {getBrowserTheme} from '../utils';
 import {
   localStorageGetItem,
@@ -254,12 +255,11 @@ function createDevToolsInstance(): DevToolsInstance {
   const store = new Store(bridge, {
     isProfiling,
     supportsReloadAndProfile: __IS_CHROME__ || __IS_EDGE__,
-    // At this time, the timeline can only parse Chrome performance profiles.
-    supportsTimeline: __IS_CHROME__,
     supportsTraceUpdates: true,
     supportsInspectMatchingDOMElement: true,
     supportsClickToInspect: true,
   });
+  subscribeToStoreErrors(store, bridge);
 
   store.addListener('settingsUpdated', (hookSettings, componentFilters) => {
     chrome.storage.local.set({...hookSettings, componentFilters});

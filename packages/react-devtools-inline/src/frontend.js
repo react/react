@@ -4,6 +4,7 @@ import * as React from 'react';
 import {forwardRef} from 'react';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import DevTools from 'react-devtools-shared/src/devtools/views/DevTools';
 import {getSavedComponentFilters} from 'react-devtools-shared/src/utils';
 
@@ -13,12 +14,13 @@ import type {Props} from 'react-devtools-shared/src/devtools/views/DevTools';
 import type {Config} from 'react-devtools-shared/src/devtools/store';
 
 export function createStore(bridge: FrontendBridge, config?: Config): Store {
-  return new Store(bridge, {
+  const store = new Store(bridge, {
     checkBridgeProtocolCompatibility: true,
     supportsTraceUpdates: true,
-    supportsTimeline: true,
     ...config,
   });
+  subscribeToStoreErrors(store, bridge);
+  return store;
 }
 
 export function createBridge(contentWindow: any, wall?: Wall): FrontendBridge {

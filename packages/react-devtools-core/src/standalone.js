@@ -12,6 +12,7 @@ import {flushSync} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import {getSavedComponentFilters} from 'react-devtools-shared/src/utils';
 import {registerDevToolsEventLogger} from 'react-devtools-shared/src/registerDevToolsEventLogger';
 import {Server} from 'ws';
@@ -209,8 +210,14 @@ function onError({code, message}: $FlowFixMe) {
 
 function openProfiler() {
   // Mocked up bridge and store to allow the DevTools to be rendered
-  bridge = new Bridge({listen: () => () => {}, send: () => {}});
-  store = new Store(bridge, {});
+  const profilerBridge: FrontendBridge = new Bridge({
+    listen: () => () => {},
+    send: () => {},
+  });
+  const profilerStore = new Store(profilerBridge, {});
+  bridge = profilerBridge;
+  store = profilerStore;
+  subscribeToStoreErrors(profilerStore, profilerBridge);
 
   // Ensure the Profiler tab is shown initially.
   localStorageSetItem(
@@ -276,6 +283,7 @@ function initialize(socket: WebSocket) {
     supportsTraceUpdates: true,
     supportsClickToInspect: true,
   });
+  subscribeToStoreErrors(store, bridge as any as FrontendBridge);
 
   log('Connected');
   statusListener('DevTools initialized.', 'devtools-connected');
