@@ -2589,8 +2589,12 @@ fn lower_block_statement(
     block: &react_compiler_ast::statements::BlockStatement,
     parent_scope: Option<react_compiler_ast::scope::ScopeId>,
 ) -> Result<(), CompilerError> {
-    let _ = lower_block_statement_inner(builder, block, None, parent_scope);
-    Ok(())
+    Ok(lower_block_statement_inner(
+        builder,
+        block,
+        None,
+        parent_scope,
+    )?)
 }
 
 fn lower_block_statement_with_scope(
@@ -2598,8 +2602,12 @@ fn lower_block_statement_with_scope(
     block: &react_compiler_ast::statements::BlockStatement,
     scope_override: react_compiler_ast::scope::ScopeId,
 ) -> Result<(), CompilerError> {
-    let _ = lower_block_statement_inner(builder, block, Some(scope_override), None);
-    Ok(())
+    Ok(lower_block_statement_inner(
+        builder,
+        block,
+        Some(scope_override),
+        None,
+    )?)
 }
 
 fn lower_block_statement_inner(
