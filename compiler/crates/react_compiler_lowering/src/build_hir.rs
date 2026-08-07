@@ -480,6 +480,7 @@ enum MemberProperty {
 struct LoweredMemberExpression {
     object: Place,
     property: MemberProperty,
+    computed: bool,
     value: InstructionValue,
 }
 
@@ -520,6 +521,7 @@ fn lower_member_expression_with_object(
                 return Ok(LoweredMemberExpression {
                     object,
                     property: MemberProperty::Literal(PropertyLiteral::String("".to_string())),
+                    computed: member.computed,
                     value: InstructionValue::UnsupportedNode {
                         node_type: Some("OptionalMemberExpression".to_string()),
                         original_node: serialize_expression(
@@ -535,11 +537,13 @@ fn lower_member_expression_with_object(
         let value = InstructionValue::PropertyLoad {
             object: object.clone(),
             property: prop_literal.clone(),
+            computed: member.computed,
             loc,
         };
         Ok(LoweredMemberExpression {
             object,
             property: MemberProperty::Literal(prop_literal),
+            computed: member.computed,
             value,
         })
     } else {
@@ -548,11 +552,13 @@ fn lower_member_expression_with_object(
             let value = InstructionValue::PropertyLoad {
                 object: object.clone(),
                 property: prop_literal.clone(),
+                computed: true,
                 loc,
             };
             return Ok(LoweredMemberExpression {
                 object,
                 property: MemberProperty::Literal(prop_literal),
+                computed: true,
                 value,
             });
         }
@@ -565,6 +571,7 @@ fn lower_member_expression_with_object(
         Ok(LoweredMemberExpression {
             object,
             property: MemberProperty::Computed(property),
+            computed: true,
             value,
         })
     }
@@ -603,6 +610,7 @@ fn lower_member_expression_impl(
                 return Ok(LoweredMemberExpression {
                     object,
                     property: MemberProperty::Literal(PropertyLiteral::String("".to_string())),
+                    computed: member.computed,
                     value: InstructionValue::UnsupportedNode {
                         node_type: Some("MemberExpression".to_string()),
                         original_node: serialize_expression(
@@ -618,11 +626,13 @@ fn lower_member_expression_impl(
         let value = InstructionValue::PropertyLoad {
             object: object.clone(),
             property: prop_literal.clone(),
+            computed: member.computed,
             loc,
         };
         Ok(LoweredMemberExpression {
             object,
             property: MemberProperty::Literal(prop_literal),
+            computed: member.computed,
             value,
         })
     } else {
@@ -632,11 +642,13 @@ fn lower_member_expression_impl(
             let value = InstructionValue::PropertyLoad {
                 object: object.clone(),
                 property: prop_literal.clone(),
+                computed: true,
                 loc,
             };
             return Ok(LoweredMemberExpression {
                 object,
                 property: MemberProperty::Literal(prop_literal),
+                computed: true,
                 value,
             });
         }
@@ -650,6 +662,7 @@ fn lower_member_expression_impl(
         Ok(LoweredMemberExpression {
             object,
             property: MemberProperty::Computed(property),
+            computed: true,
             value,
         })
     }
@@ -975,6 +988,7 @@ fn lower_expression(
                     let lowered = lower_member_expression(builder, member)?;
                     let object = lowered.object;
                     let lowered_property = lowered.property;
+                    let computed = lowered.computed;
                     let prev_value = lower_value_to_temporary(builder, lowered.value)?;
 
                     let one = lower_value_to_temporary(
@@ -1003,6 +1017,7 @@ fn lower_expression(
                             InstructionValue::PropertyStore {
                                 object,
                                 property: prop_literal,
+                                computed,
                                 value: updated.clone(),
                                 loc: member_loc,
                             },
@@ -1346,6 +1361,7 @@ fn lower_expression(
                                     InstructionValue::PropertyStore {
                                         object,
                                         property: PropertyLiteral::String(prop_id.name.clone()),
+                                        computed: false,
                                         value: right,
                                         loc: left_loc,
                                     },
@@ -1359,6 +1375,7 @@ fn lower_expression(
                                         property: PropertyLiteral::Number(FloatValue::new(
                                             num.precise_value(),
                                         )),
+                                        computed: member.computed,
                                         value: right,
                                         loc: left_loc,
                                     },
@@ -1557,6 +1574,7 @@ fn lower_expression(
                         let lowered = lower_member_expression(builder, member)?;
                         let object = lowered.object;
                         let lowered_property = lowered.property;
+                        let computed = lowered.computed;
                         let current_value = lower_value_to_temporary(builder, lowered.value)?;
                         let right = lower_expression_to_temporary(builder, &expr.right)?;
                         let result = lower_value_to_temporary(
@@ -1574,6 +1592,7 @@ fn lower_expression(
                                 Ok(InstructionValue::PropertyStore {
                                     object,
                                     property: prop_literal,
+                                    computed,
                                     value: result,
                                     loc: member_loc,
                                 })
@@ -4582,6 +4601,7 @@ fn lower_assignment(
                             InstructionValue::PropertyStore {
                                 object,
                                 property: PropertyLiteral::String(prop_id.name.clone()),
+                                computed: false,
                                 value,
                                 loc,
                             },
@@ -4595,6 +4615,7 @@ fn lower_assignment(
                                 property: PropertyLiteral::Number(FloatValue::new(
                                     num.precise_value(),
                                 )),
+                                computed: member.computed,
                                 value,
                                 loc,
                             },
@@ -6362,6 +6383,7 @@ fn lower_jsx_member_expression(
     let value = InstructionValue::PropertyLoad {
         object,
         property: PropertyLiteral::String(prop_name.clone()),
+        computed: false,
         loc: expr_loc,
     };
     Ok(lower_value_to_temporary(builder, value)?)
