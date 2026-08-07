@@ -1674,7 +1674,8 @@ export default class Store extends EventEmitter<{
           i += 2;
 
           for (let removeIndex = 0; removeIndex < removeLength; removeIndex++) {
-            const id = operations[i];
+            //point to next index before element condition check if exist
+            const id = operations[i++];
             const element = this._idToElement.get(id);
 
             if (element === undefined) {
@@ -1685,8 +1686,6 @@ export default class Store extends EventEmitter<{
                 ),
               );
             }
-
-            i += 1;
 
             const {children, ownerID, parentID, weight} = element;
             if (children.length > 0) {
