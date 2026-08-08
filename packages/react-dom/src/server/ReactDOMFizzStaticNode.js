@@ -119,7 +119,11 @@ function prerenderToNodeStream(
   options?: Options,
 ): Promise<StaticResult> {
   return new Promise((resolve, reject) => {
-    const onFatalError = reject;
+    let cleanupSignalListener = () => {};
+    const onFatalError = (error: mixed) => {
+      cleanupSignalListener();
+      reject(error);
+    };
 
     function onAllReady() {
       const readable: Readable = new Readable({
@@ -133,6 +137,7 @@ function prerenderToNodeStream(
         postponed: getPostponedState(request),
         prelude: readable,
       };
+      cleanupSignalListener();
       resolve(result);
     }
     const resumableState = createResumableState(
@@ -172,6 +177,9 @@ function prerenderToNodeStream(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
@@ -188,7 +196,11 @@ function prerender(
   prelude: ReadableStream,
 }> {
   return new Promise((resolve, reject) => {
-    const onFatalError = reject;
+    let cleanupSignalListener = () => {};
+    const onFatalError = (error: mixed) => {
+      cleanupSignalListener();
+      reject(error);
+    };
 
     function onAllReady() {
       let writable: Writable;
@@ -216,6 +228,7 @@ function prerender(
         postponed: getPostponedState(request),
         prelude: stream,
       };
+      cleanupSignalListener();
       resolve(result);
     }
 
@@ -263,6 +276,9 @@ function prerender(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
@@ -282,7 +298,11 @@ function resumeAndPrerenderToNodeStream(
   options?: Omit<ResumeOptions, 'nonce'>,
 ): Promise<StaticResult> {
   return new Promise((resolve, reject) => {
-    const onFatalError = reject;
+    let cleanupSignalListener = () => {};
+    const onFatalError = (error: mixed) => {
+      cleanupSignalListener();
+      reject(error);
+    };
 
     function onAllReady() {
       const readable: Readable = new Readable({
@@ -296,6 +316,7 @@ function resumeAndPrerenderToNodeStream(
         postponed: getPostponedState(request),
         prelude: readable,
       };
+      cleanupSignalListener();
       resolve(result);
     }
     const request = resumeAndPrerenderRequest(
@@ -319,6 +340,9 @@ function resumeAndPrerenderToNodeStream(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
@@ -334,7 +358,11 @@ function resumeAndPrerender(
   prelude: ReadableStream,
 }> {
   return new Promise((resolve, reject) => {
-    const onFatalError = reject;
+    let cleanupSignalListener = () => {};
+    const onFatalError = (error: mixed) => {
+      cleanupSignalListener();
+      reject(error);
+    };
 
     function onAllReady() {
       let writable: Writable;
@@ -362,6 +390,7 @@ function resumeAndPrerender(
         postponed: getPostponedState(request),
         prelude: stream,
       };
+      cleanupSignalListener();
       resolve(result);
     }
 
@@ -386,6 +415,9 @@ function resumeAndPrerender(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
