@@ -46,6 +46,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 import {
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 
@@ -143,6 +144,7 @@ import {now} from './Scheduler';
 import {
   trackUsedThenable,
   checkIfUseWrappedInTryCatch,
+  checkIfUseWasUsedBefore,
   createThenableState,
   SuspenseException,
   SuspenseActionException,
@@ -650,6 +652,7 @@ function finishRenderingHooks<Props, SecondArg>(
     } else {
       workInProgress.dependencies._debugThenableState = thenableState;
     }
+    checkIfUseWasUsedBefore(workInProgress, thenableState);
   }
 
   // We can assume the previous dispatcher is always this one, since we set it
@@ -1099,7 +1102,12 @@ function useThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  const result = trackUsedThenable(thenableState, thenable, index);
+  const result = trackUsedThenable(
+    thenableState,
+    thenable,
+    index,
+    __DEV__ ? currentlyRenderingFiber : null,
+  );
 
   // When something suspends with `use`, we replay the component with the
   // "re-render" dispatcher instead of the "mount" or "update" dispatcher.
@@ -1156,6 +1164,10 @@ function use<T>(usable: Usable<T>): T {
       // This is a thenable.
       const thenable: Thenable<T> = usable as any;
       return useThenable(thenable);
+    } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Fiber is the final renderer, so there is no downstream host that
+      // needs to recover this subtree. Continue rendering through it.
+      return undefined as any;
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
       const context: ReactContext<T> = usable as any;
       return readContext(context);

@@ -288,11 +288,6 @@ export function installFacade(target?: any = globalThis): Facade {
         profilingState.onPostCommit(root);
       }
     },
-    getInternalModuleRanges(): Array<[string, string]> {
-      return [];
-    },
-    registerInternalModuleStart() {},
-    registerInternalModuleStop() {},
   };
 
   Object.defineProperty(target, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {

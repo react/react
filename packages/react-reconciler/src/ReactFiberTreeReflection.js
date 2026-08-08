@@ -392,6 +392,7 @@ function traverseVisibleInstancesAndTextInstances<A, B, C>(
   while (child !== null) {
     const isHostNode =
       child.tag === HostComponent ||
+      child.tag === HostSingleton ||
       (enableFragmentRefsTextNodes && child.tag === HostText);
     if (isHostNode && fn(child, a, b, c)) {
       return true;
@@ -402,7 +403,8 @@ function traverseVisibleInstancesAndTextInstances<A, B, C>(
       // Skip hidden subtrees
     } else {
       if (
-        (searchWithinHosts || child.tag !== HostComponent) &&
+        (searchWithinHosts ||
+          (child.tag !== HostComponent && child.tag !== HostSingleton)) &&
         traverseVisibleInstancesAndTextInstances(
           child.child,
           searchWithinHosts,
@@ -425,7 +427,11 @@ export function getFragmentParentInstanceOrContainerFiber(
 ): null | Fiber {
   let parent = fiber.return;
   while (parent !== null) {
-    if (parent.tag === HostRoot || parent.tag === HostComponent) {
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
       return parent;
     }
     parent = parent.return;
@@ -441,7 +447,11 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
     if (parent.tag === HostPortal) {
       foundPortalParent = true;
     }
-    if (parent.tag === HostRoot || parent.tag === HostComponent) {
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
       break;
     }
     parent = parent.return;
@@ -486,6 +496,7 @@ function findFragmentInstanceOrTextInstanceSiblings(
     }
     if (
       child.tag === HostComponent ||
+      child.tag === HostSingleton ||
       (enableFragmentRefsTextNodes && child.tag === HostText)
     ) {
       if (foundSelf) {
@@ -521,6 +532,7 @@ export function getInstanceFromHostFiber<
 >(fiber: Fiber): I {
   switch (fiber.tag) {
     case HostComponent:
+    case HostSingleton:
     case HostText:
       return fiber.stateNode;
     case HostRoot:
@@ -589,7 +601,9 @@ export function isFragmentContainedByFiber(
     getFragmentParentInstanceOrContainerFiber(fragmentFiber);
   while (current !== null) {
     if (
-      (current.tag === HostComponent || current.tag === HostRoot) &&
+      (current.tag === HostComponent ||
+        current.tag === HostRoot ||
+        current.tag === HostSingleton) &&
       (current === fiberHostParent || current.alternate === fiberHostParent)
     ) {
       return true;

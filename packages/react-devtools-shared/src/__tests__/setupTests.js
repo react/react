@@ -312,9 +312,7 @@ beforeEach(() => {
   };
   const bridge = new Bridge(bridgeWall);
 
-  const store = new Store(((bridge: any): FrontendBridge), {
-    supportsTimeline: true,
-  });
+  const store = new Store(((bridge: any): FrontendBridge));
 
   const agent = new Agent(((bridge: any): BackendBridge));
   const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;

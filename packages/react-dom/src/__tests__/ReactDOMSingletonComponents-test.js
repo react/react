@@ -491,6 +491,54 @@ describe('ReactDOM HostSingleton', () => {
     expect(onScroll).toHaveBeenCalledTimes(2);
   });
 
+  // @gate __DEV__
+  it('does not release or reacquire singletons when double invoking effects during hydration', async () => {
+    const effectLog = [];
+    const html = '<span id="managed">managed content</span>';
+
+    function Effect() {
+      React.useLayoutEffect(() => {
+        effectLog.push('mount');
+        return () => {
+          effectLog.push('unmount');
+        };
+      }, []);
+      return <meta name="strict-effect" />;
+    }
+
+    await actIntoEmptyDocument(() => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
+        <html>
+          <head>
+            <meta name="strict-effect" />
+          </head>
+          <body dangerouslySetInnerHTML={{__html: html}} />
+        </html>,
+      );
+      pipe(writable);
+    });
+    const serverBodyHTML = document.body.innerHTML;
+    const managedElement = document.getElementById('managed');
+
+    ReactDOMClient.hydrateRoot(
+      document,
+      <React.StrictMode>
+        <html>
+          <head>
+            <Effect />
+          </head>
+          <body dangerouslySetInnerHTML={{__html: serverBodyHTML}} />
+        </html>
+      </React.StrictMode>,
+    );
+    await waitForAll([]);
+
+    // The Strict Mode effects are still double invoked.
+    expect(effectLog).toEqual(['mount', 'unmount', 'mount']);
+    // Hydrating a matching tree should preserve the server-rendered nodes.
+    expect(document.getElementById('managed')).toBe(managedElement);
+  });
+
   it('renders into html, head, and body persistently so the node identities never change and extraneous styles are retained', async () => {
     // Server render some html that will get replaced with a client render
     await actIntoEmptyDocument(() => {

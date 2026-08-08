@@ -12,7 +12,6 @@ import EventEmitter from '../events';
 import {inspect} from 'util';
 import {
   PROFILING_FLAG_BASIC_SUPPORT,
-  PROFILING_FLAG_TIMELINE_SUPPORT,
   PROFILING_FLAG_PERFORMANCE_TRACKS_SUPPORT,
   TREE_OPERATION_ADD,
   TREE_OPERATION_REMOVE,
@@ -133,14 +132,12 @@ export type Config = {
   supportsInspectMatchingDOMElement?: boolean,
   supportsClickToInspect?: boolean,
   supportsReloadAndProfile?: boolean,
-  supportsTimeline?: boolean,
   supportsTraceUpdates?: boolean,
 };
 
 const ADVANCED_PROFILING_NONE = 0;
-const ADVANCED_PROFILING_TIMELINE = 1;
 const ADVANCED_PROFILING_PERFORMANCE_TRACKS = 2;
-type AdvancedProfiling = 0 | 1 | 2;
+type AdvancedProfiling = 0 | 2;
 
 export type Capabilities = {
   supportsBasicProfiling: boolean,
@@ -201,7 +198,6 @@ export default class Store extends EventEmitter<{
   recordChangeDescriptions: [],
   roots: [],
   rootSupportsBasicProfiling: [],
-  rootSupportsTimelineProfiling: [],
   rootSupportsPerformanceTracks: [],
   suspenseTreeMutated: [[Map<SuspenseNode['id'], SuspenseNode['id']>]],
   supportsNativeStyleEditor: [],
@@ -280,7 +276,6 @@ export default class Store extends EventEmitter<{
   // These options may be initially set by a configuration option when constructing the Store.
   _supportsInspectMatchingDOMElement: boolean = false;
   _supportsClickToInspect: boolean = false;
-  _supportsTimeline: boolean = false;
   _supportsTraceUpdates: boolean = false;
 
   _isReloadAndProfileFrontendSupported: boolean = false;
@@ -288,7 +283,6 @@ export default class Store extends EventEmitter<{
 
   // These options default to false but may be updated as roots are added and removed.
   _rootSupportsBasicProfiling: boolean = false;
-  _rootSupportsTimelineProfiling: boolean = false;
   _rootSupportsPerformanceTracks: boolean = false;
 
   _bridgeProtocol: BridgeProtocol | null = null;
@@ -336,7 +330,6 @@ export default class Store extends EventEmitter<{
         supportsInspectMatchingDOMElement,
         supportsClickToInspect,
         supportsReloadAndProfile,
-        supportsTimeline,
         supportsTraceUpdates,
         checkBridgeProtocolCompatibility,
       } = config;
@@ -348,9 +341,6 @@ export default class Store extends EventEmitter<{
       }
       if (supportsReloadAndProfile) {
         this._isReloadAndProfileFrontendSupported = true;
-      }
-      if (supportsTimeline) {
-        this._supportsTimeline = true;
       }
       if (supportsTraceUpdates) {
         this._supportsTraceUpdates = true;
@@ -575,11 +565,6 @@ export default class Store extends EventEmitter<{
     return this._rootSupportsBasicProfiling;
   }
 
-  // At least one of the currently mounted roots support the Timeline profiler.
-  get rootSupportsTimelineProfiling(): boolean {
-    return this._rootSupportsTimelineProfiling;
-  }
-
   // At least one of the currently mounted roots support performance tracks.
   get rootSupportsPerformanceTracks(): boolean {
     return this._rootSupportsPerformanceTracks;
@@ -602,12 +587,6 @@ export default class Store extends EventEmitter<{
       this._isReloadAndProfileFrontendSupported &&
       this._isReloadAndProfileBackendSupported
     );
-  }
-
-  // This build of DevTools supports the Timeline profiler.
-  // This is a static flag, controlled by the Store config.
-  get supportsTimeline(): boolean {
-    return this._supportsTimeline;
   }
 
   get supportsTraceUpdates(): boolean {
@@ -1537,16 +1516,12 @@ export default class Store extends EventEmitter<{
             const profilerFlags = operations[i++];
             const supportsBasicProfiling =
               (profilerFlags & PROFILING_FLAG_BASIC_SUPPORT) !== 0;
-            const supportsTimeline =
-              (profilerFlags & PROFILING_FLAG_TIMELINE_SUPPORT) !== 0;
             const supportsPerformanceTracks =
               (profilerFlags & PROFILING_FLAG_PERFORMANCE_TRACKS_SUPPORT) !== 0;
             let supportsAdvancedProfiling: AdvancedProfiling =
               ADVANCED_PROFILING_NONE;
             if (supportsPerformanceTracks) {
               supportsAdvancedProfiling = ADVANCED_PROFILING_PERFORMANCE_TRACKS;
-            } else if (supportsTimeline) {
-              supportsAdvancedProfiling = ADVANCED_PROFILING_TIMELINE;
             }
 
             let supportsStrictMode = false;
@@ -2301,14 +2276,11 @@ export default class Store extends EventEmitter<{
 
     if (haveRootsChanged) {
       const prevRootSupportsProfiling = this._rootSupportsBasicProfiling;
-      const prevRootSupportsTimelineProfiling =
-        this._rootSupportsTimelineProfiling;
       const prevRootSupportsPerformanceTracks =
         this._rootSupportsPerformanceTracks;
 
       this._hasOwnerMetadata = false;
       this._rootSupportsBasicProfiling = false;
-      this._rootSupportsTimelineProfiling = false;
       this._rootSupportsPerformanceTracks = false;
       this._rootIDToCapabilities.forEach(
         ({
@@ -2321,9 +2293,6 @@ export default class Store extends EventEmitter<{
           }
           if (hasOwnerMetadata) {
             this._hasOwnerMetadata = true;
-          }
-          if (supportsAdvancedProfiling === ADVANCED_PROFILING_TIMELINE) {
-            this._rootSupportsTimelineProfiling = true;
           }
           if (
             supportsAdvancedProfiling === ADVANCED_PROFILING_PERFORMANCE_TRACKS
@@ -2339,12 +2308,6 @@ export default class Store extends EventEmitter<{
         this.emit('rootSupportsBasicProfiling');
       }
 
-      if (
-        this._rootSupportsTimelineProfiling !==
-        prevRootSupportsTimelineProfiling
-      ) {
-        this.emit('rootSupportsTimelineProfiling');
-      }
       if (
         this._rootSupportsPerformanceTracks !==
         prevRootSupportsPerformanceTracks

@@ -3264,9 +3264,9 @@ function blurActiveElementWithinFragment(
     return false;
   }
   const instance = getInstanceFromHostFiber<Instance>(child);
-  if (instance === activeElement) {
+  if (instance === activeElement || instance.contains(activeElement)) {
     // $FlowFixMe[prop-missing]
-    instance.blur();
+    activeElement.blur();
     return true;
   }
   return false;
