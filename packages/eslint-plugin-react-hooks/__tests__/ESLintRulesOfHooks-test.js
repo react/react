@@ -76,6 +76,19 @@ const allTests = {
     },
     {
       code: normalizeIndent`
+        // Valid because components can be static members.
+        function MyComponent() {
+          return <MyComponent.Ready />;
+        }
+
+        MyComponent.Ready = () => {
+          useHook();
+          return null;
+        };
+      `,
+    },
+    {
+      code: normalizeIndent`
         // Valid because hooks can use hooks.
         function useHookWithHook() {
           useHook();

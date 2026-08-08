@@ -55,7 +55,12 @@ function isHook(node: Node): boolean {
  * always start with an uppercase letter.
  */
 function isComponentName(node: Node): boolean {
-  return node.type === 'Identifier' && /^[A-Z]/.test(node.name);
+  return (
+    (node.type === 'Identifier' && /^[A-Z]/.test(node.name)) ||
+    (node.type === 'MemberExpression' &&
+      !node.computed &&
+      isComponentName(node.property))
+  );
 }
 
 function isReactFunction(node: Node, functionName: string): boolean {
