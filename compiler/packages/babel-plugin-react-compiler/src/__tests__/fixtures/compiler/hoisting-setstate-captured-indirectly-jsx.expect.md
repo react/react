@@ -27,7 +27,7 @@ function useFoo() {
 ```javascript
 import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMemoizationGuarantees
 function useFoo() {
-  const $ = _c(7);
+  const $ = _c(4);
   const onClick = (response) => {
     setState(DISABLED_FORM);
   };
@@ -35,34 +35,31 @@ function useFoo() {
   const [, t0] = useState();
   const setState = t0;
   let t1;
-  if ($[0] !== setState) {
+  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t1 = () => {
       setState(DISABLED_FORM);
     };
-    $[0] = setState;
-    $[1] = t1;
+    $[0] = t1;
   } else {
-    t1 = $[1];
+    t1 = $[0];
   }
   setState;
   const handleLogout = t1;
   let t2;
-  if ($[2] !== handleLogout) {
+  if ($[1] === Symbol.for("react.memo_cache_sentinel")) {
     const getComponent = () => <ColumnItem onPress={() => handleLogout()} />;
     t2 = getComponent();
-    $[2] = handleLogout;
-    $[3] = t2;
+    $[1] = t2;
   } else {
-    t2 = $[3];
+    t2 = $[1];
   }
   let t3;
-  if ($[4] !== onClick || $[5] !== t2) {
+  if ($[2] !== onClick) {
     t3 = [t2, onClick];
-    $[4] = onClick;
-    $[5] = t2;
-    $[6] = t3;
+    $[2] = onClick;
+    $[3] = t3;
   } else {
-    t3 = $[6];
+    t3 = $[3];
   }
   return t3;
 }
