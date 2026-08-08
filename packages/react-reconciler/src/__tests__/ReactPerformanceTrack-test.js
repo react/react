@@ -587,4 +587,97 @@ describe('ReactPerformanceTracks', () => {
       ],
     ]);
   });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
+  it('does not throw SecurityError when a cross-origin Window is passed as a prop', async () => {
+    // Simulate a cross-origin Window whose property enumeration throws SecurityError,
+    // as happens in browsers when a component receives an iframe.contentWindow
+    // from an iframe with a null/cross origin (e.g. srcdoc="").
+    const createCrossOriginWindow = () => {
+      return new Proxy(
+        {},
+        {
+          ownKeys() {
+            // In browsers, `for...in` on a cross-origin Window throws SecurityError.
+            // We simulate that here so the test can run in JSDOM.
+            throw new Error(
+              "Failed to enumerate the properties of 'Window': " +
+                'cross-origin access blocked.',
+            );
+          },
+          getOwnPropertyDescriptor(target, prop) {
+            throw new Error(
+              `Failed to read a named property '${String(prop)}' from 'Window': ` +
+                'cross-origin access blocked.',
+            );
+          },
+          get(target, prop) {
+            if (prop === Symbol.toStringTag) {
+              return 'Window';
+            }
+            throw new Error(
+              `Failed to read a named property '${String(prop)}' from 'Window': ` +
+                'cross-origin access blocked.',
+            );
+          },
+        },
+      );
+    };
+
+    const crossOriginWin = createCrossOriginWindow();
+
+    const App = function App({win}) {
+      Scheduler.unstable_advanceTime(10);
+      return null;
+    };
+
+    // This should not throw SecurityError and must not corrupt the fiber tree.
+    await act(() => {
+      ReactNoop.render(<App win={crossOriginWin} />);
+    });
+
+    // First render: mount measure should be recorded.
+    expect(performanceMeasureCalls).toEqual([
+      [
+        'Mount',
+        {
+          detail: {
+            devtools: {
+              color: 'warning',
+              properties: null,
+              tooltipText: 'Mount',
+              track: 'Components ⚛',
+            },
+          },
+          end: 10,
+          start: 0,
+        },
+      ],
+    ]);
+    performanceMeasureCalls.length = 0;
+
+    // Verify the UI remains responsive by re-rendering with a new cross-origin
+    // Window instance (different reference forces React to diff the win prop).
+    const crossOriginWin2 = createCrossOriginWindow();
+    Scheduler.unstable_advanceTime(10);
+    await act(() => {
+      ReactNoop.render(<App win={crossOriginWin2} />);
+    });
+
+    // Second render: App measure should be recorded. The cross-origin Window
+    // props should appear as '[CrossOriginObject]' placeholders — not throw
+    // SecurityError or corrupt the fiber tree.
+    expect(performanceMeasureCalls).toHaveLength(1);
+    const [measureName, measureOptions] = performanceMeasureCalls[0];
+    // Component-update measures are prefixed with a zero-width space (\u200b).
+    expect(measureName).toBe('\u200bApp');
+    expect(measureOptions.detail.devtools.tooltipText).toBe('App');
+    // The cross-origin Window must degrade to '[CrossOriginObject]', not throw.
+    const properties = measureOptions.detail.devtools.properties;
+    expect(properties).not.toBeNull();
+    const hasCrossOriginPlaceholder = properties.some(([key]) =>
+      key.includes('[CrossOriginObject]'),
+    );
+    expect(hasCrossOriginPlaceholder).toBe(true);
+  });
 });
