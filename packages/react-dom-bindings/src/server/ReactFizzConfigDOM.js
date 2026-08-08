@@ -4087,12 +4087,17 @@ function pushStartCustomElement(
             typeof propValue !== 'function' &&
             typeof propValue !== 'symbol'
           ) {
-            // $FlowFixMe[invalid-compare]
-            if (propValue === false) {
-              continue;
-              // $FlowFixMe[invalid-compare]
-            } else if (propValue === true) {
-              propValue = '';
+            // Match pushAttribute / setValueForAttribute: aria-* and data-* booleans
+            // stringify ("true"/"false"). Other booleans use empty-string presence.
+            if (typeof propValue === 'boolean') {
+              const prefix = attributeName.toLowerCase().slice(0, 5);
+              if (prefix !== 'data-' && prefix !== 'aria-') {
+                // $FlowFixMe[invalid-compare]
+                if (propValue === false) {
+                  continue;
+                }
+                propValue = '';
+              }
             } else if (typeof propValue === 'object') {
               continue;
             }
