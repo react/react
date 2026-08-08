@@ -65,6 +65,24 @@ export function defaultModuleTypeProvider(
               },
             },
           },
+          useFormContext: {
+            kind: 'hook',
+            returnType: {
+              kind: 'object',
+              properties: {
+                // Only the `watch()` function returned by react-hook-form's `useFormContext()` API is incompatible
+                watch: {
+                  kind: 'function',
+                  positionalParams: [],
+                  restParam: Effect.Read,
+                  calleeEffect: Effect.Read,
+                  returnType: {kind: 'type', name: 'Any'},
+                  returnValueKind: ValueKind.Mutable,
+                  knownIncompatible: `React Hook Form's \`useFormContext()\` API returns a \`watch()\` function which cannot be memoized safely.`,
+                },
+              },
+            },
+          },
         },
       };
     }
