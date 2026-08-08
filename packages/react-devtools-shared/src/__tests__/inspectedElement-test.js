@@ -583,6 +583,7 @@ describe('InspectedElement', () => {
           boolean_true={true}
           infinity={Infinity}
           minus_infinity={-Infinity}
+          minus_zero={-0}
           integer_zero={0}
           integer_one={1}
           float={1.23}
@@ -606,6 +607,7 @@ describe('InspectedElement', () => {
         "integer_one": 1,
         "integer_zero": 0,
         "minus_infinity": -Infinity,
+        "minus_zero": -0,
         "nan": NaN,
         "string": "abc",
         "string_empty": "",

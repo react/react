@@ -43,6 +43,24 @@ describe('useEditableValue', () => {
     expect(state.isValid).toBe(true);
   });
 
+  it('should preserve -0 as an editable value', () => {
+    let state;
+
+    function Example({value = -0}) {
+      const tuple = useEditableValue(value);
+      state = tuple[0];
+      return null;
+    }
+
+    act(() => render(<Example />));
+
+    expect(state.editableValue).toEqual('-0');
+    expect(Object.is(state.externalValue, -0)).toBe(true);
+    expect(Object.is(state.parsedValue, -0)).toBe(true);
+    expect(state.hasPendingChanges).toBe(false);
+    expect(state.isValid).toBe(true);
+  });
+
   it('should override editable state when external props are updated', () => {
     let state;
 

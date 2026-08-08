@@ -273,6 +273,8 @@ export default function KeyValue({
       displayValue = 'undefined';
     } else if (isNaN(value)) {
       displayValue = 'NaN';
+    } else if (Object.is(value, -0)) {
+      displayValue = '-0';
     }
 
     let shouldDisplayValueAsLink = false;

@@ -597,6 +597,7 @@ export function dehydrate(
     }
     case 'infinity':
     case '-infinity':
+    case '-0':
     case 'nan':
     case 'undefined':
       // Some values are lossy when sent through a WebSocket.
@@ -707,6 +708,8 @@ export function hydrate(
       parent[last] = Infinity;
     } else if (value.type === '-infinity') {
       parent[last] = -Infinity;
+    } else if (value.type === '-0') {
+      parent[last] = -0;
     } else if (value.type === 'nan') {
       parent[last] = NaN;
     } else if (value.type === 'undefined') {

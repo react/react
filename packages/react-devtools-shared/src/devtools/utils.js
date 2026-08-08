@@ -237,6 +237,8 @@ export function smartParse(value: any): any | void | number {
       return Infinity;
     case '-Infinity':
       return -Infinity;
+    case '-0':
+      return -0;
     case 'NaN':
       return NaN;
     case 'undefined':
@@ -252,6 +254,8 @@ export function smartStringify(value: any): string {
       return 'NaN';
     } else if (!Number.isFinite(value)) {
       return value > 0 ? 'Infinity' : '-Infinity';
+    } else if (Object.is(value, -0)) {
+      return '-0';
     }
   } else if (value === undefined) {
     return 'undefined';
