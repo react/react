@@ -929,4 +929,42 @@ describe('Store component filters', () => {
           <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
     `);
   });
+
+  // @reactVersion >= 18.0
+  it('should not throw when reordering children of filtered Suspense boundary', async () => {
+    const Suspense = React.Suspense;
+    const Component = () => null;
+
+    const Foo = () => [<Component key="0" />];
+    const Bar = () => [<Component key="0" />, <Component key="1" />];
+    const foo = <Foo key="foo" />;
+    const bar = <Bar key="bar" />;
+
+    await actAsync(async () =>
+      render(
+        <Suspense fallback={null}>
+          {foo}
+          {bar}
+        </Suspense>,
+      ),
+    );
+
+    // Apply filter to filter out Suspense
+    await actAsync(
+      async () =>
+        (store.componentFilters = [
+          utils.createElementTypeFilter(Types.ElementTypeSuspense),
+        ]),
+    );
+
+    // Now reorder the children
+    await actAsync(async () =>
+      render(
+        <Suspense fallback={null}>
+          {bar}
+          {foo}
+        </Suspense>,
+      ),
+    );
+  });
 });
