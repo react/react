@@ -56,7 +56,7 @@ export function validateOptionProps(element: Element, props: Object) {
     if (props.selected != null && !didWarnSelectedSetOnOption) {
       console.error(
         'Use the `defaultValue` or `value` props on <select> instead of ' +
-          'setting `selected` on <option>.',
+          'setting `selected` on <option>. Otherwise form reset may not work as expected.',
       );
       didWarnSelectedSetOnOption = true;
     }
