@@ -168,17 +168,49 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
     function bumpSettleBatch() {
       settleBatch++;
     }
-    // Leaves whose promise is handed to a child as a prop: the child's await
-    // dedupes into the parent's, so they don't surface individually.
-    // TODO: assert exactly where they do surface instead.
+    // Leaves whose promise is handed to a child as a prop. The child awaits
+    // the prop, so a single-leaf prop must be attributed in the child's
+    // render; leaves behind composite sources only surface through whatever
+    // io ends up unblocking the composite.
     const propLeaves = new Set();
-    function trackPropLeaves(fn) {
+    const propConsumers = new Map();
+    function trackPropLeaves(fn, consumerName, singleLeaf) {
       const before = nextValue;
       const result = fn();
       for (let i = before; i < nextValue; i++) {
         propLeaves.add('v' + i);
+        if (singleLeaf) {
+          propConsumers.set('v' + i, consumerName);
+        }
       }
       return result;
+    }
+    // Combinator awaits attribute only the io that unblocked them. When
+    // every part is a plain single-leaf fetch, the settle order decides
+    // which part that is, so the oracle can demand it exactly.
+    const combinatorAwaits = [];
+    // Leaves delivered through a userland thenable: their io entries
+    // describe whatever context settled the thenable, not the leaf.
+    const foreignLeaves = new Set();
+    // Leaves settled in another leaf's io callback: the driver settles a
+    // batch back to back in the context of the batch's last io.
+    const foreignSettles = new Set();
+    function trackForeignValue(promise) {
+      promise.then(
+        function (value) {
+          if (typeof value === 'string' && /^v[0-9]+$/.test(value)) {
+            foreignLeaves.add(value);
+          } else if (
+            value !== null &&
+            typeof value === 'object' &&
+            typeof value.id === 'string'
+          ) {
+            foreignLeaves.add(value.id);
+          }
+        },
+        function (error) {},
+      );
+      return promise;
     }
     function withComponent(componentName, source) {
       const parentChain = currentChain;
@@ -226,6 +258,31 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       });
     }
 
+    // Throws for any property access outside the thenable protocol, like
+    // userland reference proxies without the serialization exemptions our
+    // own ClientReference proxies carry.
+    function proxyThenable(thenable) {
+      return new Proxy(thenable, {
+        get(target, key) {
+          if (
+            key === 'then' ||
+            key === 'status' ||
+            key === 'value' ||
+            key === 'reason' ||
+            key === 'constructor' ||
+            typeof key === 'symbol'
+          ) {
+            return target[key];
+          }
+          throw new Error('touched forbidden key ' + String(key));
+        },
+        set(target, key, value) {
+          target[key] = value;
+          return true;
+        },
+      });
+    }
+
     // A promise backed by one unit of real I/O whose resolution is parked
     // with the driver. The io kind is decided when the seed is built, never
     // when the leaf is created.
@@ -249,6 +306,7 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
           : id;
       const promise = new Promise((resolve, reject) => {
         pending.push({
+          id: id,
           io: useTimer ? waitForTimer : readFromFile,
           settle() {
             meta.settleIndex = settleCount++;
@@ -302,14 +360,21 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         // A component fetching its own data.
         const useTimer = rand.intBetween(0, 1) === 0;
         if (rand.intBetween(0, 1) === 0) {
-          return named('fetchData', function fetchData() {
+          const fetchData = named('fetchData', function fetchData() {
             return leaf({useTimer: useTimer});
           });
+          fetchData.singleLeaf = true;
+          return fetchData;
         }
-        return named('fetchAndTransform', async function fetchAndTransform() {
-          const data = await leaf({useTimer: useTimer});
-          return String(data).toUpperCase();
-        });
+        const fetchAndTransform = named(
+          'fetchAndTransform',
+          async function fetchAndTransform() {
+            const data = await leaf({useTimer: useTimer});
+            return String(data).toUpperCase();
+          },
+        );
+        fetchAndTransform.singleLeaf = true;
+        return fetchAndTransform;
       }
       if (roll <= 40) {
         const key = rand.intBetween(0, 3);
@@ -346,7 +411,27 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
           parts.push(genSource(depth + 1));
         }
         return named('loadAll', function loadAll() {
-          return Promise.all(parts.map(part => part()));
+          const record = {
+            kind: 'all',
+            completionOrder: [],
+            chain: currentChain === null ? null : currentChain.slice(),
+            flat: parts.every(part => part.singleLeaf === true),
+            parts: [],
+          };
+          combinatorAwaits.push(record);
+          return Promise.all(
+            parts.map(function startPart(part, partIndex) {
+              const from = nextValue;
+              const result = part();
+              record.parts.push({from: from, to: nextValue});
+              return Promise.resolve(result).then(
+                function recordPartCompletion(partValue) {
+                  record.completionOrder.push(partIndex);
+                  return partValue;
+                },
+              );
+            }),
+          );
         });
       }
       if (roll <= 81) {
@@ -354,10 +439,16 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         // data, which forks the await chain.
         const inner = genSource(depth + 1);
         const next = rand.intBetween(0, 1) === 0 ? genSource(depth + 1) : null;
+        // When the callback starts new work, the original value's io forks
+        // off the await chain and only the new work unblocks the consumer.
+        const innerSource =
+          next === null ? inner : named('forkedDerived', inner);
         return named('loadDerived', function loadDerived() {
-          return Promise.resolve(inner()).then(function transformResult(x) {
-            return next !== null ? next() : 'transformed:' + x;
-          });
+          return Promise.resolve(innerSource()).then(
+            function transformResult(x) {
+              return next !== null ? next() : 'transformed:' + x;
+            },
+          );
         });
       }
       if (roll <= 85) {
@@ -375,7 +466,27 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         const first = genSource(depth + 1);
         const second = genSource(depth + 1);
         return named('loadFastest', function loadFastest() {
-          return Promise.race([first(), second()]);
+          const record = {
+            kind: 'race',
+            completionOrder: [],
+            chain: currentChain === null ? null : currentChain.slice(),
+            flat: first.singleLeaf === true && second.singleLeaf === true,
+            parts: [],
+          };
+          combinatorAwaits.push(record);
+          return Promise.race(
+            [first, second].map(function startPart(part, partIndex) {
+              const from = nextValue;
+              const result = part();
+              record.parts.push({from: from, to: nextValue});
+              return Promise.resolve(result).then(
+                function recordPartCompletion(partValue) {
+                  record.completionOrder.push(partIndex);
+                  return partValue;
+                },
+              );
+            }),
+          );
         });
       }
       if (roll <= 92) {
@@ -419,25 +530,27 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       }
       if (roll <= 98) {
         const useTimer = rand.intBetween(0, 1) === 0;
-        return named('fetchObject', function fetchObject() {
+        const fetchObject = named('fetchObject', function fetchObject() {
           return leaf({object: true, useTimer: useTimer});
         });
+        fetchObject.singleLeaf = true;
+        return fetchObject;
       }
       if (roll <= 99) {
         // A userland thenable, like an ORM query object. Parked with the
         // driver like other leaves; resolves to more data.
         const inner = genSource(depth + 1);
         return named('queryThenable', function queryThenable() {
-          return {
+          return proxyThenable({
             then(resolve) {
               pending.push({
                 io: async function noIO() {},
                 settle() {
-                  resolve(retain(Promise.resolve(inner())));
+                  resolve(retain(trackForeignValue(Promise.resolve(inner()))));
                 },
               });
             },
-          };
+          });
         });
       }
       // A Promise subclass, like a polyfill or instrumented promise.
@@ -466,6 +579,12 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       bumpSettleBatch,
       propLeaves,
       trackPropLeaves,
+      foreignLeaves,
+      foreignSettles,
+      trackForeignValue,
+      proxyThenable,
+      propConsumers,
+      combinatorAwaits,
     };
   }
 
@@ -482,14 +601,24 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       const Component = {
         [name]: function () {
           const value = ReactServer.use(
-            program.retain(
-              Promise.resolve(program.withComponent(name, source)),
-            ),
+            program.retain(program.withComponent(name, source)),
           );
           return name + ':' + String(value);
         },
       }[name];
       return Component;
+    }
+
+    function identity(x) {
+      return x;
+    }
+    function wrapPropInProxy(promise) {
+      const tracked = program.trackForeignValue(promise);
+      return program.proxyThenable({
+        then(resolve, reject) {
+          return tracked.then(resolve, reject);
+        },
+      });
     }
 
     function makeComponent(depth, options) {
@@ -550,13 +679,9 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
             ? 'text'
             : 'array';
 
-      // A promise started by the parent and awaited by the first child.
-      // TODO: Pass the source's raw result once debug info serialization
-      // survives props that throw on unexpected property access (like our
-      // own ClientReference proxies do). JSON.stringify's toJSON probe
-      // throws while the component's debug info is serialized, the server
-      // degrades the debug info to a string, and the client then corrupts
-      // the component's data chunk while failing to initialize it.
+      // A promise started by the parent and awaited by the first child,
+      // sometimes hidden behind a throwing proxy.
+      const proxyProp = rand.intBetween(0, 1) === 0;
       const propSource =
         children.length > 0 &&
         // use() components ignore their props, so a promise prop passed to
@@ -606,9 +731,17 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
               data:
                 i === 0 && propSource
                   ? program.retain(
-                      Promise.resolve(
-                        program.trackPropLeaves(() =>
-                          program.withComponent(name, sources[0]),
+                      (proxyProp ? wrapPropInProxy : identity)(
+                        program.trackPropLeaves(
+                          () =>
+                            program.withComponent(
+                              name,
+                              proxyProp
+                                ? program.named('proxyProp', sources[0])
+                                : sources[0],
+                            ),
+                          Child.name,
+                          !proxyProp && sources[0].singleLeaf === true,
                         ),
                       ),
                     )
@@ -669,6 +802,9 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
           await batch[i].io();
         }
         for (let i = 0; i < batch.length; i++) {
+          if (i !== batch.length - 1 && batch[i].id != null) {
+            program.foreignSettles.add(batch[i].id);
+          }
           batch[i].settle();
           onSettle();
         }
@@ -730,13 +866,28 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       componentRoots,
       componentCreators,
       leafMeta,
+      foreignLeaves,
+      foreignSettles,
+      propLeaves,
+      propConsumers,
+      useComponents,
       rootIndex,
       violations,
       leafSightings,
+      unidentifiedAwaits,
       orderSamples,
     } = ctx;
     let lastTime = -Infinity;
     debugInfo.forEach(entry => {
+      if (
+        entry.awaited &&
+        entry.awaited.name === 'rsc stream' &&
+        typeof entry.awaited.end === 'number'
+      ) {
+        // Merged debug info from another chunk follows. Segments are
+        // individually ordered but their spans can overlap.
+        lastTime = -Infinity;
+      }
       if (typeof entry.time === 'number') {
         if (entry.time < lastTime) {
           violations.push(
@@ -802,6 +953,11 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       }
       const io = entry.awaited;
       if (io) {
+        if (io.value != null && typeof io.value.then === 'function') {
+          // A fulfillment-only subscription, like a DevTools-style inspector
+          // would use, must be safe even for caught rejections.
+          io.value.then(function inspectValue() {});
+        }
         if (
           typeof io.start === 'number' &&
           typeof io.end === 'number' &&
@@ -823,6 +979,116 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         if (typeof io.byteSize === 'number' && io.byteSize < 0) {
           violations.push('negative byteSize');
         }
+        // Identity checks shared by resolved and rejected leaves: the io kind
+        // and its stack must describe the code recorded as creating the leaf.
+        const checkLeafIo = (leafId, meta) => {
+          // V8 prefixes names with the receiver when a function is invoked
+          // as a method (program.leaf becomes Object.leaf); compare by the
+          // bare name.
+          const bareName = name =>
+            name.indexOf('.') === -1
+              ? name
+              : name.slice(name.lastIndexOf('.') + 1);
+          const frames = io.stack
+            ? io.stack.map(frame => bareName(frame[0]))
+            : [];
+          const ioName = bareName(io.name);
+          // Pool io is named after the fs or timer API call, chained io
+          // after the leaf constructor.
+          if (meta.chain === null) {
+            if (!meta.useTimer && !/readFile/.test(io.name)) {
+              violations.push(leafId + ' pool fs io named ' + io.name);
+            }
+            if (meta.useTimer && !/setTimeout/.test(io.name)) {
+              violations.push(leafId + ' pool timer io named ' + io.name);
+            }
+          } else if (ioName !== 'leaf') {
+            violations.push(leafId + ' chained io named ' + io.name);
+          }
+          // Stacks start at the promise executor or the leaf
+          // constructor, never inside hook dispatch internals.
+          if (
+            frames.length > 0 &&
+            frames[0] !== 'readFixture' &&
+            frames[0] !== 'sleep' &&
+            frames[0] !== 'leaf'
+          ) {
+            violations.push(leafId + ' io stack starts at ' + frames[0]);
+          }
+          if (meta.useTimer && frames.indexOf('readFixture') !== -1) {
+            violations.push(
+              leafId + ' used a timer but its io stack reads a file',
+            );
+          }
+          if (!meta.useTimer && frames.indexOf('sleep') !== -1) {
+            violations.push(
+              leafId + ' read a file but its io stack is a timer',
+            );
+          }
+          if (meta.chain !== null) {
+            const initiator = meta.chain[meta.chain.length - 1];
+            // A leaf initiated by one render's component must never be
+            // attributed inside the other render.
+            if (
+              componentRoots.has(initiator) &&
+              componentRoots.get(initiator) !== rootIndex
+            ) {
+              violations.push(
+                leafId +
+                  ' was initiated by the other render (' +
+                  initiator +
+                  ')',
+              );
+            }
+            // The awaited entry belongs to the task of the component that
+            // performed the await: the child for a promise passed down as a
+            // prop, otherwise the component recorded invoking the source.
+            // Shared sources (cache(), the pool, use()) are awaited by
+            // whichever component got there, so they carry no expectation.
+            let expectedOwner = null;
+            if (propConsumers.has(leafId)) {
+              expectedOwner = propConsumers.get(leafId);
+            } else if (
+              !propLeaves.has(leafId) &&
+              meta.chain.indexOf('fetchCached') === -1 &&
+              !useComponents.has(initiator) &&
+              componentRoots.get(initiator) === rootIndex
+            ) {
+              expectedOwner = initiator;
+            }
+            if (expectedOwner !== null && entry.owner != null) {
+            }
+            if (
+              expectedOwner !== null &&
+              entry.owner != null &&
+              entry.owner.name !== expectedOwner
+            ) {
+              violations.push(
+                leafId +
+                  ' awaited entry owned by ' +
+                  entry.owner.name +
+                  ' but awaited by ' +
+                  expectedOwner,
+              );
+            }
+          }
+        };
+        // Without a debug channel a value that is still pending when its
+        // await is serialized stays a halted stub forever, so the entry is
+        // attributed but can't be joined to a leaf. Count it against its
+        // owner so the completeness checks below can tell "attributed with
+        // an unreadable value" apart from "never attributed".
+        if (
+          io.value != null &&
+          io.value.status !== 'fulfilled' &&
+          io.value.status !== 'rejected' &&
+          entry.owner != null
+        ) {
+          unidentifiedAwaits.set(
+            entry.owner.name,
+            (unidentifiedAwaits.get(entry.owner.name) || 0) + 1,
+          );
+        }
         const leafId = leafIdOfValue(io.value);
         if (leafId !== null) {
           const meta = leafMeta.get(leafId);
@@ -830,33 +1096,15 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
             violations.push('io resolved to unknown leaf ' + leafId);
           } else {
             leafSightings.set(leafId, (leafSightings.get(leafId) || 0) + 1);
-            const frames = io.stack ? io.stack.map(frame => frame[0]) : [];
-            if (meta.useTimer && frames.indexOf('readFixture') !== -1) {
-              violations.push(
-                leafId + ' used a timer but its io stack reads a file',
-              );
+            if (foreignLeaves.has(leafId) || foreignSettles.has(leafId)) {
+              // This entry's io belongs to whatever settled the value, so
+              // the leaf-identity checks don't apply.
+              return;
             }
-            if (!meta.useTimer && frames.indexOf('sleep') !== -1) {
-              violations.push(
-                leafId + ' read a file but its io stack is a timer',
-              );
+            if (meta.rejects) {
+              violations.push(leafId + ' was created to reject but resolved');
             }
-            // A leaf initiated by one render's component must never be
-            // attributed inside the other render.
-            if (meta.chain !== null) {
-              const initiator = meta.chain[meta.chain.length - 1];
-              if (
-                componentRoots.has(initiator) &&
-                componentRoots.get(initiator) !== rootIndex
-              ) {
-                violations.push(
-                  leafId +
-                    ' was initiated by the other render (' +
-                    initiator +
-                    ')',
-                );
-              }
-            }
+            checkLeafIo(leafId, meta);
             // The recorded value must be exactly what the leaf resolved to.
             const value = io.value.value;
             if (meta.object) {
@@ -875,6 +1123,29 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
                 end: io.end,
               });
             }
+          }
+        } else if (
+          io.value != null &&
+          io.value.status === 'rejected' &&
+          io.value.reason != null &&
+          typeof io.value.reason.message === 'string' &&
+          /^rejected v[0-9]+$/.test(io.value.reason.message)
+        ) {
+          // The rejection path must attribute its io as precisely as the
+          // happy path does.
+          const rejectedId = io.value.reason.message.slice('rejected '.length);
+          const meta = leafMeta.get(rejectedId);
+          if (meta === undefined) {
+            violations.push('io rejected with unknown leaf ' + rejectedId);
+          } else if (!meta.rejects) {
+            violations.push(
+              rejectedId + ' was created to resolve but rejected',
+            );
+          } else if (
+            !foreignLeaves.has(rejectedId) &&
+            !foreignSettles.has(rejectedId)
+          ) {
+            checkLeafIo(rejectedId, meta);
           }
         } else if (
           io.value != null &&
@@ -1087,9 +1358,15 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         componentRoots,
         componentCreators,
         leafMeta: program.leafMeta,
+        foreignLeaves: program.foreignLeaves,
+        foreignSettles: program.foreignSettles,
+        propLeaves: program.propLeaves,
+        propConsumers: program.propConsumers,
+        useComponents,
         rootIndex: i,
         violations,
         leafSightings: new Map(),
+        unidentifiedAwaits: new Map(),
         orderSamples: [],
         collected: false,
       };
@@ -1170,27 +1447,77 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       }
     });
 
+    // For a combinator over plain single-leaf parts the settle order decides
+    // which part unblocked it: the last part to settle for all(), the first
+    // for race(). That leaf must be attributed like any direct await; the
+    // other parts stay exempt.
+    const combinatorUnblockers = new Set();
+    program.combinatorAwaits.forEach(record => {
+      if (
+        !record.flat ||
+        record.completionOrder.length !== record.parts.length
+      ) {
+        return;
+      }
+      // The part whose promise completed last (for all) or first (for race)
+      // is the one whose io unblocked the combinator. Completion order is
+      // recorded live because a part may take extra microtask hops after its
+      // leaf settles, so leaf settle order is not completion order.
+      const winnerIndex =
+        record.kind === 'all'
+          ? record.completionOrder[record.completionOrder.length - 1]
+          : record.completionOrder[0];
+      const part = record.parts[winnerIndex];
+      if (part.from + 1 !== part.to) {
+        return;
+      }
+      const winner = 'v' + part.from;
+      const winnerMeta = program.leafMeta.get(winner);
+      if (winnerMeta !== undefined && winnerMeta.settleIndex !== -1) {
+        combinatorUnblockers.add(winner);
+      }
+    });
+
     // Completeness: every leaf a component actually fetched and settled must
     // be attributed somewhere in that component's render. Exemptions, each
     // for a reason: aborted renders (the abort races the io), rejected roots
     // (nothing was collected), throwing subtrees (they never finish),
-    // combinator and parallel awaits (only the io that unblocked them is
-    // attributed -- TODO: the driver knows the settle order, so the
-    // unblocker is predictable; assert it exactly), use() components (the
-    // used promise carries the transformed value, so there is nothing to
-    // join on), and pre-request pool data (no initiating component).
+    // combinator parts that did not unblock their combinator and parallel
+    // awaits (only the io that unblocked them is attributed), use()
+    // components (the used promise carries the transformed value, so there
+    // is nothing to join on), and pre-request pool data (no initiating
+    // component).
     if (abortAfter === -1) {
       program.leafMeta.forEach((meta, leafId) => {
+        const combinators =
+          meta.chain === null
+            ? 0
+            : meta.chain.filter(
+                sourceName =>
+                  sourceName === 'loadAll' || sourceName === 'loadFastest',
+              ).length;
         if (
           meta.chain === null ||
           meta.rejects ||
           meta.big ||
           meta.settleIndex === -1 ||
-          meta.chain.indexOf('loadFastest') !== -1 ||
-          meta.chain.indexOf('loadAll') !== -1 ||
+          (combinators > 0 &&
+            !(combinators === 1 && combinatorUnblockers.has(leafId))) ||
+          meta.chain.indexOf('forkedDerived') !== -1 ||
+          // Like combinators, a derived chain nested inside another
+          // composite attributes whichever io the enclosing await chain
+          // surfaces, not necessarily its own.
+          (meta.chain.indexOf('loadDerived') !== -1 &&
+            !componentRoots.has(
+              meta.chain[meta.chain.indexOf('loadDerived') + 1],
+            )) ||
           meta.chain.indexOf('readPages') !== -1 ||
           meta.chain.indexOf('queryThenable') !== -1 ||
-          program.propLeaves.has(leafId)
+          // A value delivered through a userland thenable: React cannot see
+          // through it, so the io behind it never reaches the consumer.
+          meta.chain.indexOf('proxyProp') !== -1 ||
+          program.propLeaves.has(leafId) ||
+          program.foreignLeaves.has(leafId)
         ) {
           return;
         }
@@ -1205,11 +1532,46 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         }
         const ctx = contexts[componentRoots.get(initiator)];
         if (ctx && ctx.collected === true && !ctx.leafSightings.has(leafId)) {
+          const wildcards = ctx.unidentifiedAwaits.get(initiator) || 0;
+          if (wildcards > 0) {
+            ctx.unidentifiedAwaits.set(initiator, wildcards - 1);
+            return;
+          }
           violations.push(
             leafId +
               ' (' +
               meta.chain.join('<') +
               ') settled but never appeared in the debug info',
+          );
+        }
+      });
+
+      // A single-leaf promise handed down as a prop is awaited by the child,
+      // so it must be attributed inside the child's render.
+      program.propConsumers.forEach((consumer, leafId) => {
+        const meta = program.leafMeta.get(leafId);
+        if (
+          meta === undefined ||
+          meta.settleIndex === -1 ||
+          program.foreignLeaves.has(leafId)
+        ) {
+          return;
+        }
+        if (!componentRoots.has(consumer) || exempt.has(consumer)) {
+          return;
+        }
+        const ctx = contexts[componentRoots.get(consumer)];
+        if (ctx && ctx.collected === true && !ctx.leafSightings.has(leafId)) {
+          const wildcards = ctx.unidentifiedAwaits.get(consumer) || 0;
+          if (wildcards > 0) {
+            ctx.unidentifiedAwaits.set(consumer, wildcards - 1);
+            return;
+          }
+          violations.push(
+            leafId +
+              ' was passed as a prop to ' +
+              consumer +
+              ' but never appeared in its render',
           );
         }
       });

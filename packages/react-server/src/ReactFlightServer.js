@@ -5515,6 +5515,60 @@ function renderDebugModel(
   return 'unknown type ' + typeof value;
 }
 
+function makeDebugModelSafeForStringify(model: ReactJSONValue): ReactJSONValue {
+  // JSON.stringify probes each object property's toJSON before the replacer
+  // can substitute it, so a value whose property access throws unwinds the
+  // whole stringify. Our own ClientReference proxies exempt the probe, but
+  // userland reference proxies of the same shape don't. Run the same probes
+  // first and replace just the values that fail. Nested objects pass through
+  // the replacer again, so one level at a time covers the whole tree.
+  if (typeof model !== 'object' || model === null) {
+    return model;
+  }
+  const object: {[string]: mixed} = model as any;
+  try {
+    for (const key in object) {
+      if (!hasOwnProperty.call(object, key)) {
+        continue;
+      }
+      const value = object[key];
+      if (
+        (typeof value === 'object' && value !== null) ||
+        typeof value === 'function'
+      ) {
+        // The same probe JSON.stringify runs.
+        // eslint-disable-next-line ft-flow/no-unused-expressions
+        (value as any).toJSON;
+      }
+    }
+    // The common case allocates nothing and returns the model as is.
+    return model;
+  } catch (x) {
+    const safeCopy: {[string]: mixed} = isArray(model) ? ([] as any) : {};
+    const keys = Object.keys(object);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      let value;
+      try {
+        value = object[key];
+        if (
+          (typeof value === 'object' && value !== null) ||
+          typeof value === 'function'
+        ) {
+          // eslint-disable-next-line ft-flow/no-unused-expressions
+          (value as any).toJSON;
+        }
+      } catch (x2) {
+        value =
+          'Unknown Value: React could not send it from the server.\n' +
+          x2.message;
+      }
+      safeCopy[key] = value;
+    }
+    return safeCopy as any;
+  }
+}
+
 function serializeDebugModel(
   request: Request,
   objectLimit: number,
@@ -5533,12 +5587,14 @@ function serializeDebugModel(
       // By-pass toJSON and use the original value.
       // $FlowFixMe[incompatible-use]
       const originalValue = this[parentPropertyName];
-      return renderDebugModel(
-        request,
-        counter,
-        this,
-        parentPropertyName,
-        originalValue,
+      return makeDebugModelSafeForStringify(
+        renderDebugModel(
+          request,
+          counter,
+          this,
+          parentPropertyName,
+          originalValue,
+        ),
       );
     } catch (x) {
       return (
@@ -5593,12 +5649,14 @@ function emitOutlinedDebugModelChunk(
       // By-pass toJSON and use the original value.
       // $FlowFixMe[incompatible-use]
       const originalValue = this[parentPropertyName];
-      return renderDebugModel(
-        request,
-        counter,
-        this,
-        parentPropertyName,
-        originalValue,
+      return makeDebugModelSafeForStringify(
+        renderDebugModel(
+          request,
+          counter,
+          this,
+          parentPropertyName,
+          originalValue,
+        ),
       );
     } catch (x) {
       return (

@@ -1208,8 +1208,9 @@ function pushServerComponentStack(
   if (debugInfo != null) {
     const stack: ReactDebugInfo = debugInfo;
     for (let i = 0; i < stack.length; i++) {
+      // The array can have holes for debug info that is still streaming in.
       const componentInfo: ReactComponentInfo = stack[i] as any;
-      if (typeof componentInfo.name !== 'string') {
+      if (componentInfo == null || typeof componentInfo.name !== 'string') {
         continue;
       }
       if (componentInfo.debugStack === undefined) {
