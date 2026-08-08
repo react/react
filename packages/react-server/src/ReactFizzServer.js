@@ -4669,7 +4669,11 @@ function abortTaskSoft(this: Request, task: Task): void {
   const request: Request = this;
   const boundary = task.blockedBoundary;
   const segment = task.blockedSegment;
-  if (segment !== null) {
+  if (segment !== null && segment.status === PENDING) {
+    // Only abort tasks that haven't finished yet. Aborting can reentrantly
+    // trigger a flush which can abort the remaining tasks of the same set
+    // before we get to them (e.g. from onShellReady), so we might see tasks
+    // that have already been aborted.
     segment.status = ABORTED;
     finishedTask(request, boundary, task.row, segment);
   }
@@ -5996,6 +6000,18 @@ function flushSegment(
       }
     }
 
+    if (boundary.fallbackAbortableTasks.size > 0) {
+      // We're emitting the completed content, so the fallback will never be
+      // needed. If it has tasks that are still pending (e.g. the fallback
+      // itself suspended), cancel them now. Otherwise they would keep the
+      // parent boundary and the request pending forever. If the boundary was
+      // not eligible for outlining this already happened when the boundary
+      // completed. This may finish the parent boundary and schedule new
+      // completed boundaries.
+      boundary.fallbackAbortableTasks.forEach(abortTaskSoft, request);
+      boundary.fallbackAbortableTasks.clear();
+    }
+
     // We can inline this boundary's content as a complete boundary.
     writeStartCompletedSuspenseBoundary(destination, request.renderState);
 
@@ -6081,6 +6097,21 @@ function flushCompletedBoundary(
     if (--row.pendingTasks === 0) {
       finishSuspenseListRow(request, row);
     }
+  }
+
+  if (
+    boundary.status === COMPLETED &&
+    boundary.fallbackAbortableTasks.size > 0
+  ) {
+    // We're emitting the completed content, so the fallback will never be
+    // needed. If it has tasks that are still pending (e.g. the fallback
+    // itself suspended), cancel them now. Otherwise they would keep the
+    // parent boundary and the request pending forever. If the boundary was
+    // not eligible for outlining this already happened when the boundary
+    // completed. This may finish the parent boundary and schedule new
+    // completed boundaries.
+    boundary.fallbackAbortableTasks.forEach(abortTaskSoft, request);
+    boundary.fallbackAbortableTasks.clear();
   }
 
   writeHoistablesForBoundary(
