@@ -60,6 +60,7 @@ type ProgramContextOptions = {
   filename: string | null;
   code: string | null;
   hasModuleScopeOptOut: boolean;
+  hasModuleScopeOptIn: boolean;
 };
 export class ProgramContext {
   /**
@@ -72,6 +73,12 @@ export class ProgramContext {
   reactRuntimeModule: string;
   suppressions: Array<SuppressionRange>;
   hasModuleScopeOptOut: boolean;
+  /**
+   * True when a module-level opt-in directive (e.g. `'use memo'`) is present.
+   * In annotation mode this makes every component/hook in the module behave as
+   * if it had an individual function-level opt-in directive.
+   */
+  hasModuleScopeOptIn: boolean;
 
   /*
    * This is a hack to work around what seems to be a Babel bug. Babel doesn't
@@ -91,6 +98,7 @@ export class ProgramContext {
     filename,
     code,
     hasModuleScopeOptOut,
+    hasModuleScopeOptIn,
   }: ProgramContextOptions) {
     this.scope = program.scope;
     this.opts = opts;
@@ -99,6 +107,7 @@ export class ProgramContext {
     this.reactRuntimeModule = getReactCompilerRuntimeModule(opts.target);
     this.suppressions = suppressions;
     this.hasModuleScopeOptOut = hasModuleScopeOptOut;
+    this.hasModuleScopeOptIn = hasModuleScopeOptIn;
   }
 
   isHookName(name: string): boolean {
