@@ -640,6 +640,14 @@ pub enum InstructionValue {
         type_annotation: Option<Box<serde_json::Value>>,
         loc: Option<SourceLocation>,
     },
+    /// TSNonNullExpression (`expr!`). Lowered as its own instruction rather
+    /// than a transparent unwrap so dependency collection stops at the
+    /// asserted value instead of hoisting member accesses past a `!` that
+    /// only holds inside guarded callbacks (react/react#34752).
+    NonNullExpression {
+        value: Place,
+        loc: Option<SourceLocation>,
+    },
     JsxExpression {
         tag: JsxTag,
         props: Vec<JsxAttribute>,
@@ -803,6 +811,7 @@ impl InstructionValue {
             | InstructionValue::MethodCall { loc, .. }
             | InstructionValue::UnaryExpression { loc, .. }
             | InstructionValue::TypeCastExpression { loc, .. }
+            | InstructionValue::NonNullExpression { loc, .. }
             | InstructionValue::JsxExpression { loc, .. }
             | InstructionValue::ObjectExpression { loc, .. }
             | InstructionValue::ObjectMethod { loc, .. }

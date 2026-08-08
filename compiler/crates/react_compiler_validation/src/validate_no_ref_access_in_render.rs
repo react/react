@@ -728,7 +728,8 @@ fn validate_no_ref_access_in_render_impl(
                             }),
                         );
                     }
-                    InstructionValue::TypeCastExpression { value, .. } => {
+                    InstructionValue::TypeCastExpression { value, .. }
+                    | InstructionValue::NonNullExpression { value, .. } => {
                         ref_env.set(
                             instr.lvalue.identifier,
                             ref_env.get(value.identifier).cloned().unwrap_or_else(|| {

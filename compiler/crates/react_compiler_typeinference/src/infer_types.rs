@@ -786,7 +786,8 @@ fn generate_instruction_types(
             }
         },
 
-        InstructionValue::TypeCastExpression { value, .. } => {
+        InstructionValue::TypeCastExpression { value, .. }
+        | InstructionValue::NonNullExpression { value, .. } => {
             let value_type = get_type(value.identifier, identifiers);
             unifier.unify(left, value_type, shapes)?;
         }
@@ -1093,7 +1094,8 @@ fn apply_instruction_operands(
         InstructionValue::UnaryExpression { value: val, .. } => {
             resolve_identifier(val.identifier, identifiers, types, unifier);
         }
-        InstructionValue::TypeCastExpression { value: val, .. } => {
+        InstructionValue::TypeCastExpression { value: val, .. }
+        | InstructionValue::NonNullExpression { value: val, .. } => {
             resolve_identifier(val.identifier, identifiers, types, unifier);
         }
         InstructionValue::CallExpression { callee, args, .. } => {
