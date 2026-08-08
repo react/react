@@ -13,6 +13,7 @@ let React;
 let ReactDOM;
 let ReactIs;
 let SuspenseList;
+let ReactSymbols;
 
 describe('ReactIs', () => {
   beforeEach(() => {
@@ -21,6 +22,7 @@ describe('ReactIs', () => {
     React = require('react');
     ReactDOM = require('react-dom');
     ReactIs = require('react-is');
+    ReactSymbols = require('shared/ReactSymbols');
 
     if (gate(flags => flags.enableSuspenseList)) {
       SuspenseList = React.unstable_SuspenseList;
@@ -114,6 +116,19 @@ describe('ReactIs', () => {
     expect(ReactIs.isElement(<React.Fragment />)).toBe(true);
     expect(ReactIs.isElement(<React.StrictMode />)).toBe(true);
     expect(ReactIs.isElement(<React.Suspense />)).toBe(true);
+  });
+
+  it('should identify legacy elements from older React versions', () => {
+    // Simulate a legacy React element with the old $$typeof symbol
+    const legacyElement = {
+      $$typeof: ReactSymbols.REACT_LEGACY_ELEMENT_TYPE,
+      type: 'div',
+      key: null,
+      ref: null,
+      props: {},
+    };
+    expect(ReactIs.isElement(legacyElement)).toBe(true);
+    expect(ReactIs.typeOf(legacyElement)).toBe(ReactIs.Element);
   });
 
   it('should identify ref forwarding component', () => {
