@@ -1905,13 +1905,11 @@ function markNode(
 ): void {
   if (optionalChains) {
     if ('optional' in node && node.optional) {
-      // We only want to consider it optional if *all* usages were optional.
-      if (!optionalChains.has(result)) {
-        // Mark as (maybe) optional. If there's a required usage, this will be overridden.
-        optionalChains.set(result, true);
-      }
-    } else {
-      // Mark as required.
+      // Prefer optional chaining if any usage needs it, because dependency
+      // arrays are evaluated outside guarded blocks.
+      optionalChains.set(result, true);
+    } else if (!optionalChains.has(result)) {
+      // Mark as required unless an optional usage has already been seen.
       optionalChains.set(result, false);
     }
   }
