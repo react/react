@@ -42,9 +42,18 @@ function isHook(node: Node): boolean {
     !node.computed &&
     isHook(node.property)
   ) {
+    if ('optional' in node && node.optional) {
+      return true;
+    }
     const obj = node.object;
     const isPascalCaseNameSpace = /^[A-Z].*/;
     return obj.type === 'Identifier' && isPascalCaseNameSpace.test(obj.name);
+  } else if (
+    node.type === 'OptionalMemberExpression' &&
+    !node.computed &&
+    isHook(node.property)
+  ) {
+    return true;
   } else {
     return false;
   }
@@ -223,6 +232,43 @@ const rule = {
     > = [];
     const codePathSegmentStack: Array<Rule.CodePathSegment> = [];
     const useEffectEventFunctions = new WeakSet();
+    const recordedHooks = new WeakSet<Node>();
+    const directlyReportedConditionalHooks = new WeakSet<Node>();
+
+    function recordHook(callee: Node): void {
+      if (recordedHooks.has(callee)) {
+        return;
+      }
+      recordedHooks.add(callee);
+      // Add the hook node to a map keyed by the code path segment. We will
+      // do full code path analysis at the end of our code path.
+      const reactHooksMap = last(codePathReactHooksMapStack);
+      const codePathSegment = last(codePathSegmentStack);
+      let reactHooks = reactHooksMap.get(codePathSegment);
+      if (!reactHooks) {
+        reactHooks = [];
+        reactHooksMap.set(codePathSegment, reactHooks);
+      }
+      reactHooks.push(callee);
+    }
+
+    function reportConditionalHook(hook: Node): void {
+      directlyReportedConditionalHooks.add(hook);
+      const message =
+        `React Hook "${getSourceCode().getText(hook)}" is called ` +
+        'conditionally. React Hooks must be called in the exact same order ' +
+        'in every component render.';
+      context.report({node: hook, message});
+    }
+
+    function isOptionalHookCall(node: any): boolean {
+      return (
+        node.type === 'OptionalCallExpression' ||
+        node.optional === true ||
+        node.callee?.type === 'OptionalMemberExpression' ||
+        node.callee?.optional === true
+      );
+    }
 
     // For a given scope, iterate through the references and add all useEffectEvent definitions. We can
     // do this in non-Program nodes because we can rely on the assumption that useEffectEvent functions
@@ -671,6 +717,7 @@ const rule = {
                 !cycled &&
                 pathsFromStartToEnd !== allPathsFromStartToEnd &&
                 !isUseIdentifier(hook) && // `use(...)` can be called conditionally.
+                !directlyReportedConditionalHooks.has(hook) &&
                 !isInsideDoWhileLoop(hook) // wrapping do/while loops are checked separately.
               ) {
                 const message =
@@ -755,16 +802,14 @@ const rule = {
       // only being strict about hook calls for now.
       CallExpression(node) {
         if (isHook(node.callee)) {
-          // Add the hook node to a map keyed by the code path segment. We will
-          // do full code path analysis at the end of our code path.
-          const reactHooksMap = last(codePathReactHooksMapStack);
-          const codePathSegment = last(codePathSegmentStack);
-          let reactHooks = reactHooksMap.get(codePathSegment);
-          if (!reactHooks) {
-            reactHooks = [];
-            reactHooksMap.set(codePathSegment, reactHooks);
+          recordHook(node.callee);
+          if (
+            isOptionalHookCall(node) &&
+            isInsideComponentOrHook(node) &&
+            !isUseIdentifier(node.callee)
+          ) {
+            reportConditionalHook(node.callee);
           }
-          reactHooks.push(node.callee);
         }
 
         // useEffectEvent: useEffectEvent functions can be passed by reference within useEffect as well as in
@@ -795,6 +840,18 @@ const rule = {
             node,
             message,
           });
+        }
+      },
+
+      OptionalCallExpression(node: any) {
+        if (isHook(node.callee)) {
+          recordHook(node.callee);
+          if (
+            isInsideComponentOrHook(node) &&
+            !isUseIdentifier(node.callee)
+          ) {
+            reportConditionalHook(node.callee);
+          }
         }
       },
 
