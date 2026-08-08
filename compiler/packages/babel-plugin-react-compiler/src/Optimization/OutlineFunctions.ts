@@ -11,6 +11,8 @@ export function outlineFunctions(
   fn: HIRFunction,
   fbtOperands: Set<IdentifierId>,
 ): void {
+  const outlinedObjectMethods = new Set<IdentifierId>();
+
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const {value, lvalue} = instr;
@@ -23,7 +25,8 @@ export function outlineFunctions(
         outlineFunctions(value.loweredFunc.func, fbtOperands);
       }
       if (
-        value.kind === 'FunctionExpression' &&
+        (value.kind === 'FunctionExpression' ||
+          value.kind === 'ObjectMethod') &&
         value.loweredFunc.func.context.length === 0 &&
         // TODO: handle outlining named functions
         value.loweredFunc.func.id === null &&
@@ -37,6 +40,9 @@ export function outlineFunctions(
         loweredFunc.id = id.value;
 
         fn.env.outlineFunction(loweredFunc, null);
+        if (value.kind === 'ObjectMethod') {
+          outlinedObjectMethods.add(lvalue.identifier.id);
+        }
         instr.value = {
           kind: 'LoadGlobal',
           binding: {
@@ -45,6 +51,25 @@ export function outlineFunctions(
           },
           loc: value.loc,
         };
+      }
+    }
+  }
+
+  if (outlinedObjectMethods.size > 0) {
+    for (const [, block] of fn.body.blocks) {
+      for (const instr of block.instructions) {
+        if (instr.value.kind !== 'ObjectExpression') {
+          continue;
+        }
+        for (const property of instr.value.properties) {
+          if (
+            property.kind === 'ObjectProperty' &&
+            property.type === 'method' &&
+            outlinedObjectMethods.has(property.place.identifier.id)
+          ) {
+            property.type = 'property';
+          }
+        }
       }
     }
   }

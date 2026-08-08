@@ -34,12 +34,13 @@ import { identity } from "shared-runtime";
 // inferred as a context variable.
 
 function Component() {
-  const obj = { method() {} };
+  const obj = { method: _temp };
 
   identity(obj);
 
   return 4;
 }
+function _temp() {}
 
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
