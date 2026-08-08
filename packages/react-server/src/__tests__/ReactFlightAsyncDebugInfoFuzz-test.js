@@ -26,6 +26,7 @@ import {patchSetImmediate} from '../../../../scripts/jest/patchSetImmediate';
 
 import fs from 'fs';
 import path from 'path';
+import {AsyncLocalStorage} from 'async_hooks';
 
 let ReactServer;
 let ReactServerDOMServer;
@@ -147,21 +148,22 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
     // output of one run but not another.
     const retained = [];
     // The chain of named sources (innermost first, ending with the component
-    // that initiated the call) currently executing synchronously. Sources
-    // and component call sites maintain it, so each leaf records exactly
-    // which code created it.
-    let currentChain = null;
+    // that initiated the call) in whose context the current code runs.
+    // Tracked with AsyncLocalStorage so that, like the stacks under test, it
+    // survives awaits: a leaf created after an await inside a source is
+    // still attributed to that source.
+    const chainStorage = new AsyncLocalStorage();
+    // Every name the seed can put on a stack frame, so checks can tell a
+    // foreign frame from an unknown-but-harmless one.
+    const sourceNames = new Set();
     function named(name, fn) {
+      sourceNames.add(name);
       return {
         [name]: function () {
-          const parentChain = currentChain;
-          currentChain =
-            parentChain === null ? [name] : [name].concat(parentChain);
-          try {
-            return fn.apply(this, arguments);
-          } finally {
-            currentChain = parentChain;
-          }
+          const parentChain = chainStorage.getStore();
+          const chain =
+            parentChain == null ? [name] : [name].concat(parentChain);
+          return chainStorage.run(chain, () => fn.apply(this, arguments));
         },
       }[name];
     }
@@ -174,16 +176,9 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
     // io ends up unblocking the composite.
     const propLeaves = new Set();
     const propConsumers = new Map();
+    const propStorage = new AsyncLocalStorage();
     function trackPropLeaves(fn, consumerName, singleLeaf) {
-      const before = nextValue;
-      const result = fn();
-      for (let i = before; i < nextValue; i++) {
-        propLeaves.add('v' + i);
-        if (singleLeaf) {
-          propConsumers.set('v' + i, consumerName);
-        }
-      }
-      return result;
+      return propStorage.run({consumer: consumerName, singleLeaf}, fn);
     }
     // Combinator awaits attribute only the io that unblocked them. When
     // every part is a plain single-leaf fetch, the settle order decides
@@ -213,13 +208,7 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       return promise;
     }
     function withComponent(componentName, source) {
-      const parentChain = currentChain;
-      currentChain = [componentName];
-      try {
-        return source();
-      } finally {
-        currentChain = parentChain;
-      }
+      return chainStorage.run([componentName], source);
     }
     // Ground truth per leaf id: which io kind backs it, whether it rejects,
     // which chain of sources created it, and when the driver settled it.
@@ -289,12 +278,22 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
     function leaf(opts) {
       const id = 'v' + nextValue++;
       const useTimer = opts.useTimer === true;
+      const propContext = propStorage.getStore();
+      if (propContext !== undefined) {
+        propLeaves.add(id);
+        if (propContext.singleLeaf) {
+          propConsumers.set(id, propContext.consumer);
+        }
+      }
       const meta = {
         useTimer,
         rejects: opts.rejects === true,
         big: opts.big === true,
         object: opts.object === true,
-        chain: currentChain === null ? null : currentChain.slice(),
+        chain:
+          chainStorage.getStore() == null
+            ? null
+            : chainStorage.getStore().slice(),
         settleIndex: -1,
       };
       leafMeta.set(id, meta);
@@ -414,7 +413,10 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
           const record = {
             kind: 'all',
             completionOrder: [],
-            chain: currentChain === null ? null : currentChain.slice(),
+            chain:
+              chainStorage.getStore() == null
+                ? null
+                : chainStorage.getStore().slice(),
             flat: parts.every(part => part.singleLeaf === true),
             parts: [],
           };
@@ -469,7 +471,10 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
           const record = {
             kind: 'race',
             completionOrder: [],
-            chain: currentChain === null ? null : currentChain.slice(),
+            chain:
+              chainStorage.getStore() == null
+                ? null
+                : chainStorage.getStore().slice(),
             flat: first.singleLeaf === true && second.singleLeaf === true,
             parts: [],
           };
@@ -583,6 +588,7 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       foreignSettles,
       trackForeignValue,
       proxyThenable,
+      sourceNames,
       propConsumers,
       combinatorAwaits,
     };
@@ -868,6 +874,7 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
       leafMeta,
       foreignLeaves,
       foreignSettles,
+      sourceNames,
       propLeaves,
       propConsumers,
       useComponents,
@@ -1024,6 +1031,20 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
             violations.push(
               leafId + ' read a file but its io stack is a timer',
             );
+          }
+          // The stack may only contain code recorded as creating this leaf:
+          // any other seed function on it means the stack was captured in,
+          // or contaminated by, someone else's execution context.
+          for (let i = 0; i < frames.length; i++) {
+            const frameName = frames[i];
+            if (
+              (sourceNames.has(frameName) || componentRoots.has(frameName)) &&
+              (meta.chain === null || meta.chain.indexOf(frameName) === -1)
+            ) {
+              violations.push(
+                leafId + ' io stack contains foreign frame ' + frameName,
+              );
+            }
           }
           if (meta.chain !== null) {
             const initiator = meta.chain[meta.chain.length - 1];
@@ -1360,6 +1381,7 @@ describe('ReactFlightAsyncDebugInfoFuzz', () => {
         leafMeta: program.leafMeta,
         foreignLeaves: program.foreignLeaves,
         foreignSettles: program.foreignSettles,
+        sourceNames: program.sourceNames,
         propLeaves: program.propLeaves,
         propConsumers: program.propConsumers,
         useComponents,
