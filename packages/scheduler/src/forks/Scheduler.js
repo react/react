@@ -500,6 +500,12 @@ const performWorkUntilDeadline = () => {
   if (enableRequestPaint) {
     needsPaint = false;
   }
+  if (isPerformingWork) {
+    // This can happen if a browser (like Firefox) fires a MessageChannel callback
+    // while the thread is paused by a blocking API like alert() or prompt().
+    // We should safely return early without crashing or modifying the scheduler state.
+    return;
+  }
   if (isMessageLoopRunning) {
     const currentTime = getCurrentTime();
     // Keep track of the start time so we can measure how long the main thread
