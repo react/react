@@ -34,6 +34,7 @@ describe('FragmentRefs', () => {
     global.document = global.window.document;
     global.navigator = global.window.navigator;
     global.Event = global.window.Event;
+    global.MouseEvent = global.window.MouseEvent;
     global.Node = Node;
   });
 
@@ -102,6 +103,106 @@ describe('FragmentRefs', () => {
 
         expect(fragmentListener).toHaveBeenCalledTimes(1);
         expect(bodyListener).toHaveBeenCalledTimes(1);
+      });
+
+      // @gate enableFragmentRefs
+      it('dispatches to its own listeners when the container is a Document', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+        const logs = [];
+
+        await act(() => {
+          root.render(
+            <>
+              <Fragment ref={fragmentRef} />
+              <html>
+                <body>
+                  <div id="child" />
+                </body>
+              </html>
+            </>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+        document.addEventListener('click', () => {
+          logs.push('document');
+        });
+
+        const isCancelable = !fragmentRef.current.dispatchEvent(
+          new MouseEvent('click', {bubbles: true}),
+        );
+
+        expect(logs).toEqual(['fragment', 'document']);
+        expect(isCancelable).toBe(false);
+      });
+
+      // @gate enableFragmentRefs
+      it('does not propagate through its own children when wrapping documentElement', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+        const logs = [];
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <html>
+                <body>
+                  <div id="child" />
+                </body>
+              </html>
+            </Fragment>,
+          );
+        });
+
+        // This also registers the listener on the <html> child. Because the
+        // fragment's position is a sibling of <html>, the event must not
+        // propagate through it and fire the listener a second time.
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+        document.addEventListener('click', () => {
+          logs.push('document');
+        });
+
+        fragmentRef.current.dispatchEvent(
+          new MouseEvent('click', {bubbles: true}),
+        );
+
+        expect(logs).toEqual(['fragment', 'document']);
+      });
+
+      // @gate enableFragmentRefs
+      it('dispatches non-bubbling events when the container is a Document', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+        const logs = [];
+
+        await act(() => {
+          root.render(
+            <>
+              <Fragment ref={fragmentRef} />
+              <html>
+                <body>
+                  <div id="child" />
+                </body>
+              </html>
+            </>,
+          );
+        });
+
+        document.addEventListener('click', () => {
+          logs.push('document');
+        });
+
+        const isCancelable = !fragmentRef.current.dispatchEvent(
+          new MouseEvent('click', {bubbles: false}),
+        );
+
+        expect(logs).toEqual([]);
+        expect(isCancelable).toBe(false);
       });
     });
 
