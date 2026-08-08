@@ -54,7 +54,7 @@ Before promoting, make sure the versions have been bumped:
 1. `package.json` files for each package
 1. [packages/shared/ReactVersion.js](../../packages/shared/ReactVersion.js)
 
-Once the "canary" release has been tested and verified, you can promote it to stable by running the [Publish release](./actions/workflows/runtime_release_from_ci.yml) GitHub Action workflow. This workflow will prepare the release artifacts and publish them to NPM as either `stable-latest` (e.g. for `react@latest`) or `stable-backport` for an older release line that shouldn't move `@latest` (published under the `@backport` dist-tag instead).
+Once the "canary" release has been tested and verified, you can promote it to stable by running the [Publish release](https://github.com/facebook/react/actions/workflows/runtime_release_from_ci.yml) GitHub Action workflow. This workflow will prepare the release artifacts and publish them to NPM as either `stable-latest` (e.g. for `react@latest`) or `stable-backport` for an older release line that shouldn't move `@latest` (published under the `@backport` dist-tag instead).
 
 > [!IMPORTANT]
 > The designated commit must be able to build in CI. If runtime_build_and_test.yml fails for that commit, the release workflow will also fail.
@@ -67,7 +67,7 @@ Once the "canary" release has been tested and verified, you can promote it to st
 1. Make sure versions (`ReactVersions.js`, `ReactVersion.js`, `package.json`) are set to an unreleased version 
 1. Cherry-pick desired commits
 1. Push to branch
-1. [Publish release](./actions/workflows/runtime_release_from_ci.yml)
+1. [Publish release](https://github.com/facebook/react/actions/workflows/runtime_release_from_ci.yml)
    - `workflow_from` is the newly pushed commit containing cherry-picked changes,
    - `type` is either `stable-latest` (e.g. for `react@latest`) or `stable-backport` for an older release line that shouldn't move `@latest` (published under the `@backport` dist-tag instead).
 1. For stable releases the workflow will prepare everything for an automated publish. However, the final publish step will require manual approval in the GitHub Actions UI.
