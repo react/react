@@ -1564,8 +1564,111 @@ const tests = {
         }
       `,
     },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const [count, setCount] = useState(0);
+          
+          const logCount = () => {
+            console.log(count);
+          };
+          
+          useEffect(() => {
+            logCount();
+          }, [logCount]);
+        }
+      `,
+      options: [{reactCompiler: true}],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const [count, setCount] = useState(0);
+          
+          const options = { count };
+          
+          useEffect(() => {
+            console.log(options);
+          }, [options]);
+        }
+      `,
+      options: [{reactCompiler: true}],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const [count, setCount] = useState(0);
+          
+          const logCount = () => {
+            console.log(count);
+          };
+          
+          useEffect(() => {
+            logCount();
+          }, [logCount]);
+        }
+      `,
+      settings: {reactCompiler: true},
+    },
   ],
   invalid: [
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const [count, setCount] = useState(0);
+          
+          const logCount = () => {
+            console.log(count);
+          };
+          
+          useEffect(() => {
+            logCount();
+          }, [logCount]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "The 'logCount' function makes the dependencies of useEffect Hook " +
+            '(at line 11) change on every render. ' +
+            "Move it inside the useEffect callback. Alternatively, wrap the definition of 'logCount' in its own useCallback() Hook.",
+          suggestions: undefined,
+        },
+      ],
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const [count, setCount] = useState(0);
+          
+          useEffect(() => {
+            console.log(count);
+          }, []);
+        }
+      `,
+      options: [{reactCompiler: true}],
+      errors: [
+        {
+          message:
+            "React Hook useEffect has a missing dependency: 'count'. " +
+            'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [count]',
+              output: normalizeIndent`
+                function MyComponent() {
+                  const [count, setCount] = useState(0);
+                  
+                  useEffect(() => {
+                    console.log(count);
+                  }, [count]);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
     {
       code: normalizeIndent`
         function MyComponent(props) {
