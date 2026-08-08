@@ -753,6 +753,20 @@ function setProp(
       }
       break;
     }
+    case 'hidden': {
+      if (value === 'until-found') {
+        domElement.setAttribute('hidden', 'until-found');
+      } else if (
+        value &&
+        typeof value !== 'function' &&
+        typeof value !== 'symbol'
+      ) {
+        domElement.setAttribute(key, '');
+      } else {
+        domElement.removeAttribute(key);
+      }
+      break;
+    }
     // Boolean
     case 'inert': {
       if (__DEV__) {
@@ -780,7 +794,6 @@ function setProp(
     case 'disablePictureInPicture':
     case 'disableRemotePlayback':
     case 'formNoValidate':
-    case 'hidden':
     case 'loop':
     case 'noModule':
     case 'noValidate':

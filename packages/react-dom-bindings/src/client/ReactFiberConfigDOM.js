@@ -162,7 +162,7 @@ export type Props = {
   autoFocus?: boolean,
   children?: mixed,
   disabled?: boolean,
-  hidden?: boolean,
+  hidden?: boolean | 'until-found',
   suppressHydrationWarning?: boolean,
   dangerouslySetInnerHTML?: mixed,
   style?: {
