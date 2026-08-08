@@ -10,6 +10,9 @@
 //! often bad for performance and frequently has more efficient and straightforward
 //! alternatives. See https://react.dev/learn/you-might-not-need-an-effect for examples.
 //!
+//! The `dispatch` function returned by useReducer schedules the same cascading render
+//! as a state setter, so it is validated identically.
+//!
 //! Port of ValidateNoSetStateInEffects.ts.
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -21,8 +24,8 @@ use react_compiler_hir::dominator::{compute_post_dominator_tree, post_dominator_
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
     BlockId, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue,
-    PlaceOrSpread, PropertyLiteral, SourceLocation, Terminal, Type, is_ref_value_type,
-    is_set_state_type, is_use_effect_event_type, is_use_effect_hook_type,
+    PlaceOrSpread, PropertyLiteral, SourceLocation, Terminal, Type, is_dispatcher_type,
+    is_ref_value_type, is_set_state_type, is_use_effect_event_type, is_use_effect_hook_type,
     is_use_insertion_effect_hook_type, is_use_layout_effect_hook_type, is_use_ref_type, visitors,
 };
 
@@ -61,7 +64,7 @@ pub fn validate_no_set_state_in_effects(
                     // Check if any context capture references a setState
                     let inner_func = &functions[lowered_func.func.0 as usize];
                     let has_set_state_operand = inner_func.context.iter().any(|ctx_place| {
-                        is_set_state_type_by_id(ctx_place.identifier, identifiers, types)
+                        is_state_updater_type_by_id(ctx_place.identifier, identifiers, types)
                             || set_state_functions.contains_key(&ctx_place.identifier)
                     });
 
@@ -143,6 +146,9 @@ pub fn validate_no_set_state_in_effects(
 struct SetStateInfo {
     loc: Option<SourceLocation>,
     identifier_name: Option<String>,
+    /// True when the reported callee is a useReducer dispatch rather than a
+    /// useState setter, which only changes the wording of the diagnostic.
+    is_dispatcher: bool,
 }
 
 /// Get the user-visible name for an identifier, matching Babel's
@@ -178,17 +184,34 @@ fn get_identifier_name_with_loc(
     None
 }
 
-fn is_set_state_type_by_id(
+/// State updaters that synchronously schedule a re-render when called: the setter
+/// from useState and the dispatch function from useReducer.
+fn is_state_updater_type_by_id(
     identifier_id: IdentifierId,
     identifiers: &[Identifier],
     types: &[Type],
 ) -> bool {
     let ident = &identifiers[identifier_id.0 as usize];
     let ty = &types[ident.type_.0 as usize];
-    is_set_state_type(ty)
+    is_set_state_type(ty) || is_dispatcher_type(ty)
+}
+
+fn is_dispatcher_type_by_id(
+    identifier_id: IdentifierId,
+    identifiers: &[Identifier],
+    types: &[Type],
+) -> bool {
+    let ident = &identifiers[identifier_id.0 as usize];
+    let ty = &types[ident.type_.0 as usize];
+    is_dispatcher_type(ty)
 }
 
 fn push_error(errors: &mut CompilerError, info: &SetStateInfo, enable_verbose: bool) {
+    let updater_message = if info.is_dispatcher {
+        "Avoid calling dispatch() directly within an effect"
+    } else {
+        "Avoid calling setState() directly within an effect"
+    };
     if enable_verbose {
         errors.push_diagnostic(
             CompilerDiagnostic::new(
@@ -212,9 +235,7 @@ fn push_error(errors: &mut CompilerError, info: &SetStateInfo, enable_verbose: b
             )
             .with_detail(CompilerDiagnosticDetail::Error {
                 loc: info.loc,
-                message: Some(
-                    "Avoid calling setState() directly within an effect".to_string(),
-                ),
+                message: Some(updater_message.to_string()),
                 identifier_name: info.identifier_name.clone(),
             }),
         );
@@ -234,9 +255,7 @@ fn push_error(errors: &mut CompilerError, info: &SetStateInfo, enable_verbose: b
             )
             .with_detail(CompilerDiagnosticDetail::Error {
                 loc: info.loc,
-                message: Some(
-                    "Avoid calling setState() directly within an effect".to_string(),
-                ),
+                message: Some(updater_message.to_string()),
                 identifier_name: info.identifier_name.clone(),
             }),
         );
@@ -531,7 +550,7 @@ fn get_set_state_call(
                     }
                 }
                 InstructionValue::CallExpression { callee, args, .. } => {
-                    if is_set_state_type_by_id(callee.identifier, identifiers, types)
+                    if is_state_updater_type_by_id(callee.identifier, identifiers, types)
                         || set_state_functions.contains_key(&callee.identifier)
                     {
                         if enable_allow_set_state_from_refs {
@@ -566,6 +585,11 @@ fn get_set_state_call(
                         return Ok(Some(SetStateInfo {
                             loc: callee.loc,
                             identifier_name: callee_name,
+                            is_dispatcher: is_dispatcher_type_by_id(
+                                callee.identifier,
+                                identifiers,
+                                types,
+                            ),
                         }));
                     }
                 }
