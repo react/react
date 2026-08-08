@@ -487,6 +487,23 @@ function propagateParentContextChanges(
       renderLanes,
       forcePropagateEntireTree,
     );
+  } else {
+    // If we looked and saw that there are no changed providers in the
+    // ancestors, mark it so that siblings can bail out early when walking
+    // through parents to check for provider changes.
+    for (
+      let ancestor = workInProgress.return;
+      ancestor !== null;
+      ancestor = ancestor.return
+    ) {
+      if (
+        (ancestor.flags & NeedsPropagation) !== NoFlags ||
+        (ancestor.flags & DidPropagateContext) !== NoFlags
+      ) {
+        break;
+      }
+      ancestor.flags |= DidPropagateContext;
+    }
   }
 
   // This is an optimization so that we only propagate once per subtree. If a
