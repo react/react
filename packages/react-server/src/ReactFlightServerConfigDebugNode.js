@@ -334,6 +334,22 @@ export function initAsyncDebugInfo(): void {
       destroy(asyncId: number): void {
         // If we needed the meta data from this operation we should have already
         // extracted it or it should be part of a chain of triggers.
+        const node = pendingOperations.get(asyncId);
+        if (node !== undefined) {
+          // Sever the previous link to allow GC of the old execution-path chain.
+          // The node itself may still be alive if referenced by newer nodes via
+          // their previous/awaited fields, but once this async resource is
+          // destroyed, its own execution-path ancestors are no longer needed.
+          // Without this, long-lived async workloads (streaming SSR, WebSocket
+          // connections, etc.) would retain an ever-growing linked list of
+          // ancestor nodes through these strong references, causing unbounded
+          // memory growth.
+          // We intentionally keep `awaited` intact — it is the I/O dependency
+          // chain that newer nodes rely on to reach the originating I/O node
+          // when debug info is emitted after intermediate promises are GC'd.
+          const n: any = node;
+          n.previous = null;
+        }
         pendingOperations.delete(asyncId);
       },
     }).enable();
@@ -345,7 +361,16 @@ export function markAsyncSequenceRootTask(): void {
     // Whatever Task we're running now is spawned by React itself to perform render work.
     // Don't track any cause beyond this task. We may still track I/O that was started outside
     // React but just not the cause of entering the render.
-    pendingOperations.delete(executionAsyncId());
+    const asyncId = executionAsyncId();
+    const node = pendingOperations.get(asyncId);
+    if (node !== undefined) {
+      // Sever the previous link to allow GC of any execution-path ancestry
+      // that is no longer reachable from live nodes. Same rationale as in the
+      // destroy hook. Keep `awaited` intact for I/O debug info preservation.
+      const n: any = node;
+      n.previous = null;
+    }
+    pendingOperations.delete(asyncId);
   }
 }
 
