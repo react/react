@@ -26,7 +26,6 @@ import {
   HostText,
   HostPortal,
   DehydratedFragment,
-  Fragment,
 } from './ReactWorkTags';
 import {ContentReset, Placement} from './ReactFiberFlags';
 import {
@@ -57,17 +56,16 @@ import {
   acquireSingletonInstance,
   releaseSingletonInstance,
   isSingletonScope,
-  commitNewChildToFragmentInstance,
-  deleteChildFromFragmentInstance,
 } from './ReactFiberConfig';
 import {captureCommitPhaseError} from './ReactFiberWorkLoop';
 import {trackHostMutation} from './ReactFiberMutationTracking';
 
 import {runWithFiberInDEV} from './ReactCurrentFiber';
+import {enableFragmentRefs} from 'shared/ReactFeatureFlags';
 import {
-  enableFragmentRefs,
-  enableFragmentRefsTextNodes,
-} from 'shared/ReactFeatureFlags';
+  commitNewChildToFragmentInstances,
+  getParentFragmentInstances,
+} from './ReactFiberFragmentInstance';
 
 export function commitHostMount(finishedWork: Fiber) {
   const type = finishedWork.type;
@@ -256,58 +254,6 @@ export function commitShowHideHostTextInstance(node: Fiber, isHidden: boolean) {
   }
 }
 
-export function commitNewChildToFragmentInstances(
-  fiber: Fiber,
-  parentFragmentInstances: null | Array<FragmentInstanceType>,
-): void {
-  if (
-    (fiber.tag !== HostComponent &&
-      fiber.tag !== HostSingleton &&
-      !(enableFragmentRefsTextNodes && fiber.tag === HostText)) ||
-    // Only run fragment insertion effects for initial insertions
-    fiber.alternate !== null ||
-    parentFragmentInstances === null
-  ) {
-    return;
-  }
-  for (let i = 0; i < parentFragmentInstances.length; i++) {
-    const fragmentInstance = parentFragmentInstances[i];
-    commitNewChildToFragmentInstance(fiber.stateNode, fragmentInstance);
-  }
-}
-
-export function commitFragmentInstanceInsertionEffects(fiber: Fiber): void {
-  let parent = fiber.return;
-  while (parent !== null) {
-    if (isFragmentInstanceParent(parent)) {
-      const fragmentInstance: FragmentInstanceType = parent.stateNode;
-      commitNewChildToFragmentInstance(fiber.stateNode, fragmentInstance);
-    }
-
-    if (isFragmentInstanceHostBoundary(parent)) {
-      return;
-    }
-
-    parent = parent.return;
-  }
-}
-
-export function commitFragmentInstanceDeletionEffects(fiber: Fiber): void {
-  let parent = fiber.return;
-  while (parent !== null) {
-    if (isFragmentInstanceParent(parent)) {
-      const fragmentInstance: FragmentInstanceType = parent.stateNode;
-      deleteChildFromFragmentInstance(fiber.stateNode, fragmentInstance);
-    }
-
-    if (isFragmentInstanceHostBoundary(parent)) {
-      return;
-    }
-
-    parent = parent.return;
-  }
-}
-
 function isHostParent(fiber: Fiber): boolean {
   return (
     fiber.tag === HostComponent ||
@@ -320,24 +266,6 @@ function isHostParent(fiber: Fiber): boolean {
       : false) ||
     fiber.tag === HostPortal
   );
-}
-
-// HostPortal / HostHoistable are host parents for placement, but not for
-// fragment instance ancestry — commit bookkeeping walks past them so it
-// matches getFragmentParentInstanceOrContainerFiber. HostSingleton is a
-// fragment host boundary (and a collected child) even when it is not a
-// placement scope.
-function isFragmentInstanceHostBoundary(fiber: Fiber): boolean {
-  return (
-    fiber.tag === HostComponent ||
-    fiber.tag === HostRoot ||
-    // $FlowFixMe[constant-condition]
-    (supportsSingletons ? fiber.tag === HostSingleton : false)
-  );
-}
-
-function isFragmentInstanceParent(fiber: Fiber): boolean {
-  return fiber && fiber.tag === Fragment && fiber.stateNode !== null;
 }
 
 function getHostSibling(fiber: Fiber): ?Instance {
@@ -524,37 +452,19 @@ function insertOrAppendPlacementNode(
 function commitPlacement(finishedWork: Fiber): void {
   // Recursively insert all host nodes into the parent.
   let hostParentFiber;
-  let parentFragmentInstances = null;
-  let collectFragmentInstances = enableFragmentRefs;
   let parentFiber = finishedWork.return;
   while (parentFiber !== null) {
-    if (collectFragmentInstances && isFragmentInstanceParent(parentFiber)) {
-      const fragmentInstance: FragmentInstanceType = parentFiber.stateNode;
-      if (parentFragmentInstances === null) {
-        parentFragmentInstances = [fragmentInstance];
-      } else {
-        parentFragmentInstances.push(fragmentInstance);
-      }
-    }
-    if (hostParentFiber === undefined && isHostParent(parentFiber)) {
-      // Nearest host parent for placement. Portals still win here so
-      // children insert into the portal container.
+    if (isHostParent(parentFiber)) {
       hostParentFiber = parentFiber;
-    }
-    if (
-      collectFragmentInstances &&
-      isFragmentInstanceHostBoundary(parentFiber)
-    ) {
-      // Stop collecting at HostComponent / HostRoot / HostSingleton.
-      // Placement can continue past non-scope singletons to HostRoot, and
-      // past portals (already recorded above) to fragment ancestors.
-      collectFragmentInstances = false;
-    }
-    if (hostParentFiber !== undefined && !collectFragmentInstances) {
       break;
     }
     parentFiber = parentFiber.return;
   }
+  // Fragment ancestry is collected separately so portals remain placement
+  // parents while fragment bookkeeping still walks past them to ancestors.
+  const parentFragmentInstances = enableFragmentRefs
+    ? getParentFragmentInstances(finishedWork)
+    : null;
 
   // $FlowFixMe[constant-condition]
   if (!supportsMutation) {

@@ -254,9 +254,11 @@ import {
   commitHostRemoveChild,
   commitHostSingletonAcquisition,
   commitHostSingletonRelease,
+} from './ReactFiberCommitHostEffects';
+import {
   commitFragmentInstanceDeletionEffects,
   commitFragmentInstanceInsertionEffects,
-} from './ReactFiberCommitHostEffects';
+} from './ReactFiberFragmentInstance';
 import {
   trackEnterViewTransitions,
   commitEnterViewTransitions,
