@@ -1159,6 +1159,22 @@ function createChildReconciler(
           break;
         case REACT_LAZY_TYPE: {
           const resolvedChild = resolveLazy(child as any);
+          if (
+            (child as any)._store &&
+            (child as any)._store.validated &&
+            resolvedChild !== null &&
+            typeof resolvedChild === 'object' &&
+            (resolvedChild as any).$$typeof === REACT_ELEMENT_TYPE &&
+            (resolvedChild as any)._store &&
+            !(resolvedChild as any)._store.validated
+          ) {
+            // The JSX runtime validated the lazy node as a static child before
+            // it was unwrapped, e.g. an outlined Flight element. Transfer that
+            // to the resolved element so it isn't reported as missing a key.
+            (resolvedChild as any)._store.validated = (
+              child as any
+            )._store.validated;
+          }
           warnOnInvalidKey(
             returnFiber,
             workInProgress,
