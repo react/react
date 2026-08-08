@@ -858,4 +858,30 @@ describe('BeforeInputEventPlugin', () => {
   it('should extract onBeforeInput when simulating in env with only CompositionEvent on contenteditable', async () => {
     await testContentEditableComponent(environments[3], scenarios);
   });
+
+  it('should extract onBeforeInput from native beforeinput on textarea', async () => {
+    let beforeInputEvent = null;
+    const spyOnBeforeInput = jest.fn();
+
+    ({ReactDOMClient, act} = loadReactDOMClientAndAct(simulateComposition));
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(
+        <textarea
+          onBeforeInput={e => {
+            spyOnBeforeInput();
+            beforeInputEvent = e;
+          }}
+        />,
+      );
+    });
+
+    simulateEvent(container.firstChild, 'beforeinput', {data: 'replaced'});
+
+    expect(spyOnBeforeInput).toHaveBeenCalledTimes(1);
+    expect(beforeInputEvent.nativeEvent.type).toBe('beforeinput');
+    expect(beforeInputEvent.type).toBe('beforeinput');
+    expect(beforeInputEvent.data).toBe('replaced');
+  });
 });
