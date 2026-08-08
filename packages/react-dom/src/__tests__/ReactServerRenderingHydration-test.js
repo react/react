@@ -852,4 +852,46 @@ describe('ReactDOMServerHydration', () => {
 
     expect(ref.current).toBe(button);
   });
+
+  it('should skip hydration of elements with dangerouslySetInnerHTML and suppressHydrationWarning', async () => {
+    const htmlContent = {
+      __html: '<p>This is <strong>HTML</strong> content</p>',
+    };
+
+    function TestComponent() {
+      return (
+        <div>
+          <h1>Header</h1>
+          <div
+            className="testElement"
+            dangerouslySetInnerHTML={htmlContent}
+            suppressHydrationWarning={true}
+          />
+          <p>Footer</p>
+        </div>
+      );
+    }
+
+    const container = document.createElement('div');
+    container.innerHTML = ReactDOMServer.renderToString(<TestComponent />);
+
+    const testElement = container.querySelector('.testElement');
+    expect(testElement).not.toBe(null);
+    expect(testElement.innerHTML).toBe(
+      '<p>This is <strong>HTML</strong> content</p>',
+    );
+
+    // change content before hydration to simulate a mismatch
+    testElement.innerHTML = '<h1>Content changed</h1>';
+
+    // Hydrate - should not produce warnings when both props are set
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <TestComponent />);
+    });
+
+    // Verify the innerHTML is preserved (not cleared or modified)
+    expect(testElement.innerHTML).toBe(
+      '<h1>Content changed</h1>',
+    );
+  });
 });
