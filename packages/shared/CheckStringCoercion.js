@@ -12,7 +12,7 @@
  * and Temporal.* types. See https://github.com/facebook/react/pull/22064.
  *
  * The functions in this module will throw an easier-to-understand,
- * easier-to-debug exception with a clear errors message message explaining the
+ * easier-to-debug exception with a clear error message explaining the
  * problem. (Instead of a confusing exception thrown inside the implementation
  * of the `value` object).
  */
@@ -63,7 +63,7 @@ function testStringCoercion(value: mixed) {
   // To find which value is throwing, check the browser or debugger console.
   // Before this exception was thrown, there should be `console.error` output
   // that shows the type (Symbol, Temporal.PlainDate, etc.) that caused the
-  // problem and how that type was used: key, atrribute, input value prop, etc.
+  // problem and how that type was used: key, attribute, input value prop, etc.
   // In most cases, this console output also shows the component and its
   // ancestor components where the exception happened.
   //
