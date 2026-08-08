@@ -1107,6 +1107,311 @@ describe('ReactFlightDOMEdge', () => {
     expect(items[5]).toEqual(items[10]);
   });
 
+  it('should encode repeated strings in a compact format by deduping', async () => {
+    const testString = 'a'.repeat(100);
+    const props = {texts: new Array(30).fill(testString)};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(props),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // One inline copy, one outlined row and a reference per repetition.
+    expect(serializedContent.length).toBeLessThan(400);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(props);
+  });
+
+  it('should not dedupe strings below the length threshold', async () => {
+    const testString = 'a'.repeat(63);
+    const props = {texts: new Array(30).fill(testString)};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(props),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // Every copy is spelled out because outlining a string this short would
+    // cost more than the duplicate.
+    expect(serializedContent.length).toBeGreaterThan(30 * testString.length);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(props);
+  });
+
+  it('should not outline a string that is used only once', async () => {
+    const props = {text: 'a'.repeat(100)};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(props),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // Most strings never repeat, so the first copy stays inline rather than
+    // paying for a row and a reference to it.
+    expect(serializedContent).not.toContain('$');
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(props);
+  });
+
+  it('should dedupe repeated large strings', async () => {
+    const testString = 'a'.repeat(2000);
+    const props = {texts: new Array(5).fill(testString)};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(props),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // Large strings are outlined on first use, so there's only ever one copy.
+    expect(serializedContent.length).toBeLessThan(2100);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(props);
+  });
+
+  it('should escape deduped strings that start with $', async () => {
+    const testString = '$' + 'a'.repeat(100);
+    const props = {texts: new Array(30).fill(testString)};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(props),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    expect(serializedContent).toContain('"$' + testString + '"');
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(props);
+  });
+
+  it('should not count deduped strings against the row size limit', async () => {
+    // A className shared by every row of a list, which is the common shape.
+    const testString = 'a'.repeat(250);
+    const elements = [];
+    for (let i = 0; i < 60; i++) {
+      elements.push(
+        <p key={i} className={testString}>
+          {'row ' + i}
+        </p>,
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<div>{elements}</div>),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    // A reference is a few bytes, so the list stays in one row instead of
+    // being split up as if each element still carried the whole string.
+    const modelRows = serializedContent
+      .split('\n')
+      .filter(row => row !== '')
+      // Skip the tagged rows, which includes the debug info emitted in DEV.
+      .filter(row => !/^[0-9a-f]+:[A-Z]/.test(row));
+    // In DEV each element is outlined anyway to give its debug info an ID.
+    expect(modelRows.length).toBeLessThan(__DEV__ ? 70 : 10);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result.props.children.length).toBe(60);
+  });
+
+  function clientComponent(name, chunkFilename) {
+    return clientExports(
+      function Client() {
+        return <span>{name}</span>;
+      },
+      'chunk-' + name,
+      chunkFilename,
+      Promise.resolve(),
+    );
+  }
+
+  it('should dedupe strings inside client reference metadata', async () => {
+    // Bundlers repeat the same chunk in the metadata of every client reference
+    // that needs it.
+    const chunk = 'path/to/some/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const ClientA = clientComponent('A', chunk);
+    const ClientB = clientComponent('B', chunk);
+    const ClientC = clientComponent('C', chunk);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <div>
+          <ClientA />
+          <ClientB />
+          <ClientC />
+        </div>,
+        webpackMap,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    const outlinedRow = ':' + JSON.stringify(chunk) + '\n';
+    expect(serializedContent).toContain(outlinedRow);
+    // The client resolves a client reference while parsing its row, so the
+    // outlined row has to be flushed before every row referencing it.
+    expect(serializedContent.indexOf(outlinedRow)).toBeLessThan(
+      serializedContent.lastIndexOf(':I['),
+    );
+    // An export name is too short to be worth outlining.
+    expect(serializedContent).not.toContain(':"*"\n');
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result),
+    );
+    expect(await readResult(ssrStream)).toBe(
+      '<div><span>A</span><span>B</span><span>C</span></div>',
+    );
+  });
+
+  it('should escape strings inside client reference metadata', async () => {
+    // A leading $ has to be escaped whether the string gets outlined or not.
+    const outlinedChunk = '$path/to/some/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const inlineChunk = '$chunk.js';
+    const ClientA = clientComponent('A', outlinedChunk);
+    const ClientB = clientComponent('B', outlinedChunk);
+    const ClientC = clientComponent('C', inlineChunk);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <div>
+          <ClientA />
+          <ClientB />
+          <ClientC />
+        </div>,
+        webpackMap,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const serializedContent = await readResult(stream1);
+    expect(serializedContent).toContain(':"$' + outlinedChunk + '"\n');
+    expect(serializedContent).toContain('"$' + inlineChunk + '"');
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result),
+    );
+    expect(await readResult(ssrStream)).toBe(
+      '<div><span>A</span><span>B</span><span>C</span></div>',
+    );
+  });
+
+  // @gate __DEV__
+  it('should not dedupe import metadata on the debug channel', async () => {
+    // The debug channel is a separate transport, so a row it emits can't be
+    // referenced from the main stream and vice versa.
+    const chunk = 'path/to/some/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const Client = clientComponent('Client', chunk);
+
+    function Server({a, b}) {
+      return ReactServer.createElement('div', null, a, b);
+    }
+
+    let debugContent = '';
+    const debugChannel = {
+      writable: new WritableStream({
+        write(value) {
+          debugContent += Buffer.from(value).toString('utf8');
+        },
+      }),
+    };
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // We can't use JSX here because it'll use the Client React.
+        ReactServer.createElement(Server, {
+          a: ReactServer.createElement(Client),
+          b: ReactServer.createElement(Client),
+        }),
+        webpackMap,
+        {debugChannel},
+      ),
+    );
+    await readResult(stream);
+
+    expect(debugContent).toContain(':I[');
+    // Every import row on the debug channel spells the chunk out.
+    expect(debugContent.split(chunk).length).toBe(
+      debugContent.split(':I[').length,
+    );
+  });
+
   it('warns if passing a this argument to bind() of a server reference', async () => {
     const ServerModule = serverExports({
       greet: function () {},

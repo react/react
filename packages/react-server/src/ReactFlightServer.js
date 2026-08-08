@@ -616,6 +616,9 @@ export type Request = {
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
+  // A null entry means the string has been seen once and is still inline.
+  writtenStrings: Map<string, null | string>,
+  writtenImportStrings: Map<string, null | string>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -741,6 +744,8 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.writtenStrings = new Map();
+  this.writtenImportStrings = new Map();
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -2250,6 +2255,16 @@ let canEmitDebugInfo: boolean = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
 
+// Strings at least this long get outlined and deduplicated when they repeat.
+// Below it the reference and row header outweigh the duplicate, and the extra
+// rows compress worse than the duplication they replace.
+const MIN_DEDUPLICATED_STRING_LENGTH = 64;
+
+// Bundler metadata repeats the same chunk URLs across every client reference of
+// a route, so it pays off much sooner. It's still bounded away from zero because
+// outlining something as short as an export name costs more than copying it.
+const MIN_DEDUPLICATED_IMPORT_STRING_LENGTH = 16;
+
 function deferTask(request: Request, task: Task): ReactJSONValue {
   // Like outlineTask but instead the item is scheduled to be serialized
   // after its parent in the stream.
@@ -3594,6 +3609,70 @@ function escapeStringValue(value: string): string {
   }
 }
 
+function serializeDeduplicatedString(request: Request, value: string): string {
+  const writtenStrings = request.writtenStrings;
+  const existing = writtenStrings.get(value);
+  if (existing !== undefined && existing !== null) {
+    // The row it refers to was already emitted so only the reference is new here.
+    serializedSize += existing.length;
+    return existing;
+  }
+  // The string still has to arrive before this row can be used, whether it's
+  // written inline or into its own row, so either way it counts in full.
+  serializedSize += value.length;
+  // $FlowFixMe[invalid-compare]
+  const isLarge = value.length >= 1024 && byteLengthOfChunk !== null;
+  if (existing === undefined && !isLarge) {
+    // Leave the first occurrence inline. Most strings never repeat, and a row
+    // header plus a reference costs more than the duplicate would have.
+    writtenStrings.set(value, null);
+    return escapeStringValue(value);
+  }
+  let ref;
+  if (isLarge) {
+    // Large strings are encoded outside the JSON payload so that we don't have
+    // to double encode and double parse them.
+    ref = serializeLargeTextString(request, value);
+  } else {
+    request.pendingChunks++;
+    const outlinedId = request.nextChunkId++;
+    // $FlowFixMe[incompatible-type] stringify can return null
+    const json: string = stringify(escapeStringValue(value));
+    emitModelChunk(request, outlinedId, json);
+    ref = serializeByValueID(outlinedId);
+  }
+  writtenStrings.set(value, ref);
+  return ref;
+}
+
+function serializeImportString(request: Request, value: string): string {
+  if (value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH) {
+    return escapeStringValue(value);
+  }
+  const writtenStrings = request.writtenImportStrings;
+  const existing = writtenStrings.get(value);
+  if (existing !== undefined) {
+    if (existing !== null) {
+      return existing;
+    }
+    request.pendingChunks++;
+    const outlinedId = request.nextChunkId++;
+    // $FlowFixMe[incompatible-type] stringify can return null
+    const json: string = stringify(escapeStringValue(value));
+    // The client reads import metadata synchronously, so this row has to have
+    // been written by the time the referencing row arrives. Import chunks are
+    // flushed ahead of regular ones, which regular chunks can't guarantee.
+    request.completedImportChunks.push(
+      stringToChunk(outlinedId.toString(16) + ':' + json + '\n'),
+    );
+    const ref = serializeByValueID(outlinedId);
+    writtenStrings.set(value, ref);
+    return ref;
+  }
+  writtenStrings.set(value, null);
+  return escapeStringValue(value);
+}
+
 let modelRoot: null | ReactClientValue = false;
 
 function renderModel(
@@ -4196,23 +4275,21 @@ function renderModelDestructive(
         throwTaintViolation(tainted.message);
       }
     }
-    serializedSize += value.length;
     // TODO: Maybe too clever. If we support URL there's no similar trick.
     if (value[value.length - 1] === 'Z') {
       // Possibly a Date, whose toJSON automatically calls toISOString
       // $FlowFixMe[incompatible-use]
       const originalValue = parent[parentPropertyName];
       if (originalValue instanceof Date) {
+        serializedSize += value.length;
         return serializeDateFromDateJSON(value);
       }
     }
-    // $FlowFixMe[invalid-compare]
-    if (value.length >= 1024 && byteLengthOfChunk !== null) {
-      // For large strings, we encode them outside the JSON payload so that we
-      // don't have to double encode and double parse the strings. This can also
-      // be more compact in case the string has a lot of escaped characters.
-      return serializeLargeTextString(request, value);
+    if (value.length >= MIN_DEDUPLICATED_STRING_LENGTH) {
+      // This path does its own accounting since it might only write a reference.
+      return serializeDeduplicatedString(request, value);
     }
+    serializedSize += value.length;
     return escapeStringValue(value);
   }
 
@@ -4584,14 +4661,50 @@ function emitErrorChunk(
   }
 }
 
+// This maps every string in the metadata through serializeImportString the
+// way a stringify replacer would, but ahead of time so that stringify can
+// run without one. A replacer would allocate a closure for every import row
+// and take stringify off its fast path. The metadata is plain JSON data or
+// unwraps to it through toJSON.
+function transformImportMetadata(request: Request, value: mixed): mixed {
+  if (typeof value === 'string') {
+    return serializeImportString(request, value);
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (typeof (value as any).toJSON === 'function') {
+      // stringify would have called toJSON before the replacer saw the value.
+      return transformImportMetadata(request, (value as any).toJSON());
+    }
+    if (isArray(value)) {
+      const copy: Array<mixed> = [];
+      for (let i = 0; i < value.length; i++) {
+        copy.push(transformImportMetadata(request, value[i]));
+      }
+      return copy;
+    }
+    const copy: {[string]: mixed} = {};
+    for (const name in value) {
+      if (hasOwnProperty.call(value, name)) {
+        copy[name] = transformImportMetadata(request, (value as any)[name]);
+      }
+    }
+    return copy;
+  }
+  return value;
+}
+
 function emitImportChunk(
   request: Request,
   id: number,
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
-  // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
+  const json: string =
+    __DEV__ && debug
+      ? // The debug channel can't reference rows in the main stream.
+        stringify(clientReferenceMetadata)
+      : // $FlowFixMe[incompatible-type] stringify can return null
+        stringify(transformImportMetadata(request, clientReferenceMetadata));
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
