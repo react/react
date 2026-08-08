@@ -55,7 +55,7 @@ pub fn apply_gating_rewrites(
 ) -> Result<(), CompilerDiagnostic> {
     // Sort rewrites in reverse order by original_index so that insertions
     // at higher indices don't invalidate lower indices.
-    rewrites.sort_by(|a, b| b.original_index.cmp(&a.original_index));
+    rewrites.sort_by_key(|b| std::cmp::Reverse(b.original_index));
 
     for rewrite in rewrites {
         let gating_imported_name = context

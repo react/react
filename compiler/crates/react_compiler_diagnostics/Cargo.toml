@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true
