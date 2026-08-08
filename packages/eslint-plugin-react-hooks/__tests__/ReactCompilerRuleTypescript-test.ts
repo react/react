@@ -195,7 +195,80 @@ const tests: CompilerTestCases = {
   ],
 };
 
+const refsTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Allows JSX ref from a props member without marking all props as refs',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        function Test(props) {
+          return (
+            <div>
+              <button ref={props.buttonRef}>
+                {props.text}
+              </button>
+            </div>
+          );
+        }
+      `,
+    },
+    {
+      name: 'Allows JSX ref from React 19 props.ref with sibling props',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        function TextArea(props) {
+          return (
+            <TextInput
+              ref={props.ref}
+              placeholder={props.placeholder}
+              type="body"
+            />
+          );
+        }
+      `,
+    },
+    {
+      name: 'Allows JSX refs stored as object properties',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+
+        function App() {
+          const groupRefs = {
+            group1: useRef(null),
+            group2: useRef(null),
+          };
+
+          return (
+            <>
+              <ComboBoxItemGroup ref={groupRefs.group1} />
+              <ComboBoxItemGroup ref={groupRefs.group2} />
+            </>
+          );
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Reports direct access to props.ref.current during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        function Component(props) {
+          return <div>{props.ref.current}</div>;
+        }
+      `,
+      errors: [
+        {
+          message: /Cannot access ref value during render/,
+        },
+      ],
+    },
+  ],
+};
+
 const eslintTester = new ESLintTesterV8({
   parser: require.resolve('@typescript-eslint/parser-v5'),
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
+eslintTester.run('react-compiler refs', allRules['refs'].rule, refsTests);

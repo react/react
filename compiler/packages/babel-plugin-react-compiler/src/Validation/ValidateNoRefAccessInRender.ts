@@ -149,19 +149,6 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           }
           break;
         }
-        case 'PropertyLoad': {
-          if (
-            isUseRefType(value.object.identifier) &&
-            value.property === 'current'
-          ) {
-            continue;
-          }
-          const temp = env.lookup(value.object);
-          if (temp != null) {
-            env.define(lvalue, temp);
-          }
-          break;
-        }
       }
     }
   }
