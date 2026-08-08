@@ -3303,7 +3303,6 @@ function reappearLayoutEffects(
     }
     case HostHoistable:
     case HostComponent: {
-      // TODO: Enable HostText for RN
       if (
         enableFragmentRefs &&
         (finishedWork.tag === HostComponent ||
