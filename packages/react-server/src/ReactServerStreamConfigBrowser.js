@@ -21,6 +21,7 @@ channel.port1.onmessage = () => {
     task();
   }
 };
+channel.port1.unref?.()
 
 export function scheduleWork(callback: () => void) {
   taskQueue.push(callback);
