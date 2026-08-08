@@ -1673,6 +1673,42 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
+    it('returns implementation specific when DOM containment disagrees with the Fiber tree', async () => {
+      const fragmentRef = React.createRef();
+      const childRef = React.createRef();
+      const unrelatedParentRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test() {
+        return (
+          <div>
+            <div>
+              <React.Fragment ref={fragmentRef}>
+                <div ref={childRef} />
+              </React.Fragment>
+            </div>
+            <div ref={unrelatedParentRef} />
+          </div>
+        );
+      }
+
+      await act(() => root.render(<Test />));
+      unrelatedParentRef.current.appendChild(childRef.current);
+
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(unrelatedParentRef.current),
+        {
+          preceding: false,
+          following: false,
+          contains: false,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: true,
+        },
+      );
+    });
+
+    // @gate enableFragmentRefs
     it('handles fragment instances with one child', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
