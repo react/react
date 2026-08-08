@@ -197,6 +197,10 @@ export function formatConsoleArgumentsToSingleString(
 
       // $FlowFixMe[incompatible-type]
       formatted = formatted.replace(REGEXP, (match, escaped, ptn, flag) => {
+        if (args.length === 0) {
+          // No argument left for this specifier, so keep it literal like the console does.
+          return match;
+        }
         let arg = args.shift();
         switch (flag) {
           case 's':
