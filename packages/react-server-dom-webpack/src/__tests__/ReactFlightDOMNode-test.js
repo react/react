@@ -2446,4 +2446,18 @@ describe('ReactFlightDOMNode', () => {
     expect(Buffer.isBuffer(result.font)).toBe(false);
     expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
   });
+
+  it('rejects an impossibly large byte length for a string chunk', () => {
+    const readable = new Stream.Readable({...streamOptions, read() {}});
+    ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: null,
+      moduleLoading: null,
+    });
+
+    readable.emit('data', '0:T4,');
+    expect(() => readable.emit('data', 'x')).toThrow(
+      'String chunks need to be passed in their original shape.',
+    );
+    readable.destroy();
+  });
 });
