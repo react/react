@@ -82,7 +82,7 @@ function Component(t0) {
 }
 function _temp(t0) {
   const $ = _c(8);
-  const { k: k, k1: k1, x: x } = t0;
+  const { k, k1, x } = t0;
   let t1;
   if ($[0] !== k) {
     t1 = <Foo k={k} />;
