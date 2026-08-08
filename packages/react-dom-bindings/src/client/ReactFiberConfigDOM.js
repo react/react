@@ -3074,15 +3074,18 @@ FragmentInstance.prototype.removeEventListener = function (
     return;
   }
   if (typeof listeners !== 'undefined' && listeners.length > 0) {
-    traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
-      removeEventListenerFromChild,
+    const index = indexOfEventListener(
+      listeners,
       type,
       listener,
       optionsOrUseCapture,
     );
-    const index = indexOfEventListener(
-      listeners,
+    if (index === -1) {
+      return;
+    }
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      removeEventListenerFromChild,
       type,
       listener,
       optionsOrUseCapture,
@@ -3106,7 +3109,7 @@ function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
 ): string {
   if (opts == null) {
-    return '0';
+    return 'c=0';
   }
 
   if (typeof opts === 'boolean') {
