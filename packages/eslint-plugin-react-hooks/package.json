@@ -43,7 +43,7 @@
     "@babel/parser": "^7.24.4",
     "hermes-parser": "^0.25.1",
     "zod": "^3.25.0 || ^4.0.0",
-    "zod-validation-error": "^3.5.0 || ^4.0.0"
+    "zod-validation-error": ">=3.5.0 <3.5.4 || ^4.0.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.11.4",
