@@ -797,18 +797,20 @@ export class Environment {
        * NOTE: Zod doesn't work when specifying a function as a default, so we have to
        * fallback to the default value here
        */
-      const moduleTypeProvider =
-        this.config.moduleTypeProvider ?? defaultModuleTypeProvider;
-      if (moduleTypeProvider == null) {
-        return null;
-      }
-      if (typeof moduleTypeProvider !== 'function') {
+      const moduleTypeProvider = this.config.moduleTypeProvider;
+      if (
+        moduleTypeProvider != null &&
+        typeof moduleTypeProvider !== 'function'
+      ) {
         CompilerError.throwInvalidConfig({
           reason: `Expected a function for \`moduleTypeProvider\``,
           loc,
         });
       }
-      const unparsedModuleConfig = moduleTypeProvider(moduleName);
+      const unparsedModuleConfig =
+        (typeof moduleTypeProvider === 'function'
+          ? moduleTypeProvider(moduleName)
+          : null) ?? defaultModuleTypeProvider(moduleName);
       if (unparsedModuleConfig != null) {
         const parsedModuleConfig = TypeSchema.safeParse(unparsedModuleConfig);
         if (!parsedModuleConfig.success) {
