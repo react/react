@@ -58,7 +58,7 @@ export function getChartData({
     const node = nodes.get(id);
 
     if (node == null) {
-      throw Error(`Could not find node with id "${id}" in commit tree`);
+      return;
     }
 
     const {displayName, key, parentID, type, compiledWithForget} = node;
