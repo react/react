@@ -630,10 +630,40 @@ export function dispatchEventForPluginEventSystem(
       // If we find that "rootContainer", we find the parent fiber
       // sub-tree for that root and make that our ancestor instance.
       let node: null | Fiber = targetInst;
+      // Guards against a pathological infinite loop that can occur when the
+      // DOM has been mutated out from under React in a way that breaks the
+      // invariant that walking up from a container eventually reaches a
+      // different host fiber. This happens, for example, when invalid HTML
+      // such as a nested <body> is rendered into the root: the browser's
+      // parser normalizes the structure, desynchronizing React's fiber
+      // references from the actual DOM, so that reassigning `node` below no
+      // longer makes progress and the traversal never terminates. Tracking
+      // the previously visited node lets us detect the lack of progress and
+      // bail out gracefully instead of freezing the main thread.
+      let previousNode: null | Fiber = null;
 
       mainLoop: while (true) {
         if (node === null) {
           return;
+        }
+        if (node === previousNode) {
+          // We failed to make progress since the last iteration that
+          // reassigned `node`, which means the fiber/DOM relationship is in an
+          // inconsistent state (typically caused by rendering invalid HTML
+          // like a nested <body> that the browser then normalizes). Continuing
+          // would spin forever, so stop here. `ancestorInst` retains the last
+          // resolved instance and event dispatch proceeds from there.
+          if (__DEV__) {
+            console.error(
+              'React detected a break in the DOM tree while dispatching an ' +
+                'event and stopped traversing to avoid an infinite loop. This ' +
+                'is usually caused by rendering invalid HTML (for example, a ' +
+                'nested <body> or <html> tag) into a container, which the ' +
+                'browser silently normalizes. Ensure your components render ' +
+                'valid, properly nested HTML.',
+            );
+          }
+          break;
         }
         const nodeTag = node.tag;
         if (nodeTag === HostRoot || nodeTag === HostPortal) {
@@ -680,6 +710,10 @@ export function dispatchEventForPluginEventSystem(
               parentTag === HostHoistable ||
               parentTag === HostSingleton
             ) {
+              // Remember the node we're leaving so that if the next iteration
+              // resolves back to this same fiber (no progress was made) we can
+              // detect the cycle at the top of `mainLoop` and bail out.
+              previousNode = node;
               node = ancestorInst = parentNode;
               continue mainLoop;
             }
