@@ -3720,17 +3720,18 @@ export function commitNewChildToFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
-  if (childInstance.nodeType === TEXT_NODE) {
-    return;
-  }
-  const instance: InstanceWithFragmentHandles = childInstance as any;
   const eventListeners = fragmentInstance._eventListeners;
   if (eventListeners !== null) {
     for (let i = 0; i < eventListeners.length; i++) {
       const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.addEventListener(type, listener, optionsOrUseCapture);
+      childInstance.addEventListener(type, listener, optionsOrUseCapture);
     }
   }
+  // Observers and fragment handles only apply to element children.
+  if (childInstance.nodeType === TEXT_NODE) {
+    return;
+  }
+  const instance: InstanceWithFragmentHandles = childInstance as any;
   if (fragmentInstance._observers !== null) {
     fragmentInstance._observers.forEach(observer => {
       observer.observe(instance);
@@ -3745,17 +3746,17 @@ export function deleteChildFromFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
-  if (childInstance.nodeType === TEXT_NODE) {
-    return;
-  }
-  const instance: InstanceWithFragmentHandles = childInstance as any;
   const eventListeners = fragmentInstance._eventListeners;
   if (eventListeners !== null) {
     for (let i = 0; i < eventListeners.length; i++) {
       const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.removeEventListener(type, listener, optionsOrUseCapture);
+      childInstance.removeEventListener(type, listener, optionsOrUseCapture);
     }
   }
+  if (childInstance.nodeType === TEXT_NODE) {
+    return;
+  }
+  const instance: InstanceWithFragmentHandles = childInstance as any;
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {
       instance.reactFragments.delete(fragmentInstance);
