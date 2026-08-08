@@ -185,7 +185,7 @@ pub fn infer_mutation_aliasing_effects(
             };
 
             states_by_block.insert(block_id, incoming_state.clone());
-            let mut state = incoming_state.clone();
+            let mut state = incoming_state;
 
             infer_block(&mut context, &mut state, block_id, func, env)?;
 
