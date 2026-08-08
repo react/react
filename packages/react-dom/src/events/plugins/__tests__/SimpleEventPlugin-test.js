@@ -18,6 +18,14 @@ class ToggleEvent extends Event {
   }
 }
 
+class CommandEvent extends Event {
+  constructor(type, eventInit) {
+    super(type, eventInit);
+    this.command = eventInit.command;
+    this.source = eventInit.source;
+  }
+}
+
 describe('SimpleEventPlugin', function () {
   let React;
   let ReactDOMClient;
@@ -590,6 +598,45 @@ describe('SimpleEventPlugin', function () {
         }),
       );
     });
+  });
+
+  it('dispatches synthetic command events when the Invoker Commands API is used', async () => {
+    container = document.createElement('div');
+
+    const onCommand = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <>
+          <button command="toggle-popover" commandFor="popover">
+            Toggle popover
+          </button>
+          <div id="invokee" popover="" onCommand={onCommand}>
+            popover content
+          </div>
+        </>,
+      );
+    });
+
+    const invokee = container.querySelector('#invokee');
+    const invoker = container.querySelector('button');
+    invokee.dispatchEvent(
+      new CommandEvent('command', {
+        bubbles: false,
+        cancelable: true,
+        command: 'toggle-popover',
+        source: invoker,
+      }),
+    );
+
+    expect(onCommand).toHaveBeenCalledTimes(1);
+    const event = onCommand.mock.calls[0][0];
+    expect(event).toEqual(
+      expect.objectContaining({
+        command: 'toggle-popover',
+        source: invoker,
+      }),
+    );
   });
 
   it('includes the submitter in submit events', async function () {
