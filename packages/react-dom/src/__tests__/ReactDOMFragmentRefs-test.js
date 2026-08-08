@@ -607,6 +607,47 @@ describe('FragmentRefs', () => {
       });
 
       // @gate enableFragmentRefs
+      it('regression: does not detach a registered listener when removing an unregistered one', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        function unregisteredListener() {
+          logs.push('unregistered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('click', registeredListener);
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        // Regression: removing a listener that was never added must be a no-op.
+        // It must not detach registered listeners from fragmentInstance,
+        // causing them to stay attached to DOM even after removeEventListener.
+        fragmentRef.current.removeEventListener('click', unregisteredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        fragmentRef.current.removeEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
+      // @gate enableFragmentRefs
       it('adds and removes event listeners from children with multiple fragments', async () => {
         const fragmentRef = React.createRef();
         const nestedFragmentRef = React.createRef();
