@@ -41,6 +41,7 @@ describe('ReactDOMForm', () => {
   let Suspense;
   let startTransition;
   let useTransition;
+  let useLayoutEffect;
   let use;
   let textCache;
   let useFormStatus;
@@ -62,6 +63,7 @@ describe('ReactDOMForm', () => {
     Suspense = React.Suspense;
     startTransition = React.startTransition;
     useTransition = React.useTransition;
+    useLayoutEffect = React.useLayoutEffect;
     use = React.use;
     useFormStatus = ReactDOM.useFormStatus;
     requestFormReset = ReactDOM.requestFormReset;
@@ -1079,6 +1081,30 @@ describe('ReactDOMForm', () => {
     // Increment again. The state should increase by 10.
     await act(() => startTransition(() => increment()));
     assertLog(['Pending 1', '11']);
+  });
+
+  it('useActionState updates inline actions before layout effects', async () => {
+    function App({stepSize}) {
+      const [state, dispatch] = useActionState(prevState => {
+        return prevState + stepSize;
+      }, 0);
+
+      useLayoutEffect(() => {
+        if (stepSize === 10) {
+          dispatch();
+        }
+      }, [dispatch, stepSize]);
+
+      return <Text text={state} />;
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App stepSize={1} />));
+    assertLog([0]);
+
+    await act(() => root.render(<App stepSize={10} />));
+    assertLog([0, 10]);
+    expect(container.textContent).toBe('10');
   });
 
   it('useActionState: dispatch throws if called during render', async () => {
