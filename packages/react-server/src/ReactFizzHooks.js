@@ -107,6 +107,9 @@ let suspendedRecoverableError: Error | null = null;
 export function createFatalRecoverableError(
   recoverable: ReactRecoverable,
 ): Error {
+  // This is created eagerly when use() encounters the recoverable so its stack
+  // points to the component call site. It only becomes fatal if no Suspense
+  // boundary can recover the render.
   return new Error(
     'The server render could not complete because client rendering was ' +
       "requested outside a Suspense boundary. See this error's cause for " +
@@ -312,10 +315,6 @@ export function getSuspendedRecoverableError(): Error {
   const error = suspendedRecoverableError;
   suspendedRecoverableError = null;
   return error;
-}
-
-export function clearSuspendedRecoverableError(): void {
-  suspendedRecoverableError = null;
 }
 
 export function checkDidRenderIdHook(): boolean {

@@ -16,12 +16,7 @@ const browserImpl = function browser(): ReactRecoverable {
   // Recoverables are Errors so that a renderer can preserve the browser() call
   // site as the cause if no downstream renderer can recover the subtree.
   const recoverable = new Error(
-    "Recoverable Exception: This is not a real error! It's an " +
-      'implementation detail of `use(browser())` to defer rendering to the ' +
-      'browser. `use(browser())` can only be used inside a `<Suspense>` ' +
-      'boundary. If a server render errors with this as its cause, the ' +
-      'component that called `use(browser())` does not have a `<Suspense>` ' +
-      'boundary above it.',
+    'Browser-only rendering was requested by `browser()`.',
   );
   Object.defineProperty(recoverable as any, '$$typeof', {
     value: REACT_RECOVERABLE_TYPE,
