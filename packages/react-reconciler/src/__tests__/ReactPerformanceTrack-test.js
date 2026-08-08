@@ -587,4 +587,167 @@ describe('ReactPerformanceTracks', () => {
       ],
     ]);
   });
+
+  // A faithful model of a cross-origin (opaque origin) Window. Unlike a plain
+  // object, *any* property access throws a SecurityError — including the `in`
+  // operator (the `has` trap), getOwnPropertyDescriptor and walking the
+  // prototype. Only the handful of symbols the JS engine itself probes are
+  // allowed. A real cross-origin Window's *only* enumerable own properties are
+  // the numeric indices of its child frames, so `childFrameCount` models those.
+  // The previous fixture only trapped `get`, which let `'$$typeof' in value`
+  // slip through and so never reproduced the real crash.
+  function createCrossOriginWindow(childFrameCount = 0) {
+    const allowed = new Set([
+      Symbol.toStringTag,
+      Symbol.hasInstance,
+      Symbol.isConcatSpreadable,
+    ]);
+    const indices = [];
+    for (let i = 0; i < childFrameCount; i++) {
+      indices.push(String(i));
+    }
+    const isChildFrameIndex = prop =>
+      typeof prop === 'string' && indices.includes(prop);
+    const guard = prop => {
+      if (typeof prop === 'symbol' && allowed.has(prop)) {
+        return;
+      }
+      if (prop === 'then') {
+        return;
+      }
+      // An existing child-frame index is readable; everything else (including
+      // the `in` check for a *missing* index) throws.
+      if (isChildFrameIndex(prop)) {
+        return;
+      }
+      throw new Error(
+        `Failed to read a named property '${String(prop)}' from 'Window'`,
+      );
+    };
+    return new Proxy(
+      {},
+      {
+        get(target, prop) {
+          guard(prop);
+          // A child-frame index resolves to a (childless) cross-origin Window.
+          return isChildFrameIndex(prop)
+            ? createCrossOriginWindow(0)
+            : undefined;
+        },
+        has(target, prop) {
+          guard(prop);
+          return isChildFrameIndex(prop);
+        },
+        getOwnPropertyDescriptor(target, prop) {
+          guard(prop);
+          if (isChildFrameIndex(prop)) {
+            return {
+              enumerable: true,
+              configurable: true,
+              value: createCrossOriginWindow(0),
+            };
+          }
+          return undefined;
+        },
+        ownKeys() {
+          return indices;
+        },
+        getPrototypeOf() {
+          return null;
+        },
+      },
+    );
+  }
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
+  it('does not crash diffing cross-origin Window props (opaque origin)', async () => {
+    const App = function App({win}) {
+      Scheduler.unstable_advanceTime(10);
+      React.useEffect(() => {}, [win]);
+    };
+
+    Scheduler.unstable_advanceTime(1);
+    await act(() => {
+      ReactNoop.render(<App win={createCrossOriginWindow()} />);
+    });
+    performanceMeasureCalls.length = 0;
+
+    Scheduler.unstable_advanceTime(10);
+    await act(() => {
+      // Re-render with a *different* cross-origin Window so the prop diffs and
+      // the perf-track logger walks it.
+      ReactNoop.render(<App win={createCrossOriginWindow()} />);
+    });
+
+    expect(performanceMeasureCalls).toEqual([
+      [
+        '​App',
+        {
+          detail: {
+            devtools: {
+              color: 'primary-dark',
+              properties: [
+                ['Changed Props', ''],
+                [
+                  ' \xa0win',
+                  'Referentially unequal but deeply equal objects. Consider memoization.',
+                ],
+              ],
+              tooltipText: 'App',
+              track: 'Components ⚛',
+            },
+          },
+          end: 31,
+          start: 21,
+        },
+      ],
+    ]);
+  });
+
+  // @gate __DEV__ && enableComponentPerformanceTrack
+  it('does not crash diffing cross-origin Windows that contain child frames', async () => {
+    const App = function App({win}) {
+      Scheduler.unstable_advanceTime(10);
+      React.useEffect(() => {}, [win]);
+    };
+
+    Scheduler.unstable_advanceTime(1);
+    await act(() => {
+      // A cross-origin Window that contains a nested iframe exposes the child
+      // frame as an enumerable numeric index ('0'), so `for...in` walks it.
+      ReactNoop.render(<App win={createCrossOriginWindow(1)} />);
+    });
+    performanceMeasureCalls.length = 0;
+
+    Scheduler.unstable_advanceTime(10);
+    await act(() => {
+      // The new Window has no child frame, so the diff checks `'0' in next` on a
+      // cross-origin Window that doesn't have it — which throws a SecurityError
+      // unless the `in` check is guarded.
+      ReactNoop.render(<App win={createCrossOriginWindow(0)} />);
+    });
+
+    // Should not throw. The removed '0' child frame is reported in the diff.
+    expect(performanceMeasureCalls).toEqual([
+      [
+        '​App',
+        {
+          detail: {
+            devtools: {
+              color: 'primary-dark',
+              properties: [
+                ['Changed Props', ''],
+                [' \xa0win', ''],
+                ['-\xa0\xa0\xa00', '…'],
+              ],
+              tooltipText: 'App',
+              track: 'Components ⚛',
+            },
+          },
+          end: 31,
+          start: 21,
+        },
+      ],
+    ]);
+  });
 });
