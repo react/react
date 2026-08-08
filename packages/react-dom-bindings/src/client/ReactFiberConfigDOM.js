@@ -70,6 +70,7 @@ import {
   getFragmentInstanceOrTextInstanceSiblings,
   traverseFragmentInstancesAndTextInstancesDeeply,
   fiberIsPortaledIntoHost,
+  getFragmentPortalContainerInfo,
   isFiberContainedByFragment,
   isFragmentContainedByFiber,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
@@ -3420,9 +3421,20 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   );
 
   if (children.length === 0) {
+    // Match non-empty CDP: when portaled, position against the portal
+    // container rather than the React host parent.
+    let emptyParentHostInstance = parentHostInstance;
+    if (fiberIsPortaledIntoHost(this._fragmentFiber)) {
+      const portalContainer = getFragmentPortalContainerInfo(
+        this._fragmentFiber,
+      );
+      if (portalContainer != null) {
+        emptyParentHostInstance = portalContainer;
+      }
+    }
     return compareDocumentPositionForEmptyFragment(
       this._fragmentFiber,
-      parentHostInstance,
+      emptyParentHostInstance,
       otherNode,
       getInstanceFromHostFiber,
     );
@@ -3525,10 +3537,13 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document or body element
+      // otherFiber could be null if its the document, documentElement, or body
       const ownerDocument = otherNode.ownerDocument;
-      // $FlowFixMe[invalid-compare]
-      return otherNode === ownerDocument || otherNode === ownerDocument.body;
+      return (
+        (otherNode as Instance | Document) === ownerDocument ||
+        otherNode === ownerDocument.documentElement ||
+        otherNode === ownerDocument.body
+      );
     }
     return isFragmentContainedByFiber(fragmentFiber, otherFiber);
   }
