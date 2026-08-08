@@ -298,6 +298,9 @@ function renderToReadableStream(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        const removeListener = () =>
+          signal.removeEventListener('abort', listener);
+        allReady.then(removeListener, removeListener);
       }
     }
     startWork(request);
@@ -436,6 +439,9 @@ function resume(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        const removeListener = () =>
+          signal.removeEventListener('abort', listener);
+        allReady.then(removeListener, removeListener);
       }
     }
     startWork(request);
