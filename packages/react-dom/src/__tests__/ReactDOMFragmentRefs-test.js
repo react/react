@@ -1925,6 +1925,51 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
+    it('handles empty fragments nested inside non-host wrappers', async () => {
+      const fragmentRef = React.createRef();
+      const beforeRef = React.createRef();
+      const afterRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test() {
+        return (
+          <div>
+            <div id="before" ref={beforeRef} />
+            <Wrapper>
+              <React.Fragment ref={fragmentRef} />
+            </Wrapper>
+            <div id="after" ref={afterRef} />
+          </div>
+        );
+      }
+
+      await act(() => root.render(<Test />));
+
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(beforeRef.current),
+        {
+          preceding: true,
+          following: false,
+          contains: false,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: true,
+        },
+      );
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(afterRef.current),
+        {
+          preceding: false,
+          following: true,
+          contains: false,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: true,
+        },
+      );
+    });
+
+    // @gate enableFragmentRefs
     it('handles nested children', async () => {
       const fragmentRef = React.createRef();
       const nestedFragmentRef = React.createRef();
@@ -2368,8 +2413,8 @@ describe('FragmentRefs', () => {
         expectPosition(
           fragmentRef.current.compareDocumentPosition(childBRef.current),
           {
-            preceding: true,
-            following: false,
+            preceding: false,
+            following: true,
             contains: false,
             containedBy: false,
             disconnected: false,
@@ -2638,6 +2683,40 @@ describe('FragmentRefs', () => {
         fragmentRef.current.scrollIntoView(true);
         expect(siblingARef.current.scrollIntoView).toHaveBeenCalledTimes(0);
         expect(siblingBRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
+      });
+
+      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+      it('finds host siblings when the empty fragment is nested in a non-host wrapper', async () => {
+        const fragmentRef = React.createRef();
+        const beforeRef = React.createRef();
+        const afterRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(
+            <div>
+              <div ref={beforeRef} id="before" />
+              <Wrapper>
+                <Fragment ref={fragmentRef} />
+              </Wrapper>
+              <div ref={afterRef} id="after" />
+            </div>,
+          );
+        });
+
+        beforeRef.current.scrollIntoView = jest.fn();
+        afterRef.current.scrollIntoView = jest.fn();
+
+        // Default / alignToTop=true should use the following host sibling,
+        // even though the empty fragment's fiber.sibling is null.
+        fragmentRef.current.scrollIntoView();
+        expect(beforeRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
+        expect(afterRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
+
+        afterRef.current.scrollIntoView.mockClear();
+
+        fragmentRef.current.scrollIntoView(false);
+        expect(beforeRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
+        expect(afterRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
       });
 
       // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
