@@ -3137,4 +3137,43 @@ describe('ReactFlightDOMBrowser', () => {
 
     expect(container.innerHTML).toBe('<div></div>');
   });
+  it('should not have missing key warnings when a static child is outlined', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {element}
+        </div>
+      );
+    });
+
+    // A large preceding prop pushes the element past the outlining threshold so
+    // it is emitted as its own row instead of inline.
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={'a'.repeat(4000)} element={<span>Hi</span>} />,
+        webpackMap,
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hi</span></div>',
+    );
+  });
 });
