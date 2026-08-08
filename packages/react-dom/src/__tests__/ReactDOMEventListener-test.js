@@ -730,6 +730,33 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
+  it('should not emulate bubbling of command events', async () => {
+    const container = document.createElement('div');
+    const ref = React.createRef();
+    const onCommand = jest.fn();
+    document.body.appendChild(container);
+    try {
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div onCommand={onCommand}>
+            <img ref={ref} alt="" onCommand={onCommand} />
+          </div>,
+        );
+      });
+      await act(() => {
+        ref.current.dispatchEvent(
+          new Event('command', {
+            bubbles: false,
+          }),
+        );
+      });
+      expect(onCommand).toHaveBeenCalledTimes(1);
+    } finally {
+      document.body.removeChild(container);
+    }
+  });
+
   it('should bubble non-native bubbling cancel/close events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();

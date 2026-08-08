@@ -233,6 +233,7 @@ type AnimationEventTypes =
   | 'animationend'
   | 'animationiteration';
 type ClipboardEventTypes = 'clipboardchange' | 'cut' | 'copy' | 'paste';
+type CommandEventTypes = 'command';
 type TransitionEventTypes =
   | 'transitionrun'
   | 'transitionstart'
