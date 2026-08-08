@@ -522,6 +522,9 @@ const rule = {
           if (referenceNode == null) {
             continue;
           }
+          if (isInsideTypeQueryOrReference(referenceNode)) {
+            continue;
+          }
           const dependencyNode = getDependency(referenceNode);
           const dependency = analyzePropertyChain(
             dependencyNode,
@@ -1890,6 +1893,20 @@ function getDependency(node: Node): Node {
   } else {
     return node;
   }
+}
+
+function isInsideTypeQueryOrReference(node: Node): boolean {
+  let current: Node | null = node.parent ?? null;
+  while (current != null) {
+    if (
+      current.type === 'TSTypeQuery' ||
+      current.type === 'TSTypeReference'
+    ) {
+      return true;
+    }
+    current = current.parent ?? null;
+  }
+  return false;
 }
 
 /**
