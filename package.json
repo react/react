@@ -90,7 +90,7 @@
     "jest-environment-jsdom": "^29.4.2",
     "jest-silent-reporter": "^0.6.0",
     "jest-snapshot-serializer-raw": "^1.2.0",
-    "minimatch": "^3.0.4",
+    "minimatch": "^3.0.5",
     "minimist": "^1.2.3",
     "mkdirp": "^0.5.1",
     "ncp": "^2.0.0",
