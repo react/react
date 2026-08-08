@@ -613,6 +613,29 @@ const tests = {
       `,
     },
     {
+      // The dispatch function returned by useActionState is stable, including
+      // when destructuring the third `isPending` element:
+      // const [state, dispatch, isPending] = useActionState(...)
+      code: normalizeIndent`
+        function MyComponent() {
+          const [state, dispatch, isPending] = useActionState(action, 0);
+          useEffect(() => {
+            dispatch();
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          const [state, dispatch, isPending] = React.useActionState(action, 0);
+          useEffect(() => {
+            dispatch();
+          }, []);
+        }
+      `,
+    },
+    {
       code: normalizeIndent`
         function MyComponent({ maybeRef2, foo }) {
           const definitelyRef1 = useRef();
@@ -1619,6 +1642,41 @@ const tests = {
                   useCallback(() => {
                     console.log(props.foo?.toString());
                   }, [props.foo]);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // The state and isPending values from useActionState are dynamic, so
+      // they still need to be listed as dependencies (only the dispatch
+      // function is stable).
+      code: normalizeIndent`
+        function MyComponent() {
+          const [state, dispatch, isPending] = useActionState(action, 0);
+          useEffect(() => {
+            console.log(state, isPending);
+            dispatch();
+          }, []);
+        }
+      `,
+      errors: [
+        {
+          message:
+            "React Hook useEffect has missing dependencies: 'isPending' and 'state'. " +
+            'Either include them or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [isPending, state]',
+              output: normalizeIndent`
+                function MyComponent() {
+                  const [state, dispatch, isPending] = useActionState(action, 0);
+                  useEffect(() => {
+                    console.log(state, isPending);
+                    dispatch();
+                  }, [isPending, state]);
                 }
               `,
             },
