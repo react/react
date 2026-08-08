@@ -677,12 +677,14 @@ pub enum InstructionValue {
     PropertyStore {
         object: Place,
         property: PropertyLiteral,
+        computed: bool,
         value: Place,
         loc: Option<SourceLocation>,
     },
     PropertyLoad {
         object: Place,
         property: PropertyLiteral,
+        computed: bool,
         loc: Option<SourceLocation>,
     },
     PropertyDelete {
@@ -970,6 +972,7 @@ pub enum ManualMemoDependencyRoot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DependencyPathEntry {
     pub property: PropertyLiteral,
+    pub computed: bool,
     pub optional: bool,
     pub loc: Option<SourceLocation>,
 }

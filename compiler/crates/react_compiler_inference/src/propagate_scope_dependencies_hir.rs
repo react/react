@@ -289,11 +289,19 @@ fn collect_temporaries_sidemap_impl(
                 InstructionValue::PropertyLoad {
                     object,
                     property,
+                    computed,
                     loc,
-                    ..
                 } if !used_outside => {
                     if inner_fn_context.is_none() || temporaries.contains_key(&object.identifier) {
-                        let prop = get_property(object, property, false, *loc, temporaries, env);
+                        let prop = get_property(
+                            object,
+                            property,
+                            *computed,
+                            false,
+                            *loc,
+                            temporaries,
+                            env,
+                        );
                         temporaries.insert(instr.lvalue.identifier, prop);
                     }
                 }
@@ -368,6 +376,7 @@ fn collect_temporaries_sidemap_impl(
 fn get_property(
     object: &Place,
     property_name: &PropertyLiteral,
+    computed: bool,
     optional: bool,
     loc: Option<react_compiler_hir::SourceLocation>,
     temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
@@ -378,6 +387,7 @@ fn get_property(
         let mut path = resolved.path.clone();
         path.push(DependencyPathEntry {
             property: property_name.clone(),
+            computed,
             optional,
             loc,
         });
@@ -393,6 +403,7 @@ fn get_property(
             reactive: object.reactive,
             path: vec![DependencyPathEntry {
                 property: property_name.clone(),
+                computed,
                 optional,
                 loc,
             }],
@@ -474,6 +485,7 @@ fn traverse_function_optional(
 struct MatchConsequentResult {
     consequent_id: IdentifierId,
     property: PropertyLiteral,
+    computed: bool,
     property_id: IdentifierId,
     store_local_lvalue_id: IdentifierId,
     consequent_goto: BlockId,
@@ -503,12 +515,13 @@ fn match_optional_test_block(
     let instr0 = &func.instructions[consequent_block.instructions[0].0 as usize];
     let instr1 = &func.instructions[consequent_block.instructions[1].0 as usize];
 
-    let (property_load_object, property, property_load_loc) = match &instr0.value {
+    let (property_load_object, property, computed, property_load_loc) = match &instr0.value {
         InstructionValue::PropertyLoad {
             object,
             property,
+            computed,
             loc,
-        } => (object, property, loc),
+        } => (object, property, computed, loc),
         _ => return None,
     };
 
@@ -550,6 +563,7 @@ fn match_optional_test_block(
             Some(MatchConsequentResult {
                 consequent_id: store_local_value.identifier,
                 property: property.clone(),
+                computed: *computed,
                 property_id: instr0.lvalue.identifier,
                 store_local_lvalue_id: instr1.lvalue.identifier,
                 consequent_goto: *goto_block,
@@ -605,11 +619,12 @@ fn traverse_optional_block(
                     InstructionValue::PropertyLoad {
                         object,
                         property,
+                        computed,
                         loc,
-                        ..
                     } if object.identifier == prev_instr.lvalue.identifier => {
                         path.push(DependencyPathEntry {
                             property: property.clone(),
+                            computed: *computed,
                             optional: false,
                             loc: *loc,
                         });
@@ -715,6 +730,7 @@ fn traverse_optional_block(
             let mut p = base_object.path.clone();
             p.push(DependencyPathEntry {
                 property: match_result.property.clone(),
+                computed: match_result.computed,
                 optional: is_optional,
                 loc: match_result.property_load_loc,
             });
@@ -930,6 +946,7 @@ fn reduce_maybe_optional_chains(nodes: &mut BTreeSet<usize>, registry: &mut Prop
                 let next_entry = if entry.optional && nodes.contains(&curr_node) {
                     DependencyPathEntry {
                         property: entry.property.clone(),
+                        computed: entry.computed,
                         optional: false,
                         loc: entry.loc,
                     }
@@ -1615,6 +1632,7 @@ struct HoistableNodeEntry {
 struct DependencyNode {
     properties: IndexMap<PropertyLiteral, Box<DependencyNodeEntry>, FxBuildHasher>,
     access_type: PropertyAccessType,
+    computed: bool,
     loc: Option<react_compiler_hir::SourceLocation>,
 }
 
@@ -1697,6 +1715,7 @@ impl ReactiveScopeDependencyTreeHIR {
                 DependencyNode {
                     properties: IndexMap::default(),
                     access_type: PropertyAccessType::UnconditionalAccess,
+                    computed: false,
                     loc: dep.loc,
                 },
                 dep.reactive,
@@ -1742,11 +1761,13 @@ impl ReactiveScopeDependencyTreeHIR {
                         node: DependencyNode {
                             properties: IndexMap::default(),
                             access_type,
+                            computed: entry.computed,
                             loc: entry.loc,
                         },
                     })
                 });
             child.node.access_type = merge_access(child.node.access_type, access_type);
+            child.node.computed |= entry.computed;
 
             dep_cursor = &mut child.node;
             hoistable_ptr = next_hoistable;
@@ -1787,6 +1808,7 @@ fn collect_minimal_deps_in_subtree(
             let mut new_path = path.to_vec();
             new_path.push(DependencyPathEntry {
                 property: child_name.clone(),
+                computed: child_entry.node.computed,
                 optional: is_optional_access(child_entry.node.access_type),
                 loc: child_entry.node.loc,
             });
@@ -1935,11 +1957,20 @@ impl<'a> DependencyCollectionContext<'a> {
         &mut self,
         object: &Place,
         property: &PropertyLiteral,
+        computed: bool,
         optional: bool,
         loc: Option<react_compiler_hir::SourceLocation>,
         env: &mut Environment,
     ) {
-        let dep = get_property(object, property, optional, loc, self.temporaries, env);
+        let dep = get_property(
+            object,
+            property,
+            computed,
+            optional,
+            loc,
+            self.temporaries,
+            env,
+        );
         self.visit_dependency(dep, env);
     }
 
@@ -2138,10 +2169,10 @@ fn handle_instruction(
         InstructionValue::PropertyLoad {
             object,
             property,
+            computed,
             loc,
-            ..
         } => {
-            ctx.visit_property(object, property, false, *loc, env);
+            ctx.visit_property(object, property, *computed, false, *loc, env);
         }
         InstructionValue::StoreLocal {
             value: val, lvalue, ..
