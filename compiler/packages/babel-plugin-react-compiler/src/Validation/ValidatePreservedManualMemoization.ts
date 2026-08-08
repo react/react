@@ -324,6 +324,7 @@ class Visitor extends ReactiveFunctionVisitor<VisitorState> {
   scopes: Set<ScopeId> = new Set();
   prunedScopes: Set<ScopeId> = new Set();
   temporaries: Map<IdentifierId, ManualMemoDependency> = new Map();
+  memoDependencies: Map<IdentifierId, ManualMemoDependency> = new Map();
 
   /**
    * Recursively visit values and instructions to collect declarations
@@ -331,32 +332,38 @@ class Visitor extends ReactiveFunctionVisitor<VisitorState> {
    * @returns a @{ManualMemoDependency} representing the variable +
    * property reads represented by @value
    */
-  recordDepsInValue(value: ReactiveValue, state: VisitorState): void {
+  recordDepsInValue(
+    value: ReactiveValue,
+    state: VisitorState,
+  ): ManualMemoDependency | null {
     switch (value.kind) {
       case 'SequenceExpression': {
         for (const instr of value.instructions) {
           this.visitInstruction(instr, state);
         }
-        this.recordDepsInValue(value.value, state);
-        break;
+        return this.recordDepsInValue(value.value, state);
       }
       case 'OptionalExpression': {
-        this.recordDepsInValue(value.value, state);
-        break;
+        return this.recordDepsInValue(value.value, state);
       }
       case 'ConditionalExpression': {
         this.recordDepsInValue(value.test, state);
         this.recordDepsInValue(value.consequent, state);
         this.recordDepsInValue(value.alternate, state);
-        break;
+        return null;
       }
       case 'LogicalExpression': {
         this.recordDepsInValue(value.left, state);
         this.recordDepsInValue(value.right, state);
-        break;
+        return null;
       }
       default: {
         collectMaybeMemoDependencies(value, this.temporaries, false);
+        const dependency = collectMaybeMemoDependencies(
+          value,
+          this.memoDependencies,
+          false,
+        );
         if (
           value.kind === 'StoreLocal' ||
           value.kind === 'StoreContext' ||
@@ -379,7 +386,7 @@ class Visitor extends ReactiveFunctionVisitor<VisitorState> {
             }
           }
         }
-        break;
+        return dependency;
       }
     }
   }
@@ -396,9 +403,9 @@ class Visitor extends ReactiveFunctionVisitor<VisitorState> {
       state.manualMemoState.decls.add(lvalue.identifier.declarationId);
     }
 
-    this.recordDepsInValue(value, state);
+    const dependency = this.recordDepsInValue(value, state);
     if (lvalue != null) {
-      temporaries.set(lvalue.identifier.id, {
+      const localDependency: ManualMemoDependency = {
         root: {
           kind: 'NamedLocal',
           value: {...lvalue},
@@ -406,7 +413,11 @@ class Visitor extends ReactiveFunctionVisitor<VisitorState> {
         },
         path: [],
         loc: lvalue.loc,
-      });
+      };
+      temporaries.set(lvalue.identifier.id, localDependency);
+      if (dependency != null) {
+        this.memoDependencies.set(lvalue.identifier.id, dependency);
+      }
     }
   }
 
@@ -568,8 +579,29 @@ class Visitor extends ReactiveFunctionVisitor<VisitorState> {
           loc: value.loc,
         },
       );
-      const reassignments = state.manualMemoState.reassignments;
+      const memoState = state.manualMemoState;
+      const reassignments = memoState.reassignments;
       state.manualMemoState = null;
+      if (value.pruned && memoState.depsFromSource != null) {
+        const outputDependency = this.memoDependencies.get(
+          value.decl.identifier.id,
+        );
+        if (outputDependency?.root.kind === 'NamedLocal') {
+          validateInferredDep(
+            {
+              identifier: outputDependency.root.value.identifier,
+              reactive: outputDependency.root.value.reactive,
+              path: outputDependency.path,
+              loc: outputDependency.loc,
+            },
+            this.temporaries,
+            memoState.decls,
+            memoState.depsFromSource,
+            state.env,
+            memoState.loc,
+          );
+        }
+      }
       if (!value.pruned) {
         for (const {identifier, loc} of eachInstructionValueOperand(
           value as InstructionValue,
