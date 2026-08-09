@@ -156,7 +156,7 @@ export function printStore(
     }
 
     store.roots.forEach(rootID => {
-      const {weight} = ((store.getElementByID(rootID): any): Element);
+      const {weight} = store.getElementByID(rootID) as any as Element;
       const maybeWeightLabel = includeWeight ? ` (${weight})` : '';
 
       // Store does not (yet) expose a way to get errors/warnings per root.

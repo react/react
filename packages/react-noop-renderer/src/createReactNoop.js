@@ -126,14 +126,16 @@ function createReactNoop(
       prevParent !== -1 &&
       prevParent !==
         // $FlowFixMe[prop-missing]
-        (parentInstance: Instance).id
+        // $FlowFixMe[incompatible-type]
+        (parentInstance as Instance).id
     ) {
       throw new Error('Reparenting is not allowed');
     }
 
     child.parent =
       // $FlowFixMe[prop-missing]
-      (parentInstance: Instance).id;
+      // $FlowFixMe[incompatible-type]
+      (parentInstance as Instance).id;
     const index = parentInstance.children.indexOf(child);
     if (index !== -1) {
       parentInstance.children.splice(index, 1);
@@ -159,7 +161,7 @@ function createReactNoop(
     parentInstance: Instance,
     child: Instance | TextInstance,
   ): void {
-    if (typeof (parentInstance: any).rootID === 'string') {
+    if (typeof (parentInstance as any).rootID === 'string') {
       // Some calls to this aren't typesafe.
       // This helps surface mistakes in tests.
       throw new Error('appendChild() first argument is not an instance.');
@@ -203,7 +205,7 @@ function createReactNoop(
     child: Instance | TextInstance,
     beforeChild: Instance | TextInstance,
   ) {
-    if (typeof (parentInstance: any).rootID === 'string') {
+    if (typeof (parentInstance as any).rootID === 'string') {
       // Some calls to this aren't typesafe.
       // This helps surface mistakes in tests.
       throw new Error('insertBefore() first argument is not an instance.');
@@ -244,7 +246,7 @@ function createReactNoop(
     parentInstance: Instance,
     child: Instance | TextInstance,
   ): void {
-    if (typeof (parentInstance: any).rootID === 'string') {
+    if (typeof (parentInstance as any).rootID === 'string') {
       // Some calls to this aren't typesafe.
       // This helps surface mistakes in tests.
       throw new Error('removeChild() first argument is not an instance.');
@@ -272,7 +274,7 @@ function createReactNoop(
         : // $FlowFixMe[incompatible-type] We're not typing immutable instances.
           (children ?? []),
       text: shouldSetTextContent(type, newProps)
-        ? computeText((newProps.children: any) + '', instance.context)
+        ? computeText((newProps.children as any) + '', instance.context)
         : null,
       prop: newProps.prop,
       hidden: !!newProps.hidden,
@@ -409,7 +411,7 @@ function createReactNoop(
     },
 
     getPublicInstance(instance: Instance): PublicInstance {
-      return (instance: any);
+      return instance as any;
     },
 
     HostTransitionContext: null,
@@ -438,7 +440,7 @@ function createReactNoop(
         parent: -1,
         text: shouldSetTextContent(type, props)
           ? // eslint-disable-next-line react-internal/safe-string-coercion
-            computeText((props.children: any) + '', hostContext)
+            computeText((props.children as any) + '', hostContext)
           : null,
         prop: props.prop,
         hidden: !!props.hidden,
@@ -694,12 +696,12 @@ function createReactNoop(
       return null;
     },
 
-    NotPendingTransition: (null: TransitionStatus),
+    NotPendingTransition: null as TransitionStatus,
 
     resetFormInstance(form: Instance) {},
 
     bindToConsole(methodName: $FlowFixMe, args: Array<any>, badgeName: string) {
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       return Function.prototype.bind.apply(
         // eslint-disable-next-line react-internal/no-production-logging
         console[methodName],
@@ -735,6 +737,7 @@ function createReactNoop(
       oldProps: Props,
       newProps: Props,
     ): void {
+      // $FlowFixMe[invalid-compare]
       if (oldProps === null) {
         throw new Error('Should have old props');
       }
@@ -752,7 +755,7 @@ function createReactNoop(
           checkPropStringCoercion(newProps.children, 'children');
         }
         instance.text = computeText(
-          (newProps.children: any) + '',
+          (newProps.children as any) + '',
           instance.context,
         );
       }
@@ -1011,7 +1014,9 @@ function createReactNoop(
         $$typeof: REACT_ELEMENT_TYPE,
         key: null,
         props: props,
+        // $FlowFixMe[constant-condition]
         _owner: null,
+        // $FlowFixMe[constant-condition]
         _store: __DEV__ ? {} : undefined,
       };
       // $FlowFixMe[prop-missing]
@@ -1066,9 +1071,9 @@ function createReactNoop(
     }
     if (isArray(child.children)) {
       // This is an instance.
-      const instance: Instance = (child: any);
+      const instance: Instance = child as any;
       const children = childToJSX(instance.children, instance.text);
-      const props = ({prop: instance.prop}: any);
+      const props = {prop: instance.prop} as any;
       if (instance.hidden) {
         props.hidden = true;
       }
@@ -1082,7 +1087,7 @@ function createReactNoop(
       return createJSXElementForTestComparison(instance.type, props);
     }
     // This is a text instance
-    const textInstance: TextInstance = (child: any);
+    const textInstance: TextInstance = child as any;
     if (textInstance.hidden) {
       return '';
     }
@@ -1141,8 +1146,10 @@ function createReactNoop(
       const previousTransition = ReactSharedInternals.T;
       const preivousEventPriority = currentEventPriority;
       try {
+        // $FlowFixMe[constant-condition]
         ReactSharedInternals.T = null;
         currentEventPriority = DiscreteEventPriority;
+        // $FlowFixMe[constant-condition]
         if (fn) {
           return fn();
         } else {
@@ -1164,9 +1171,12 @@ function createReactNoop(
   }
   function onDefaultTransitionIndicator(): void | (() => void) {}
 
+  // $FlowFixMe[recursive-definition]
+  // $FlowFixMe[definition-cycle]
   let idCounter = 0;
 
-  // $FlowFixMe
+  // $FlowFixMe[definition-cycle]
+  // $FlowFixMe[recursive-definition]
   const ReactNoop = {
     _Scheduler: Scheduler,
 
@@ -1220,9 +1230,10 @@ function createReactNoop(
         root = NoopRenderer.createContainer(
           // $FlowFixMe[incompatible-call] -- Discovered when typechecking noop-renderer
           container,
+          // $FlowFixMe[incompatible-type]
           tag,
           null,
-          // $FlowFixMe[incompatible-call] -- Discovered when typechecking noop-renderer
+          // $FlowFixMe[incompatible-type] -- Discovered when typechecking noop-renderer
           null,
           false,
           '',
@@ -1247,9 +1258,10 @@ function createReactNoop(
       const fiberRoot = NoopRenderer.createContainer(
         // $FlowFixMe[incompatible-call]
         container,
+        // $FlowFixMe[incompatible-type]
         ConcurrentRoot,
         null,
-        // $FlowFixMe[incompatible-call]
+        // $FlowFixMe[incompatible-type]
         null,
         false,
         '',
@@ -1398,9 +1410,11 @@ function createReactNoop(
       if (disableLegacyMode) {
         throw new Error('createLegacyRoot: Unsupported Legacy Mode API.');
       }
+      // $FlowFixMe[incompatible-type]
       const rootID = DEFAULT_ROOT_ID;
       const container = ReactNoop.getOrCreateRootContainer(rootID, LegacyRoot);
       const root = roots.get(container.rootID);
+      // $FlowFixMe[incompatible-type]
       NoopRenderer.updateContainer(element, root, null, callback);
     },
 
@@ -1411,9 +1425,11 @@ function createReactNoop(
     ) {
       const container = ReactNoop.getOrCreateRootContainer(
         rootID,
+        // $FlowFixMe[incompatible-type]
         ConcurrentRoot,
       );
       const root = roots.get(container.rootID);
+      // $FlowFixMe[incompatible-type]
       NoopRenderer.updateContainer(element, root, null, callback);
     },
 
@@ -1434,7 +1450,7 @@ function createReactNoop(
         return null;
       }
       // Unsound duck typing.
-      const component = (componentOrElement: any);
+      const component = componentOrElement as any;
       if (typeof component.id === 'number') {
         return component;
       }
@@ -1543,8 +1559,9 @@ function createReactNoop(
             // $FlowFixMe[unsafe-addition]
             log(indent + '- ' + child.type + '#' + child.id);
 
+            // $FlowFixMe[incompatible-type]
             logHostInstances(
-              // $FlowFixMe[incompatible-call]
+              // $FlowFixMe[incompatible-type]
               child.children,
               depth + 1,
             );
@@ -1562,11 +1579,16 @@ function createReactNoop(
         const update = first;
         if (update !== null) {
           do {
+            // $FlowFixMe[unsafe-addition]
+            // $FlowFixMe[prop-missing]
             log(
               '  '.repeat(depth + 1) + '~',
-              // $FlowFixMe
+              // $FlowFixMe[invalid-compare]
+              // $FlowFixMe[prop-missing]
+              // $FlowFixMe[unsafe-addition]
               '[' + update.expirationTime + ']',
             );
+            // $FlowFixMe[invalid-compare]
           } while (update !== null);
         }
 
@@ -1575,12 +1597,17 @@ function createReactNoop(
           const firstPending = lastPending.next;
           const pendingUpdate = firstPending;
           if (pendingUpdate !== null) {
+            // $FlowFixMe[unsafe-addition]
+            // $FlowFixMe[prop-missing]
             do {
               log(
+                // $FlowFixMe[invalid-compare]
                 '  '.repeat(depth + 1) + '~',
-                // $FlowFixMe
+                // $FlowFixMe[prop-missing]
+                // $FlowFixMe[unsafe-addition]
                 '[' + pendingUpdate.expirationTime + ']',
               );
+              // $FlowFixMe[invalid-compare]
             } while (pendingUpdate !== null && pendingUpdate !== firstPending);
           }
         }
@@ -1597,11 +1624,12 @@ function createReactNoop(
             // $FlowFixMe[prop-missing]
             fiber.childExpirationTime +
             (fiber.pendingProps ? '*' : '') +
+            // $FlowFixMe[incompatible-type]
             ']',
         );
         if (fiber.updateQueue) {
           logUpdateQueue(
-            // $FlowFixMe[incompatible-call]
+            // $FlowFixMe[incompatible-type]
             fiber.updateQueue,
             depth,
           );

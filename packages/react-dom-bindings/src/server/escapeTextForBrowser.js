@@ -114,7 +114,7 @@ function escapeTextForBrowser(text: string | number | boolean): string {
     // this shortcircuit helps perf for types that we know will never have
     // special characters, especially given that this function is used often
     // for numeric dom ids.
-    return '' + (text: any);
+    return '' + (text as any);
   }
   return escapeHtml(text);
 }

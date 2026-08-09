@@ -434,7 +434,7 @@ export default function setupHighlighter(
     lastHoveredNode = target;
 
     if (target.tagName === 'IFRAME') {
-      const iframe: HTMLIFrameElement = (target: any);
+      const iframe: HTMLIFrameElement = target as any;
       try {
         if (!iframesListeningTo.has(iframe)) {
           const window = iframe.contentWindow;
@@ -493,9 +493,9 @@ export default function setupHighlighter(
 
   function getEventTarget(event: MouseEvent): HTMLElement {
     if (event.composed) {
-      return (event.composedPath()[0]: any);
+      return event.composedPath()[0] as any;
     }
 
-    return (event.target: any);
+    return event.target as any;
   }
 }

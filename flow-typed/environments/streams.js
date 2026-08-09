@@ -42,7 +42,7 @@ declare class ReadableStreamReader {
 
   closed: boolean;
 
-  cancel(reason: string): void;
+  cancel(reason: string): Promise<void>;
   read(): Promise<{
     value: ?any,
     done: boolean,

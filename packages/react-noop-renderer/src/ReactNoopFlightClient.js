@@ -27,6 +27,7 @@ const decoderOptions = {stream: true};
 
 const {createResponse, createStreamState, processBinaryChunk, getRoot, close} =
   // $FlowFixMe[prop-missing]
+  // $FlowFixMe[incompatible-type]
   ReactFlightClient({
     createStringDecoder() {
       return new TextDecoder();
@@ -46,7 +47,7 @@ const {createResponse, createStreamState, processBinaryChunk, getRoot, close} =
       return readModule(idx);
     },
     bindToConsole(methodName, args, badgeName) {
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       return Function.prototype.bind.apply(
         // eslint-disable-next-line react-internal/no-production-logging
         console[methodName],
@@ -64,10 +65,10 @@ type ReadOptions = {|
 
 function read<T>(source: Source, options: ReadOptions): Thenable<T> {
   const response = createResponse(
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     source,
     null,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     null,
     undefined,
     undefined,
@@ -78,7 +79,7 @@ function read<T>(source: Source, options: ReadOptions): Thenable<T> {
     true,
     undefined,
     __DEV__ && options !== undefined && options.debugChannel !== undefined
-      ? // $FlowFixMe[incompatible-call]
+      ? // $FlowFixMe[incompatible-type]
         options.debugChannel.onMessage
       : undefined,
   );

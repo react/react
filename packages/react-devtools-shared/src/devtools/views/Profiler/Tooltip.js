@@ -101,6 +101,7 @@ function getMousePosition(
     // Position within the nearest position:relative container.
     let targetContainer = relativeContainer;
     while (targetContainer.parentElement != null) {
+      // $FlowFixMe[invalid-compare]
       if (targetContainer.style.position === 'relative') {
         break;
       } else {

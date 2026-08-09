@@ -406,6 +406,400 @@ describe('ReactDOMFizzServer', () => {
     );
   }
 
+  // @gate enableBrowserAPI
+  it('can opt a component into browser-only rendering', async () => {
+    let resolveBrowserText;
+    const browserText = new Promise(resolve => {
+      resolveBrowserText = resolve;
+    });
+    const browserOnly = ReactDOM.browser();
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(browserText);
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error, errorInfo) {
+          browserBailouts.push({error, errorInfo});
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].error).toBe(browserOnly);
+    expect(
+      normalizeCodeLocInfo(browserBailouts[0].errorInfo.componentStack),
+    ).toBe(componentStack(['BrowserOnly', 'Suspense', 'div', 'App']));
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await clientAct(() => {
+      resolveBrowserText('Browser');
+    });
+    assertLog(['Browser']);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('can opt a component into browser-only rendering after streaming the fallback', async () => {
+    let resolveServerReady;
+    const serverReady = new Promise(resolve => {
+      resolveServerReady = resolve;
+    });
+
+    function BrowserOnly() {
+      use(serverReady);
+      use(ReactDOM.browser());
+      return <span>Browser</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveServerReady();
+    });
+
+    expect(serverErrors).toEqual([]);
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('errors if browser-only content is rendered outside Suspense', async () => {
+    function createBrowserValue() {
+      return ReactDOM.browser();
+    }
+    const browserValue = createBrowserValue();
+
+    function BrowserOnly() {
+      use(browserValue);
+      return <span>Browser</span>;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    let shellReady = false;
+    let shellError;
+    await act(() => {
+      renderToPipeableStream(<BrowserOnly />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+        onShellReady() {
+          shellReady = true;
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.stack).toContain('BrowserOnly');
+    expect(shellError.cause).toBe(browserValue);
+    expect(shellError.cause.stack).toContain('createBrowserValue');
+    expect(shellReady).toBe(false);
+    expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('can abort all pending boundaries into browser-only rendering', async () => {
+    const never = new Promise(() => {});
+    let isClient = false;
+
+    function Pending({children}) {
+      if (!isClient) {
+        use(never);
+      }
+      return <span>{children}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>Shell</span>
+          <Suspense fallback={<span>Loading A</span>}>
+            <Pending>A</Pending>
+          </Suspense>
+          <Suspense fallback={<span>Loading B</span>}>
+            <Pending>B</Pending>
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    const browserValue = ReactDOM.browser();
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Shell</span>
+        <span>Loading A</span>
+        <span>Loading B</span>
+      </div>,
+    );
+
+    await act(() => {
+      abort(browserValue);
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toEqual([browserValue, browserValue]);
+
+    isClient = true;
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Shell</span>
+        <span>A</span>
+        <span>B</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('errors if aborted with browser() before the shell completes', async () => {
+    const never = new Promise(() => {});
+    const browserValue = ReactDOM.browser();
+
+    function PendingRoot() {
+      use(never);
+      return <span>Root</span>;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    let shellReady = false;
+    let shellError;
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<PendingRoot />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+        onShellReady() {
+          shellReady = true;
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+      abort = controls.abort;
+    });
+
+    await act(() => {
+      abort(browserValue);
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.cause).toBe(browserValue);
+    expect(shellReady).toBe(false);
+    expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('reports the browser value if it is thrown instead of passed to use', async () => {
+    const browserValue = ReactDOM.browser();
+
+    function BrowserOnly() {
+      throw browserValue;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <Suspense fallback={<span>Fallback</span>}>
+          <BrowserOnly />
+        </Suspense>,
+        {
+          onError(error) {
+            reportedErrors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(reportedErrors).toEqual([browserValue]);
+    expect(browserBailouts).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+  });
+
+  ['', 'BROWSER'].forEach(userDigest => {
+    it(`does not reserve the ${JSON.stringify(
+      userDigest,
+    )} user error digest for browser rendering`, async () => {
+      let isClient = false;
+      const serverError = new Error('Server error');
+
+      function ServerError() {
+        if (!isClient) {
+          throw serverError;
+        }
+        return <span>Client</span>;
+      }
+
+      function App() {
+        return (
+          <Suspense fallback={<span>Fallback</span>}>
+            <ServerError />
+          </Suspense>
+        );
+      }
+
+      const serverErrors = [];
+      await act(() => {
+        const {pipe} = renderToPipeableStream(<App />, {
+          onError(error) {
+            serverErrors.push(error);
+            return userDigest;
+          },
+        });
+        pipe(writable);
+      });
+
+      expect(serverErrors).toEqual([serverError]);
+      expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+
+      isClient = true;
+      const recoverableErrors = [];
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error);
+        },
+      });
+      await waitForAll([]);
+
+      expect(recoverableErrors).toHaveLength(1);
+      expect(recoverableErrors[0].digest).toBe(userDigest || undefined);
+      expect(getVisibleChildren(container)).toEqual(<span>Client</span>);
+    });
+  });
+
   it('should asynchronously load a lazy component', async () => {
     let resolveA;
     const LazyA = React.lazy(() => {
@@ -3562,6 +3956,129 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('reports abort errors for every suspended task when aborting fatals the shell', async () => {
+    const promise = new Promise(() => {});
+    const rendered = [];
+    function Suspend({label}) {
+      rendered.push(label);
+      use(promise);
+      return null;
+    }
+
+    function App() {
+      return (
+        <>
+          <Suspense fallback="Loading...">
+            <Suspend label="boundary" />
+          </Suspense>
+          <Suspend label="root one" />
+          <Suspend label="root two" />
+        </>
+      );
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      abort = renderToPipeableStream(<App />, {
+        onError(error) {
+          errors.push(error.message);
+        },
+        onShellError() {},
+      }).abort;
+    });
+
+    expect(rendered).toEqual(['boundary', 'root one', 'root two']);
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason', 'abort reason']);
+  });
+
+  it('uses a rejection reason from a lazy component before the abort finishes', async () => {
+    let reject;
+    const Lazy = React.lazy(
+      () =>
+        new Promise((resolve, rejectPromise) => {
+          reject = rejectPromise;
+        }),
+    );
+    const haltedPromise = new Promise(() => {});
+    function HaltedWait() {
+      use(haltedPromise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <>
+          <Suspense fallback="Loading lazy">
+            <Lazy />
+          </Suspense>
+          <Suspense fallback="Loading halted">
+            <HaltedWait />
+          </Suspense>
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+      reject(new Error('rejected during abort'));
+    });
+
+    expect(errors).toEqual(['rejected during abort', 'abort reason']);
+  });
+
+  it('does not report a rejection reason after abort has finished', async () => {
+    let reject;
+    const promise = new Promise((resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    function Wait() {
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <Suspense fallback="Loading">
+          <Wait />
+        </Suspense>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+        },
+      );
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    await act(() => {
+      abort(new Error('abort reason'));
+    });
+
+    await act(() => {
+      reject(new Error('rejected after abort'));
+    });
+
+    expect(errors).toEqual(['abort reason']);
+  });
+
   it('warns in dev if you access digest from errorInfo in onRecoverableError', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -3803,11 +4320,40 @@ describe('ReactDOMFizzServer', () => {
 
     expect(headers).toEqual({
       Link: `
-<non-responsive-preload>; rel=preload; as="image"; fetchpriority="high", 
-<non-responsive-img>; rel=preload; as="image"; fetchpriority="high"
+<non-responsive-preload>; rel=preload; as="image"; fetchpriority="high",
+ <non-responsive-img>; rel=preload; as="image"; fetchpriority="high"
 `
         .replaceAll('\n', '')
         .trim(),
+    });
+  });
+
+  it('preserves referrerPolicy for image preload headers', async () => {
+    let headers = null;
+    function onHeaders(x) {
+      headers = x;
+    }
+
+    function App() {
+      return (
+        <html>
+          <body>
+            <img
+              src="image-with-referrer-policy"
+              fetchPriority="high"
+              referrerPolicy="no-referrer"
+            />
+          </body>
+        </html>
+      );
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App />, {onHeaders});
+    });
+
+    expect(headers).toEqual({
+      Link: `<image-with-referrer-policy>; rel=preload; as="image"; fetchpriority="high"; referrerpolicy="no-referrer"`,
     });
   });
 
@@ -4003,10 +4549,46 @@ describe('ReactDOMFizzServer', () => {
     await act(() => pipe(testWritable));
     expect(didRender).toBe(false);
     expect(didFatal).toBe(didFatal);
-    expect(errors).toEqual([
-      'boom',
-      'The destination stream errored while writing data.',
-    ]);
+    expect(errors).toEqual(['boom']);
+  });
+
+  it('does not report aborts after fatally erroring', async () => {
+    const promise = new Promise(() => {});
+    function AsyncComp() {
+      React.use(promise);
+      return 'Async';
+    }
+
+    function ErrorComp() {
+      throw new Error('boom');
+    }
+
+    const errors = [];
+    let abort;
+    await act(() => {
+      abort = renderToPipeableStream(
+        <div>
+          <Suspense fallback="loading...">
+            <AsyncComp />
+          </Suspense>
+          <ErrorComp />
+        </div>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      ).abort;
+    });
+
+    expect(errors).toEqual(['boom']);
+
+    await act(() => {
+      abort(new Error('too late'));
+    });
+
+    expect(errors).toEqual(['boom']);
   });
 
   describe('error escaping', () => {
@@ -6986,6 +7568,107 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('reports an in-flight root task after another root task fatals while aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      return 'child';
+    }
+
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(new Error('abort reason'));
+      return <Child />;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <ComponentThatAborts />
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason']);
+  });
+
+  it('reports a root task before rendering a suspended child returned after aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      use(promise);
+      return null;
+    }
+
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(new Error('abort reason'));
+      return <Child />;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <ComponentThatAborts />
+        </>,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason', 'abort reason']);
+  });
+
+  it('reports a root task that suspends directly after aborting during render', async () => {
+    const promise = new Promise(() => {});
+    const abortRef = {current: null};
+    function ComponentThatAbortsAndSuspends() {
+      abortRef.current(new Error('abort reason'));
+      use(promise);
+      return null;
+    }
+
+    const errors = [];
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <ComponentThatAbortsAndSuspends />,
+        {
+          onError(error) {
+            errors.push(error.message);
+          },
+          onShellError() {},
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual(['abort reason']);
+  });
+
   it('can abort during render in a lazy initializer for a component', async () => {
     function Sibling() {
       return <p>sibling</p>;
@@ -7387,13 +8070,14 @@ describe('ReactDOMFizzServer', () => {
       return <span>hi</span>;
     }
 
-    // Recursively render a component tree deep enough to trigger stack overflow.
-    // Don't make this too short to not hit the limit but also not too deep to slow
-    // down the test.
+    // Recursively render a component tree deep enough to trigger stack overflow
+    // more than once. The first overflow is recovered by the renderNode
+    // trampoline; deeper trees must also recover when the retried task
+    // overflows again. Don't make this too deep to slow down the test.
     await act(() => {
       const {pipe} = renderToPipeableStream(
         <div>
-          <Recursive n={1000} />
+          <Recursive n={1200} />
         </div>,
       );
       pipe(writable);
@@ -7438,6 +8122,94 @@ describe('ReactDOMFizzServer', () => {
     }).rejects.toThrow('Maximum call stack size exceeded');
 
     expect(caughtError.message).toBe('Maximum call stack size exceeded');
+  });
+
+  it('can recover from very deep trees during resume to avoid stack overflow', async () => {
+    const promise = new Promise(() => {});
+
+    let prerendering = true;
+
+    // Deep wrappers above the postponed boundary. On resume, replaying this
+    // path goes through retryReplayTask → retryNode (no trampoline), so a
+    // tree deep enough to overflow must recover there — not only on the
+    // ordinary render retry path.
+    function Deep({n, children}) {
+      if (n > 0) {
+        return <Deep n={n - 1}>{children}</Deep>;
+      }
+      return children;
+    }
+
+    function Content() {
+      if (prerendering) {
+        return React.use(promise);
+      }
+      return <span>hi</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Deep n={1200}>
+            <Suspense fallback="Loading...">
+              <Content />
+            </Suspense>
+          </Deep>
+        </div>
+      );
+    }
+
+    const controller = new AbortController();
+    const errors = [];
+    let pendingPrerender;
+    await act(() => {
+      pendingPrerender = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
+        signal: controller.signal,
+        onError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    controller.abort('abort');
+
+    const prerendered = await pendingPrerender;
+    expect(errors).toEqual(['abort']);
+    expect(prerendered.postponed).not.toBe(null);
+
+    const preludeWritable = new Stream.PassThrough();
+    preludeWritable.setEncoding('utf8');
+    preludeWritable.on('data', chunk => {
+      writable.write(chunk);
+    });
+
+    await act(() => {
+      prerendered.prelude.pipe(preludeWritable);
+    });
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    prerendering = false;
+    errors.length = 0;
+
+    const resumed = await ReactDOMFizzServer.resumeToPipeableStream(
+      <App />,
+      JSON.parse(JSON.stringify(prerendered.postponed)),
+      {
+        onError(error) {
+          errors.push(error);
+        },
+      },
+    );
+
+    await act(() => {
+      resumed.pipe(writable);
+    });
+
+    expect(errors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>hi</span>
+      </div>,
+    );
   });
 
   it('client renders incomplete Suspense boundaries when the document is no longer loading when hydration begins', async () => {
@@ -8290,11 +9062,11 @@ describe('ReactDOMFizzServer', () => {
     }
 
     expect(thrownError).toBe('boom');
-    // TODO there should actually be three errors. One for the pending Suspense, one for the fallback task, and one for the task
-    // that does the abort itself. At the moment abort will flush queues and if there is no pending tasks will close the request before
-    // the task which initiated the abort can even be processed. This is a bug but not one that I am fixing with the current change
-    // so I am asserting the current behavior
     expect(errors).toEqual([
+      {
+        error: 'boom',
+        componentStack: componentStack(['Abort', 'body', 'html', 'App']),
+      },
       {
         error: 'boom',
         componentStack: componentStack([
@@ -8313,9 +9085,6 @@ describe('ReactDOMFizzServer', () => {
           'html',
           'App',
         ]),
-        // }, {
-        //   error: 'boom',
-        //   componentStack: componentStack(['Abort', 'body', 'html', 'App'])
       },
     ]);
 
@@ -9550,6 +10319,43 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>hello</span>
+      </div>,
+    );
+  });
+
+  it('outlines boundaries based on UTF-8 byte size, not code unit count', async () => {
+    // Boundaries are outlined when byteSize > 500, which streams the fallback
+    // first. Content is 200 three-byte characters: 600 UTF-8 bytes but only 200
+    // code units. The fallback should be shown initially because the boundary is
+    // large enough to outline. A string.length shortcut for byte size would
+    // count 200, stay under the threshold, and inline the content with no
+    // fallback shown — which would be incorrect.
+    const multiByte = '✓'.repeat(200);
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Waiting">
+            <span>{multiByte}</span>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(async () => {
+      renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
+        writable,
+      );
+      await jest.runAllTimers();
+      const temp = document.createElement('body');
+      temp.innerHTML = buffer;
+      // Fallback is shown because the boundary is outlined by its UTF-8 size.
+      expect(getVisibleChildren(temp)).toEqual(<div>Waiting</div>);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>{multiByte}</span>
       </div>,
     );
   });

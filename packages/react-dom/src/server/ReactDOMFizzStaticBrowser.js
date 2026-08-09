@@ -53,6 +53,7 @@ type Options = {
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   onHeaders?: (headers: Headers) => void,
@@ -84,6 +85,7 @@ function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -123,6 +125,7 @@ function prerender(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -131,10 +134,10 @@ function prerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -148,6 +151,7 @@ type ResumeOptions = {
   nonce?: NonceOption,
   signal?: AbortSignal,
   onError?: (error: mixed) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
 };
 
@@ -172,6 +176,7 @@ function resumeAndPrerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -187,6 +192,7 @@ function resumeAndPrerender(
       postponedState,
       resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -195,10 +201,10 @@ function resumeAndPrerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

@@ -1,4 +1,4 @@
-// @enableOptimizeForSSR
+// @outputMode:"ssr"
 function Component() {
   const [state, setState] = useState(0);
   const ref = useRef(null);

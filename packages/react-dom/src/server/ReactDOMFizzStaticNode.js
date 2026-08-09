@@ -57,6 +57,7 @@ type Options = {
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   onHeaders?: (headers: HeadersDescriptor) => void,
@@ -73,7 +74,7 @@ function createFakeWritableFromReadableStreamController(
 ): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       if (typeof chunk === 'string') {
         chunk = textEncoder.encode(chunk);
@@ -94,13 +95,13 @@ function createFakeWritableFromReadableStreamController(
         controller.close();
       }
     },
-  }: any);
+  } as any;
 }
 
 function createFakeWritableFromReadable(readable: any): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk) {
       return readable.push(chunk);
     },
@@ -110,7 +111,7 @@ function createFakeWritableFromReadable(readable: any): Writable {
     destroy(error) {
       readable.destroy(error);
     },
-  }: any);
+  } as any;
 }
 
 function prerenderToNodeStream(
@@ -155,6 +156,7 @@ function prerenderToNodeStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -163,10 +165,10 @@ function prerenderToNodeStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -206,6 +208,7 @@ function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -244,6 +247,7 @@ function prerender(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -252,10 +256,10 @@ function prerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -269,6 +273,7 @@ type ResumeOptions = {
   nonce?: NonceOption,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
 };
 
 function resumeAndPrerenderToNodeStream(
@@ -298,6 +303,7 @@ function resumeAndPrerenderToNodeStream(
       postponedState,
       resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -306,10 +312,10 @@ function resumeAndPrerenderToNodeStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -348,6 +354,7 @@ function resumeAndPrerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
 
@@ -363,6 +370,7 @@ function resumeAndPrerender(
       postponedState,
       resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -371,10 +379,10 @@ function resumeAndPrerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

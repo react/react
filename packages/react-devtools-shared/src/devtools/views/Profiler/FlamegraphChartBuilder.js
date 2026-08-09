@@ -52,7 +52,7 @@ export function getChartData({
 
   const chartDataKey = `${rootID}-${commitIndex}`;
   if (cachedChartData.has(chartDataKey)) {
-    return ((cachedChartData.get(chartDataKey): any): ChartData);
+    return cachedChartData.get(chartDataKey) as any as ChartData;
   }
 
   const idToDepthMap: Map<number, number> = new Map();

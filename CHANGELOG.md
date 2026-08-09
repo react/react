@@ -1,3 +1,40 @@
+## 19.2.7 (June 1, 2026)
+
+### React Server Components
+
+- Fixed missing `FormData` entries in Server Actions which regressed in 19.2.6 (@unstubbable [#36566](https://github.com/facebook/react/pull/36566))
+
+## 19.2.6 (May 6, 2026)
+
+### React Server Components
+
+- Type hardening and performance improvements (@eps1lon, @unstubbable [#36425](https://github.com/facebook/react/pull/36425))
+
+## 19.2.5 (March 18, 2026)
+
+### React Server Components
+
+- Add more cycle protections (@eps1lon, @unstubbable [#36236](https://github.com/facebook/react/pull/36236))
+
+## 19.2.4 (Jan 26, 2026)
+
+### React Server Components
+
+- Add more DoS mitigations to Server Actions, and harden Server Components (@gnoff, @lubieowoce, @sebmarkbage, @unstubbable [#35632](https://github.com/facebook/react/pull/35632))
+
+## 19.2.3 (Dec 11, 2025)
+
+### React Server Components
+
+- Add extra loop protection to React Server Functions (@sebmarkbage [#35351](https://github.com/facebook/react/pull/35351))
+
+## 19.2.2 (Dec 11, 2025)
+
+### React Server Components
+
+- Move `react-server-dom-webpack/*.unbundled` to private `react-server-dom-unbundled` (@eps1lon [#35290](https://github.com/facebook/react/pull/35290))
+- Patch Promise cycles and toString on Server Functions (@sebmarkbage, @unstubbable [#35289](https://github.com/facebook/react/pull/35289), [#35345](https://github.com/facebook/react/pull/35345))
+
 ## 19.2.1 (Dec 3, 2025)
 
 ### React Server Components
@@ -77,6 +114,43 @@ Read the [React 19.2 release post](https://react.dev/blog/2025/10/01/react-19-2)
 
 - [createContainer](https://github.com/facebook/react/blob/v19.2.0/packages/react-reconciler/src/ReactFiberReconciler.js#L255-L261) and [createHydrationContainer](https://github.com/facebook/react/blob/v19.2.0/packages/react-reconciler/src/ReactFiberReconciler.js#L305-L312) had their parameter order adjusted after `on*` handlers to account for upcoming experimental APIs
 
+## 19.1.8 (June 1, 2026)
+
+### React Server Components
+
+- Fixed missing `FormData` entries in Server Actions which regressed in 19.1.7 (@unstubbable [#36567](https://github.com/facebook/react/pull/36567))
+
+## 19.1.7 (May 6, 2026)
+
+### React Server Components
+
+- Type hardening and performance improvements (@eps1lon, @unstubbable [#36425](https://github.com/facebook/react/pull/36425))
+
+## 19.1.6 (March 18, 2026)
+
+### React Server Components
+
+- Add more cycle protections (@eps1lon, @unstubbable [#36236](https://github.com/facebook/react/pull/36236))
+
+## 19.1.5 (Jan 26, 2026)
+
+### React Server Components
+
+- Add more DoS mitigations to Server Actions, and harden Server Components (@gnoff, @lubieowoce, @sebmarkbage, @unstubbable [#35632](https://github.com/facebook/react/pull/35632))
+
+## 19.1.4 (Dec 11, 2025)
+
+### React Server Components
+
+- Add extra loop protection to React Server Functions (@sebmarkbage [#35351](https://github.com/facebook/react/pull/35351))
+
+## 19.1.3 (Dec 11, 2025)
+
+### React Server Components
+
+- Move `react-server-dom-webpack/*.unbundled` to private `react-server-dom-unbundled` (@eps1lon [#35290](https://github.com/facebook/react/pull/35290))
+- Patch Promise cycles and toString on Server Functions (@sebmarkbage, @unstubbable [#35289](https://github.com/facebook/react/pull/35289), [#35345](https://github.com/facebook/react/pull/35345))
+
 ## 19.1.2 (Dec 3, 2025)
 
 ### React Server Components
@@ -134,6 +208,42 @@ An Owner Stack is a string representing the components that are directly respons
 * Updated the server component wire format to remove IDs for hints and console.log because they have no return value [#31671](https://github.com/facebook/react/pull/31671)
 * Exposed `registerServerReference` in client builds to handle server references in different environments. [#32534](https://github.com/facebook/react/pull/32534)
 * Added react-server-dom-parcel package which integrates Server Components with the [Parcel bundler](https://parceljs.org/) [#31725](https://github.com/facebook/react/pull/31725), [#32132](https://github.com/facebook/react/pull/32132), [#31799](https://github.com/facebook/react/pull/31799), [#32294](https://github.com/facebook/react/pull/32294), [#31741](https://github.com/facebook/react/pull/31741)
+
+## 19.0.7 (June 1, 2026)
+
+### React Server Components
+
+- Fixed missing `FormData` entries in Server Actions which regressed in 19.0.6 (@unstubbable [#36568](https://github.com/facebook/react/pull/36568))
+
+## 19.0.6 (May 6, 2026)
+
+### React Server Components
+
+- Type hardening and performance improvements (@eps1lon, @unstubbable [#36425](https://github.com/facebook/react/pull/36425))
+
+## 19.0.5 (March 18, 2026)
+
+### React Server Components
+
+- Add more cycle protections (@eps1lon, @unstubbable [#36236](https://github.com/facebook/react/pull/36236))
+
+## 19.0.4 (Jan 26, 2026)
+
+### React Server Components
+
+- Add more DoS mitigations to Server Actions, and harden Server Components (@gnoff, @lubieowoce, @sebmarkbage, @unstubbable [#35632](https://github.com/facebook/react/pull/35632))
+
+## 19.0.3 (Dec 11, 2025)
+
+### React Server Components
+
+- Add extra loop protection to React Server Functions (@sebmarkbage [#35351](https://github.com/facebook/react/pull/35351))
+
+## 19.0.2 (Dec 11, 2025)
+
+### React Server Components
+
+- Patch Promise cycles and toString on Server Functions (@sebmarkbage, @unstubbable [#35289](https://github.com/facebook/react/pull/35289), [#35345](https://github.com/facebook/react/pull/35345))
 
 ## 19.0.1 (Dec 3, 2025)
 
