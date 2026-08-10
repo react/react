@@ -3137,4 +3137,221 @@ describe('ReactFlightDOMBrowser', () => {
 
     expect(container.innerHTML).toBe('<div></div>');
   });
+
+  // Long enough to exceed MAX_ROW_SIZE in ReactFlightServer, which makes the
+  // element prop that follows it be outlined into its own row.
+  const longText = 'a'.repeat(4000);
+
+  it('should not have missing key warnings when a static child is outlined', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {element}
+        </div>
+      );
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  it('should not have missing key warnings when an outlined static child is blocked on debug info', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {element}
+        </div>
+      );
+    });
+
+    let debugReadableStreamController;
+
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      debugChannel: {readable: createDelayedStream(debugReadableStream)},
+    });
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    // Wait for the debug info to be processed.
+    await act(() => {});
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  it('should have missing key warnings when an outlined element is used in an array', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {[element]}
+        </div>
+      );
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `div`. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in span (at **)',
+    ]);
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  describe('with console.createTask', () => {
+    // Stands in for what a browser console does with fake tasks: whatever runs
+    // inside a task is shown under that task's name in the async stack. This is
+    // the same setup that `ReactServer-test` uses to assert on task names.
+    let currentTask;
+
+    beforeEach(() => {
+      const {AsyncLocalStorage} = require('node:async_hooks');
+      currentTask = new AsyncLocalStorage();
+      (console: any).createTask = taskName => ({
+        run: taskFn => {
+          const parentTask = currentTask.getStore() || '';
+          return currentTask.run(parentTask + '\n' + taskName, taskFn);
+        },
+      });
+
+      // `supportsCreateTask` is captured when ReactFlightClient is required, so
+      // the client modules need to be required again with this in place.
+      jest.resetModules();
+      patchMessageChannel();
+      ({act} = require('internal-test-utils'));
+      React = require('react');
+      use = React.use;
+      ReactDOMClient = require('react-dom/client');
+      ReactServerDOMClient = require('react-server-dom-webpack/client');
+    });
+
+    afterEach(() => {
+      delete (console: any).createTask;
+    });
+
+    // @gate __DEV__
+    it('renders a client component inside a "use client" task', async () => {
+      let taskWhileRendering;
+
+      const ClientComponent = clientExports(function ClientComponent() {
+        taskWhileRendering = currentTask.getStore();
+        return <span>Hello</span>;
+      });
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(
+          <ClientComponent />,
+          webpackMap,
+        ),
+      );
+
+      function ClientRoot({response}) {
+        return use(response);
+      }
+
+      const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<ClientRoot response={response} />);
+      });
+
+      expect(container.innerHTML).toBe('<span>Hello</span>');
+      // The element's type is a lazy node wrapping the client reference, so the
+      // task that the component renders in marks the boundary into the client.
+      expect(taskWhileRendering).toBe('\n"use client"');
+    });
+  });
 });

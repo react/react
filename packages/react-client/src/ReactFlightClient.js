@@ -1280,10 +1280,11 @@ function getTaskName(type: mixed): string {
     type !== null &&
     type.$$typeof === REACT_LAZY_TYPE
   ) {
-    if (type._init === readChunk) {
-      // This is a lazy node created by Flight. It is probably a client reference.
-      // We use the "use client" string to indicate that this is the boundary into
-      // the client. There will only be one for any given owner chain.
+    if (type._payload instanceof ReactPromise) {
+      // This is a lazy node created by Flight, i.e. it wraps a chunk. It is
+      // probably a client reference. We use the "use client" string to indicate
+      // that this is the boundary into the client. There will only be one for
+      // any given owner chain.
       return '"use client"';
     }
     // We don't want to eagerly initialize the initializer in DEV mode so we can't
@@ -1374,16 +1375,6 @@ function initializeElement(
   }
 
   if (lazyNode !== null) {
-    // In case the JSX runtime has validated the lazy type as a static child, we
-    // need to transfer this information to the element.
-    if (
-      lazyNode._store &&
-      lazyNode._store.validated &&
-      !element._store.validated
-    ) {
-      element._store.validated = lazyNode._store.validated;
-    }
-
     // If the lazy node is initialized, we move its debug info to the inner
     // value.
     if (lazyNode._payload.status === INITIALIZED && lazyNode._debugInfo) {
@@ -1548,7 +1539,27 @@ function createLazyChunkWrapper<T>(
     // Forward the live array
     lazyType._debugInfo = chunk._debugInfo;
     // Initialize a store for key validation by the JSX runtime.
-    lazyType._store = {validated: validated};
+    const store = {validated: validated};
+    lazyType._store = store;
+    lazyType._init = (payload: SomeChunk<T>) => {
+      const value: any = readChunk(payload);
+      // The JSX runtime can only validate the lazy node as a static child
+      // because the value it refers to might not exist yet at that point, e.g.
+      // if it's an outlined row that hasn't been initialized. So we transfer
+      // the validation to the value when the lazy node is unwrapped. If the
+      // value is another lazy node, unwrapping that one forwards the validation
+      // further.
+      if (
+        store.validated &&
+        value !== null &&
+        typeof value === 'object' &&
+        value._store &&
+        !value._store.validated
+      ) {
+        value._store.validated = store.validated;
+      }
+      return value;
+    };
   }
   return lazyType;
 }
