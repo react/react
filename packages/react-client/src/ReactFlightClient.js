@@ -1526,6 +1526,24 @@ function createElement(
   return element;
 }
 
+function transferValidation(store: {validated: 0 | 1 | 2}, value: mixed): void {
+  if (store.validated && typeof value === 'object' && value !== null) {
+    const valueStore = (value as any)._store;
+    if (valueStore && !valueStore.validated) {
+      valueStore.validated = store.validated;
+    }
+  }
+}
+
+function readChunkAndTransferValidation<T>(
+  store: {validated: 0 | 1 | 2},
+  payload: SomeChunk<T>,
+): T {
+  const value: T = readChunk(payload);
+  transferValidation(store, value);
+  return value;
+}
+
 function createLazyChunkWrapper<T>(
   chunk: SomeChunk<T>,
   validated: 0 | 1 | 2, // DEV-only
@@ -1538,28 +1556,16 @@ function createLazyChunkWrapper<T>(
   if (__DEV__) {
     // Forward the live array
     lazyType._debugInfo = chunk._debugInfo;
-    // Initialize a store for key validation by the JSX runtime.
+    // Initialize a store for key validation by the JSX runtime. It can only
+    // validate the lazy node itself, because the value it refers to might not
+    // exist yet at that point, e.g. if it's an outlined row that hasn't been
+    // initialized. So the validation is transferred to the value when the lazy
+    // node is unwrapped. If the value is another lazy node, unwrapping that one
+    // forwards the validation further.
     const store = {validated: validated};
     lazyType._store = store;
-    lazyType._init = (payload: SomeChunk<T>) => {
-      const value: any = readChunk(payload);
-      // The JSX runtime can only validate the lazy node as a static child
-      // because the value it refers to might not exist yet at that point, e.g.
-      // if it's an outlined row that hasn't been initialized. So we transfer
-      // the validation to the value when the lazy node is unwrapped. If the
-      // value is another lazy node, unwrapping that one forwards the validation
-      // further.
-      if (
-        store.validated &&
-        value !== null &&
-        typeof value === 'object' &&
-        value._store &&
-        !value._store.validated
-      ) {
-        value._store.validated = store.validated;
-      }
-      return value;
-    };
+    // $FlowFixMe[incompatible-type] `bind` loses the type argument.
+    lazyType._init = readChunkAndTransferValidation.bind(null, store);
   }
   return lazyType;
 }
