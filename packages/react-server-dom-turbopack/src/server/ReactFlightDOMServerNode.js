@@ -56,6 +56,7 @@ import {
 
 export {
   registerServerReference,
+  registerServerObjectReference,
   registerClientReference,
   createClientModuleProxy,
 } from '../ReactFlightTurbopackReferences';

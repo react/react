@@ -42,6 +42,7 @@ import {
   registerTemporaryReference,
 } from './ReactFlightServerTemporaryReferences';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
+import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 import getPrototypeOf from 'shared/getPrototypeOf';
@@ -1624,6 +1625,24 @@ function parseModelString(
           null,
           loadServerReference,
         );
+      }
+      case 'H': {
+        if (enableFlightObjectReferences) {
+          // Server Reference to an object. Its metadata carries only an id —
+          // no bound arguments — and it resolves through the same manifest
+          // lookup as a function reference, which returns the module export
+          // without calling it.
+          const ref = value.slice(2);
+          return getOutlinedModel(
+            response,
+            ref,
+            obj,
+            key,
+            null,
+            loadServerReference,
+          );
+        }
+        return undefined;
       }
       case 'T': {
         // Temporary Reference

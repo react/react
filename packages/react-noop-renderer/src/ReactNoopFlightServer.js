@@ -57,6 +57,9 @@ const ReactNoopFlightServer = ReactFlightServer({
   isServerReference(reference: Object): boolean {
     return reference.$$typeof === Symbol.for('react.server.reference');
   },
+  isServerObjectReference(reference: Object): boolean {
+    return reference.$$typeof === Symbol.for('react.server.object.reference');
+  },
   getClientReferenceKey(reference: Object): Object {
     return reference;
   },

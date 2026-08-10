@@ -17,6 +17,7 @@ import {
   enableComponentPerformanceTrack,
   enableAsyncDebugInfo,
   enableFlightWeakThenables,
+  enableFlightObjectReferences,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -85,6 +86,7 @@ import {
   getClientReferenceKey,
   isClientReference,
   isServerReference,
+  isServerObjectReference,
   supportsRequestStorage,
   requestStorage,
   createHints,
@@ -615,6 +617,7 @@ export type Request = {
   writtenSymbols: Map<symbol, number>,
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
+  writtenServerObjectReferences: Map<Object, number>,
   writtenObjects: WeakMap<Reference, string>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
@@ -740,6 +743,7 @@ function RequestInstance(
   this.writtenSymbols = new Map();
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
+  this.writtenServerObjectReferences = new Map();
   this.writtenObjects = new WeakMap();
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
@@ -3072,6 +3076,10 @@ function serializeServerReferenceID(id: number): string {
   return '$h' + id.toString(16);
 }
 
+function serializeServerObjectReferenceID(id: number): string {
+  return '$H' + id.toString(16);
+}
+
 function serializeSymbolReference(name: string): string {
   return '$S' + name;
 }
@@ -3338,6 +3346,27 @@ function serializeServerReference(
   const metadataId = outlineModel(request, serverReferenceMetadata);
   writtenServerReferences.set(serverReference, metadataId);
   return serializeServerReferenceID(metadataId);
+}
+
+function serializeServerObjectReference(
+  request: Request,
+  serverObjectReference: Object,
+): string {
+  const writtenServerObjectReferences = request.writtenServerObjectReferences;
+  const existingId = writtenServerObjectReferences.get(serverObjectReference);
+  if (existingId !== undefined) {
+    return serializeServerObjectReferenceID(existingId);
+  }
+
+  // Object references share the manifest id format with function references,
+  // but have no bound arguments and no debug metadata.
+  const id = getServerReferenceId(
+    request.bundlerConfig,
+    serverObjectReference as any,
+  );
+  const metadataId = outlineModel(request, {id});
+  writtenServerObjectReferences.set(serverObjectReference, metadataId);
+  return serializeServerObjectReferenceID(metadataId);
 }
 
 function serializeTemporaryReference(
@@ -3931,6 +3960,13 @@ function renderModelDestructive(
         parentPropertyName,
         value as any,
       );
+    }
+
+    if (enableFlightObjectReferences && isServerObjectReference(value)) {
+      // An object registered as a Server Reference. This must be checked
+      // before the thenable case below so that a reference that happens to
+      // be a Promise is serialized by reference instead of being awaited.
+      return serializeServerObjectReference(request, value as any);
     }
 
     if (request.temporaryReferences !== undefined) {

@@ -30,6 +30,7 @@ export type ClientReferenceKey = string;
 export {
   isClientReference,
   isServerReference,
+  isServerObjectReference,
 } from '../ReactFlightESMReferences';
 
 export function getClientReferenceKey(

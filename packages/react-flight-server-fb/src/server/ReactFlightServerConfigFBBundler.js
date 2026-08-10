@@ -24,7 +24,11 @@ export type ClientReferenceMetadata = ClientReference<any>;
 
 export type ClientReferenceKey = string;
 
-export {isClientReference, isServerReference} from '../ReactFlightFBReferences';
+export {
+  isClientReference,
+  isServerReference,
+  isServerObjectReference,
+} from '../ReactFlightFBReferences';
 
 export function getClientReferenceKey(
   reference: ClientReference<any>,

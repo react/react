@@ -37,6 +37,9 @@ import {writeTemporaryReference} from './ReactFlightTemporaryReferences';
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
 
+import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
+import {createOpaqueServerObjectReference} from 'shared/ReactFlightOpaqueReferences';
+
 const ObjectPrototype = Object.prototype;
 
 import {
@@ -70,6 +73,12 @@ type ServerReferenceClosure = {
 };
 
 const knownServerReferences: WeakMap<Function, ServerReferenceClosure> =
+  new WeakMap();
+
+// Server References to objects are tracked separately from function
+// references. They have no bound arguments and are never callable, so a
+// reference of one kind must not be usable where the other is expected.
+const knownServerObjectReferences: WeakMap<Function, ServerReferenceId> =
   new WeakMap();
 
 // Serializable values
@@ -110,6 +119,10 @@ function serializePromiseID(id: number): string {
 
 function serializeServerReferenceID(id: number): string {
   return '$h' + id.toString(16);
+}
+
+function serializeServerObjectReferenceID(id: number): string {
+  return '$H' + id.toString(16);
 }
 
 function serializeTemporaryReferenceMarker(): string {
@@ -832,6 +845,38 @@ export function processReply(
         writtenObjects.set(value, serverReferenceId);
         return serverReferenceId;
       }
+      if (enableFlightObjectReferences) {
+        // Opaque object references are function-typed (they're Proxies over a
+        // function target, like Temporary References) but are tracked and
+        // encoded separately from function references. Like function
+        // references, they must be checked before the temporary reference
+        // fallback below — a Server Reference is never turned into a
+        // temporary reference.
+        const objectReferenceId = knownServerObjectReferences.get(value);
+        if (objectReferenceId !== undefined) {
+          const existingReference = writtenObjects.get(value);
+          if (existingReference !== undefined) {
+            return existingReference;
+          }
+          const referenceJSON = JSON.stringify(
+            {id: objectReferenceId},
+            resolveToJSON,
+          );
+          if (formData === null) {
+            // Upgrade to use FormData to allow us to stream this value.
+            formData = new FormData();
+          }
+          // The reference to this object came from the same client so we can
+          // pass it back to the server where it resolves to the object.
+          const refId = nextPartId++;
+          formData.set(formFieldPrefix + refId, referenceJSON);
+          const serverObjectReferenceId =
+            serializeServerObjectReferenceID(refId);
+          // Store the reference ID for deduplication.
+          writtenObjects.set(value, serverObjectReferenceId);
+          return serverObjectReferenceId;
+        }
+      }
       if (temporaryReferences !== undefined && key.indexOf(':') === -1) {
         // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
         const parentReference = writtenObjects.get(parent);
@@ -1235,6 +1280,15 @@ export function registerServerReference<T: Function>(
   encodeFormAction?: EncodeFormActionCallback,
 ): ServerReference<T> {
   registerBoundServerReference(reference, id, null, encodeFormAction);
+  return reference;
+}
+
+export function createServerObjectReference(id: ServerReferenceId): mixed {
+  const reference = createOpaqueServerObjectReference();
+  // Register the reference so that passing it back to the server encodes it
+  // by id. Object references are tracked separately from function references
+  // so that one kind can never be encoded as the other.
+  knownServerObjectReferences.set(reference as any, id);
   return reference;
 }
 

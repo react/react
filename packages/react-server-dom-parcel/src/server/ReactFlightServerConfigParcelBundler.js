@@ -25,6 +25,7 @@ export type ClientReferenceKey = string;
 export {
   isClientReference,
   isServerReference,
+  isServerObjectReference,
 } from '../ReactFlightParcelReferences';
 
 export function getClientReferenceKey(

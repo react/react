@@ -34,6 +34,7 @@ export type ClientReferenceKey = string;
 export {
   isClientReference,
   isServerReference,
+  isServerObjectReference,
 } from '../ReactFlightWebpackReferences';
 
 export function getClientReferenceKey(

@@ -17,6 +17,7 @@ export opaque type ServerReferenceId: any = mixed;
 export opaque type ClientReferenceKey: any = mixed;
 export const isClientReference = $$$config.isClientReference;
 export const isServerReference = $$$config.isServerReference;
+export const isServerObjectReference = $$$config.isServerObjectReference;
 export const getClientReferenceKey = $$$config.getClientReferenceKey;
 export const resolveClientReferenceMetadata =
   $$$config.resolveClientReferenceMetadata;

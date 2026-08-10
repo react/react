@@ -25,6 +25,7 @@ global.__turbopack_require__ = function (id) {
 const Server = require('react-server-dom-turbopack/server');
 const registerClientReference = Server.registerClientReference;
 const registerServerReference = Server.registerServerReference;
+const registerServerObjectReference = Server.registerServerObjectReference;
 const createClientModuleProxy = Server.createClientModuleProxy;
 
 exports.turbopackMap = turbopackClientMap;
@@ -174,24 +175,48 @@ exports.serverExports = function serverExports(moduleExports) {
     };
   }
 
-  if (typeof exports === 'function') {
+  if (typeof moduleExports === 'function') {
     // The module exports a function directly,
     registerServerReference(
-      (exports: any),
-      idx,
+      (moduleExports: any),
+      path,
       // Represents the whole Module object instead of a particular import.
       null,
     );
   } else {
-    const keys = Object.keys(exports);
+    const keys = Object.keys(moduleExports);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      const value = exports[keys[i]];
+      const value = moduleExports[key];
       if (typeof value === 'function') {
-        registerServerReference((value: any), idx, key);
+        registerServerReference((value: any), path, key);
       }
     }
   }
 
+  return moduleExports;
+};
+
+// Simulates a "use server" module whose exports include objects, which are
+// registered as object Server References.
+exports.serverObjectExports = function serverObjectExports(moduleExports) {
+  const idx = '' + turbopackModuleIdx++;
+  turbopackServerModules[idx] = moduleExports;
+  const path = url.pathToFileURL(idx).href;
+  turbopackServerMap[path] = {
+    id: idx,
+    chunks: [],
+    name: '*',
+  };
+  const keys = Object.keys(moduleExports);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const value = moduleExports[key];
+    if (typeof value === 'function') {
+      registerServerReference((value: any), path, key);
+    } else {
+      registerServerObjectReference((value: any), path, key);
+    }
+  }
   return moduleExports;
 };

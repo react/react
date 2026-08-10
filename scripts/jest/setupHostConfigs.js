@@ -158,6 +158,7 @@ jest.mock('react-server/flight', () => {
     jest.mock('react-server/src/ReactFlightServerConfigBundlerCustom', () => ({
       isClientReference: config.isClientReference,
       isServerReference: config.isServerReference,
+      isServerObjectReference: config.isServerObjectReference,
       getClientReferenceKey: config.getClientReferenceKey,
       resolveClientReferenceMetadata: config.resolveClientReferenceMetadata,
     }));
