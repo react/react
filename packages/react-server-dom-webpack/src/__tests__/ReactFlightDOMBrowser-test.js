@@ -3288,6 +3288,77 @@ describe('ReactFlightDOMBrowser', () => {
     );
   });
 
+  it('should have missing key warnings when an outlined element that is blocked on debug info is used in an array', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {[element]}
+        </div>
+      );
+    });
+
+    let debugReadableStreamController;
+
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      debugChannel: {readable: createDelayedStream(debugReadableStream)},
+    });
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    // The element can only be rendered, and therefore validated, after it's
+    // unblocked by the debug info.
+    await act(() => {});
+
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `div`. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in span (at **)',
+    ]);
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
   describe('with console.createTask', () => {
     // Stands in for what a browser console does with fake tasks: whatever runs
     // inside a task is shown under that task's name in the async stack. This is
