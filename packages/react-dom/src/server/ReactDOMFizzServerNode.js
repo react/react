@@ -76,6 +76,7 @@ type Options = {
   onShellError?: (error: mixed) => void,
   onAllReady?: () => void,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   formState?: ReactFormState<any, any> | null,
@@ -89,6 +90,7 @@ type ResumeOptions = {
   onShellError?: (error: mixed) => void,
   onAllReady?: () => void,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
 };
 
 type PipeableStream = {
@@ -120,6 +122,7 @@ function createRequestImpl(children: ReactNodeList, options: void | Options) {
     createRootFormatContext(options ? options.namespaceURI : undefined),
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
+    options ? options.onBrowserBailout : undefined,
     options ? options.onAllReady : undefined,
     options ? options.onShellReady : undefined,
     options ? options.onShellError : undefined,
@@ -278,6 +281,7 @@ function renderToReadableStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
@@ -313,6 +317,7 @@ function resumeRequestImpl(
       options ? options.nonce : undefined,
     ),
     options ? options.onError : undefined,
+    options ? options.onBrowserBailout : undefined,
     options ? options.onAllReady : undefined,
     options ? options.onShellReady : undefined,
     options ? options.onShellError : undefined,
@@ -415,6 +420,7 @@ function resume(
         options ? options.nonce : undefined,
       ),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
