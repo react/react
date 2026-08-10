@@ -42,6 +42,7 @@ import {
   registerTemporaryReference,
 } from './ReactFlightServerTemporaryReferences';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
+import {enableFlightObjectReferences} from 'shared/ReactFeatureFlags';
 
 import hasOwnProperty from 'shared/hasOwnProperty';
 import getPrototypeOf from 'shared/getPrototypeOf';
@@ -420,20 +421,46 @@ function resolveIteratorResultChunk<T>(
   resolveModelChunk(response, chunk, iteratorResultJSON, -1);
 }
 
-function loadServerReference<A: Iterable<any>, T>(
+// Metadata comes from the client. A private key prevents a supplied cache
+// entry from bypassing validation of the module export.
+const SERVER_OBJECT_REFERENCE_PROMISE = Symbol();
+
+function requireServerObjectReference(reference: ServerReference<any>): Object {
+  const value = requireModule(reference);
+  if (typeof value !== 'object' || value === null) {
+    throw new Error(
+      'Expected a Server Reference to an object to resolve to an object.',
+    );
+  }
+  return value;
+}
+
+function loadServerObjectReference(
+  response: Response,
+  metaData: {id: any},
+  parentObject: Object,
+  key: string,
+): mixed {
+  // Objects can be stored under a property named "then". Validate the module
+  // export before assigning it so it cannot turn its parent into a thenable.
+  return loadServerReference(response, metaData, parentObject, key, true);
+}
+
+function loadServerReference<T>(
   response: Response,
   metaData: {
     id: any,
-    bound: null | Thenable<Array<any>>,
+    bound?: null | Thenable<Array<any>>,
   },
   parentObject: Object,
   key: string,
-): (...A) => Promise<T> {
+  isObjectReference: boolean = false,
+): T {
   const id: ServerReferenceId = metaData.id;
   if (typeof id !== 'string') {
     return null as any;
   }
-  if (key === 'then') {
+  if (key === 'then' && !isObjectReference) {
     // This should never happen because we always serialize objects with then-functions
     // as "thenable" which reduces to ReactPromise with no other fields.
     return null as any;
@@ -442,7 +469,10 @@ function loadServerReference<A: Iterable<any>, T>(
   // Check for a cached promise from a previous call with the same metadata.
   // This handles deduplication when the same server reference appears multiple
   // times in the payload.
-  const cachedPromise: SomeChunk<T> | void = (metaData as any).$$promise;
+  const promiseKey = isObjectReference
+    ? SERVER_OBJECT_REFERENCE_PROMISE
+    : '$$promise';
+  const cachedPromise: SomeChunk<T> | void = (metaData as any)[promiseKey];
   if (cachedPromise !== undefined) {
     if (cachedPromise.status === INITIALIZED) {
       // The value was already resolved by a previous call.
@@ -482,21 +512,23 @@ function loadServerReference<A: Iterable<any>, T>(
   // promise to be used for subsequent calls.
   // $FlowFixMe[invalid-constructor] Flow doesn't support functions as constructors
   const blockedPromise: BlockedChunk<T> = new ReactPromise(BLOCKED, null, null);
-  (metaData as any).$$promise = blockedPromise;
+  (metaData as any)[promiseKey] = blockedPromise;
 
   const serverReference: ServerReference<T> =
     resolveServerReference<$FlowFixMe>(response._bundlerConfig, id);
   // We expect most servers to not really need this because you'd just have all
   // the relevant modules already loaded but it allows for lazy loading of code
   // if needed.
-  const bound = metaData.bound;
+  const bound = isObjectReference ? null : metaData.bound;
   let serverReferencePromise: null | Thenable<any> =
     preloadModule(serverReference);
   if (!serverReferencePromise) {
     if (bound instanceof ReactPromise) {
       serverReferencePromise = Promise.resolve(bound);
     } else {
-      const resolvedValue = requireModule(serverReference) as any;
+      const resolvedValue = isObjectReference
+        ? requireServerObjectReference(serverReference)
+        : (requireModule(serverReference) as any);
       // Resolve the cached promise synchronously.
       const initializedPromise: InitializedChunk<T> = blockedPromise as any;
       initializedPromise.status = INITIALIZED;
@@ -523,11 +555,19 @@ function loadServerReference<A: Iterable<any>, T>(
   }
 
   function fulfill(): void {
-    let resolvedValue = requireModule(serverReference) as any;
+    let resolvedValue;
+    try {
+      resolvedValue = isObjectReference
+        ? requireServerObjectReference(serverReference)
+        : (requireModule(serverReference) as any);
+    } catch (error) {
+      reject(error);
+      return;
+    }
 
-    if (metaData.bound) {
+    if (bound) {
       // This promise is coming from us and should have initialized by now.
-      const promiseValue = (metaData.bound as any).value;
+      const promiseValue = (bound as any).value;
       const boundArgs: Array<any> = isArray(promiseValue)
         ? promiseValue.slice(0)
         : [];
@@ -1624,6 +1664,24 @@ function parseModelString(
           null,
           loadServerReference,
         );
+      }
+      case 'H': {
+        if (enableFlightObjectReferences) {
+          // Server Reference to an object. Its metadata carries only an id —
+          // no bound arguments — and it resolves through the same manifest
+          // lookup as a function reference, which returns the module export
+          // without calling it.
+          const ref = value.slice(2);
+          return getOutlinedModel(
+            response,
+            ref,
+            obj,
+            key,
+            null,
+            loadServerObjectReference,
+          );
+        }
+        return undefined;
       }
       case 'T': {
         // Temporary Reference
