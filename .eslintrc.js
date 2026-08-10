@@ -337,8 +337,7 @@ module.exports = {
         'packages/react-debug-tools/**/*.js',
         'packages/react-devtools-extensions/**/*.js',
         'packages/react-devtools-facade/**/*.js',
-        'packages/react-devtools-timeline/**/*.js',
-        'packages/react-native-renderer/**/*.js',
+          'packages/react-native-renderer/**/*.js',
         'packages/eslint-plugin-react-hooks/**/*.js',
         'packages/jest-react/**/*.js',
         'packages/internal-test-utils/**/*.js',
@@ -464,7 +463,6 @@ module.exports = {
       files: ['packages/react-native-renderer/**/*.js'],
       globals: {
         nativeFabricUIManager: 'readonly',
-        RN$enableMicrotasksInReact: 'readonly',
         RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
       },
     },

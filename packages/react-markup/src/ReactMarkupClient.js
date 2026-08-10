@@ -85,6 +85,7 @@ export function experimental_renderToHTML(
       undefined,
       undefined,
       undefined,
+      undefined,
     );
     if (options && options.signal) {
       const signal = options.signal;

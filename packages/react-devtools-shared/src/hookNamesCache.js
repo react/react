@@ -99,7 +99,7 @@ export function loadHookNames(
         rejectCallbacks.add(reject);
       },
 
-      // Optional property used by Timeline:
+      // Optional property, read by React to name this I/O in async debug info:
       displayName: `Loading hook names for ${element.displayName || 'Unknown'}`,
     };
 

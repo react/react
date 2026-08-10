@@ -29,9 +29,12 @@ type Props = {
 function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
   const {
     chartData,
+    currentSearchMatchID,
+    matchedFiberIDs,
     onElementMouseEnter,
     onElementMouseLeave,
     scaleX,
+    searchRegExp,
     selectedChartNode,
     selectedChartNodeIndex,
     selectFiber,
@@ -115,12 +118,15 @@ function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
           <ChartNode
             color={color}
             height={lineHeight}
+            isCurrentSearchMatch={id === currentSearchMatchID}
             isDimmed={index < selectedChartNodeIndex}
+            isSearchMatch={matchedFiberIDs.has(id)}
             key={id}
             label={label}
             onClick={event => handleClick(event, id, name)}
             onMouseEnter={() => handleMouseEnter(chartNode)}
             onMouseLeave={handleMouseLeave}
+            searchRegExp={searchRegExp}
             textStyle={{color: textColor}}
             width={nodeWidth}
             x={nodeOffset - selectedNodeOffset}

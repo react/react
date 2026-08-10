@@ -57,6 +57,7 @@ type Options = {
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   onHeaders?: (headers: HeadersDescriptor) => void,
@@ -155,6 +156,7 @@ function prerenderToNodeStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -245,6 +247,7 @@ function prerender(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -270,6 +273,7 @@ type ResumeOptions = {
   nonce?: NonceOption,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
 };
 
 function resumeAndPrerenderToNodeStream(
@@ -299,6 +303,7 @@ function resumeAndPrerenderToNodeStream(
       postponedState,
       resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,
@@ -365,6 +370,7 @@ function resumeAndPrerender(
       postponedState,
       resumeRenderState(postponedState.resumableState, undefined),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       undefined,
       undefined,

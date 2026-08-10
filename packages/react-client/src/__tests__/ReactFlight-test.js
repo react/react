@@ -3915,6 +3915,25 @@ describe('ReactFlight', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span>Hello, Seb</span>);
   });
 
+  it('restores the stack trace limit after recreating JSX call sites', async () => {
+    function Component() {
+      return ReactServer.createElement('div');
+    }
+
+    const transport = ReactNoopFlightServer.render(
+      ReactServer.createElement(Component),
+    );
+    const previousStackTraceLimit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 50;
+    try {
+      await ReactNoopFlightClient.read(transport);
+
+      expect(Error.stackTraceLimit).toBe(50);
+    } finally {
+      Error.stackTraceLimit = previousStackTraceLimit;
+    }
+  });
+
   // @gate __DEV__
   it('can get the component owner stacks during rendering in dev', () => {
     let stack;

@@ -375,7 +375,7 @@ describe('ReactDOMFizzShellHydration', () => {
     expect(container.textContent).toBe('New screen');
   });
 
-  it('TODO: A large component stack causes SSR to stack overflow', async () => {
+  it('recovers from a large component stack during SSR', async () => {
     spyOnDevAndProd(console, 'error').mockImplementation(() => {});
 
     function NestedComponent({depth}: {depth: number}) {
@@ -385,16 +385,16 @@ describe('ReactDOMFizzShellHydration', () => {
       return <NestedComponent depth={depth - 1} />;
     }
 
-    // Server render
+    await resolveText('Shell');
     await serverAct(async () => {
-      ReactDOMFizzServer.renderToPipeableStream(
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
         <NestedComponent depth={3000} />,
       );
+      pipe(writable);
     });
-    expect(console.error).toHaveBeenCalledTimes(1);
-    expect(console.error.mock.calls[0][0].toString()).toBe(
-      'RangeError: Maximum call stack size exceeded',
-    );
+    expect(console.error).not.toHaveBeenCalled();
+    assertLog(['Shell']);
+    expect(container.textContent).toBe('Shell');
   });
 
   it('client renders when an error is thrown in an error boundary', async () => {
