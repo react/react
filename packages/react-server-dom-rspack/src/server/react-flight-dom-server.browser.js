@@ -19,6 +19,7 @@ export {
   setServerActionBoundArgsEncryption,
   encryptServerActionBoundArgs,
   decryptServerActionBoundArgs,
+  loadServerAction,
   createServerEntry,
   ensureServerActions,
 } from './ReactFlightDOMServerBrowser';

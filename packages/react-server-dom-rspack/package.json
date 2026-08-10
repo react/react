@@ -24,9 +24,7 @@
     "static.browser.js",
     "static.edge.js",
     "static.node.js",
-    "node-register.js",
-    "cjs/",
-    "esm/"
+    "cjs/"
   ],
   "exports": {
     ".": "./index.js",

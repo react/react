@@ -267,8 +267,6 @@ module.exports = [
       'react-server-dom-rspack/src/client/react-flight-dom-client.node',
       'react-server-dom-rspack/src/server/react-flight-dom-server.node',
       'react-server-dom-rspack/src/server/ReactFlightDOMServerNode.js', // react-server-dom-rspack/src/server/react-flight-dom-server.node
-      'react-server-dom-rspack/node-register',
-      'react-server-dom-rspack/src/ReactFlightRspackNodeRegister.js',
       'react-devtools',
       'react-devtools-core',
       'react-devtools-shell',
@@ -448,13 +446,6 @@ module.exports = [
   {
     shortName: 'dom-browser-rspack',
     entryPoints: [
-      'react-dom',
-      'react-dom/client',
-      'react-dom/profiling',
-      'react-dom/unstable_testing',
-      'react-dom/src/server/react-dom-server.browser.js',
-      'react-dom/static.browser',
-      'react-dom/unstable_server-external-runtime',
       'react-server-dom-rspack/src/client/react-flight-dom-client.browser',
       'react-server-dom-rspack/src/server/react-flight-dom-server.browser',
     ],
@@ -621,8 +612,6 @@ module.exports = [
   {
     shortName: 'dom-edge-rspack',
     entryPoints: [
-      'react-dom/src/server/react-dom-server.edge.js',
-      'react-dom/static.edge',
       'react-server-dom-rspack/src/client/react-flight-dom-client.edge',
       'react-server-dom-rspack/src/server/react-flight-dom-server.edge',
     ],
