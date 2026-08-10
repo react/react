@@ -1528,9 +1528,14 @@ function createElement(
 
 function transferValidation(store: {validated: 0 | 1 | 2}, value: mixed): void {
   if (store.validated && typeof value === 'object' && value !== null) {
-    const valueStore = (value as any)._store;
-    if (valueStore && !valueStore.validated) {
-      valueStore.validated = store.validated;
+    // Only elements and lazy nodes carry key validation. Any other value, e.g.
+    // an array of children, needs to have its own items validated instead.
+    const $$typeof = (value as any).$$typeof;
+    if ($$typeof === REACT_ELEMENT_TYPE || $$typeof === REACT_LAZY_TYPE) {
+      const valueStore = (value as any)._store;
+      if (valueStore && !valueStore.validated) {
+        valueStore.validated = store.validated;
+      }
     }
   }
 }
