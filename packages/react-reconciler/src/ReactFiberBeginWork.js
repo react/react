@@ -1168,7 +1168,7 @@ function updateActivityComponent(
           renderLanes,
         );
         workInProgress.lanes = laneToLanes(OffscreenLane);
-        // memoizedState on Offscreen is used to indicate whether it is hidden.
+        // This tree hasn't been mounted yet so there are no baseLanes to carry over.
         const nextState: OffscreenState = {
           baseLanes: NoLanes,
           cachePool: null,
