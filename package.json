@@ -53,6 +53,7 @@
     "art": "0.10.1",
     "babel-plugin-syntax-hermes-parser": "^0.32.0",
     "babel-plugin-syntax-trailing-function-commas": "^6.5.0",
+    "busboy": "^1.6.0",
     "chalk": "^3.0.0",
     "cli-table": "^0.3.1",
     "coffee-script": "^1.12.7",

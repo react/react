@@ -590,7 +590,9 @@ export function processReply(
         // Copy all the form fields with a prefix for this reference.
         // These must come first in the form order because we assume that all the
         // fields are available before this is referenced.
-        const prefix = formFieldPrefix + refId + '_';
+        // We include a special marker so that the Server can detect FormData entries
+        // that are values in referenced FormData objects.
+        const prefix = formFieldPrefix + '_' + refId + '_';
         // $FlowFixMe[prop-missing]: FormData has forEach.
         value.forEach((originalValue: string | File, originalKey: string) => {
           // $FlowFixMe[incompatible-call]

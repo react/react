@@ -18,6 +18,7 @@ import type {
   ClientReference as ServerReference,
 } from 'react-client/src/ReactFlightClientConfig';
 
+import type {BackingFormData} from './ReactFlightReplyBackingFormData';
 import type {TemporaryReferenceSet} from './ReactFlightServerTemporaryReferences';
 
 import {
@@ -26,6 +27,16 @@ import {
   requireModule,
 } from 'react-client/src/ReactFlightClientConfig';
 
+import {
+  createBackingFormData,
+  advanceBackingEntryIterator,
+  appendBackingEntry,
+  appendBackingFile,
+  consumeBackingEntry,
+  getBackingEntry,
+  getAllBackingEntries,
+  peekBackingEntry,
+} from './ReactFlightReplyBackingFormData';
 import {
   createTemporaryReference,
   registerTemporaryReference,
@@ -192,7 +203,7 @@ const ArrayPrototype = Array.prototype;
 export type Response = {
   _bundlerConfig: ServerManifest,
   _prefix: string,
-  _formData: FormData,
+  _formData: BackingFormData,
   _chunks: Map<number, SomeChunk<any>>,
   _closed: boolean,
   _closedReason: mixed,
@@ -605,7 +616,13 @@ function reviveModel(
       if (value.length > 1) {
         childContext.fork = true;
       }
-      bumpArrayCount(childContext, value.length + 1, response);
+      bumpArrayCount(
+        childContext,
+        // Number of commas + square brackets
+        // value.length - 1 + 2
+        value.length + 1,
+        response,
+      );
       for (let i = 0; i < value.length; i++) {
         const childRef =
           reference !== undefined ? reference + ':' + i : undefined;
@@ -690,7 +707,9 @@ type InitializationReference = {
 type InitializationHandler = {
   chunk: null | BlockedChunk<any>,
   value: any,
-  reason: any,
+  // TODO: Split type to make it impossible to treat a thrown value as NestedArrayContext.
+  // thrown value if errored, otherwise array context
+  reason: mixed | NestedArrayContext,
   deps: number,
   errored: boolean,
 };
@@ -785,11 +804,16 @@ export function reportGlobalError(response: Response, error: Error): void {
     // because we won't be getting any new data to resolve it.
     if (chunk.status === PENDING) {
       triggerErrorOnChunk(response, chunk, error);
-    } else if (chunk.status === INITIALIZED && chunk.reason !== null) {
-      const maybeController = chunk.reason;
-      // $FlowFixMe
-      if (typeof maybeController.error === 'function') {
-        maybeController.error(error);
+    } else if (chunk.status === INITIALIZED) {
+      const initializedChunk:
+        | InitializedChunk<any>
+        | InitializedStreamChunk<any> = (chunk: any);
+      if (initializedChunk.reason !== null) {
+        const maybeController = initializedChunk.reason;
+        // $FlowFixMe[method-unbinding] Just doing a typeof check
+        if (typeof maybeController.error === 'function') {
+          maybeController.error(error);
+        }
       }
     }
   });
@@ -802,7 +826,7 @@ function getChunk(response: Response, id: number): SomeChunk<any> {
     const prefix = response._prefix;
     const key = prefix + id;
     // Check if we have this field in the backing store already.
-    const backingEntry = response._formData.get(key);
+    const backingEntry = getBackingEntry(response._formData, key);
     if (typeof backingEntry === 'string') {
       chunk = createResolvedModelChunk(response, backingEntry, id);
     } else if (response._closed) {
@@ -923,7 +947,9 @@ function resolveReference(
     const initializedChunk: InitializedChunk<any> = (chunk: any);
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = handler.value;
-    initializedChunk.reason = handler.reason; // Used by streaming chunks
+    initializedChunk.reason =
+      // $FlowFixMe[incompatible-type] Assuming handler.errored is false.
+      handler.reason;
     if (resolveListeners !== null) {
       wakeChunk(response, resolveListeners, handler.value, initializedChunk);
     }
@@ -1010,17 +1036,30 @@ function getOutlinedModel<T>(
 ): T {
   const path = reference.split(':');
   const id = parseInt(path[0], 16);
-  const chunk = getChunk(response, id);
+  let chunk = getChunk(response, id);
   switch (chunk.status) {
     case RESOLVED_MODEL:
       initializeModelChunk(chunk);
+      // $FlowFixMe[incompatible-cast] We just initialized this chunk so it can't be a ResolvedModelChunk anymore.
+      chunk = (chunk: Exclude<SomeChunk<T>, ResolvedModelChunk<T>>);
       break;
   }
   // The status might have changed after initialization.
   switch (chunk.status) {
     case INITIALIZED:
       let value = chunk.value;
-      let arrayRoot: null | NestedArrayContext = chunk.reason;
+      const arrayRootOrController:
+        | null
+        | NestedArrayContext
+        | FlightStreamController = chunk.reason;
+      if (arrayRootOrController !== null && 'error' in arrayRootOrController) {
+        throw new Error(
+          'Expected an initialized chunk but got an initialized stream chunk instead. ' +
+            'This payload may have been submitted by an older version of React.',
+        );
+      }
+      let arrayRoot = arrayRootOrController;
+
       let localLength: number = 0;
       const rootArrayContexts = response._rootArrayContexts;
       for (let i = 1; i < path.length; i++) {
@@ -1035,7 +1074,11 @@ function getOutlinedModel<T>(
           value = value[name];
           if (isArray(value)) {
             localLength = 0;
-            arrayRoot = rootArrayContexts.get(value) || arrayRoot;
+            arrayRoot =
+              rootArrayContexts.get(
+                // $FlowFixMe[incompatible-cast] Our `isArray` typing can't narrow `mixed`
+                (value: $ReadOnlyArray<mixed>),
+              ) || arrayRoot;
           } else {
             arrayRoot = null;
             if (typeof value === 'string') {
@@ -1122,8 +1165,9 @@ function createMap(
   if ((model as any).$$consumed === true) {
     throw new Error('Already initialized Map.');
   }
-  const map = new Map(model);
+  // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
   (model as any).$$consumed = true;
+  const map = new Map(model);
   return map;
 }
 
@@ -1134,8 +1178,9 @@ function createSet(response: Response, model: Array<any>): Set<any> {
   if ((model as any).$$consumed === true) {
     throw new Error('Already initialized Set.');
   }
-  const set = new Set(model);
+  // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
   (model as any).$$consumed = true;
+  const set = new Set(model);
   return set;
 }
 
@@ -1146,9 +1191,10 @@ function extractIterator(response: Response, model: Array<any>): Iterator<any> {
   if ((model as any).$$consumed === true) {
     throw new Error('Already initialized Iterator.');
   }
+  // This needs to come first to prevent the model from being consumed again in case of a cyclic reference.
+  (model as any).$$consumed = true;
   // $FlowFixMe[incompatible-use]: This uses raw Symbols because we're extracting from a native array.
   const iterator = model[Symbol.iterator]();
-  (model as any).$$consumed = true;
   return iterator;
 }
 
@@ -1191,7 +1237,7 @@ function parseTypedArray<T: $ArrayBufferView | ArrayBuffer>(
 
   // We should have this backingEntry in the store already because we emitted
   // it before referencing it. It should be a Blob.
-  const backingEntry: Blob = (response._formData.get(key): any);
+  const backingEntry: Blob = (getBackingEntry(response._formData, key): any);
 
   const promise: Promise<ArrayBuffer> = backingEntry.arrayBuffer();
 
@@ -1291,7 +1337,7 @@ function resolveStream<T: ReadableStream | $AsyncIterable<any, any, void>>(
 
   const prefix = response._prefix;
   const key = prefix + id;
-  const existingEntries = response._formData.getAll(key);
+  const existingEntries = getAllBackingEntries(response._formData, key);
   for (let i = 0; i < existingEntries.length; i++) {
     const value = existingEntries[i];
     if (typeof value === 'string') {
@@ -1595,28 +1641,41 @@ function parseModelString(
       case 'K': {
         // FormData
         const stringId = value.slice(2);
-        const formPrefix = response._prefix + stringId + '_';
+
+        const responsePrefix = response._prefix;
+        // Use the special marker from the Client to distinguish keys that should
+        // be consumed by referenced FormData.
+        const anyFormPrefix = responsePrefix + '_';
+        const formPrefix = anyFormPrefix + stringId + '_';
+
         const data = new FormData();
         const backingFormData = response._formData;
-        // We assume that the reference to FormData always comes after each
-        // entry that it references so we can assume they all exist in the
-        // backing store already.
-        // Clone the keys to workaround bugs in the delete-while-iterating
-        // algorithm of FormData.
-        const keys = Array.from(backingFormData.keys());
-        for (let i = 0; i < keys.length; i++) {
-          const entryKey = keys[i];
-          if (entryKey.startsWith(formPrefix)) {
-            const entries = backingFormData.getAll(entryKey);
-            const newKey = entryKey.slice(formPrefix.length);
-            for (let j = 0; j < entries.length; j++) {
+        // We're still transpiling for-of loops, so we have to use the iterator directly instead of a for-of loop.
+        while (true) {
+          const formDataKey = peekBackingEntry(backingFormData);
+          if (formDataKey === undefined) {
+            break;
+          }
+          if (formDataKey.startsWith(formPrefix)) {
+            const referencedFormDataValue = getAllBackingEntries(
+              backingFormData,
+              formDataKey,
+            );
+            const referencedFormDataKey = formDataKey.slice(formPrefix.length);
+            for (let i = 0; i < referencedFormDataValue.length; i++) {
               // $FlowFixMe[incompatible-call]
-              data.append(newKey, entries[j]);
+              data.append(referencedFormDataKey, referencedFormDataValue[i]);
             }
-            // These entries have now all been consumed. Let's free it.
-            // This also ensures that we don't have any entries left if we
-            // see the same key twice.
-            backingFormData.delete(entryKey);
+            consumeBackingEntry(backingFormData, formDataKey);
+          } else if (formDataKey.startsWith(anyFormPrefix)) {
+            // The FormData values are continuous and before the FormData reference.
+            // If we see something that doesn't look like a value for a referenced
+            // FormData, we can assume we're past the values for this FormData
+            // reference and stop iterating.
+            break;
+          } else {
+            // Either an outlined value or something not owned by this Reply.
+            advanceBackingEntryIterator(backingFormData);
           }
         }
         return data;
@@ -1805,7 +1864,10 @@ function parseModelString(
         const blobKey = prefix + id;
         // We should have this backingEntry in the store already because we emitted
         // it before referencing it. It should be a Blob.
-        const backingEntry: Blob = (response._formData.get(blobKey): any);
+        const backingEntry = getBackingEntry(response._formData, blobKey);
+        if (!(backingEntry instanceof Blob)) {
+          throw new Error('Referenced Blob is not a Blob.');
+        }
         return backingEntry;
       }
       case 'R': {
@@ -1849,10 +1911,11 @@ export function createResponse(
   arraySizeLimit?: number = DEFAULT_MAX_ARRAY_NESTING,
 ): Response {
   const chunks: Map<number, SomeChunk<any>> = new Map();
+
   const response: Response = {
     _bundlerConfig: bundlerConfig,
     _prefix: formFieldPrefix,
-    _formData: backingFormData,
+    _formData: createBackingFormData(backingFormData),
     _chunks: chunks,
     _closed: false,
     _closedReason: null,
@@ -1869,7 +1932,7 @@ export function resolveField(
   value: string,
 ): void {
   // Add this field to the backing store.
-  response._formData.append(key, value);
+  appendBackingEntry(response._formData, key, value);
   const prefix = response._prefix;
   if (key.startsWith(prefix)) {
     const chunks = response._chunks;
@@ -1884,7 +1947,7 @@ export function resolveField(
 
 export function resolveFile(response: Response, key: string, file: File): void {
   // Add this field to the backing store.
-  response._formData.append(key, file);
+  appendBackingEntry(response._formData, key, file);
 }
 
 export opaque type FileHandle = {
@@ -1924,7 +1987,7 @@ export function resolveFileComplete(
   // the append() form that takes the file name as the third argument,
   // to create a File object.
   const blob = new Blob(handle.chunks, {type: handle.mime});
-  response._formData.append(key, blob, handle.filename);
+  appendBackingFile(response._formData, key, blob, handle.filename);
 }
 
 export function close(response: Response): void {

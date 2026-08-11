@@ -26,6 +26,7 @@ import {
 } from './ReactFlightServerConfigRspackBundler';
 import type {ServerManifest} from 'react-client/src/ReactFlightClientConfig';
 
+import noop from 'shared/noop';
 import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 
 import {
@@ -268,7 +269,10 @@ function prerender(
 
 function decodeReply<T>(
   body: string | FormData,
-  options?: {temporaryReferences?: TemporaryReferenceSet},
+  options?: {
+    temporaryReferences?: TemporaryReferenceSet,
+    arraySizeLimit?: number,
+  },
 ): Thenable<T> {
   if (typeof body === 'string') {
     const form = new FormData();
@@ -280,6 +284,7 @@ function decodeReply<T>(
     '',
     options ? options.temporaryReferences : undefined,
     body,
+    options ? options.arraySizeLimit : undefined,
   );
   const root = getRoot<T>(response);
   close(response);
@@ -288,7 +293,10 @@ function decodeReply<T>(
 
 function decodeReplyFromAsyncIterable<T>(
   iterable: AsyncIterable<[string, string | File]>,
-  options?: {temporaryReferences?: TemporaryReferenceSet},
+  options?: {
+    temporaryReferences?: TemporaryReferenceSet,
+    arraySizeLimit?: number,
+  },
 ): Thenable<T> {
   const iterator: AsyncIterator<[string, string | File]> =
     iterable[ASYNC_ITERATOR]();
@@ -297,6 +305,8 @@ function decodeReplyFromAsyncIterable<T>(
     __rspack_rsc_manifest__.serverManifest,
     '',
     options ? options.temporaryReferences : undefined,
+    undefined,
+    options ? options.arraySizeLimit : undefined,
   );
 
   function progress(
@@ -320,8 +330,8 @@ function decodeReplyFromAsyncIterable<T>(
     reportGlobalError(response, reason);
     if (typeof (iterator: any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
-      // $FlowFixMe should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      // $FlowFixMe[prop-missing] should be able to pass mixed
+      iterator.throw(reason).then(noop, noop);
     }
   }
 

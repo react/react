@@ -112,53 +112,50 @@ export function decodeAction<T>(
   // the implementation details of the action data.
   const formData = new FormData();
 
-  let action: Promise<(formData: FormData) => T> | null = null;
-  const seenActions = new Set<string>();
+  let maybeActionKey: null | string = null;
 
   // $FlowFixMe[prop-missing]
   body.forEach((value: string | File, key: string) => {
     if (!key.startsWith('$ACTION_')) {
       // $FlowFixMe[incompatible-call]
       formData.append(key, value);
-      return;
-    }
-    // Later actions may override earlier actions if a button is used to
-    // override the default form action. However, we don't expect the same
-    // action ref field to be sent multiple times in legitimate form data.
-    if (key.startsWith('$ACTION_REF_')) {
-      if (seenActions.has(key)) {
-        return;
-      }
-      seenActions.add(key);
-      const formFieldPrefix = '$ACTION_' + key.slice(12) + ':';
-      const metaData = decodeBoundActionMetaData(
-        body,
-        serverManifest,
-        formFieldPrefix,
-      );
-      action = loadServerReference(serverManifest, metaData);
-      return;
-    }
-    // A simple action with no bound arguments may appear twice in the form data
-    // if a button specifies the same action as the default form action. We only
-    // load the first one, as they're guaranteed to be identical.
-    if (key.startsWith('$ACTION_ID_')) {
-      if (seenActions.has(key)) {
-        return;
-      }
-      seenActions.add(key);
-      const id = key.slice(11);
-      action = loadServerReference(serverManifest, {
-        id,
-        bound: null,
-      });
-      return;
+    } else if (key.startsWith('$ACTION_REF_')) {
+      // Later actions may override earlier actions if a button is used to
+      // override the default form action. However, we don't expect the same
+      // action ref field to be sent multiple times in legitimate form data.
+      maybeActionKey = key;
+    } else if (key.startsWith('$ACTION_ID_')) {
+      // A simple action with no bound arguments may appear twice in the form data
+      // if a button specifies the same action as the default form action.
+      maybeActionKey = key;
     }
   });
 
-  if (action === null) {
+  if (maybeActionKey === null) {
     return null;
   }
+  const actionKey = maybeActionKey;
+
+  let action: Promise<(formData: FormData) => T> | null = null;
+  if (actionKey.startsWith('$ACTION_REF_')) {
+    const formFieldPrefix =
+      '$ACTION_' + actionKey.slice('$ACTION_REF_'.length) + ':';
+    const metaData = decodeBoundActionMetaData(
+      body,
+      serverManifest,
+      formFieldPrefix,
+    );
+    action = loadServerReference(serverManifest, metaData);
+  } else if (actionKey.startsWith('$ACTION_ID_')) {
+    const id = actionKey.slice('$ACTION_ID_'.length);
+    action = loadServerReference(serverManifest, {
+      id,
+      bound: null,
+    });
+  } else {
+    throw new Error('Cannot handle action key. This is a bug in React.');
+  }
+
   // Return the action with the remaining FormData bound to the first argument.
   return action.then(fn => fn.bind(null, formData));
 }
@@ -175,24 +172,28 @@ export function decodeFormState<S>(
   }
   // Search through the form data object to get the reference id and the number
   // of bound arguments. This repeats some of the work done in decodeAction.
-  let metaData = null;
+  let actionKey: null | string = null;
   // $FlowFixMe[prop-missing]
   body.forEach((value: string | File, key: string) => {
     if (key.startsWith('$ACTION_REF_')) {
-      const formFieldPrefix = '$ACTION_' + key.slice(12) + ':';
-      metaData = decodeBoundActionMetaData(
-        body,
-        serverManifest,
-        formFieldPrefix,
-      );
+      actionKey = key;
     }
     // We don't check for the simple $ACTION_ID_ case because form state actions
     // are always bound to the state argument.
   });
-  if (metaData === null) {
+  if (actionKey === null) {
     // Should be unreachable.
     return Promise.resolve(null);
   }
+
+  const formFieldPrefix =
+    '$ACTION_' + actionKey.slice('$ACTION_REF_'.length) + ':';
+  const metaData = decodeBoundActionMetaData(
+    body,
+    serverManifest,
+    formFieldPrefix,
+  );
+
   const referenceId = metaData.id;
   return Promise.resolve(metaData.bound).then(bound => {
     if (bound === null) {
