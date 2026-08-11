@@ -12,7 +12,6 @@
     "LICENSE",
     "README.md",
     "index.js",
-    "plugin.js",
     "client.js",
     "client.browser.js",
     "client.edge.js",
@@ -31,7 +30,6 @@
   ],
   "exports": {
     ".": "./index.js",
-    "./plugin": "./plugin.js",
     "./client": {
       "workerd": "./client.edge.js",
       "deno": "./client.edge.js",
