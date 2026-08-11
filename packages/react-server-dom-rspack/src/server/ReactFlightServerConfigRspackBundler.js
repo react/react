@@ -18,11 +18,23 @@ import type {
   ServerReference,
 } from '../ReactFlightRspackReferences';
 import type {ServerManifest} from '../client/ReactFlightClientConfigBundlerRspack';
+import type {ServerManifest} from 'react-client/src/ReactFlightClientConfig';
+import {preinit} from 'react-dom';
 
 export type {ClientReference, ServerReference};
 
-export type ClientManifest = {
+export type ClientReferenceManifest = {
   [id: string]: ClientReferenceManifestEntry,
+};
+
+type ModuleLoading = null | {
+  prefix: string,
+};
+
+export type ClientManifest = {
+  clientManifest: ClientReferenceManifest,
+  moduleLoading: ModuleLoading,
+  cssLinkPrecedence?: string | false,
 };
 
 export type ServerReferenceId = string;
@@ -59,13 +71,31 @@ export function getClientReferenceKey(
   return reference.$$async ? reference.$$id + '#async' : reference.$$id;
 }
 
+export function createClientManifest(
+  clientManifest: ClientReferenceManifest,
+  moduleLoading: ModuleLoading,
+  cssLinkPrecedence: void | string | false,
+): ClientManifest {
+  return {
+    clientManifest,
+    moduleLoading,
+    cssLinkPrecedence,
+  };
+}
+
 export function resolveClientReferenceMetadata<T>(
   config: ClientManifest,
   clientReference: ClientReference<T>,
 ): ClientReferenceMetadata {
   const modulePath = clientReference.$$id;
+  const clientManifest = config.clientManifest;
+  const exportSeparatorIndex = modulePath.lastIndexOf('#');
+  const clientReferenceId =
+    exportSeparatorIndex === -1
+      ? modulePath
+      : modulePath.slice(0, exportSeparatorIndex);
   let name = '';
-  let resolvedModuleData = config[modulePath];
+  let resolvedModuleData = clientManifest[modulePath];
   if (resolvedModuleData) {
     // The potentially aliased name.
     name = resolvedModuleData.name;
@@ -74,10 +104,9 @@ export function resolveClientReferenceMetadata<T>(
     // which contains this name as well.
     // TODO: It's unfortunate that we now have to parse this string. We should
     // probably go back to encoding path and name separately on the client reference.
-    const idx = modulePath.lastIndexOf('#');
-    if (idx !== -1) {
-      name = modulePath.slice(idx + 1);
-      resolvedModuleData = config[modulePath.slice(0, idx)];
+    if (exportSeparatorIndex !== -1) {
+      name = modulePath.slice(exportSeparatorIndex + 1);
+      resolvedModuleData = clientManifest[clientReferenceId];
     }
     if (!resolvedModuleData) {
       throw new Error(
@@ -87,6 +116,20 @@ export function resolveClientReferenceMetadata<T>(
           'This is probably a bug in the React Server Components bundler.',
       );
     }
+  }
+  const cssFiles = resolvedModuleData.cssFiles || [];
+  const configuredPrecedence = config.cssLinkPrecedence;
+  const precedence =
+    configuredPrecedence === undefined
+      ? 'rspack-rsc/client-reference'
+      : configuredPrecedence === false
+        ? undefined
+        : configuredPrecedence;
+  for (let i = 0; i < cssFiles.length; i++) {
+    preinit(cssFiles[i], {
+      as: 'style',
+      precedence,
+    });
   }
   if (resolvedModuleData.async === true && clientReference.$$async === true) {
     throw new Error(

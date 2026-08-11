@@ -11,6 +11,8 @@ export type ImportManifestEntry = {
   id: string,
   // chunks is a double indexed array of chunkId / chunkFilename pairs
   chunks: Array<string>,
+  // CSS files associated with this client reference.
+  cssFiles?: Array<string>,
   name: string,
   async?: boolean,
 };

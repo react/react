@@ -15,6 +15,8 @@ import type {ReactFormState, Thenable} from 'shared/ReactTypes';
 import {
   type ClientManifest,
   type ServerReferenceId,
+  type ClientReferenceManifest,
+  createClientManifest,
   setServerActionBoundArgsEncryption,
   encryptServerActionBoundArgs,
   decryptServerActionBoundArgs,
@@ -77,6 +79,7 @@ type Options = {
   signal?: AbortSignal,
   temporaryReferences?: TemporaryReferenceSet,
   onError?: (error: mixed) => void,
+  cssLinkPrecedence?: string | false,
 };
 
 function startReadingFromDebugChannelReadableStream(
@@ -121,7 +124,10 @@ function startReadingFromDebugChannelReadableStream(
 }
 
 declare const __rspack_rsc_manifest__: {
-  clientManifest: ClientManifest,
+  clientManifest: ClientReferenceManifest,
+  moduleLoading: {
+    prefix: string,
+  },
   serverManifest: ServerManifest,
 };
 
@@ -139,7 +145,11 @@ function renderToReadableStream(
       : undefined;
   const request = createRequest(
     model,
-    __rspack_rsc_manifest__.clientManifest,
+    createClientManifest(
+      __rspack_rsc_manifest__.clientManifest,
+      __rspack_rsc_manifest__.moduleLoading,
+      options ? options.cssLinkPrecedence : undefined,
+    ),
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
@@ -224,7 +234,11 @@ function prerender(
     }
     const request = createPrerenderRequest(
       model,
-      __rspack_rsc_manifest__.clientManifest,
+      createClientManifest(
+        __rspack_rsc_manifest__.clientManifest,
+        __rspack_rsc_manifest__.moduleLoading,
+        options ? options.cssLinkPrecedence : undefined,
+      ),
       onAllReady,
       onFatalError,
       options ? options.onError : undefined,

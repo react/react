@@ -16,6 +16,8 @@ import type {ServerManifest} from 'react-client/src/forks/ReactFlightClientConfi
 import {
   type ClientManifest,
   type ServerReferenceId,
+  type ClientReferenceManifest,
+  createClientManifest,
   setServerActionBoundArgsEncryption,
   encryptServerActionBoundArgs,
   decryptServerActionBoundArgs,
@@ -160,6 +162,7 @@ type Options = {
   onError?: (error: mixed) => void,
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
+  cssLinkPrecedence?: string | false,
 };
 
 type PipeableStream = {
@@ -192,7 +195,11 @@ function renderToPipeableStream(
       : undefined;
   const request = createRequest(
     model,
-    __rspack_rsc_manifest__.clientManifest,
+    createClientManifest(
+      __rspack_rsc_manifest__.clientManifest,
+      __rspack_rsc_manifest__.moduleLoading,
+      options ? options.cssLinkPrecedence : undefined,
+    ),
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
@@ -333,7 +340,10 @@ function startReadingFromDebugChannelReadableStream(
 }
 
 declare const __rspack_rsc_manifest__: {
-  clientManifest: ClientManifest,
+  clientManifest: ClientReferenceManifest,
+  moduleLoading: {
+    prefix: string,
+  },
   serverManifest: ServerManifest,
 };
 
@@ -354,7 +364,11 @@ function renderToReadableStream(
       : undefined;
   const request = createRequest(
     model,
-    __rspack_rsc_manifest__.clientManifest,
+    createClientManifest(
+      __rspack_rsc_manifest__.clientManifest,
+      __rspack_rsc_manifest__.moduleLoading,
+      options ? options.cssLinkPrecedence : undefined,
+    ),
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
@@ -440,6 +454,7 @@ type PrerenderOptions = {
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
   signal?: AbortSignal,
+  cssLinkPrecedence?: string | false,
 };
 
 type StaticResult = {
@@ -464,7 +479,11 @@ function prerenderToNodeStream(
 
     const request = createPrerenderRequest(
       model,
-      __rspack_rsc_manifest__.clientManifest,
+      createClientManifest(
+        __rspack_rsc_manifest__.clientManifest,
+        __rspack_rsc_manifest__.moduleLoading,
+        options ? options.cssLinkPrecedence : undefined,
+      ),
       onAllReady,
       onFatalError,
       options ? options.onError : undefined,
@@ -526,7 +545,11 @@ function prerender(
     }
     const request = createPrerenderRequest(
       model,
-      __rspack_rsc_manifest__.clientManifest,
+      createClientManifest(
+        __rspack_rsc_manifest__.clientManifest,
+        __rspack_rsc_manifest__.moduleLoading,
+        options ? options.cssLinkPrecedence : undefined,
+      ),
       onAllReady,
       onFatalError,
       options ? options.onError : undefined,
