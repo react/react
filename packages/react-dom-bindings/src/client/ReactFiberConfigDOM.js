@@ -3603,12 +3603,6 @@ if (enableFragmentRefsScrollIntoView) {
         : hostSiblings[0] || hostSiblings[1];
 
       if (targetFiber === null) {
-        if (__DEV__) {
-          console.warn(
-            'You are attempting to scroll a FragmentInstance that has no ' +
-              'children, siblings, or parent. No scroll was performed.',
-          );
-        }
         return;
       }
       // For text node siblings, use Range API to scroll to their position
