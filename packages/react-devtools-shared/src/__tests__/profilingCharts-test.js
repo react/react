@@ -298,4 +298,164 @@ describe('profiling charts', () => {
       `);
     });
   });
+
+  describe('components behind filtered fibers should not report false re-renders', () => {
+    it('should not report a component as re-rendered when its filtered parent bailed out', () => {
+      let triggerUpdate;
+
+      function Count() {
+        const [count, setCount] = React.useState(0);
+        triggerUpdate = () => setCount(c => c + 1);
+        Scheduler.unstable_advanceTime(5);
+        return count;
+      }
+
+      function Greeting() {
+        Scheduler.unstable_advanceTime(3);
+        return 'Hello';
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Fragment>
+            <Count />
+            <div>
+              <Greeting />
+            </div>
+          </React.Fragment>
+        );
+      }
+
+      utils.act(() => store.profilerStore.startProfiling());
+      utils.act(() => render(<App />));
+
+      // Verify tree structure: div is filtered, so Greeting appears as child of App
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+              <Count>
+              <Greeting>
+      `);
+
+      // Trigger a state update in Count. Should not cause Greeting to re-render.
+      utils.act(() => triggerUpdate());
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const {chartData} = getFlamegraphChartData(rootID, 1);
+      const allNodes = chartData.rows.flat();
+
+      expect(allNodes).toEqual([
+        expect.objectContaining({name: 'App', didRender: false}),
+        expect.objectContaining({name: 'Greeting', didRender: false}),
+        expect.objectContaining({name: 'Count', didRender: true}),
+      ]);
+    });
+
+    it('should not report a component as re-rendered when behind a filtered fragment', () => {
+      let triggerUpdate;
+
+      function Count() {
+        const [count, setCount] = React.useState(0);
+        triggerUpdate = () => setCount(c => c + 1);
+        Scheduler.unstable_advanceTime(5);
+        return count;
+      }
+
+      function Greeting() {
+        Scheduler.unstable_advanceTime(3);
+        return 'Hello';
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Fragment>
+            <Count />
+            <React.Fragment>
+              <Greeting />
+            </React.Fragment>
+          </React.Fragment>
+        );
+      }
+
+      utils.act(() => store.profilerStore.startProfiling());
+      utils.act(() => render(<App />));
+
+      // Fragment with null key is filtered, so Greeting appears as child of App
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+              <Count>
+              <Greeting>
+      `);
+
+      // Trigger a state update in Count
+      utils.act(() => triggerUpdate());
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const {chartData} = getFlamegraphChartData(rootID, 1);
+      const allNodes = chartData.rows.flat();
+
+      expect(allNodes).toEqual([
+        expect.objectContaining({name: 'App', didRender: false}),
+        expect.objectContaining({name: 'Greeting', didRender: false}),
+        expect.objectContaining({name: 'Count', didRender: true}),
+      ]);
+    });
+
+    it('should correctly report sibling components that did not re-render', () => {
+      let triggerUpdate;
+
+      function Count() {
+        const [count, setCount] = React.useState(0);
+        triggerUpdate = () => setCount(c => c + 1);
+        Scheduler.unstable_advanceTime(5);
+        return count;
+      }
+
+      function Greeting() {
+        Scheduler.unstable_advanceTime(3);
+        return 'Hello';
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Fragment>
+            <Count />
+            <Greeting />
+          </React.Fragment>
+        );
+      }
+
+      utils.act(() => store.profilerStore.startProfiling());
+      utils.act(() => render(<App />));
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+              <Count>
+              <Greeting>
+      `);
+
+      utils.act(() => triggerUpdate());
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const {chartData} = getFlamegraphChartData(rootID, 1);
+      const allNodes = chartData.rows.flat();
+
+      expect(allNodes).toEqual([
+        expect.objectContaining({name: 'App', didRender: false}),
+        expect.objectContaining({name: 'Greeting', didRender: false}),
+        expect.objectContaining({name: 'Count', didRender: true}),
+      ]);
+    });
+  });
 });

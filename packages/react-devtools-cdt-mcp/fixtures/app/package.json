@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "name": "react-devtools-cdt-mcp-fixture",
+  "version": "0.0.0",
+  "scripts": {
+    "start": "cross-env NODE_ENV=development webpack serve --config webpack.config.js"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.11.1",
+    "@babel/plugin-proposal-class-properties": "^7.10.4",
+    "@babel/plugin-transform-flow-strip-types": "^7.10.4",
+    "@babel/plugin-transform-react-jsx-source": "^7.10.5",
+    "@babel/preset-env": "^7.11.0",
+    "@babel/preset-flow": "^7.10.4",
+    "@babel/preset-react": "^7.10.4",
+    "babel-loader": "^8.0.4",
+    "cross-env": "^7.0.3",
+    "process": "^0.11.10",
+    "webpack": "^5.82.1",
+    "webpack-cli": "^5.1.1",
+    "webpack-dev-server": "^4.15.0"
+  }
+}

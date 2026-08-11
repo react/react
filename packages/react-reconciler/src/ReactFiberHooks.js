@@ -46,6 +46,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 import {
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 
@@ -92,6 +93,7 @@ import {
   FormReset,
 } from './ReactFiberFlags';
 import {
+  NoFlags as HookNoFlags,
   HasEffect as HookHasEffect,
   Layout as HookLayout,
   Passive as HookPassive,
@@ -142,6 +144,7 @@ import {now} from './Scheduler';
 import {
   trackUsedThenable,
   checkIfUseWrappedInTryCatch,
+  checkIfUseWasUsedBefore,
   createThenableState,
   SuspenseException,
   SuspenseActionException,
@@ -258,7 +261,7 @@ type Dispatch<A> = A => void;
 let renderLanes: Lanes = NoLanes;
 // The work-in-progress fiber. I've named it differently to distinguish it from
 // the work-in-progress hook.
-let currentlyRenderingFiber: Fiber = (null: any);
+let currentlyRenderingFiber: Fiber = null as any;
 
 // Hooks are stored as a linked list on the fiber's memoizedState field. The
 // current hook list is the list that belongs to the current fiber. The
@@ -307,7 +310,7 @@ let ignorePreviousDependencies: boolean = false;
 
 function mountHookTypesDev(): void {
   if (__DEV__) {
-    const hookName = ((currentHookNameInDev: any): HookType);
+    const hookName = currentHookNameInDev as any as HookType;
 
     if (hookTypesDev === null) {
       hookTypesDev = [hookName];
@@ -319,7 +322,7 @@ function mountHookTypesDev(): void {
 
 function updateHookTypesDev(): void {
   if (__DEV__) {
-    const hookName = ((currentHookNameInDev: any): HookType);
+    const hookName = currentHookNameInDev as any as HookType;
 
     if (hookTypesDev !== null) {
       hookTypesUpdateIndexDev++;
@@ -356,10 +359,10 @@ function warnOnHookMismatchInDev(currentHookName: HookType): void {
 
         const secondColumnStart = 30;
 
-        for (let i = 0; i <= ((hookTypesUpdateIndexDev: any): number); i++) {
+        for (let i = 0; i <= (hookTypesUpdateIndexDev as any as number); i++) {
           const oldHookName = hookTypesDev[i];
           const newHookName =
-            i === ((hookTypesUpdateIndexDev: any): number)
+            i === (hookTypesUpdateIndexDev as any as number)
               ? currentHookName
               : oldHookName;
 
@@ -415,9 +418,9 @@ function warnIfAsyncClientComponent(Component: Function) {
     // for transpiled async functions. Neither mechanism is completely
     // bulletproof but together they cover the most common cases.
     const isAsyncFunction =
-      // $FlowIgnore[method-unbinding]
+      // $FlowFixMe[method-unbinding]
       Object.prototype.toString.call(Component) === '[object AsyncFunction]' ||
-      // $FlowIgnore[method-unbinding]
+      // $FlowFixMe[method-unbinding]
       Object.prototype.toString.call(Component) ===
         '[object AsyncGeneratorFunction]';
     if (isAsyncFunction) {
@@ -513,7 +516,7 @@ export function renderWithHooks<Props, SecondArg>(
   if (__DEV__) {
     hookTypesDev =
       current !== null
-        ? ((current._debugHookTypes: any): Array<HookType>)
+        ? (current._debugHookTypes as any as Array<HookType>)
         : null;
     hookTypesUpdateIndexDev = -1;
     // Used for hot reloading:
@@ -649,6 +652,7 @@ function finishRenderingHooks<Props, SecondArg>(
     } else {
       workInProgress.dependencies._debugThenableState = thenableState;
     }
+    checkIfUseWasUsedBefore(workInProgress, thenableState);
   }
 
   // We can assume the previous dispatcher is always this one, since we set it
@@ -661,7 +665,7 @@ function finishRenderingHooks<Props, SecondArg>(
     currentHook !== null && currentHook.next !== null;
 
   renderLanes = NoLanes;
-  currentlyRenderingFiber = (null: any);
+  currentlyRenderingFiber = null as any;
 
   currentHook = null;
   workInProgressHook = null;
@@ -833,7 +837,7 @@ function renderWithHooksAgain<Props, SecondArg>(
     workInProgressHook = null;
 
     if (workInProgress.updateQueue != null) {
-      resetFunctionComponentUpdateQueue((workInProgress.updateQueue: any));
+      resetFunctionComponentUpdateQueue(workInProgress.updateQueue as any);
     }
 
     if (__DEV__) {
@@ -872,7 +876,7 @@ export function TransitionAwareHostComponent(): TransitionStatus {
   const [maybeThenable] = dispatcher.useState();
   let nextState;
   if (typeof maybeThenable.then === 'function') {
-    const thenable: Thenable<TransitionStatus> = (maybeThenable: any);
+    const thenable: Thenable<TransitionStatus> = maybeThenable as any;
     nextState = useThenable(thenable);
   } else {
     const status: TransitionStatus = maybeThenable;
@@ -929,7 +933,7 @@ export function resetHooksAfterThrow(): void {
   //
   // It should only reset things like the current dispatcher, to prevent hooks
   // from being called outside of a component.
-  currentlyRenderingFiber = (null: any);
+  currentlyRenderingFiber = null as any;
 
   // We can assume the previous dispatcher is always this one, since we set it
   // at the beginning of the render phase and there's no re-entrance.
@@ -958,7 +962,7 @@ export function resetHooksOnUnwind(workInProgress: Fiber): void {
   }
 
   renderLanes = NoLanes;
-  currentlyRenderingFiber = (null: any);
+  currentlyRenderingFiber = null as any;
 
   currentHook = null;
   workInProgressHook = null;
@@ -1098,7 +1102,12 @@ function useThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  const result = trackUsedThenable(thenableState, thenable, index);
+  const result = trackUsedThenable(
+    thenableState,
+    thenable,
+    index,
+    __DEV__ ? currentlyRenderingFiber : null,
+  );
 
   // When something suspends with `use`, we replay the component with the
   // "re-render" dispatcher instead of the "mount" or "update" dispatcher.
@@ -1148,14 +1157,19 @@ function useThenable<T>(thenable: Thenable<T>): T {
 }
 
 function use<T>(usable: Usable<T>): T {
+  // $FlowFixMe[invalid-compare]
   if (usable !== null && typeof usable === 'object') {
     // $FlowFixMe[method-unbinding]
     if (typeof usable.then === 'function') {
       // This is a thenable.
-      const thenable: Thenable<T> = (usable: any);
+      const thenable: Thenable<T> = usable as any;
       return useThenable(thenable);
+    } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Fiber is the final renderer, so there is no downstream host that
+      // needs to recover this subtree. Continue rendering through it.
+      return undefined as any;
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
-      const context: ReactContext<T> = (usable: any);
+      const context: ReactContext<T> = usable as any;
       return readContext(context);
     }
   }
@@ -1168,7 +1182,7 @@ function useMemoCache(size: number): Array<mixed> {
   let memoCache = null;
   // Fast-path, load memo cache from wip fiber if already prepared
   let updateQueue: FunctionComponentUpdateQueue | null =
-    (currentlyRenderingFiber.updateQueue: any);
+    currentlyRenderingFiber.updateQueue as any;
   if (updateQueue !== null) {
     memoCache = updateQueue.memoCache;
   }
@@ -1177,7 +1191,7 @@ function useMemoCache(size: number): Array<mixed> {
     const current: Fiber | null = currentlyRenderingFiber.alternate;
     if (current !== null) {
       const currentUpdateQueue: FunctionComponentUpdateQueue | null =
-        (current.updateQueue: any);
+        current.updateQueue as any;
       if (currentUpdateQueue !== null) {
         const currentMemoCache: ?MemoCache = currentUpdateQueue.memoCache;
         if (currentMemoCache != null) {
@@ -1271,7 +1285,7 @@ function mountReducer<S, I, A>(
       }
     }
   } else {
-    initialState = ((initialArg: any): S);
+    initialState = initialArg as any as S;
   }
   hook.memoizedState = hook.baseState = initialState;
   const queue: UpdateQueue<S, A> = {
@@ -1279,14 +1293,14 @@ function mountReducer<S, I, A>(
     lanes: NoLanes,
     dispatch: null,
     lastRenderedReducer: reducer,
-    lastRenderedState: (initialState: any),
+    lastRenderedState: initialState as any,
   };
   hook.queue = queue;
-  const dispatch: Dispatch<A> = (queue.dispatch = (dispatchReducerAction.bind(
+  const dispatch: Dispatch<A> = (queue.dispatch = dispatchReducerAction.bind(
     null,
     currentlyRenderingFiber,
     queue,
-  ): any));
+  ) as any);
   return [hook.memoizedState, dispatch];
 }
 
@@ -1296,7 +1310,7 @@ function updateReducer<S, I, A>(
   init?: I => S,
 ): [S, Dispatch<A>] {
   const hook = updateWorkInProgressHook();
-  return updateReducerImpl(hook, ((currentHook: any): Hook), reducer);
+  return updateReducerImpl(hook, currentHook as any as Hook, reducer);
 }
 
 function updateReducerImpl<S, A>(
@@ -1413,7 +1427,7 @@ function updateReducerImpl<S, A>(
           action: update.action,
           hasEagerState: update.hasEagerState,
           eagerState: update.eagerState,
-          next: (null: any),
+          next: null as any,
         };
         if (newBaseQueueLast === null) {
           newBaseQueueFirst = newBaseQueueLast = clone;
@@ -1449,7 +1463,7 @@ function updateReducerImpl<S, A>(
               action: update.action,
               hasEagerState: update.hasEagerState,
               eagerState: update.eagerState,
-              next: (null: any),
+              next: null as any,
             };
             newBaseQueueLast = newBaseQueueLast.next = clone;
           }
@@ -1493,7 +1507,7 @@ function updateReducerImpl<S, A>(
               action: update.action,
               hasEagerState: update.hasEagerState,
               eagerState: update.eagerState,
-              next: (null: any),
+              next: null as any,
             };
             if (newBaseQueueLast === null) {
               newBaseQueueFirst = newBaseQueueLast = clone;
@@ -1520,18 +1534,19 @@ function updateReducerImpl<S, A>(
         if (update.hasEagerState) {
           // If this update is a state update (not a reducer) and was processed eagerly,
           // we can use the eagerly computed state
-          newState = ((update.eagerState: any): S);
+          newState = update.eagerState as any as S;
         } else {
           newState = reducer(newState, action);
         }
       }
       update = update.next;
+      // $FlowFixMe[invalid-compare]
     } while (update !== null && update !== first);
 
     if (newBaseQueueLast === null) {
       newBaseState = newState;
     } else {
-      newBaseQueueLast.next = (newBaseQueueFirst: any);
+      newBaseQueueLast.next = newBaseQueueFirst as any;
     }
 
     // Mark that the fiber performed work, but only if the new state is
@@ -1569,7 +1584,7 @@ function updateReducerImpl<S, A>(
     queue.lanes = NoLanes;
   }
 
-  const dispatch: Dispatch<A> = (queue.dispatch: any);
+  const dispatch: Dispatch<A> = queue.dispatch as any;
   return [hook.memoizedState, dispatch];
 }
 
@@ -1592,7 +1607,7 @@ function rerenderReducer<S, I, A>(
 
   // This is a re-render. Apply the new render phase updates to the previous
   // work-in-progress hook.
-  const dispatch: Dispatch<A> = (queue.dispatch: any);
+  const dispatch: Dispatch<A> = queue.dispatch as any;
   const lastRenderPhaseUpdate = queue.pending;
   let newState = hook.memoizedState;
   if (lastRenderPhaseUpdate !== null) {
@@ -1772,21 +1787,31 @@ function updateSyncExternalStore<T>(
   // commit phase if there was an interleaved mutation. In concurrent mode
   // this can happen all the time, but even in synchronous mode, an earlier
   // effect may have mutated the store.
-  if (
+  const storeChanged =
     inst.getSnapshot !== getSnapshot ||
     snapshotChanged ||
     // Check if the subscribe function changed. We can save some memory by
     // checking whether we scheduled a subscription effect above.
     (workInProgressHook !== null &&
-      workInProgressHook.memoizedState.tag & HookHasEffect)
-  ) {
+      (workInProgressHook.memoizedState.tag & HookHasEffect) !== HookNoFlags);
+
+  // Even if nothing changed during this render, we push the effect so it is
+  // always in the effect list. That way it re-runs whenever the passive
+  // effects are reconnected, like when a hidden Activity tree is shown again.
+  // While the tree was hidden we were not subscribed to the store, so
+  // mutations during that window notified nobody, and if the reveal didn't
+  // re-render this component (or rendered before the mutation), nothing
+  // would ever detect them. When nothing changed, the effect is pushed
+  // without the HasEffect tag so a regular commit skips it.
+  pushSimpleEffect(
+    storeChanged ? HookHasEffect | HookPassive : HookPassive,
+    createEffectInstance(),
+    updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
+    null,
+  );
+
+  if (storeChanged) {
     fiber.flags |= PassiveEffect;
-    pushSimpleEffect(
-      HookHasEffect | HookPassive,
-      createEffectInstance(),
-      updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
-      null,
-    );
 
     // Unless we're rendering a blocking lane, schedule a consistency check.
     // Right before committing, we will walk the tree and check if any of the
@@ -1818,10 +1843,10 @@ function pushStoreConsistencyCheck<T>(
     value: renderedSnapshot,
   };
   let componentUpdateQueue: null | FunctionComponentUpdateQueue =
-    (currentlyRenderingFiber.updateQueue: any);
+    currentlyRenderingFiber.updateQueue as any;
   if (componentUpdateQueue === null) {
     componentUpdateQueue = createFunctionComponentUpdateQueue();
-    currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
+    currentlyRenderingFiber.updateQueue = componentUpdateQueue as any;
     componentUpdateQueue.stores = [check];
   } else {
     const stores = componentUpdateQueue.stores;
@@ -1846,7 +1871,8 @@ function updateStoreInstance<T>(
   // Something may have been mutated in between render and commit. This could
   // have been in an event that fired before the passive effects, or it could
   // have been in a layout effect. In that case, we would have used the old
-  // snapsho and getSnapshot values to bail out. We need to check one more time.
+  // snapshot and getSnapshot values to bail out. We need to check one more
+  // time. This effect also re-runs when a hidden Activity tree is revealed.
   if (checkIfSnapshotChanged(inst)) {
     // Force a re-render.
     // We intentionally don't log update times and stacks here because this
@@ -1913,7 +1939,7 @@ function mountStateImpl<S>(initialState: (() => S) | S): Hook {
     lanes: NoLanes,
     dispatch: null,
     lastRenderedReducer: basicStateReducer,
-    lastRenderedState: (initialState: any),
+    lastRenderedState: initialState as any,
   };
   hook.queue = queue;
   return hook;
@@ -1924,11 +1950,11 @@ function mountState<S>(
 ): [S, Dispatch<BasicStateAction<S>>] {
   const hook = mountStateImpl(initialState);
   const queue = hook.queue;
-  const dispatch: Dispatch<BasicStateAction<S>> = (dispatchSetState.bind(
+  const dispatch: Dispatch<BasicStateAction<S>> = dispatchSetState.bind(
     null,
     currentlyRenderingFiber,
     queue,
-  ): any);
+  ) as any;
   queue.dispatch = dispatch;
   return [hook.memoizedState, dispatch];
 }
@@ -1961,12 +1987,12 @@ function mountOptimistic<S, A>(
   };
   hook.queue = queue;
   // This is different than the normal setState function.
-  const dispatch: A => void = (dispatchOptimisticSetState.bind(
+  const dispatch: A => void = dispatchOptimisticSetState.bind(
     null,
     currentlyRenderingFiber,
     true,
     queue,
-  ): any);
+  ) as any;
   queue.dispatch = dispatch;
   return [passthrough, dispatch];
 }
@@ -1978,7 +2004,7 @@ function updateOptimistic<S, A>(
   const hook = updateWorkInProgressHook();
   return updateOptimisticImpl(
     hook,
-    ((currentHook: any): Hook),
+    currentHook as any as Hook,
     passthrough,
     reducer,
   );
@@ -2000,9 +2026,9 @@ function updateOptimisticImpl<S, A>(
 
   // If a reducer is not provided, default to the same one used by useState.
   const resolvedReducer: (S, A) => S =
-    typeof reducer === 'function' ? reducer : (basicStateReducer: any);
+    typeof reducer === 'function' ? reducer : (basicStateReducer as any);
 
-  return updateReducerImpl(hook, ((currentHook: any): Hook), resolvedReducer);
+  return updateReducerImpl(hook, currentHook as any as Hook, resolvedReducer);
 }
 
 function rerenderOptimistic<S, A>(
@@ -2022,7 +2048,7 @@ function rerenderOptimistic<S, A>(
     // This is an update. Process the update queue.
     return updateOptimisticImpl(
       hook,
-      ((currentHook: any): Hook),
+      currentHook as any as Hook,
       passthrough,
       reducer,
     );
@@ -2085,7 +2111,7 @@ function dispatchActionState<S, P>(
   payload: P,
 ): void {
   if (isRenderPhaseUpdate(fiber)) {
-    throw new Error('Cannot update form state while rendering.');
+    throw new Error('Cannot update action state while rendering.');
   }
 
   const currentAction = actionQueue.action;
@@ -2097,8 +2123,7 @@ function dispatchActionState<S, P>(
   const actionNode: ActionStateQueueNode<S, P> = {
     payload,
     action: currentAction,
-    next: (null: any), // circular
-
+    next: null as any, // circular
     isTransition: true,
 
     status: 'pending',
@@ -2164,7 +2189,7 @@ function runActionStateAction<S, P>(
 
     // This is a fork of startTransition
     const prevTransition = ReactSharedInternals.T;
-    const currentTransition: Transition = ({}: any);
+    const currentTransition: Transition = {} as any;
     if (enableViewTransition) {
       currentTransition.types =
         prevTransition !== null
@@ -2253,7 +2278,7 @@ function handleActionReturnValue<S, P>(
     // $FlowFixMe[method-unbinding]
     typeof returnValue.then === 'function'
   ) {
-    const thenable = ((returnValue: any): Thenable<Awaited<S>>);
+    const thenable = returnValue as any as Thenable<Awaited<S>>;
     if (__DEV__) {
       // Keep track of the number of async transitions still running so we can warn.
       ReactSharedInternals.asyncTransitions++;
@@ -2279,7 +2304,7 @@ function handleActionReturnValue<S, P>(
       }
     }
   } else {
-    const nextState = ((returnValue: any): Awaited<S>);
+    const nextState = returnValue as any as Awaited<S>;
     onActionSuccess(actionQueue, node, nextState);
   }
 }
@@ -2359,7 +2384,7 @@ function mountActionState<S, P>(
 ): [Awaited<S>, (P) => void, boolean] {
   let initialState: Awaited<S> = initialStateProp;
   if (getIsHydrating()) {
-    const root: FiberRoot = (getWorkInProgressRoot(): any);
+    const root: FiberRoot = getWorkInProgressRoot() as any;
     const ssrFormState = root.formState;
     // If a formState option was passed to the root, there are form state
     // markers that we need to hydrate. These indicate whether the form state
@@ -2383,30 +2408,30 @@ function mountActionState<S, P>(
   const stateQueue = {
     pending: null,
     lanes: NoLanes,
-    dispatch: (null: any),
+    dispatch: null as any,
     lastRenderedReducer: actionStateReducer,
     lastRenderedState: initialState,
   };
   stateHook.queue = stateQueue;
-  const setState: Dispatch<S | Awaited<S>> = (dispatchSetState.bind(
+  const setState: Dispatch<S | Awaited<S>> = dispatchSetState.bind(
     null,
     currentlyRenderingFiber,
-    ((stateQueue: any): UpdateQueue<S | Awaited<S>, S | Awaited<S>>),
-  ): any);
+    stateQueue as any as UpdateQueue<S | Awaited<S>, S | Awaited<S>>,
+  ) as any;
   stateQueue.dispatch = setState;
 
   // Pending state. This is used to store the pending state of the action.
   // Tracked optimistically, like a transition pending state.
-  const pendingStateHook = mountStateImpl((false: Thenable<boolean> | boolean));
-  const setPendingState: boolean => void = (dispatchOptimisticSetState.bind(
+  const pendingStateHook = mountStateImpl(false as Thenable<boolean> | boolean);
+  const setPendingState: boolean => void = dispatchOptimisticSetState.bind(
     null,
     currentlyRenderingFiber,
     false,
-    ((pendingStateHook.queue: any): UpdateQueue<
+    pendingStateHook.queue as any as UpdateQueue<
       S | Awaited<S>,
       S | Awaited<S>,
-    >),
-  ): any);
+    >,
+  ) as any;
 
   // Action queue hook. This is used to queue pending actions. The queue is
   // shared between all instances of the hook. Similar to a regular state queue,
@@ -2415,12 +2440,12 @@ function mountActionState<S, P>(
   const actionQueueHook = mountWorkInProgressHook();
   const actionQueue: ActionStateQueue<S, P> = {
     state: initialState,
-    dispatch: (null: any), // circular
+    dispatch: null as any, // circular
     action,
     pending: null,
   };
   actionQueueHook.queue = actionQueue;
-  const dispatch = (dispatchActionState: any).bind(
+  const dispatch = (dispatchActionState as any).bind(
     null,
     currentlyRenderingFiber,
     actionQueue,
@@ -2443,7 +2468,7 @@ function updateActionState<S, P>(
   permalink?: string,
 ): [Awaited<S>, (P) => void, boolean] {
   const stateHook = updateWorkInProgressHook();
-  const currentStateHook = ((currentHook: any): Hook);
+  const currentStateHook = currentHook as any as Hook;
   return updateActionStateImpl(
     stateHook,
     currentStateHook,
@@ -2472,12 +2497,13 @@ function updateActionStateImpl<S, P>(
   let state: Awaited<S>;
   if (
     typeof actionResult === 'object' &&
+    // $FlowFixMe[invalid-compare]
     actionResult !== null &&
     // $FlowFixMe[method-unbinding]
     typeof actionResult.then === 'function'
   ) {
     try {
-      state = useThenable(((actionResult: any): Thenable<Awaited<S>>));
+      state = useThenable(actionResult as any as Thenable<Awaited<S>>);
     } catch (x) {
       if (x === SuspenseException) {
         // If we Suspend here, mark this separately so that we can track this
@@ -2488,7 +2514,7 @@ function updateActionStateImpl<S, P>(
       }
     }
   } else {
-    state = (actionResult: any);
+    state = actionResult as any;
   }
 
   const actionQueueHook = updateWorkInProgressHook();
@@ -2571,17 +2597,17 @@ function pushSimpleEffect(
     deps,
     inst,
     // Circular
-    next: (null: any),
+    next: null as any,
   };
   return pushEffectImpl(effect);
 }
 
 function pushEffectImpl(effect: Effect): Effect {
   let componentUpdateQueue: null | FunctionComponentUpdateQueue =
-    (currentlyRenderingFiber.updateQueue: any);
+    currentlyRenderingFiber.updateQueue as any;
   if (componentUpdateQueue === null) {
     componentUpdateQueue = createFunctionComponentUpdateQueue();
-    currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
+    currentlyRenderingFiber.updateQueue = componentUpdateQueue as any;
   }
   const lastEffect = componentUpdateQueue.lastEffect;
   if (lastEffect === null) {
@@ -2645,7 +2671,7 @@ function updateEffectImpl(
     if (nextDeps !== null) {
       const prevEffect: Effect = currentHook.memoizedState;
       const prevDeps = prevEffect.deps;
-      // $FlowFixMe[incompatible-call] (@poteto)
+      // $FlowFixMe[incompatible-type] (@poteto)
       if (areHookInputsEqual(nextDeps, prevDeps)) {
         hook.memoizedState = pushSimpleEffect(
           hookFlags,
@@ -2704,10 +2730,10 @@ function useEffectEventImpl<Args, Return, F: (...Array<Args>) => Return>(
 ) {
   currentlyRenderingFiber.flags |= UpdateEffect;
   let componentUpdateQueue: null | FunctionComponentUpdateQueue =
-    (currentlyRenderingFiber.updateQueue: any);
+    currentlyRenderingFiber.updateQueue as any;
   if (componentUpdateQueue === null) {
     componentUpdateQueue = createFunctionComponentUpdateQueue();
-    currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
+    currentlyRenderingFiber.updateQueue = componentUpdateQueue as any;
     componentUpdateQueue.events = [payload];
   } else {
     const events = componentUpdateQueue.events;
@@ -2725,7 +2751,7 @@ function mountEvent<Args, Return, F: (...Array<Args>) => Return>(
   const hook = mountWorkInProgressHook();
   const ref = {impl: callback};
   hook.memoizedState = ref;
-  // $FlowIgnore[incompatible-return]
+  // $FlowFixMe[incompatible-type]
   return function eventFn() {
     if (isInvalidExecutionContextForEventFunction()) {
       throw new Error(
@@ -2742,7 +2768,7 @@ function updateEvent<Args, Return, F: (...Array<Args>) => Return>(
   const hook = updateWorkInProgressHook();
   const ref = hook.memoizedState;
   useEffectEventImpl({ref, nextImpl: callback});
-  // $FlowIgnore[incompatible-return]
+  // $FlowFixMe[incompatible-type]
   return function eventFn() {
     if (isInvalidExecutionContextForEventFunction()) {
       throw new Error(
@@ -2833,6 +2859,7 @@ function mountImperativeHandle<T>(
       console.error(
         'Expected useImperativeHandle() second argument to be a function ' +
           'that creates a handle. Instead received: %s.',
+        // $FlowFixMe[invalid-compare]
         create !== null ? typeof create : 'null',
       );
     }
@@ -2867,6 +2894,7 @@ function updateImperativeHandle<T>(
       console.error(
         'Expected useImperativeHandle() second argument to be a function ' +
           'that creates a handle. Instead received: %s.',
+        // $FlowFixMe[invalid-compare]
         create !== null ? typeof create : 'null',
       );
     }
@@ -2966,7 +2994,7 @@ function mountDeferredValue<T>(value: T, initialValue?: T): T {
 
 function updateDeferredValue<T>(value: T, initialValue?: T): T {
   const hook = updateWorkInProgressHook();
-  const resolvedCurrentHook: Hook = (currentHook: any);
+  const resolvedCurrentHook: Hook = currentHook as any;
   const prevValue: T = resolvedCurrentHook.memoizedState;
   return updateDeferredValueImpl(hook, prevValue, value, initialValue);
 }
@@ -3100,7 +3128,7 @@ function startTransition<S>(
   );
 
   const prevTransition = ReactSharedInternals.T;
-  const currentTransition: Transition = ({}: any);
+  const currentTransition: Transition = {} as any;
   if (enableViewTransition) {
     currentTransition.types =
       prevTransition !== null
@@ -3153,7 +3181,7 @@ function startTransition<S>(
       typeof returnValue === 'object' &&
       typeof returnValue.then === 'function'
     ) {
-      const thenable = ((returnValue: any): Thenable<mixed>);
+      const thenable = returnValue as any as Thenable<mixed>;
       if (__DEV__) {
         // Keep track of the number of async transitions still running so we can warn.
         ReactSharedInternals.asyncTransitions++;
@@ -3168,7 +3196,7 @@ function startTransition<S>(
       dispatchSetStateInternal(
         fiber,
         queue,
-        (thenableForFinishedState: any),
+        thenableForFinishedState as any,
         requestUpdateLane(fiber),
       );
     } else {
@@ -3299,7 +3327,7 @@ function ensureFormComponentIsStateful(formFiber: Fiber) {
     lanes: NoLanes,
     // We're going to cheat and intentionally not create a bound dispatch
     // method, because we can call it directly in startTransition.
-    dispatch: (null: any),
+    dispatch: null as any,
     lastRenderedReducer: basicStateReducer,
     lastRenderedState: NoPendingHostTransition,
   };
@@ -3322,7 +3350,7 @@ function ensureFormComponentIsStateful(formFiber: Fiber) {
     lanes: NoLanes,
     // We're going to cheat and intentionally not create a bound dispatch
     // method, because we can call it directly in startTransition.
-    dispatch: (null: any),
+    dispatch: null as any,
     lastRenderedReducer: basicStateReducer,
     lastRenderedState: initialResetState,
   };
@@ -3382,9 +3410,9 @@ export function requestFormReset(formFiber: Fiber) {
     // instead.
     // TODO: We should really stash the Queue somewhere stateful
     // just like how setState binds the Queue.
-    stateHook = (formFiber.alternate: any).memoizedState;
+    stateHook = (formFiber.alternate as any).memoizedState;
   }
-  const resetStateHook: Hook = (stateHook.next: any);
+  const resetStateHook: Hook = stateHook.next as any;
   const resetStateQueue = resetStateHook.queue;
   dispatchSetStateInternal(
     formFiber,
@@ -3398,7 +3426,7 @@ function mountTransition(): [
   boolean,
   (callback: () => void, options?: StartTransitionOptions) => void,
 ] {
-  const stateHook = mountStateImpl((false: Thenable<boolean> | boolean));
+  const stateHook = mountStateImpl(false as Thenable<boolean> | boolean);
   // The `start` method never changes.
   const start = startTransition.bind(
     null,
@@ -3449,7 +3477,7 @@ function useHostTransitionStatus(): TransitionStatus {
 function mountId(): string {
   const hook = mountWorkInProgressHook();
 
-  const root = ((getWorkInProgressRoot(): any): FiberRoot);
+  const root = getWorkInProgressRoot() as any as FiberRoot;
   // TODO: In Fizz, id generation is specific to each server config. Maybe we
   // should do this in Fiber, too? Deferring this decision for now because
   // there's no other place to store the prefix except for an internal field on
@@ -3578,7 +3606,7 @@ function dispatchReducerAction<S, A>(
     action,
     hasEagerState: false,
     eagerState: null,
-    next: (null: any),
+    next: null as any,
   };
 
   if (isRenderPhaseUpdate(fiber)) {
@@ -3638,7 +3666,7 @@ function dispatchSetStateInternal<S, A>(
     action,
     hasEagerState: false,
     eagerState: null,
-    next: (null: any),
+    next: null as any,
   };
 
   if (isRenderPhaseUpdate(fiber)) {
@@ -3660,7 +3688,7 @@ function dispatchSetStateInternal<S, A>(
           ReactSharedInternals.H = InvalidNestedHooksDispatcherOnUpdateInDEV;
         }
         try {
-          const currentState: S = (queue.lastRenderedState: any);
+          const currentState: S = queue.lastRenderedState as any;
           const eagerState = lastRenderedReducer(currentState, action);
           // Stash the eagerly computed state, and the reducer used to compute
           // it, on the update object. If the reducer hasn't changed by the
@@ -3757,7 +3785,7 @@ function dispatchOptimisticSetState<S, A>(
     action,
     hasEagerState: false,
     eagerState: null,
-    next: (null: any),
+    next: null as any,
   };
 
   if (isRenderPhaseUpdate(fiber)) {
@@ -3822,8 +3850,8 @@ function enqueueRenderPhaseUpdate<S, A>(
   // This is a render phase update. Stash it in a lazily-created map of
   // queue -> linked list of updates. After this render pass, we'll restart
   // and apply the stashed updates on top of the work-in-progress hook.
-  didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate =
-    true;
+  didScheduleRenderPhaseUpdateDuringThisPass =
+    didScheduleRenderPhaseUpdate = true;
   const pending = queue.pending;
   if (pending === null) {
     // This is the first update. Create a circular list.

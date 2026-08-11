@@ -24,24 +24,6 @@ describe('parseConfigPragma()', () => {
     );
   });
 
-  it('effect autodeps config must have at least 1 required argument', () => {
-    expect(() => {
-      validateEnvironmentConfig({
-        inferEffectDependencies: [
-          {
-            function: {
-              source: 'react',
-              importSpecifierName: 'useEffect',
-            },
-            autodepsIndex: 0,
-          },
-        ],
-      } as any);
-    }).toThrowErrorMatchingInlineSnapshot(
-      `"Error: Could not validate environment config. Update React Compiler config to fix the error. Validation error: AutodepsIndex must be > 0 at "inferEffectDependencies[0].autodepsIndex"."`,
-    );
-  });
-
   it('can parse stringy enums', () => {
     const stringyHook = {
       effectKind: 'freeze',

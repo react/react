@@ -12,7 +12,10 @@ const Module = require('module');
 const path = require('path');
 const fs = require('fs');
 babel({
-  plugins: ['@babel/plugin-transform-modules-commonjs'],
+  plugins: [
+    'babel-plugin-syntax-hermes-parser',
+    '@babel/plugin-transform-modules-commonjs',
+  ],
 });
 
 const yargs = require('yargs');
@@ -90,7 +93,10 @@ function getReactFeatureFlagsMajor() {
       'const __NEXT_MAJOR__ = "next";'
     ),
     {
-      plugins: ['@babel/plugin-transform-modules-commonjs'],
+      plugins: [
+        'babel-plugin-syntax-hermes-parser',
+        '@babel/plugin-transform-modules-commonjs',
+      ],
     }
   ).code;
 
@@ -125,7 +131,10 @@ function getReactNativeFeatureFlagsMajor() {
         'const __TODO_NEXT_RN_MAJOR__ = "next-todo";'
       ),
     {
-      plugins: ['@babel/plugin-transform-modules-commonjs'],
+      plugins: [
+        'babel-plugin-syntax-hermes-parser',
+        '@babel/plugin-transform-modules-commonjs',
+      ],
     }
   ).code;
 
@@ -190,7 +199,7 @@ function getNextMajorFlagValue(flag) {
     return '📊';
   } else if (value === 'dev') {
     return '💻';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected OSS Stable value ${value} for flag ${flag}`);
@@ -212,7 +221,7 @@ function getOSSCanaryFlagValue(flag) {
     return '📊';
   } else if (value === 'dev') {
     return '💻';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected OSS Canary value ${value} for flag ${flag}`);
@@ -229,7 +238,7 @@ function getOSSExperimentalFlagValue(flag) {
     return '📊';
   } else if (value === 'dev') {
     return '💻';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(
@@ -250,7 +259,7 @@ function getWWWModernFlagValue(flag) {
     return '💻';
   } else if (value === 'gk') {
     return '🧪';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected WWW Modern value ${value} for flag ${flag}`);
@@ -274,7 +283,7 @@ function getWWWClassicFlagValue(flag) {
     return '💻';
   } else if (value === 'gk') {
     return '🧪';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected WWW Classic value ${value} for flag ${flag}`);
@@ -295,7 +304,7 @@ function getRNNextMajorFlagValue(flag) {
     return '💻';
   } else if (value === 'gk') {
     return '🧪';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected RN OSS value ${value} for flag ${flag}`);
@@ -320,7 +329,7 @@ function getRNOSSFlagValue(flag) {
     return '💻';
   } else if (value === 'gk') {
     return '🧪';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected RN OSS value ${value} for flag ${flag}`);
@@ -344,7 +353,7 @@ function getRNFBFlagValue(flag) {
     return '💻';
   } else if (value === 'gk') {
     return '🧪';
-  } else if (typeof value === 'number') {
+  } else if (typeof value === 'number' || typeof value === 'string') {
     return value;
   } else {
     throw new Error(`Unexpected RN FB value ${value} for flag ${flag}`);

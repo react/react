@@ -291,7 +291,9 @@ export function printTerminal(terminal: Terminal): Array<string> | string {
       break;
     }
     case 'maybe-throw': {
-      value = `[${terminal.id}] MaybeThrow continuation=bb${terminal.continuation} handler=bb${terminal.handler}`;
+      const handlerStr =
+        terminal.handler !== null ? `bb${terminal.handler}` : '(none)';
+      value = `[${terminal.id}] MaybeThrow continuation=bb${terminal.continuation} handler=${handlerStr}`;
       if (terminal.effects != null) {
         value += `\n    ${terminal.effects.map(printAliasingEffect).join('\n    ')}`;
       }

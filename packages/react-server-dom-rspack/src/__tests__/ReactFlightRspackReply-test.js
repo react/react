@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment node
  */
 
 'use strict';
@@ -12,8 +13,14 @@
 const {
   describeRspackReplySecurityTests,
 } = require('./utils/RspackReplySecurityTests');
+const {
+  patchMessageChannel,
+} = require('../../../../scripts/jest/patchMessageChannel');
 
 describeRspackReplySecurityTests(
-  () => require('react-server-dom-rspack/server.node'),
+  () => {
+    patchMessageChannel();
+    return require('react-server-dom-rspack/server.node');
+  },
   () => require('react-server-dom-rspack/client.browser'),
 );

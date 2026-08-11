@@ -7,4 +7,11 @@
  * @flow
  */
 
+import typeof * as ReconcilerAPI from './src/ReactFiberReconciler';
+import typeof * as HostConfig from './src/ReactFiberConfig';
+
 export * from './src/ReactFiberReconciler';
+
+// At build time, this module is wrapped as a factory function ($$$reconciler).
+// Consumers pass a host config object and get back the reconciler API.
+declare export default (hostConfig: HostConfig) => ReconcilerAPI;

@@ -8,10 +8,12 @@
 import {NodePath} from '@babel/core';
 import * as t from '@babel/types';
 import {
+  CompilerDiagnostic,
   CompilerError,
   CompilerErrorDetail,
   ErrorCategory,
 } from '../CompilerError';
+import {CompileErrorDetail} from './Options';
 import {ExternalFunction, ReactFunctionType} from '../HIR/Environment';
 import {CodegenFunction} from '../ReactiveScopes';
 import {isComponentDeclaration} from '../Utils/ComponentDeclaration';
@@ -170,6 +172,44 @@ export type CompileResult = {
   compiledFn: CodegenFunction;
 };
 
+/**
+ * Format a CompilerDiagnostic or CompilerErrorDetail class instance
+ * into a plain object for logEvent(). This ensures the logged value
+ * has all fields as direct properties (no getters, no nested `options`).
+ */
+export function formatDetailForLogging(
+  detail: CompilerDiagnostic | CompilerErrorDetail,
+): CompileErrorDetail {
+  if (detail instanceof CompilerDiagnostic) {
+    return {
+      category: detail.category,
+      reason: detail.reason,
+      description: detail.description ?? null,
+      severity: detail.severity,
+      suggestions: detail.suggestions ?? null,
+      details: detail.options.details.map(d => {
+        if (d.kind === 'error') {
+          const loc = d.loc != null && typeof d.loc !== 'symbol' ? d.loc : null;
+          return {kind: d.kind, loc, message: d.message};
+        } else {
+          return {kind: d.kind, loc: null, message: d.message};
+        }
+      }),
+    };
+  } else {
+    const loc =
+      detail.loc != null && typeof detail.loc !== 'symbol' ? detail.loc : null;
+    return {
+      category: detail.category,
+      reason: detail.reason,
+      description: detail.description ?? null,
+      severity: detail.severity,
+      suggestions: detail.suggestions ?? null,
+      loc,
+    };
+  }
+}
+
 function logError(
   err: unknown,
   context: {
@@ -184,7 +224,7 @@ function logError(
         context.opts.logger.logEvent(context.filename, {
           kind: 'CompileError',
           fnLoc,
-          detail,
+          detail: formatDetailForLogging(detail),
         });
       }
     } else {
@@ -350,10 +390,6 @@ function isFilePartOfSources(
   return false;
 }
 
-export type CompileProgramMetadata = {
-  retryErrors: Array<{fn: BabelFn; error: CompilerError}>;
-  inferredEffectLocations: Set<t.SourceLocation>;
-};
 /**
  * Main entrypoint for React Compiler.
  *
@@ -364,7 +400,7 @@ export type CompileProgramMetadata = {
 export function compileProgram(
   program: NodePath<t.Program>,
   pass: CompilerPass,
-): CompileProgramMetadata | null {
+): void {
   /**
    * This is directly invoked by the react-compiler babel plugin, so exceptions
    * thrown by this function will fail the babel build.
@@ -377,7 +413,7 @@ export function compileProgram(
    *   the outlined functions.
    */
   if (shouldSkipCompilation(program, pass)) {
-    return null;
+    return;
   }
   const restrictedImportsErr = validateRestrictedImports(
     program,
@@ -385,7 +421,7 @@ export function compileProgram(
   );
   if (restrictedImportsErr) {
     handleError(restrictedImportsErr, pass, null);
-    return null;
+    return;
   }
   /*
    * Record lint errors and critical errors as depending on Forget's config,
@@ -479,16 +515,11 @@ export function compileProgram(
       );
       handleError(error, programContext, null);
     }
-    return null;
+    return;
   }
 
   // Insert React Compiler generated functions into the Babel AST
   applyCompiledFunctions(program, compiledFns, pass, programContext);
-
-  return {
-    retryErrors: programContext.retryErrors,
-    inferredEffectLocations: programContext.inferredEffectLocations,
-  };
 }
 
 type CompileSource = {
@@ -517,10 +548,6 @@ function findFunctionsToCompile(
     }
 
     const fnType = getReactFunctionType(fn, pass);
-
-    if (pass.opts.environment.validateNoDynamicallyCreatedComponentsOrHooks) {
-      validateNoDynamicallyCreatedComponentsOrHooks(fn, pass, programContext);
-    }
 
     if (fnType === null || programContext.alreadyCompiled.has(fn.node)) {
       return;
@@ -633,15 +660,7 @@ function processFn(
     } else {
       handleError(compileResult.error, programContext, fn.node.loc ?? null);
     }
-    if (outputMode === 'client') {
-      const retryResult = retryCompileFunction(fn, fnType, programContext);
-      if (retryResult == null) {
-        return null;
-      }
-      compiledFn = retryResult;
-    } else {
-      return null;
-    }
+    return null;
   } else {
     compiledFn = compileResult.compiledFn;
   }
@@ -659,7 +678,7 @@ function processFn(
     programContext.logEvent({
       kind: 'CompileSkip',
       fnLoc: fn.node.body.loc ?? null,
-      reason: `Skipped due to '${directives.optOut.value}' directive.`,
+      reason: `Skipped due to '${directives.optOut.value.value}' directive.`,
       loc: directives.optOut.loc ?? null,
     });
     return null;
@@ -678,16 +697,6 @@ function processFn(
   if (programContext.hasModuleScopeOptOut) {
     return null;
   } else if (programContext.opts.outputMode === 'lint') {
-    /**
-     * inferEffectDependencies + noEmit is currently only used for linting. In
-     * this mode, add source locations for where the compiler *can* infer effect
-     * dependencies.
-     */
-    for (const loc of compiledFn.inferredEffectLocations) {
-      if (loc !== GeneratedSource) {
-        programContext.inferredEffectLocations.add(loc);
-      }
-    }
     return null;
   } else if (
     programContext.opts.compilationMode === 'annotation' &&
@@ -728,67 +737,37 @@ function tryCompileFunction(
   }
 
   try {
-    return {
-      kind: 'compile',
-      compiledFn: compileFn(
-        fn,
-        programContext.opts.environment,
-        fnType,
-        outputMode,
-        programContext,
-        programContext.opts.logger,
-        programContext.filename,
-        programContext.code,
-      ),
-    };
-  } catch (err) {
-    return {kind: 'error', error: err};
-  }
-}
-
-/**
- * If non-memo feature flags are enabled, retry compilation with a more minimal
- * feature set.
- *
- * @returns a CodegenFunction if retry was successful
- */
-function retryCompileFunction(
-  fn: BabelFn,
-  fnType: ReactFunctionType,
-  programContext: ProgramContext,
-): CodegenFunction | null {
-  const environment = programContext.opts.environment;
-  if (
-    !(environment.enableFire || environment.inferEffectDependencies != null)
-  ) {
-    return null;
-  }
-  /**
-   * Note that function suppressions are not checked in the retry pipeline, as
-   * they only affect auto-memoization features.
-   */
-  try {
-    const retryResult = compileFn(
+    const result = compileFn(
       fn,
-      environment,
+      programContext.opts.environment,
       fnType,
-      'client-no-memo',
+      outputMode,
       programContext,
       programContext.opts.logger,
       programContext.filename,
       programContext.code,
     );
-
-    if (!retryResult.hasFireRewrite && !retryResult.hasInferredEffect) {
-      return null;
+    if (result.isOk()) {
+      return {kind: 'compile', compiledFn: result.unwrap()};
+    } else {
+      return {kind: 'error', error: result.unwrapErr()};
     }
-    return retryResult;
   } catch (err) {
-    // TODO: we might want to log error here, but this will also result in duplicate logging
-    if (err instanceof CompilerError) {
-      programContext.retryErrors.push({fn, error: err});
+    /**
+     * A pass incorrectly threw instead of recording the error.
+     * Log for detection in development.
+     */
+    if (
+      err instanceof CompilerError &&
+      err.details.every(detail => detail.category !== ErrorCategory.Invariant)
+    ) {
+      programContext.logEvent({
+        kind: 'CompileUnexpectedThrow',
+        fnLoc: fn.node.loc ?? null,
+        data: err.toString(),
+      });
     }
-    return null;
+    return {kind: 'error', error: err};
   }
 }
 
@@ -836,6 +815,13 @@ function applyCompiledFunctions(
 
   // Forget compiled the component, we need to update existing imports of useMemoCache
   if (compiledFns.length > 0) {
+    // Codegen may have registered `_c` for a function that was later discarded.
+    const anyAppliedUsesMemo = compiledFns.some(
+      result => result.compiledFn.memoSlotsUsed > 0,
+    );
+    if (!anyAppliedUsesMemo) {
+      programContext.removeMemoCacheImport();
+    }
     addImportsToProgram(program, programContext);
   }
 }
@@ -876,84 +862,17 @@ function shouldSkipCompilation(
   return false;
 }
 
-/**
- * Validates that Components/Hooks are always defined at module level. This prevents scope reference
- * errors that occur when the compiler attempts to optimize the nested component/hook while its
- * parent function remains uncompiled.
- */
-function validateNoDynamicallyCreatedComponentsOrHooks(
-  fn: BabelFn,
-  pass: CompilerPass,
-  programContext: ProgramContext,
-): void {
-  const parentNameExpr = getFunctionName(fn);
-  const parentName =
-    parentNameExpr !== null && parentNameExpr.isIdentifier()
-      ? parentNameExpr.node.name
-      : '<anonymous>';
-
-  const validateNestedFunction = (
-    nestedFn: NodePath<
-      t.FunctionDeclaration | t.FunctionExpression | t.ArrowFunctionExpression
-    >,
-  ): void => {
-    if (
-      nestedFn.node === fn.node ||
-      programContext.alreadyCompiled.has(nestedFn.node)
-    ) {
-      return;
-    }
-
-    if (nestedFn.scope.getProgramParent() !== nestedFn.scope.parent) {
-      const nestedFnType = getReactFunctionType(nestedFn as BabelFn, pass);
-      const nestedFnNameExpr = getFunctionName(nestedFn as BabelFn);
-      const nestedName =
-        nestedFnNameExpr !== null && nestedFnNameExpr.isIdentifier()
-          ? nestedFnNameExpr.node.name
-          : '<anonymous>';
-      if (nestedFnType === 'Component' || nestedFnType === 'Hook') {
-        CompilerError.throwDiagnostic({
-          category: ErrorCategory.Factories,
-          reason: `Components and hooks cannot be created dynamically`,
-          description: `The function \`${nestedName}\` appears to be a React ${nestedFnType.toLowerCase()}, but it's defined inside \`${parentName}\`. Components and Hooks should always be declared at module scope`,
-          details: [
-            {
-              kind: 'error',
-              message: 'this function dynamically created a component/hook',
-              loc: parentNameExpr?.node.loc ?? fn.node.loc ?? null,
-            },
-            {
-              kind: 'error',
-              message: 'the component is created here',
-              loc: nestedFnNameExpr?.node.loc ?? nestedFn.node.loc ?? null,
-            },
-          ],
-        });
-      }
-    }
-
-    nestedFn.skip();
-  };
-
-  fn.traverse({
-    FunctionDeclaration: validateNestedFunction,
-    FunctionExpression: validateNestedFunction,
-    ArrowFunctionExpression: validateNestedFunction,
-  });
-}
-
 function getReactFunctionType(
   fn: BabelFn,
   pass: CompilerPass,
 ): ReactFunctionType | null {
-  const hookPattern = pass.opts.environment.hookPattern;
   if (fn.node.body.type === 'BlockStatement') {
     const optInDirectives = tryFindDirectiveEnablingMemoization(
       fn.node.body.directives,
       pass.opts,
     );
     if (optInDirectives.unwrapOr(null) != null) {
-      return getComponentOrHookLike(fn, hookPattern) ?? 'Other';
+      return getComponentOrHookLike(fn) ?? 'Other';
     }
   }
 
@@ -974,13 +893,13 @@ function getReactFunctionType(
     }
     case 'infer': {
       // Check if this is a component or hook-like function
-      return componentSyntaxType ?? getComponentOrHookLike(fn, hookPattern);
+      return componentSyntaxType ?? getComponentOrHookLike(fn);
     }
     case 'syntax': {
       return componentSyntaxType;
     }
     case 'all': {
-      return getComponentOrHookLike(fn, hookPattern) ?? 'Other';
+      return getComponentOrHookLike(fn) ?? 'Other';
     }
     default: {
       assertExhaustive(
@@ -1022,10 +941,7 @@ function hasMemoCacheFunctionImport(
   return hasUseMemoCache;
 }
 
-function isHookName(s: string, hookPattern: string | null): boolean {
-  if (hookPattern !== null) {
-    return new RegExp(hookPattern).test(s);
-  }
+function isHookName(s: string): boolean {
   return /^use[A-Z0-9]/.test(s);
 }
 
@@ -1034,16 +950,13 @@ function isHookName(s: string, hookPattern: string | null): boolean {
  * containing a hook name.
  */
 
-function isHook(
-  path: NodePath<t.Expression | t.PrivateName>,
-  hookPattern: string | null,
-): boolean {
+function isHook(path: NodePath<t.Expression | t.PrivateName>): boolean {
   if (path.isIdentifier()) {
-    return isHookName(path.node.name, hookPattern);
+    return isHookName(path.node.name);
   } else if (
     path.isMemberExpression() &&
     !path.node.computed &&
-    isHook(path.get('property'), hookPattern)
+    isHook(path.get('property'))
   ) {
     const obj = path.get('object').node;
     const isPascalCaseNameSpace = /^[A-Z].*/;
@@ -1184,19 +1097,18 @@ function getComponentOrHookLike(
   node: NodePath<
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
   >,
-  hookPattern: string | null,
 ): ReactFunctionType | null {
   const functionName = getFunctionName(node);
   // Check if the name is component or hook like:
   if (functionName !== null && isComponentName(functionName)) {
     let isComponent =
-      callsHooksOrCreatesJsx(node, hookPattern) &&
+      callsHooksOrCreatesJsx(node) &&
       isValidComponentParams(node.get('params')) &&
       !returnsNonNode(node);
     return isComponent ? 'Component' : null;
-  } else if (functionName !== null && isHook(functionName, hookPattern)) {
+  } else if (functionName !== null && isHook(functionName)) {
     // Hooks have hook invocations or JSX, but can take any # of arguments
-    return callsHooksOrCreatesJsx(node, hookPattern) ? 'Hook' : null;
+    return callsHooksOrCreatesJsx(node) ? 'Hook' : null;
   }
 
   /*
@@ -1206,7 +1118,7 @@ function getComponentOrHookLike(
   if (node.isFunctionExpression() || node.isArrowFunctionExpression()) {
     if (isForwardRefCallback(node) || isMemoCallback(node)) {
       // As an added check we also look for hook invocations or JSX
-      return callsHooksOrCreatesJsx(node, hookPattern) ? 'Component' : null;
+      return callsHooksOrCreatesJsx(node) ? 'Component' : null;
     }
   }
   return null;
@@ -1232,7 +1144,6 @@ function callsHooksOrCreatesJsx(
   node: NodePath<
     t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression
   >,
-  hookPattern: string | null,
 ): boolean {
   let invokesHooks = false;
   let createsJsx = false;
@@ -1243,7 +1154,7 @@ function callsHooksOrCreatesJsx(
     },
     CallExpression(call) {
       const callee = call.get('callee');
-      if (callee.isExpression() && isHook(callee, hookPattern)) {
+      if (callee.isExpression() && isHook(callee)) {
         invokesHooks = true;
       }
     },

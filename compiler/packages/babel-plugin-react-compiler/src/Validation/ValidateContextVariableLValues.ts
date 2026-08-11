@@ -5,7 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {CompilerError} from '..';
+import {CompilerDiagnostic, CompilerError} from '..';
+import {ErrorCategory} from '../CompilerError';
+import {Environment} from '../HIR/Environment';
 import {HIRFunction, IdentifierId, Place} from '../HIR';
 import {printPlace} from '../HIR/PrintHIR';
 import {eachInstructionValueLValue, eachPatternOperand} from '../HIR/visitors';
@@ -17,12 +19,13 @@ import {eachInstructionValueLValue, eachPatternOperand} from '../HIR/visitors';
  */
 export function validateContextVariableLValues(fn: HIRFunction): void {
   const identifierKinds: IdentifierKinds = new Map();
-  validateContextVariableLValuesImpl(fn, identifierKinds);
+  validateContextVariableLValuesImpl(fn, identifierKinds, fn.env);
 }
 
 function validateContextVariableLValuesImpl(
   fn: HIRFunction,
   identifierKinds: IdentifierKinds,
+  env: Environment,
 ): void {
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
@@ -30,30 +33,30 @@ function validateContextVariableLValuesImpl(
       switch (value.kind) {
         case 'DeclareContext':
         case 'StoreContext': {
-          visit(identifierKinds, value.lvalue.place, 'context');
+          visit(identifierKinds, value.lvalue.place, 'context', env);
           break;
         }
         case 'LoadContext': {
-          visit(identifierKinds, value.place, 'context');
+          visit(identifierKinds, value.place, 'context', env);
           break;
         }
         case 'StoreLocal':
         case 'DeclareLocal': {
-          visit(identifierKinds, value.lvalue.place, 'local');
+          visit(identifierKinds, value.lvalue.place, 'local', env);
           break;
         }
         case 'LoadLocal': {
-          visit(identifierKinds, value.place, 'local');
+          visit(identifierKinds, value.place, 'local', env);
           break;
         }
         case 'PostfixUpdate':
         case 'PrefixUpdate': {
-          visit(identifierKinds, value.lvalue, 'local');
+          visit(identifierKinds, value.lvalue, 'local', env);
           break;
         }
         case 'Destructure': {
           for (const lvalue of eachPatternOperand(value.lvalue.pattern)) {
-            visit(identifierKinds, lvalue, 'destructure');
+            visit(identifierKinds, lvalue, 'destructure', env);
           }
           break;
         }
@@ -62,18 +65,24 @@ function validateContextVariableLValuesImpl(
           validateContextVariableLValuesImpl(
             value.loweredFunc.func,
             identifierKinds,
+            env,
           );
           break;
         }
         default: {
           for (const _ of eachInstructionValueLValue(value)) {
-            CompilerError.throwTodo({
-              reason:
-                'ValidateContextVariableLValues: unhandled instruction variant',
-              loc: value.loc,
-              description: `Handle '${value.kind} lvalues`,
-              suggestions: null,
-            });
+            fn.env.recordError(
+              CompilerDiagnostic.create({
+                category: ErrorCategory.Todo,
+                reason:
+                  'ValidateContextVariableLValues: unhandled instruction variant',
+                description: `Handle '${value.kind} lvalues`,
+              }).withDetails({
+                kind: 'error',
+                loc: value.loc,
+                message: null,
+              }),
+            );
           }
         }
       }
@@ -90,6 +99,7 @@ function visit(
   identifiers: IdentifierKinds,
   place: Place,
   kind: 'local' | 'context' | 'destructure',
+  env: Environment,
 ): void {
   const prev = identifiers.get(place.identifier.id);
   if (prev !== undefined) {
@@ -97,12 +107,18 @@ function visit(
     const isContext = kind === 'context';
     if (wasContext !== isContext) {
       if (prev.kind === 'destructure' || kind === 'destructure') {
-        CompilerError.throwTodo({
-          reason: `Support destructuring of context variables`,
-          loc: kind === 'destructure' ? place.loc : prev.place.loc,
-          description: null,
-          suggestions: null,
-        });
+        env.recordError(
+          CompilerDiagnostic.create({
+            category: ErrorCategory.Todo,
+            reason: `Support destructuring of context variables`,
+            description: null,
+          }).withDetails({
+            kind: 'error',
+            loc: kind === 'destructure' ? place.loc : prev.place.loc,
+            message: null,
+          }),
+        );
+        return;
       }
 
       CompilerError.invariant(false, {

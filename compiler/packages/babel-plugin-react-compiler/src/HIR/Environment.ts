@@ -8,8 +8,18 @@
 import * as t from '@babel/types';
 import {ZodError, z} from 'zod/v4';
 import {fromZodError} from 'zod-validation-error/v4';
-import {CompilerError} from '../CompilerError';
-import {CompilerOutputMode, Logger, ProgramContext} from '../Entrypoint';
+import {
+  CompilerDiagnostic,
+  CompilerError,
+  CompilerErrorDetail,
+  ErrorCategory,
+} from '../CompilerError';
+import {
+  CompilerOutputMode,
+  Logger,
+  ProgramContext,
+  formatDetailForLogging,
+} from '../Entrypoint';
 import {Err, Ok, Result} from '../Utils/Result';
 import {
   DEFAULT_GLOBALS,
@@ -54,14 +64,6 @@ import {FlowTypeEnv} from '../Flood/Types';
 import {defaultModuleTypeProvider} from './DefaultModuleTypeProvider';
 import {assertExhaustive} from '../Utils/utils';
 
-export const ReactElementSymbolSchema = z.object({
-  elementSymbol: z.union([
-    z.literal('react.element'),
-    z.literal('react.transitional.element'),
-  ]),
-  globalDevVar: z.string(),
-});
-
 export const ExternalFunctionSchema = z.object({
   // Source for the imported module that exports the `importSpecifierName` functions
   source: z.string(),
@@ -82,8 +84,6 @@ export const InstrumentationSchema = z
   );
 
 export type ExternalFunction = z.infer<typeof ExternalFunctionSchema>;
-export const USE_FIRE_FUNCTION_NAME = 'useFire';
-export const EMIT_FREEZE_GLOBAL_GATING = '__DEV__';
 
 export const MacroSchema = z.string();
 
@@ -236,23 +236,8 @@ export const EnvironmentConfigSchema = z.object({
     .enum(['off', 'all', 'missing-only', 'extra-only'])
     .default('off'),
 
-  /**
-   * When this is true, rather than pruning existing manual memoization but ensuring or validating
-   * that the memoized values remain memoized, the compiler will simply not prune existing calls to
-   * useMemo/useCallback.
-   */
-  enablePreserveExistingManualUseMemo: z.boolean().default(false),
-
   // 🌲
   enableForest: z.boolean().default(false),
-
-  /**
-   * Enable use of type annotations in the source to drive type inference. By default
-   * Forget attemps to infer types using only information that is guaranteed correct
-   * given the source, and does not trust user-supplied type annotations. This mode
-   * enables trusting user type annotations.
-   */
-  enableUseTypeAnnotations: z.boolean().default(false),
 
   /**
    * Allows specifying a function that can populate HIR with type information from
@@ -268,52 +253,7 @@ export const EnvironmentConfigSchema = z.object({
    */
   enableOptionalDependencies: z.boolean().default(true),
 
-  enableFire: z.boolean().default(false),
-
   enableNameAnonymousFunctions: z.boolean().default(false),
-
-  /**
-   * Enables inference and auto-insertion of effect dependencies. Takes in an array of
-   * configurable module and import pairs to allow for user-land experimentation. For example,
-   * [
-   *   {
-   *     module: 'react',
-   *     imported: 'useEffect',
-   *     autodepsIndex: 1,
-   *   },{
-   *     module: 'MyExperimentalEffectHooks',
-   *     imported: 'useExperimentalEffect',
-   *     autodepsIndex: 2,
-   *   },
-   * ]
-   * would insert dependencies for calls of `useEffect` imported from `react` and calls of
-   * useExperimentalEffect` from `MyExperimentalEffectHooks`.
-   *
-   * `autodepsIndex` tells the compiler which index we expect the AUTODEPS to appear in.
-   *  With the configuration above, we'd insert dependencies for `useEffect` if it has two
-   *  arguments, and the second is AUTODEPS.
-   *
-   * Still experimental.
-   */
-  inferEffectDependencies: z
-    .nullable(
-      z.array(
-        z.object({
-          function: ExternalFunctionSchema,
-          autodepsIndex: z.number().min(1, 'autodepsIndex must be > 0'),
-        }),
-      ),
-    )
-    .default(null),
-
-  /**
-   * Enables inlining ReactElement object literals in place of JSX
-   * An alternative to the standard JSX transform which replaces JSX with React's jsxProd() runtime
-   * Currently a prod-only optimization, requiring Fast JSX dependencies
-   *
-   * The symbol configuration is set for backwards compatability with pre-React 19 transforms
-   */
-  inlineJsxTransform: ReactElementSymbolSchema.nullable().default(null),
 
   /*
    * Enable validation of hooks to partially check that the component honors the rules of hooks.
@@ -367,16 +307,6 @@ export const EnvironmentConfigSchema = z.object({
   validateStaticComponents: z.boolean().default(false),
 
   /**
-   * Validates that the dependencies of all effect hooks are memoized. This helps ensure
-   * that Forget does not introduce infinite renders caused by a dependency changing,
-   * triggering an effect, which triggers re-rendering, which causes a dependency to change,
-   * triggering the effect, etc.
-   *
-   * Covers useEffect, useLayoutEffect, useInsertionEffect.
-   */
-  validateMemoizedEffectDependencies: z.boolean().default(false),
-
-  /**
    * Validates that there are no capitalized calls other than those allowed by the allowlist.
    * Calls to capitalized functions are often functions that used to be components and may
    * have lingering hook calls, which makes those calls risky to memoize.
@@ -422,37 +352,7 @@ export const EnvironmentConfigSchema = z.object({
    * then this flag will assume that `x` is not subusequently modified.
    */
   enableTransitivelyFreezeFunctionExpressions: z.boolean().default(true),
-
-  /*
-   * Enables codegen mutability debugging. This emits a dev-mode only to log mutations
-   * to values that Forget assumes are immutable (for Forget compiled code).
-   * For example:
-   *   emitFreeze: {
-   *     source: 'ReactForgetRuntime',
-   *     importSpecifierName: 'makeReadOnly',
-   *   }
-   *
-   * produces:
-   *   import {makeReadOnly} from 'ReactForgetRuntime';
-   *
-   *   function Component(props) {
-   *     if (c_0) {
-   *       // ...
-   *       $[0] = __DEV__ ? makeReadOnly(x) : x;
-   *     } else {
-   *       x = $[0];
-   *     }
-   *   }
-   */
-  enableEmitFreeze: ExternalFunctionSchema.nullable().default(null),
-
   enableEmitHookGuards: ExternalFunctionSchema.nullable().default(null),
-
-  /**
-   * Enable instruction reordering. See InstructionReordering.ts for the details
-   * of the approach.
-   */
-  enableInstructionReordering: z.boolean().default(false),
 
   /**
    * Enables function outlinining, where anonymous functions that do not close over
@@ -535,79 +435,11 @@ export const EnvironmentConfigSchema = z.object({
   // Enable validation of mutable ranges
   assertValidMutableRanges: z.boolean().default(false),
 
-  /*
-   * Enable emitting "change variables" which store the result of whether a particular
-   * reactive scope dependency has changed since the scope was last executed.
-   *
-   * Ex:
-   * ```
-   * const c_0 = $[0] !== input; // change variable
-   * let output;
-   * if (c_0) ...
-   * ```
-   *
-   * Defaults to false, where the comparison is inlined:
-   *
-   * ```
-   * let output;
-   * if ($[0] !== input) ...
-   * ```
-   */
-  enableChangeVariableCodegen: z.boolean().default(false),
-
-  /**
-   * Enable emitting comments that explain Forget's output, and which
-   * values are being checked and which values produced by each memo block.
-   *
-   * Intended for use in demo purposes (incl playground)
-   */
-  enableMemoizationComments: z.boolean().default(false),
-
   /**
    * [TESTING ONLY] Throw an unknown exception during compilation to
    * simulate unexpected exceptions e.g. errors from babel functions.
    */
   throwUnknownException__testonly: z.boolean().default(false),
-
-  /**
-   * Enables deps of a function epxression to be treated as conditional. This
-   * makes sure we don't load a dep when it's a property (to check if it has
-   * changed) and instead check the receiver.
-   *
-   * This makes sure we don't end up throwing when the reciver is null. Consider
-   * this code:
-   *
-   * ```
-   * function getLength() {
-   *   return props.bar.length;
-   * }
-   * ```
-   *
-   * It's only safe to memoize `getLength` against props, not props.bar, as
-   * props.bar could be null when this `getLength` function is created.
-   *
-   * This does cause the memoization to now be coarse grained, which is
-   * non-ideal.
-   */
-  enableTreatFunctionDepsAsConditional: z.boolean().default(false),
-
-  /**
-   * When true, always act as though the dependencies of a memoized value
-   * have changed. This makes the compiler not actually perform any optimizations,
-   * but is useful for debugging. Implicitly also sets
-   * @enablePreserveExistingManualUseMemo, because otherwise memoization in the
-   * original source will be disabled as well.
-   */
-  disableMemoizationForDebugging: z.boolean().default(false),
-
-  /**
-   * When true, rather using memoized values, the compiler will always re-compute
-   * values, and then use a heuristic to compare the memoized value to the newly
-   * computed one. This detects cases where rules of react violations may cause the
-   * compiled code to behave differently than the original.
-   */
-  enableChangeDetectionForDebugging:
-    ExternalFunctionSchema.nullable().default(null),
 
   /**
    * The react native re-animated library uses custom Babel transforms that
@@ -618,19 +450,6 @@ export const EnvironmentConfigSchema = z.object({
    * with the compiler.
    */
   enableCustomTypeDefinitionForReanimated: z.boolean().default(false),
-
-  /**
-   * If specified, this value is used as a pattern for determing which global values should be
-   * treated as hooks. The pattern should have a single capture group, which will be used as
-   * the hook name for the purposes of resolving hook definitions (for builtin hooks)_.
-   *
-   * For example, by default `React$useState` would not be treated as a hook. By specifying
-   * `hookPattern: 'React$(\w+)'`, the compiler will treat this value equivalently to `useState()`.
-   *
-   * This setting is intended for cases where Forget is compiling code that has been prebundled
-   * and identifiers have been changed.
-   */
-  hookPattern: z.string().nullable().default(null),
 
   /**
    * If enabled, this will treat objects named as `ref` or if their names end with the substring `Ref`,
@@ -656,28 +475,6 @@ export const EnvironmentConfigSchema = z.object({
    */
   enableTreatSetIdentifiersAsStateSetters: z.boolean().default(false),
 
-  /*
-   * If specified a value, the compiler lowers any calls to `useContext` to use
-   * this value as the callee.
-   *
-   * A selector function is compiled and passed as an argument along with the
-   * context to this function call.
-   *
-   * The compiler automatically figures out the keys by looking for the immediate
-   * destructuring of the return value from the useContext call. In the future,
-   * this can be extended to different kinds of context access like property
-   * loads and accesses over multiple statements as well.
-   *
-   * ```
-   * // input
-   * const {foo, bar} = useContext(MyContext);
-   *
-   * // output
-   * const {foo, bar} = useCompiledContext(MyContext, (c) => [c.foo, c.bar]);
-   * ```
-   */
-  lowerContextAccess: ExternalFunctionSchema.nullable().default(null),
-
   /**
    * If enabled, will validate useMemos that don't return any values:
    *
@@ -688,13 +485,6 @@ export const EnvironmentConfigSchema = z.object({
    *   useMemo(() => { ... }, [...]);
    */
   validateNoVoidUseMemo: z.boolean().default(true),
-
-  /**
-   * Validates that Components/Hooks are always defined at module level. This prevents scope
-   * reference errors that occur when the compiler attempts to optimize the nested component/hook
-   * while its parent function remains uncompiled.
-   */
-  validateNoDynamicallyCreatedComponentsOrHooks: z.boolean().default(false),
 
   /**
    * When enabled, allows setState calls in effects based on valid patterns involving refs:
@@ -717,15 +507,6 @@ export const EnvironmentConfigSchema = z.object({
    * 3. Force update / external sync - should use useSyncExternalStore
    */
   enableVerboseNoSetStateInEffect: z.boolean().default(false),
-
-  /**
-   * Enables inference of event handler types for JSX props on built-in DOM elements.
-   * When enabled, functions passed to event handler props (props starting with "on")
-   * on primitive JSX tags are inferred to have the BuiltinEventHandlerId type, which
-   * allows ref access within those functions since DOM event handlers are guaranteed
-   * by React to only execute in response to events, not during render.
-   */
-  enableInferEventHandlers: z.boolean().default(false),
 });
 
 export type EnvironmentConfig = z.infer<typeof EnvironmentConfigSchema>;
@@ -767,15 +548,18 @@ export class Environment {
   fnType: ReactFunctionType;
   outputMode: CompilerOutputMode;
   programContext: ProgramContext;
-  hasFireRewrite: boolean;
-  hasInferredEffect: boolean;
-  inferredEffectLocations: Set<SourceLocation> = new Set();
 
   #contextIdentifiers: Set<t.Identifier>;
   #hoistedIdentifiers: Set<t.Identifier>;
   parentFunction: NodePath<t.Function>;
 
   #flowTypeEnvironment: FlowTypeEnv | null;
+
+  /**
+   * Accumulated compilation errors. Passes record errors here instead of
+   * throwing, so the pipeline can continue and report all errors at once.
+   */
+  #errors: CompilerError = new CompilerError();
 
   constructor(
     scope: BabelScope,
@@ -799,20 +583,6 @@ export class Environment {
     this.programContext = programContext;
     this.#shapes = new Map(DEFAULT_SHAPES);
     this.#globals = new Map(DEFAULT_GLOBALS);
-    this.hasFireRewrite = false;
-    this.hasInferredEffect = false;
-
-    if (
-      config.disableMemoizationForDebugging &&
-      config.enableChangeDetectionForDebugging != null
-    ) {
-      CompilerError.throwInvalidConfig({
-        reason: `Invalid environment config: the 'disableMemoizationForDebugging' and 'enableChangeDetectionForDebugging' options cannot be used together`,
-        description: null,
-        loc: null,
-        suggestions: null,
-      });
-    }
 
     for (const [hookName, hook] of this.config.customHooks) {
       CompilerError.invariant(!this.#globals.has(hookName), {
@@ -875,9 +645,6 @@ export class Environment {
       case 'ssr': {
         return true;
       }
-      case 'client-no-memo': {
-        return false;
-      }
       default: {
         assertExhaustive(
           this.outputMode,
@@ -894,8 +661,7 @@ export class Environment {
         // linting also enables memoization so that we can check if manual memoization is preserved
         return true;
       }
-      case 'ssr':
-      case 'client-no-memo': {
+      case 'ssr': {
         return false;
       }
       default: {
@@ -913,9 +679,6 @@ export class Environment {
       case 'lint':
       case 'ssr': {
         return true;
-      }
-      case 'client-no-memo': {
-        return false;
       }
       default: {
         assertExhaustive(
@@ -949,10 +712,56 @@ export class Environment {
     for (const error of errors.unwrapErr().details) {
       this.logger.logEvent(this.filename, {
         kind: 'CompileError',
-        detail: error,
+        detail: formatDetailForLogging(error),
         fnLoc: null,
       });
     }
+  }
+
+  /**
+   * Record a single diagnostic or error detail on this environment.
+   * If the error is an Invariant, it is immediately thrown since invariants
+   * represent internal bugs that cannot be recovered from.
+   * Otherwise, the error is accumulated and optionally logged.
+   */
+  recordError(error: CompilerDiagnostic | CompilerErrorDetail): void {
+    if (error.category === ErrorCategory.Invariant) {
+      const compilerError = new CompilerError();
+      if (error instanceof CompilerDiagnostic) {
+        compilerError.pushDiagnostic(error);
+      } else {
+        compilerError.pushErrorDetail(error);
+      }
+      throw compilerError;
+    }
+    if (error instanceof CompilerDiagnostic) {
+      this.#errors.pushDiagnostic(error);
+    } else {
+      this.#errors.pushErrorDetail(error);
+    }
+  }
+
+  /**
+   * Record all diagnostics from a CompilerError onto this environment.
+   */
+  recordErrors(error: CompilerError): void {
+    for (const detail of error.details) {
+      this.recordError(detail);
+    }
+  }
+
+  /**
+   * Returns true if any errors have been recorded during compilation.
+   */
+  hasErrors(): boolean {
+    return this.#errors.hasAnyErrors();
+  }
+
+  /**
+   * Returns the accumulated CompilerError containing all recorded diagnostics.
+   */
+  aggregateErrors(): CompilerError {
+    return this.#errors;
   }
 
   isContextIdentifier(node: t.Identifier): boolean {
@@ -1029,18 +838,6 @@ export class Environment {
     binding: NonLocalBinding,
     loc: SourceLocation,
   ): Global | null {
-    if (this.config.hookPattern != null) {
-      const match = new RegExp(this.config.hookPattern).exec(binding.name);
-      if (
-        match != null &&
-        typeof match[1] === 'string' &&
-        isHookName(match[1])
-      ) {
-        const resolvedName = match[1];
-        return this.#globals.get(resolvedName) ?? this.#getCustomHookType();
-      }
-    }
-
     switch (binding.kind) {
       case 'ModuleLocal': {
         // don't resolve module locals

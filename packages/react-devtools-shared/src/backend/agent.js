@@ -38,7 +38,7 @@ import type {
   ElementType,
 } from 'react-devtools-shared/src/frontend/types';
 import type {GroupItem} from './views/TraceUpdates/canvas';
-import {gte, isReactNativeEnvironment} from './utils';
+import {isReactNativeEnvironment} from './utils';
 import {
   sessionStorageGetItem,
   sessionStorageRemoveItem,
@@ -46,6 +46,7 @@ import {
 } from '../storage';
 
 const debug = (methodName: string, ...args: Array<string>) => {
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `%cAgent %c${methodName}`,
@@ -147,6 +148,7 @@ type OverrideSuspenseParams = {
 };
 
 type OverrideSuspenseMilestoneParams = {
+  rendererID: number,
   suspendedSet: Array<number>,
 };
 
@@ -224,9 +226,9 @@ function mergeRoots(
   }
 
   const leftSuspendedBy: DehydratedData = left.suspendedBy;
-  const {data, cleaned, unserializable} = (right.suspendedBy: DehydratedData);
-  const leftSuspendedByData = ((leftSuspendedBy.data: any): Array<mixed>);
-  const rightSuspendedByData = ((data: any): Array<mixed>);
+  const {data, cleaned, unserializable} = right.suspendedBy as DehydratedData;
+  const leftSuspendedByData = leftSuspendedBy.data as any as Array<mixed>;
+  const rightSuspendedByData = data as any as Array<mixed>;
   for (let i = 0; i < rightSuspendedByData.length; i++) {
     leftSuspendedByData.push(rightSuspendedByData[i]);
   }
@@ -280,17 +282,12 @@ export default class Agent extends EventEmitter<{
   _persistedSelection: PersistedSelection | null = null;
   _persistedSelectionMatch: PathMatch | null = null;
   _traceUpdatesEnabled: boolean = false;
-  _onReloadAndProfile:
-    | ((recordChangeDescriptions: boolean, recordTimeline: boolean) => void)
-    | void;
+  _onReloadAndProfile: ((recordChangeDescriptions: boolean) => void) | void;
 
   constructor(
     bridge: BackendBridge,
     isProfiling: boolean = false,
-    onReloadAndProfile?: (
-      recordChangeDescriptions: boolean,
-      recordTimeline: boolean,
-    ) => void,
+    onReloadAndProfile?: (recordChangeDescriptions: boolean) => void,
   ) {
     super();
 
@@ -462,9 +459,9 @@ export default class Agent extends EventEmitter<{
     if (isReactNativeEnvironment() || typeof target.nodeType !== 'number') {
       // In React Native or non-DOM we simply pick any renderer that has a match.
       for (const rendererID in this._rendererInterfaces) {
-        const renderer = ((this._rendererInterfaces[
-          (rendererID: any)
-        ]: any): RendererInterface);
+        const renderer = this._rendererInterfaces[
+          rendererID as any
+        ] as any as RendererInterface;
         try {
           const id = onlySuspenseNodes
             ? renderer.getSuspenseNodeIDForHostInstance(target)
@@ -489,11 +486,11 @@ export default class Agent extends EventEmitter<{
       let bestRendererID: number = 0;
       // Find the nearest ancestor which is mounted by a React.
       for (const rendererID in this._rendererInterfaces) {
-        const renderer = ((this._rendererInterfaces[
-          (rendererID: any)
-        ]: any): RendererInterface);
+        const renderer = this._rendererInterfaces[
+          rendererID as any
+        ] as any as RendererInterface;
         const nearestNode: null | Element = renderer.getNearestMountedDOMNode(
-          (target: any),
+          target as any,
         );
         if (nearestNode !== null) {
           if (nearestNode === target) {
@@ -535,9 +532,9 @@ export default class Agent extends EventEmitter<{
   getComponentNameForHostInstance(target: HostInstance): string | null {
     const match = this.getIDForHostInstance(target);
     if (match !== null) {
-      const renderer = ((this._rendererInterfaces[
-        (match.rendererID: any)
-      ]: any): RendererInterface);
+      const renderer = this._rendererInterfaces[
+        match.rendererID as any
+      ] as any as RendererInterface;
       return renderer.getDisplayNameForElementID(match.id);
     }
     return null;
@@ -573,7 +570,7 @@ export default class Agent extends EventEmitter<{
       console.warn(`Invalid renderer id "${rendererID}" for element "${id}"`);
     } else {
       const owners = renderer.getOwnersList(id);
-      this._bridge.send('ownersList', ({id, owners}: OwnersList));
+      this._bridge.send('ownersList', {id, owners} as OwnersList);
     }
   };
 
@@ -651,9 +648,9 @@ export default class Agent extends EventEmitter<{
     }
 
     for (const rendererID in this._rendererInterfaces) {
-      const renderer = ((this._rendererInterfaces[
-        (rendererID: any)
-      ]: any): RendererInterface);
+      const renderer = this._rendererInterfaces[
+        rendererID as any
+      ] as any as RendererInterface;
       let path: InspectElementParams['path'] = null;
       if (suspendedByPathIndex !== null && rendererPath !== null) {
         const suspendedByPathRendererIndex =
@@ -707,14 +704,14 @@ export default class Agent extends EventEmitter<{
           mergeRoots(inspectedScreen, inspectedRoots, suspendedByOffset);
           const dehydratedSuspendedBy: DehydratedData =
             inspectedRoots.suspendedBy;
-          const suspendedBy = ((dehydratedSuspendedBy.data: any): Array<mixed>);
+          const suspendedBy = dehydratedSuspendedBy.data as any as Array<mixed>;
           suspendedByOffset += suspendedBy.length;
           found = true;
           break;
         case 'no-change':
           found = true;
           const rootsSuspendedBy: Array<mixed> =
-            (renderer.getElementAttributeByPath(id, ['suspendedBy']): any);
+            renderer.getElementAttributeByPath(id, ['suspendedBy']) as any;
           suspendedByOffset += rootsSuspendedBy.length;
           break;
         case 'not-found':
@@ -787,15 +784,14 @@ export default class Agent extends EventEmitter<{
   };
 
   overrideSuspenseMilestone: OverrideSuspenseMilestoneParams => void = ({
+    rendererID,
     suspendedSet,
   }) => {
-    for (const rendererID in this._rendererInterfaces) {
-      const renderer = ((this._rendererInterfaces[
-        (rendererID: any)
-      ]: any): RendererInterface);
-      if (renderer.supportsTogglingSuspense) {
-        renderer.overrideSuspenseMilestone(suspendedSet);
-      }
+    const renderer = this._rendererInterfaces[
+      rendererID as any
+    ] as any as RendererInterface;
+    if (renderer.supportsTogglingSuspense) {
+      renderer.overrideSuspenseMilestone(suspendedSet);
     }
   };
 
@@ -908,12 +904,11 @@ export default class Agent extends EventEmitter<{
     this._bridge.send('isReloadAndProfileSupportedByBackend', true);
   };
 
-  reloadAndProfile: ({
-    recordChangeDescriptions: boolean,
-    recordTimeline: boolean,
-  }) => void = ({recordChangeDescriptions, recordTimeline}) => {
+  reloadAndProfile: ({recordChangeDescriptions: boolean}) => void = ({
+    recordChangeDescriptions,
+  }) => {
     if (typeof this._onReloadAndProfile === 'function') {
-      this._onReloadAndProfile(recordChangeDescriptions, recordTimeline);
+      this._onReloadAndProfile(recordChangeDescriptions);
     }
 
     // This code path should only be hit if the shell has explicitly told the Store that it supports profiling.
@@ -961,16 +956,6 @@ export default class Agent extends EventEmitter<{
 
     rendererInterface.setTraceUpdatesEnabled(this._traceUpdatesEnabled);
 
-    const renderer = rendererInterface.renderer;
-    if (renderer !== null) {
-      const devRenderer = renderer.bundleType === 1;
-      const enableSuspenseTab =
-        devRenderer && gte(renderer.version, '19.3.0-canary');
-      if (enableSuspenseTab) {
-        this._bridge.send('enableSuspenseTab');
-      }
-    }
-
     // When the renderer is attached, we need to tell it whether
     // we remember the previous selection that we'd like to restore.
     // It'll start tracking mounts for matches to the last selection path.
@@ -987,9 +972,9 @@ export default class Agent extends EventEmitter<{
       setTraceUpdatesEnabled(traceUpdatesEnabled);
 
       for (const rendererID in this._rendererInterfaces) {
-        const renderer = ((this._rendererInterfaces[
-          (rendererID: any)
-        ]: any): RendererInterface);
+        const renderer = this._rendererInterfaces[
+          rendererID as any
+        ] as any as RendererInterface;
         renderer.setTraceUpdatesEnabled(traceUpdatesEnabled);
       }
     };
@@ -1007,16 +992,15 @@ export default class Agent extends EventEmitter<{
     this.removeAllListeners();
   };
 
-  startProfiling: ({
-    recordChangeDescriptions: boolean,
-    recordTimeline: boolean,
-  }) => void = ({recordChangeDescriptions, recordTimeline}) => {
+  startProfiling: ({recordChangeDescriptions: boolean}) => void = ({
+    recordChangeDescriptions,
+  }) => {
     this._isProfiling = true;
     for (const rendererID in this._rendererInterfaces) {
-      const renderer = ((this._rendererInterfaces[
-        (rendererID: any)
-      ]: any): RendererInterface);
-      renderer.startProfiling(recordChangeDescriptions, recordTimeline);
+      const renderer = this._rendererInterfaces[
+        rendererID as any
+      ] as any as RendererInterface;
+      renderer.startProfiling(recordChangeDescriptions);
     }
     this._bridge.send('profilingStatus', this._isProfiling);
   };
@@ -1024,9 +1008,9 @@ export default class Agent extends EventEmitter<{
   stopProfiling: () => void = () => {
     this._isProfiling = false;
     for (const rendererID in this._rendererInterfaces) {
-      const renderer = ((this._rendererInterfaces[
-        (rendererID: any)
-      ]: any): RendererInterface);
+      const renderer = this._rendererInterfaces[
+        rendererID as any
+      ] as any as RendererInterface;
       renderer.stopProfiling();
     }
     this._bridge.send('profilingStatus', this._isProfiling);
@@ -1069,9 +1053,9 @@ export default class Agent extends EventEmitter<{
     componentFilters => {
       for (const rendererIDString in this._rendererInterfaces) {
         const rendererID = +rendererIDString;
-        const renderer = ((this._rendererInterfaces[
-          (rendererID: any)
-        ]: any): RendererInterface);
+        const renderer = this._rendererInterfaces[
+          rendererID as any
+        ] as any as RendererInterface;
         if (this._lastSelectedRendererID === rendererID) {
           // Changing component filters will unmount and remount the DevTools tree.
           // Track the last selection's path so we can restore the selection.
@@ -1120,6 +1104,7 @@ export default class Agent extends EventEmitter<{
   };
 
   onFastRefreshScheduled: () => void = () => {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug('onFastRefreshScheduled');
     }
@@ -1128,6 +1113,7 @@ export default class Agent extends EventEmitter<{
   };
 
   onHookOperations: (operations: Array<number>) => void = operations => {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       debug(
         'onHookOperations',
@@ -1211,7 +1197,7 @@ export default class Agent extends EventEmitter<{
     if (path !== null) {
       sessionStorageSetItem(
         SESSION_STORAGE_LAST_SELECTION_KEY,
-        JSON.stringify(({rendererID, path}: PersistedSelection)),
+        JSON.stringify({rendererID, path} as PersistedSelection),
       );
     } else {
       sessionStorageRemoveItem(SESSION_STORAGE_LAST_SELECTION_KEY);

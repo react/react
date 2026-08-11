@@ -15,7 +15,6 @@ global.__IS_FIREFOX__ = false;
 global.__IS_CHROME__ = false;
 global.__IS_EDGE__ = false;
 global.__IS_NATIVE__ = false;
-global.__IS_INTERNAL_MCP_BUILD__ = false;
 
 const ReactVersionTestingAgainst = process.env.REACT_VERSION || ReactVersion;
 

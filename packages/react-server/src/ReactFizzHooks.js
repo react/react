@@ -14,6 +14,7 @@ import type {
   StartTransitionOptions,
   Thenable,
   Usable,
+  ReactRecoverable,
   ReactCustomFormAction,
   Awaited,
 } from 'shared/ReactTypes';
@@ -39,8 +40,10 @@ import {
 import {createFastHash} from './ReactServerStreamConfig';
 
 import is from 'shared/objectIs';
+import hasOwnProperty from 'shared/hasOwnProperty';
 import {
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
@@ -89,6 +92,70 @@ let actionStateMatchingIndex: number = -1;
 // Counts the number of use(thenable) calls in this component
 let thenableIndexCounter: number = 0;
 let thenableState: ThenableState | null = null;
+
+const browserReasonInitializationFallback =
+  'The reason for browser-only rendering could not be determined because its ' +
+  'initializer threw.';
+
+export function createRecoverableError(recoverable: ReactRecoverable): Error {
+  const reason = recoverable._reason;
+  let initializedReason;
+  if (typeof reason === 'function') {
+    try {
+      initializedReason = reason();
+    } catch {
+      // A reason is only diagnostic metadata. Its initializer must not affect
+      // whether the renderer can defer this subtree to the browser.
+      initializedReason = browserReasonInitializationFallback;
+    }
+  } else {
+    initializedReason = reason;
+  }
+  // Always create the recoverable at the consumption point so its stack
+  // identifies the relevant use() or abort() call. A lazy reason is diagnostic
+  // metadata and can be any value supported by Error.cause.
+  const error = new Error(
+    'Browser-only rendering was requested by `browser()`.',
+    reason === undefined ? undefined : {cause: initializedReason},
+  );
+  Object.defineProperty(error, REACT_RECOVERABLE_TYPE, {value: true});
+  return error;
+}
+
+export function isRecoverableError(error: mixed): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  return (error as any)[REACT_RECOVERABLE_TYPE] === true;
+}
+
+export function cloneRecoverableErrorAsFatal(recoverableError: Error): Error {
+  // Create a separate diagnostic for fatal reporting without changing the
+  // branded recoverable error that other tasks may still need to observe.
+  const fatalRecoverableError = new Error(
+    'The server render could not complete because client rendering was ' +
+      "requested outside a Suspense boundary. See this error's cause for " +
+      'additional details.',
+    hasOwnProperty.call(recoverableError, 'cause')
+      ? {cause: (recoverableError as any).cause}
+      : undefined,
+  );
+  // Keep the frames captured where the recoverable was consumed, but replace
+  // the first line with the fatal error's message.
+  const stack = recoverableError.stack;
+  if (stack !== undefined) {
+    const frameStart = stack.indexOf('\n');
+    fatalRecoverableError.stack =
+      fatalRecoverableError.name +
+      ': ' +
+      fatalRecoverableError.message +
+      (frameStart === -1 ? '' : stack.slice(frameStart));
+  } else {
+    (fatalRecoverableError as any).stack = undefined;
+  }
+  return fatalRecoverableError;
+}
+
 // Lazily created map of render-phase updates
 let renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null = null;
 // Counter to prevent infinite loops.
@@ -350,7 +417,7 @@ export function useState<S>(
   return useReducer(
     basicStateReducer,
     // useReducer has a special case to support lazy useState initializers
-    (initialState: any),
+    initialState as any,
   );
 }
 
@@ -360,6 +427,7 @@ export function useReducer<S, I, A>(
   init?: I => S,
 ): [S, Dispatch<A>] {
   if (__DEV__) {
+    // $FlowFixMe[invalid-compare]
     if (reducer !== basicStateReducer) {
       currentHookNameInDev = 'useReducer';
     }
@@ -369,8 +437,8 @@ export function useReducer<S, I, A>(
   if (isReRender) {
     // This is a re-render. Apply the new render phase updates to the previous
     // current hook.
-    const queue: UpdateQueue<A> = (workInProgressHook.queue: any);
-    const dispatch: Dispatch<A> = (queue.dispatch: any);
+    const queue: UpdateQueue<A> = workInProgressHook.queue as any;
+    const dispatch: Dispatch<A> = queue.dispatch as any;
     if (renderPhaseUpdates !== null) {
       // Render phase updates are stored in a map of queue -> linked list
       const firstRenderPhaseUpdate = renderPhaseUpdates.get(queue);
@@ -409,15 +477,16 @@ export function useReducer<S, I, A>(
       isInHookUserCodeInDev = true;
     }
     let initialState;
+    // $FlowFixMe[invalid-compare]
     if (reducer === basicStateReducer) {
       // Special case for `useState`.
       initialState =
         typeof initialArg === 'function'
-          ? ((initialArg: any): () => S)()
-          : ((initialArg: any): S);
+          ? (initialArg as any as () => S)()
+          : (initialArg as any as S);
     } else {
       initialState =
-        init !== undefined ? init(initialArg) : ((initialArg: any): S);
+        init !== undefined ? init(initialArg) : (initialArg as any as S);
     }
     if (__DEV__) {
       isInHookUserCodeInDev = false;
@@ -429,11 +498,11 @@ export function useReducer<S, I, A>(
       last: null,
       dispatch: null,
     });
-    const dispatch: Dispatch<A> = (queue.dispatch = (dispatchAction.bind(
+    const dispatch: Dispatch<A> = (queue.dispatch = dispatchAction.bind(
       null,
       currentlyRenderingComponent,
       queue,
-    ): any));
+    ) as any);
     // $FlowFixMe[incompatible-use] found when upgrading Flow
     return [workInProgressHook.memoizedState, dispatch];
   }
@@ -445,6 +514,7 @@ function useMemo<T>(nextCreate: () => T, deps: Array<mixed> | void | null): T {
 
   const nextDeps = deps === undefined ? null : deps;
 
+  // $FlowFixMe[invalid-compare]
   if (workInProgressHook !== null) {
     const prevState = workInProgressHook.memoizedState;
     if (prevState !== null) {
@@ -545,7 +615,7 @@ function throwOnUseEffectEventCall() {
 export function useEffectEvent<Args, Return, F: (...Array<Args>) => Return>(
   callback: F,
 ): F {
-  // $FlowIgnore[incompatible-return]
+  // $FlowFixMe[incompatible-type]
   return throwOnUseEffectEventCall;
 }
 
@@ -627,9 +697,9 @@ function useActionState<S, P>(
   // track the position of this useActionState hook relative to the other ones in
   // this component, so we can generate a unique key for each one.
   const actionStateHookIndex = actionStateCounter++;
-  const request: Request = (currentlyRenderingRequest: any);
+  const request: Request = currentlyRenderingRequest as any;
 
-  // $FlowIgnore[prop-missing]
+  // $FlowFixMe[prop-missing]
   const formAction = action.$$FORM_ACTION;
   if (typeof formAction === 'function') {
     // This is a server action. These have additional features to enable
@@ -649,9 +719,9 @@ function useActionState<S, P>(
     // Otherwise, we'll use the initial state argument. We will emit a comment
     // marker into the stream that indicates whether the state was reused.
     let state = initialState;
-    const componentKeyPath = (currentlyRenderingKeyPath: any);
+    const componentKeyPath = currentlyRenderingKeyPath as any;
     const postbackActionState = getFormState(request);
-    // $FlowIgnore[prop-missing]
+    // $FlowFixMe[prop-missing]
     const isSignatureEqual = action.$$IS_SIGNATURE_EQUAL;
     if (
       postbackActionState !== null &&
@@ -687,7 +757,7 @@ function useActionState<S, P>(
 
     // $FlowIgnore[prop-missing]
     if (typeof boundAction.$$FORM_ACTION === 'function') {
-      // $FlowIgnore[prop-missing]
+      // $FlowFixMe[prop-missing]
       dispatch.$$FORM_ACTION = (prefix: string) => {
         const metadata: ReactCustomFormAction =
           boundAction.$$FORM_ACTION(prefix);
@@ -731,7 +801,7 @@ function useActionState<S, P>(
 }
 
 function useId(): string {
-  const task: Task = (currentlyRenderingTask: any);
+  const task: Task = currentlyRenderingTask as any;
   const treeId = getTreeId(task.treeContext);
 
   const resumableState = currentResumableState;
@@ -746,14 +816,21 @@ function useId(): string {
 }
 
 function use<T>(usable: Usable<T>): T {
+  // $FlowFixMe[invalid-compare]
   if (usable !== null && typeof usable === 'object') {
     // $FlowFixMe[method-unbinding]
     if (typeof usable.then === 'function') {
       // This is a thenable.
-      const thenable: Thenable<T> = (usable: any);
+      const thenable: Thenable<T> = usable as any;
       return unwrapThenable(thenable);
+    } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Create the recoverable error here so its stack captures the component
+      // that passed this value to use(). The internal brand lets the renderer
+      // distinguish it from an Error thrown by application code.
+      const recoverable: ReactRecoverable = usable as any;
+      throw createRecoverableError(recoverable);
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
-      const context: ReactContext<T> = (usable: any);
+      const context: ReactContext<T> = usable as any;
       return readContext(context);
     }
   }
@@ -803,6 +880,7 @@ function clientHookNotSupported() {
   );
 }
 
+// $FlowFixMe[constant-condition]
 export const HooksDispatcher: Dispatcher = supportsClientAPIs
   ? {
       readContext,
@@ -861,7 +939,7 @@ export const HooksDispatcher: Dispatcher = supportsClientAPIs
       useEffectEvent,
     };
 
-export let currentResumableState: null | ResumableState = (null: any);
+export let currentResumableState: null | ResumableState = null as any;
 export function setCurrentResumableState(
   resumableState: null | ResumableState,
 ): void {

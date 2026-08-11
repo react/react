@@ -54,6 +54,7 @@ type EncodeFormActionCallback = <A>(
 export type Options = {
   nonce?: string,
   encodeFormAction?: EncodeFormActionCallback,
+  unstable_allowPartialStream?: boolean,
   findSourceMapURL?: FindSourceMapURLCallback,
   replayConsoleLogs?: boolean,
   environmentName?: string,
@@ -104,6 +105,9 @@ function createFromNodeStream<T>(
     options ? options.encodeFormAction : undefined,
     options && typeof options.nonce === 'string' ? options.nonce : undefined,
     undefined, // TODO: If encodeReply is supported, this should support temporaryReferences
+    options && options.unstable_allowPartialStream
+      ? options.unstable_allowPartialStream
+      : false,
     __DEV__ && options && options.findSourceMapURL
       ? options.findSourceMapURL
       : undefined,

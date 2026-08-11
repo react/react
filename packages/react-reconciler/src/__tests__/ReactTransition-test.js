@@ -210,6 +210,319 @@ describe('ReactTransition', () => {
   });
 
   // @gate enableLegacyCache
+  it('when multiple transitions update different queues, they entangle', async () => {
+    let setA;
+    let startTransitionA;
+    let setB;
+    let startTransitionB;
+    function A() {
+      const [a, _setA] = useState(0);
+      const [isPending, _startTransitionA] = useTransition();
+      setA = _setA;
+      startTransitionA = _startTransitionA;
+
+      return (
+        <span>
+          {isPending && (
+            <span>
+              <Text text="Pending A..." />
+            </span>
+          )}
+          <AsyncText text={`A: ${a}`} />
+        </span>
+      );
+    }
+
+    function B() {
+      const [b, _setB] = useState(0);
+      const [isPending, _startTransitionB] = useTransition();
+      setB = _setB;
+      startTransitionB = _startTransitionB;
+
+      return (
+        <span>
+          {isPending && (
+            <span>
+              <Text text="Pending B..." />
+            </span>
+          )}
+          <AsyncText text={`B: ${b}`} />
+        </span>
+      );
+    }
+    function App() {
+      return (
+        <>
+          <Suspense fallback={<span>Loading A</span>}>
+            <A />
+          </Suspense>
+          <Suspense fallback={<span>Loading B</span>}>
+            <B />
+          </Suspense>
+        </>
+      );
+    }
+
+    // Initial render
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog([
+      'Suspend! [A: 0]',
+      'Suspend! [B: 0]',
+      'Suspend! [A: 0]',
+      'Suspend! [B: 0]',
+    ]);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>Loading A</span>
+        <span>Loading B</span>
+      </>,
+    );
+
+    // Resolve
+    await act(() => {
+      resolveText('A: 0');
+      resolveText('B: 0');
+    });
+    assertLog(['A: 0', 'B: 0']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>A: 0</span>
+        <span>B: 0</span>
+      </>,
+    );
+
+    // Start transitioning A
+    await act(() => {
+      startTransitionA(() => {
+        setA(1);
+      });
+    });
+    assertLog(['Pending A...', 'A: 0', 'Suspend! [A: 1]']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>
+          <span>Pending A...</span>A: 0
+        </span>
+        <span>B: 0</span>
+      </>,
+    );
+
+    // Start transitioning B
+    await act(() => {
+      startTransitionB(() => {
+        setB(1);
+      });
+    });
+    assertLog(['Pending B...', 'B: 0', 'Suspend! [A: 1]', 'Suspend! [B: 1]']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>
+          <span>Pending A...</span>A: 0
+        </span>
+        <span>
+          <span>Pending B...</span>B: 0
+        </span>
+      </>,
+    );
+
+    // Resolve B
+    await act(() => {
+      resolveText('B: 1');
+    });
+    assertLog(
+      gate('enableParallelTransitions')
+        ? ['B: 1', 'Suspend! [A: 1]']
+        : ['Suspend! [A: 1]', 'B: 1'],
+    );
+    expect(root).toMatchRenderedOutput(
+      gate('enableParallelTransitions') ? (
+        <>
+          <span>
+            <span>Pending A...</span>A: 0
+          </span>
+          <span>B: 1</span>
+        </>
+      ) : (
+        <>
+          <span>
+            <span>Pending A...</span>A: 0
+          </span>
+          <span>
+            <span>Pending B...</span>B: 0
+          </span>
+        </>
+      ),
+    );
+
+    // Resolve A
+    await act(() => {
+      resolveText('A: 1');
+    });
+    assertLog(gate('enableParallelTransitions') ? ['A: 1'] : ['A: 1', 'B: 1']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>A: 1</span>
+        <span>B: 1</span>
+      </>,
+    );
+  });
+
+  // @gate enableLegacyCache
+  it('when multiple transitions update different queues, but suspend the same boundary, they do entangle', async () => {
+    let setA;
+    let startTransitionA;
+    let setB;
+    let startTransitionB;
+    function A() {
+      const [a, _setA] = useState(0);
+      const [isPending, _startTransitionA] = useTransition();
+      setA = _setA;
+      startTransitionA = _startTransitionA;
+
+      return (
+        <span>
+          {isPending && (
+            <span>
+              <Text text="Pending A..." />
+            </span>
+          )}
+          <AsyncText text={`A: ${a}`} />
+        </span>
+      );
+    }
+
+    function B() {
+      const [b, _setB] = useState(0);
+      const [isPending, _startTransitionB] = useTransition();
+      setB = _setB;
+      startTransitionB = _startTransitionB;
+
+      return (
+        <span>
+          {isPending && (
+            <span>
+              <Text text="Pending B..." />
+            </span>
+          )}
+          <AsyncText text={`B: ${b}`} />
+        </span>
+      );
+    }
+    function App() {
+      return (
+        <Suspense fallback={<span>Loading...</span>}>
+          <A />
+          <B />
+        </Suspense>
+      );
+    }
+
+    // Initial render
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App />);
+    });
+    assertLog([
+      'Suspend! [A: 0]',
+      // pre-warming
+      'Suspend! [A: 0]',
+      'Suspend! [B: 0]',
+    ]);
+    expect(root).toMatchRenderedOutput(<span>Loading...</span>);
+
+    // Resolve
+    await act(() => {
+      resolveText('A: 0');
+      resolveText('B: 0');
+    });
+    assertLog(['A: 0', 'B: 0']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>A: 0</span>
+        <span>B: 0</span>
+      </>,
+    );
+
+    // Start transitioning A
+    await act(() => {
+      startTransitionA(() => {
+        setA(1);
+      });
+    });
+    assertLog(['Pending A...', 'A: 0', 'Suspend! [A: 1]']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>
+          <span>Pending A...</span>A: 0
+        </span>
+        <span>B: 0</span>
+      </>,
+    );
+
+    // Start transitioning B
+    await act(() => {
+      startTransitionB(() => {
+        setB(1);
+      });
+    });
+    assertLog(['Pending B...', 'B: 0', 'Suspend! [A: 1]', 'Suspend! [B: 1]']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>
+          <span>Pending A...</span>A: 0
+        </span>
+        <span>
+          <span>Pending B...</span>B: 0
+        </span>
+      </>,
+    );
+
+    // Resolve B
+    await act(() => {
+      resolveText('B: 1');
+    });
+    assertLog(
+      gate('enableParallelTransitions')
+        ? ['B: 1', 'Suspend! [A: 1]']
+        : ['Suspend! [A: 1]', 'B: 1'],
+    );
+    expect(root).toMatchRenderedOutput(
+      gate('enableParallelTransitions') ? (
+        <>
+          <span>
+            <span>Pending A...</span>A: 0
+          </span>
+          <span>B: 1</span>
+        </>
+      ) : (
+        <>
+          <span>
+            <span>Pending A...</span>A: 0
+          </span>
+          <span>
+            <span>Pending B...</span>B: 0
+          </span>
+        </>
+      ),
+    );
+
+    // Resolve A
+    await act(() => {
+      resolveText('A: 1');
+    });
+    assertLog(gate('enableParallelTransitions') ? ['A: 1'] : ['A: 1', 'B: 1']);
+    expect(root).toMatchRenderedOutput(
+      <>
+        <span>A: 1</span>
+        <span>B: 1</span>
+      </>,
+    );
+  });
+
+  // @gate enableLegacyCache
   it(
     'when multiple transitions update the same queue, only the most recent ' +
       'one is allowed to finish (no intermediate states)',

@@ -29,7 +29,7 @@ if (process.env.NODE_ENV !== 'production') {
 |---------------------------|-------------|
 | `settings`                | Optional. If not specified, or received as null, then default settings are used. Can be plain object or a Promise that resolves with the [plain settings object](#Settings). If Promise rejects, the console will not be patched and some console features from React DevTools will not work. |
 | `shouldStartProfilingNow` | Optional. Whether to start profiling immediately after installing the hook. Defaults to `false`. |
-| `profilingSettings`       | Optional. Profiling settings used when `shouldStartProfilingNow` is `true`. Defaults to `{ recordChangeDescriptions: false, recordTimeline: false }`. |
+| `profilingSettings`       | Optional. Profiling settings used when `shouldStartProfilingNow` is `true`. Defaults to `{ recordChangeDescriptions: false }`. |
 | `componentFilters`        | Optional. Array or Promise that resolves to an array of component filters to apply before DevTools connects. Defaults to the built-in host component filter. See [Component filters](#component-filters) for the full spec. |
 
 #### `Settings`
@@ -54,6 +54,7 @@ Each filter object must include `type` and `isEnabled`. Some filters also requir
 |------------------------|---------------|---------------------------------------------------------------------------------------------------------------------------|
 | `host`                 | `"localhost"` | Socket connection to frontend should use this host.                                                                       |
 | `isAppActive`          |               | (Optional) function that returns true/false, telling DevTools when it's ready to connect to React.                        |
+| `path`                 | `""`          | Path appended to the WebSocket URI (e.g. `"/__react_devtools__/"`). Useful when proxying through a reverse proxy on a subpath. A leading `/` is added automatically if missing. |
 | `port`                 | `8097`        | Socket connection to frontend should use this port.                                                                       |
 | `resolveRNStyle`       |               | (Optional) function that accepts a key (number) and returns a style (object); used by React Native.                       |
 | `retryConnectionDelay` | `200`         | Delay (ms) to wait between retrying a failed Websocket connection                                                         |
@@ -141,16 +142,51 @@ function onStatus(
 }
 ```
 
-#### `startServer(port?: number, host?: string, httpsOptions?: Object, loggerOptions?: Object)`
+#### `startServer(port?, host?, httpsOptions?, loggerOptions?, path?, clientOptions?)`
 Start a socket server (used to communicate between backend and frontend) and renders the DevTools UI.
 
 This method accepts the following parameters:
 | Name | Default | Description |
 |---|---|---|
-| `port` | `8097` | Socket connection to backend should use this port. |
-| `host` | `"localhost"` | Socket connection to backend should use this host. |
+| `port` | `8097` | Port the local server listens on. |
+| `host` | `"localhost"` | Host the local server binds to. |
 | `httpsOptions` | | _Optional_ object defining `key` and `cert` strings. |
 | `loggerOptions` | | _Optional_ object defining a `surface` string (to be included with DevTools logging events). |
+| `path` | | _Optional_ path to append to the WebSocket URI served to connecting clients (e.g. `"/__react_devtools__/"`). Also set via the `REACT_DEVTOOLS_PATH` env var in the Electron app. |
+| `clientOptions` | | _Optional_ object with client-facing overrides (see below). |
+
+##### `clientOptions`
+
+When connecting through a reverse proxy, the client may need to connect to a different host, port, or protocol than the local server. Use `clientOptions` to override what appears in the `connectToDevTools()` script served to clients. Any field not set falls back to the corresponding server value.
+
+| Field | Default | Description |
+|---|---|---|
+| `host` | server `host` | Host the client connects to. |
+| `port` | server `port` | Port the client connects to. |
+| `useHttps` | server `useHttps` | Whether the client should use `wss://`. |
+
+These can also be set via environment variables in the Electron app:
+
+| Env Var | Description |
+|---|---|
+| `REACT_DEVTOOLS_CLIENT_HOST` | Overrides the host in the served client script. |
+| `REACT_DEVTOOLS_CLIENT_PORT` | Overrides the port in the served client script. |
+| `REACT_DEVTOOLS_CLIENT_USE_HTTPS` | Set to `"true"` to make the served client script use `wss://`. |
+
+##### Reverse proxy example
+
+Run DevTools locally on the default port, but tell clients to connect through a remote proxy:
+```sh
+REACT_DEVTOOLS_CLIENT_HOST=remote.example.com \
+REACT_DEVTOOLS_CLIENT_PORT=443 \
+REACT_DEVTOOLS_CLIENT_USE_HTTPS=true \
+REACT_DEVTOOLS_PATH=/__react_devtools__/ \
+react-devtools
+```
+The server listens on `localhost:8097`. The served script tells clients:
+```js
+connectToDevTools({host: 'remote.example.com', port: 443, useHttps: true, path: '/__react_devtools__/'})
+```
 
 # Development
 

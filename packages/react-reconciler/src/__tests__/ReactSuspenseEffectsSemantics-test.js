@@ -1610,9 +1610,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
         'AsyncText:InnerAsync_1 render',
         'Text:OuterFallback destroy insertion',
         'Text:OuterFallback destroy layout',
-        ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-          ? ['Text:InnerFallback destroy insertion']
-          : []),
+        'Text:InnerFallback destroy insertion',
         'Text:Outer create layout',
         'AsyncText:OuterAsync_1 create layout',
         'Text:Inner create layout',
@@ -1757,9 +1755,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
       assertLog([
         'Text:Inside render',
         'AsyncText:OutsideAsync render',
-        ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-          ? ['Text:Fallback:Inside destroy insertion']
-          : []),
+        'Text:Fallback:Inside destroy insertion',
         'Text:Fallback:Fallback destroy insertion',
         'Text:Fallback:Fallback destroy layout',
         'Text:Fallback:Outside destroy insertion',
@@ -2248,9 +2244,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
 
           // Destroy layout and passive effects in the errored tree.
           'App destroy layout',
-          ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-            ? ['Text:Inside destroy insertion']
-            : []),
+          'Text:Inside destroy insertion',
           'Text:Fallback destroy insertion',
           'Text:Fallback destroy layout',
           'Text:Outside destroy insertion',
@@ -2511,9 +2505,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
 
           // Destroy layout and passive effects in the errored tree.
           'App destroy layout',
-          ...(gate(flags => flags.enableHiddenSubtreeInsertionEffectCleanup)
-            ? ['Text:Inside destroy insertion']
-            : []),
+          'Text:Inside destroy insertion',
           'Text:Fallback destroy insertion',
           'Text:Fallback destroy layout',
           'Text:Outside destroy insertion',

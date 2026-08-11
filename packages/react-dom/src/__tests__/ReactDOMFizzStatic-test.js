@@ -230,9 +230,7 @@ describe('ReactDOMFizzStatic', () => {
 
     const result = await promise;
 
-    expect(result.postponed).toBe(
-      gate(flags => flags.enableHalt) ? null : undefined,
-    );
+    expect(result.postponed).toBe(null);
 
     await act(async () => {
       result.prelude.pipe(writable);
@@ -362,7 +360,6 @@ describe('ReactDOMFizzStatic', () => {
     );
   });
 
-  // @gate enableHalt
   it('will halt a prerender when aborting with an error during a render', async () => {
     const controller = new AbortController();
     function App() {
@@ -384,7 +381,6 @@ describe('ReactDOMFizzStatic', () => {
     expect(getVisibleChildren(container)).toEqual(undefined);
   });
 
-  // @gate enableHalt
   it('will halt a prerender when aborting with an error in a microtask', async () => {
     const errors = [];
 

@@ -31,7 +31,7 @@ function Component({content, refetch}) {
 ## Error
 
 ```
-Found 1 error:
+Found 2 errors:
 
 Error: Cannot access variable before it is declared
 
@@ -52,6 +52,18 @@ Error: Cannot access variable before it is declared
   20 |
   21 |   return <Foo data={data} onSubmit={onSubmit} />;
   22 | }
+
+Error: Found missing memoization dependencies
+
+Missing dependencies can cause a value to update less often than it should, resulting in stale UI.
+
+   9 |   // TDZ violation!
+  10 |   const onRefetch = useCallback(() => {
+> 11 |     refetch(data);
+     |             ^^^^ Missing dependency `data`
+  12 |   }, [refetch]);
+  13 |
+  14 |   // The context variable gets frozen here since it's passed to a hook
 ```
           
       

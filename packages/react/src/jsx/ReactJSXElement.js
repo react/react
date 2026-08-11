@@ -860,7 +860,6 @@ export function cloneElement(element, config, children) {
  *
  * @internal
  * @param {ReactNode} node Statically passed child of any type.
- * @param {*} parentType node's parent's type.
  */
 function validateChildKeys(node) {
   if (__DEV__) {

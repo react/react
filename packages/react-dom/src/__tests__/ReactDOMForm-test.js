@@ -1092,7 +1092,7 @@ describe('ReactDOMForm', () => {
     const root = ReactDOMClient.createRoot(container);
     await act(async () => {
       root.render(<App />);
-      await waitForThrow('Cannot update form state while rendering.');
+      await waitForThrow('Cannot update action state while rendering.');
     });
   });
 

@@ -121,15 +121,6 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.SuspenseBreadcrumbs {
-  flex: 1;
-  /**
-   * TODO: Switch to single item view on overflow like OwnerStack does.
-   * OwnerStack has more constraints that make it easier so it won't be a 1:1 port.
-   */
-  overflow-x: auto;
-}
-
 .SuspenseTreeViewFooter {
   flex: 0 0 42px;
   display: flex;

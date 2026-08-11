@@ -70,9 +70,6 @@ The `occursCheck` method prevents infinite types by detecting when a type variab
 - `DeclareContext` and `LoadContext` generate no type equations (intentionally untyped)
 - `StoreContext` with `Const` kind does propagate the rvalue type to enable ref inference through context variables
 
-### Event Handler Inference
-When `enableInferEventHandlers` is enabled, JSX props starting with "on" (e.g., `onClick`) on built-in DOM elements (excluding web components with hyphens) are inferred as `Function<BuiltInEventHandlerId>`.
-
 ## TODOs
 1. **Hook vs Function type ambiguity**:
    > "TODO: callee could be a hook or a function, so this type equation isn't correct. We should change Hook to a subtype of Function or change unifier logic."

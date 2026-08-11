@@ -31,6 +31,7 @@ import {
   PropertyLiteral,
   ReactiveScopeDependency,
   ScopeId,
+  SourceLocation,
   TInstruction,
 } from './HIR';
 
@@ -123,9 +124,7 @@ export function collectHoistablePropertyLoads(
     hoistableFromOptionals,
     registry,
     nestedFnImmutableContext: null,
-    assumedInvokedFns: fn.env.config.enableTreatFunctionDepsAsConditional
-      ? new Set()
-      : getAssumedInvokedFunctions(fn),
+    assumedInvokedFns: getAssumedInvokedFunctions(fn),
   });
 }
 
@@ -141,9 +140,7 @@ export function collectHoistablePropertyLoadsInInnerFn(
     hoistableFromOptionals,
     registry: new PropertyPathRegistry(),
     nestedFnImmutableContext: null,
-    assumedInvokedFns: fn.env.config.enableTreatFunctionDepsAsConditional
-      ? new Set()
-      : getAssumedInvokedFunctions(fn),
+    assumedInvokedFns: getAssumedInvokedFunctions(fn),
   };
   const nestedFnImmutableContext = new Set(
     fn.context
@@ -244,6 +241,7 @@ class PropertyPathRegistry {
   getOrCreateIdentifier(
     identifier: Identifier,
     reactive: boolean,
+    loc: SourceLocation,
   ): PropertyPathNode {
     /**
      * Reads from a statically scoped variable are always safe in JS,
@@ -260,6 +258,7 @@ class PropertyPathRegistry {
           identifier,
           reactive,
           path: [],
+          loc,
         },
         hasOptional: false,
         parent: null,
@@ -290,6 +289,7 @@ class PropertyPathRegistry {
           identifier: parent.fullPath.identifier,
           reactive: parent.fullPath.reactive,
           path: parent.fullPath.path.concat(entry),
+          loc: entry.loc,
         },
         hasOptional: parent.hasOptional || entry.optional,
       };
@@ -304,7 +304,7 @@ class PropertyPathRegistry {
      * so all subpaths of a PropertyLoad should already exist
      * (e.g. a.b is added before a.b.c),
      */
-    let currNode = this.getOrCreateIdentifier(n.identifier, n.reactive);
+    let currNode = this.getOrCreateIdentifier(n.identifier, n.reactive, n.loc);
     if (n.path.length === 0) {
       return currNode;
     }
@@ -323,20 +323,21 @@ class PropertyPathRegistry {
 }
 
 function getMaybeNonNullInInstruction(
-  instr: InstructionValue,
+  value: InstructionValue,
   context: CollectHoistablePropertyLoadsContext,
 ): PropertyPathNode | null {
   let path: ReactiveScopeDependency | null = null;
-  if (instr.kind === 'PropertyLoad') {
-    path = context.temporaries.get(instr.object.identifier.id) ?? {
-      identifier: instr.object.identifier,
-      reactive: instr.object.reactive,
+  if (value.kind === 'PropertyLoad') {
+    path = context.temporaries.get(value.object.identifier.id) ?? {
+      identifier: value.object.identifier,
+      reactive: value.object.reactive,
       path: [],
+      loc: value.loc,
     };
-  } else if (instr.kind === 'Destructure') {
-    path = context.temporaries.get(instr.value.identifier.id) ?? null;
-  } else if (instr.kind === 'ComputedLoad') {
-    path = context.temporaries.get(instr.object.identifier.id) ?? null;
+  } else if (value.kind === 'Destructure') {
+    path = context.temporaries.get(value.value.identifier.id) ?? null;
+  } else if (value.kind === 'ComputedLoad') {
+    path = context.temporaries.get(value.object.identifier.id) ?? null;
   }
   return path != null ? context.registry.getOrCreateProperty(path) : null;
 }
@@ -393,7 +394,11 @@ function collectNonNullsInBlocks(
   ) {
     const identifier = fn.params[0].identifier;
     knownNonNullIdentifiers.add(
-      context.registry.getOrCreateIdentifier(identifier, true),
+      context.registry.getOrCreateIdentifier(
+        identifier,
+        true,
+        fn.params[0].loc,
+      ),
     );
   }
   const nodes = new Map<
@@ -468,6 +473,7 @@ function collectNonNullsInBlocks(
                 identifier: dep.root.value.identifier,
                 path: dep.path.slice(0, i),
                 reactive: dep.root.value.reactive,
+                loc: dep.loc,
               });
               assumedNonNullObjects.add(depNode);
             }
@@ -654,17 +660,23 @@ function reduceMaybeOptionalChains(
     changed = false;
 
     for (const original of optionalChainNodes) {
-      let {identifier, path: origPath, reactive} = original.fullPath;
+      let {
+        identifier,
+        path: origPath,
+        reactive,
+        loc: origLoc,
+      } = original.fullPath;
       let currNode: PropertyPathNode = registry.getOrCreateIdentifier(
         identifier,
         reactive,
+        origLoc,
       );
       for (let i = 0; i < origPath.length; i++) {
         const entry = origPath[i];
         // If the base is known to be non-null, replace with a non-optional load
         const nextEntry: DependencyPathEntry =
           entry.optional && nodes.has(currNode)
-            ? {property: entry.property, optional: false}
+            ? {property: entry.property, optional: false, loc: entry.loc}
             : entry;
         currNode = PropertyPathRegistry.getOrCreatePropertyEntry(
           currNode,

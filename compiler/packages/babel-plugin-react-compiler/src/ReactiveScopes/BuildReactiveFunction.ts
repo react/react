@@ -141,6 +141,61 @@ class Driver {
     return {block: blockId, place, value: sequence, id: instr.id};
   }
 
+  /*
+   * Converts the result of visitValueBlock into a SequenceExpression that includes
+   * the instruction with its lvalue. This is needed for for/for-of/for-in init/test
+   * blocks where the instruction's lvalue assignment must be preserved.
+   *
+   * This also flattens nested SequenceExpressions that can occur from MaybeThrow
+   * handling in try-catch blocks.
+   */
+  valueBlockResultToSequence(
+    result: {
+      block: BlockId;
+      value: ReactiveValue;
+      place: Place;
+      id: InstructionId;
+    },
+    loc: SourceLocation,
+  ): ReactiveSequenceValue {
+    // Collect all instructions from potentially nested SequenceExpressions
+    const instructions: Array<ReactiveInstruction> = [];
+    let innerValue: ReactiveValue = result.value;
+
+    // Flatten nested SequenceExpressions
+    while (innerValue.kind === 'SequenceExpression') {
+      instructions.push(...innerValue.instructions);
+      innerValue = innerValue.value;
+    }
+
+    /*
+     * Only add the final instruction if the innermost value is not just a LoadLocal
+     * of the same place we're storing to (which would be a no-op).
+     * This happens when MaybeThrow blocks cause the sequence to already contain
+     * all the necessary instructions.
+     */
+    const isLoadOfSamePlace =
+      innerValue.kind === 'LoadLocal' &&
+      innerValue.place.identifier.id === result.place.identifier.id;
+
+    if (!isLoadOfSamePlace) {
+      instructions.push({
+        id: result.id,
+        lvalue: result.place,
+        value: innerValue,
+        loc,
+      });
+    }
+
+    return {
+      kind: 'SequenceExpression',
+      instructions,
+      id: result.id,
+      value: {kind: 'Primitive', value: undefined, loc},
+      loc,
+    };
+  }
+
   traverseBlock(block: BasicBlock): ReactiveBlock {
     const blockValue: ReactiveBlock = [];
     this.visitBlock(block, blockValue);
@@ -441,29 +496,7 @@ class Driver {
         scheduleIds.push(scheduleId);
 
         const init = this.visitValueBlock(terminal.init, terminal.loc);
-        const initBlock = this.cx.ir.blocks.get(init.block)!;
-        let initValue = init.value;
-        if (initValue.kind === 'SequenceExpression') {
-          const last = initBlock.instructions.at(-1)!;
-          initValue.instructions.push(last);
-          initValue.value = {
-            kind: 'Primitive',
-            value: undefined,
-            loc: terminal.loc,
-          };
-        } else {
-          initValue = {
-            kind: 'SequenceExpression',
-            instructions: [initBlock.instructions.at(-1)!],
-            id: terminal.id,
-            loc: terminal.loc,
-            value: {
-              kind: 'Primitive',
-              value: undefined,
-              loc: terminal.loc,
-            },
-          };
-        }
+        const initValue = this.valueBlockResultToSequence(init, terminal.loc);
 
         const testValue = this.visitValueBlock(
           terminal.test,
@@ -524,54 +557,10 @@ class Driver {
         scheduleIds.push(scheduleId);
 
         const init = this.visitValueBlock(terminal.init, terminal.loc);
-        const initBlock = this.cx.ir.blocks.get(init.block)!;
-        let initValue = init.value;
-        if (initValue.kind === 'SequenceExpression') {
-          const last = initBlock.instructions.at(-1)!;
-          initValue.instructions.push(last);
-          initValue.value = {
-            kind: 'Primitive',
-            value: undefined,
-            loc: terminal.loc,
-          };
-        } else {
-          initValue = {
-            kind: 'SequenceExpression',
-            instructions: [initBlock.instructions.at(-1)!],
-            id: terminal.id,
-            loc: terminal.loc,
-            value: {
-              kind: 'Primitive',
-              value: undefined,
-              loc: terminal.loc,
-            },
-          };
-        }
+        const initValue = this.valueBlockResultToSequence(init, terminal.loc);
 
         const test = this.visitValueBlock(terminal.test, terminal.loc);
-        const testBlock = this.cx.ir.blocks.get(test.block)!;
-        let testValue = test.value;
-        if (testValue.kind === 'SequenceExpression') {
-          const last = testBlock.instructions.at(-1)!;
-          testValue.instructions.push(last);
-          testValue.value = {
-            kind: 'Primitive',
-            value: undefined,
-            loc: terminal.loc,
-          };
-        } else {
-          testValue = {
-            kind: 'SequenceExpression',
-            instructions: [testBlock.instructions.at(-1)!],
-            id: terminal.id,
-            loc: terminal.loc,
-            value: {
-              kind: 'Primitive',
-              value: undefined,
-              loc: terminal.loc,
-            },
-          };
-        }
+        const testValue = this.valueBlockResultToSequence(test, terminal.loc);
 
         let loopBody: ReactiveBlock;
         if (loopId) {
@@ -621,29 +610,7 @@ class Driver {
         scheduleIds.push(scheduleId);
 
         const init = this.visitValueBlock(terminal.init, terminal.loc);
-        const initBlock = this.cx.ir.blocks.get(init.block)!;
-        let initValue = init.value;
-        if (initValue.kind === 'SequenceExpression') {
-          const last = initBlock.instructions.at(-1)!;
-          initValue.instructions.push(last);
-          initValue.value = {
-            kind: 'Primitive',
-            value: undefined,
-            loc: terminal.loc,
-          };
-        } else {
-          initValue = {
-            kind: 'SequenceExpression',
-            instructions: [initBlock.instructions.at(-1)!],
-            id: terminal.id,
-            loc: terminal.loc,
-            value: {
-              kind: 'Primitive',
-              value: undefined,
-              loc: terminal.loc,
-            },
-          };
-        }
+        const initValue = this.valueBlockResultToSequence(init, terminal.loc);
 
         let loopBody: ReactiveBlock;
         if (loopId) {
@@ -1040,11 +1007,10 @@ class Driver {
     const test = this.visitValueBlock(testBlockId, loc);
     const testBlock = this.cx.ir.blocks.get(test.block)!;
     if (testBlock.terminal.kind !== 'branch') {
-      CompilerError.throwTodo({
-        reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for ${terminalKind} test block`,
-        description: null,
+      CompilerError.invariant(false, {
+        reason: `Expected a branch terminal for ${terminalKind} test block`,
+        description: `Got \`${testBlock.terminal.kind}\``,
         loc: testBlock.terminal.loc,
-        suggestions: null,
       });
     }
     return {

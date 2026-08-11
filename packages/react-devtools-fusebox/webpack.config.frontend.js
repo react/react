@@ -85,7 +85,6 @@ module.exports = {
       __IS_CHROME__: false,
       __IS_FIREFOX__: false,
       __IS_EDGE__: false,
-      __IS_INTERNAL_MCP_BUILD__: false,
       'process.env.DEVTOOLS_PACKAGE': `"react-devtools-fusebox"`,
       'process.env.DEVTOOLS_VERSION': `"${DEVTOOLS_VERSION}"`,
       'process.env.EDITOR_URL': EDITOR_URL != null ? `"${EDITOR_URL}"` : null,

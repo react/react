@@ -75,6 +75,6 @@ export const REACT_MEMO_CACHE_SENTINEL: symbol = Symbol.for(
 
 import type {ReactOptimisticKey} from 'shared/ReactTypes';
 
-export const REACT_OPTIMISTIC_KEY: ReactOptimisticKey = (Symbol.for(
+export const REACT_OPTIMISTIC_KEY: ReactOptimisticKey = Symbol.for(
   'react.optimistic_key',
-): any);
+) as any;

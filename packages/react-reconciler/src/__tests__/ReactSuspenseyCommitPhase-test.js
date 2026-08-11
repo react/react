@@ -442,7 +442,7 @@ describe('ReactSuspenseyCommitPhase', () => {
     );
   });
 
-  // @gate enableActivity && enableSuspenseyImages
+  // @gate enableSuspenseyImages
   it("host instances don't suspend during prerendering, but do suspend when they are revealed", async () => {
     function More() {
       Scheduler.log('More');

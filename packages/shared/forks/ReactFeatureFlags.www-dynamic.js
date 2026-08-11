@@ -16,7 +16,6 @@
 export const alwaysThrottleRetries: boolean = __VARIANT__;
 export const disableLegacyContextForFunctionComponents: boolean = __VARIANT__;
 export const disableSchedulerTimeoutInWorkLoop: boolean = __VARIANT__;
-export const enableHiddenSubtreeInsertionEffectCleanup: boolean = __VARIANT__;
 export const enableNoCloningMemoCache: boolean = __VARIANT__;
 export const enableObjectFiber: boolean = __VARIANT__;
 export const enableRetryLaneExpiration: boolean = __VARIANT__;
@@ -28,16 +27,19 @@ export const transitionLaneExpirationMs = 5000;
 export const enableSchedulingProfiler: boolean = __VARIANT__;
 
 export const enableInfiniteRenderLoopDetection: boolean = __VARIANT__;
+export const enableInfiniteRenderLoopDetectionForceThrow: boolean = __VARIANT__;
+export const enableConditionalUseWarning: boolean = __VARIANT__;
 
 export const enableFastAddPropertiesInDiffing: boolean = __VARIANT__;
+export const enableSuspenseyImages: boolean = __VARIANT__;
 export const enableViewTransition: boolean = __VARIANT__;
+export const enableViewTransitionParentEnterExit: boolean = __VARIANT__;
 export const enableScrollEndPolyfill: boolean = __VARIANT__;
 export const enableFragmentRefs: boolean = __VARIANT__;
 export const enableFragmentRefsScrollIntoView: boolean = __VARIANT__;
 export const enableFragmentRefsTextNodes: boolean = __VARIANT__;
-export const enableAsyncDebugInfo: boolean = __VARIANT__;
 export const enableInternalInstanceMap: boolean = __VARIANT__;
-export const enableTrustedTypesIntegration: boolean = __VARIANT__;
+export const enableParallelTransitions: boolean = __VARIANT__;
 
 // TODO: These flags are hard-coded to the default values used in open source.
 // Update the tests so that they pass in either mode, then set these

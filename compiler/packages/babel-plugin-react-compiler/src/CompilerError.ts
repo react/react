@@ -522,7 +522,7 @@ export class CompilerError extends Error {
   }
 }
 
-function printCodeFrame(
+export function printCodeFrame(
   source: string,
   loc: t.SourceLocation,
   message: string,
@@ -565,15 +565,12 @@ function printCodeFrame(
 function printErrorSummary(category: ErrorCategory, message: string): string {
   let heading: string;
   switch (category) {
-    case ErrorCategory.AutomaticEffectDependencies:
     case ErrorCategory.CapitalizedCalls:
     case ErrorCategory.Config:
     case ErrorCategory.EffectDerivationsOfState:
     case ErrorCategory.EffectSetState:
     case ErrorCategory.ErrorBoundaries:
-    case ErrorCategory.Factories:
     case ErrorCategory.FBT:
-    case ErrorCategory.Fire:
     case ErrorCategory.Gating:
     case ErrorCategory.Globals:
     case ErrorCategory.Hooks:
@@ -637,10 +634,6 @@ export enum ErrorCategory {
    * Checking that useMemos always return a value
    */
   VoidUseMemo = 'VoidUseMemo',
-  /**
-   * Checking for higher order functions acting as factories for components/hooks
-   */
-  Factories = 'Factories',
   /**
    * Checks that manual memoization is preserved
    */
@@ -719,14 +712,6 @@ export enum ErrorCategory {
    */
   Suppression = 'Suppression',
   /**
-   * Issues with auto deps
-   */
-  AutomaticEffectDependencies = 'AutomaticEffectDependencies',
-  /**
-   * Issues with `fire`
-   */
-  Fire = 'Fire',
-  /**
    * fbt-specific issues
    */
   FBT = 'FBT',
@@ -790,16 +775,6 @@ export function getRuleForCategory(category: ErrorCategory): LintRule {
 
 function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
   switch (category) {
-    case ErrorCategory.AutomaticEffectDependencies: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'automatic-effect-dependencies',
-        description:
-          'Verifies that automatic effect dependencies are compiled if opted-in',
-        preset: LintRulePreset.Off,
-      };
-    }
     case ErrorCategory.CapitalizedCalls: {
       return {
         category,
@@ -870,32 +845,12 @@ function getRuleForCategoryImpl(category: ErrorCategory): LintRule {
         preset: LintRulePreset.Recommended,
       };
     }
-    case ErrorCategory.Factories: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'component-hook-factories',
-        description:
-          'Validates against higher order functions defining nested components or hooks. ' +
-          'Components and hooks should be defined at the module level',
-        preset: LintRulePreset.Recommended,
-      };
-    }
     case ErrorCategory.FBT: {
       return {
         category,
         severity: ErrorSeverity.Error,
         name: 'fbt',
         description: 'Validates usage of fbt',
-        preset: LintRulePreset.Off,
-      };
-    }
-    case ErrorCategory.Fire: {
-      return {
-        category,
-        severity: ErrorSeverity.Error,
-        name: 'fire',
-        description: 'Validates usage of `fire`',
         preset: LintRulePreset.Off,
       };
     }

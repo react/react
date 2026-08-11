@@ -1485,7 +1485,6 @@ describe('ReactDOMSelect', () => {
           );
         }),
       ).rejects.toThrowError(
-        // eslint-disable-next-line no-undef
         new AggregateError([
           new TypeError('prod message'),
           new TypeError('prod message'),

@@ -15,21 +15,18 @@ import {
   GeneratedSource,
   HIRFunction,
   IdentifierId,
-  Identifier,
   Place,
   SourceLocation,
   getHookKindForType,
   isRefValueType,
   isUseRefType,
 } from '../HIR';
-import {BuiltInEventHandlerId} from '../HIR/ObjectShape';
 import {
   eachInstructionOperand,
   eachInstructionValueOperand,
   eachPatternOperand,
   eachTerminalOperand,
 } from '../HIR/visitors';
-import {Err, Ok, Result} from '../Utils/Result';
 import {retainWhere} from '../Utils/utils';
 
 /**
@@ -122,12 +119,14 @@ class Env {
   }
 }
 
-export function validateNoRefAccessInRender(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
+export function validateNoRefAccessInRender(fn: HIRFunction): void {
   const env = new Env();
   collectTemporariesSidemap(fn, env);
-  return validateNoRefAccessInRenderImpl(fn, env).map(_ => undefined);
+  const errors = new CompilerError();
+  validateNoRefAccessInRenderImpl(fn, env, errors);
+  for (const detail of errors.details) {
+    fn.env.recordError(detail);
+  }
 }
 
 function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
@@ -176,11 +175,6 @@ function refTypeOfType(place: Place): RefAccessType {
   } else {
     return {kind: 'None'};
   }
-}
-
-function isEventHandlerType(identifier: Identifier): boolean {
-  const type = identifier.type;
-  return type.kind === 'Function' && type.shapeId === BuiltInEventHandlerId;
 }
 
 function tyEqual(a: RefAccessType, b: RefAccessType): boolean {
@@ -312,7 +306,8 @@ function joinRefAccessTypes(...types: Array<RefAccessType>): RefAccessType {
 function validateNoRefAccessInRenderImpl(
   fn: HIRFunction,
   env: Env,
-): Result<RefAccessType, CompilerError> {
+  errors: CompilerError,
+): RefAccessType {
   let returnValues: Array<undefined | RefAccessType> = [];
   let place;
   for (const param of fn.params) {
@@ -343,7 +338,6 @@ function validateNoRefAccessInRenderImpl(
     env.resetChanged();
     returnValues = [];
     const safeBlocks: Array<{block: BlockId; ref: RefId}> = [];
-    const errors = new CompilerError();
     for (const [, block] of fn.body.blocks) {
       retainWhere(safeBlocks, entry => entry.block !== block.id);
       for (const phi of block.phis) {
@@ -439,13 +433,15 @@ function validateNoRefAccessInRenderImpl(
           case 'FunctionExpression': {
             let returnType: RefAccessType = {kind: 'None'};
             let readRefEffect = false;
+            const innerErrors = new CompilerError();
             const result = validateNoRefAccessInRenderImpl(
               instr.value.loweredFunc.func,
               env,
+              innerErrors,
             );
-            if (result.isOk()) {
-              returnType = result.unwrap();
-            } else if (result.isErr()) {
+            if (!innerErrors.hasAnyErrors()) {
+              returnType = result;
+            } else {
               readRefEffect = true;
             }
             env.set(instr.lvalue.identifier.id, {
@@ -491,29 +487,26 @@ function validateNoRefAccessInRenderImpl(
              */
             if (!didError) {
               const isRefLValue = isUseRefType(instr.lvalue.identifier);
-              const isEventHandlerLValue = isEventHandlerType(
-                instr.lvalue.identifier,
-              );
-              for (const operand of eachInstructionValueOperand(instr.value)) {
-                /**
-                 * By default we check that function call operands are not refs,
-                 * ref values, or functions that can access refs.
-                 */
-                if (
-                  isRefLValue ||
-                  isEventHandlerLValue ||
-                  (hookKind != null &&
-                    hookKind !== 'useState' &&
-                    hookKind !== 'useReducer')
-                ) {
+              if (
+                isRefLValue ||
+                (hookKind != null &&
+                  hookKind !== 'useState' &&
+                  hookKind !== 'useReducer')
+              ) {
+                for (const operand of eachInstructionValueOperand(
+                  instr.value,
+                )) {
                   /**
                    * Allow passing refs or ref-accessing functions when:
                    * 1. lvalue is a ref (mergeRefs pattern: `mergeRefs(ref1, ref2)`)
-                   * 2. lvalue is an event handler (DOM events execute outside render)
-                   * 3. calling hooks (independently validated for ref safety)
+                   * 2. calling hooks (independently validated for ref safety)
                    */
                   validateNoDirectRefValueAccess(errors, operand, env);
-                } else if (interpolatedAsJsx.has(instr.lvalue.identifier.id)) {
+                }
+              } else if (interpolatedAsJsx.has(instr.lvalue.identifier.id)) {
+                for (const operand of eachInstructionValueOperand(
+                  instr.value,
+                )) {
                   /**
                    * Special case: the lvalue is passed as a jsx child
                    *
@@ -522,7 +515,98 @@ function validateNoRefAccessInRenderImpl(
                    * render function which attempts to obey the rules.
                    */
                   validateNoRefValueAccess(errors, env, operand);
-                } else {
+                }
+              } else if (hookKind == null && instr.effects != null) {
+                /**
+                 * For non-hook functions with known aliasing effects, use the
+                 * effects to determine what validation to apply for each place.
+                 * Track visited id:kind pairs to avoid duplicate errors.
+                 */
+                const visitedEffects: Set<string> = new Set();
+                for (const effect of instr.effects) {
+                  let place: Place | null = null;
+                  let validation: 'ref-passed' | 'direct-ref' | 'none' = 'none';
+                  switch (effect.kind) {
+                    case 'Freeze': {
+                      place = effect.value;
+                      validation = 'direct-ref';
+                      break;
+                    }
+                    case 'Mutate':
+                    case 'MutateTransitive':
+                    case 'MutateConditionally':
+                    case 'MutateTransitiveConditionally': {
+                      place = effect.value;
+                      validation = 'ref-passed';
+                      break;
+                    }
+                    case 'Render': {
+                      place = effect.place;
+                      validation = 'ref-passed';
+                      break;
+                    }
+                    case 'Capture':
+                    case 'Alias':
+                    case 'MaybeAlias':
+                    case 'Assign':
+                    case 'CreateFrom': {
+                      place = effect.from;
+                      validation = 'ref-passed';
+                      break;
+                    }
+                    case 'ImmutableCapture': {
+                      /**
+                       * ImmutableCapture can come from two sources:
+                       * 1. A known signature that explicitly freezes the operand
+                       *    (e.g. PanResponder.create) — safe, the function doesn't
+                       *    call callbacks during render.
+                       * 2. Downgraded defaults when the operand is already frozen
+                       *    (e.g. foo(propRef)) — the function is unknown and may
+                       *    access the ref.
+                       *
+                       * We distinguish these by checking whether the same operand
+                       * also has a Freeze effect on this instruction, which only
+                       * comes from known signatures.
+                       */
+                      place = effect.from;
+                      const isFrozen = instr.effects.some(
+                        e =>
+                          e.kind === 'Freeze' &&
+                          e.value.identifier.id === effect.from.identifier.id,
+                      );
+                      validation = isFrozen ? 'direct-ref' : 'ref-passed';
+                      break;
+                    }
+                    case 'Create':
+                    case 'CreateFunction':
+                    case 'Apply':
+                    case 'Impure':
+                    case 'MutateFrozen':
+                    case 'MutateGlobal': {
+                      break;
+                    }
+                  }
+                  if (place !== null && validation !== 'none') {
+                    const key = `${place.identifier.id}:${validation}`;
+                    if (!visitedEffects.has(key)) {
+                      visitedEffects.add(key);
+                      if (validation === 'direct-ref') {
+                        validateNoDirectRefValueAccess(errors, place, env);
+                      } else {
+                        validateNoRefPassedToFunction(
+                          errors,
+                          env,
+                          place,
+                          place.loc,
+                        );
+                      }
+                    }
+                  }
+                }
+              } else {
+                for (const operand of eachInstructionValueOperand(
+                  instr.value,
+                )) {
                   validateNoRefPassedToFunction(
                     errors,
                     env,
@@ -741,7 +825,7 @@ function validateNoRefAccessInRenderImpl(
     }
 
     if (errors.hasAnyErrors()) {
-      return Err(errors);
+      return {kind: 'None'};
     }
   }
 
@@ -750,10 +834,8 @@ function validateNoRefAccessInRenderImpl(
     loc: GeneratedSource,
   });
 
-  return Ok(
-    joinRefAccessTypes(
-      ...returnValues.filter((env): env is RefAccessType => env !== undefined),
-    ),
+  return joinRefAccessTypes(
+    ...returnValues.filter((env): env is RefAccessType => env !== undefined),
   );
 }
 

@@ -17,6 +17,7 @@ import type {
   DevToolsBackend,
   DevToolsHookSettings,
   ProfilingSettings,
+  ReactBuildType,
 } from './backend/types';
 import type {ComponentFilter} from './frontend/types';
 
@@ -53,7 +54,6 @@ const targetConsole: Object = console;
 
 const defaultProfilingSettings: ProfilingSettings = {
   recordChangeDescriptions: false,
-  recordTimeline: false,
 };
 
 export function installHook(
@@ -71,7 +71,7 @@ export function installHook(
     return null;
   }
 
-  function detectReactBuildType(renderer: ReactRenderer) {
+  function detectReactBuildType(renderer: ReactRenderer): ReactBuildType {
     try {
       if (typeof renderer.version === 'string') {
         // React DOM Fiber (16+)
@@ -211,7 +211,7 @@ export function installHook(
     const id = ++uidCounter;
     renderers.set(id, renderer);
 
-    const reactBuildType = hasDetectedBadDCE
+    const reactBuildType: ReactBuildType = hasDetectedBadDCE
       ? 'deadcode'
       : detectReactBuildType(renderer);
 
@@ -403,41 +403,6 @@ export function installHook(
     unpatchConsoleCallbacks.length = 0;
   }
 
-  type StackFrameString = string;
-
-  const openModuleRangesStack: Array<StackFrameString> = [];
-  const moduleRanges: Array<[StackFrameString, StackFrameString]> = [];
-
-  function getTopStackFrameString(error: Error): StackFrameString | null {
-    const frames = error.stack.split('\n');
-    const frame = frames.length > 1 ? frames[1] : null;
-    return frame;
-  }
-
-  function getInternalModuleRanges(): Array<
-    [StackFrameString, StackFrameString],
-  > {
-    return moduleRanges;
-  }
-
-  function registerInternalModuleStart(error: Error) {
-    const startStackFrame = getTopStackFrameString(error);
-    if (startStackFrame !== null) {
-      openModuleRangesStack.push(startStackFrame);
-    }
-  }
-
-  function registerInternalModuleStop(error: Error) {
-    if (openModuleRangesStack.length > 0) {
-      const startStackFrame = openModuleRangesStack.pop();
-      const stopStackFrame = getTopStackFrameString(error);
-      if (stopStackFrame !== null) {
-        // $FlowFixMe[incompatible-call]
-        moduleRanges.push([startStackFrame, stopStackFrame]);
-      }
-    }
-  }
-
   // For Errors and Warnings we only patch console once
   function patchConsoleForErrorsAndWarnings() {
     // Don't patch console in case settings were not injected
@@ -492,7 +457,7 @@ export function installHook(
               // The backend is what implements a message queue, so it's the only one that injects onErrorOrWarning.
               if (onErrorOrWarning != null) {
                 onErrorOrWarning(
-                  ((method: any): 'error' | 'warn'),
+                  method as any as 'error' | 'warn',
                   args.slice(),
                 );
               }
@@ -664,13 +629,6 @@ export function installHook(
     // React v18.0+
     onPostCommitFiberRoot,
     setStrictMode,
-
-    // Schedule Profiler runtime helpers.
-    // These internal React modules to report their own boundaries
-    // which in turn enables the profiler to dim or filter internal frames.
-    getInternalModuleRanges,
-    registerInternalModuleStart,
-    registerInternalModuleStop,
   };
 
   if (maybeSettingsOrSettingsPromise == null) {
@@ -698,19 +656,15 @@ export function installHook(
       });
   }
 
-  Object.defineProperty(
-    target,
-    '__REACT_DEVTOOLS_GLOBAL_HOOK__',
-    ({
-      // This property needs to be configurable for the test environment,
-      // else we won't be able to delete and recreate it between tests.
-      configurable: __DEV__,
-      enumerable: false,
-      get() {
-        return hook;
-      },
-    }: Object),
-  );
+  Object.defineProperty(target, '__REACT_DEVTOOLS_GLOBAL_HOOK__', {
+    // This property needs to be configurable for the test environment,
+    // else we won't be able to delete and recreate it between tests.
+    configurable: __DEV__,
+    enumerable: false,
+    get() {
+      return hook;
+    },
+  } as Object);
 
   return hook;
 }

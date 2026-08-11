@@ -1,8 +1,8 @@
-/* global chrome */
+/* global chrome, ExtensionRuntimePort */
 /** @flow */
 
 import type {RootType} from 'react-dom/src/client/ReactDOMRoot';
-import type {FrontendBridge, Message} from 'react-devtools-shared/src/bridge';
+import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 import type {
   TabID,
   ViewElementSource,
@@ -15,6 +15,7 @@ import {flushSync} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import {getBrowserTheme} from '../utils';
 import {
   localStorageGetItem,
@@ -48,6 +49,11 @@ import injectBackendManager from './injectBackendManager';
 import registerEventsLogger from './registerEventsLogger';
 import getProfilingFlags from './getProfilingFlags';
 import debounce from './debounce';
+import {
+  EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+  EXTENSION_BRIDGE_CONNECTION_READY,
+  getExtensionBridgeConnectionType,
+} from '../constants';
 import './requestAnimationFramePolyfill';
 
 const resolvedParseHookNames = Promise.resolve(parseHookNames);
@@ -56,24 +62,105 @@ const resolvedParseHookNames = Promise.resolve(parseHookNames);
 // wrapper around calling the worker.
 const hookNamesModuleLoaderFunction = () => resolvedParseHookNames;
 
-function createBridge() {
-  bridge = new Bridge({
-    listen(fn) {
-      const bridgeListener = (message: Message) => fn(message);
-      // Store the reference so that we unsubscribe from the same object.
-      const portOnMessage = ((port: any): ExtensionPort).onMessage;
-      portOnMessage.addListener(bridgeListener);
+type PendingBridgeMessage = {
+  event: string,
+  payload: mixed,
+  transferable?: $ReadOnlyArray<mixed>,
+};
 
-      lastSubscribedBridgeListener = bridgeListener;
+type DevToolsInstance = {
+  bridge: FrontendBridge,
+  store: Store,
+  render: (overrideTab?: TabID) => void,
+  root: RootType,
+};
+
+function flushPendingBridgeMessages(): void {
+  const currentPort = port;
+  if (!isBridgeConnected || currentPort === null) {
+    return;
+  }
+
+  let sentCount = 0;
+  while (sentCount < pendingBridgeMessages.length) {
+    const {event, payload, transferable} = pendingBridgeMessages[sentCount];
+    try {
+      currentPort.postMessage({event, payload}, transferable);
+      sentCount++;
+    } catch (error) {
+      isBridgeConnected = false;
+      break;
+    }
+  }
+
+  if (sentCount > 0) {
+    pendingBridgeMessages.splice(0, sentCount);
+  }
+}
+
+function handleBridgeConnectionMessage(message: mixed): void {
+  switch (getExtensionBridgeConnectionType(message)) {
+    case EXTENSION_BRIDGE_CONNECTION_READY:
+      isBridgeConnected = true;
+      flushPendingBridgeMessages();
+      break;
+    case EXTENSION_BRIDGE_CONNECTION_DISCONNECTED:
+      isBridgeConnected = false;
+      break;
+  }
+}
+
+function removeBridgePortListener(): void {
+  if (subscribedBridgePort !== null && bridgePortListener !== null) {
+    subscribedBridgePort.onMessage.removeListener(bridgePortListener);
+  }
+  subscribedBridgePort = null;
+  bridgePortListener = null;
+}
+
+function addBridgePortListener(nextPort: ExtensionRuntimePort): void {
+  const bridgeListener = lastSubscribedBridgeListener;
+  if (bridgeListener === null) {
+    return;
+  }
+
+  removeBridgePortListener();
+
+  const nextBridgePortListener = (message: mixed) => {
+    if (port === nextPort) {
+      bridgeListener(message);
+    }
+  };
+  nextPort.onMessage.addListener(nextBridgePortListener);
+  subscribedBridgePort = nextPort;
+  bridgePortListener = nextBridgePortListener;
+}
+
+function createBridge(): FrontendBridge {
+  const bridge: FrontendBridge = new Bridge({
+    listen(fn) {
+      const currentPort = port;
+      if (currentPort === null) {
+        throw new Error('DevTools port is not connected.');
+      }
+      if (lastSubscribedBridgeListener !== null) {
+        throw new Error('The Bridge already has a Wall listener.');
+      }
+
+      lastSubscribedBridgeListener = fn;
+      addBridgePortListener(currentPort);
 
       return () => {
-        port?.onMessage.removeListener(bridgeListener);
-        lastSubscribedBridgeListener = null;
+        if (lastSubscribedBridgeListener === fn) {
+          lastSubscribedBridgeListener = null;
+          removeBridgePortListener();
+        }
       };
     },
 
-    send(event: string, payload: any, transferable?: Array<any>) {
-      port?.postMessage({event, payload}, transferable);
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
+      pendingBridgeMessages.push({event, payload, transferable});
+      flushPendingBridgeMessages();
     },
   });
 
@@ -120,7 +207,13 @@ function createBridge() {
         },
       };
       // Rerender with the new file selection.
-      render();
+      const instance = devToolsInstance;
+      if (instance === null) {
+        throw new Error(
+          'Cannot sync source selection: DevTools instance is not initialized.',
+        );
+      }
+      instance.render();
     } else {
       // Update the ref to the latest position without updating the url. No need to rerender.
       const selectionRef = currentSelectedSource.selectionRef;
@@ -150,26 +243,23 @@ function createBridge() {
       onBrowserSourceSelectionChanged,
     );
   }
+
+  return bridge;
 }
 
-function createBridgeAndStore() {
-  createBridge();
+function createDevToolsInstance(): DevToolsInstance {
+  const bridge = createBridge();
 
   const {isProfiling} = getProfilingFlags();
 
-  store = new Store(bridge, {
+  const store = new Store(bridge, {
     isProfiling,
     supportsReloadAndProfile: __IS_CHROME__ || __IS_EDGE__,
-    // At this time, the timeline can only parse Chrome performance profiles.
-    supportsTimeline: __IS_CHROME__,
     supportsTraceUpdates: true,
     supportsInspectMatchingDOMElement: true,
     supportsClickToInspect: true,
   });
-
-  store.addListener('enableSuspenseTab', () => {
-    createSuspensePanel();
-  });
+  subscribeToStoreErrors(store, bridge);
 
   store.addListener('settingsUpdated', (hookSettings, componentFilters) => {
     chrome.storage.local.set({...hookSettings, componentFilters});
@@ -210,9 +300,9 @@ function createBridgeAndStore() {
     );
   };
 
-  root = createRoot(document.createElement('div'));
+  const root = createRoot(document.createElement('div'));
 
-  render = (overrideTab: TabID | null = mostRecentOverrideTab) => {
+  const render = (overrideTab: TabID | null = mostRecentOverrideTab) => {
     mostRecentOverrideTab = overrideTab;
 
     root.render(
@@ -239,6 +329,8 @@ function createBridgeAndStore() {
       }),
     );
   };
+
+  return {bridge, store, render, root};
 }
 
 function ensureInitialHTMLIsCleared(
@@ -253,14 +345,6 @@ function ensureInitialHTMLIsCleared(
 }
 
 function createComponentsPanel() {
-  if (componentsPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(componentsPortalContainer);
-    render('components');
-
-    return;
-  }
-
   if (componentsPanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -275,35 +359,30 @@ function createComponentsPanel() {
 
       createdPanel.onShown.addListener(portal => {
         componentsPortalContainer = portal.container;
-        if (componentsPortalContainer != null && render) {
-          ensureInitialHTMLIsCleared(componentsPortalContainer);
+        const currentInstance = devToolsInstance;
+        if (componentsPortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(componentsPortalContainer);
 
-          render('components');
+            currentInstance.render('components');
+
+            logEvent({event_name: 'selected-components-tab'});
+          }
           portal.injectStyles(cloneStyleTags);
-
-          logEvent({event_name: 'selected-components-tab'});
         }
       });
 
       createdPanel.onShown.addListener(() => {
-        bridge.emit('extensionComponentsPanelShown');
+        devToolsInstance?.bridge.emit('extensionComponentsPanelShown');
       });
       createdPanel.onHidden.addListener(() => {
-        bridge.emit('extensionComponentsPanelHidden');
+        devToolsInstance?.bridge.emit('extensionComponentsPanelHidden');
       });
     },
   );
 }
 
 function createElementsInspectPanel() {
-  if (inspectedElementPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
-    render();
-
-    return;
-  }
-
   if (inspectedElementPane) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -328,28 +407,23 @@ function createElementsInspectPanel() {
 
     createdPane.onShown.addListener(portal => {
       inspectedElementPortalContainer = portal.container;
-      if (inspectedElementPortalContainer != null && render) {
-        ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
-        bridge.send('syncSelectionFromBuiltinElementsPanel');
+      const currentInstance = devToolsInstance;
+      if (inspectedElementPortalContainer != null) {
+        if (currentInstance !== null) {
+          ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
+          currentInstance.bridge.send('syncSelectionFromBuiltinElementsPanel');
 
-        render();
+          currentInstance.render();
+
+          logEvent({event_name: 'selected-inspected-element-pane'});
+        }
         portal.injectStyles(cloneStyleTags);
-
-        logEvent({event_name: 'selected-inspected-element-pane'});
       }
     });
   });
 }
 
 function createProfilerPanel() {
-  if (profilerPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(profilerPortalContainer);
-    render('profiler');
-
-    return;
-  }
-
   if (profilerPanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -364,13 +438,16 @@ function createProfilerPanel() {
 
       createdPanel.onShown.addListener(portal => {
         profilerPortalContainer = portal.container;
-        if (profilerPortalContainer != null && render) {
-          ensureInitialHTMLIsCleared(profilerPortalContainer);
+        const currentInstance = devToolsInstance;
+        if (profilerPortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(profilerPortalContainer);
 
-          render('profiler');
+            currentInstance.render('profiler');
+
+            logEvent({event_name: 'selected-profiler-tab'});
+          }
           portal.injectStyles(cloneStyleTags);
-
-          logEvent({event_name: 'selected-profiler-tab'});
         }
       });
     },
@@ -378,14 +455,6 @@ function createProfilerPanel() {
 }
 
 function createSourcesEditorPanel() {
-  if (editorPortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(editorPortalContainer);
-    render();
-
-    return;
-  }
-
   if (editorPane) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -405,27 +474,22 @@ function createSourcesEditorPanel() {
 
     createdPane.onShown.addListener(portal => {
       editorPortalContainer = portal.container;
-      if (editorPortalContainer != null && render) {
-        ensureInitialHTMLIsCleared(editorPortalContainer);
+      const currentInstance = devToolsInstance;
+      if (editorPortalContainer != null) {
+        if (currentInstance !== null) {
+          ensureInitialHTMLIsCleared(editorPortalContainer);
 
-        render();
+          currentInstance.render();
+
+          logEvent({event_name: 'selected-editor-pane'});
+        }
         portal.injectStyles(cloneStyleTags);
-
-        logEvent({event_name: 'selected-editor-pane'});
       }
     });
   });
 }
 
 function createSuspensePanel() {
-  if (suspensePortalContainer) {
-    // Panel is created and user opened it at least once
-    ensureInitialHTMLIsCleared(suspensePortalContainer);
-    render('suspense');
-
-    return;
-  }
-
   if (suspensePanel) {
     // Panel is created, but wasn't opened yet, so no document is present for it
     return;
@@ -440,26 +504,66 @@ function createSuspensePanel() {
 
       createdPanel.onShown.addListener(portal => {
         suspensePortalContainer = portal.container;
-        if (suspensePortalContainer != null && render) {
-          ensureInitialHTMLIsCleared(suspensePortalContainer);
+        const currentInstance = devToolsInstance;
+        if (suspensePortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(suspensePortalContainer);
 
-          render('suspense');
+            currentInstance.render('suspense');
+
+            logEvent({event_name: 'selected-suspense-tab'});
+          }
           portal.injectStyles(cloneStyleTags);
-
-          logEvent({event_name: 'selected-suspense-tab'});
         }
       });
     },
   );
 }
 
+function createDevToolsPanels(): void {
+  createComponentsPanel();
+  createProfilerPanel();
+  createSourcesEditorPanel();
+  createElementsInspectPanel();
+  createSuspensePanel();
+}
+
+function renderOpenedDevToolsPanels(instance: DevToolsInstance): void {
+  if (componentsPortalContainer) {
+    ensureInitialHTMLIsCleared(componentsPortalContainer);
+    instance.render('components');
+  }
+
+  if (profilerPortalContainer) {
+    ensureInitialHTMLIsCleared(profilerPortalContainer);
+    instance.render('profiler');
+  }
+
+  if (editorPortalContainer) {
+    ensureInitialHTMLIsCleared(editorPortalContainer);
+    instance.render();
+  }
+
+  if (inspectedElementPortalContainer) {
+    ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
+    instance.bridge.send('syncSelectionFromBuiltinElementsPanel');
+    instance.render();
+  }
+
+  if (suspensePortalContainer) {
+    ensureInitialHTMLIsCleared(suspensePortalContainer);
+    instance.render('suspense');
+  }
+}
+
 function performInTabNavigationCleanup() {
   // Potentially, if react hasn't loaded yet and user performs in-tab navigation
   clearReactPollingInstance();
 
-  if (store !== null) {
+  const instance = devToolsInstance;
+  if (instance !== null) {
     // Store profiling data, so it can be used later
-    profilingData = store.profilerStore.profilingData;
+    profilingData = instance.store.profilerStore.profilingData;
   }
 
   // If panels were already created, and we have already mounted React root to display
@@ -468,17 +572,17 @@ function performInTabNavigationCleanup() {
     (componentsPortalContainer ||
       profilerPortalContainer ||
       suspensePortalContainer) &&
-    root
+    instance !== null
   ) {
     // It's easiest to recreate the DevTools panel (to clean up potential stale state).
     // We can revisit this in the future as a small optimization.
     // This should also emit bridge.shutdown, but only if this root was mounted
-    flushSync(() => root.unmount());
+    flushSync(() => instance.root.unmount());
   } else {
     // In case Browser DevTools were opened, but user never pressed on extension panels
     // They were never mounted and there is nothing to unmount, but we need to emit shutdown event
     // because bridge was already created
-    bridge?.shutdown();
+    instance?.bridge.shutdown();
   }
 
   // Do not nullify componentsPanelPortal and profilerPanelPortal on purpose,
@@ -489,40 +593,37 @@ function performInTabNavigationCleanup() {
   // Do not clean mostRecentOverrideTab on purpose, so we remember last opened
   // React DevTools tab, when user does in-tab navigation
 
-  store = (null: $FlowFixMe);
-  bridge = (null: $FlowFixMe);
-  render = (null: $FlowFixMe);
-  root = (null: $FlowFixMe);
+  devToolsInstance = null;
+  pendingBridgeMessages.length = 0;
 }
 
 function performFullCleanup() {
   // Potentially, if react hasn't loaded yet and user closed the browser DevTools
   clearReactPollingInstance();
 
+  const instance = devToolsInstance;
   if (
     (componentsPortalContainer ||
       profilerPortalContainer ||
       suspensePortalContainer) &&
-    root
+    instance !== null
   ) {
     // This should also emit bridge.shutdown, but only if this root was mounted
-    flushSync(() => root.unmount());
+    flushSync(() => instance.root.unmount());
   } else {
-    bridge?.shutdown();
+    instance?.bridge.shutdown();
   }
 
   componentsPortalContainer = null;
   profilerPortalContainer = null;
   suspensePortalContainer = null;
-  root = (null: $FlowFixMe);
 
   mostRecentOverrideTab = null;
-  store = (null: $FlowFixMe);
-  bridge = (null: $FlowFixMe);
-  render = (null: $FlowFixMe);
+  devToolsInstance = null;
+  pendingBridgeMessages.length = 0;
 
   port?.disconnect();
-  port = (null: $FlowFixMe);
+  port = null;
 }
 
 function connectExtensionPort(): void {
@@ -531,8 +632,15 @@ function connectExtensionPort(): void {
   }
 
   const tabId = chrome.devtools.inspectedWindow.tabId;
-  port = chrome.runtime.connect({
+  isBridgeConnected = false;
+  const nextPort = chrome.runtime.connect({
     name: String(tabId),
+  });
+  port = nextPort;
+  nextPort.onMessage.addListener(message => {
+    if (port === nextPort) {
+      handleBridgeConnectionMessage(message);
+    }
   });
 
   // If DevTools port was reconnected and Bridge was already created
@@ -540,16 +648,18 @@ function connectExtensionPort(): void {
   // This could happen if service worker dies and all ports are disconnected,
   // but later user continues the session and Chrome reconnects all ports
   // Bridge object is still in-memory, though
-  if (lastSubscribedBridgeListener) {
-    port.onMessage.addListener(lastSubscribedBridgeListener);
-  }
+  addBridgePortListener(nextPort);
 
   // This port may be disconnected by Chrome at some point, this callback
   // will be executed only if this port was disconnected from the other end
   // so, when we call `port.disconnect()` from this script,
   // this should not trigger this callback and port reconnection
-  port.onDisconnect.addListener(() => {
-    port = (null: $FlowFixMe);
+  nextPort.onDisconnect.addListener(() => {
+    if (port !== nextPort) {
+      return;
+    }
+    isBridgeConnected = false;
+    port = null;
     connectExtensionPort();
   });
 }
@@ -559,14 +669,10 @@ function mountReactDevTools() {
 
   registerEventsLogger();
 
-  createBridgeAndStore();
+  const instance = createDevToolsInstance();
+  devToolsInstance = instance;
 
-  createComponentsPanel();
-  createProfilerPanel();
-  createSourcesEditorPanel();
-  createElementsInspectPanel();
-  // Suspense Tab is created via the hook
-  // TODO(enableSuspenseTab): Create eagerly once Suspense tab is stable
+  renderOpenedDevToolsPanels(instance);
 }
 
 let reactPollingInstance = null;
@@ -603,9 +709,10 @@ function mountReactDevToolsWhenReactHasLoaded() {
   );
 }
 
-let bridge: FrontendBridge = (null: $FlowFixMe);
-let lastSubscribedBridgeListener = null;
-let store: Store = (null: $FlowFixMe);
+let devToolsInstance: DevToolsInstance | null = null;
+let lastSubscribedBridgeListener: ((message: mixed) => void) | null = null;
+let subscribedBridgePort: ExtensionRuntimePort | null = null;
+let bridgePortListener: ((message: mixed) => void) | null = null;
 
 let profilingData = null;
 
@@ -621,27 +728,12 @@ let editorPortalContainer = null;
 let inspectedElementPortalContainer = null;
 
 let mostRecentOverrideTab: null | TabID = null;
-let render: (overrideTab?: TabID) => void = (null: $FlowFixMe);
-let root: RootType = (null: $FlowFixMe);
 
 let currentSelectedSource: null | SourceSelection = null;
 
-type ExtensionEvent = {
-  addListener(callback: (message: Message, port: ExtensionPort) => void): void,
-  removeListener(
-    callback: (message: Message, port: ExtensionPort) => void,
-  ): void,
-};
-
-/** https://developer.chrome.com/docs/extensions/reference/api/runtime#type-Port */
-type ExtensionPort = {
-  onDisconnect: ExtensionEvent,
-  onMessage: ExtensionEvent,
-  postMessage(message: mixed, transferable?: Array<mixed>): void,
-  disconnect(): void,
-};
-
-let port: ExtensionPort = (null: $FlowFixMe);
+let port: ExtensionRuntimePort | null = null;
+let isBridgeConnected: boolean = false;
+const pendingBridgeMessages: Array<PendingBridgeMessage> = [];
 
 // In case when multiple navigation events emitted in a short period of time
 // This debounced callback primarily used to avoid mounting React DevTools multiple times, which results
@@ -653,7 +745,7 @@ const debouncedMountReactDevToolsCallback = debounce(
   500,
 );
 
-// Clean up everything, but start mounting React DevTools panels if user stays at this page
+// Clean up everything, but remount React DevTools if user stays at this page
 function onNavigatedToOtherPage() {
   performInTabNavigationCleanup();
   debouncedMountReactDevToolsCallback();
@@ -672,11 +764,13 @@ if (__IS_FIREFOX__) {
 
 connectExtensionPort();
 
+createDevToolsPanels();
+
 mountReactDevToolsWhenReactHasLoaded();
 
 function onThemeChanged() {
   // Rerender with the new theme
-  render();
+  devToolsInstance?.render();
 }
 
 if (chrome.devtools.panels.setThemeChangeHandler) {

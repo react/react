@@ -77,8 +77,8 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
       }
 
       // We may be able to reuse the previous invocation's result.
-      const prevSnapshot: Snapshot = (memoizedSnapshot: any);
-      const prevSelection: Selection = (memoizedSelection: any);
+      const prevSnapshot: Snapshot = memoizedSnapshot as any;
+      const prevSelection: Selection = memoizedSelection as any;
 
       if (is(prevSnapshot, nextSnapshot)) {
         // The snapshot is the same as last time. Reuse the previous selection.

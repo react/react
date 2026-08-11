@@ -9,9 +9,6 @@ import {Effect, ValueKind, ValueReason} from './HIR';
 import {
   BUILTIN_SHAPES,
   BuiltInArrayId,
-  BuiltInAutodepsId,
-  BuiltInFireFunctionId,
-  BuiltInFireId,
   BuiltInMapId,
   BuiltInMixedReadonlyId,
   BuiltInObjectId,
@@ -847,26 +844,6 @@ const REACT_APIS: Array<[string, BuiltInType]> = [
     ),
   ],
   [
-    'fire',
-    addFunction(
-      DEFAULT_SHAPES,
-      [],
-      {
-        positionalParams: [],
-        restParam: null,
-        returnType: {
-          kind: 'Function',
-          return: {kind: 'Poly'},
-          shapeId: BuiltInFireFunctionId,
-          isConstructor: false,
-        },
-        calleeEffect: Effect.Read,
-        returnValueKind: ValueKind.Frozen,
-      },
-      BuiltInFireId,
-    ),
-  ],
-  [
     'useEffectEvent',
     addHook(
       DEFAULT_SHAPES,
@@ -887,7 +864,6 @@ const REACT_APIS: Array<[string, BuiltInType]> = [
       BuiltInUseEffectEventId,
     ),
   ],
-  ['AUTODEPS', addObject(DEFAULT_SHAPES, BuiltInAutodepsId, [])],
 ];
 
 TYPED_GLOBALS.push(

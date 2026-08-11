@@ -145,9 +145,9 @@ if (__DEV__) {
    * object keys are not valid. This allows us to keep track of children between
    * updates.
    */
-  ownerHasKeyUseWarning = ({}: {[string]: boolean});
-  ownerHasFunctionTypeWarning = ({}: {[string]: boolean});
-  ownerHasSymbolTypeWarning = ({}: {[string]: boolean});
+  ownerHasKeyUseWarning = {} as {[string]: boolean};
+  ownerHasFunctionTypeWarning = {} as {[string]: boolean};
+  ownerHasSymbolTypeWarning = {} as {[string]: boolean};
 
   warnForMissingKey = (
     returnFiber: Fiber,
@@ -188,7 +188,7 @@ if (__DEV__) {
 
     let currentComponentErrorInfo = '';
     if (parentOwner && typeof parentOwner.tag === 'number') {
-      const name = getComponentNameFromFiber((parentOwner: any));
+      const name = getComponentNameFromFiber(parentOwner as any);
       if (name) {
         currentComponentErrorInfo =
           '\n\nCheck the render method of `' + name + '`.';
@@ -207,7 +207,7 @@ if (__DEV__) {
     if (childOwner != null && parentOwner !== childOwner) {
       let ownerName = null;
       if (typeof childOwner.tag === 'number') {
-        ownerName = getComponentNameFromFiber((childOwner: any));
+        ownerName = getComponentNameFromFiber(childOwner as any);
       } else if (typeof childOwner.name === 'string') {
         ownerName = childOwner.name;
       }
@@ -285,7 +285,7 @@ function unwrapThenable<T>(thenable: Thenable<T>): T {
   if (thenableState === null) {
     thenableState = createThenableState();
   }
-  return trackUsedThenable(thenableState, thenable, index);
+  return trackUsedThenable(thenableState, thenable, index, null);
 }
 
 function coerceRef(workInProgress: Fiber, element: ReactElement): void {
@@ -524,8 +524,10 @@ function createChildReconciler(
     if (current !== null) {
       const oldIndex = current.index;
       if (oldIndex < lastPlacedIndex) {
-        // This is a move.
-        newFiber.flags |= Placement | PlacementDEV;
+        // This is a move. The fiber already existed, so this is not a new
+        // mount; don't set PlacementDEV, which would cause StrictMode to
+        // re-run the effects in its subtree as if it had remounted.
+        newFiber.flags |= Placement;
         return lastPlacedIndex;
       } else {
         // This item can stay in place.
@@ -765,7 +767,7 @@ function createChildReconciler(
         }
         case REACT_LAZY_TYPE: {
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
-          const resolvedChild = resolveLazy((newChild: any));
+          const resolvedChild = resolveLazy(newChild as any);
           const created = createChild(returnFiber, resolvedChild, lanes);
           currentDebugInfo = prevDebugInfo;
           return created;
@@ -789,6 +791,7 @@ function createChildReconciler(
           // We treat the parent as the owner for stack purposes.
           created._debugOwner = returnFiber;
           created._debugTask = returnFiber._debugTask;
+          // Make sure to not push again when handling the Fragment child.
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
           created._debugInfo = currentDebugInfo;
           currentDebugInfo = prevDebugInfo;
@@ -800,7 +803,7 @@ function createChildReconciler(
       //
       // Unwrap the inner value and recursively call this function again.
       if (typeof newChild.then === 'function') {
-        const thenable: Thenable<any> = (newChild: any);
+        const thenable: Thenable<any> = newChild as any;
         const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
         const created = createChild(
           returnFiber,
@@ -811,8 +814,9 @@ function createChildReconciler(
         return created;
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_CONTEXT_TYPE) {
-        const context: ReactContext<mixed> = (newChild: any);
+        const context: ReactContext<mixed> = newChild as any;
         return createChild(
           returnFiber,
           readContextDuringReconciliation(returnFiber, context, lanes),
@@ -902,7 +906,7 @@ function createChildReconciler(
         }
         case REACT_LAZY_TYPE: {
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
-          const resolvedChild = resolveLazy((newChild: any));
+          const resolvedChild = resolveLazy(newChild as any);
           const updated = updateSlot(
             returnFiber,
             oldFiber,
@@ -940,8 +944,8 @@ function createChildReconciler(
       //
       // Unwrap the inner value and recursively call this function again.
       if (typeof newChild.then === 'function') {
-        const thenable: Thenable<any> = (newChild: any);
-        const prevDebugInfo = pushDebugInfo((thenable: any)._debugInfo);
+        const thenable: Thenable<any> = newChild as any;
+        const prevDebugInfo = pushDebugInfo((thenable as any)._debugInfo);
         const updated = updateSlot(
           returnFiber,
           oldFiber,
@@ -952,8 +956,9 @@ function createChildReconciler(
         return updated;
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_CONTEXT_TYPE) {
-        const context: ReactContext<mixed> = (newChild: any);
+        const context: ReactContext<mixed> = newChild as any;
         return updateSlot(
           returnFiber,
           oldFiber,
@@ -1035,7 +1040,7 @@ function createChildReconciler(
         }
         case REACT_LAZY_TYPE: {
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
-          const resolvedChild = resolveLazy((newChild: any));
+          const resolvedChild = resolveLazy(newChild as any);
           const updated = updateFromMap(
             existingChildren,
             returnFiber,
@@ -1071,8 +1076,8 @@ function createChildReconciler(
       //
       // Unwrap the inner value and recursively call this function again.
       if (typeof newChild.then === 'function') {
-        const thenable: Thenable<any> = (newChild: any);
-        const prevDebugInfo = pushDebugInfo((thenable: any)._debugInfo);
+        const thenable: Thenable<any> = newChild as any;
+        const prevDebugInfo = pushDebugInfo((thenable as any)._debugInfo);
         const updated = updateFromMap(
           existingChildren,
           returnFiber,
@@ -1084,8 +1089,9 @@ function createChildReconciler(
         return updated;
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_CONTEXT_TYPE) {
-        const context: ReactContext<mixed> = (newChild: any);
+        const context: ReactContext<mixed> = newChild as any;
         return updateFromMap(
           existingChildren,
           returnFiber,
@@ -1152,7 +1158,7 @@ function createChildReconciler(
           });
           break;
         case REACT_LAZY_TYPE: {
-          const resolvedChild = resolveLazy((child: any));
+          const resolvedChild = resolveLazy(child as any);
           warnOnInvalidKey(
             returnFiber,
             workInProgress,
@@ -1408,7 +1414,7 @@ function createChildReconciler(
           }
           didWarnAboutGenerators = true;
         }
-      } else if ((newChildrenIterable: any).entries === iteratorFn) {
+      } else if ((newChildrenIterable as any).entries === iteratorFn) {
         // Warn about using Maps as children
         if (!didWarnAboutMaps) {
           console.error(
@@ -1470,11 +1476,11 @@ function createChildReconciler(
 
     // To save bytes, we reuse the logic by creating a synchronous Iterable and
     // reusing that code path.
-    const iterator: Iterator<mixed> = ({
+    const iterator: Iterator<mixed> = {
       next(): IteratorResult<mixed, void> {
         return unwrapThenable(newChildren.next());
       },
-    }: any);
+    } as any;
 
     return reconcileChildrenIterator(
       returnFiber,
@@ -1902,7 +1908,7 @@ function createChildReconciler(
           );
         case REACT_LAZY_TYPE: {
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
-          const result = resolveLazy((newChild: any));
+          const result = resolveLazy(newChild as any);
           const firstChild = reconcileChildFibersImpl(
             returnFiber,
             currentFirstChild,
@@ -1915,26 +1921,26 @@ function createChildReconciler(
       }
 
       if (isArray(newChild)) {
-        const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+        // We created a Fragment for this child with the debug info.
+        // No need to push again.
         const firstChild = reconcileChildrenArray(
           returnFiber,
           currentFirstChild,
           newChild,
           lanes,
         );
-        currentDebugInfo = prevDebugInfo;
         return firstChild;
       }
 
       if (getIteratorFn(newChild)) {
-        const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+        // We created a Fragment for this child with the debug info.
+        // No need to push again.
         const firstChild = reconcileChildrenIteratable(
           returnFiber,
           currentFirstChild,
           newChild,
           lanes,
         );
-        currentDebugInfo = prevDebugInfo;
         return firstChild;
       }
 
@@ -1942,14 +1948,14 @@ function createChildReconciler(
         enableAsyncIterableChildren &&
         typeof newChild[ASYNC_ITERATOR] === 'function'
       ) {
-        const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+        // We created a Fragment for this child with the debug info.
+        // No need to push again.
         const firstChild = reconcileChildrenAsyncIteratable(
           returnFiber,
           currentFirstChild,
           newChild,
           lanes,
         );
-        currentDebugInfo = prevDebugInfo;
         return firstChild;
       }
 
@@ -1970,8 +1976,8 @@ function createChildReconciler(
       // depending on the type of work, not always at the end. We should
       // consider as an future improvement.
       if (typeof newChild.then === 'function') {
-        const thenable: Thenable<any> = (newChild: any);
-        const prevDebugInfo = pushDebugInfo((thenable: any)._debugInfo);
+        const thenable: Thenable<any> = newChild as any;
+        const prevDebugInfo = pushDebugInfo((thenable as any)._debugInfo);
         const firstChild = reconcileChildFibersImpl(
           returnFiber,
           currentFirstChild,
@@ -1982,8 +1988,9 @@ function createChildReconciler(
         return firstChild;
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_CONTEXT_TYPE) {
-        const context: ReactContext<mixed> = (newChild: any);
+        const context: ReactContext<mixed> = newChild as any;
         return reconcileChildFibersImpl(
           returnFiber,
           currentFirstChild,
@@ -2084,7 +2091,7 @@ function createChildReconciler(
         if (debugInfo != null) {
           for (let i = debugInfo.length - 1; i >= 0; i--) {
             if (typeof debugInfo[i].stack === 'string') {
-              throwFiber._debugOwner = (debugInfo[i]: any);
+              throwFiber._debugOwner = debugInfo[i] as any;
               throwFiber._debugTask = debugInfo[i].debugTask;
               break;
             }
@@ -2156,7 +2163,7 @@ function validateSuspenseListNestedChild(childSlot: mixed, index: number) {
       enableAsyncIterableChildren &&
       typeof childSlot === 'object' &&
       childSlot !== null &&
-      typeof (childSlot: any)[ASYNC_ITERATOR] === 'function';
+      typeof (childSlot as any)[ASYNC_ITERATOR] === 'function';
     if (isAnArray || isIterable || isAsyncIterable) {
       const type = isAnArray
         ? 'array'
@@ -2215,7 +2222,7 @@ export function validateSuspenseListChildren(
           }
         } else if (
           enableAsyncIterableChildren &&
-          typeof (children: any)[ASYNC_ITERATOR] === 'function'
+          typeof (children as any)[ASYNC_ITERATOR] === 'function'
         ) {
           // TODO: Technically we should warn for nested arrays inside the
           // async iterable but it would require unwrapping the array.
@@ -2224,10 +2231,11 @@ export function validateSuspenseListChildren(
           enableAsyncIterableChildren &&
           children.$$typeof === REACT_ELEMENT_TYPE &&
           typeof children.type === 'function' &&
-          // $FlowFixMe
+          // $FlowFixMe[method-unbinding]
           (Object.prototype.toString.call(children.type) ===
             '[object GeneratorFunction]' ||
-            // $FlowFixMe
+            // $FlowFixMe[incompatible-use]
+            // $FlowFixMe[method-unbinding]
             Object.prototype.toString.call(children.type) ===
               '[object AsyncGeneratorFunction]')
         ) {

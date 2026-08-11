@@ -64,6 +64,9 @@ testRule(
           makeTestCaseError(
             'Capitalized functions are reserved for components',
           ),
+          makeTestCaseError(
+            'Capitalized functions are reserved for components',
+          ),
         ],
       },
     ],

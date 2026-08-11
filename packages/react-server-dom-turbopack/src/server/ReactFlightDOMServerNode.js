@@ -101,7 +101,7 @@ function startReadingFromDebugChannelReadable(
       }
       stringBuffer += chunk;
     } else {
-      const buffer: Uint8Array = (chunk: any);
+      const buffer: Uint8Array = chunk as any;
       stringBuffer += readPartialStringChunk(stringDecoder, buffer);
       lastWasPartial = true;
     }
@@ -128,19 +128,19 @@ function startReadingFromDebugChannelReadable(
     // $FlowFixMe[method-unbinding]
     typeof stream.binaryType === 'string'
   ) {
-    const ws: WebSocket = (stream: any);
+    const ws: WebSocket = stream as any;
     ws.binaryType = 'arraybuffer';
     ws.addEventListener('message', event => {
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       onData(event.data);
     });
     ws.addEventListener('error', event => {
-      // $FlowFixMe
+      // $FlowFixMe[prop-missing]
       onError(event.error);
     });
     ws.addEventListener('close', onClose);
   } else {
-    const readable: Readable = (stream: any);
+    const readable: Readable = stream as any;
     readable.on('data', onData);
     readable.on('error', onError);
     readable.on('end', onClose);
@@ -154,6 +154,7 @@ type Options = {
   onError?: (error: mixed) => void,
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
+  startTime?: number,
 };
 
 type PipeableStream = {
@@ -173,16 +174,16 @@ function renderToPipeableStream(
     // $FlowFixMe[method-unbinding]
     (typeof debugChannel.read === 'function' ||
       typeof debugChannel.readyState === 'number')
-      ? (debugChannel: any)
+      ? (debugChannel as any)
       : undefined;
   const debugChannelWritable: void | Writable =
     __DEV__ && debugChannel !== undefined
       ? // $FlowFixMe[method-unbinding]
         typeof debugChannel.write === 'function'
-        ? (debugChannel: any)
+        ? (debugChannel as any)
         : // $FlowFixMe[method-unbinding]
           typeof debugChannel.send === 'function'
-          ? createFakeWritableFromWebSocket((debugChannel: any))
+          ? createFakeWritableFromWebSocket(debugChannel as any)
           : undefined
       : undefined;
   const request = createRequest(
@@ -191,9 +192,10 @@ function renderToPipeableStream(
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
-    debugChannel !== undefined,
+    debugChannelReadable !== undefined,
   );
   let hasStartedFlowing = false;
   startWork(request);
@@ -236,9 +238,9 @@ function renderToPipeableStream(
 }
 
 function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
-      webSocket.send((chunk: any));
+      webSocket.send(chunk as any);
       return true;
     },
     end() {
@@ -254,7 +256,7 @@ function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
         webSocket.close(1011);
       }
     },
-  }: any);
+  } as any;
 }
 
 function createFakeWritableFromReadableStreamController(
@@ -262,7 +264,7 @@ function createFakeWritableFromReadableStreamController(
 ): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       if (typeof chunk === 'string') {
         chunk = textEncoder.encode(chunk);
@@ -283,7 +285,7 @@ function createFakeWritableFromReadableStreamController(
         controller.close();
       }
     },
-  }: any);
+  } as any;
 }
 
 function startReadingFromDebugChannelReadableStream(
@@ -301,7 +303,7 @@ function startReadingFromDebugChannelReadableStream(
     value: ?any,
     ...
   }): void | Promise<void> {
-    const buffer: Uint8Array = (value: any);
+    const buffer: Uint8Array = value as any;
     stringBuffer += done
       ? readFinalStringChunk(stringDecoder, new Uint8Array(0))
       : readPartialStringChunk(stringDecoder, buffer);
@@ -349,6 +351,7 @@ function renderToReadableStream(
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
+    options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
     debugChannelReadable !== undefined,
@@ -356,10 +359,10 @@ function renderToReadableStream(
   if (options && options.signal) {
     const signal = options.signal;
     if (signal.aborted) {
-      abort(request, (signal: any).reason);
+      abort(request, (signal as any).reason);
     } else {
       const listener = () => {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
         signal.removeEventListener('abort', listener);
       };
       signal.addEventListener('abort', listener);
@@ -379,6 +382,7 @@ function renderToReadableStream(
         },
       },
       // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+      // $FlowFixMe[incompatible-type]
       {highWaterMark: 0},
     );
     debugStream.pipeTo(debugChannelWritable);
@@ -403,6 +407,7 @@ function renderToReadableStream(
       },
     },
     // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+    // $FlowFixMe[incompatible-type]
     {highWaterMark: 0},
   );
   return stream;
@@ -411,7 +416,7 @@ function renderToReadableStream(
 function createFakeWritableFromNodeReadable(readable: any): Writable {
   // The current host config expects a Writable so we create
   // a fake writable for now to push into the Readable.
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
       return readable.push(chunk);
     },
@@ -421,7 +426,7 @@ function createFakeWritableFromNodeReadable(readable: any): Writable {
     destroy(error) {
       readable.destroy(error);
     },
-  }: any);
+  } as any;
 }
 
 type PrerenderOptions = {
@@ -431,6 +436,7 @@ type PrerenderOptions = {
   identifierPrefix?: string,
   temporaryReferences?: TemporaryReferenceSet,
   signal?: AbortSignal,
+  startTime?: number,
 };
 
 type StaticResult = {
@@ -462,6 +468,7 @@ function prerenderToNodeStream(
       options ? options.onError : undefined,
       options ? options.identifierPrefix : undefined,
       options ? options.temporaryReferences : undefined,
+      options ? options.startTime : undefined,
       __DEV__ && options ? options.environmentName : undefined,
       __DEV__ && options ? options.filterStackFrame : undefined,
       false,
@@ -469,11 +476,11 @@ function prerenderToNodeStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        const reason = (signal: any).reason;
+        const reason = (signal as any).reason;
         abort(request, reason);
       } else {
         const listener = () => {
-          const reason = (signal: any).reason;
+          const reason = (signal as any).reason;
           abort(request, reason);
           signal.removeEventListener('abort', listener);
         };
@@ -513,6 +520,7 @@ function prerender(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
       );
       resolve({prelude: stream});
@@ -525,6 +533,7 @@ function prerender(
       options ? options.onError : undefined,
       options ? options.identifierPrefix : undefined,
       options ? options.temporaryReferences : undefined,
+      options ? options.startTime : undefined,
       __DEV__ && options ? options.environmentName : undefined,
       __DEV__ && options ? options.filterStackFrame : undefined,
       false,
@@ -532,11 +541,11 @@ function prerender(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        const reason = (signal: any).reason;
+        const reason = (signal as any).reason;
         abort(request, reason);
       } else {
         const listener = () => {
-          const reason = (signal: any).reason;
+          const reason = (signal as any).reason;
           abort(request, reason);
           signal.removeEventListener('abort', listener);
         };
@@ -685,7 +694,7 @@ function decodeReplyFromBusboy<T>(
   busboyStream.on('error', err => {
     reportGlobalError(
       response,
-      // $FlowFixMe[incompatible-call] types Error and mixed are incompatible
+      // $FlowFixMe[incompatible-type] types Error and mixed are incompatible
       err,
     );
   });
@@ -755,7 +764,7 @@ function decodeReplyFromAsyncIterable<T>(
   }
   function error(reason: Error) {
     reportGlobalError(response, reason);
-    if (typeof (iterator: any).throw === 'function') {
+    if (typeof (iterator as any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
       // $FlowFixMe[prop-missing] should be able to pass mixed
       iterator.throw(reason).then(noop, noop);

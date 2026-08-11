@@ -7,6 +7,7 @@
 
 import {CompilerDiagnostic, CompilerError, Effect} from '..';
 import {ErrorCategory} from '../CompilerError';
+import {Environment} from '../HIR/Environment';
 import {HIRFunction, IdentifierId, Place} from '../HIR';
 import {
   eachInstructionLValue,
@@ -27,15 +28,15 @@ export function validateLocalsNotReassignedAfterRender(fn: HIRFunction): void {
     contextVariables,
     false,
     false,
+    fn.env,
   );
   if (reassignment !== null) {
-    const errors = new CompilerError();
     const variable =
       reassignment.identifier.name != null &&
       reassignment.identifier.name.kind === 'named'
         ? `\`${reassignment.identifier.name.value}\``
         : 'variable';
-    errors.pushDiagnostic(
+    fn.env.recordError(
       CompilerDiagnostic.create({
         category: ErrorCategory.Immutability,
         reason: 'Cannot reassign variable after render completes',
@@ -46,7 +47,6 @@ export function validateLocalsNotReassignedAfterRender(fn: HIRFunction): void {
         message: `Cannot reassign ${variable} after render completes`,
       }),
     );
-    throw errors;
   }
 }
 
@@ -55,6 +55,7 @@ function getContextReassignment(
   contextVariables: Set<IdentifierId>,
   isFunctionExpression: boolean,
   isAsync: boolean,
+  env: Environment,
 ): Place | null {
   const reassigningFunctions = new Map<IdentifierId, Place>();
   for (const [, block] of fn.body.blocks) {
@@ -68,6 +69,7 @@ function getContextReassignment(
             contextVariables,
             true,
             isAsync || value.loweredFunc.func.async,
+            env,
           );
           if (reassignment === null) {
             // If the function itself doesn't reassign, does one of its dependencies?
@@ -84,13 +86,12 @@ function getContextReassignment(
           // if the function or its depends reassign, propagate that fact on the lvalue
           if (reassignment !== null) {
             if (isAsync || value.loweredFunc.func.async) {
-              const errors = new CompilerError();
               const variable =
                 reassignment.identifier.name !== null &&
                 reassignment.identifier.name.kind === 'named'
                   ? `\`${reassignment.identifier.name.value}\``
                   : 'variable';
-              errors.pushDiagnostic(
+              env.recordError(
                 CompilerDiagnostic.create({
                   category: ErrorCategory.Immutability,
                   reason: 'Cannot reassign variable in async function',
@@ -102,7 +103,7 @@ function getContextReassignment(
                   message: `Cannot reassign ${variable}`,
                 }),
               );
-              throw errors;
+              return null;
             }
             reassigningFunctions.set(lvalue.identifier.id, reassignment);
           }

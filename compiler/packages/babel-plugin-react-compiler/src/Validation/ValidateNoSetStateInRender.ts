@@ -13,7 +13,6 @@ import {
 import {HIRFunction, IdentifierId, isSetStateType} from '../HIR';
 import {computeUnconditionalBlocks} from '../HIR/ComputeUnconditionalBlocks';
 import {eachInstructionValueOperand} from '../HIR/visitors';
-import {Result} from '../Utils/Result';
 
 /**
  * Validates that the given function does not have an infinite update loop
@@ -43,17 +42,21 @@ import {Result} from '../Utils/Result';
  * y();
  * ```
  */
-export function validateNoSetStateInRender(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
+export function validateNoSetStateInRender(fn: HIRFunction): void {
   const unconditionalSetStateFunctions: Set<IdentifierId> = new Set();
-  return validateNoSetStateInRenderImpl(fn, unconditionalSetStateFunctions);
+  const errors = validateNoSetStateInRenderImpl(
+    fn,
+    unconditionalSetStateFunctions,
+  );
+  for (const detail of errors.details) {
+    fn.env.recordError(detail);
+  }
 }
 
 function validateNoSetStateInRenderImpl(
   fn: HIRFunction,
   unconditionalSetStateFunctions: Set<IdentifierId>,
-): Result<void, CompilerError> {
+): CompilerError {
   const unconditionalBlocks = computeUnconditionalBlocks(fn);
   let activeManualMemoId: number | null = null;
   const errors = new CompilerError();
@@ -92,7 +95,7 @@ function validateNoSetStateInRenderImpl(
             validateNoSetStateInRenderImpl(
               instr.value.loweredFunc.func,
               unconditionalSetStateFunctions,
-            ).isErr()
+            ).hasAnyErrors()
           ) {
             // This function expression unconditionally calls a setState
             unconditionalSetStateFunctions.add(instr.lvalue.identifier.id);
@@ -183,5 +186,5 @@ function validateNoSetStateInRenderImpl(
     }
   }
 
-  return errors.asResult();
+  return errors;
 }

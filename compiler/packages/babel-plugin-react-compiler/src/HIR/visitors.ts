@@ -909,7 +909,7 @@ export function mapTerminalSuccessors(
     }
     case 'maybe-throw': {
       const continuation = fn(terminal.continuation);
-      const handler = fn(terminal.handler);
+      const handler = terminal.handler !== null ? fn(terminal.handler) : null;
       return {
         kind: 'maybe-throw',
         continuation,
@@ -1083,7 +1083,9 @@ export function* eachTerminalSuccessor(terminal: Terminal): Iterable<BlockId> {
     }
     case 'maybe-throw': {
       yield terminal.continuation;
-      yield terminal.handler;
+      if (terminal.handler !== null) {
+        yield terminal.handler;
+      }
       break;
     }
     case 'try': {

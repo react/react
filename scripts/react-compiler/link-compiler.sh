@@ -12,6 +12,11 @@ fi
 
 HERE=$(pwd)
 
-cd compiler/packages/babel-plugin-react-compiler && yarn --silent link && cd "$HERE"
+cd compiler/packages/babel-plugin-react-compiler
+# Free the global link name first — it may be held by another React checkout,
+# and `yarn link` (register) won't overwrite an existing owner.
+yarn --silent unlink 2>/dev/null || true
+yarn --silent link
+cd "$HERE"
 
 yarn --silent link babel-plugin-react-compiler

@@ -34,8 +34,6 @@ const IS_FIREFOX = process.env.IS_FIREFOX === 'true';
 const IS_EDGE = process.env.IS_EDGE === 'true';
 const IS_INTERNAL_VERSION = process.env.FEATURE_FLAG_TARGET === 'extension-fb';
 
-const IS_INTERNAL_MCP_BUILD = process.env.IS_INTERNAL_MCP_BUILD === 'true';
-
 const featureFlagTarget = process.env.FEATURE_FLAG_TARGET || 'extension-oss';
 
 let statsFileName = `webpack-stats.${featureFlagTarget}.${__DEV__ ? 'development' : 'production'}`;
@@ -47,9 +45,6 @@ if (IS_FIREFOX) {
 }
 if (IS_EDGE) {
   statsFileName += `.edge`;
-}
-if (IS_INTERNAL_MCP_BUILD) {
-  statsFileName += `.mcp`;
 }
 statsFileName += '.json';
 
@@ -139,7 +134,6 @@ module.exports = {
       __IS_FIREFOX__: IS_FIREFOX,
       __IS_EDGE__: IS_EDGE,
       __IS_NATIVE__: false,
-      __IS_INTERNAL_MCP_BUILD__: IS_INTERNAL_MCP_BUILD,
       __IS_INTERNAL_VERSION__: IS_INTERNAL_VERSION,
       'process.env.DEVTOOLS_PACKAGE': `"react-devtools-extensions"`,
       'process.env.DEVTOOLS_VERSION': `"${DEVTOOLS_VERSION}"`,

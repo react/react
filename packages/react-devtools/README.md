@@ -87,7 +87,31 @@ This will ensure the developer tools are connected. **Don’t forget to remove i
 
 ## Advanced
 
-By default DevTools listen to port `8097` on `localhost`. The port can be modified by setting the `REACT_DEVTOOLS_PORT` environment variable. If you need to further customize host, port, or other settings, see the `react-devtools-core` package instead.
+By default DevTools listen to port `8097` on `localhost`. If you need to customize the server or client connection settings, the following environment variables are available:
+
+| Env Var | Default | Description |
+|---|---|---|
+| `HOST` | `"localhost"` | Host the local server binds to. |
+| `PORT` | `8097` | Port the local server listens on. |
+| `REACT_DEVTOOLS_PORT` | | Alias for `PORT`. Takes precedence if both are set. |
+| `KEY` | | Path to an SSL key file. Enables HTTPS when set alongside `CERT`. |
+| `CERT` | | Path to an SSL certificate file. Enables HTTPS when set alongside `KEY`. |
+| `REACT_DEVTOOLS_PATH` | | Path appended to the WebSocket URI served to clients (e.g. `/__react_devtools__/`). |
+| `REACT_DEVTOOLS_CLIENT_HOST` | `HOST` | Overrides the host in the script served to connecting clients. |
+| `REACT_DEVTOOLS_CLIENT_PORT` | `PORT` | Overrides the port in the script served to connecting clients. |
+| `REACT_DEVTOOLS_CLIENT_USE_HTTPS` | | Set to `"true"` to make the served client script use `wss://`. |
+
+When connecting through a reverse proxy, use the `REACT_DEVTOOLS_CLIENT_*` variables to tell clients to connect to a different host/port/protocol than the local server:
+
+```sh
+REACT_DEVTOOLS_CLIENT_HOST=remote.example.com \
+REACT_DEVTOOLS_CLIENT_PORT=443 \
+REACT_DEVTOOLS_CLIENT_USE_HTTPS=true \
+REACT_DEVTOOLS_PATH=/__react_devtools__/ \
+react-devtools
+```
+
+For more details, see the [`react-devtools-core` documentation](https://github.com/facebook/react/tree/main/packages/react-devtools-core).
 
 ## FAQ
 

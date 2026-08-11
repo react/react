@@ -248,4 +248,24 @@ describe('when Trusted Types are available in global object', () => {
       root.render(<script>alert("I am not executed")</script>);
     });
   });
+
+  it('should not warn when rendering a data block script tag', async () => {
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <script type="application/json">{'{"key": "value"}'}</script>,
+      );
+    });
+  });
+
+  it('should not warn when rendering a ld+json script tag', async () => {
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <script type="application/ld+json">
+          {'{"@context": "https://schema.org"}'}
+        </script>,
+      );
+    });
+  });
 });

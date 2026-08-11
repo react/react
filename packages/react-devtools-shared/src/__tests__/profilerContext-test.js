@@ -590,9 +590,6 @@ describe('ProfilerContext', () => {
     const Profiler =
       require('react-devtools-shared/src/devtools/views/Profiler/Profiler').default;
     const {
-      TimelineContextController,
-    } = require('react-devtools-timeline/src/TimelineContext');
-    const {
       SettingsContextController,
     } = require('react-devtools-shared/src/devtools/views/Settings/SettingsContext');
     const {
@@ -615,9 +612,7 @@ describe('ProfilerContext', () => {
         <Contexts>
           <SettingsContextController browserTheme="light">
             <ModalDialogContextController>
-              <TimelineContextController>
-                <Profiler />
-              </TimelineContextController>
+              <Profiler />
             </ModalDialogContextController>
           </SettingsContextController>
         </Contexts>,
@@ -674,9 +669,6 @@ describe('ProfilerContext', () => {
     const Profiler =
       require('react-devtools-shared/src/devtools/views/Profiler/Profiler').default;
     const {
-      TimelineContextController,
-    } = require('react-devtools-timeline/src/TimelineContext');
-    const {
       SettingsContextController,
     } = require('react-devtools-shared/src/devtools/views/Settings/SettingsContext');
     const {
@@ -699,10 +691,8 @@ describe('ProfilerContext', () => {
         <Contexts>
           <SettingsContextController browserTheme="light">
             <ModalDialogContextController>
-              <TimelineContextController>
-                <Profiler />
-                <ContextReader />
-              </TimelineContextController>
+              <Profiler />
+              <ContextReader />
             </ModalDialogContextController>
           </SettingsContextController>
         </Contexts>,
@@ -776,6 +766,84 @@ describe('ProfilerContext', () => {
     document.body.removeChild(profilerContainer);
   });
 
+  it('should reset commit index when switching to a different root', async () => {
+    const Parent = () => <Child />;
+    const Child = () => null;
+
+    const containerA = document.createElement('div');
+    const containerB = document.createElement('div');
+
+    const rootA = ReactDOMClient.createRoot(containerA);
+    const rootB = ReactDOMClient.createRoot(containerB);
+
+    utils.act(() => rootA.render(<Parent />));
+    utils.act(() => rootB.render(<Parent />));
+
+    // Profile and record different numbers of commits for each root
+    // Root A: 5 commits, Root B: 2 commits
+    await utils.actAsync(() => store.profilerStore.startProfiling());
+    await utils.actAsync(() => rootA.render(<Parent />)); // Root A commit 1
+    await utils.actAsync(() => rootA.render(<Parent />)); // Root A commit 2
+    await utils.actAsync(() => rootA.render(<Parent />)); // Root A commit 3
+    await utils.actAsync(() => rootA.render(<Parent />)); // Root A commit 4
+    await utils.actAsync(() => rootA.render(<Parent />)); // Root A commit 5
+    await utils.actAsync(() => rootB.render(<Parent />)); // Root B commit 1
+    await utils.actAsync(() => rootB.render(<Parent />)); // Root B commit 2
+    await utils.actAsync(() => store.profilerStore.stopProfiling());
+
+    let context: Context = ((null: any): Context);
+    function ContextReader() {
+      context = React.useContext(ProfilerContext);
+      return null;
+    }
+
+    await utils.actAsync(() =>
+      TestRenderer.create(
+        <Contexts>
+          <ContextReader />
+        </Contexts>,
+      ),
+    );
+
+    // Verify we have profiling data for both roots
+    expect(context.didRecordCommits).toBe(true);
+    expect(context.profilingData).not.toBeNull();
+
+    const rootIDs = Array.from(context.profilingData.dataForRoots.keys());
+    expect(rootIDs.length).toBe(2);
+
+    const [rootAID, rootBID] = rootIDs;
+    const rootAData = context.profilingData.dataForRoots.get(rootAID);
+    const rootBData = context.profilingData.dataForRoots.get(rootBID);
+
+    expect(rootAData.commitData.length).toBe(5);
+    expect(rootBData.commitData.length).toBe(2);
+
+    // Select root A and navigate to commit 4 (index 3)
+    await utils.actAsync(() => context.setRootID(rootAID));
+    expect(context.rootID).toBe(rootAID);
+    expect(context.selectedCommitIndex).toBe(0);
+
+    await utils.actAsync(() => context.selectCommitIndex(3));
+    expect(context.selectedCommitIndex).toBe(3);
+
+    // Switch to root B which only has 2 commits
+    // The commit index should be reset to 0, not stay at 3 (which would be invalid)
+    await utils.actAsync(() => context.setRootID(rootBID));
+    expect(context.rootID).toBe(rootBID);
+    // Should be reset to 0 since commit 3 doesn't exist in root B
+    expect(context.selectedCommitIndex).toBe(0);
+
+    // Verify we can still navigate in root B
+    await utils.actAsync(() => context.selectCommitIndex(1));
+    expect(context.selectedCommitIndex).toBe(1);
+
+    // Switch back to root A - should reset to 0
+    await utils.actAsync(() => context.setRootID(rootAID));
+    expect(context.rootID).toBe(rootAID);
+    expect(context.selectedCommitIndex).toBe(0);
+  });
+
   it('should handle commit selection edge cases when filtering commits', async () => {
     const Scheduler = require('scheduler');
 
@@ -809,9 +877,6 @@ describe('ProfilerContext', () => {
     const Profiler =
       require('react-devtools-shared/src/devtools/views/Profiler/Profiler').default;
     const {
-      TimelineContextController,
-    } = require('react-devtools-timeline/src/TimelineContext');
-    const {
       SettingsContextController,
     } = require('react-devtools-shared/src/devtools/views/Settings/SettingsContext');
     const {
@@ -834,10 +899,8 @@ describe('ProfilerContext', () => {
         <Contexts>
           <SettingsContextController browserTheme="light">
             <ModalDialogContextController>
-              <TimelineContextController>
-                <Profiler />
-                <ContextReader />
-              </TimelineContextController>
+              <Profiler />
+              <ContextReader />
             </ModalDialogContextController>
           </SettingsContextController>
         </Contexts>,

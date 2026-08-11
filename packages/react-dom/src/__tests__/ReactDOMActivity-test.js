@@ -54,7 +54,6 @@ describe('ReactDOMActivity', () => {
     return <span prop={props.text}>{props.children}</span>;
   }
 
-  // @gate enableActivity
   it(
     'hiding an Activity boundary also hides the direct children of any ' +
       'portals it contains, regardless of how deeply nested they are',
@@ -100,7 +99,6 @@ describe('ReactDOMActivity', () => {
     },
   );
 
-  // @gate enableActivity
   it(
     'revealing an Activity boundary inside a portal does not reveal the ' +
       'portal contents if has a hidden Activity parent',
@@ -151,7 +149,6 @@ describe('ReactDOMActivity', () => {
     },
   );
 
-  // @gate enableActivity
   it('hides new portals added to an already hidden tree', async () => {
     function Child() {
       return <Text text="Child" />;
@@ -218,7 +215,6 @@ describe('ReactDOMActivity', () => {
     );
   });
 
-  // @gate enableActivity
   it('hides new insertions inside an already hidden portal', async () => {
     function Child({text}) {
       useLayoutEffect(() => {
@@ -289,7 +285,6 @@ describe('ReactDOMActivity', () => {
     );
   });
 
-  // @gate enableActivity
   it('reveal an inner Suspense boundary without revealing an outer Activity on the same host child', async () => {
     const promise = new Promise(() => {});
 
@@ -390,7 +385,6 @@ describe('ReactDOMActivity', () => {
     );
   });
 
-  // @gate enableActivity
   it('mounts/unmounts layout effects in portal when visibility changes (starting visible)', async () => {
     function Child() {
       useLayoutEffect(() => {
@@ -440,7 +434,6 @@ describe('ReactDOMActivity', () => {
     );
   });
 
-  // @gate enableActivity
   it('mounts/unmounts layout effects in portal when visibility changes (starting hidden)', async () => {
     function Child() {
       useLayoutEffect(() => {

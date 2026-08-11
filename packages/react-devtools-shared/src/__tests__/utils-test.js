@@ -11,7 +11,9 @@ import {
   getDisplayName,
   getDisplayNameForReactElement,
   isPlainObject,
+  printOperationsArray,
 } from 'react-devtools-shared/src/utils';
+import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
 import {
   formatConsoleArguments,
@@ -145,6 +147,20 @@ describe('utils', () => {
       expect(
         formatConsoleArgumentsToSingleString('a %s b %s c', 123, true),
       ).toEqual('a 123 b true c');
+    });
+
+    it('should support integer substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%i', 3.14)).toEqual('3');
+    });
+
+    it('should support float substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%f', 3.5)).toEqual('3.5');
+    });
+
+    it('should keep argument alignment across mixed substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('a %i b %s', 7, 'x')).toEqual(
+        'a 7 b x',
+      );
     });
 
     it('should gracefully handle Symbol types', () => {
@@ -500,6 +516,57 @@ function f() { }
       expect(
         formatConsoleArguments('This is the %s template', undefined),
       ).toEqual(['This is the undefined template']);
+    });
+
+    it('keeps a trailing percent sign', () => {
+      expect(formatConsoleArguments('Progress 100%', 'extra')).toEqual([
+        'Progress 100%',
+        'extra',
+      ]);
+      expect(formatConsoleArguments('%s 100%', 'done')).toEqual(['done 100%']);
+    });
+
+    it('keeps specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArguments('%s %s', 'the')).toEqual(['the %s']);
+      expect(formatConsoleArguments('%s %d', 'value')).toEqual(['value %d']);
+      expect(formatConsoleArguments('%s %i', 'value')).toEqual(['value %i']);
+      expect(formatConsoleArguments('%s %f', 'value')).toEqual(['value %f']);
+    });
+  });
+
+  describe('printOperationsArray', () => {
+    let log;
+    beforeEach(() => {
+      log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      log.mockRestore();
+    });
+
+    // The operation is [opcode, activitySliceID] (2 slots). A trailing operation
+    // after it verifies that the reader advances past the value slot instead of
+    // re-reading it as the next opcode.
+    it('should log an applied activity slice change and advance past its value', () => {
+      const rendererID = 1;
+      const rootID = 1;
+      const stringTableSize = 0;
+      const operations = [
+        rendererID,
+        rootID,
+        stringTableSize,
+        TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+        42,
+        TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+        0,
+      ];
+
+      expect(() => printOperationsArray(operations)).not.toThrow();
+
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain(
+        'Applied activity slice change to 42',
+      );
+      expect(log.mock.calls[0][0]).toContain('Reset applied activity slice');
     });
   });
 });

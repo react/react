@@ -32,9 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: compiler/**/yarn.lock
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:

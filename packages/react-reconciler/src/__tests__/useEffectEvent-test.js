@@ -27,6 +27,7 @@ describe('useEffectEvent', () => {
   let waitForAll;
   let assertLog;
   let waitForThrow;
+  let waitFor;
 
   beforeEach(() => {
     React = require('react');
@@ -46,6 +47,7 @@ describe('useEffectEvent', () => {
     waitForAll = InternalTestUtils.waitForAll;
     assertLog = InternalTestUtils.assertLog;
     waitForThrow = InternalTestUtils.waitForThrow;
+    waitFor = InternalTestUtils.waitFor;
   });
 
   function Text(props) {
@@ -595,6 +597,353 @@ describe('useEffectEvent', () => {
     assertLog(['Effect value: 2', 'Event value: 2']);
   });
 
+  it('fires all (interleaved) effects with useEffectEvent in correct order', async () => {
+    function CounterA({count}) {
+      const onEvent = useEffectEvent(() => {
+        return `A ${count}`;
+      });
+
+      useInsertionEffect(() => {
+        // Call the event function to verify it sees the latest value
+        Scheduler.log(`Parent Insertion Create: ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Parent Insertion Create: ${onEvent()}`);
+        };
+      });
+
+      useLayoutEffect(() => {
+        Scheduler.log(`Parent Layout Create: ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Parent Layout Cleanup: ${onEvent()}`);
+        };
+      });
+
+      useEffect(() => {
+        Scheduler.log(`Parent Passive Create: ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Parent Passive Destroy ${onEvent()}`);
+        };
+      });
+
+      // this breaks the rules, but ensures the ordering is correct.
+      return <CounterB count={count} onEventParent={onEvent} />;
+    }
+
+    function CounterB({count, onEventParent}) {
+      const onEvent = useEffectEvent(() => {
+        return `${onEventParent()} B ${count}`;
+      });
+
+      useInsertionEffect(() => {
+        Scheduler.log(`Child Insertion Create ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Child Insertion Destroy ${onEvent()}`);
+        };
+      });
+
+      useLayoutEffect(() => {
+        Scheduler.log(`Child Layout Create ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Child Layout Destroy ${onEvent()}`);
+        };
+      });
+
+      useEffect(() => {
+        Scheduler.log(`Child Passive Create ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Child Passive Destroy ${onEvent()}`);
+        };
+      });
+
+      return null;
+    }
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={1} />);
+    });
+
+    assertLog([
+      'Child Insertion Create A 1 B 1',
+      'Parent Insertion Create: A 1',
+      'Child Layout Create A 1 B 1',
+      'Parent Layout Create: A 1',
+      'Child Passive Create A 1 B 1',
+      'Parent Passive Create: A 1',
+    ]);
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={2} />);
+    });
+
+    assertLog([
+      'Child Insertion Destroy A 2 B 2',
+      'Child Insertion Create A 2 B 2',
+      'Child Layout Destroy A 2 B 2',
+      'Parent Insertion Create: A 2',
+      'Parent Insertion Create: A 2',
+      'Parent Layout Cleanup: A 2',
+      'Child Layout Create A 2 B 2',
+      'Parent Layout Create: A 2',
+      'Child Passive Destroy A 2 B 2',
+      'Parent Passive Destroy A 2',
+      'Child Passive Create A 2 B 2',
+      'Parent Passive Create: A 2',
+    ]);
+
+    // Unmount everything
+    await act(async () => {
+      ReactNoop.render(null);
+    });
+
+    assertLog([
+      'Parent Insertion Create: A 2',
+      'Parent Layout Cleanup: A 2',
+      'Child Insertion Destroy A 2 B 2',
+      'Child Layout Destroy A 2 B 2',
+      'Parent Passive Destroy A 2',
+      'Child Passive Destroy A 2 B 2',
+    ]);
+  });
+
+  it('correctly mutates effect event with Activity', async () => {
+    let setState;
+    let setChildState;
+    function CounterA({count, hideChild}) {
+      const [state, _setState] = useState(1);
+      setState = _setState;
+      const onEvent = useEffectEvent(() => {
+        return `A ${count} ${state}`;
+      });
+
+      useInsertionEffect(() => {
+        // Call the event function to verify it sees the latest value
+        Scheduler.log(`Parent Insertion Create: ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Parent Insertion Create: ${onEvent()}`);
+        };
+      });
+
+      useLayoutEffect(() => {
+        Scheduler.log(`Parent Layout Create: ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Parent Layout Cleanup: ${onEvent()}`);
+        };
+      });
+
+      // this breaks the rules, but ensures the ordering is correct.
+      return (
+        <React.Activity mode={hideChild ? 'hidden' : 'visible'}>
+          <CounterB count={count} state={state} onEventParent={onEvent} />
+        </React.Activity>
+      );
+    }
+
+    function CounterB({count, state, onEventParent}) {
+      const [childState, _setChildState] = useState(1);
+      setChildState = _setChildState;
+      const onEvent = useEffectEvent(() => {
+        return `${onEventParent()} B ${count} ${state} ${childState}`;
+      });
+
+      useInsertionEffect(() => {
+        Scheduler.log(`Child Insertion Create ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Child Insertion Destroy ${onEvent()}`);
+        };
+      });
+
+      useLayoutEffect(() => {
+        Scheduler.log(`Child Layout Create ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Child Layout Destroy ${onEvent()}`);
+        };
+      });
+
+      useEffect(() => {
+        Scheduler.log(`Child Passive Create ${onEvent()}`);
+        return () => {
+          Scheduler.log(`Child Passive Destroy ${onEvent()}`);
+        };
+      });
+
+      return null;
+    }
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={1} hideChild={true} />);
+      await waitFor([
+        'Parent Insertion Create: A 1 1',
+        'Parent Layout Create: A 1 1',
+        'Child Insertion Create A 1 1 B 1 1 1',
+      ]);
+    });
+
+    assertLog([]);
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={2} hideChild={true} />);
+
+      await waitFor([
+        'Parent Insertion Create: A 2 1',
+        'Parent Insertion Create: A 2 1',
+        'Parent Layout Cleanup: A 2 1',
+        'Parent Layout Create: A 2 1',
+        ...(gate('enableViewTransition') &&
+        !gate('enableEffectEventMutationPhase')
+          ? [
+              'Child Insertion Destroy A 2 1 B 1 1 1',
+              'Child Insertion Create A 2 1 B 1 1 1',
+            ]
+          : [
+              'Child Insertion Destroy A 2 1 B 2 1 1',
+              'Child Insertion Create A 2 1 B 2 1 1',
+            ]),
+      ]);
+    });
+
+    assertLog([]);
+
+    await act(async () => {
+      setState(2);
+
+      await waitFor([
+        'Parent Insertion Create: A 2 2',
+        'Parent Insertion Create: A 2 2',
+        'Parent Layout Cleanup: A 2 2',
+        'Parent Layout Create: A 2 2',
+        ...(gate('enableViewTransition') &&
+        !gate('enableEffectEventMutationPhase')
+          ? [
+              'Child Insertion Destroy A 2 2 B 1 1 1',
+              'Child Insertion Create A 2 2 B 1 1 1',
+            ]
+          : [
+              'Child Insertion Destroy A 2 2 B 2 2 1',
+              'Child Insertion Create A 2 2 B 2 2 1',
+            ]),
+      ]);
+    });
+
+    assertLog([]);
+
+    await act(async () => {
+      setChildState(2);
+
+      await waitFor(
+        gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
+          ? [
+              'Child Insertion Destroy A 2 2 B 1 1 1',
+              'Child Insertion Create A 2 2 B 1 1 1',
+            ]
+          : [
+              'Child Insertion Destroy A 2 2 B 2 2 2',
+              'Child Insertion Create A 2 2 B 2 2 2',
+            ],
+      );
+    });
+
+    assertLog([]);
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={3} hideChild={true} />);
+
+      await waitFor([
+        'Parent Insertion Create: A 3 2',
+        'Parent Insertion Create: A 3 2',
+        'Parent Layout Cleanup: A 3 2',
+        'Parent Layout Create: A 3 2',
+      ]);
+    });
+
+    assertLog(
+      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
+        ? [
+            'Child Insertion Destroy A 3 2 B 1 1 1',
+            'Child Insertion Create A 3 2 B 1 1 1',
+          ]
+        : [
+            'Child Insertion Destroy A 3 2 B 3 2 2',
+            'Child Insertion Create A 3 2 B 3 2 2',
+          ],
+    );
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={3} hideChild={false} />);
+
+      await waitFor([
+        ...(gate('enableViewTransition') &&
+        !gate('enableEffectEventMutationPhase')
+          ? [
+              'Child Insertion Destroy A 3 2 B 1 1 1',
+              'Child Insertion Create A 3 2 B 1 1 1',
+            ]
+          : [
+              'Child Insertion Destroy A 3 2 B 3 2 2',
+              'Child Insertion Create A 3 2 B 3 2 2',
+            ]),
+        'Parent Insertion Create: A 3 2',
+        'Parent Insertion Create: A 3 2',
+        'Parent Layout Cleanup: A 3 2',
+        ...(gate('enableViewTransition') &&
+        !gate('enableEffectEventMutationPhase')
+          ? ['Child Layout Create A 3 2 B 1 1 1']
+          : ['Child Layout Create A 3 2 B 3 2 2']),
+
+        'Parent Layout Create: A 3 2',
+      ]);
+    });
+
+    assertLog(
+      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
+        ? ['Child Passive Create A 3 2 B 1 1 1']
+        : ['Child Passive Create A 3 2 B 3 2 2'],
+    );
+
+    await act(async () => {
+      ReactNoop.render(<CounterA count={3} hideChild={true} />);
+
+      await waitFor([
+        ...(gate('enableViewTransition') &&
+        !gate('enableEffectEventMutationPhase')
+          ? ['Child Layout Destroy A 3 2 B 1 1 1']
+          : ['Child Layout Destroy A 3 2 B 3 2 2']),
+        'Parent Insertion Create: A 3 2',
+        'Parent Insertion Create: A 3 2',
+        'Parent Layout Cleanup: A 3 2',
+        'Parent Layout Create: A 3 2',
+        ...(gate('enableViewTransition') &&
+        !gate('enableEffectEventMutationPhase')
+          ? ['Child Passive Destroy A 3 2 B 1 1 1']
+          : ['Child Passive Destroy A 3 2 B 3 2 2']),
+      ]);
+    });
+
+    assertLog(
+      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
+        ? [
+            'Child Insertion Destroy A 3 2 B 1 1 1',
+            'Child Insertion Create A 3 2 B 1 1 1',
+          ]
+        : [
+            'Child Insertion Destroy A 3 2 B 3 2 2',
+            'Child Insertion Create A 3 2 B 3 2 2',
+          ],
+    );
+
+    // Unmount everything
+    await act(async () => {
+      ReactNoop.render(null);
+    });
+
+    assertLog([
+      'Parent Insertion Create: A 3 2',
+      'Parent Layout Cleanup: A 3 2',
+      gate('enableViewTransition') && !gate('enableEffectEventMutationPhase')
+        ? 'Child Insertion Destroy A 3 2 B 1 1 1'
+        : 'Child Insertion Destroy A 3 2 B 3 2 2',
+    ]);
+  });
+
   it("doesn't provide a stable identity", async () => {
     function Counter({shouldRender, value}) {
       const onClick = useEffectEvent(() => {
@@ -915,5 +1264,66 @@ describe('useEffectEvent', () => {
 
     logContextValue();
     assertLog(['ContextReader (Effect event): second']);
+  });
+
+  it('effect events are fresh inside Activity', async () => {
+    function Child({value}) {
+      const getValue = useEffectEvent(() => {
+        return value;
+      });
+      useInsertionEffect(() => {
+        Scheduler.log('insertion create: ' + getValue());
+        return () => {
+          Scheduler.log('insertion destroy: ' + getValue());
+        };
+      });
+      useLayoutEffect(() => {
+        Scheduler.log('layout create: ' + getValue());
+        return () => {
+          Scheduler.log('layout destroy: ' + getValue());
+        };
+      });
+
+      Scheduler.log('render: ' + value);
+      return null;
+    }
+
+    function App({value, mode}) {
+      return (
+        <React.Activity mode={mode}>
+          <Child value={value} />
+        </React.Activity>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+
+    // Mount hidden
+    await act(async () => root.render(<App value={1} mode="hidden" />));
+    assertLog(['render: 1', 'insertion create: 1']);
+
+    // Update, still hidden
+    await act(async () => root.render(<App value={2} mode="hidden" />));
+
+    // Bug in enableViewTransition. Insertion and layout see stale closure.
+    assertLog([
+      'render: 2',
+      ...(gate('enableViewTransition') &&
+      !gate('enableEffectEventMutationPhase')
+        ? ['insertion destroy: 1', 'insertion create: 1']
+        : ['insertion destroy: 2', 'insertion create: 2']),
+    ]);
+
+    // Switch to visible
+    await act(async () => root.render(<App value={2} mode="visible" />));
+
+    // Bug in enableViewTransition. Even when switching to visible, sees stale closure.
+    assertLog([
+      'render: 2',
+      ...(gate('enableViewTransition') &&
+      !gate('enableEffectEventMutationPhase')
+        ? ['insertion destroy: 1', 'insertion create: 1', 'layout create: 1']
+        : ['insertion destroy: 2', 'insertion create: 2', 'layout create: 2']),
+    ]);
   });
 });

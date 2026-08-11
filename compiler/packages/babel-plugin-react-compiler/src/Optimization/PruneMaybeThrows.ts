@@ -9,7 +9,6 @@ import {CompilerError} from '..';
 import {
   BlockId,
   GeneratedSource,
-  GotoVariant,
   HIRFunction,
   Instruction,
   assertConsistentIdentifiers,
@@ -25,9 +24,15 @@ import {
 } from '../HIR/HIRBuilder';
 import {printPlace} from '../HIR/PrintHIR';
 
-/*
- * This pass prunes `maybe-throw` terminals for blocks that can provably *never* throw.
- * For now this is very conservative, and only affects blocks with primitives or
+/**
+ * This pass updates `maybe-throw` terminals for blocks that can provably *never* throw,
+ * nulling out the handler to indicate that control will always continue. Note that
+ * rewriting to a `goto` disrupts the structure of the HIR, making it more difficult to
+ * reconstruct an ast during BuildReactiveFunction. Preserving the maybe-throw makes the
+ * continuations clear, while nulling out the handler tells us that control cannot flow
+ * to the handler.
+ *
+ * For now the analysis is very conservative, and only affects blocks with primitives or
  * array/object literals. Even a variable reference could throw bc of the TDZ.
  */
 export function pruneMaybeThrows(fn: HIRFunction): void {
@@ -82,13 +87,7 @@ function pruneMaybeThrowsImpl(fn: HIRFunction): Map<BlockId, BlockId> | null {
     if (!canThrow) {
       const source = terminalMapping.get(block.id) ?? block.id;
       terminalMapping.set(terminal.continuation, source);
-      block.terminal = {
-        kind: 'goto',
-        block: terminal.continuation,
-        variant: GotoVariant.Break,
-        id: terminal.id,
-        loc: terminal.loc,
-      };
+      terminal.handler = null;
     }
   }
   return terminalMapping.size > 0 ? terminalMapping : null;

@@ -12,6 +12,7 @@ let React;
 let ReactNoop;
 let Scheduler;
 let act;
+let assertConsoleErrorDev;
 let assertLog;
 let useMemo;
 let useState;
@@ -26,8 +27,10 @@ describe('useMemoCache()', () => {
     React = require('react');
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
-    act = require('internal-test-utils').act;
-    assertLog = require('internal-test-utils').assertLog;
+    const InternalTestUtils = require('internal-test-utils');
+    act = InternalTestUtils.act;
+    assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
+    assertLog = InternalTestUtils.assertLog;
     useMemo = React.useMemo;
     useMemoCache = require('react/compiler-runtime').c;
     useState = React.useState;
@@ -256,8 +259,6 @@ describe('useMemoCache()', () => {
       return `${data.text} (n=${props.n})`;
     });
 
-    spyOnDev(console, 'error');
-
     const root = ReactNoop.createRoot();
     await act(() => {
       root.render(
@@ -274,6 +275,10 @@ describe('useMemoCache()', () => {
       // this triggers a throw.
       setN(1);
     });
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
     expect(root).toMatchRenderedOutput('Count 0 (n=1)');
     expect(Text).toBeCalledTimes(2);
     expect(data).toBe(data0);

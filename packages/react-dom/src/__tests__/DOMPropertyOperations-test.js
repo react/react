@@ -160,6 +160,34 @@ describe('DOMPropertyOperations', () => {
       expect(container.firstChild.hasAttribute('allowFullScreen')).toBe(false);
     });
 
+    it('should set credentialless boolean attribute on iframes', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<iframe credentialless={true} />);
+      });
+      expect(container.firstChild.getAttribute('credentialless')).toBe('');
+      await act(() => {
+        root.render(<iframe credentialless={false} />);
+      });
+      expect(container.firstChild.hasAttribute('credentialless')).toBe(false);
+    });
+
+    it('should set credentialless attribute when passed a string and warn', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<iframe credentialless="true" />);
+      });
+      assertConsoleErrorDev([
+        'Received the string `true` for the boolean attribute `credentialless`. ' +
+          'Although this works, it will not work as expected if you pass the string "false". ' +
+          'Did you mean credentialless={true}?\n' +
+          '    in iframe (at **)',
+      ]);
+      expect(container.firstChild.getAttribute('credentialless')).toBe('');
+    });
+
     it('should remove when setting custom attr to null', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);

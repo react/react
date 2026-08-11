@@ -834,6 +834,40 @@ describe('ReactDOMEventListener', () => {
         },
       });
     });
+
+    it('onFullscreenChange', async () => {
+      await testNativeBubblingEvent({
+        type: 'div',
+        reactEvent: 'onFullscreenChange',
+        reactEventType: 'fullscreenchange',
+        nativeEvent: 'fullscreenchange',
+        dispatch(node) {
+          node.dispatchEvent(
+            new Event('fullscreenchange', {
+              bubbles: true,
+              cancelable: false,
+            }),
+          );
+        },
+      });
+    });
+
+    it('onFullscreenError', async () => {
+      await testNativeBubblingEvent({
+        type: 'div',
+        reactEvent: 'onFullscreenError',
+        reactEventType: 'fullscreenerror',
+        nativeEvent: 'fullscreenerror',
+        dispatch(node) {
+          node.dispatchEvent(
+            new Event('fullscreenerror', {
+              bubbles: true,
+              cancelable: false,
+            }),
+          );
+        },
+      });
+    });
   });
 
   describe('non-bubbling events that bubble in React', () => {

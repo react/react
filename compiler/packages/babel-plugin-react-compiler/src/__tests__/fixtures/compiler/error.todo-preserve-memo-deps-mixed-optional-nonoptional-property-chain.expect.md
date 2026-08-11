@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees @enableOptionalDependencies @enableTreatFunctionDepsAsConditional:false
+// @enablePreserveExistingMemoizationGuarantees @validatePreserveExistingMemoizationGuarantees @enableOptionalDependencies
 
 import {useMemo} from 'react';
 import {identity, ValidateMemoization} from 'shared-runtime';

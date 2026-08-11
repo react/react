@@ -61,6 +61,14 @@ export function addObjectToProperties(
   indent: number,
   prefix: string,
 ): void {
+  if (ArrayBuffer.isView(object)) {
+    // Typed arrays (e.g. Uint8Array, Float32Array) can hold millions of
+    // elements. Enumerating them with for...in forces the engine to
+    // materialize a key for every index, which can freeze the page. Their
+    // contents aren't useful to show here so we skip them. DataView has no
+    // enumerable properties to show anyway.
+    return;
+  }
   let addedProperties = 0;
   for (const key in object) {
     if (hasOwnProperty.call(object, key) && key[0] !== '_') {
@@ -82,6 +90,13 @@ export function addObjectToProperties(
   }
 }
 
+function readReactElementTypeof(value: Object): mixed {
+  // Prevents dotting into $$typeof in opaque origin windows.
+  return '$$typeof' in value && hasOwnProperty.call(value, '$$typeof')
+    ? value.$$typeof
+    : undefined;
+}
+
 export function addValueToProperties(
   propertyName: string,
   value: mixed,
@@ -96,7 +111,7 @@ export function addValueToProperties(
         desc = 'null';
         break;
       } else {
-        if (value.$$typeof === REACT_ELEMENT_TYPE) {
+        if (readReactElementTypeof(value) === REACT_ELEMENT_TYPE) {
           // JSX
           const typeName = getComponentNameFromType(value.type) || '\u2026';
           const key = value.key;
@@ -158,8 +173,20 @@ export function addValueToProperties(
         // $FlowFixMe[method-unbinding]
         const objectToString = Object.prototype.toString.call(value);
         let objectName = objectToString.slice(8, objectToString.length - 1);
+        if (ArrayBuffer.isView(value)) {
+          // Typed arrays can hold millions of elements. Showing the type and
+          // length is more useful than enumerating every index (which is also
+          // prohibitively slow, see addObjectToProperties). DataView is the
+          // only view without a length; show just its type.
+          const length = (value as any).length;
+          desc =
+            typeof length === 'number'
+              ? objectName + '(' + length + ')'
+              : objectName;
+          break;
+        }
         if (objectName === 'Array') {
-          const array: Array<any> = (value: any);
+          const array: Array<any> = value as any;
           const didTruncate = array.length > OBJECT_WIDTH_LIMIT;
           const kind = getArrayKind(array);
           if (kind === PRIMITIVE_ARRAY || kind === EMPTY_ARRAY) {
@@ -268,7 +295,11 @@ export function addValueToProperties(
       if (value === OMITTED_PROP_ERROR) {
         desc = '\u2026'; // ellipsis
       } else {
-        desc = JSON.stringify(value);
+        desc = JSON.stringify(
+          value.length >= 1024
+            ? value.slice(0, 1023) + '\u2026' // ellipsis
+            : value,
+        );
       }
       break;
     case 'undefined':
@@ -352,9 +383,10 @@ export function addObjectDiffToProperties(
           typeof nextValue === 'object' &&
           prevValue !== null &&
           nextValue !== null &&
-          prevValue.$$typeof === nextValue.$$typeof
+          readReactElementTypeof(prevValue) ===
+            readReactElementTypeof(nextValue)
         ) {
-          if (nextValue.$$typeof === REACT_ELEMENT_TYPE) {
+          if (readReactElementTypeof(nextValue) === REACT_ELEMENT_TYPE) {
             if (
               prevValue.type === nextValue.type &&
               prevValue.key === nextValue.key

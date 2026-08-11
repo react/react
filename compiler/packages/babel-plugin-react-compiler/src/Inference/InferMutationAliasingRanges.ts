@@ -20,13 +20,14 @@ import {
   Place,
   isPrimitiveType,
 } from '../HIR/HIR';
+import {Environment} from '../HIR/Environment';
 import {
   eachInstructionLValue,
   eachInstructionValueOperand,
   eachTerminalOperand,
 } from '../HIR/visitors';
 import {assertExhaustive, getOrInsertWith} from '../Utils/utils';
-import {Err, Ok, Result} from '../Utils/Result';
+
 import {AliasingEffect, MutationReason} from './AliasingEffects';
 
 /**
@@ -74,7 +75,7 @@ import {AliasingEffect, MutationReason} from './AliasingEffects';
 export function inferMutationAliasingRanges(
   fn: HIRFunction,
   {isFunctionExpression}: {isFunctionExpression: boolean},
-): Result<Array<AliasingEffect>, CompilerError> {
+): Array<AliasingEffect> {
   // The set of externally-visible effects
   const functionEffects: Array<AliasingEffect> = [];
 
@@ -107,7 +108,7 @@ export function inferMutationAliasingRanges(
 
   let index = 0;
 
-  const errors = new CompilerError();
+  const shouldRecordErrors = !isFunctionExpression && fn.env.enableValidations;
 
   for (const param of [...fn.params, ...fn.context, fn.returns]) {
     const place = param.kind === 'Identifier' ? param : param.place;
@@ -200,7 +201,9 @@ export function inferMutationAliasingRanges(
           effect.kind === 'MutateGlobal' ||
           effect.kind === 'Impure'
         ) {
-          errors.pushDiagnostic(effect.error);
+          if (shouldRecordErrors) {
+            fn.env.recordError(effect.error);
+          }
           functionEffects.push(effect);
         } else if (effect.kind === 'Render') {
           renders.push({index: index++, place: effect.place});
@@ -245,11 +248,15 @@ export function inferMutationAliasingRanges(
       mutation.kind,
       mutation.place.loc,
       mutation.reason,
-      errors,
+      shouldRecordErrors ? fn.env : null,
     );
   }
   for (const render of renders) {
-    state.render(render.index, render.place.identifier, errors);
+    state.render(
+      render.index,
+      render.place.identifier,
+      shouldRecordErrors ? fn.env : null,
+    );
   }
   for (const param of [...fn.context, ...fn.params]) {
     const place = param.kind === 'Identifier' ? param : param.place;
@@ -498,7 +505,6 @@ export function inferMutationAliasingRanges(
    * would be transitively mutated needs a capture relationship.
    */
   const tracked: Array<Place> = [];
-  const ignoredErrors = new CompilerError();
   for (const param of [...fn.params, ...fn.context, fn.returns]) {
     const place = param.kind === 'Identifier' ? param : param.place;
     tracked.push(place);
@@ -513,7 +519,7 @@ export function inferMutationAliasingRanges(
       MutationKind.Conditional,
       into.loc,
       null,
-      ignoredErrors,
+      null,
     );
     for (const from of tracked) {
       if (
@@ -547,19 +553,17 @@ export function inferMutationAliasingRanges(
     }
   }
 
-  if (errors.hasAnyErrors() && !isFunctionExpression) {
-    return Err(errors);
-  }
-  return Ok(functionEffects);
+  return functionEffects;
 }
 
-function appendFunctionErrors(errors: CompilerError, fn: HIRFunction): void {
+function appendFunctionErrors(env: Environment | null, fn: HIRFunction): void {
+  if (env == null) return;
   for (const effect of fn.aliasingEffects ?? []) {
     switch (effect.kind) {
       case 'Impure':
       case 'MutateFrozen':
       case 'MutateGlobal': {
-        errors.pushDiagnostic(effect.error);
+        env.recordError(effect.error);
         break;
       }
     }
@@ -660,7 +664,7 @@ class AliasingState {
     }
   }
 
-  render(index: number, start: Identifier, errors: CompilerError): void {
+  render(index: number, start: Identifier, env: Environment | null): void {
     const seen = new Set<Identifier>();
     const queue: Array<Identifier> = [start];
     while (queue.length !== 0) {
@@ -674,7 +678,7 @@ class AliasingState {
         continue;
       }
       if (node.value.kind === 'Function') {
-        appendFunctionErrors(errors, node.value.function);
+        appendFunctionErrors(env, node.value.function);
       }
       for (const [alias, when] of node.createdFrom) {
         if (when >= index) {
@@ -706,7 +710,7 @@ class AliasingState {
     startKind: MutationKind,
     loc: SourceLocation,
     reason: MutationReason | null,
-    errors: CompilerError,
+    env: Environment | null,
   ): void {
     const seen = new Map<Identifier, MutationKind>();
     const queue: Array<{
@@ -738,7 +742,7 @@ class AliasingState {
         node.transitive == null &&
         node.local == null
       ) {
-        appendFunctionErrors(errors, node.value.function);
+        appendFunctionErrors(env, node.value.function);
       }
       if (transitive) {
         if (node.transitive == null || node.transitive.kind < kind) {

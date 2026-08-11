@@ -13,7 +13,7 @@ function component(a, b) {
 ## Error
 
 ```
-Found 1 error:
+Found 2 errors:
 
 Error: useMemo() callbacks may not accept parameters
 
@@ -26,6 +26,20 @@ error.invalid-useMemo-callback-args.ts:2:18
   3 |   return x;
   4 | }
   5 |
+
+Error: Found missing memoization dependencies
+
+Missing dependencies can cause a value to update less often than it should, resulting in stale UI.
+
+error.invalid-useMemo-callback-args.ts:2:23
+  1 | function component(a, b) {
+> 2 |   let x = useMemo(c => a, []);
+    |                        ^ Missing dependency `a`
+  3 |   return x;
+  4 | }
+  5 |
+
+Inferred dependencies: `[a]`
 ```
           
       

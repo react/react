@@ -352,6 +352,132 @@ describe('useSyncExternalStore', () => {
     },
   );
 
+  // Regression test for https://github.com/facebook/react/issues/27670
+  it('detects store mutations from a layout effect while an Activity subtree is being revealed', async () => {
+    const store = createExternalStore('revision:1');
+
+    function App({mode, revision}) {
+      return (
+        <React.Activity mode={mode}>
+          <Wrapper revision={revision}>
+            <Subscriber />
+          </Wrapper>
+        </React.Activity>
+      );
+    }
+
+    function Wrapper({children, revision}) {
+      useLayoutEffect(() => {
+        store.set('revision:' + revision);
+      }, [revision]);
+
+      return (
+        <>
+          wrapper:{revision}
+          {', '}
+          {children}
+        </>
+      );
+    }
+
+    function Subscriber() {
+      const revision = useSyncExternalStore(store.subscribe, store.getState);
+      return <Text text={revision} />;
+    }
+
+    const root = ReactNoop.createRoot();
+
+    // Mount the app
+    await act(() => {
+      root.render(<App mode="visible" revision="1" />);
+    });
+    assertLog(['revision:1']);
+    expect(root).toMatchRenderedOutput('wrapper:1, revision:1');
+    expect(store.getSubscriberCount()).toBe(1);
+
+    // Hide the subtree. React unsubscribes from the store.
+    await act(() => {
+      root.render(<App mode="hidden" revision="1" />);
+    });
+    assertLog(['revision:1']);
+    expect(store.getSubscriberCount()).toBe(0);
+
+    // Show the subtree again. A layout effect mutates the store during the
+    // reveal, after the Subscriber rendered but before it resubscribed. When
+    // it resubscribes, it must detect the mutation it missed.
+    await act(() => {
+      root.render(<App mode="visible" revision="2" />);
+    });
+    assertLog(['revision:1', 'revision:2']);
+    expect(store.getSubscriberCount()).toBe(1);
+    expect(root).toMatchRenderedOutput('wrapper:2, revision:2');
+  });
+
+  // Regression test for https://github.com/facebook/react/issues/27670
+  it(
+    'detects store mutations that happened while an Activity subtree was ' +
+      'hidden, even if the subtree bails out of rendering when revealed',
+    async () => {
+      const store = createExternalStore('initial');
+
+      // Memoized so that revealing the Activity boundary doesn't re-render
+      // the subscriber. This matches components memoized by React.memo or
+      // React Compiler.
+      const Subscriber = React.memo(({label}) => {
+        const value = useSyncExternalStore(store.subscribe, store.getState);
+        return <Text text={label + ':' + value} />;
+      });
+
+      function App({mode, label}) {
+        return (
+          <React.Activity mode={mode}>
+            <Subscriber label={label} />
+          </React.Activity>
+        );
+      }
+
+      const root = ReactNoop.createRoot();
+      await act(() => {
+        root.render(<App mode="visible" label="a" />);
+      });
+      assertLog(['a:initial']);
+      expect(root).toMatchRenderedOutput('a:initial');
+      expect(store.getSubscriberCount()).toBe(1);
+
+      // Re-render the subscriber once with different props, with no store
+      // change. This replaces its effect list with one that contains only
+      // the subscription effect, no interleaved mutation check.
+      await act(() => {
+        root.render(<App mode="visible" label="b" />);
+      });
+      assertLog(['b:initial']);
+      expect(root).toMatchRenderedOutput('b:initial');
+
+      // Hide the subtree. React unsubscribes from the store.
+      await act(() => {
+        root.render(<App mode="hidden" label="b" />);
+      });
+      expect(store.getSubscriberCount()).toBe(0);
+
+      // Mutate the store while the subtree is hidden. Nothing is subscribed,
+      // so no update is scheduled.
+      await act(() => {
+        store.set('updated');
+      });
+      assertLog([]);
+
+      // Show the subtree again. The memoized component bails out of
+      // rendering, so resubscribing to the store is the only chance to
+      // detect the mutation that happened while it was hidden.
+      await act(() => {
+        root.render(<App mode="visible" label="b" />);
+      });
+      assertLog(['b:updated']);
+      expect(store.getSubscriberCount()).toBe(1);
+      expect(root).toMatchRenderedOutput('b:updated');
+    },
+  );
+
   it('regression: does not infinite loop for only changing store reference in render', async () => {
     let store = {value: {}};
     let listeners = [];

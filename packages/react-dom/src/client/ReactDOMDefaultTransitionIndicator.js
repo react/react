@@ -43,11 +43,11 @@ export function defaultOnDefaultTransitionIndicator(): void | (() => void) {
     }
   }
 
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   navigation.addEventListener('navigate', handleNavigate);
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   navigation.addEventListener('navigatesuccess', handleNavigateComplete);
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   navigation.addEventListener('navigateerror', handleNavigateComplete);
 
   function startFakeNavigation() {
@@ -76,11 +76,11 @@ export function defaultOnDefaultTransitionIndicator(): void | (() => void) {
 
   return function () {
     isCancelled = true;
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-type]
     navigation.removeEventListener('navigate', handleNavigate);
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-type]
     navigation.removeEventListener('navigatesuccess', handleNavigateComplete);
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-type]
     navigation.removeEventListener('navigateerror', handleNavigateComplete);
     if (pendingResolve !== null) {
       pendingResolve();

@@ -82,7 +82,7 @@ function crawlObjectProperties(
 
 function getPropertyValueForStyleName(styleName: string): string | null {
   if (cachedStyleNameToValueMap.has(styleName)) {
-    return ((cachedStyleNameToValueMap.get(styleName): any): string);
+    return cachedStyleNameToValueMap.get(styleName) as any as string;
   }
 
   for (
@@ -90,9 +90,9 @@ function getPropertyValueForStyleName(styleName: string): string | null {
     styleSheetIndex < document.styleSheets.length;
     styleSheetIndex++
   ) {
-    const styleSheet = ((document.styleSheets[
+    const styleSheet = document.styleSheets[
       styleSheetIndex
-    ]: any): CSSStyleSheet);
+    ] as any as CSSStyleSheet;
     let rules: CSSRuleList | null = null;
     // this might throw if CORS rules are enforced https://www.w3.org/TR/cssom-1/#the-cssstylesheet-interface
     try {
@@ -105,7 +105,7 @@ function getPropertyValueForStyleName(styleName: string): string | null {
       if (!(rules[ruleIndex] instanceof CSSStyleRule)) {
         continue;
       }
-      const rule = ((rules[ruleIndex]: any): CSSStyleRule);
+      const rule = rules[ruleIndex] as any as CSSStyleRule;
       const {cssText, selectorText, style} = rule;
 
       if (selectorText != null) {

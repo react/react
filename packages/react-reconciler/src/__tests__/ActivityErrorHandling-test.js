@@ -26,7 +26,6 @@ describe('Activity error handling', () => {
     return text;
   }
 
-  // @gate enableActivity
   it(
     'errors inside a hidden Activity do not escape in the visible part ' +
       'of the UI',

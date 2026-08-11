@@ -35,9 +35,48 @@ yarn snap -p <file-basename> -d
 yarn snap -u
 ```
 
+## Linting
+
+```bash
+# Run lint on the compiler source
+yarn workspace babel-plugin-react-compiler lint
+```
+
+## Formatting
+
+```bash
+# Run prettier on all files (from the react root directory, not compiler/)
+yarn prettier-all
+```
+
+## Compiling Arbitrary Files
+
+Use `yarn snap compile` to compile any file (not just fixtures) with the React Compiler:
+
+```bash
+# Compile a file and see the output
+yarn snap compile <path>
+
+# Compile with debug logging to see the state after each compiler pass
+# This is an alternative to `yarn snap -d -p <pattern>` when you don't have a fixture file yet
+yarn snap compile --debug <path>
+```
+
+## Minimizing Test Cases
+
+Use `yarn snap minimize` to automatically reduce a failing test case to its minimal reproduction:
+
+```bash
+# Minimize a file that causes a compiler error
+yarn snap minimize <path>
+
+# Minimize and update the file in-place with the minimized version
+yarn snap minimize --update <path>
+```
+
 ## Version Control
 
-This repository uses Sapling (`sl`) for version control. Sapling is similar to Mercurial: there is not staging area, but new/deleted files must be explicitlyu added/removed.
+This repository uses Sapling (`sl`) for version control. Sapling is similar to Mercurial: there is not staging area, but new/deleted files must be explicitly added/removed.
 
 ```bash
 # Check status
@@ -190,12 +229,27 @@ const UseEffectEventHook = addHook(
 Feature flags are configured in `src/HIR/Environment.ts`, for example `enableJsxOutlining`. Test fixtures can override the active feature flags used for that fixture via a comment pragma on the first line of the fixture input, for example:
 
 ```javascript
-// enableJsxOutlining @enableChangeVariableCodegen:false
+// enableJsxOutlining @enableNameAnonymousFunctions:false
 
 ...code...
 ```
 
-Would enable the `enableJsxOutlining` feature and disable the `enableChangeVariableCodegen` feature.
+Would enable the `enableJsxOutlining` feature and disable the `enableNameAnonymousFunctions` feature.
+
+## Rust Port (Active)
+
+Work is tracked in `compiler/docs/rust-port/` with numbered plan docs.
+Rust crates live in `compiler/crates/`.
+
+### Before implementing from a plan:
+- Run `git log --oneline --grep="<plan-name>"` to see what's already done
+- Read the plan doc's Remaining Work / Status section
+- Only implement what's actually remaining
+
+### After implementing:
+- Update the plan doc's status
+- Run `/compiler-verify`
+- Ensure `compiler/scripts/test-babel-ast.sh` passes
 
 ## Debugging Tips
 
@@ -204,20 +258,19 @@ Would enable the `enableJsxOutlining` feature and disable the `enableChangeVaria
 3. Look for `Impure`, `Render`, `Capture` effects on instructions
 4. Check the pass ordering in Pipeline.ts to understand when effects are populated vs validated
 
-## Error Handling for Unsupported Features
+## Error Handling and Fault Tolerance
 
-When the compiler encounters an unsupported but known pattern, use `CompilerError.throwTodo()` instead of `CompilerError.invariant()`. Todo errors cause graceful bailouts in production; Invariant errors are hard failures indicating unexpected/invalid states.
+The compiler is fault-tolerant: it runs all passes and accumulates errors on the `Environment` rather than throwing on the first error. This lets users see all compilation errors at once.
 
-```typescript
-// Unsupported but expected pattern - graceful bailout
-CompilerError.throwTodo({
-  reason: `Support [description of unsupported feature]`,
-  loc: terminal.loc,
-});
+**Recording errors** — Passes record errors via `env.recordError(diagnostic)`. Errors are accumulated on `Environment.#errors` and checked at the end of the pipeline via `env.hasErrors()` / `env.aggregateErrors()`.
 
-// Invariant is for truly unexpected/invalid states - hard failure
-CompilerError.invariant(false, {
-  reason: `Unexpected [thing]`,
-  loc: terminal.loc,
-});
-```
+**`tryRecord()` wrapper** — In Pipeline.ts, validation passes are wrapped in `env.tryRecord(() => pass(hir))` which catches thrown `CompilerError`s (non-invariant) and records them. Infrastructure/transformation passes are NOT wrapped in `tryRecord()` because later passes depend on their output being structurally valid.
+
+**Error categories:**
+- `CompilerError.throwTodo()` — Unsupported but known pattern. Graceful bailout. Can be caught by `tryRecord()`.
+- `CompilerError.invariant()` — Truly unexpected/invalid state. Always throws immediately, never caught by `tryRecord()`.
+- Non-`CompilerError` exceptions — Always re-thrown.
+
+**Key files:** `Environment.ts` (`recordError`, `tryRecord`, `hasErrors`, `aggregateErrors`), `Pipeline.ts` (pass orchestration), `Program.ts` (`tryCompileFunction` handles the `Result`).
+
+**Test fixtures:** `__tests__/fixtures/compiler/fault-tolerance/` contains multi-error fixtures verifying all errors are reported.

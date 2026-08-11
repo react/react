@@ -158,12 +158,19 @@
     <script>
       // window.api is defined in preload.js
       const {electron, readEnv, ip, getDevTools} = window.api;
-      const {options, useHttps, host, protocol, port} = readEnv();
+      const {options, useHttps, host, protocol, port, path, clientHost, clientPort, clientUseHttps} = readEnv();
 
       const localIp = ip.address();
-      const defaultPort = (port === 443 && useHttps) || (port === 80 && !useHttps);
-      const server = defaultPort ? `${protocol}://${host}` : `${protocol}://${host}:${port}`;
-      const serverIp = defaultPort ? `${protocol}://${localIp}` : `${protocol}://${localIp}:${port}`;
+
+      // Effective values for display URLs: client overrides take precedence over server values.
+      const effectiveHost = clientHost != null ? clientHost : host;
+      const effectivePort = clientPort != null ? clientPort : port;
+      const effectiveUseHttps = clientUseHttps != null ? clientUseHttps : useHttps;
+      const effectiveProtocol = effectiveUseHttps ? 'https' : 'http';
+      const defaultPort = (effectivePort === 443 && effectiveUseHttps) || (effectivePort === 80 && !effectiveUseHttps);
+      const pathStr = path != null ? path : '';
+      const server = defaultPort ? `${effectiveProtocol}://${effectiveHost}${pathStr}` : `${effectiveProtocol}://${effectiveHost}:${effectivePort}${pathStr}`;
+      const serverIp = defaultPort ? `${effectiveProtocol}://${localIp}${pathStr}` : `${effectiveProtocol}://${localIp}:${effectivePort}${pathStr}`;
       const $ = document.querySelector.bind(document);
       
       let timeoutID;
@@ -234,7 +241,7 @@
             element.innerText = status;
           }
         })
-        .startServer(port, host, options);
+        .startServer(port, host, options, undefined, path, {host: clientHost, port: clientPort, useHttps: clientUseHttps});
     </script>
   </body>
 </html>

@@ -305,7 +305,7 @@ describe('ReactFreshIntegration', () => {
       }
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for class component in hidden subtree', async () => {
       const code = `
         import {Activity} from 'react';
@@ -335,7 +335,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for hoistable resource in hidden subtree', async () => {
       const code = `
         import {Activity} from 'react';
@@ -357,7 +357,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for host component in hidden subtree', async () => {
       const code = `
         import {Activity} from 'react';
@@ -379,7 +379,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for Activity in hidden subtree', async () => {
       const code = `
         import {Activity} from 'react';
@@ -403,7 +403,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for Scope in hidden subtree', async () => {
       const code = `
         import {
@@ -430,7 +430,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for functional component in hidden subtree', async () => {
       const code = `
         import {Activity} from 'react';
@@ -458,7 +458,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for ref forwarding component in hidden subtree', async () => {
       const code = `
         import {
@@ -489,7 +489,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for simple memo component in hidden subtree', async () => {
       const code = `
         import {
@@ -520,7 +520,7 @@ describe('ReactFreshIntegration', () => {
       await patch(code);
     });
 
-    // @gate __DEV__ && enableActivity
+    // @gate __DEV__
     it('ignores ref for memo component in hidden subtree', async () => {
       // A custom compare function means this won't use SimpleMemoComponent.
       const code = `

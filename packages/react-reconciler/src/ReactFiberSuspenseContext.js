@@ -92,6 +92,7 @@ export function pushPrimaryTreeSuspenseHandler(handler: Fiber): void {
       shellBoundary = handler;
     } else {
       const prevState: SuspenseState = current.memoizedState;
+      // $FlowFixMe[invalid-compare]
       if (prevState !== null) {
         // This boundary is showing a fallback in the current UI.
         shellBoundary = handler;

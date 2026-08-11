@@ -224,17 +224,19 @@ export function createServerEntry<T>(
   const entryCssFiles = __rspack_rsc_manifest__.entryCssFiles[resource] || [];
   if (
     typeof value === 'function' ||
+    // $FlowFixMe[invalid-compare]
     (typeof value === 'object' && value !== null)
   ) {
-    // $FlowFixMe: We're dynamically adding properties to create ServerEntry
+    // $FlowFixMe[prop-missing] We're dynamically adding properties to create ServerEntry.
+    // $FlowFixMe[cannot-write]
     Object.assign(value, {
       resource,
       entryJsFiles,
       entryCssFiles,
     });
   }
-  // $FlowFixMe: After Object.assign, value conforms to ServerEntry<T>
-  return (value: ServerEntry<T>);
+  // $FlowFixMe[incompatible-type] After Object.assign, value conforms to ServerEntry<T>.
+  return value as ServerEntry<T>;
 }
 
 // This function ensures that all the exported values are valid server actions,

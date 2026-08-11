@@ -11,20 +11,18 @@ import generate from '@babel/generator';
 import traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import type {parseConfigPragmaForTests as ParseConfigPragma} from 'babel-plugin-react-compiler/src/Utils/TestUtils';
-import fs from 'fs';
-import path from 'path';
-import {parseInput, parseLanguage, parseSourceType} from './compiler.js';
-import {PARSE_CONFIG_PRAGMA_IMPORT, PROJECT_SRC} from './constants.js';
-
-type MinimizeOptions = {
-  path: string;
-};
+import {parseInput} from './compiler.js';
+import {
+  PARSE_CONFIG_PRAGMA_IMPORT,
+  BABEL_PLUGIN_SRC,
+  BABEL_PLUGIN_RUST_SRC,
+} from './constants.js';
 
 type CompileSuccess = {kind: 'success'};
 type CompileParseError = {kind: 'parse_error'; message: string};
 type CompileErrors = {
   kind: 'errors';
-  errors: Array<{category: string; reason: string}>;
+  errors: Array<{category: string; reason: string; description: string | null}>;
 };
 type CompileResult = CompileSuccess | CompileParseError | CompileErrors;
 
@@ -76,7 +74,11 @@ function compileAndGetError(
     return {kind: 'success'};
   } catch (e: unknown) {
     const error = e as Error & {
-      details?: Array<{category: string; reason: string}>;
+      details?: Array<{
+        category: string;
+        reason: string;
+        description: string | null;
+      }>;
     };
     // Check if this is a CompilerError with details
     if (error.details && error.details.length > 0) {
@@ -85,6 +87,7 @@ function compileAndGetError(
         errors: error.details.map(detail => ({
           category: detail.category,
           reason: detail.reason,
+          description: detail.description,
         })),
       };
     }
@@ -95,6 +98,7 @@ function compileAndGetError(
         {
           category: error.name ?? 'Error',
           reason: error.message,
+          description: null,
         },
       ],
     };
@@ -114,7 +118,8 @@ function errorsMatch(a: CompileErrors, b: CompileResult): boolean {
   for (let i = 0; i < a.errors.length; i++) {
     if (
       a.errors[i].category !== b.errors[i].category ||
-      a.errors[i].reason !== b.errors[i].reason
+      a.errors[i].reason !== b.errors[i].reason ||
+      a.errors[i].description !== b.errors[i].description
     ) {
       return false;
     }
@@ -210,6 +215,45 @@ function* removeCallArguments(ast: t.File): Generator<t.File> {
         if (t.isCallExpression(node) && node.arguments.length > 0) {
           if (idx === targetCallIdx && argIdx < node.arguments.length) {
             node.arguments.splice(argIdx, 1);
+            modified = true;
+          }
+          idx++;
+        }
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that yields ASTs with function parameters removed one at a time
+ */
+function* removeFunctionParameters(ast: t.File): Generator<t.File> {
+  // Collect all functions with parameters
+  const funcSites: Array<{funcIndex: number; paramCount: number}> = [];
+  let funcIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isFunction(node) && node.params.length > 0) {
+      funcSites.push({funcIndex, paramCount: node.params.length});
+      funcIndex++;
+    }
+  });
+
+  // For each function, try removing each parameter (from end to start)
+  for (const {funcIndex: targetFuncIdx, paramCount} of funcSites) {
+    for (let paramIdx = paramCount - 1; paramIdx >= 0; paramIdx--) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      t.traverseFast(cloned, node => {
+        if (modified) return;
+        if (t.isFunction(node) && node.params.length > 0) {
+          if (idx === targetFuncIdx && paramIdx < node.params.length) {
+            node.params.splice(paramIdx, 1);
             modified = true;
           }
           idx++;
@@ -1573,6 +1617,84 @@ function* removeObjectProperties(ast: t.File): Generator<t.File> {
 }
 
 /**
+ * Generator that removes elements from array destructuring patterns one at a time
+ */
+function* removeArrayPatternElements(ast: t.File): Generator<t.File> {
+  // Collect all array patterns with elements
+  const patternSites: Array<{patternIndex: number; elementCount: number}> = [];
+  let patternIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isArrayPattern(node) && node.elements.length > 0) {
+      patternSites.push({patternIndex, elementCount: node.elements.length});
+      patternIndex++;
+    }
+  });
+
+  // For each pattern, try removing each element (from end to start)
+  for (const {patternIndex: targetPatternIdx, elementCount} of patternSites) {
+    for (let elemIdx = elementCount - 1; elemIdx >= 0; elemIdx--) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      t.traverseFast(cloned, node => {
+        if (modified) return;
+        if (t.isArrayPattern(node) && node.elements.length > 0) {
+          if (idx === targetPatternIdx && elemIdx < node.elements.length) {
+            node.elements.splice(elemIdx, 1);
+            modified = true;
+          }
+          idx++;
+        }
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
+ * Generator that removes properties from object destructuring patterns one at a time
+ */
+function* removeObjectPatternProperties(ast: t.File): Generator<t.File> {
+  // Collect all object patterns with properties
+  const patternSites: Array<{patternIndex: number; propCount: number}> = [];
+  let patternIndex = 0;
+  t.traverseFast(ast, node => {
+    if (t.isObjectPattern(node) && node.properties.length > 0) {
+      patternSites.push({patternIndex, propCount: node.properties.length});
+      patternIndex++;
+    }
+  });
+
+  // For each pattern, try removing each property (from end to start)
+  for (const {patternIndex: targetPatternIdx, propCount} of patternSites) {
+    for (let propIdx = propCount - 1; propIdx >= 0; propIdx--) {
+      const cloned = cloneAst(ast);
+      let idx = 0;
+      let modified = false;
+
+      t.traverseFast(cloned, node => {
+        if (modified) return;
+        if (t.isObjectPattern(node) && node.properties.length > 0) {
+          if (idx === targetPatternIdx && propIdx < node.properties.length) {
+            node.properties.splice(propIdx, 1);
+            modified = true;
+          }
+          idx++;
+        }
+      });
+
+      if (modified) {
+        yield cloned;
+      }
+    }
+  }
+}
+
+/**
  * Generator that simplifies assignment expressions (a = b) -> a or b
  */
 function* simplifyAssignmentExpressions(ast: t.File): Generator<t.File> {
@@ -1858,8 +1980,14 @@ function* simplifyIdentifiersRenameRef(ast: t.File): Generator<t.File> {
 const simplificationStrategies = [
   {name: 'removeStatements', generator: removeStatements},
   {name: 'removeCallArguments', generator: removeCallArguments},
+  {name: 'removeFunctionParameters', generator: removeFunctionParameters},
   {name: 'removeArrayElements', generator: removeArrayElements},
   {name: 'removeObjectProperties', generator: removeObjectProperties},
+  {name: 'removeArrayPatternElements', generator: removeArrayPatternElements},
+  {
+    name: 'removeObjectPatternProperties',
+    generator: removeObjectPatternProperties,
+  },
   {name: 'removeJSXAttributes', generator: removeJSXAttributes},
   {name: 'removeJSXChildren', generator: removeJSXChildren},
   {name: 'removeJSXFragmentChildren', generator: removeJSXFragmentChildren},
@@ -1923,12 +2051,11 @@ export function minimize(
   filename: string,
   language: 'flow' | 'typescript',
   sourceType: 'module' | 'script',
+  useRust: boolean = false,
 ): MinimizeResult {
   // Load the compiler plugin
-  const importedCompilerPlugin = require(PROJECT_SRC) as Record<
-    string,
-    unknown
-  >;
+  const pluginSrc = useRust ? BABEL_PLUGIN_RUST_SRC : BABEL_PLUGIN_SRC;
+  const importedCompilerPlugin = require(pluginSrc) as Record<string, unknown>;
   const BabelPluginReactCompiler = importedCompilerPlugin[
     'default'
   ] as PluginObj;
@@ -2018,53 +2145,155 @@ export function minimize(
 }
 
 /**
- * Main minimize function that reads the input file, runs minimization,
- * and reports results.
+ * Compile code with a given plugin and return the output code (or error string).
  */
-export async function runMinimize(options: MinimizeOptions): Promise<void> {
-  // Resolve the input path
-  const inputPath = path.isAbsolute(options.path)
-    ? options.path
-    : path.resolve(process.cwd(), options.path);
-
-  // Check if file exists
-  if (!fs.existsSync(inputPath)) {
-    console.error(`Error: File not found: ${inputPath}`);
-    process.exit(1);
+function compileAndGetOutput(
+  code: string,
+  filename: string,
+  language: 'flow' | 'typescript',
+  sourceType: 'module' | 'script',
+  plugin: PluginObj,
+  parseConfigPragmaFn: typeof ParseConfigPragma,
+): string | null {
+  let ast: t.File;
+  try {
+    ast = parseInput(code, filename, language, sourceType);
+  } catch {
+    return null;
   }
 
-  // Read the input file
-  const input = fs.readFileSync(inputPath, 'utf-8');
-  const filename = path.basename(inputPath);
-  const firstLine = input.substring(0, input.indexOf('\n'));
-  const language = parseLanguage(firstLine);
-  const sourceType = parseSourceType(firstLine);
+  const firstLine = code.substring(0, code.indexOf('\n'));
+  const config = parseConfigPragmaFn(firstLine, {compilationMode: 'all'});
+  const options = {
+    ...config,
+    environment: {
+      ...config.environment,
+    },
+    logger: {
+      logEvent: () => {},
+      debugLogIRs: () => {},
+    },
+    enableReanimatedCheck: false,
+  };
 
-  console.log(`Minimizing: ${inputPath}`);
-
-  const originalLines = input.split('\n').length;
-
-  // Run the minimization
-  const result = minimize(input, filename, language, sourceType);
-
-  if (result.kind === 'success') {
-    console.log('Could not minimize: the input compiles successfully.');
-    process.exit(0);
+  try {
+    const result = transformFromAstSync(ast, code, {
+      filename: '/' + filename,
+      highlightCode: false,
+      retainLines: true,
+      compact: true,
+      plugins: [[plugin, options]],
+      sourceType: 'module',
+      ast: false,
+      cloneInputAst: true,
+      configFile: false,
+      babelrc: false,
+    });
+    return result?.code ?? null;
+  } catch (e: unknown) {
+    return `ERROR: ${(e as Error).message}`;
   }
+}
 
-  if (result.kind === 'minimal') {
-    console.log(
-      'Could not minimize: the input fails but is already minimal and cannot be reduced further.',
+type MinimizeRustDeltaResult =
+  | {kind: 'no_delta'}
+  | {kind: 'minimal'}
+  | {kind: 'minimized'; source: string};
+
+/**
+ * Core minimization loop that attempts to reduce the input source code
+ * while preserving a delta (difference in output) between the TS and Rust compilers.
+ */
+export function minimizeRustDelta(
+  input: string,
+  filename: string,
+  language: 'flow' | 'typescript',
+  sourceType: 'module' | 'script',
+): MinimizeRustDeltaResult {
+  // Load both compiler plugins
+  const importedTsPlugin = require(BABEL_PLUGIN_SRC) as Record<string, unknown>;
+  const importedRustPlugin = require(BABEL_PLUGIN_RUST_SRC) as Record<
+    string,
+    unknown
+  >;
+  const tsPlugin = importedTsPlugin['default'] as PluginObj;
+  const rustPlugin = importedRustPlugin['default'] as PluginObj;
+  const parseConfigPragmaForTests = importedTsPlugin[
+    PARSE_CONFIG_PRAGMA_IMPORT
+  ] as typeof ParseConfigPragma;
+
+  // Helper: check if TS and Rust outputs differ for given code
+  function hasDelta(code: string): boolean {
+    const tsOutput = compileAndGetOutput(
+      code,
+      filename,
+      language,
+      sourceType,
+      tsPlugin,
+      parseConfigPragmaForTests,
     );
-    process.exit(0);
+    const rustOutput = compileAndGetOutput(
+      code,
+      filename,
+      language,
+      sourceType,
+      rustPlugin,
+      parseConfigPragmaForTests,
+    );
+    // Both null (e.g. parse error) means no delta
+    if (tsOutput == null && rustOutput == null) return false;
+    return tsOutput !== rustOutput;
   }
 
-  // Output the minimized code
-  console.log('--- Minimized Code ---');
-  console.log(result.source);
+  // Verify the initial input has a delta
+  if (!hasDelta(input)) {
+    return {kind: 'no_delta'};
+  }
 
-  const minimizedLines = result.source.split('\n').length;
-  console.log(
-    `\nReduced from ${originalLines} lines to ${minimizedLines} lines`,
-  );
+  // Parse the initial AST
+  let currentAst = parseInput(input, filename, language, sourceType);
+  let currentCode = input;
+  let changed = true;
+  let iterations = 0;
+  const maxIterations = 1000;
+
+  process.stdout.write('\nMinimizing');
+
+  while (changed && iterations < maxIterations) {
+    changed = false;
+    iterations++;
+
+    for (const strategy of simplificationStrategies) {
+      const generator = strategy.generator(currentAst);
+
+      for (const candidateAst of generator) {
+        let candidateCode: string;
+        try {
+          candidateCode = astToCode(candidateAst);
+        } catch {
+          continue;
+        }
+
+        if (hasDelta(candidateCode)) {
+          currentAst = candidateAst;
+          currentCode = candidateCode;
+          changed = true;
+          process.stdout.write('.');
+          break;
+        }
+      }
+
+      if (changed) {
+        break;
+      }
+    }
+  }
+
+  console.log('\n');
+
+  if (currentCode === input) {
+    return {kind: 'minimal'};
+  }
+
+  return {kind: 'minimized', source: currentCode};
 }

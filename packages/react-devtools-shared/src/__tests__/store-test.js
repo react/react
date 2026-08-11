@@ -129,6 +129,128 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`[root]`);
   });
 
+  it('throws when a transition timeline is requested during initial paint', () => {
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+
+    expect(() =>
+      store.getSuspendableDocumentOrderSuspenseTransition(false, 1),
+    ).toThrow(
+      'Cannot get a transition timeline during the initial paint. This is a bug in React DevTools.',
+    );
+    expect(errorListener).toHaveBeenCalledTimes(1);
+
+    store.removeListener('error', errorListener);
+  });
+
+  // @reactVersion >= 18.0
+  it('throws before removing a node that is not a child of its parent', () => {
+    function FirstChild() {
+      return null;
+    }
+    function SecondChild() {
+      return null;
+    }
+    function Parent({showFirstChild}) {
+      return (
+        <>
+          {showFirstChild && <FirstChild />}
+          <SecondChild />
+        </>
+      );
+    }
+
+    act(() => render(<Parent showFirstChild={true} />));
+
+    const parent = store.getElementAtIndex(0);
+    expect(parent.displayName).toBe('Parent');
+    const firstChildIndex = parent.children.findIndex(id => {
+      const child = store.getElementByID(id);
+      return child !== null && child.displayName === 'FirstChild';
+    });
+    expect(firstChildIndex).not.toBe(-1);
+    const firstChildID = parent.children[firstChildIndex];
+
+    // Corrupt only the frontend relationship. The removal operation below is
+    // still produced canonically by rendering React.
+    parent.children.splice(firstChildIndex, 1);
+
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+    let caughtError = null;
+    try {
+      act(() => render(<Parent showFirstChild={false} />));
+    } catch (error) {
+      caughtError = error;
+    } finally {
+      // The test Bridge invokes listeners synchronously, so discard the batch
+      // whose Store listener intentionally threw.
+      bridge._messageQueue.length = 0;
+    }
+
+    const expectedMessage =
+      `Cannot remove node "${firstChildID}" from parent "${parent.id}" ` +
+      `because it is not a child of the parent.`;
+    expect(caughtError).toMatchObject({message: expectedMessage});
+    expect(errorListener).toHaveBeenCalledWith(caughtError);
+    expect(store.containsElement(firstChildID)).toBe(true);
+
+    parent.children.splice(firstChildIndex, 0, firstChildID);
+    store.removeListener('error', errorListener);
+  });
+
+  // @reactVersion >= 18.0
+  it('receives operations queued while the frontend transport reconnects', () => {
+    const App = ({children}) => children ?? null;
+    const Parent = ({children}) => children ?? null;
+    const Child = () => null;
+
+    act(() => render(<App />));
+
+    const bridgeWall = (bridge.wall: any);
+
+    bridgeWall.disconnect();
+    try {
+      act(() =>
+        render(
+          <App>
+            <Parent />
+          </App>,
+        ),
+      );
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+            <App>
+      `);
+    } finally {
+      bridgeWall.reconnect();
+    }
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+            <Parent>
+    `);
+
+    act(() =>
+      render(
+        <App>
+          <Parent>
+            <Child />
+          </Parent>
+        </App>,
+      ),
+    );
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App>
+          ▾ <Parent>
+              <Child>
+    `);
+  });
+
   // This test is not the same cause as what's reported on GitHub,
   // but the resulting behavior (owner mounting after descendant) is the same.
   // Thec ase below is admittedly contrived and relies on side effects.
@@ -164,7 +286,7 @@ describe('Store', () => {
         ▾ <Parent>
             <Child>
       [suspense-root]  rects={null}
-        <Suspense name="Unknown" rects={null}>
+        <Suspense name="Unknown" uniqueSuspenders={true} rects={null}>
     `);
   });
 
@@ -294,6 +416,269 @@ describe('Store', () => {
 
       expect(store.getElementAtIndex(0).isStrictModeNonCompliant).toBe(true);
       expect(store.getElementAtIndex(1).isStrictModeNonCompliant).toBe(false);
+    });
+  });
+
+  describe('Activity hidden state', () => {
+    // @reactVersion >= 19
+    it('should mark Activity subtree elements as hidden when mode is hidden', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      // Activity element should be marked as hidden and collapsed
+      const activityElement = store.getElementAtIndex(1);
+      expect(activityElement.displayName).toBe('Activity');
+      expect(activityElement.isActivityHidden).toBe(true);
+      expect(activityElement.isInsideHiddenActivity).toBe(false);
+      expect(activityElement.isCollapsed).toBe(true);
+
+      // Expand to access children
+      store.toggleIsCollapsed(activityElement.id, false);
+
+      // Children should still be in the tree but marked as inside hidden Activity
+      const childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(true);
+    });
+
+    // @reactVersion >= 19
+    it('should not mark Activity subtree as hidden when mode is visible', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App() {
+        return (
+          <Activity mode="visible">
+            <Child />
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App />);
+      });
+
+      const activityElement = store.getElementAtIndex(1);
+      expect(activityElement.displayName).toBe('Activity');
+      expect(activityElement.isActivityHidden).toBe(false);
+      expect(activityElement.isInsideHiddenActivity).toBe(false);
+      expect(activityElement.isCollapsed).toBe(false);
+
+      const childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(false);
+    });
+
+    // @reactVersion >= 19
+    it('should update hidden state when Activity mode toggles', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      // Start visible
+      await actAsync(() => {
+        render(<App hidden={false} />);
+      });
+
+      let activityElement = store.getElementAtIndex(1);
+      expect(activityElement.isActivityHidden).toBe(false);
+      expect(activityElement.isCollapsed).toBe(false);
+
+      let childElement = store.getElementAtIndex(2);
+      expect(childElement.isInsideHiddenActivity).toBe(false);
+
+      // Toggle to hidden — children remain but subtree collapses
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      activityElement = store.getElementAtIndex(1);
+      expect(activityElement.isActivityHidden).toBe(true);
+      expect(activityElement.isCollapsed).toBe(true);
+
+      // Expand to verify children are still marked
+      store.toggleIsCollapsed(activityElement.id, false);
+
+      childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(true);
+
+      // Toggle back to visible — subtree expands automatically
+      await actAsync(() => {
+        render(<App hidden={false} />);
+      });
+
+      activityElement = store.getElementAtIndex(1);
+      expect(activityElement.isActivityHidden).toBe(false);
+      expect(activityElement.isCollapsed).toBe(false);
+
+      childElement = store.getElementAtIndex(2);
+      expect(childElement.isInsideHiddenActivity).toBe(false);
+    });
+
+    // @reactVersion >= 19
+    it('should propagate hidden state to deeply nested children', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function GrandChild() {
+        return <div>grandchild</div>;
+      }
+      function Child() {
+        return <GrandChild />;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      const activityElement = store.getElementAtIndex(1);
+      expect(activityElement.displayName).toBe('Activity');
+      expect(activityElement.isActivityHidden).toBe(true);
+      expect(activityElement.isCollapsed).toBe(true);
+
+      // Expand to access children
+      store.toggleIsCollapsed(activityElement.id, false);
+
+      const childElement = store.getElementAtIndex(2);
+      expect(childElement.displayName).toBe('Child');
+      expect(childElement.isInsideHiddenActivity).toBe(true);
+
+      const grandChildElement = store.getElementAtIndex(3);
+      expect(grandChildElement.displayName).toBe('GrandChild');
+      expect(grandChildElement.isInsideHiddenActivity).toBe(true);
+    });
+
+    // @reactVersion >= 19
+    it('should collapse hidden Activity subtree by default', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Child() {
+        return <div>child</div>;
+      }
+
+      function App({hidden}) {
+        return (
+          <Activity mode={hidden ? 'hidden' : 'visible'}>
+            <Child />
+          </Activity>
+        );
+      }
+
+      // Hidden Activity should be collapsed
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▸ <Activity mode="hidden">
+      `);
+
+      // Toggle to visible — should expand
+      await actAsync(() => {
+        render(<App hidden={false} />);
+      });
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▾ <Activity mode="visible">
+                <Child>
+      `);
+
+      // Toggle back to hidden — should collapse again
+      await actAsync(() => {
+        render(<App hidden={true} />);
+      });
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▸ <Activity mode="hidden">
+      `);
+    });
+
+    // @reactVersion >= 19
+    it('should dim nested visible Activity inside a hidden Activity', async () => {
+      const Activity = React.Activity || React.unstable_Activity;
+
+      function Leaf() {
+        return <div>leaf</div>;
+      }
+
+      function App() {
+        return (
+          <Activity mode="hidden" name="outer">
+            <Activity mode="visible" name="inner">
+              <Leaf />
+            </Activity>
+          </Activity>
+        );
+      }
+
+      await actAsync(() => {
+        render(<App />);
+      });
+
+      // Outer Activity: hidden, collapsed, not dimmed itself
+      const outerActivity = store.getElementAtIndex(1);
+      expect(outerActivity.displayName).toBe('Activity');
+      expect(outerActivity.nameProp).toBe('outer');
+      expect(outerActivity.isActivityHidden).toBe(true);
+      expect(outerActivity.isInsideHiddenActivity).toBe(false);
+      expect(outerActivity.isCollapsed).toBe(true);
+
+      // Expand to access inner elements
+      store.toggleIsCollapsed(outerActivity.id, false);
+
+      // Inner Activity: visible, but inside hidden outer so still dimmed
+      const innerActivity = store.getElementAtIndex(2);
+      expect(innerActivity.displayName).toBe('Activity');
+      expect(innerActivity.nameProp).toBe('inner');
+      expect(innerActivity.isActivityHidden).toBe(false);
+      expect(innerActivity.isInsideHiddenActivity).toBe(true);
+
+      // Leaf: inside both, dimmed
+      const leaf = store.getElementAtIndex(3);
+      expect(leaf.displayName).toBe('Leaf');
+      expect(leaf.isInsideHiddenActivity).toBe(true);
     });
   });
 
@@ -520,7 +905,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <Loading>
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="Wrapper" rects={null}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={null}>
       `);
 
       await act(() => {
@@ -533,7 +918,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <Component key="Inside">
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}
-          <Suspense name="Wrapper" rects={[{x:1,y:2,width:5,height:1}]}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={[{x:1,y:2,width:5,height:1}]}>
       `);
     });
 
@@ -609,10 +994,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={false} rects={null}>
+            <Suspense name="two" uniqueSuspenders={false} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -637,10 +1022,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={false} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -665,10 +1050,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -693,10 +1078,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -714,10 +1099,10 @@ describe('Store', () => {
             ▾ <Suspense name="parent">
                 <Loading key="Parent Fallback">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -742,10 +1127,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -770,10 +1155,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
 
       const rendererID = getRendererID();
@@ -798,10 +1183,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         agent.overrideSuspense({
@@ -817,10 +1202,10 @@ describe('Store', () => {
             ▾ <Suspense name="parent">
                 <Loading key="Parent Fallback">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -838,10 +1223,10 @@ describe('Store', () => {
             ▾ <Suspense name="parent">
                 <Loading key="Parent Fallback">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await actAsync(() =>
         agent.overrideSuspense({
@@ -864,10 +1249,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         agent.overrideSuspense({
@@ -890,10 +1275,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
       await act(() =>
         render(
@@ -918,10 +1303,10 @@ describe('Store', () => {
                   <Loading key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:10,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:10,height:1}]}>
-            <Suspense name="one" rects={null}>
-            <Suspense name="two" rects={null}>
-            <Suspense name="three" rects={null}>
+          <Suspense name="parent" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={true} rects={null}>
+            <Suspense name="two" uniqueSuspenders={true} rects={null}>
+            <Suspense name="three" uniqueSuspenders={true} rects={null}>
       `);
     });
 
@@ -973,14 +1358,15 @@ describe('Store', () => {
                   <Component key="Suspense 3 Content">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}>
-            <Suspense name="one" rects={[{x:1,y:2,width:5,height:1}]}>
-            <Suspense name="two" rects={[{x:1,y:2,width:5,height:1}]}>
-            <Suspense name="three" rects={[{x:1,y:2,width:5,height:1}]}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
+            <Suspense name="two" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
+            <Suspense name="three" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
       `);
 
       await actAsync(() => {
         agent.overrideSuspenseMilestone({
+          rendererID: getRendererID(),
           suspendedSet: [
             store.getElementIDAtIndex(4),
             store.getElementIDAtIndex(8),
@@ -1002,14 +1388,15 @@ describe('Store', () => {
                   <Component key="Suspense 3 Fallback">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}>
-            <Suspense name="one" rects={[{x:1,y:2,width:5,height:1}]}>
-            <Suspense name="two" rects={[{x:1,y:2,width:5,height:1}]}>
-            <Suspense name="three" rects={[{x:1,y:2,width:5,height:1}]}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
+            <Suspense name="two" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
+            <Suspense name="three" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
       `);
 
       await actAsync(() => {
         agent.overrideSuspenseMilestone({
+          rendererID: getRendererID(),
           suspendedSet: [],
         });
       });
@@ -1028,10 +1415,10 @@ describe('Store', () => {
                   <Component key="Suspense 3 Content">
                 <Component key="Unrelated at End">
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}
-          <Suspense name="parent" rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}>
-            <Suspense name="one" rects={[{x:1,y:2,width:5,height:1}]}>
-            <Suspense name="two" rects={[{x:1,y:2,width:5,height:1}]}>
-            <Suspense name="three" rects={[{x:1,y:2,width:5,height:1}]}>
+          <Suspense name="parent" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}>
+            <Suspense name="one" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
+            <Suspense name="two" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
+            <Suspense name="three" uniqueSuspenders={false} rects={[{x:1,y:2,width:5,height:1}]}>
       `);
     });
 
@@ -1069,7 +1456,7 @@ describe('Store', () => {
               ▾ <Suspense>
                   <Loading>
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="Wrapper" rects={null}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={null}>
       `);
 
       await act(() => {
@@ -1084,7 +1471,7 @@ describe('Store', () => {
                   <Component key="B">
                 <Component key="C">
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}
-          <Suspense name="Wrapper" rects={[{x:1,y:2,width:5,height:1}]}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={[{x:1,y:2,width:5,height:1}]}>
       `);
     });
 
@@ -1419,7 +1806,7 @@ describe('Store', () => {
         [root]
           ▸ <Wrapper>
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="Wrapper" rects={null}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={null}>
       `);
 
       // This test isn't meaningful unless we expand the suspended tree
@@ -1436,7 +1823,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <Loading>
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:10,height:1}]}
-          <Suspense name="Wrapper" rects={null}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={null}>
       `);
 
       await act(() => {
@@ -1449,7 +1836,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <Component key="Inside">
         [suspense-root]  rects={[{x:1,y:2,width:5,height:1}, {x:1,y:2,width:5,height:1}]}
-          <Suspense name="Wrapper" rects={[{x:1,y:2,width:5,height:1}]}>
+          <Suspense name="Wrapper" uniqueSuspenders={true} rects={[{x:1,y:2,width:5,height:1}]}>
       `);
     });
 
@@ -1675,7 +2062,7 @@ describe('Store', () => {
         [root]
           ▸ <SuspenseTree>
         [suspense-root]  rects={null}
-          <Suspense name="SuspenseTree" rects={null}>
+          <Suspense name="SuspenseTree" uniqueSuspenders={false} rects={null}>
       `);
 
       await act(() =>
@@ -1690,7 +2077,7 @@ describe('Store', () => {
             ▾ <Suspense>
               ▸ <Parent>
         [suspense-root]  rects={null}
-          <Suspense name="SuspenseTree" rects={null}>
+          <Suspense name="SuspenseTree" uniqueSuspenders={false} rects={null}>
       `);
 
       const rendererID = getRendererID();
@@ -1709,7 +2096,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <Fallback>
         [suspense-root]  rects={null}
-          <Suspense name="SuspenseTree" rects={null}>
+          <Suspense name="SuspenseTree" uniqueSuspenders={false} rects={null}>
       `);
 
       await act(() =>
@@ -1725,7 +2112,7 @@ describe('Store', () => {
             ▾ <Suspense>
               ▸ <Parent>
         [suspense-root]  rects={null}
-          <Suspense name="SuspenseTree" rects={null}>
+          <Suspense name="SuspenseTree" uniqueSuspenders={false} rects={null}>
       `);
     });
   });
@@ -2030,7 +2417,7 @@ describe('Store', () => {
           ▾ <App>
               <Suspense>
         [suspense-root]  rects={null}
-          <Suspense name="App" rects={null}>
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
 
       await Promise.resolve();
@@ -2044,7 +2431,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <LazyInnerComponent>
         [suspense-root]  rects={null}
-          <Suspense name="App" rects={null}>
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
 
       // Render again to unmount it
@@ -2537,7 +2924,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <ChildA>
         [suspense-root]  rects={null}
-          <Suspense name="App" rects={null}>
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
 
       await actAsync(() => render(<App renderA={false} />));
@@ -2548,7 +2935,7 @@ describe('Store', () => {
             ▾ <Suspense>
                 <ChildB>
         [suspense-root]  rects={null}
-          <Suspense name="App" rects={null}>
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
     });
   });
@@ -2827,6 +3214,40 @@ describe('Store', () => {
       `);
   });
 
+  // @reactVersion >= 19.0
+  it('does not duplicate Server Component parents in keyed Fragments', async () => {
+    // TODO: Use an actual Flight renderer.
+    // See ReactFlight-test for the produced JSX from Flight.
+    function ClientComponent() {
+      return null;
+    }
+    // This used to be a keyed Fragment on the Server.
+    const children = [<ClientComponent key="app" />];
+    children._debugInfo = [
+      {time: 12},
+      {
+        name: 'App',
+        env: 'Server',
+        key: null,
+        stack: '    in Object.<anonymous> (at **)',
+        props: {},
+      },
+      {time: 13},
+    ];
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await actAsync(() => {
+      root.render([children]);
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <App> [Server]
+            <ClientComponent key="app">
+    `);
+  });
+
   // @reactVersion >= 17.0
   it('can reconcile Suspense in fallback positions', async () => {
     let resolveFallback;
@@ -2875,8 +3296,8 @@ describe('Store', () => {
           ▾ <Suspense name="fallback">
               <Component key="fallback-fallback">
       [suspense-root]  rects={[{x:1,y:2,width:19,height:1}]}
-        <Suspense name="content" rects={null}>
-        <Suspense name="fallback" rects={null}>
+        <Suspense name="content" uniqueSuspenders={true} rects={null}>
+        <Suspense name="fallback" uniqueSuspenders={true} rects={null}>
     `);
 
     await actAsync(() => {
@@ -2889,8 +3310,8 @@ describe('Store', () => {
           ▾ <Suspense name="fallback">
               <Component key="fallback-content">
       [suspense-root]  rects={[{x:1,y:2,width:10,height:1}]}
-        <Suspense name="content" rects={null}>
-        <Suspense name="fallback" rects={[{x:1,y:2,width:10,height:1}]}>
+        <Suspense name="content" uniqueSuspenders={true} rects={null}>
+        <Suspense name="fallback" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}]}>
     `);
 
     await actAsync(() => {
@@ -2902,7 +3323,7 @@ describe('Store', () => {
         ▾ <Suspense name="content">
             <Component key="content">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}]}
-        <Suspense name="content" rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="content" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
     `);
   });
 
@@ -3005,10 +3426,10 @@ describe('Store', () => {
               ▾ <Suspense name="main-fallback">
                   <Component key="main-fallback-fallback">
       [suspense-root]  rects={[{x:1,y:2,width:19,height:1}, {x:1,y:2,width:19,height:1}]}
-        <Suspense name="head" rects={null}>
-        <Suspense name="head-fallback" rects={null}>
-        <Suspense name="main" rects={null}>
-        <Suspense name="main-fallback" rects={null}>
+        <Suspense name="head" uniqueSuspenders={true} rects={null}>
+        <Suspense name="head-fallback" uniqueSuspenders={true} rects={null}>
+        <Suspense name="main" uniqueSuspenders={true} rects={null}>
+        <Suspense name="main-fallback" uniqueSuspenders={true} rects={null}>
     `);
 
     await actAsync(() => {
@@ -3028,8 +3449,8 @@ describe('Store', () => {
             ▾ <Suspense name="main">
                 <Component key="main-content">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:4,height:1}]}
-        <Suspense name="head" rects={[{x:1,y:2,width:4,height:1}]}>
-        <Suspense name="main" rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="head" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="main" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
     `);
 
     // Resuspend head content
@@ -3058,9 +3479,9 @@ describe('Store', () => {
             ▾ <Suspense name="main">
                 <Component key="main-content">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:4,height:1}]}
-        <Suspense name="head" rects={[{x:1,y:2,width:4,height:1}]}>
-        <Suspense name="head-fallback" rects={[{x:1,y:2,width:10,height:1}]}>
-        <Suspense name="main" rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="head" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="head-fallback" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}]}>
+        <Suspense name="main" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
     `);
 
     // Resuspend head fallback
@@ -3089,9 +3510,9 @@ describe('Store', () => {
             ▾ <Suspense name="main">
                 <Component key="main-content">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:10,height:1}, {x:1,y:2,width:19,height:1}, {x:1,y:2,width:4,height:1}]}
-        <Suspense name="head" rects={[{x:1,y:2,width:4,height:1}]}>
-        <Suspense name="head-fallback" rects={[{x:1,y:2,width:10,height:1}]}>
-        <Suspense name="main" rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="head" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
+        <Suspense name="head-fallback" uniqueSuspenders={true} rects={[{x:1,y:2,width:10,height:1}]}>
+        <Suspense name="main" uniqueSuspenders={true} rects={[{x:1,y:2,width:4,height:1}]}>
     `);
 
     await actAsync(() => render(null));
@@ -3125,7 +3546,7 @@ describe('Store', () => {
         ▾ <Suspense>
             <Component key="A">
       [suspense-root]  rects={[{x:1,y:2,width:1,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:1,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={true} rects={[{x:1,y:2,width:1,height:1}]}>
     `);
 
     await actAsync(() =>
@@ -3141,7 +3562,7 @@ describe('Store', () => {
         ▾ <Suspense>
             <Component key="not-A">
       [suspense-root]  rects={[{x:1,y:2,width:5,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:5,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={true} rects={[{x:1,y:2,width:5,height:1}]}>
     `);
 
     await actAsync(() => render(null));
@@ -3189,7 +3610,7 @@ describe('Store', () => {
       [root]
           <Suspense name="main">
       [suspense-root]  rects={null}
-        <Suspense name="main" rects={null}>
+        <Suspense name="main" uniqueSuspenders={true} rects={null}>
     `);
 
     await actAsync(() => resolveContent('content'));
@@ -3198,7 +3619,7 @@ describe('Store', () => {
         ▾ <Suspense name="main">
             <Component>
       [suspense-root]  rects={null}
-        <Suspense name="main" rects={null}>
+        <Suspense name="main" uniqueSuspenders={true} rects={null}>
     `);
   });
 
@@ -3261,7 +3682,7 @@ describe('Store', () => {
           ▾ <Suspense name="root">
               <Component key="root-fallback">
         [suspense-root]  rects={null}
-          <Suspense name="root" rects={null}>
+          <Suspense name="root" uniqueSuspenders={true} rects={null}>
       `);
     }
 
@@ -3271,8 +3692,8 @@ describe('Store', () => {
         ▾ <Suspense name="root">
             <Suspense name="main">
       [suspense-root]  rects={null}
-        <Suspense name="root" rects={null}>
-          <Suspense name="main" rects={null}>
+        <Suspense name="root" uniqueSuspenders={true} rects={null}>
+          <Suspense name="main" uniqueSuspenders={true} rects={null}>
     `);
 
     await actAsync(() => resolveContent('content'));
@@ -3282,8 +3703,8 @@ describe('Store', () => {
           ▾ <Suspense name="main">
               <Component>
       [suspense-root]  rects={null}
-        <Suspense name="root" rects={null}>
-          <Suspense name="main" rects={null}>
+        <Suspense name="root" uniqueSuspenders={true} rects={null}>
+          <Suspense name="main" uniqueSuspenders={true} rects={null}>
     `);
   });
 
@@ -3325,10 +3746,11 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-            <Activity>
+          ▸ <Activity mode="hidden">
             <Suspense name="outer-suspense">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}]}
-        <Suspense name="outer-suspense" rects={null}>
+        <Suspense name="inside-activity" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="outer-suspense" uniqueSuspenders={true} rects={null}>
     `);
 
     // mount as visible
@@ -3342,16 +3764,16 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
             ▾ <Suspense name="inside-activity">
                 <Component key="inside-activity">
           ▾ <Suspense name="outer-suspense">
             ▾ <Suspense name="inner-suspense">
                 <Component key="inside-suspense">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:15,height:1}]}
-        <Suspense name="inside-activity" rects={[{x:1,y:2,width:15,height:1}]}>
-        <Suspense name="outer-suspense" rects={[{x:1,y:2,width:15,height:1}]}>
-          <Suspense name="inner-suspense" rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="inside-activity" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="outer-suspense" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
+          <Suspense name="inner-suspense" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
     `);
 
     await actAsync(() => {
@@ -3361,11 +3783,12 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-            <Activity>
+          ▸ <Activity mode="hidden">
             <Suspense name="outer-suspense">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:15,height:1}]}
-        <Suspense name="outer-suspense" rects={[{x:1,y:2,width:15,height:1}]}>
-          <Suspense name="inner-suspense" rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="inside-activity" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="outer-suspense" uniqueSuspenders={true} rects={[{x:1,y:2,width:15,height:1}]}>
+          <Suspense name="inner-suspense" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
     `);
 
     await actAsync(() => {
@@ -3375,16 +3798,16 @@ describe('Store', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <App>
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
             ▾ <Suspense name="inside-activity">
                 <Component key="inside-activity">
           ▾ <Suspense name="outer-suspense">
             ▾ <Suspense name="inner-suspense">
                 <Component key="inside-suspense">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:15,height:1}]}
-        <Suspense name="inside-activity" rects={[{x:1,y:2,width:15,height:1}]}>
-        <Suspense name="outer-suspense" rects={[{x:1,y:2,width:15,height:1}]}>
-          <Suspense name="inner-suspense" rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="inside-activity" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
+        <Suspense name="outer-suspense" uniqueSuspenders={true} rects={[{x:1,y:2,width:15,height:1}]}>
+          <Suspense name="inner-suspense" uniqueSuspenders={false} rects={[{x:1,y:2,width:15,height:1}]}>
     `);
   });
 
@@ -3424,7 +3847,7 @@ describe('Store', () => {
         ▾ <Outer>
             <Suspense>
       [suspense-root]  rects={[{x:1,y:2,width:13,height:1}]}
-        <Suspense name="Outer" rects={null}>
+        <Suspense name="Outer" uniqueSuspenders={true} rects={null}>
     `);
 
     await actAsync(() => {
@@ -3438,8 +3861,8 @@ describe('Store', () => {
             ▾ <Inner>
                 <Suspense>
       [suspense-root]  rects={[{x:1,y:2,width:6,height:1}, {x:1,y:2,width:6,height:1}]}
-        <Suspense name="Outer" rects={[{x:1,y:2,width:6,height:1}, {x:1,y:2,width:6,height:1}]}>
-          <Suspense name="Inner" rects={[{x:1,y:2,width:6,height:1}]}>
+        <Suspense name="Outer" uniqueSuspenders={true} rects={[{x:1,y:2,width:6,height:1}, {x:1,y:2,width:6,height:1}]}>
+          <Suspense name="Inner" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
   });
 
@@ -3494,8 +3917,8 @@ describe('Store', () => {
             ▾ <Suspense name="inner">
                 <Component key="inner-content">
       [suspense-root]  rects={[{x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}]}
-        <Suspense name="outer" rects={[{x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}]}>
-          <Suspense name="inner" rects={[{x:1,y:2,width:13,height:1}]}>
+        <Suspense name="outer" uniqueSuspenders={false} rects={[{x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="inner" uniqueSuspenders={false} rects={[{x:1,y:2,width:13,height:1}]}>
     `);
 
     let outerResolve;
@@ -3517,8 +3940,8 @@ describe('Store', () => {
           ▾ <Suspense name="outer">
               <Component key="outer-fallback">
       [suspense-root]  rects={[{x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}]}
-        <Suspense name="outer" rects={[{x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}]}>
-          <Suspense name="inner" rects={[{x:1,y:2,width:13,height:1}]}>
+        <Suspense name="outer" uniqueSuspenders={true} rects={[{x:1,y:2,width:13,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="inner" uniqueSuspenders={false} rects={[{x:1,y:2,width:13,height:1}]}>
     `);
 
     await actAsync(() => {
@@ -3534,8 +3957,204 @@ describe('Store', () => {
             ▾ <Suspense name="inner">
                 <Component key="inner-content">
       [suspense-root]  rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:14,height:1}]}
-        <Suspense name="outer" rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:14,height:1}]}>
-          <Suspense name="inner" rects={[{x:1,y:2,width:14,height:1}]}>
+        <Suspense name="outer" uniqueSuspenders={true} rects={[{x:1,y:2,width:15,height:1}, {x:1,y:2,width:14,height:1}]}>
+          <Suspense name="inner" uniqueSuspenders={true} rects={[{x:1,y:2,width:14,height:1}]}>
     `);
+  });
+
+  // @reactVersion >= 19
+  it('can reconcile newly visible Activity with filtered, stable children', async () => {
+    const Activity = React.Activity || React.unstable_Activity;
+
+    function IgnoreMe({children}) {
+      return children;
+    }
+
+    function Component({children}) {
+      return <div>{children}</div>;
+    }
+
+    await actAsync(
+      async () =>
+        (store.componentFilters = [createDisplayNameFilter('^IgnoreMe', true)]),
+    );
+
+    const children = (
+      <IgnoreMe>
+        <Component key="left">Left</Component>
+      </IgnoreMe>
+    );
+
+    await actAsync(() => {
+      render(<Activity mode="hidden">{children}</Activity>);
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▸ <Activity mode="hidden">
+    `);
+
+    await actAsync(() => {
+      render(<Activity mode="visible">{children}</Activity>);
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Activity mode="visible">
+          ▾ <Component key="left">
+              <div>
+    `);
+  });
+
+  // @reactVersion >= 17.0
+  it('continues to consider Suspense boundary as blocking if some child still is suspended on removed io', async () => {
+    function Component({promise}) {
+      readValue(promise);
+      return null;
+    }
+
+    let resolve;
+    const promise = new Promise(_resolve => {
+      resolve = _resolve;
+    });
+
+    await actAsync(() => {
+      render(
+        <React.Suspense fallback={null} name="outer">
+          <Component key="one" promise={promise} />
+          <Component key="two" promise={promise} />
+          <React.Suspense fallback={null} name="inner">
+            <Component key="three" promise={promise} />
+          </React.Suspense>
+        </React.Suspense>,
+      );
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Suspense name="outer">
+      [suspense-root]  rects={null}
+        <Suspense name="outer" uniqueSuspenders={true} rects={null}>
+    `);
+
+    await actAsync(() => {
+      resolve('Hello, World!');
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Suspense name="outer">
+            <Component key="one">
+            <Component key="two">
+          ▾ <Suspense name="inner">
+              <Component key="three">
+      [suspense-root]  rects={null}
+        <Suspense name="outer" uniqueSuspenders={true} rects={null}>
+          <Suspense name="inner" uniqueSuspenders={false} rects={null}>
+    `);
+
+    // We remove one suspender.
+    // The inner one shouldn't have unique suspenders because it's still blocked
+    // by the outer one.
+    await actAsync(() => {
+      render(
+        <React.Suspense fallback={null} name="outer">
+          <Component key="one" promise={promise} />
+          <React.Suspense fallback={null} name="inner">
+            <Component key="three" promise={promise} />
+          </React.Suspense>
+        </React.Suspense>,
+      );
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Suspense name="outer">
+            <Component key="one">
+          ▾ <Suspense name="inner">
+              <Component key="three">
+      [suspense-root]  rects={null}
+        <Suspense name="outer" uniqueSuspenders={true} rects={null}>
+          <Suspense name="inner" uniqueSuspenders={false} rects={null}>
+    `);
+
+    // Now we remove all unique suspenders of the outer Suspense boundary.
+    // The inner one is now independently revealed from the parent and should
+    // be marked as having unique suspenders.
+    // TODO: The outer boundary no longer has unique suspenders.
+    await actAsync(() => {
+      render(
+        <React.Suspense fallback={null} name="outer">
+          <React.Suspense fallback={null} name="inner">
+            <Component key="three" promise={promise} />
+          </React.Suspense>
+        </React.Suspense>,
+      );
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+        ▾ <Suspense name="outer">
+          ▾ <Suspense name="inner">
+              <Component key="three">
+      [suspense-root]  rects={null}
+        <Suspense name="outer" uniqueSuspenders={true} rects={null}>
+          <Suspense name="inner" uniqueSuspenders={true} rects={null}>
+    `);
+  });
+
+  // @reactVersion >= 19
+  it('cleans up host hoistables', async () => {
+    function Left() {
+      return (
+        <style href="test.css" precedence="medium">
+          {'* {color:black}'}
+        </style>
+      );
+    }
+
+    function Right() {
+      return (
+        <style href="test.css" precedence="medium">
+          {'* {color:black}'}
+        </style>
+      );
+    }
+
+    await actAsync(() => {
+      render(
+        <>
+          <Left />
+          <Right />
+        </>,
+      );
+    });
+
+    // Ensure we're still testing deduplicated hoistables.
+    expect(document.head.querySelectorAll('style')).toHaveLength(1);
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Left>
+          <Right>
+    `);
+    let style = document.head.querySelector('style');
+    let styleID = agent.getIDForHostInstance(style).id;
+    expect(store.containsElement(styleID)).toBe(true);
+
+    await actAsync(() => {
+      render(
+        <>
+          <Right />
+        </>,
+      );
+    });
+
+    expect(store).toMatchInlineSnapshot(`
+      [root]
+          <Right>
+    `);
+    style = document.head.querySelector('style');
+    styleID = agent.getIDForHostInstance(style).id;
+    expect(store.containsElement(styleID)).toBe(true);
   });
 });

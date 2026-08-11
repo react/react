@@ -29,6 +29,7 @@ import {
   disableLegacyMode,
   enableDefaultTransitionIndicator,
   enableGestureTransition,
+  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {clz32} from './clz32';
@@ -208,6 +209,9 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
     case TransitionLane8:
     case TransitionLane9:
     case TransitionLane10:
+      if (enableParallelTransitions) {
+        return getHighestPriorityLane(lanes);
+      }
       return lanes & TransitionUpdateLanes;
     case TransitionLane11:
     case TransitionLane12:
@@ -938,6 +942,7 @@ export function markRootFinished(
       // commits, they behave like regular updates.
       for (let i = 0; i < hiddenUpdatesForLane.length; i++) {
         const update = hiddenUpdatesForLane[i];
+        // $FlowFixMe[invalid-compare]
         if (update !== null) {
           update.lane &= ~OffscreenLane;
         }

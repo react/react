@@ -152,7 +152,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       require('react-reconciler/constants').ContinuousEventPriority;
   });
 
-  // @gate enableActivity
   it('hydrates the target boundary synchronously during a click', async () => {
     function Child({text}) {
       Scheduler.log(text);
@@ -214,7 +213,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('hydrates at higher pri if sync did not work first time', async () => {
     let suspend = false;
     let resolve;
@@ -300,7 +298,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('hydrates at higher pri for secondary discrete events', async () => {
     let suspend = false;
     let resolve;
@@ -388,7 +385,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity && www
+  // @gate www
   it('hydrates the target boundary synchronously during a click (createEventHandle)', async () => {
     const setClick = ReactDOM.unstable_createEventHandle('click');
     let isServerRendering = true;
@@ -455,7 +452,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity && www
+  // @gate www
   it('hydrates at higher pri if sync did not work first time (createEventHandle)', async () => {
     let suspend = false;
     let isServerRendering = true;
@@ -544,7 +541,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity && www
+  // @gate www
   it('hydrates at higher pri for secondary discrete events (createEventHandle)', async () => {
     const setClick = ReactDOM.unstable_createEventHandle('click');
     let suspend = false;
@@ -636,7 +633,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('hydrates the hovered targets as higher priority for continuous events', async () => {
     let suspend = false;
     let resolve;
@@ -729,7 +725,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('replays capture phase for continuous events and respects stopPropagation', async () => {
     let suspend = false;
     let resolve;
@@ -883,7 +878,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('replays event with null target when tree is dismounted', async () => {
     let suspend = false;
     let resolve;
@@ -957,7 +951,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('hydrates the last target path first for continuous events', async () => {
     let suspend = false;
     let resolve;
@@ -1044,7 +1037,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('hydrates the last explicitly hydrated target at higher priority', async () => {
     function Child({text}) {
       Scheduler.log(text);
@@ -1092,7 +1084,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     await waitForAll(['App', 'C', 'B', 'A']);
   });
 
-  // @gate enableActivity && www
+  // @gate www
   it('hydrates before an update even if hydration moves away from it', async () => {
     function Child({text}) {
       Scheduler.log(text);
@@ -1200,7 +1192,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('fires capture event handlers and native events if content is hydratable during discrete event', async () => {
     spyOnDev(console, 'error');
     function Child({text}) {
@@ -1272,7 +1263,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableActivity
   it('does not propagate discrete event if it cannot be synchronously hydrated', async () => {
     let triggeredParent = false;
     let triggeredChild = false;
@@ -1335,7 +1325,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     expect(triggeredChild).toBe(false);
   });
 
-  // @gate enableActivity
   it('can force hydration in response to sync update', async () => {
     function Child({text}) {
       Scheduler.log(`Child ${text}`);
@@ -1371,7 +1360,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     expect(initialSpan).toBe(spanRef);
   });
 
-  // @gate enableActivity && www
+  // @gate www
   it('can force hydration in response to continuous update', async () => {
     function Child({text}) {
       Scheduler.log(`Child ${text}`);
@@ -1408,7 +1397,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     expect(initialSpan).toBe(spanRef);
   });
 
-  // @gate enableActivity
   it('can force hydration in response to default update', async () => {
     function Child({text}) {
       Scheduler.log(`Child ${text}`);
@@ -1441,7 +1429,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     expect(initialSpan).toBe(spanRef);
   });
 
-  // @gate enableActivity && www
+  // @gate www
   it('regression test: can unwind context on selective hydration interruption', async () => {
     const Context = React.createContext('DefaultContext');
 
@@ -1500,7 +1488,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
   });
 
-  // @gate enableActivity
   it('regression test: can unwind context on selective hydration interruption for sync updates', async () => {
     const Context = React.createContext('DefaultContext');
 
@@ -1552,7 +1539,6 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
   });
 
-  // @gate enableActivity
   it('regression: selective hydration does not contribute to "maximum update limit" count', async () => {
     const outsideRef = React.createRef(null);
     const insideRef = React.createRef(null);

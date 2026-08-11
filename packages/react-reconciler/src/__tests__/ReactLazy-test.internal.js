@@ -116,6 +116,44 @@ describe('ReactLazy', () => {
     expect(root).toMatchRenderedOutput('Hi again');
   });
 
+  it('renders a lazy context provider', async () => {
+    const Context = React.createContext('default');
+    function ConsumerText() {
+      return <Text text={React.useContext(Context)} />;
+    }
+    // Context.Provider === Context, so we can lazy-load the context itself
+    const LazyProvider = lazy(() => fakeImport(Context));
+
+    const root = ReactTestRenderer.create(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <LazyProvider value="Hi">
+          <ConsumerText />
+        </LazyProvider>
+      </Suspense>,
+      {
+        unstable_isConcurrent: true,
+      },
+    );
+
+    await waitForAll(['Loading...']);
+    expect(root).not.toMatchRenderedOutput('Hi');
+
+    await act(() => resolveFakeImport(Context));
+    assertLog(['Hi']);
+    expect(root).toMatchRenderedOutput('Hi');
+
+    // Should not suspend on update
+    root.update(
+      <Suspense fallback={<Text text="Loading..." />}>
+        <LazyProvider value="Hi again">
+          <ConsumerText />
+        </LazyProvider>
+      </Suspense>,
+    );
+    await waitForAll(['Hi again']);
+    expect(root).toMatchRenderedOutput('Hi again');
+  });
+
   it('can resolve synchronously without suspending', async () => {
     const LazyText = lazy(() => ({
       then(cb) {
@@ -858,13 +896,20 @@ describe('ReactLazy', () => {
     );
   });
 
-  it('throws with a useful error when wrapping Context with lazy()', async () => {
-    const Context = React.createContext(null);
-    const BadLazy = lazy(() => fakeImport(Context));
+  it('renders a lazy context provider without value prop', async () => {
+    // Context providers work when wrapped in lazy()
+    const Context = React.createContext('default');
+    const LazyProvider = lazy(() => fakeImport(Context));
+
+    function ConsumerText() {
+      return <Text text={React.useContext(Context)} />;
+    }
 
     const root = ReactTestRenderer.create(
       <Suspense fallback={<Text text="Loading..." />}>
-        <BadLazy />
+        <LazyProvider value="provided">
+          <ConsumerText />
+        </LazyProvider>
       </Suspense>,
       {
         unstable_isConcurrent: true,
@@ -873,16 +918,9 @@ describe('ReactLazy', () => {
 
     await waitForAll(['Loading...']);
 
-    await resolveFakeImport(Context);
-    root.update(
-      <Suspense fallback={<Text text="Loading..." />}>
-        <BadLazy />
-      </Suspense>,
-    );
-    await waitForThrow(
-      'Element type is invalid. Received a promise that resolves to: Context. ' +
-        'Lazy element type must resolve to a class or function.',
-    );
+    await act(() => resolveFakeImport(Context));
+    assertLog(['provided']);
+    expect(root).toMatchRenderedOutput('provided');
   });
 
   it('throws with a useful error when wrapping Context.Consumer with lazy()', async () => {
@@ -966,7 +1004,6 @@ describe('ReactLazy', () => {
     );
   });
 
-  // @gate enableActivity
   it('throws with a useful error when wrapping Activity with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.Activity));
 

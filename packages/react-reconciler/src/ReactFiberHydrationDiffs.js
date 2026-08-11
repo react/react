@@ -197,8 +197,8 @@ function describeValue(value: mixed, maxLength: number): string {
       if (isArray(value)) {
         return '[...]';
       }
-      if ((value: any).$$typeof === REACT_ELEMENT_TYPE) {
-        const type = getComponentNameFromType((value: any).type);
+      if ((value as any).$$typeof === REACT_ELEMENT_TYPE) {
+        const type = getComponentNameFromType((value as any).type);
         return type ? '<' + type + '>' : '<...>';
       }
       const name = objectName(value);
@@ -228,12 +228,12 @@ function describeValue(value: mixed, maxLength: number): string {
         }
         return '{' + properties + '}';
       } else if (enableSrcObject && (name === 'Blob' || name === 'File')) {
-        return name + ':' + (value: any).type;
+        return name + ':' + (value as any).type;
       }
       return name;
     }
     case 'function': {
-      const name = (value: any).displayName || value.name;
+      const name = (value as any).displayName || value.name;
       return name ? 'function ' + name : 'function';
     }
     default:

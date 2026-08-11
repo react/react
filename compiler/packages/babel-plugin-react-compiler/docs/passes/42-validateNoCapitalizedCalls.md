@@ -49,13 +49,8 @@ const ALLOW_LIST = new Set([
   ...(envConfig.validateNoCapitalizedCalls ?? []),  // User-configured allowlist
 ]);
 
-const hookPattern = envConfig.hookPattern != null
-  ? new RegExp(envConfig.hookPattern)
-  : null;
-
 const isAllowed = (name: string): boolean => {
-  return ALLOW_LIST.has(name) ||
-         (hookPattern != null && hookPattern.test(name));
+  return ALLOW_LIST.has(name);
 };
 ```
 
@@ -135,13 +130,6 @@ const obj = Object.create(null);  // OK - Object is a built-in
 Users can allowlist specific functions via configuration:
 ```typescript
 validateNoCapitalizedCalls: ['MyUtility', 'SomeFactory']
-```
-
-### Hook Patterns
-Functions matching the configured hook pattern are allowed even if capitalized:
-```typescript
-// With hookPattern: 'React\\$use.*'
-const x = React$useState(); // Allowed if it matches the hook pattern
 ```
 
 ### Method Calls vs Function Calls

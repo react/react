@@ -175,7 +175,6 @@ describe('ReactSiblingPrerendering', () => {
     ]);
   });
 
-  // @gate enableActivity
   it("don't skip siblings when rendering inside a hidden tree", async () => {
     function App() {
       return (

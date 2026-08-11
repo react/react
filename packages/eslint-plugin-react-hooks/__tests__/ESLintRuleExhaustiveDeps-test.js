@@ -7913,6 +7913,25 @@ const testsFlow = {
         }
       `,
     },
+    // Flow type aliases in type assertions should not be flagged as missing dependencies
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          type ColumnKey = 'id' | 'name';
+          type Item = {id: string, name: string};
+
+          const columns = useMemo(
+            () => [
+              {
+                type: 'text',
+                key: 'id',
+              } as TextColumn<ColumnKey, Item>,
+            ],
+            [],
+          );
+        }
+      `,
+    },
   ],
   invalid: [
     {

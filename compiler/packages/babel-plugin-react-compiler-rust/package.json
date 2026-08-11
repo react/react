@@ -1,0 +1,32 @@
+{
+  "name": "babel-plugin-react-compiler-rust",
+  "version": "0.0.0-experimental",
+  "description": "Babel plugin for React Compiler (Rust backend).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "!*.tsbuildinfo"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "snap": "yarn workspace snap run snap",
+    "snap:build": "yarn workspace snap run build",
+    "snap:ci": "yarn snap:build && yarn snap --rust",
+    "test": "yarn snap:ci"
+  },
+  "dependencies": {
+    "@babel/types": "^7.26.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.2.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/babel-plugin-react-compiler-rust"
+  }
+}

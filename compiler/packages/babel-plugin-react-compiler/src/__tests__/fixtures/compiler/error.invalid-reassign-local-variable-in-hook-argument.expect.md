@@ -48,7 +48,7 @@ function Component() {
 ## Error
 
 ```
-Found 1 error:
+Found 2 errors:
 
 Error: Cannot reassign variable after render completes
 
@@ -59,6 +59,32 @@ error.invalid-reassign-local-variable-in-hook-argument.ts:8:4
    7 |   const reassignLocal = newValue => {
 >  8 |     local = newValue;
      |     ^^^^^ Cannot reassign `local` after render completes
+   9 |   };
+  10 |
+  11 |   const callback = newValue => {
+
+Error: Cannot modify local variables after render completes
+
+This argument is a function which may reassign or mutate `local` after render, which can cause inconsistent behavior on subsequent renders. Consider using state instead.
+
+error.invalid-reassign-local-variable-in-hook-argument.ts:34:14
+  32 |   };
+  33 |
+> 34 |   useIdentity(() => {
+     |               ^^^^^^^
+> 35 |     callback();
+     | ^^^^^^^^^^^^^^^
+> 36 |   });
+     | ^^^^ This function may (indirectly) reassign or modify `local` after render
+  37 |
+  38 |   return 'ok';
+  39 | }
+
+error.invalid-reassign-local-variable-in-hook-argument.ts:8:4
+   6 |
+   7 |   const reassignLocal = newValue => {
+>  8 |     local = newValue;
+     |     ^^^^^ This modifies `local`
    9 |   };
   10 |
   11 |   const callback = newValue => {

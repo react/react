@@ -46,7 +46,7 @@ function requiredContext<Value>(c: Value | null): Value {
       );
     }
   }
-  return (c: any);
+  return c as any;
 }
 
 function getCurrentRootHostContainer(): null | Container {
@@ -105,6 +105,7 @@ function pushHostContext(fiber: Fiber): void {
     // we would need to push a context value even for host fibers that
     // haven't been upgraded yet.
     const transitionStatus: TransitionStatus = stateHook.memoizedState;
+    // $FlowFixMe[constant-condition]
     if (isPrimaryRenderer) {
       HostTransitionContext._currentValue = transitionStatus;
     } else {
@@ -149,6 +150,7 @@ function popHostContext(fiber: Fiber): void {
     // to `NotPendingTransition`. We can do this because you're not allowed to nest forms. If
     // we allowed for multiple nested host transition providers, then we'd
     // need to reset this to the parent provider's status.
+    // $FlowFixMe[constant-condition]
     if (isPrimaryRenderer) {
       HostTransitionContext._currentValue = NotPendingTransition;
     } else {

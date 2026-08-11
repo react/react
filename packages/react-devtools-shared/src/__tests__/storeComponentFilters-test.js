@@ -169,8 +169,8 @@ describe('Store component filters', () => {
         ▾ <Suspense>
             <div>
       [suspense-root]  rects={[{x:1,y:2,width:7,height:1}, {x:1,y:2,width:6,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:7,height:1}]}>
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:6,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:7,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
 
     await actAsync(
@@ -187,8 +187,8 @@ describe('Store component filters', () => {
         ▾ <Suspense>
             <div>
       [suspense-root]  rects={[{x:1,y:2,width:7,height:1}, {x:1,y:2,width:6,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:7,height:1}]}>
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:6,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:7,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
 
     await actAsync(
@@ -205,8 +205,8 @@ describe('Store component filters', () => {
         ▾ <Suspense>
             <div>
       [suspense-root]  rects={[{x:1,y:2,width:7,height:1}, {x:1,y:2,width:6,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:7,height:1}]}>
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:6,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:7,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:6,height:1}]}>
     `);
   });
 
@@ -229,9 +229,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
 
       await actAsync(
@@ -244,6 +244,7 @@ describe('Store component filters', () => {
       expect(store).toMatchInlineSnapshot(`
         [root]
             <div>
+            <div>
       `);
 
       await actAsync(
@@ -255,9 +256,9 @@ describe('Store component filters', () => {
 
       expect(store).toMatchInlineSnapshot(`
         [root]
-          ▾ <Activity>
+          ▾ <Activity mode="visible">
               <div>
-            <Activity>
+          ▸ <Activity mode="hidden">
       `);
     }
   });
@@ -809,7 +810,7 @@ describe('Store component filters', () => {
           ▾ <ErrorBoundary>
               <div key="did-error">
       [suspense-root]  rects={[{x:1,y:2,width:0,height:1}, {x:1,y:2,width:0,height:1}, {x:1,y:2,width:0,height:1}]}
-        <Suspense name="App" rects={[{x:1,y:2,width:0,height:1}]}>
+        <Suspense name="App" uniqueSuspenders={false} rects={[{x:1,y:2,width:0,height:1}]}>
     `);
 
     await actAsync(() => {
@@ -825,7 +826,7 @@ describe('Store component filters', () => {
         ▾ <ErrorBoundary>
             <div key="error-content">
       [suspense-root]  rects={[{x:1,y:2,width:0,height:1}, {x:1,y:2,width:0,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:0,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:0,height:1}]}>
     `);
   });
 
@@ -871,20 +872,20 @@ describe('Store component filters', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Root>
-          ▾ <Activity name="/">
+          ▾ <Activity name="/" mode="visible">
             ▾ <Suspense>
                 <h1>
               ▾ <main>
                 ▾ <Layout>
-                  ▾ <Activity name="/blog">
+                  ▾ <Activity name="/blog" mode="visible">
                       <h2>
                     ▾ <section>
                       ▾ <Page>
                         ▾ <Suspense>
                             <div>
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
-        <Suspense name="Root" rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
-          <Suspense name="Page" rects={[{x:1,y:2,width:9,height:1}]}>
+        <Suspense name="Root" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
     `);
 
     await actAsync(
@@ -896,15 +897,15 @@ describe('Store component filters', () => {
 
     expect(store).toMatchInlineSnapshot(`
       [root]
-        ▾ <Activity name="/">
+        ▾ <Activity name="/" mode="visible">
           ▾ <Suspense>
               <h1>
             ▾ <main>
               ▾ <Layout>
-                ▸ <Activity name="/blog">
+                ▸ <Activity name="/blog" mode="visible">
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
-        <Suspense name="Unknown" rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
-          <Suspense name="Page" rects={[{x:1,y:2,width:9,height:1}]}>
+        <Suspense name="Unknown" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
     `);
 
     await actAsync(async () => (store.componentFilters = []));
@@ -912,20 +913,20 @@ describe('Store component filters', () => {
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Root>
-          ▾ <Activity name="/">
+          ▾ <Activity name="/" mode="visible">
             ▾ <Suspense>
                 <h1>
               ▾ <main>
                 ▾ <Layout>
-                  ▾ <Activity name="/blog">
+                  ▾ <Activity name="/blog" mode="visible">
                       <h2>
                     ▾ <section>
                       ▾ <Page>
                         ▾ <Suspense>
                             <div>
       [suspense-root]  rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}
-        <Suspense name="Root" rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
-          <Suspense name="Page" rects={[{x:1,y:2,width:9,height:1}]}>
+        <Suspense name="Root" uniqueSuspenders={false} rects={[{x:1,y:2,width:4,height:1}, {x:1,y:2,width:13,height:1}]}>
+          <Suspense name="Page" uniqueSuspenders={true} rects={[{x:1,y:2,width:9,height:1}]}>
     `);
   });
 });

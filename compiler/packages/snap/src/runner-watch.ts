@@ -8,16 +8,22 @@
 import watcher from '@parcel/watcher';
 import path from 'path';
 import ts from 'typescript';
-import {FIXTURES_PATH, PROJECT_ROOT} from './constants';
+import {
+  FIXTURES_PATH,
+  BABEL_PLUGIN_ROOT,
+  BABEL_PLUGIN_RUST_ROOT,
+  CRATES_PATH,
+} from './constants';
 import {TestFilter, getFixtures} from './fixture-utils';
 import {execSync} from 'child_process';
+import fs from 'fs';
 
 export function watchSrc(
   onStart: () => void,
   onComplete: (isSuccess: boolean) => void,
 ): ts.WatchOfConfigFile<ts.SemanticDiagnosticsBuilderProgram> {
   const configPath = ts.findConfigFile(
-    /*searchPath*/ PROJECT_ROOT,
+    /*searchPath*/ BABEL_PLUGIN_ROOT,
     ts.sys.fileExists,
     'tsconfig.json',
   );
@@ -155,6 +161,7 @@ function subscribeFixtures(
 function subscribeTsc(
   state: RunnerState,
   onChange: (state: RunnerState) => void,
+  enableRust: boolean = false,
 ) {
   // Run TS in incremental watch mode
   watchSrc(
@@ -166,12 +173,16 @@ function subscribeTsc(
       let isCompilerBuildValid = false;
       if (isTypecheckSuccess) {
         try {
-          execSync('yarn build', {cwd: PROJECT_ROOT});
+          execSync('yarn build', {cwd: BABEL_PLUGIN_ROOT});
           console.log('Built compiler successfully with tsup');
           isCompilerBuildValid = true;
         } catch (e) {
           console.warn('Failed to build compiler with tsup:', e);
         }
+      }
+      // When using Rust, also build the Rust compiler after TS build succeeds
+      if (isCompilerBuildValid && enableRust) {
+        isCompilerBuildValid = buildRust();
       }
       // Bump the compiler version after a build finishes
       // and re-run tests
@@ -183,6 +194,77 @@ function subscribeTsc(
       onChange(state);
     },
   );
+}
+
+export function buildRust(): boolean {
+  const compilerRoot = path.join(BABEL_PLUGIN_ROOT, '..', '..');
+  try {
+    execSync('cargo build -p react_compiler_napi', {
+      cwd: compilerRoot,
+      stdio: 'inherit',
+    });
+  } catch (e) {
+    console.error('Failed to build Rust compiler with cargo:', e);
+    return false;
+  }
+
+  // Copy the built native module to the babel plugin package
+  const platform = process.platform;
+  const ext = platform === 'darwin' ? 'dylib' : 'so';
+  const libName =
+    platform === 'darwin'
+      ? 'libreact_compiler_napi.dylib'
+      : 'libreact_compiler_napi.so';
+  const sourcePath = path.join(compilerRoot, 'target', 'debug', libName);
+  const destPath = path.join(BABEL_PLUGIN_RUST_ROOT, 'native', 'index.node');
+
+  try {
+    fs.copyFileSync(sourcePath, destPath);
+  } catch (e) {
+    console.error(
+      `Failed to copy native module (${sourcePath} -> ${destPath}):`,
+      e,
+    );
+    return false;
+  }
+
+  // Build the TypeScript wrapper
+  try {
+    execSync('yarn build', {cwd: BABEL_PLUGIN_RUST_ROOT, stdio: 'inherit'});
+    console.log('Built Rust compiler successfully');
+  } catch (e) {
+    console.error('Failed to build Rust babel plugin with tsc:', e);
+    return false;
+  }
+
+  return true;
+}
+
+function subscribeRustCrates(
+  state: RunnerState,
+  onChange: (state: RunnerState) => void,
+) {
+  watcher.subscribe(CRATES_PATH, async (err, events) => {
+    if (err) {
+      console.error(err);
+      process.exit(1);
+    }
+    // Only rebuild on .rs file changes
+    const hasRustChanges = events.some(e => e.path.endsWith('.rs'));
+    if (!hasRustChanges) {
+      return;
+    }
+    console.log('\nRust source changed, rebuilding...');
+    if (buildRust()) {
+      state.compilerVersion++;
+      state.isCompilerBuildValid = true;
+      state.mode.action = RunnerAction.Test;
+      onChange(state);
+    } else {
+      state.isCompilerBuildValid = false;
+      console.error('Rust build failed, waiting for changes...');
+    }
+  });
 }
 
 /**
@@ -417,6 +499,7 @@ export async function makeWatchRunner(
   onChange: (state: RunnerState) => void,
   debugMode: boolean,
   initialPattern?: string,
+  enableRust: boolean = false,
 ): Promise<void> {
   // Determine initial filter state
   let filter: TestFilter | null = null;
@@ -445,7 +528,10 @@ export async function makeWatchRunner(
     fixtureLastRunStatus: new Map(),
   };
 
-  subscribeTsc(state, onChange);
+  subscribeTsc(state, onChange, enableRust);
   subscribeFixtures(state, onChange);
   subscribeKeyEvents(state, onChange);
+  if (enableRust) {
+    subscribeRustCrates(state, onChange);
+  }
 }

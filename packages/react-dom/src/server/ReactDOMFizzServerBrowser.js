@@ -53,6 +53,7 @@ type Options = {
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   formState?: ReactFormState<any, any> | null,
@@ -64,6 +65,7 @@ type ResumeOptions = {
   nonce?: NonceOption,
   signal?: AbortSignal,
   onError?: (error: mixed) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
 };
 
@@ -85,7 +87,7 @@ function renderToReadableStream(
     });
 
     function onShellReady() {
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'bytes',
           pull: (controller): ?Promise<void> => {
@@ -97,8 +99,9 @@ function renderToReadableStream(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -140,6 +143,7 @@ function renderToReadableStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
@@ -149,10 +153,10 @@ function renderToReadableStream(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
@@ -176,7 +180,7 @@ function resume(
     });
 
     function onShellReady() {
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'bytes',
           pull: (controller): ?Promise<void> => {
@@ -188,8 +192,9 @@ function resume(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -209,6 +214,7 @@ function resume(
         options ? options.nonce : undefined,
       ),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
@@ -217,10 +223,10 @@ function resume(
     if (options && options.signal) {
       const signal = options.signal;
       if (signal.aborted) {
-        abort(request, (signal: any).reason);
+        abort(request, (signal as any).reason);
       } else {
         const listener = () => {
-          abort(request, (signal: any).reason);
+          abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);

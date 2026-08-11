@@ -13,6 +13,7 @@
  * It should always be imported from "react-devtools-feature-flags".
  ************************************************************************/
 
+export const enableActivitySlices: boolean = false;
 export const enableLogger: boolean = true;
 export const enableStyleXFeatures: boolean = true;
 export const isInternalFacebookBuild: boolean = true;
@@ -26,4 +27,4 @@ import typeof * as FeatureFlagsType from './DevToolsFeatureFlags.default';
 import typeof * as ExportsType from './DevToolsFeatureFlags.extension-fb';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

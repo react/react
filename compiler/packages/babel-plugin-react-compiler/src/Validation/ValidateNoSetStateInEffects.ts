@@ -97,7 +97,7 @@ export function validateNoSetStateInEffects(
         case 'CallExpression': {
           const callee =
             instr.value.kind === 'MethodCall'
-              ? instr.value.receiver
+              ? instr.value.property
               : instr.value.callee;
 
           if (isUseEffectEventType(callee.identifier)) {
