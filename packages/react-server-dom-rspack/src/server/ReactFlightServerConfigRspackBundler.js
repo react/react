@@ -18,7 +18,6 @@ import type {
   ServerReference,
 } from '../ReactFlightRspackReferences';
 import type {ServerManifest} from '../client/ReactFlightClientConfigBundlerRspack';
-import type {ServerManifest} from 'react-client/src/ReactFlightClientConfig';
 import {preinit} from 'react-dom';
 
 export type {ClientReference, ServerReference};
