@@ -81,6 +81,6 @@
   "peerDependencies": {
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "@rspack/core": "^2.0.0-0"
+    "@rspack/core": "^2.2.0-0"
   }
 }
