@@ -2294,8 +2294,16 @@ fn handle_function_deps(
         // Record phi operands
         for phi in &block.phis {
             for (_pred_id, operand) in &phi.operands {
-                if let Some(maybe_optional_chain) = ctx.temporaries.get(&operand.identifier) {
-                    ctx.visit_dependency(maybe_optional_chain.clone(), env);
+                let maybe_optional_chain = ctx.temporaries.get(&operand.identifier).cloned();
+                if let Some(maybe_optional_chain) = maybe_optional_chain {
+                    ctx.visit_dependency(maybe_optional_chain, env);
+                } else if operand.reactive {
+                    // A reactive phi operand defined before the current scope flows through the
+                    // scope, which may reassign the variable on some paths and leave the
+                    // incoming value untouched on others. Without a dependency on that incoming
+                    // value, skipping the scope restores a stale copy over what an earlier
+                    // scope computed.
+                    ctx.visit_operand(operand, env);
                 }
             }
         }
