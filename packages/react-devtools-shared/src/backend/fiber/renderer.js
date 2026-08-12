@@ -3283,7 +3283,7 @@ export function attach(
       if (isFocusedActivityEntry) {
         focusedActivityID = newInstance.id;
         pushOperation(TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE);
-        pushOperation(newInstance.id);
+        pushOperation(newInstance.connected ? newInstance.id : 0);
       }
       if (fiber.tag === SuspenseComponent || fiber.tag === HostRoot) {
         newSuspenseNode = createSuspenseNode(newInstance);
