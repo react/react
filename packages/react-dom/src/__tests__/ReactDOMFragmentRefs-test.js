@@ -1675,28 +1675,37 @@ describe('FragmentRefs', () => {
     // @gate enableFragmentRefs
     it('returns implementation specific when DOM containment disagrees with the Fiber tree', async () => {
       const fragmentRef = React.createRef();
-      const childRef = React.createRef();
-      const unrelatedParentRef = React.createRef();
+      const portalContainerRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
 
       function Test() {
+        const [portalContainer, setPortalContainer] = React.useState(null);
+
+        React.useLayoutEffect(() => {
+          setPortalContainer(portalContainerRef.current);
+        }, []);
+
         return (
-          <div>
-            <div>
-              <React.Fragment ref={fragmentRef}>
-                <div ref={childRef} />
-              </React.Fragment>
-            </div>
-            <div ref={unrelatedParentRef} />
-          </div>
+          <>
+            <div ref={portalContainerRef} />
+            {portalContainer === null
+              ? null
+              : createPortal(
+                  <div>
+                    <React.Fragment ref={fragmentRef}>
+                      <div />
+                    </React.Fragment>
+                  </div>,
+                  portalContainer,
+                )}
+          </>
         );
       }
 
       await act(() => root.render(<Test />));
-      unrelatedParentRef.current.appendChild(childRef.current);
 
       expectPosition(
-        fragmentRef.current.compareDocumentPosition(unrelatedParentRef.current),
+        fragmentRef.current.compareDocumentPosition(portalContainerRef.current),
         {
           preceding: false,
           following: false,
