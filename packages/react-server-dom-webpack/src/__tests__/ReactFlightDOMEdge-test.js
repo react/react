@@ -2559,6 +2559,60 @@ describe('ReactFlightDOMEdge', () => {
     );
   });
 
+  async function renderThroughDebugChannel(chunkFilename) {
+    const Client = clientComponent('Client', chunkFilename);
+    // The client reference shows up in the owner's props on the debug channel.
+    function Server({component}) {
+      return ReactServer.createElement(component, null);
+    }
+
+    let debugReadableStreamController;
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        ReactServer.createElement(Server, {component: Client}),
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+      debugChannel: {readable: debugReadableStream},
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    return readResult(ssrStream);
+  }
+
+  it('can resolve a client reference while debug info is still blocked', async () => {
+    const result = await renderThroughDebugChannel('path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
   it('should properly resolve with deduped objects', async () => {
     const obj = {foo: 'hi'};
 
