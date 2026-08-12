@@ -617,7 +617,6 @@ export type Request = {
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
   // A null entry means the string has been seen once and is still inline.
-  writtenStrings: Map<string, null | string>,
   writtenImportStrings: Map<string, null | string>,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
@@ -744,7 +743,6 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
-  this.writtenStrings = new Map();
   this.writtenImportStrings = new Map();
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
@@ -2255,15 +2253,17 @@ let canEmitDebugInfo: boolean = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
 
-// Strings at least this long get outlined and deduplicated when they repeat.
-// Below it the reference and row header outweigh the duplicate, and the extra
-// rows compress worse than the duplication they replace.
-const MIN_DEDUPLICATED_STRING_LENGTH = 64;
-
 // Bundler metadata repeats the same chunk URLs across every client reference of
-// a route, so it pays off much sooner. It's still bounded away from zero because
-// outlining something as short as an export name costs more than copying it.
+// a route, so strings in it at least this long get outlined and deduplicated
+// when they repeat. The threshold is bounded away from zero because outlining
+// something as short as an export name costs more than copying it.
 const MIN_DEDUPLICATED_IMPORT_STRING_LENGTH = 16;
+
+// The dedupe map retains every tracked string for the rest of the request, so
+// both the entry size and the entry count are bounded. Anything past these
+// limits is pathological input and simply doesn't dedupe.
+const MAX_DEDUPLICATED_IMPORT_STRING_LENGTH = 32768;
+const MAX_DEDUPLICATED_IMPORT_STRINGS = 256;
 
 function deferTask(request: Request, task: Task): ReactJSONValue {
   // Like outlineTask but instead the item is scheduled to be serialized
@@ -3609,44 +3609,11 @@ function escapeStringValue(value: string): string {
   }
 }
 
-function serializeDeduplicatedString(request: Request, value: string): string {
-  const writtenStrings = request.writtenStrings;
-  const existing = writtenStrings.get(value);
-  if (existing !== undefined && existing !== null) {
-    // The row it refers to was already emitted so only the reference is new here.
-    serializedSize += existing.length;
-    return existing;
-  }
-  // The string still has to arrive before this row can be used, whether it's
-  // written inline or into its own row, so either way it counts in full.
-  serializedSize += value.length;
-  // $FlowFixMe[invalid-compare]
-  const isLarge = value.length >= 1024 && byteLengthOfChunk !== null;
-  if (existing === undefined && !isLarge) {
-    // Leave the first occurrence inline. Most strings never repeat, and a row
-    // header plus a reference costs more than the duplicate would have.
-    writtenStrings.set(value, null);
-    return escapeStringValue(value);
-  }
-  let ref;
-  if (isLarge) {
-    // Large strings are encoded outside the JSON payload so that we don't have
-    // to double encode and double parse them.
-    ref = serializeLargeTextString(request, value);
-  } else {
-    request.pendingChunks++;
-    const outlinedId = request.nextChunkId++;
-    // $FlowFixMe[incompatible-type] stringify can return null
-    const json: string = stringify(escapeStringValue(value));
-    emitModelChunk(request, outlinedId, json);
-    ref = serializeByValueID(outlinedId);
-  }
-  writtenStrings.set(value, ref);
-  return ref;
-}
-
 function serializeImportString(request: Request, value: string): string {
-  if (value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH) {
+  if (
+    value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH ||
+    value.length > MAX_DEDUPLICATED_IMPORT_STRING_LENGTH
+  ) {
     return escapeStringValue(value);
   }
   const writtenStrings = request.writtenImportStrings;
@@ -3668,6 +3635,11 @@ function serializeImportString(request: Request, value: string): string {
     const ref = serializeByValueID(outlinedId);
     writtenStrings.set(value, ref);
     return ref;
+  }
+  if (writtenStrings.size >= MAX_DEDUPLICATED_IMPORT_STRINGS) {
+    // The map is full. Strings already tracked keep deduping; new ones are
+    // written out every time.
+    return escapeStringValue(value);
   }
   writtenStrings.set(value, null);
   return escapeStringValue(value);
@@ -4275,21 +4247,23 @@ function renderModelDestructive(
         throwTaintViolation(tainted.message);
       }
     }
+    serializedSize += value.length;
     // TODO: Maybe too clever. If we support URL there's no similar trick.
     if (value[value.length - 1] === 'Z') {
       // Possibly a Date, whose toJSON automatically calls toISOString
       // $FlowFixMe[incompatible-use]
       const originalValue = parent[parentPropertyName];
       if (originalValue instanceof Date) {
-        serializedSize += value.length;
         return serializeDateFromDateJSON(value);
       }
     }
-    if (value.length >= MIN_DEDUPLICATED_STRING_LENGTH) {
-      // This path does its own accounting since it might only write a reference.
-      return serializeDeduplicatedString(request, value);
+    // $FlowFixMe[invalid-compare]
+    if (value.length >= 1024 && byteLengthOfChunk !== null) {
+      // For large strings, we encode them outside the JSON payload so that we
+      // don't have to double encode and double parse the strings. This can also
+      // be more compact in case the string has a lot of escaped characters.
+      return serializeLargeTextString(request, value);
     }
-    serializedSize += value.length;
     return escapeStringValue(value);
   }
 
