@@ -4755,19 +4755,13 @@ export function attach(
               }
             }
           } else {
-            const childrenUpdateFlags = updateChildrenRecursively(
+            // If this fiber is filtered there might be changes to this set elsewhere so we have
+            // to visit each child to place it back in the set. We let the child bail out instead.
+            updateFlags |= updateChildrenRecursively(
               nextFiber.child,
               prevFiber.child,
               false,
             );
-            // If this fiber is filtered there might be changes to this set elsewhere so we have
-            // to visit each child to place it back in the set. We let the child bail out instead.
-            if ((childrenUpdateFlags & ShouldResetChildren) !== NoUpdate) {
-              throw new Error(
-                'The children should not have changed if we pass in the same set.',
-              );
-            }
-            updateFlags |= childrenUpdateFlags;
           }
         }
       }
