@@ -160,7 +160,7 @@ export const enableInfiniteRenderLoopDetection: boolean = false;
  */
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
-export const enableConditionalUseWarning: boolean = false;
+export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
 
 export const enableFragmentRefs: boolean = true;
 export const enableFragmentRefsScrollIntoView: boolean = true;

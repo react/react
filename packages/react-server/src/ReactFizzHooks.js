@@ -40,6 +40,7 @@ import {
 import {createFastHash} from './ReactServerStreamConfig';
 
 import is from 'shared/objectIs';
+import hasOwnProperty from 'shared/hasOwnProperty';
 import {
   REACT_CONTEXT_TYPE,
   REACT_RECOVERABLE_TYPE,
@@ -91,28 +92,68 @@ let actionStateMatchingIndex: number = -1;
 // Counts the number of use(thenable) calls in this component
 let thenableIndexCounter: number = 0;
 let thenableState: ThenableState | null = null;
-// An opaque exception that lets the Fizz work loop distinguish a recoverable
-// from an Error thrown by application code. The actual errors are stored
-// separately so this implementation detail cannot be mistaken for either
-// diagnostic if it is caught by userspace.
-export const RecoverableException: mixed = new Error(
-  "Recoverable Exception: This is not a real error! It's an implementation " +
-    'detail of `use` to interrupt the current render so a downstream ' +
-    'renderer can recover it. You must either rethrow it immediately, or move ' +
-    'the `use` call outside of the `try/catch` block. Capturing without ' +
-    'rethrowing will lead to unexpected behavior.',
-);
-let suspendedRecoverableError: Error | null = null;
 
-export function createFatalRecoverableError(
-  recoverable: ReactRecoverable,
-): Error {
-  return new Error(
+const browserReasonInitializationFallback =
+  'The reason for browser-only rendering could not be determined because its ' +
+  'initializer threw.';
+
+export function createRecoverableError(recoverable: ReactRecoverable): Error {
+  const reason = recoverable._reason;
+  let initializedReason;
+  if (typeof reason === 'function') {
+    try {
+      initializedReason = reason();
+    } catch {
+      // A reason is only diagnostic metadata. Its initializer must not affect
+      // whether the renderer can defer this subtree to the browser.
+      initializedReason = browserReasonInitializationFallback;
+    }
+  } else {
+    initializedReason = reason;
+  }
+  // Always create the recoverable at the consumption point so its stack
+  // identifies the relevant use() or abort() call. A lazy reason is diagnostic
+  // metadata and can be any value supported by Error.cause.
+  const error = new Error(
+    'Browser-only rendering was requested by `browser()`.',
+    reason === undefined ? undefined : {cause: initializedReason},
+  );
+  Object.defineProperty(error, REACT_RECOVERABLE_TYPE, {value: true});
+  return error;
+}
+
+export function isRecoverableError(error: mixed): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  return (error as any)[REACT_RECOVERABLE_TYPE] === true;
+}
+
+export function cloneRecoverableErrorAsFatal(recoverableError: Error): Error {
+  // Create a separate diagnostic for fatal reporting without changing the
+  // branded recoverable error that other tasks may still need to observe.
+  const fatalRecoverableError = new Error(
     'The server render could not complete because client rendering was ' +
       "requested outside a Suspense boundary. See this error's cause for " +
       'additional details.',
-    {cause: recoverable},
+    hasOwnProperty.call(recoverableError, 'cause')
+      ? {cause: (recoverableError as any).cause}
+      : undefined,
   );
+  // Keep the frames captured where the recoverable was consumed, but replace
+  // the first line with the fatal error's message.
+  const stack = recoverableError.stack;
+  if (stack !== undefined) {
+    const frameStart = stack.indexOf('\n');
+    fatalRecoverableError.stack =
+      fatalRecoverableError.name +
+      ': ' +
+      fatalRecoverableError.message +
+      (frameStart === -1 ? '' : stack.slice(frameStart));
+  } else {
+    (fatalRecoverableError as any).stack = undefined;
+  }
+  return fatalRecoverableError;
 }
 
 // Lazily created map of render-phase updates
@@ -300,22 +341,6 @@ export function getThenableStateAfterSuspending(): null | ThenableState {
   const state = thenableState;
   thenableState = null;
   return state;
-}
-
-export function getSuspendedRecoverableError(): Error {
-  if (suspendedRecoverableError === null) {
-    throw new Error(
-      'Expected a suspended recoverable. This is a bug in React. Please file ' +
-        'an issue.',
-    );
-  }
-  const error = suspendedRecoverableError;
-  suspendedRecoverableError = null;
-  return error;
-}
-
-export function clearSuspendedRecoverableError(): void {
-  suspendedRecoverableError = null;
 }
 
 export function checkDidRenderIdHook(): boolean {
@@ -799,14 +824,11 @@ function use<T>(usable: Usable<T>): T {
       const thenable: Thenable<T> = usable as any;
       return unwrapThenable(thenable);
     } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
-      // Fizz can defer this subtree to a downstream renderer. Like a suspended
-      // thenable, keep the actual value out of userspace and throw an opaque
-      // sentinel to unwind the stack. Capture the use() call site eagerly so
-      // that if there is no Suspense boundary, the fatal error points here and
-      // its cause points to where the recoverable was created.
+      // Create the recoverable error here so its stack captures the component
+      // that passed this value to use(). The internal brand lets the renderer
+      // distinguish it from an Error thrown by application code.
       const recoverable: ReactRecoverable = usable as any;
-      suspendedRecoverableError = createFatalRecoverableError(recoverable);
-      throw RecoverableException;
+      throw createRecoverableError(recoverable);
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
       const context: ReactContext<T> = usable as any;
       return readContext(context);
