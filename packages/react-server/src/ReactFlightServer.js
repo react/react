@@ -6519,9 +6519,20 @@ function flushCompletedChunks(request: Request): void {
       cleanupTaintQueue(request);
     }
     if (request.status < ABORTING) {
+      // This reason is only used internally to abort the request's cacheSignals so
+      // unused resources can be cleaned up; it is never surfaced to the user. We must
+      // NOT capture a stack trace here: this runs on every successful render, and the
+      // captured CallSites retain the completed render's async context / cache scope
+      // (e.g. the fetch dedupe cache), which — because the reason is held for the
+      // request's lifetime as `cacheController.signal.reason` — causes an unbounded
+      // heap leak under load (RSC responses never released). Creating it with zero
+      // frames breaks that retention. See #37288.
+      const previousStackTraceLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = 0;
       const abortReason = new Error(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
       );
+      Error.stackTraceLimit = previousStackTraceLimit;
       request.cacheController.abort(abortReason);
     }
     if (request.destination !== null) {
