@@ -238,9 +238,7 @@ function evaluateInstruction(
       if (
         property !== null &&
         property.kind === 'Primitive' &&
-        ((typeof property.value === 'string' &&
-          isValidIdentifier(property.value)) ||
-          typeof property.value === 'number')
+        typeof property.value === 'number'
       ) {
         const nextValue: InstructionValue = {
           kind: 'PropertyLoad',
