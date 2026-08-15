@@ -29,7 +29,7 @@ class ClassComponent extends React.Component {
 const FunctionComponent = () => React.createElement("div");
 
 const ForwardRefComponent = React.forwardRef((props, ref) =>
-  React.createElement(Component, { forwardedRef: ref, ...props })
+  React.createElement(ClassComponent, { forwardedRef: ref, ...props })
 );
 
 const Context = React.createContext(false);
