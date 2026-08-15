@@ -1617,13 +1617,13 @@ export default class Store extends EventEmitter<{
             const element = this._idToElement.get(id);
 
             if (element === undefined) {
-              this._throwAndEmitError(
-                Error(
+              if (__DEV__) {
+                console.warn(
                   `Cannot remove node "${id}" because no matching node was found in the Store.`,
-                ),
-              );
-
-              break;
+                );
+              }
+              i += 1;
+              continue;
             }
 
             i += 1;
