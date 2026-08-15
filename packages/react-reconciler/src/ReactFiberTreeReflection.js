@@ -392,6 +392,7 @@ function traverseVisibleInstancesAndTextInstances<A, B, C>(
   while (child !== null) {
     const isHostNode =
       child.tag === HostComponent ||
+      child.tag === HostSingleton ||
       (enableFragmentRefsTextNodes && child.tag === HostText);
     if (isHostNode && fn(child, a, b, c)) {
       return true;
@@ -402,7 +403,8 @@ function traverseVisibleInstancesAndTextInstances<A, B, C>(
       // Skip hidden subtrees
     } else {
       if (
-        (searchWithinHosts || child.tag !== HostComponent) &&
+        (searchWithinHosts ||
+          (child.tag !== HostComponent && child.tag !== HostSingleton)) &&
         traverseVisibleInstancesAndTextInstances(
           child.child,
           searchWithinHosts,
@@ -425,7 +427,11 @@ export function getFragmentParentInstanceOrContainerFiber(
 ): null | Fiber {
   let parent = fiber.return;
   while (parent !== null) {
-    if (parent.tag === HostRoot || parent.tag === HostComponent) {
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
       return parent;
     }
     parent = parent.return;
@@ -441,12 +447,34 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
     if (parent.tag === HostPortal) {
       foundPortalParent = true;
     }
-    if (parent.tag === HostRoot || parent.tag === HostComponent) {
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
       break;
     }
     parent = parent.return;
   }
   return foundPortalParent;
+}
+
+export function getFragmentPortalContainerInfo(fiber: Fiber): null | Container {
+  let parent = fiber.return;
+  while (parent !== null) {
+    if (parent.tag === HostPortal) {
+      return parent.stateNode.containerInfo as Container;
+    }
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
+      break;
+    }
+    parent = parent.return;
+  }
+  return null;
 }
 
 export function getFragmentInstanceOrTextInstanceSiblings(
@@ -462,33 +490,35 @@ export function getFragmentInstanceOrTextInstanceSiblings(
     result,
     fiber,
     parentHostFiber.child,
+    {foundSelf: false},
   );
   return result;
 }
 
 /**
  * Only collects HostText with enableFragmentRefsTextNodes enabled. Otherwise, only collects HostComponent.
+ * Returns true once the following host sibling has been found.
  */
 function findFragmentInstanceOrTextInstanceSiblings(
   result: [Fiber | null, Fiber | null],
   self: Fiber,
   child: null | Fiber,
-  foundSelf: boolean = false,
+  state: {foundSelf: boolean},
 ): boolean {
   while (child !== null) {
     if (child === self) {
-      foundSelf = true;
-      if (child.sibling) {
-        child = child.sibling;
-      } else {
-        return true;
-      }
+      // Shared across recursive calls so ancestors can keep scanning for
+      // following host siblings after a nested empty fragment.
+      state.foundSelf = true;
+      child = child.sibling;
+      continue;
     }
     if (
       child.tag === HostComponent ||
+      child.tag === HostSingleton ||
       (enableFragmentRefsTextNodes && child.tag === HostText)
     ) {
-      if (foundSelf) {
+      if (state.foundSelf) {
         result[1] = child;
         return true;
       } else {
@@ -505,7 +535,7 @@ function findFragmentInstanceOrTextInstanceSiblings(
           result,
           self,
           child.child,
-          foundSelf,
+          state,
         )
       ) {
         return true;
@@ -521,6 +551,7 @@ export function getInstanceFromHostFiber<
 >(fiber: Fiber): I {
   switch (fiber.tag) {
     case HostComponent:
+    case HostSingleton:
     case HostText:
       return fiber.stateNode;
     case HostRoot:
@@ -589,7 +620,9 @@ export function isFragmentContainedByFiber(
     getFragmentParentInstanceOrContainerFiber(fragmentFiber);
   while (current !== null) {
     if (
-      (current.tag === HostComponent || current.tag === HostRoot) &&
+      (current.tag === HostComponent ||
+        current.tag === HostRoot ||
+        current.tag === HostSingleton) &&
       (current === fiberHostParent || current.alternate === fiberHostParent)
     ) {
       return true;

@@ -395,7 +395,7 @@ export function clientRenderBoundary(
   suspenseNode.data = SUSPENSE_FALLBACK_START_DATA;
   // assign error metadata to first sibling
   const dataset = suspenseIdNode.dataset;
-  if (errorDigest) dataset['dgst'] = errorDigest;
+  if (errorDigest != null) dataset['dgst'] = errorDigest;
   if (errorMsg) dataset['msg'] = errorMsg;
   if (errorStack) dataset['stck'] = errorStack;
   if (errorComponentStack) dataset['cstck'] = errorComponentStack;

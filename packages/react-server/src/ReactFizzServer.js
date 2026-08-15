@@ -134,6 +134,9 @@ import {
   readPreviousThenableFromState,
   getActionStateCount,
   getActionStateMatchingIndex,
+  createRecoverableError,
+  isRecoverableError,
+  cloneRecoverableErrorAsFatal,
 } from './ReactFizzHooks';
 import {DefaultAsyncDispatcher} from './ReactFizzAsyncDispatcher';
 import {
@@ -173,6 +176,7 @@ import {
   REACT_VIEW_TRANSITION_TYPE,
   REACT_ACTIVITY_TYPE,
   REACT_OPTIMISTIC_KEY,
+  REACT_RECOVERABLE_TYPE,
 } from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
@@ -191,6 +195,7 @@ import assign from 'shared/assign';
 import noop from 'shared/noop';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import isArray from 'shared/isArray';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {
   SuspenseException,
   getSuspendedThenable,
@@ -408,6 +413,9 @@ export opaque type Request = {
   // The return string is used in production  primarily to avoid leaking internals, secondarily to save bytes.
   // Returning null/undefined will cause a default error message in production
   onError: (error: mixed, errorInfo: ThrownInfo) => ?string,
+  // onBrowserBailout is called when Fizz recovers by intentionally deferring
+  // rendering to the browser.
+  onBrowserBailout: (error: mixed, errorInfo: ThrownInfo) => void,
   // onAllReady is called when all pending task is done but it may not have flushed yet.
   // This is a good time to start writing if you want only HTML and no intermediate steps.
   onAllReady: () => void,
@@ -529,6 +537,7 @@ function RequestInstance(
   rootFormatContext: FormatContext,
   progressiveChunkSize: void | number,
   onError: void | ((error: mixed, errorInfo: ErrorInfo) => ?string),
+  onBrowserBailout: void | ((error: mixed, errorInfo: ErrorInfo) => void),
   onAllReady: void | (() => void),
   onShellReady: void | (() => void),
   onShellError: void | ((error: mixed) => void),
@@ -565,6 +574,8 @@ function RequestInstance(
   this.trackedPostpones = null;
   this.postponedState = null;
   this.onError = onError === undefined ? defaultErrorHandler : onError;
+  this.onBrowserBailout =
+    onBrowserBailout === undefined ? noop : onBrowserBailout;
   this.onAllReady = onAllReady === undefined ? noop : onAllReady;
   this.onShellReady = onShellReady === undefined ? noop : onShellReady;
   this.onShellError = onShellError === undefined ? noop : onShellError;
@@ -582,6 +593,7 @@ export function createRequest(
   rootFormatContext: FormatContext,
   progressiveChunkSize: void | number,
   onError: void | ((error: mixed, errorInfo: ErrorInfo) => ?string),
+  onBrowserBailout: void | ((error: mixed, errorInfo: ErrorInfo) => void),
   onAllReady: void | (() => void),
   onShellReady: void | (() => void),
   onShellError: void | ((error: mixed) => void),
@@ -599,6 +611,7 @@ export function createRequest(
     rootFormatContext,
     progressiveChunkSize,
     onError,
+    onBrowserBailout,
     onAllReady,
     onShellReady,
     onShellError,
@@ -649,6 +662,7 @@ export function createPrerenderRequest(
   rootFormatContext: FormatContext,
   progressiveChunkSize: void | number,
   onError: void | ((error: mixed, errorInfo: ErrorInfo) => ?string),
+  onBrowserBailout: void | ((error: mixed, errorInfo: ErrorInfo) => void),
   onAllReady: void | (() => void),
   onShellReady: void | (() => void),
   onShellError: void | ((error: mixed) => void),
@@ -661,6 +675,7 @@ export function createPrerenderRequest(
     rootFormatContext,
     progressiveChunkSize,
     onError,
+    onBrowserBailout,
     onAllReady,
     onShellReady,
     onShellError,
@@ -681,6 +696,7 @@ export function resumeRequest(
   postponedState: PostponedState,
   renderState: RenderState,
   onError: void | ((error: mixed, errorInfo: ErrorInfo) => ?string),
+  onBrowserBailout: void | ((error: mixed, errorInfo: ErrorInfo) => void),
   onAllReady: void | (() => void),
   onShellReady: void | (() => void),
   onShellError: void | ((error: mixed) => void),
@@ -697,6 +713,7 @@ export function resumeRequest(
     postponedState.rootFormatContext,
     postponedState.progressiveChunkSize,
     onError,
+    onBrowserBailout,
     onAllReady,
     onShellReady,
     onShellError,
@@ -775,6 +792,7 @@ export function resumeAndPrerenderRequest(
   postponedState: PostponedState,
   renderState: RenderState,
   onError: void | ((error: mixed, errorInfo: ErrorInfo) => ?string),
+  onBrowserBailout: void | ((error: mixed, errorInfo: ErrorInfo) => void),
   onAllReady: void | (() => void),
   onShellReady: void | (() => void),
   onShellError: void | ((error: mixed) => void),
@@ -785,6 +803,7 @@ export function resumeAndPrerenderRequest(
     postponedState,
     renderState,
     onError,
+    onBrowserBailout,
     onAllReady,
     onShellReady,
     onShellError,
@@ -1317,6 +1336,14 @@ function encodeErrorForBoundary(
 ) {
   boundary.errorDigest = digest;
   if (__DEV__) {
+    if (isRecoverableError(error)) {
+      boundary.errorMessage = wasAborted
+        ? 'Switched to client rendering because the server render was aborted ' +
+          'with a request to render on the client.'
+        : 'Switched to client rendering because a component requested it.';
+      boundary.errorComponentStack = thrownInfo.componentStack;
+      return;
+    }
     let message, stack;
     // In dev we additionally encode the error message and component stack on the boundary
     if (error instanceof Error) {
@@ -1347,6 +1374,11 @@ function logRecoverableError(
   errorInfo: ThrownInfo,
   debugTask: null | ConsoleTask,
 ): ?string {
+  if (isRecoverableError(error)) {
+    logBrowserBailout(request, error, errorInfo, debugTask);
+    return REACT_RECOVERABLE_DIGEST;
+  }
+
   // If this callback errors, we intentionally let that error bubble up to become a fatal error
   // so that someone fixes the error reporting instead of hiding it.
   const onError = request.onError;
@@ -1365,7 +1397,26 @@ function logRecoverableError(
     }
     return;
   }
-  return errorDigest;
+  // An empty digest is reserved for React's internal client-render signal.
+  // Historically an empty digest was omitted from the wire format, so
+  // normalizing it to undefined preserves the existing user-space semantics.
+  return errorDigest === '' ? undefined : errorDigest;
+}
+
+function logBrowserBailout(
+  request: Request,
+  error: mixed,
+  errorInfo: ThrownInfo,
+  debugTask: null | ConsoleTask,
+): void {
+  // If this callback errors, we intentionally let that error bubble up to
+  // become a fatal error, matching the behavior of onError.
+  const onBrowserBailout = request.onBrowserBailout;
+  if (__DEV__ && debugTask) {
+    debugTask.run(onBrowserBailout.bind(null, error, errorInfo));
+  } else {
+    onBrowserBailout(error, errorInfo);
+  }
 }
 
 function fatalError(
@@ -1399,7 +1450,11 @@ function fatalError(
     closeWithError(request.destination, error);
   } else {
     request.status = CLOSING;
-    request.fatalError = error;
+    // abort() already stored the reason that every remaining task must
+    // observe. This error may only be a fatal diagnostic derived from it.
+    if (!request.aborted) {
+      request.fatalError = error;
+    }
   }
 }
 
@@ -4524,19 +4579,36 @@ function erroredTask(
 
   request.allPendingTasks--;
 
-  // Report the error to a global handler.
   // We don't handle halts here because we only halt when prerendering and
   // when prerendering we should be finishing tasks not erroring them when
   // they halt or postpone
-  const errorDigest = logRecoverableError(request, error, errorInfo, debugTask);
   if (boundary === null) {
-    fatalError(request, error, errorInfo, debugTask);
+    // Recoverables can remain silent when a Suspense boundary lets us emit a
+    // shell and defer its content to a downstream renderer. At the root there
+    // is no shell to stream, so this is a fatal error and must be reported like
+    // any other root error.
+    if (isRecoverableError(error)) {
+      // This recoverable reached the root without a Suspense boundary, so
+      // report it using the fatal diagnostic while leaving the original intact.
+      const fatalRecoverableError = cloneRecoverableErrorAsFatal(error as any);
+      logRecoverableError(request, fatalRecoverableError, errorInfo, debugTask);
+      fatalError(request, fatalRecoverableError, errorInfo, debugTask);
+    } else {
+      logRecoverableError(request, error, errorInfo, debugTask);
+      fatalError(request, error, errorInfo, debugTask);
+    }
     // The shell fatally errored, so the render can never complete. Return before
     // the completeAll check below so we don't fire onAllReady for a render that
     // produced nothing. This mirrors finishAbortedTask, which also returns after
     // a fatalError on the root.
     return;
   } else {
+    const errorDigest = logRecoverableError(
+      request,
+      error,
+      errorInfo,
+      debugTask,
+    );
     boundary.pendingTasks--;
     if (boundary.status !== CLIENT_RENDERED) {
       boundary.status = CLIENT_RENDERED;
@@ -4769,19 +4841,41 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
   }
 
   const errorInfo = getThrownInfo(task.componentStack);
+  // Only errors materialized by use() or abort() carry this internal brand.
+  // Throwing the browser() token directly is still an application error.
+  const isRecoverableReason = isRecoverableError(error);
 
   if (boundary === null) {
     const replay: null | ReplaySet = task.replay;
     if (replay === null) {
       // We didn't complete the root so we have nothing to show. We can close
       // the request;
-      if (request.trackedPostpones !== null && segment !== null) {
+      if (
+        !isRecoverableReason &&
+        request.trackedPostpones !== null &&
+        segment !== null
+      ) {
         const trackedPostpones = request.trackedPostpones;
         // We are aborting a prerender and must treat the shell as halted
         // We log the error but we still resolve the prerender
         logRecoverableError(request, error, errorInfo, task.debugTask);
         trackPostpone(request, trackedPostpones, task, segment);
         finishedTask(request, null, task.row, segment);
+      } else if (isRecoverableReason) {
+        // This root task cannot recover from the abort. Report a fatal clone,
+        // but keep the original branded reason on the request for other tasks.
+        const fatalRecoverableError = cloneRecoverableErrorAsFatal(
+          error as any,
+        );
+        logRecoverableError(
+          request,
+          fatalRecoverableError,
+          errorInfo,
+          task.debugTask,
+        );
+        if (request.status !== CLOSING && request.status !== CLOSED) {
+          fatalError(request, fatalRecoverableError, errorInfo, task.debugTask);
+        }
       } else {
         logRecoverableError(request, error, errorInfo, task.debugTask);
         if (request.status !== CLOSING && request.status !== CLOSED) {
@@ -4823,7 +4917,11 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
     // boundary the message is referring to
     const trackedPostpones = request.trackedPostpones;
     if (boundary.status !== CLIENT_RENDERED) {
-      if (trackedPostpones !== null && segment !== null) {
+      if (
+        !isRecoverableReason &&
+        trackedPostpones !== null &&
+        segment !== null
+      ) {
         // We are aborting a prerender and must halt this boundary.
         // We treat this like other postpones during prerendering
         logRecoverableError(request, error, errorInfo, task.debugTask);
@@ -4845,7 +4943,6 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
         errorInfo,
         task.debugTask,
       );
-      boundary.status = CLIENT_RENDERED;
       encodeErrorForBoundary(boundary, errorDigest, error, errorInfo, true);
 
       untrackBoundary(request, boundary);
@@ -6353,7 +6450,13 @@ export function prepareForStartFlowingIfBeforeAllReady(request: Request) {
 export function startFlowing(request: Request, destination: Destination): void {
   if (request.status === CLOSING) {
     request.status = CLOSED;
-    closeWithError(destination, request.fatalError);
+    let error = request.fatalError;
+    if (isRecoverableError(error)) {
+      // An aborted request keeps its original branded reason while tasks
+      // unwind. Convert it only now that the stream must receive a fatal.
+      error = cloneRecoverableErrorAsFatal(error as any);
+    }
+    closeWithError(destination, error);
     return;
   }
   if (request.status === CLOSED) {
@@ -6411,9 +6514,17 @@ export function abort(request: Request, reason: mixed): void {
     // can be aborted. in practice this makes abort callable at most once per render.
     return;
   }
+  const isRecoverableReason =
+    typeof reason === 'object' &&
+    reason !== null &&
+    // $FlowFixMe[prop-missing]
+    reason.$$typeof === REACT_RECOVERABLE_TYPE;
+  // Mark the request before initializing a recoverable reason so an initializer
+  // cannot reenter abort().
   request.aborted = true;
-  const error =
-    reason === undefined
+  const error = isRecoverableReason
+    ? createRecoverableError(reason as any)
+    : reason === undefined
       ? new Error('The render was aborted by the server without a reason.')
       : typeof reason === 'object' &&
           reason !== null &&
