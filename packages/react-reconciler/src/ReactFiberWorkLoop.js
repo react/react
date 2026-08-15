@@ -267,7 +267,10 @@ import {
   startGestureAnimations,
 } from './ReactFiberApplyGesture';
 import {enqueueUpdate} from './ReactFiberClassUpdateQueue';
-import {resetContextDependencies} from './ReactFiberNewContext';
+import {
+  resetContextDependencies,
+  resetContextPropagationMemo,
+} from './ReactFiberNewContext';
 import {
   resetHooksAfterThrow,
   resetHooksOnUnwind,
@@ -2252,6 +2255,7 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   pendingEffectsLanes = NoLanes;
 
   resetWorkInProgressStack();
+  resetContextPropagationMemo();
   workInProgressRoot = root;
   const rootWorkInProgress = createWorkInProgress(root.current, null);
   workInProgress = rootWorkInProgress;
@@ -3407,6 +3411,11 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
     }
     if (next !== null) {
       // Completing this fiber spawned new work. Work on that next.
+      //
+      // This re-enters the begin phase for fibers that were already begun
+      // (e.g. the second pass of a SuspenseList), so any memoized parent
+      // context propagation results below this point are no longer valid.
+      resetContextPropagationMemo();
       workInProgress = next;
       return;
     }
@@ -3452,6 +3461,10 @@ function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
       // Since we're restarting, remove anything that is not a host effect
       // from the effect tag.
       next.flags &= HostEffectMask;
+      // The boundary and its subtree are about to be begun again with
+      // different flags and children, so any memoized parent context
+      // propagation results for them are no longer valid.
+      resetContextPropagationMemo();
       workInProgress = next;
       return;
     }
