@@ -60,6 +60,7 @@ import {
   enableGestureTransition,
   enableDefaultTransitionIndicator,
   enableParallelTransitions,
+  enableMemoizedContextPropagation,
 } from 'shared/ReactFeatureFlags';
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
@@ -2255,7 +2256,9 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   pendingEffectsLanes = NoLanes;
 
   resetWorkInProgressStack();
-  resetContextPropagationMemo();
+  if (enableMemoizedContextPropagation) {
+    resetContextPropagationMemo();
+  }
   workInProgressRoot = root;
   const rootWorkInProgress = createWorkInProgress(root.current, null);
   workInProgress = rootWorkInProgress;
@@ -3415,7 +3418,9 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       // This re-enters the begin phase for fibers that were already begun
       // (e.g. the second pass of a SuspenseList), so any memoized parent
       // context propagation results below this point are no longer valid.
-      resetContextPropagationMemo();
+      if (enableMemoizedContextPropagation) {
+        resetContextPropagationMemo();
+      }
       workInProgress = next;
       return;
     }
@@ -3464,7 +3469,9 @@ function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
       // The boundary and its subtree are about to be begun again with
       // different flags and children, so any memoized parent context
       // propagation results for them are no longer valid.
-      resetContextPropagationMemo();
+      if (enableMemoizedContextPropagation) {
+        resetContextPropagationMemo();
+      }
       workInProgress = next;
       return;
     }
