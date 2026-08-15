@@ -2976,4 +2976,129 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       '<div>1</div><span>client</span><div>2</div>',
     );
   });
+
+  it('commits new suspending content next to a dehydrated Activity that hides', async () => {
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function Second() {
+      if (suspend) {
+        throw promise;
+      }
+      return <span id="second">Second</span>;
+    }
+
+    function App({showSecondOnMount}) {
+      const [active, setActive] = React.useState('first');
+      React.useEffect(() => {
+        if (showSecondOnMount) {
+          // Not a transition: this update reaches the dehydrated Activity at
+          // default priority, before it has hydrated.
+          setActive('second');
+        }
+      }, [showSecondOnMount]);
+      return (
+        <div>
+          <Suspense fallback={null}>
+            {active === 'second' ? <Second /> : null}
+            <Activity mode={active === 'first' ? 'visible' : 'hidden'}>
+              <span id="first">First</span>
+            </Activity>
+          </Suspense>
+        </div>
+      );
+    }
+
+    // Don't suspend on the server.
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <App showSecondOnMount={false} />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('First');
+
+    // Hydrate. The first effect mounts new content (still loading) and hides
+    // the server-rendered Activity while its subtree is still dehydrated.
+    suspend = true;
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App showSecondOnMount={true} />);
+    });
+
+    // The data for the new row arrives.
+    suspend = false;
+    await act(async () => {
+      resolve();
+      await promise;
+    });
+
+    // The new row should be visible and the old row hidden.
+    const second = container.querySelector('#second');
+    const first = container.querySelector('#first');
+    expect(second).not.toBe(null);
+    expect(second.style.display).not.toBe('none');
+    expect(first === null || first.style.display === 'none').toBe(true);
+  });
+
+  it('commits new suspending content next to a dehydrated Activity that hides (transition)', async () => {
+    // Same as the previous test, except the update is wrapped
+    // in startTransition.
+    let suspend = false;
+    let resolve;
+    const promise = new Promise(resolvePromise => (resolve = resolvePromise));
+
+    function Second() {
+      if (suspend) {
+        throw promise;
+      }
+      return <span id="second">Second</span>;
+    }
+
+    function App({showSecondOnMount}) {
+      const [active, setActive] = React.useState('first');
+      React.useEffect(() => {
+        if (showSecondOnMount) {
+          React.startTransition(() => {
+            setActive('second');
+          });
+        }
+      }, [showSecondOnMount]);
+      return (
+        <div>
+          <Suspense fallback={null}>
+            {active === 'second' ? <Second /> : null}
+            <Activity mode={active === 'first' ? 'visible' : 'hidden'}>
+              <span id="first">First</span>
+            </Activity>
+          </Suspense>
+        </div>
+      );
+    }
+
+    suspend = false;
+    const finalHTML = ReactDOMServer.renderToString(
+      <App showSecondOnMount={false} />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    expect(container.textContent).toBe('First');
+
+    suspend = true;
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App showSecondOnMount={true} />);
+    });
+
+    suspend = false;
+    await act(async () => {
+      resolve();
+      await promise;
+    });
+
+    const second = container.querySelector('#second');
+    const first = container.querySelector('#first');
+    expect(second).not.toBe(null);
+    expect(second.style.display).not.toBe('none');
+    expect(first === null || first.style.display === 'none').toBe(true);
+  });
 });

@@ -62,14 +62,15 @@ import {
   isOwnedInstance,
 } from './ReactDOMComponentTree';
 import {
-  traverseFragmentInstance,
-  getFragmentParentHostFiber,
+  traverseFragmentInstancesAndTextInstances,
+  getFragmentParentInstanceOrContainerFiber,
   getInstanceFromHostFiber,
   isFiberFollowing,
   isFiberPreceding,
-  getFragmentInstanceSiblings,
-  traverseFragmentInstanceDeeply,
+  getFragmentInstanceOrTextInstanceSiblings,
+  traverseFragmentInstancesAndTextInstancesDeeply,
   fiberIsPortaledIntoHost,
+  getFragmentPortalContainerInfo,
   isFiberContainedByFragment,
   isFragmentContainedByFiber,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
@@ -77,15 +78,18 @@ import {compareDocumentPositionForEmptyFragment} from 'shared/ReactDOMFragmentRe
 
 export {detachDeletedInstance};
 import {hasRole} from './DOMAccessibilityRoles';
+import type {SingletonType} from './ReactDOMComponent';
 import {
   setInitialProperties,
   updateProperties,
+  clearSingletonProperties,
   hydrateProperties,
   hydrateText,
   diffHydratedProperties,
   getPropsFromElement,
   diffHydratedText,
   trapClickOnNonInteractiveElement,
+  clearClickListener,
 } from './ReactDOMComponent';
 import {hydrateInput} from './ReactDOMInput';
 import {hydrateTextarea} from './ReactDOMTextarea';
@@ -221,6 +225,9 @@ export type Instance = Element;
 export type TextInstance = Text;
 
 type InstanceWithFragmentHandles = Instance & {
+  reactFragments?: Set<FragmentInstanceType>,
+};
+type HostNodeWithFragmentHandles = (Instance | TextInstance) & {
   reactFragments?: Set<FragmentInstanceType>,
 };
 
@@ -1266,18 +1273,18 @@ function clearHydrationBoundary(
         // then it contributed to the html tag and we need to reset it.
         const ownerDocument = parentInstance.ownerDocument;
         const documentElement: Element = ownerDocument.documentElement as any;
-        releaseSingletonInstance(documentElement);
+        clearSingletonPreambleContribution(documentElement);
       } else if (data === PREAMBLE_CONTRIBUTION_HEAD) {
         const ownerDocument = parentInstance.ownerDocument;
         const head: Element = ownerDocument.head as any;
-        releaseSingletonInstance(head);
+        clearSingletonPreambleContribution(head);
         // We need to clear the head because this is the only singleton that can have children that
         // were part of this boundary but are not inside this boundary.
         clearHead(head);
       } else if (data === PREAMBLE_CONTRIBUTION_BODY) {
         const ownerDocument = parentInstance.ownerDocument;
         const body: Element = ownerDocument.body as any;
-        releaseSingletonInstance(body);
+        clearSingletonPreambleContribution(body);
       }
     }
     // $FlowFixMe[incompatible-type] we bail out when we get a null
@@ -2981,6 +2988,9 @@ type StoredEventListener = {
   type: string,
   listener: EventListener,
   optionsOrUseCapture: void | EventListenerOptionsOrUseCapture,
+  // When once:true, a wrapper that removes the fragment listener after the
+  // first fire. Otherwise the same as listener.
+  attachedListener: EventListener,
 };
 
 export type FragmentInstanceType = {
@@ -3035,13 +3045,37 @@ FragmentInstance.prototype.addEventListener = function (
   const isNewEventListener =
     indexOfEventListener(listeners, type, listener, optionsOrUseCapture) === -1;
   if (isNewEventListener) {
-    listeners.push({type, listener, optionsOrUseCapture});
-    traverseFragmentInstance(
-      this._fragmentFiber,
-      addEventListenerToChild,
+    const fragmentInstance = this;
+    let attachedListener = listener;
+    if (isOnceOption(optionsOrUseCapture)) {
+      // once is fragment-scoped: the first fire on any child removes this
+      // listener from the fragment and every host child.
+      attachedListener = function (this: EventTarget, event: Event) {
+        fragmentInstance.removeEventListener(
+          type,
+          listener,
+          optionsOrUseCapture,
+        );
+        if (typeof listener === 'function') {
+          listener.call(this, event);
+        } else {
+          listener.handleEvent(event);
+        }
+      };
+    }
+    const attachOptions = getAttachOptions(optionsOrUseCapture);
+    listeners.push({
       type,
       listener,
       optionsOrUseCapture,
+      attachedListener,
+    });
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      addEventListenerToChild,
+      type,
+      attachedListener,
+      attachOptions,
     );
   }
   this._eventListeners = listeners;
@@ -3052,7 +3086,7 @@ function addEventListenerToChild(
   listener: EventListener,
   optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
 ): boolean {
-  const instance = getInstanceFromHostFiber<Instance>(child);
+  const instance = getInstanceFromHostFiber<Instance | TextInstance>(child);
   instance.addEventListener(type, listener, optionsOrUseCapture);
   return false;
 }
@@ -3067,24 +3101,26 @@ FragmentInstance.prototype.removeEventListener = function (
   if (listeners === null) {
     return;
   }
-  if (typeof listeners !== 'undefined' && listeners.length > 0) {
-    traverseFragmentInstance(
-      this._fragmentFiber,
-      removeEventListenerFromChild,
-      type,
-      listener,
-      optionsOrUseCapture,
-    );
-    const index = indexOfEventListener(
-      listeners,
-      type,
-      listener,
-      optionsOrUseCapture,
-    );
-    if (this._eventListeners !== null) {
-      this._eventListeners.splice(index, 1);
-    }
+  const index = indexOfEventListener(
+    listeners,
+    type,
+    listener,
+    optionsOrUseCapture,
+  );
+  if (index === -1) {
+    return;
   }
+  const {attachedListener, optionsOrUseCapture: storedOptions} =
+    listeners[index];
+  const attachOptions = getAttachOptions(storedOptions);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    removeEventListenerFromChild,
+    type,
+    attachedListener,
+    attachOptions,
+  );
+  listeners.splice(index, 1);
 };
 function removeEventListenerFromChild(
   child: Fiber,
@@ -3092,9 +3128,25 @@ function removeEventListenerFromChild(
   listener: EventListener,
   optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
 ): boolean {
-  const instance = getInstanceFromHostFiber<Instance>(child);
+  const instance = getInstanceFromHostFiber<Instance | TextInstance>(child);
   instance.removeEventListener(type, listener, optionsOrUseCapture);
   return false;
+}
+function isOnceOption(opts: ?EventListenerOptionsOrUseCapture): boolean {
+  return opts != null && typeof opts !== 'boolean' && opts.once === true;
+}
+function getAttachOptions(
+  opts: void | EventListenerOptionsOrUseCapture,
+): void | EventListenerOptionsOrUseCapture {
+  // Strip once when attaching to host children; Fragment owns once semantics.
+  if (opts == null || typeof opts === 'boolean' || opts.once !== true) {
+    return opts;
+  }
+  return {
+    capture: opts.capture,
+    passive: opts.passive,
+    signal: opts.signal,
+  };
 }
 function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
@@ -3136,30 +3188,48 @@ FragmentInstance.prototype.dispatchEvent = function (
   this: FragmentInstanceType,
   event: Event,
 ): boolean {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return true;
   }
-  const parentHostInstance =
-    getInstanceFromHostFiber<Instance>(parentHostFiber);
+  const parentHostInstance = getInstanceFromHostFiber<Instance | Container>(
+    parentHostFiber,
+  );
   const eventListeners = this._eventListeners;
   if (
     (eventListeners !== null && eventListeners.length > 0) ||
     !event.bubbles
   ) {
-    const temp = document.createTextNode('');
+    // The temporary node stands in for the fragment's position so that its own
+    // listeners fire before the event propagates to the parent. A Document can
+    // only hold comments and processing instructions alongside its
+    // documentElement, so a Text node would be an invalid child there.
+    const temp =
+      parentHostInstance.nodeType === DOCUMENT_NODE
+        ? (parentHostInstance as any as Document).createComment('')
+        : document.createTextNode('');
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.addEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.addEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.appendChild(temp);
     const cancelable = temp.dispatchEvent(event);
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.removeEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.removeEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.removeChild(temp);
@@ -3173,7 +3243,7 @@ FragmentInstance.prototype.focus = function (
   this: FragmentInstanceType,
   focusOptions?: FocusOptions,
 ): void {
-  traverseFragmentInstanceDeeply(
+  traverseFragmentInstancesAndTextInstancesDeeply(
     this._fragmentFiber,
     setFocusOnFiberIfFocusable,
     focusOptions,
@@ -3198,7 +3268,7 @@ FragmentInstance.prototype.focusLast = function (
   focusOptions?: FocusOptions,
 ): void {
   const children: Array<Fiber> = [];
-  traverseFragmentInstanceDeeply(
+  traverseFragmentInstancesAndTextInstancesDeeply(
     this._fragmentFiber,
     collectChildren,
     children,
@@ -3216,19 +3286,24 @@ function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
-  // Early exit if activeElement is not within the fragment's parent
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return;
   }
-  const parentHostInstance =
-    getInstanceFromHostFiber<Instance>(parentHostFiber);
-  const activeElement = parentHostInstance.ownerDocument.activeElement;
-  if (activeElement === null || !parentHostInstance.contains(activeElement)) {
+  const parentInstanceOrContainer = getInstanceFromHostFiber<
+    Instance | Container,
+  >(parentHostFiber);
+  // Instance is included in the Container type for DOM.
+  const ownerDocument = getOwnerDocumentFromRootContainer(
+    parentInstanceOrContainer,
+  );
+  const activeElement = ownerDocument.activeElement;
+  if (activeElement === null) {
     return;
   }
-
-  traverseFragmentInstance(
+  traverseFragmentInstancesAndTextInstances(
     this._fragmentFiber,
     blurActiveElementWithinFragment,
     activeElement,
@@ -3243,9 +3318,9 @@ function blurActiveElementWithinFragment(
     return false;
   }
   const instance = getInstanceFromHostFiber<Instance>(child);
-  if (instance === activeElement) {
+  if (instance === activeElement || instance.contains(activeElement)) {
     // $FlowFixMe[prop-missing]
-    instance.blur();
+    activeElement.blur();
     return true;
   }
   return false;
@@ -3259,16 +3334,19 @@ FragmentInstance.prototype.observeUsing = function (
     if (enableFragmentRefsTextNodes) {
       let hasText = false;
       let hasElement = false;
-      traverseFragmentInstance(this._fragmentFiber, (child: Fiber) => {
-        if (child.tag === HostText) {
-          hasText = true;
-        } else {
-          // Stop traversal, found element
-          hasElement = true;
-          return true;
-        }
-        return false;
-      });
+      traverseFragmentInstancesAndTextInstances(
+        this._fragmentFiber,
+        (child: Fiber) => {
+          if (child.tag === HostText) {
+            hasText = true;
+          } else {
+            // Stop traversal, found element
+            hasElement = true;
+            return true;
+          }
+          return false;
+        },
+      );
       if (hasText && !hasElement) {
         console.error(
           'observeUsing() was called on a FragmentInstance with only text children. ' +
@@ -3281,7 +3359,11 @@ FragmentInstance.prototype.observeUsing = function (
     this._observers = new Set();
   }
   this._observers.add(observer);
-  traverseFragmentInstance(this._fragmentFiber, observeChild, observer);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    observeChild,
+    observer,
+  );
 };
 function observeChild(
   child: Fiber,
@@ -3312,7 +3394,11 @@ FragmentInstance.prototype.unobserveUsing = function (
     }
   } else {
     observers.delete(observer);
-    traverseFragmentInstance(this._fragmentFiber, unobserveChild, observer);
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      unobserveChild,
+      observer,
+    );
   }
 };
 function unobserveChild(
@@ -3334,7 +3420,11 @@ FragmentInstance.prototype.getClientRects = function (
   this: FragmentInstanceType,
 ): Array<DOMRect> {
   const rects: Array<DOMRect> = [];
-  traverseFragmentInstance(this._fragmentFiber, collectClientRects, rects);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectClientRects,
+    rects,
+  );
   return rects;
 };
 function collectClientRects(child: Fiber, rects: Array<DOMRect>): boolean {
@@ -3356,12 +3446,15 @@ FragmentInstance.prototype.getRootNode = function (
   this: FragmentInstanceType,
   getRootNodeOptions?: {composed: boolean},
 ): Document | ShadowRoot | FragmentInstanceType {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return this;
   }
-  const parentHostInstance =
-    getInstanceFromHostFiber<Instance>(parentHostFiber);
+  const parentHostInstance = getInstanceFromHostFiber<Instance | Container>(
+    parentHostFiber,
+  );
   const rootNode =
     // $FlowFixMe[incompatible-type] Flow expects Node
     parentHostInstance.getRootNode(getRootNodeOptions) as Document | ShadowRoot;
@@ -3372,26 +3465,46 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   this: FragmentInstanceType,
   otherNode: Instance,
 ): number {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return Node.DOCUMENT_POSITION_DISCONNECTED;
   }
   const children: Array<Fiber> = [];
-  traverseFragmentInstance(this._fragmentFiber, collectChildren, children);
-  const parentHostInstance =
-    getInstanceFromHostFiber<Instance>(parentHostFiber);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectChildren,
+    children,
+  );
+  const parentHostInstance = getInstanceFromHostFiber<Instance | Container>(
+    parentHostFiber,
+  );
 
   if (children.length === 0) {
+    // Match non-empty CDP: when portaled, position against the portal
+    // container rather than the React host parent.
+    let emptyParentHostInstance = parentHostInstance;
+    if (fiberIsPortaledIntoHost(this._fragmentFiber)) {
+      const portalContainer = getFragmentPortalContainerInfo(
+        this._fragmentFiber,
+      );
+      if (portalContainer != null) {
+        emptyParentHostInstance = portalContainer;
+      }
+    }
     return compareDocumentPositionForEmptyFragment(
       this._fragmentFiber,
-      parentHostInstance,
+      emptyParentHostInstance,
       otherNode,
       getInstanceFromHostFiber,
     );
   }
 
-  const firstNode = getInstanceFromHostFiber<Instance>(children[0]);
-  const lastNode = getInstanceFromHostFiber<Instance>(
+  const firstNode = getInstanceFromHostFiber<Instance | TextInstance>(
+    children[0],
+  );
+  const lastNode = getInstanceFromHostFiber<Instance | TextInstance>(
     children[children.length - 1],
   );
 
@@ -3485,10 +3598,13 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document or body element
+      // otherFiber could be null if its the document, documentElement, or body
       const ownerDocument = otherNode.ownerDocument;
-      // $FlowFixMe[invalid-compare]
-      return otherNode === ownerDocument || otherNode === ownerDocument.body;
+      return (
+        (otherNode as Instance | Document) === ownerDocument ||
+        otherNode === ownerDocument.documentElement ||
+        otherNode === ownerDocument.body
+      );
     }
     return isFragmentContainedByFiber(fragmentFiber, otherFiber);
   }
@@ -3510,6 +3626,19 @@ function validateDocumentPositionWithFiberTree(
   return false;
 }
 
+function scrollTextNodeIntoView(
+  textNode: TextInstance,
+  resolvedAlignToTop: boolean,
+): void {
+  const range = textNode.ownerDocument.createRange();
+  range.selectNodeContents(textNode);
+  const rect = range.getBoundingClientRect();
+  const scrollY = resolvedAlignToTop
+    ? window.scrollY + rect.top
+    : window.scrollY + rect.bottom - window.innerHeight;
+  window.scrollTo(window.scrollX + rect.left, scrollY);
+}
+
 if (enableFragmentRefsScrollIntoView) {
   // $FlowFixMe[prop-missing]
   FragmentInstance.prototype.scrollIntoView = function (
@@ -3524,31 +3653,65 @@ if (enableFragmentRefsScrollIntoView) {
     }
     // First, get the children nodes
     const children: Array<Fiber> = [];
-    traverseFragmentInstance(this._fragmentFiber, collectChildren, children);
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      collectChildren,
+      children,
+    );
 
     const resolvedAlignToTop = alignToTop !== false;
 
     // If there are no children, we can use the parent and siblings to determine a position
     if (children.length === 0) {
-      const hostSiblings = getFragmentInstanceSiblings(this._fragmentFiber);
+      const hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
+        this._fragmentFiber,
+      );
       const targetFiber = resolvedAlignToTop
         ? hostSiblings[1] ||
           hostSiblings[0] ||
-          getFragmentParentHostFiber(this._fragmentFiber)
+          getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
         : hostSiblings[0] || hostSiblings[1];
 
       if (targetFiber === null) {
-        if (__DEV__) {
+        return;
+      }
+      // For text node siblings, use Range API to scroll to their position
+      if (enableFragmentRefsTextNodes && targetFiber.tag === HostText) {
+        const textNode = getInstanceFromHostFiber<TextInstance>(targetFiber);
+        scrollTextNodeIntoView(textNode, resolvedAlignToTop);
+        return;
+      }
+      const target = getInstanceFromHostFiber<Instance | Container>(
+        targetFiber,
+      );
+      // If the parent host fiber is a HostRoot, the target is a Container
+      // which is not necessarily an Element with a scrollIntoView method.
+      if (target.nodeType === DOCUMENT_NODE) {
+        // A Document is always in view.
+      } else if (target.nodeType === DOCUMENT_FRAGMENT_NODE) {
+        const fragment = target as any as DocumentFragment;
+        // ShadowRoot always has a host: https://dom.spec.whatwg.org/#ref-for-concept-documentfragment-host%E2%91%A5
+        // A generic DocumentFragment doesn't implement this property but conceptually
+        // host is a nullable Element: https://dom.spec.whatwg.org/#concept-documentfragment-host
+        const host =
+          'host' in fragment ? (fragment as any as ShadowRoot).host : null;
+        if (host !== null) {
+          // The ShadowRoot's host element marks the position where the
+          // fragment's content would appear.
+          host.scrollIntoView(alignToTop);
+        } else if (__DEV__) {
           console.warn(
-            'You are attempting to scroll a FragmentInstance that has no ' +
-              'children, siblings, or parent. No scroll was performed.',
+            'You are attempting to scroll a FragmentInstance that is only ' +
+              'mounted inside a detached DocumentFragment. No scroll was ' +
+              'performed.',
           );
         }
         return;
+      } else {
+        // Narrowed down to Element by nodeType check above, but Flow doesn't know that.
+        const element = target as any as Element;
+        element.scrollIntoView(alignToTop);
       }
-      const target = getInstanceFromHostFiber<Instance>(targetFiber);
-      target.scrollIntoView(alignToTop);
-      return;
     }
 
     let i = resolvedAlignToTop ? children.length - 1 : 0;
@@ -3556,14 +3719,8 @@ if (enableFragmentRefsScrollIntoView) {
       const child = children[i];
       // For text nodes, use Range API to scroll to their position
       if (enableFragmentRefsTextNodes && child.tag === HostText) {
-        const textNode: Text = child.stateNode;
-        const range = textNode.ownerDocument.createRange();
-        range.selectNodeContents(textNode);
-        const rect = range.getBoundingClientRect();
-        const scrollY = resolvedAlignToTop
-          ? window.scrollY + rect.top
-          : window.scrollY + rect.bottom - window.innerHeight;
-        window.scrollTo(window.scrollX + rect.left, scrollY);
+        const textNode = getInstanceFromHostFiber<TextInstance>(child);
+        scrollTextNodeIntoView(textNode, resolvedAlignToTop);
         i += resolvedAlignToTop ? -1 : 1;
         continue;
       }
@@ -3579,17 +3736,16 @@ function addFragmentHandleToFiber(
   fragmentInstance: FragmentInstanceType,
 ): boolean {
   if (enableFragmentRefsInstanceHandles) {
-    const instance =
-      getInstanceFromHostFiber<InstanceWithFragmentHandles>(child);
-    if (instance != null) {
-      addFragmentHandleToInstance(instance, fragmentInstance);
-    }
+    const instance = getInstanceFromHostFiber<Instance | TextInstance>(
+      child,
+    ) as any as HostNodeWithFragmentHandles;
+    addFragmentHandleToInstance(instance, fragmentInstance);
   }
   return false;
 }
 
 function addFragmentHandleToInstance(
-  instance: InstanceWithFragmentHandles,
+  instance: HostNodeWithFragmentHandles,
   fragmentInstance: FragmentInstanceType,
 ): void {
   if (enableFragmentRefsInstanceHandles) {
@@ -3605,7 +3761,7 @@ export function createFragmentInstance(
 ): FragmentInstanceType {
   const fragmentInstance = new (FragmentInstance as any)(fragmentFiber);
   if (enableFragmentRefsInstanceHandles) {
-    traverseFragmentInstance(
+    traverseFragmentInstancesAndTextInstances(
       fragmentFiber,
       addFragmentHandleToFiber,
       fragmentInstance,
@@ -3625,17 +3781,22 @@ export function commitNewChildToFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  const eventListeners = fragmentInstance._eventListeners;
+  if (eventListeners !== null) {
+    for (let i = 0; i < eventListeners.length; i++) {
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.addEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
+    }
+  }
+  // Observers and fragment handles only apply to element children.
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  const eventListeners = fragmentInstance._eventListeners;
-  if (eventListeners !== null) {
-    for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.addEventListener(type, listener, optionsOrUseCapture);
-    }
-  }
   if (fragmentInstance._observers !== null) {
     fragmentInstance._observers.forEach(observer => {
       observer.observe(instance);
@@ -3650,17 +3811,21 @@ export function deleteChildFromFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  const eventListeners = fragmentInstance._eventListeners;
+  if (eventListeners !== null) {
+    for (let i = 0; i < eventListeners.length; i++) {
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.removeEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
+    }
+  }
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  const eventListeners = fragmentInstance._eventListeners;
-  if (eventListeners !== null) {
-    for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.removeEventListener(type, listener, optionsOrUseCapture);
-    }
-  }
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {
       instance.reactFragments.delete(fragmentInstance);
@@ -4755,7 +4920,40 @@ export function acquireSingletonInstance(
   updateFiberProps(instance, props);
 }
 
-export function releaseSingletonInstance(instance: Instance): void {
+export function releaseSingletonInstance(
+  instance: Instance,
+  type: SingletonType,
+  props: Props,
+): void {
+  // Remove the attributes and property-backed state owned by this Fiber.
+  clearSingletonProperties(instance, type, props);
+
+  // These properties aren't cleared by updateProperties when their next
+  // value is null. Normally that is handled by replacing/removing the host
+  // instance, but a singleton cannot be removed.
+  // TODO: HostSingleton updates do not currently schedule ContentReset when
+  // dangerouslySetInnerHTML becomes undefined, so an ordinary update can leave
+  // the previous HTML in place. This only handles the release path.
+  if (props.dangerouslySetInnerHTML != null) {
+    instance.textContent = '';
+  }
+  clearClickListener(instance as any as HTMLElement);
+
+  // Only remove state that was represented by this Fiber's props. Attributes
+  // added imperatively while React owned the singleton must be preserved.
+  detachDeletedInstance(instance);
+}
+
+function clearSingletonPreambleContribution(instance: Instance): void {
+  // This path is only used when clearing a dehydrated boundary that contains a
+  // Fizz preamble contribution marker. The marker tells us which singleton the
+  // boundary contributed to, but it does not include the contributed props and
+  // there is no HostSingleton Fiber to provide them. We therefore cannot tell
+  // which attributes came from React and which were added imperatively by a
+  // script or third party. For now, clearing every attribute is an accepted
+  // edge case.
+  // TODO: Include the contributed properties in the marker so this cleanup can
+  // remove only the attributes owned by the boundary.
   const attributes = instance.attributes;
   while (attributes.length) {
     instance.removeAttributeNode(attributes[0]);

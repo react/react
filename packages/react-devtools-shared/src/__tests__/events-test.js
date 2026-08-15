@@ -16,12 +16,10 @@ describe('events', () => {
     dispatcher = new EventEmitter();
   });
 
-  // @reactVersion >=16
   it('can dispatch an event with no listeners', () => {
     dispatcher.emit('event', 123);
   });
 
-  // @reactVersion >=16
   it('handles a listener being attached multiple times', () => {
     const callback = jest.fn();
 
@@ -33,7 +31,6 @@ describe('events', () => {
     expect(callback).toHaveBeenCalledWith(123);
   });
 
-  // @reactVersion >=16
   it('notifies all attached listeners of events', () => {
     const callback1 = jest.fn();
     const callback2 = jest.fn();
@@ -51,7 +48,6 @@ describe('events', () => {
     expect(callback3).not.toHaveBeenCalled();
   });
 
-  // @reactVersion >= 16.0
   it('calls later listeners before re-throwing if an earlier one throws', () => {
     const callbackThatThrows = jest.fn(() => {
       throw Error('expected');
@@ -71,7 +67,46 @@ describe('events', () => {
     expect(callback).toHaveBeenCalledWith(123);
   });
 
-  // @reactVersion >= 16.0
+  it('preserves the first thrown value and reports later errors', () => {
+    const laterError = new Error('later error');
+    const errorHandler = jest.fn(event => {
+      event.preventDefault();
+    });
+    const firstCallback = jest.fn(() => {
+      // This verifies that the emitter preserves any legal thrown value.
+      // eslint-disable-next-line no-throw-literal
+      throw null;
+    });
+    const secondCallback = jest.fn(() => {
+      throw laterError;
+    });
+    const thirdCallback = jest.fn();
+
+    dispatcher.addListener('event', firstCallback);
+    dispatcher.addListener('event', secondCallback);
+    dispatcher.addListener('event', thirdCallback);
+
+    let caughtValue = undefined;
+    window.addEventListener('error', errorHandler);
+    try {
+      dispatcher.emit('event', 123);
+    } catch (error) {
+      caughtValue = error;
+    } finally {
+      window.removeEventListener('error', errorHandler);
+    }
+
+    expect(caughtValue).toBe(null);
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        error: laterError,
+        message: 'later error',
+      }),
+    );
+    expect(thirdCallback).toHaveBeenCalledWith(123);
+  });
+
   it('removes attached listeners', () => {
     const callback1 = jest.fn();
     const callback2 = jest.fn();
@@ -86,7 +121,6 @@ describe('events', () => {
     expect(callback2).toHaveBeenCalledWith(123);
   });
 
-  // @reactVersion >= 16.0
   it('removes all listeners', () => {
     const callback1 = jest.fn();
     const callback2 = jest.fn();
@@ -104,7 +138,6 @@ describe('events', () => {
     expect(callback3).not.toHaveBeenCalled();
   });
 
-  // @reactVersion >= 16.0
   it('should call the initial listeners even if others are added or removed during a dispatch', () => {
     const callback1 = jest.fn(() => {
       dispatcher.removeListener('event', callback2);
