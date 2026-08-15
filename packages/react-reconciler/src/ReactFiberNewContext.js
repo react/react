@@ -97,11 +97,19 @@ const MAX_DEPTH = 0x3fffffff;
 const visitedFibers: Array<Fiber | null> = [];
 const visitedContexts: Array<ReactContext<mixed> | null> = [];
 
+// DEV only. Set once the memoized walk has been reported as disagreeing with
+// the full walk in the current render attempt, so we warn at most once per
+// attempt.
+let didWarnAboutContextPropagationMemoMismatch: boolean = false;
+
 export function resetContextPropagationMemo(): void {
   propagationMemoOutside = null;
   propagationMemoInside = null;
   lastReturnFiber = null;
   lastReturnFiberContexts = null;
+  if (__DEV__) {
+    didWarnAboutContextPropagationMemoMismatch = false;
+  }
 }
 
 export function resetContextDependencies(): void {
@@ -515,8 +523,8 @@ function getChangedContext(
 
 // Collects the parent providers whose value changed, walking from
 // `workInProgress` towards the root. This is the unmemoized walk used when
-// enableMemoizedContextPropagation is off. The result is in walk order:
-// nearest provider first.
+// enableMemoizedContextPropagation is off (and, in DEV, to check the memoized
+// walk against). The result is in walk order: nearest provider first.
 function collectChangedParentContexts(
   workInProgress: Fiber,
 ): ChangedContexts | null {
@@ -628,6 +636,7 @@ function collectChangedParentContextsMemoized(
   // while already inside a NeedsPropagation subtree. Providers below this index
   // are memoized in the "outside" map, the rest in the "inside" map.
   let firstInsideDepth = isInsidePropagationBailout ? 0 : MAX_DEPTH;
+  let didHitMemo = false;
   let parent: null | Fiber = returnFiber;
   if (
     parent === lastReturnFiber &&
@@ -636,6 +645,7 @@ function collectChangedParentContextsMemoized(
   ) {
     suffix = lastReturnFiberContexts;
     parent = null;
+    didHitMemo = true;
   }
   while (parent !== null) {
     if (isPossiblyProvider(parent, hostTransitionProvider)) {
@@ -646,6 +656,7 @@ function collectChangedParentContextsMemoized(
         const memoized = memo.get(parent);
         if (memoized !== undefined) {
           suffix = memoized;
+          didHitMemo = true;
           break;
         }
       }
@@ -713,7 +724,69 @@ function collectChangedParentContextsMemoized(
     contexts = {context: ownContext, next: contexts};
   }
 
+  if (__DEV__) {
+    if (didHitMemo) {
+      // Whenever a memoized result was reused, check it against the full walk
+      // and fall back to the full walk's result if they disagree, so that a
+      // memoization bug surfaces as a warning rather than a missed update.
+      const unmemoized = collectChangedParentContexts(workInProgress);
+      if (!areChangedContextsEqual(contexts, unmemoized)) {
+        if (!didWarnAboutContextPropagationMemoMismatch) {
+          didWarnAboutContextPropagationMemoMismatch = true;
+          console.error(
+            'React: memoized context propagation result did not match the ' +
+              'full walk (%s the NeedsPropagation subtree, %s). ' +
+              'This is a bug in React.',
+            returnFiberIsInside ? 'inside' : 'outside',
+            areChangedContextsEqualUnordered(contexts, unmemoized)
+              ? 'same contexts in a different order'
+              : 'different contexts',
+          );
+        }
+        contexts = unmemoized;
+      }
+    }
+  }
   return contexts;
+}
+
+// DEV only.
+function areChangedContextsEqual(
+  a: ChangedContexts | null,
+  b: ChangedContexts | null,
+): boolean {
+  while (a !== null && b !== null) {
+    if (a.context !== b.context) {
+      return false;
+    }
+    a = a.next;
+    b = b.next;
+  }
+  return a === null && b === null;
+}
+
+function areChangedContextsEqualUnordered(
+  a: ChangedContexts | null,
+  b: ChangedContexts | null,
+): boolean {
+  const setA: Set<ReactContext<mixed>> = new Set();
+  const setB: Set<ReactContext<mixed>> = new Set();
+  for (let node = a; node !== null; node = node.next) {
+    setA.add(node.context);
+  }
+  for (let node = b; node !== null; node = node.next) {
+    setB.add(node.context);
+  }
+  if (setA.size !== setB.size) {
+    return false;
+  }
+  let equal = true;
+  setA.forEach(context => {
+    if (!setB.has(context)) {
+      equal = false;
+    }
+  });
+  return equal;
 }
 
 function propagateParentContextChanges(
