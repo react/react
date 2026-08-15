@@ -1678,6 +1678,20 @@ export default class Store extends EventEmitter<{
             const element = this._idToElement.get(id);
 
             if (element === undefined) {
+              let isReferencedByStore = this._roots.includes(id);
+              if (!isReferencedByStore) {
+                this._idToElement.forEach(({children}) => {
+                  if (children.includes(id)) {
+                    isReferencedByStore = true;
+                  }
+                });
+              }
+
+              if (!isReferencedByStore) {
+                i += 1;
+                continue;
+              }
+
               // We should never reach this. This is a bug in the backend renderer.
               return this._throwAndEmitError(
                 Error(
