@@ -9,6 +9,7 @@
 
 import semver from 'semver';
 
+import {TREE_OPERATION_REMOVE} from 'react-devtools-shared/src/constants';
 import {getVersionedRenderImplementation} from './utils';
 import {ReactVersion} from '../../../../ReactVersions';
 
@@ -197,6 +198,50 @@ describe('Store', () => {
 
     parent.children.splice(firstChildIndex, 0, firstChildID);
     store.removeListener('error', errorListener);
+  });
+
+  // @reactVersion >= 18.0
+  it('ignores duplicate remove operations for nodes that are already gone', () => {
+    function Child() {
+      return null;
+    }
+    function Parent({showChild}) {
+      return showChild ? <Child /> : null;
+    }
+
+    act(() => render(<Parent showChild={true} />));
+
+    const parent = store.getElementAtIndex(0);
+    expect(parent.displayName).toBe('Parent');
+    const childID = parent.children[0];
+
+    let removeOperations = null;
+    const operationsListener = operations => {
+      if (operations.includes(TREE_OPERATION_REMOVE)) {
+        removeOperations = operations;
+      }
+    };
+    bridge.addListener('operations', operationsListener);
+    try {
+      act(() => render(<Parent showChild={false} />));
+    } finally {
+      bridge.removeListener('operations', operationsListener);
+    }
+
+    expect(removeOperations).not.toBeNull();
+    expect(store.containsElement(childID)).toBe(false);
+
+    const errorListener = jest.fn();
+    store.addListener('error', errorListener);
+    try {
+      expect(() => {
+        (bridge: any).emit('operations', removeOperations);
+      }).not.toThrow();
+      expect(errorListener).not.toHaveBeenCalled();
+      expect(store.containsElement(childID)).toBe(false);
+    } finally {
+      store.removeListener('error', errorListener);
+    }
   });
 
   // @reactVersion >= 18.0
