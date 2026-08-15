@@ -25,7 +25,7 @@ import {
   DehydratedFragment,
   SuspenseComponent,
 } from './ReactWorkTags';
-import {NoLanes, isSubsetOfLanes, mergeLanes} from './ReactFiberLane';
+import {isSubsetOfLanes, mergeLanes} from './ReactFiberLane';
 import {
   NoFlags,
   DidPropagateContext,
@@ -543,11 +543,10 @@ export function prepareToReadContext(
   currentlyRenderingFiber = workInProgress;
   lastContextDependency = null;
 
-  const dependencies = workInProgress.dependencies;
-  if (dependencies !== null) {
-    // Reset the work-in-progress list
-    dependencies.firstContext = null;
-  }
+  // Reset the work-in-progress list. The dependencies object may be shared
+  // with the current fiber, so we drop the reference rather than mutate it. A
+  // new object is created on the first `readContext` call.
+  workInProgress.dependencies = null;
 }
 
 export function readContext<T>(context: ReactContext<T>): T {
@@ -608,13 +607,11 @@ function readContextForConsumer<T>(
     consumer.dependencies = __DEV__
       ? // $FlowFixMe[incompatible-type]
         {
-          lanes: NoLanes,
           firstContext: contextItem,
           _debugThenableState: null,
         }
       : // $FlowFixMe[incompatible-type]
         {
-          lanes: NoLanes,
           firstContext: contextItem,
         };
     consumer.flags |= NeedsPropagation;
