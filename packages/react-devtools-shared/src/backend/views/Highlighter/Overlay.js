@@ -7,7 +7,11 @@
  * @flow
  */
 
-import {getElementDimensions, getNestedBoundingClientRect} from '../utils';
+import {
+  getEffectiveZoom,
+  getElementDimensions,
+  getNestedBoundingClientRect,
+} from '../utils';
 
 import type {Rect} from '../utils';
 import type Agent from 'react-devtools-shared/src/backend/agent';
@@ -208,6 +212,15 @@ export default class Overlay {
       this.rects.push(new OverlayRect(this.window.document, this.container));
     }
 
+    // CSS zoom inherited from the document scales the overlay's fixed-position
+    // coordinates, while getBoundingClientRect() coordinates are unscaled.
+    // Cancel the inherited zoom out so both coordinate systems match.
+    const inheritedZoom = getEffectiveZoom(this.window.document.body);
+    this.container.style.setProperty(
+      'zoom',
+      inheritedZoom !== 1 ? String(1 / inheritedZoom) : '1',
+    );
+
     const outerBox = {
       top: Number.POSITIVE_INFINITY,
       right: Number.NEGATIVE_INFINITY,
@@ -216,7 +229,13 @@ export default class Overlay {
     };
     elements.forEach((element, index) => {
       const box = getNestedBoundingClientRect(element, this.window);
-      const dims = getElementDimensions(element);
+      // Computed margin/border/padding values are reported unscaled, but the
+      // element renders them multiplied by its effective zoom. Scale them so
+      // the overlay bands match what is actually painted.
+      const dims = scaleElementDimensions(
+        getElementDimensions(element),
+        getEffectiveZoom(element),
+      );
 
       outerBox.top = Math.min(outerBox.top, box.top - dims.marginTop);
       outerBox.right = Math.max(
@@ -308,6 +327,26 @@ function findTipPos(
   left += 'px';
   return {
     style: {top, left},
+  };
+}
+
+function scaleElementDimensions(dims: any, zoom: number) {
+  if (zoom === 1) {
+    return dims;
+  }
+  return {
+    borderLeft: dims.borderLeft * zoom,
+    borderRight: dims.borderRight * zoom,
+    borderTop: dims.borderTop * zoom,
+    borderBottom: dims.borderBottom * zoom,
+    marginLeft: dims.marginLeft * zoom,
+    marginRight: dims.marginRight * zoom,
+    marginTop: dims.marginTop * zoom,
+    marginBottom: dims.marginBottom * zoom,
+    paddingLeft: dims.paddingLeft * zoom,
+    paddingRight: dims.paddingRight * zoom,
+    paddingTop: dims.paddingTop * zoom,
+    paddingBottom: dims.paddingBottom * zoom,
   };
 }
 
