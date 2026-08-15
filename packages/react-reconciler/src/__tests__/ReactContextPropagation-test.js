@@ -1114,6 +1114,10 @@ describe('ReactLazyContextPropagation', () => {
     expect(root).toMatchRenderedOutput('ContentB');
   });
 
+  // These exercise the shapes the memoized parent walk
+  // (enableMemoizedContextPropagation) has to get right, but they only assert
+  // which consumers re-render, which must be the same with the flag on or off.
+  // They are deliberately not gated so both code paths are covered.
   describe('memoized parent walk', () => {
     // These tests target the memoization of the return-path walk performed by
     // lazilyPropagateParentContextChanges. They use a shape where an update
