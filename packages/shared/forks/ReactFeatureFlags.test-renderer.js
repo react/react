@@ -96,6 +96,7 @@ export const enableReactTestRendererWarning: boolean = true;
 export const enableObjectFiber: boolean = false;
 
 export const enableOptimisticKey: boolean = false;
+export const enableMemoizedContextPropagation: boolean = false;
 export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
