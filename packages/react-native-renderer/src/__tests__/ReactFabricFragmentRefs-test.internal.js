@@ -91,6 +91,7 @@ describe('Fabric FragmentRefs', () => {
           // We only need to test that each child node is observed on insertion
           logs.push(entry.__internalInstanceHandle.pendingProps.nativeID);
         },
+        unobserve: () => {},
       };
       function Test({showB}) {
         const fragmentRef = React.useRef(null);
@@ -120,6 +121,51 @@ describe('Fabric FragmentRefs', () => {
         ReactFabric.render(<Test showB={true} />, 11, null, true);
       });
       expect(logs).toEqual(['B']);
+    });
+
+    // @gate enableFragmentRefs
+    it('unobserves children removed from the fragment', async () => {
+      const observed = [];
+      const observer = {
+        observe: entry => {
+          observed.push(entry.__internalInstanceHandle.pendingProps.nativeID);
+        },
+        unobserve: entry => {
+          const id = entry.__internalInstanceHandle.pendingProps.nativeID;
+          const index = observed.indexOf(id);
+          if (index >= 0) {
+            observed.splice(index, 1);
+          }
+        },
+      };
+      function Test({showB}) {
+        const fragmentRef = React.useRef(null);
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(observer);
+          const lastRefValue = fragmentRef.current;
+          return () => {
+            lastRefValue.unobserveUsing(observer);
+          };
+        }, []);
+        return (
+          <View nativeID="parent">
+            <React.Fragment ref={fragmentRef}>
+              <View nativeID="A" />
+              {showB && <View nativeID="B" />}
+            </React.Fragment>
+          </View>
+        );
+      }
+
+      await act(() => {
+        ReactFabric.render(<Test showB={true} />, 11, null, true);
+      });
+      expect(observed.slice().sort()).toEqual(['A', 'B']);
+
+      await act(() => {
+        ReactFabric.render(<Test showB={false} />, 11, null, true);
+      });
+      expect(observed).toEqual(['A']);
     });
   });
 });

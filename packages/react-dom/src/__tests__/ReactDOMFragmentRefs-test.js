@@ -1629,6 +1629,39 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
+    it('unobserves children removed from the fragment', async () => {
+      const observerMock = mockIntersectionObserver();
+      const fragmentRef = React.createRef();
+      const observer = new IntersectionObserver(() => {});
+
+      function Test({showB}) {
+        return (
+          <React.Fragment ref={fragmentRef}>
+            <div id="childA">A</div>
+            {showB && <div id="childB">B</div>}
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test showB={true} />));
+      fragmentRef.current.observeUsing(observer);
+      expect(
+        observerMock.observedTargets.map(target => target.id).sort(),
+      ).toEqual(['childA', 'childB']);
+
+      const removedChild = document.getElementById('childB');
+      await act(() => root.render(<Test showB={false} />));
+      expect(observerMock.observedTargets.map(target => target.id)).toEqual([
+        'childA',
+      ]);
+      expect(observerMock.observedTargets.includes(removedChild)).toBe(false);
+
+      fragmentRef.current.unobserveUsing(observer);
+      expect(observerMock.observedTargets).toEqual([]);
+    });
+
+    // @gate enableFragmentRefs
     it('warns when unobserveUsing() is called with an observer that was not observed', async () => {
       const fragmentRef = React.createRef();
       const observer = new IntersectionObserver(() => {});
