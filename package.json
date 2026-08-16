@@ -115,7 +115,7 @@
     "to-fast-properties": "^2.0.0",
     "tsup": "^8.4.0",
     "typescript": "^5.4.3",
-    "undici": "^5.28.4",
+    "undici": "^6.27.0",
     "web-streams-polyfill": "^3.1.1",
     "yargs": "^15.3.1"
   },
