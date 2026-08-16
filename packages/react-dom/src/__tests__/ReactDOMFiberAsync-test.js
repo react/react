@@ -777,6 +777,111 @@ describe('ReactDOMFiberAsync', () => {
     });
   });
 
+  // Regression test for https://github.com/facebook/react/issues/35966
+  it('popstate transition keeps previous UI when an already-revealed boundary re-suspends', async () => {
+    function makeRecord() {
+      let resolve;
+      const promise = new Promise(res => {
+        resolve = () => {
+          promise.status = 'fulfilled';
+          res();
+        };
+      });
+      promise.status = 'pending';
+      return {promise, resolve};
+    }
+
+    const records = {
+      '/a': makeRecord(),
+      '/b': makeRecord(),
+    };
+    // /b is ready immediately.
+    records['/b'].resolve();
+
+    function Page({path}) {
+      const record = records[path];
+      if (record.promise.status !== 'fulfilled') {
+        Scheduler.log(`Suspend! [${path}]`);
+        throw record.promise;
+      }
+      Scheduler.log(`Render [${path}]`);
+      return path;
+    }
+
+    function Fallback() {
+      Scheduler.log('Loading');
+      return 'Loading';
+    }
+
+    let navigate;
+    function App() {
+      const [path, setPath] = React.useState('/a');
+      React.useEffect(() => {
+        navigate = next => React.startTransition(() => setPath(next));
+        function onPopstate() {
+          React.startTransition(() => setPath('/a'));
+        }
+        window.addEventListener('popstate', onPopstate);
+        return () => window.removeEventListener('popstate', onPopstate);
+      });
+      return (
+        <React.Suspense fallback={<Fallback />}>
+          <Page path={path} />
+        </React.Suspense>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(<App />);
+    });
+    // Initial render: /a suspends, the boundary shows its fallback.
+    // (The extra Suspend! is from pre-warming the suspended tree.)
+    assertLog(['Suspend! [/a]', 'Loading', 'Suspend! [/a]']);
+    expect(container.textContent).toBe('Loading');
+    // Resolve /a so the boundary reveals real content.
+    await act(async () => {
+      records['/a'].resolve();
+    });
+    assertLog(['Render [/a]']);
+    expect(container.textContent).toBe('/a');
+
+    // Navigate forward to /b (already resolved).
+    await act(async () => {
+      navigate('/b');
+    });
+    assertLog(['Render [/b]']);
+    expect(container.textContent).toBe('/b');
+
+    // Invalidate /a so it will suspend again on the next render.
+    records['/a'] = makeRecord();
+
+    // Simulate pressing the browser back button.
+    await act(async () => {
+      const popStateEvent = new Event('popstate');
+      window.event = popStateEvent;
+      window.dispatchEvent(popStateEvent);
+      await waitForMicrotasks();
+      window.event = undefined;
+
+      // The transition back to /a suspends. Because /b was already revealed,
+      // the transition should keep the previous UI visible instead of
+      // replacing it with the Suspense fallback.
+      expect(container.textContent).toBe('/b');
+    });
+    // The fallback is re-rendered while prewarming, but it is never committed:
+    // the previous UI (/b) stays on screen.
+    assertLog(['Suspend! [/a]', 'Loading', 'Suspend! [/a]', 'Loading']);
+    expect(container.textContent).toBe('/b');
+
+    // Once /a's data resolves, the navigation completes and /a is shown.
+    await act(async () => {
+      records['/a'].resolve();
+    });
+    assertLog(['Render [/a]']);
+    expect(container.textContent).toBe('/a');
+  });
+
   it('regression: useDeferredValue in popState leads to infinite deferral loop', async () => {
     // At the time this test was written, it simulated a particular crash that
     // was happened due to a combination of very subtle implementation details.
