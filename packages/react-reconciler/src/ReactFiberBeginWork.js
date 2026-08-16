@@ -1168,6 +1168,13 @@ function updateActivityComponent(
           renderLanes,
         );
         workInProgress.lanes = laneToLanes(OffscreenLane);
+        // This tree hasn't been mounted yet so there are no baseLanes to carry over.
+        const nextState: OffscreenState = {
+          baseLanes: NoLanes,
+          cachePool: null,
+        };
+        primaryChildFragment.memoizedState = nextState;
+
         return bailoutOffscreenComponent(null, primaryChildFragment);
       } else {
         // We must push the suspense handler context *before* attempting to

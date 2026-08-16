@@ -70,6 +70,7 @@ import {
   getFragmentInstanceOrTextInstanceSiblings,
   traverseFragmentInstancesAndTextInstancesDeeply,
   fiberIsPortaledIntoHost,
+  getFragmentPortalContainerInfo,
   isFiberContainedByFragment,
   isFragmentContainedByFiber,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
@@ -2987,6 +2988,9 @@ type StoredEventListener = {
   type: string,
   listener: EventListener,
   optionsOrUseCapture: void | EventListenerOptionsOrUseCapture,
+  // When once:true, a wrapper that removes the fragment listener after the
+  // first fire. Otherwise the same as listener.
+  attachedListener: EventListener,
 };
 
 export type FragmentInstanceType = {
@@ -3041,13 +3045,37 @@ FragmentInstance.prototype.addEventListener = function (
   const isNewEventListener =
     indexOfEventListener(listeners, type, listener, optionsOrUseCapture) === -1;
   if (isNewEventListener) {
-    listeners.push({type, listener, optionsOrUseCapture});
+    const fragmentInstance = this;
+    let attachedListener = listener;
+    if (isOnceOption(optionsOrUseCapture)) {
+      // once is fragment-scoped: the first fire on any child removes this
+      // listener from the fragment and every host child.
+      attachedListener = function (this: EventTarget, event: Event) {
+        fragmentInstance.removeEventListener(
+          type,
+          listener,
+          optionsOrUseCapture,
+        );
+        if (typeof listener === 'function') {
+          listener.call(this, event);
+        } else {
+          listener.handleEvent(event);
+        }
+      };
+    }
+    const attachOptions = getAttachOptions(optionsOrUseCapture);
+    listeners.push({
+      type,
+      listener,
+      optionsOrUseCapture,
+      attachedListener,
+    });
     traverseFragmentInstancesAndTextInstances(
       this._fragmentFiber,
       addEventListenerToChild,
       type,
-      listener,
-      optionsOrUseCapture,
+      attachedListener,
+      attachOptions,
     );
   }
   this._eventListeners = listeners;
@@ -3073,24 +3101,26 @@ FragmentInstance.prototype.removeEventListener = function (
   if (listeners === null) {
     return;
   }
-  if (typeof listeners !== 'undefined' && listeners.length > 0) {
-    traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
-      removeEventListenerFromChild,
-      type,
-      listener,
-      optionsOrUseCapture,
-    );
-    const index = indexOfEventListener(
-      listeners,
-      type,
-      listener,
-      optionsOrUseCapture,
-    );
-    if (this._eventListeners !== null) {
-      this._eventListeners.splice(index, 1);
-    }
+  const index = indexOfEventListener(
+    listeners,
+    type,
+    listener,
+    optionsOrUseCapture,
+  );
+  if (index === -1) {
+    return;
   }
+  const {attachedListener, optionsOrUseCapture: storedOptions} =
+    listeners[index];
+  const attachOptions = getAttachOptions(storedOptions);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    removeEventListenerFromChild,
+    type,
+    attachedListener,
+    attachOptions,
+  );
+  listeners.splice(index, 1);
 };
 function removeEventListenerFromChild(
   child: Fiber,
@@ -3101,6 +3131,22 @@ function removeEventListenerFromChild(
   const instance = getInstanceFromHostFiber<Instance | TextInstance>(child);
   instance.removeEventListener(type, listener, optionsOrUseCapture);
   return false;
+}
+function isOnceOption(opts: ?EventListenerOptionsOrUseCapture): boolean {
+  return opts != null && typeof opts !== 'boolean' && opts.once === true;
+}
+function getAttachOptions(
+  opts: void | EventListenerOptionsOrUseCapture,
+): void | EventListenerOptionsOrUseCapture {
+  // Strip once when attaching to host children; Fragment owns once semantics.
+  if (opts == null || typeof opts === 'boolean' || opts.once !== true) {
+    return opts;
+  }
+  return {
+    capture: opts.capture,
+    passive: opts.passive,
+    signal: opts.signal,
+  };
 }
 function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
@@ -3156,19 +3202,34 @@ FragmentInstance.prototype.dispatchEvent = function (
     (eventListeners !== null && eventListeners.length > 0) ||
     !event.bubbles
   ) {
-    const temp = document.createTextNode('');
+    // The temporary node stands in for the fragment's position so that its own
+    // listeners fire before the event propagates to the parent. A Document can
+    // only hold comments and processing instructions alongside its
+    // documentElement, so a Text node would be an invalid child there.
+    const temp =
+      parentHostInstance.nodeType === DOCUMENT_NODE
+        ? (parentHostInstance as any as Document).createComment('')
+        : document.createTextNode('');
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.addEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.addEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.appendChild(temp);
     const cancelable = temp.dispatchEvent(event);
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.removeEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.removeEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.removeChild(temp);
@@ -3225,7 +3286,6 @@ function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
-  // Early exit if activeElement is not within the fragment's parent
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
     this._fragmentFiber,
   );
@@ -3240,13 +3300,9 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
     parentInstanceOrContainer,
   );
   const activeElement = ownerDocument.activeElement;
-  if (
-    activeElement === null ||
-    !parentInstanceOrContainer.contains(activeElement)
-  ) {
+  if (activeElement === null) {
     return;
   }
-
   traverseFragmentInstancesAndTextInstances(
     this._fragmentFiber,
     blurActiveElementWithinFragment,
@@ -3426,9 +3482,20 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   );
 
   if (children.length === 0) {
+    // Match non-empty CDP: when portaled, position against the portal
+    // container rather than the React host parent.
+    let emptyParentHostInstance = parentHostInstance;
+    if (fiberIsPortaledIntoHost(this._fragmentFiber)) {
+      const portalContainer = getFragmentPortalContainerInfo(
+        this._fragmentFiber,
+      );
+      if (portalContainer != null) {
+        emptyParentHostInstance = portalContainer;
+      }
+    }
     return compareDocumentPositionForEmptyFragment(
       this._fragmentFiber,
-      parentHostInstance,
+      emptyParentHostInstance,
       otherNode,
       getInstanceFromHostFiber,
     );
@@ -3531,10 +3598,13 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document or body element
+      // otherFiber could be null if its the document, documentElement, or body
       const ownerDocument = otherNode.ownerDocument;
-      // $FlowFixMe[invalid-compare]
-      return otherNode === ownerDocument || otherNode === ownerDocument.body;
+      return (
+        (otherNode as Instance | Document) === ownerDocument ||
+        otherNode === ownerDocument.documentElement ||
+        otherNode === ownerDocument.body
+      );
     }
     return isFragmentContainedByFiber(fragmentFiber, otherFiber);
   }
@@ -3603,12 +3673,6 @@ if (enableFragmentRefsScrollIntoView) {
         : hostSiblings[0] || hostSiblings[1];
 
       if (targetFiber === null) {
-        if (__DEV__) {
-          console.warn(
-            'You are attempting to scroll a FragmentInstance that has no ' +
-              'children, siblings, or parent. No scroll was performed.',
-          );
-        }
         return;
       }
       // For text node siblings, use Range API to scroll to their position
@@ -3717,17 +3781,22 @@ export function commitNewChildToFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  const eventListeners = fragmentInstance._eventListeners;
+  if (eventListeners !== null) {
+    for (let i = 0; i < eventListeners.length; i++) {
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.addEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
+    }
+  }
+  // Observers and fragment handles only apply to element children.
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  const eventListeners = fragmentInstance._eventListeners;
-  if (eventListeners !== null) {
-    for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.addEventListener(type, listener, optionsOrUseCapture);
-    }
-  }
   if (fragmentInstance._observers !== null) {
     fragmentInstance._observers.forEach(observer => {
       observer.observe(instance);
@@ -3742,17 +3811,21 @@ export function deleteChildFromFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  const eventListeners = fragmentInstance._eventListeners;
+  if (eventListeners !== null) {
+    for (let i = 0; i < eventListeners.length; i++) {
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.removeEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
+    }
+  }
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  const eventListeners = fragmentInstance._eventListeners;
-  if (eventListeners !== null) {
-    for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      instance.removeEventListener(type, listener, optionsOrUseCapture);
-    }
-  }
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {
       instance.reactFragments.delete(fragmentInstance);

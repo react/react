@@ -232,7 +232,7 @@ export const disableInputAttributeSyncing: boolean = false;
 export const disableTextareaChildren: boolean = false;
 
 // Disables children for <textarea> elements
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 // -----------------------------------------------------------------------------
 // Debugging and DevTools
