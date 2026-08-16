@@ -23,7 +23,7 @@ export default function ProfilingNotSupported(): React.Node {
         Learn more at{' '}
         <a
           className={styles.Link}
-          href="https://fb.me/react-devtools-profiling"
+          href="https://react.dev/link/profiling"
           rel="noopener noreferrer"
           target="_blank">
           reactjs.org/link/profiling
@@ -33,3 +33,4 @@ export default function ProfilingNotSupported(): React.Node {
     </div>
   );
 }
+
