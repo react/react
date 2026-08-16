@@ -435,6 +435,54 @@ function lowerStatement(
           },
         });
         /*
+         * When we hoist a function declaration whose body calls another
+         * function declaration from the same block, the callee must be
+         * hoisted too. The compiler rewrites a `function foo()` whose
+         * value is captured by memoization into a `const foo = ...`
+         * binding initialized at its lexical position. If the caller
+         * runs ahead of the callee's lexical position (because it was
+         * hoisted, or invoked from a hoisted function), the callee's
+         * binding is still in the TDZ at the call site. See #33689.
+         */
+        const seenFnBodies = new Set<NodePath>();
+        const transitiveQueue: Array<NodePath<t.Identifier>> =
+          Array.from(willHoist);
+        while (transitiveQueue.length > 0) {
+          const ref = transitiveQueue.pop()!;
+          const refBinding = ref.scope.getBinding(ref.node.name);
+          if (
+            refBinding == null ||
+            refBinding.kind !== 'hoisted' ||
+            !refBinding.path.isFunctionDeclaration() ||
+            seenFnBodies.has(refBinding.path)
+          ) {
+            continue;
+          }
+          seenFnBodies.add(refBinding.path);
+          refBinding.path.traverse({
+            Identifier(id: NodePath<t.Identifier>) {
+              const id2 = id;
+              if (
+                !id2.isReferencedIdentifier() &&
+                // isReferencedIdentifier is broken and returns false for reassignments
+                id.parent.type !== 'AssignmentExpression'
+              ) {
+                return;
+              }
+              const innerBinding = id.scope.getBinding(id.node.name);
+              if (
+                innerBinding != null &&
+                innerBinding.kind === 'hoisted' &&
+                hoistableIdentifiers.has(innerBinding.identifier) &&
+                !willHoist.has(id)
+              ) {
+                willHoist.add(id);
+                transitiveQueue.push(id);
+              }
+            },
+          });
+        }
+        /*
          * After visiting the declaration, hoisting is no longer required
          */
         s.traverse({
