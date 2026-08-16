@@ -3106,4 +3106,106 @@ describe('ReactDOMInput', () => {
     expect(log).toEqual(['']);
     expect(node.value).toBe('a');
   });
+
+  it('should not perform unnecessary DOM mutations for unchanged inputs', async () => {
+    // Regression test for https://github.com/facebook/react/issues/36229
+    // When updating a parent that contains many inputs, only the input whose
+    // props actually changed should get DOM writes.
+    function App({value}) {
+      return (
+        <div>
+          <input type="text" name="first" value={value} onChange={() => {}} />
+          <input
+            type="text"
+            name="second"
+            value="unchanged"
+            onChange={() => {}}
+          />
+        </div>
+      );
+    }
+
+    await act(() => {
+      root.render(<App value="initial" />);
+    });
+
+    const firstInput = container.querySelectorAll('input')[0];
+    const secondInput = container.querySelectorAll('input')[1];
+
+    expect(firstInput.value).toBe('initial');
+    expect(secondInput.value).toBe('unchanged');
+
+    // Install setters on the second (unchanged) input that throw if called.
+    // These properties should not be written to because nothing changed.
+    const originalNameDescriptor = Object.getOwnPropertyDescriptor(
+      secondInput,
+      'name',
+    ) || {value: secondInput.name, writable: true, configurable: true};
+
+    Object.defineProperty(secondInput, 'name', {
+      get() {
+        return originalNameDescriptor.value;
+      },
+      set(v) {
+        if (v !== originalNameDescriptor.value) {
+          throw new Error(
+            `name was assigned "${v}", but it should not have been mutated!`,
+          );
+        }
+        // Allow same-value assignments (shouldn't happen, but don't
+        // fail the test for a no-op write).
+        originalNameDescriptor.value = v;
+      },
+      configurable: true,
+    });
+
+    // Update only the first input's value
+    await act(() => {
+      root.render(<App value="updated" />);
+    });
+
+    expect(firstInput.value).toBe('updated');
+    expect(secondInput.value).toBe('unchanged');
+    expect(secondInput.name).toBe('second');
+  });
+
+  it('should not write type or name when they have not changed', async () => {
+    await act(() => {
+      root.render(
+        <input type="text" name="foo" value="bar" onChange={() => {}} />,
+      );
+    });
+
+    const node = container.firstChild;
+    expect(node.type).toBe('text');
+    expect(node.name).toBe('foo');
+
+    // Override type setter to detect writes
+    let typeWriteCount = 0;
+    const origType = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'type',
+    );
+    Object.defineProperty(node, 'type', {
+      get() {
+        return origType.get.call(node);
+      },
+      set(v) {
+        typeWriteCount++;
+        origType.set.call(node, v);
+      },
+      configurable: true,
+    });
+
+    // Re-render with the same props (e.g. parent re-rendered)
+    await act(() => {
+      root.render(
+        <input type="text" name="foo" value="bar" onChange={() => {}} />,
+      );
+    });
+
+    expect(typeWriteCount).toBe(0);
+    expect(node.type).toBe('text');
+    expect(node.name).toBe('foo');
+  });
 });
