@@ -182,8 +182,8 @@ export function codegenFunction(
       const index = cx.synthesizeName('$i');
       preface.push(
         t.ifStatement(
-          t.binaryExpression(
-            '!==',
+          codegenNegatedComparison(
+            cx,
             t.memberExpression(
               t.identifier(cx.synthesizeName('$')),
               t.numericLiteral(fastRefreshState.cacheIndex),
@@ -557,6 +557,23 @@ function codegenBlockNoReset(
   return t.blockStatement(statements);
 }
 
+function codegenNegatedComparison(
+  cx: Context,
+  left: t.Expression,
+  right: t.Expression,
+): t.Expression {
+  if (cx.env.config.enableObjectIsComparison) {
+    const isName = cx.env.programContext.addProgramConstant('is', () =>
+      t.memberExpression(t.identifier('Object'), t.identifier('is')),
+    );
+    return t.unaryExpression(
+      '!',
+      t.callExpression(t.identifier(isName), [left, right]),
+    );
+  }
+  return t.binaryExpression('!==', left, right);
+}
+
 function codegenReactiveScope(
   cx: Context,
   statements: Array<t.Statement>,
@@ -574,8 +591,8 @@ function codegenReactiveScope(
 
   for (const dep of [...scope.dependencies].sort(compareScopeDependency)) {
     const index = cx.nextCacheIndex;
-    const comparison = t.binaryExpression(
-      '!==',
+    const comparison = codegenNegatedComparison(
+      cx,
       t.memberExpression(
         t.identifier(cx.synthesizeName('$')),
         t.numericLiteral(index),
@@ -720,8 +737,8 @@ function codegenReactiveScope(
     const name: ValidIdentifierName = earlyReturnValue.value.name.value;
     statements.push(
       t.ifStatement(
-        t.binaryExpression(
-          '!==',
+        codegenNegatedComparison(
+          cx,
           t.identifier(name),
           t.callExpression(
             t.memberExpression(t.identifier('Symbol'), t.identifier('for')),
