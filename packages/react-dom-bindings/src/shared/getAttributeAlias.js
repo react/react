@@ -54,7 +54,7 @@ const aliases = new Map([
   ['overlinePosition', 'overline-position'],
   ['overlineThickness', 'overline-thickness'],
   ['paintOrder', 'paint-order'],
-  ['panose-1', 'panose-1'],
+  ['panose1', 'panose-1'],
   ['pointerEvents', 'pointer-events'],
   ['renderingIntent', 'rendering-intent'],
   ['shapeRendering', 'shape-rendering'],
