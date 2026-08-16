@@ -961,72 +961,89 @@ fn lower_expression(
             let loc = convert_opt_loc(&update.base.loc);
             match update.argument.as_ref() {
                 Expression::MemberExpression(member) => {
-                    let binary_op = match &update.operator {
-                        react_compiler_ast::operators::UpdateOperator::Increment => {
-                            BinaryOperator::Add
-                        }
-                        react_compiler_ast::operators::UpdateOperator::Decrement => {
-                            BinaryOperator::Subtract
-                        }
-                    };
-                    // Use the member expression's loc (not the update expression's)
-                    // to match TS behavior where the inner operations use leftExpr.node.loc
                     let member_loc = convert_opt_loc(&member.base.loc);
                     let lowered = lower_member_expression(builder, member)?;
                     let object = lowered.object;
                     let lowered_property = lowered.property;
-                    let prev_value = lower_value_to_temporary(builder, lowered.value)?;
-
-                    let one = lower_value_to_temporary(
+                    let member_value = lower_value_to_temporary(builder, lowered.value)?;
+                    // Preserve native update coercion (including BigInt) and the expression result.
+                    let update_target = build_temporary_place(builder, member_loc.clone());
+                    promote_temporary(builder, update_target.identifier);
+                    lower_value_to_temporary(
                         builder,
-                        InstructionValue::Primitive {
-                            value: PrimitiveValue::Number(FloatValue::new(1.0)),
-                            loc: None,
-                        },
-                    )?;
-                    let updated = lower_value_to_temporary(
-                        builder,
-                        InstructionValue::BinaryExpression {
-                            operator: binary_op,
-                            left: prev_value.clone(),
-                            right: one,
+                        InstructionValue::StoreLocal {
+                            lvalue: LValue {
+                                kind: InstructionKind::Const,
+                                place: update_target.clone(),
+                            },
+                            value: member_value,
+                            type_annotation: None,
                             loc: member_loc.clone(),
                         },
                     )?;
 
-                    // Store back using the property from the lowered member expression.
-                    // For prefix, the result is the PropertyStore/ComputedStore lvalue
-                    // (matching TS which uses newValuePlace). For postfix, it's prev_value.
-                    let new_value_place = match lowered_property {
-                        MemberProperty::Literal(prop_literal) => lower_value_to_temporary(
-                            builder,
-                            InstructionValue::PropertyStore {
-                                object,
-                                property: prop_literal,
-                                value: updated.clone(),
-                                loc: member_loc,
+                    let operation = convert_update_operator(&update.operator);
+                    let update_value = lower_value_to_temporary(
+                        builder,
+                        if update.prefix {
+                            InstructionValue::PrefixUpdate {
+                                lvalue: update_target.clone(),
+                                operation,
+                                value: update_target.clone(),
+                                loc: loc.clone(),
+                            }
+                        } else {
+                            InstructionValue::PostfixUpdate {
+                                lvalue: update_target.clone(),
+                                operation,
+                                value: update_target.clone(),
+                                loc: loc.clone(),
+                            }
+                        },
+                    )?;
+                    let result = build_temporary_place(builder, loc.clone());
+                    promote_temporary(builder, result.identifier);
+                    lower_value_to_temporary(
+                        builder,
+                        InstructionValue::StoreLocal {
+                            lvalue: LValue {
+                                kind: InstructionKind::Const,
+                                place: result.clone(),
                             },
-                        )?,
-                        MemberProperty::Computed(prop_place) => lower_value_to_temporary(
-                            builder,
-                            InstructionValue::ComputedStore {
-                                object,
-                                property: prop_place,
-                                value: updated.clone(),
-                                loc: member_loc,
-                            },
-                        )?,
-                    };
+                            value: update_value,
+                            type_annotation: None,
+                            loc: loc.clone(),
+                        },
+                    )?;
 
-                    // Return previous for postfix, newValuePlace for prefix
-                    let result_place = if update.prefix {
-                        new_value_place
-                    } else {
-                        prev_value
-                    };
+                    match lowered_property {
+                        MemberProperty::Literal(prop_literal) => {
+                            lower_value_to_temporary(
+                                builder,
+                                InstructionValue::PropertyStore {
+                                    object,
+                                    property: prop_literal,
+                                    value: update_target,
+                                    loc: member_loc,
+                                },
+                            )?;
+                        }
+                        MemberProperty::Computed(prop_place) => {
+                            lower_value_to_temporary(
+                                builder,
+                                InstructionValue::ComputedStore {
+                                    object,
+                                    property: prop_place,
+                                    value: update_target,
+                                    loc: member_loc,
+                                },
+                            )?;
+                        }
+                    }
+
                     Ok(InstructionValue::LoadLocal {
-                        place: result_place.clone(),
-                        loc: result_place.loc.clone(),
+                        place: result.clone(),
+                        loc: result.loc,
                     })
                 }
                 Expression::Identifier(ident) => {
