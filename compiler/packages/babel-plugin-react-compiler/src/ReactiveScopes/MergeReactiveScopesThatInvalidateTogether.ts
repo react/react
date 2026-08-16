@@ -78,7 +78,7 @@ import {
  * Note that PropagateScopeDependencies propagates scope dependencies upwards. This ensures
  * that parent scopes have the union of their own direct dependencies as well as those of
  * their (transitive) children. As a result nested scopes may have the same or fewer
- * dependencies than their parents, but not more dependencies. If they have fewer dependncies,
+ * dependencies than their parents, but not more dependencies. If they have fewer dependencies,
  * it means that the inner scope does not always invalidate with the parent and we should not
  * flatten. If they inner scope has the exact same dependencies, however, then it's always
  * better to flatten.
