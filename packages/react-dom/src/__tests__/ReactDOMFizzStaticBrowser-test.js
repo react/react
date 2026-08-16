@@ -1162,7 +1162,9 @@ describe('ReactDOMFizzStaticBrowser', () => {
     });
     await serverAct(() => controller.abort());
     const prerendered = await pendingResult;
-    expect(prerendered.postponed).not.toBe(null);
+    expect(() => prerendered.postponed).toThrow(
+      'Postponed state is not finalized. Flush the prelude stream to finalize the state.',
+    );
 
     const shellHTML = await readContent(prerendered.prelude);
 
