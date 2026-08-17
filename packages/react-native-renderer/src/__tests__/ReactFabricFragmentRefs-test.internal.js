@@ -127,19 +127,20 @@ describe('Fabric FragmentRefs', () => {
     it('unobserves children removed from the fragment', async () => {
       const observed = [];
       const observer = {
-        observe: entry => {
-          observed.push(entry.__internalInstanceHandle.pendingProps.nativeID);
+        observe: instance => {
+          observed.push(instance);
         },
-        unobserve: entry => {
-          const id = entry.__internalInstanceHandle.pendingProps.nativeID;
-          const index = observed.indexOf(id);
+        unobserve: instance => {
+          const index = observed.indexOf(instance);
           if (index >= 0) {
             observed.splice(index, 1);
           }
         },
       };
+      const fragmentRef = React.createRef();
+      const childARef = React.createRef();
+      const childBRef = React.createRef();
       function Test({showB}) {
-        const fragmentRef = React.useRef(null);
         React.useEffect(() => {
           fragmentRef.current.observeUsing(observer);
           const lastRefValue = fragmentRef.current;
@@ -148,10 +149,10 @@ describe('Fabric FragmentRefs', () => {
           };
         }, []);
         return (
-          <View nativeID="parent">
+          <View>
             <React.Fragment ref={fragmentRef}>
-              <View nativeID="A" />
-              {showB && <View nativeID="B" />}
+              <View ref={childARef} />
+              {showB && <View ref={childBRef} />}
             </React.Fragment>
           </View>
         );
@@ -160,12 +161,15 @@ describe('Fabric FragmentRefs', () => {
       await act(() => {
         ReactFabric.render(<Test showB={true} />, 11, null, true);
       });
-      expect(observed.slice().sort()).toEqual(['A', 'B']);
+      const childA = childARef.current;
+      const childB = childBRef.current;
+      expect(observed).toEqual([childA, childB]);
 
       await act(() => {
         ReactFabric.render(<Test showB={false} />, 11, null, true);
       });
-      expect(observed).toEqual(['A']);
+      expect(observed).toEqual([childA]);
+      expect(observed.includes(childB)).toBe(false);
     });
   });
 });

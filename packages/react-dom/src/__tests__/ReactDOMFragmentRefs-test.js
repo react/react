@@ -1632,13 +1632,15 @@ describe('FragmentRefs', () => {
     it('unobserves children removed from the fragment', async () => {
       const observerMock = mockIntersectionObserver();
       const fragmentRef = React.createRef();
+      const childARef = React.createRef();
+      const childBRef = React.createRef();
       const observer = new IntersectionObserver(() => {});
 
       function Test({showB}) {
         return (
           <React.Fragment ref={fragmentRef}>
-            <div id="childA">A</div>
-            {showB && <div id="childB">B</div>}
+            <div ref={childARef}>A</div>
+            {showB && <div ref={childBRef}>B</div>}
           </React.Fragment>
         );
       }
@@ -1646,16 +1648,14 @@ describe('FragmentRefs', () => {
       const root = ReactDOMClient.createRoot(container);
       await act(() => root.render(<Test showB={true} />));
       fragmentRef.current.observeUsing(observer);
-      expect(
-        observerMock.observedTargets.map(target => target.id).sort(),
-      ).toEqual(['childA', 'childB']);
 
-      const removedChild = document.getElementById('childB');
+      const childA = childARef.current;
+      const childB = childBRef.current;
+      expect(observerMock.observedTargets).toEqual([childA, childB]);
+
       await act(() => root.render(<Test showB={false} />));
-      expect(observerMock.observedTargets.map(target => target.id)).toEqual([
-        'childA',
-      ]);
-      expect(observerMock.observedTargets.includes(removedChild)).toBe(false);
+      expect(observerMock.observedTargets).toEqual([childA]);
+      expect(observerMock.observedTargets.includes(childB)).toBe(false);
 
       fragmentRef.current.unobserveUsing(observer);
       expect(observerMock.observedTargets).toEqual([]);
