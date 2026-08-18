@@ -2446,4 +2446,43 @@ describe('ReactFlightDOMNode', () => {
     expect(Buffer.isBuffer(result.font)).toBe(false);
     expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
   });
+
+  it('detaches the abort listener from a composite signal once the prerender completes', async () => {
+    // A composite signal from AbortSignal.any() is retained by the runtime for
+    // as long as it has an abort listener attached, so a listener left behind
+    // by a completed render keeps that render reachable for the lifetime of the
+    // source signals.
+    //
+    // React bounds its listener with a lifetime signal, so the runtime removes
+    // the listener rather than React calling removeEventListener. This test
+    // observes the registration itself through a Node API, which is the only
+    // way to see that removal. The suites that run under jsdom assert on the
+    // lifetime signal instead.
+    const {getEventListeners} = require('node:events');
+
+    const outer = new AbortController();
+    const timeout = new AbortController();
+    const composite = AbortSignal.any([outer.signal, timeout.signal]);
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    const {prelude} = await serverAct(() =>
+      ReactServerDOMStaticServer.prerenderToNodeStream(<App />, webpackMap, {
+        signal: composite,
+      }),
+    );
+    expect(getEventListeners(composite, 'abort')).toHaveLength(1);
+
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          prelude.resume();
+          prelude.on('end', resolve);
+        }),
+    );
+
+    expect(getEventListeners(composite, 'abort')).toHaveLength(0);
+  });
 });

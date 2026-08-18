@@ -3359,6 +3359,152 @@ describe('ReactFlightDOMBrowser', () => {
     );
   });
 
+  describe('abort signal lifetime', () => {
+    // Collects the lifetime signal that React bounds each abort listener with.
+    // React passes that signal to addEventListener instead of calling
+    // removeEventListener, so the runtime performs the removal and nothing here
+    // observes it directly. An aborted lifetime is what shows the listener is
+    // gone. ReactFlightDOMNode-test asserts the removal itself, which needs a
+    // Node API that jsdom does not have.
+    function trackAbortListenerLifetimes(signal) {
+      const lifetimes = [];
+      const add = signal.addEventListener.bind(signal);
+      signal.addEventListener = (type, listener, options) => {
+        if (type === 'abort') {
+          lifetimes.push(options.signal);
+        }
+        return add(type, listener, options);
+      };
+      return lifetimes;
+    }
+
+    async function drain(stream) {
+      const reader = stream.getReader();
+      while (true) {
+        const {done} = await reader.read();
+        if (done) {
+          return;
+        }
+      }
+    }
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    it('detaches the listener when a prerender completes', async () => {
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const {prelude} = await serverAct(() =>
+        ReactServerDOMStaticServer.prerender(<App />, webpackMap, {
+          signal: controller.signal,
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => drain(prelude));
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when a render completes', async () => {
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<App />, webpackMap, {
+          signal: controller.signal,
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => drain(stream));
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when the signal aborts mid-render', async () => {
+      let resolveGreeting;
+      const greetingPromise = new Promise(resolve => {
+        resolveGreeting = resolve;
+      });
+
+      async function Greeting() {
+        await greetingPromise;
+        return 'hello world';
+      }
+
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const {pendingResult} = await serverAct(async () => {
+        return {
+          pendingResult: ReactServerDOMStaticServer.prerender(
+            <Greeting />,
+            webpackMap,
+            {signal: controller.signal, onError() {}},
+          ),
+        };
+      });
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      controller.abort('boom');
+      resolveGreeting();
+      await serverAct(() => pendingResult);
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when the stream is cancelled', async () => {
+      let resolveGreeting;
+      const greetingPromise = new Promise(resolve => {
+        resolveGreeting = resolve;
+      });
+
+      async function Greeting() {
+        await greetingPromise;
+        return 'hello world';
+      }
+
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<Greeting />, webpackMap, {
+          signal: controller.signal,
+          onError() {},
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => stream.cancel('boom'));
+      resolveGreeting();
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('attaches no listener when the signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort('boom');
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      await serverAct(() =>
+        ReactServerDOMStaticServer.prerender(<App />, webpackMap, {
+          signal: controller.signal,
+          onError() {},
+        }),
+      );
+
+      expect(lifetimes).toHaveLength(0);
+    });
+
+    // The composite-signal case lives in ReactFlightDOMNode-test, because
+    // jsdom's AbortSignal has no AbortSignal.any.
+  });
+
   describe('with console.createTask', () => {
     // Stands in for what a browser console does with fake tasks: whatever runs
     // inside a task is shown under that task's name in the async stack. This is
