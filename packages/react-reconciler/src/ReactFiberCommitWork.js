@@ -1570,16 +1570,20 @@ function commitDeletionEffectsOnFiber(
       if (!offscreenSubtreeWasHidden) {
         safelyDetachRef(deletedFiber, nearestMountedAncestor);
       }
-      if (
-        enableFragmentRefs &&
-        (deletedFiber.tag === HostComponent ||
-          (enableFragmentRefsTextNodes && deletedFiber.tag === HostText))
-      ) {
+      if (enableFragmentRefs) {
         commitFragmentInstanceDeletionEffects(deletedFiber);
       }
       // Intentional fallthrough to next branch
     }
     case HostText: {
+      if (
+        enableFragmentRefs &&
+        enableFragmentRefsTextNodes &&
+        // HostComponent falls through into this case.
+        deletedFiber.tag === HostText
+      ) {
+        commitFragmentInstanceDeletionEffects(deletedFiber);
+      }
       // We only need to remove the nearest host child. Set the host parent
       // to `null` on the stack to indicate that nested children don't
       // need to be removed.
@@ -3152,9 +3156,10 @@ function disappearLayoutEffects(
 
       if (
         enableFragmentRefs &&
+        // HostHoistable shares this case via fallthrough but must not be
+        // attributed to fragment instances. HostText has its own case below.
         (finishedWork.tag === HostComponent ||
-          finishedWork.tag === HostSingleton ||
-          (enableFragmentRefsTextNodes && finishedWork.tag === HostText))
+          finishedWork.tag === HostSingleton)
       ) {
         commitFragmentInstanceDeletionEffects(finishedWork);
       }
@@ -3163,6 +3168,12 @@ function disappearLayoutEffects(
         finishedWork,
         layoutEffectTraversalFlags,
       );
+      break;
+    }
+    case HostText: {
+      if (enableFragmentRefs && enableFragmentRefsTextNodes) {
+        commitFragmentInstanceDeletionEffects(finishedWork);
+      }
       break;
     }
     case HostHoistable: {
@@ -3363,7 +3374,6 @@ function reappearLayoutEffects(
       // Fallthrough
     }
     case HostComponent: {
-      // TODO: Enable HostText for RN
       if (
         enableFragmentRefs &&
         (finishedWork.tag === HostComponent ||
@@ -3387,6 +3397,12 @@ function reappearLayoutEffects(
 
       // TODO: Check flags & Ref
       safelyAttachRef(finishedWork, finishedWork.return);
+      break;
+    }
+    case HostText: {
+      if (enableFragmentRefs && enableFragmentRefsTextNodes) {
+        commitFragmentInstanceInsertionEffects(finishedWork);
+      }
       break;
     }
     case HostHoistable: {

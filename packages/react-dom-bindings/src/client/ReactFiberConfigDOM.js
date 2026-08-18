@@ -2988,6 +2988,9 @@ type StoredEventListener = {
   type: string,
   listener: EventListener,
   optionsOrUseCapture: void | EventListenerOptionsOrUseCapture,
+  // When once:true, a wrapper that removes the fragment listener after the
+  // first fire. Otherwise the same as listener.
+  attachedListener: EventListener,
 };
 
 export type FragmentInstanceType = {
@@ -3042,13 +3045,37 @@ FragmentInstance.prototype.addEventListener = function (
   const isNewEventListener =
     indexOfEventListener(listeners, type, listener, optionsOrUseCapture) === -1;
   if (isNewEventListener) {
-    listeners.push({type, listener, optionsOrUseCapture});
+    const fragmentInstance = this;
+    let attachedListener = listener;
+    if (isOnceOption(optionsOrUseCapture)) {
+      // once is fragment-scoped: the first fire on any child removes this
+      // listener from the fragment and every host child.
+      attachedListener = function (this: EventTarget, event: Event) {
+        fragmentInstance.removeEventListener(
+          type,
+          listener,
+          optionsOrUseCapture,
+        );
+        if (typeof listener === 'function') {
+          listener.call(this, event);
+        } else {
+          listener.handleEvent(event);
+        }
+      };
+    }
+    const attachOptions = getAttachOptions(optionsOrUseCapture);
+    listeners.push({
+      type,
+      listener,
+      optionsOrUseCapture,
+      attachedListener,
+    });
     traverseFragmentInstancesAndTextInstances(
       this._fragmentFiber,
       addEventListenerToChild,
       type,
-      listener,
-      optionsOrUseCapture,
+      attachedListener,
+      attachOptions,
     );
   }
   this._eventListeners = listeners;
@@ -3083,12 +3110,15 @@ FragmentInstance.prototype.removeEventListener = function (
   if (index === -1) {
     return;
   }
+  const {attachedListener, optionsOrUseCapture: storedOptions} =
+    listeners[index];
+  const attachOptions = getAttachOptions(storedOptions);
   traverseFragmentInstancesAndTextInstances(
     this._fragmentFiber,
     removeEventListenerFromChild,
     type,
-    listener,
-    optionsOrUseCapture,
+    attachedListener,
+    attachOptions,
   );
   listeners.splice(index, 1);
 };
@@ -3101,6 +3131,22 @@ function removeEventListenerFromChild(
   const instance = getInstanceFromHostFiber<Instance | TextInstance>(child);
   instance.removeEventListener(type, listener, optionsOrUseCapture);
   return false;
+}
+function isOnceOption(opts: ?EventListenerOptionsOrUseCapture): boolean {
+  return opts != null && typeof opts !== 'boolean' && opts.once === true;
+}
+function getAttachOptions(
+  opts: void | EventListenerOptionsOrUseCapture,
+): void | EventListenerOptionsOrUseCapture {
+  // Strip once when attaching to host children; Fragment owns once semantics.
+  if (opts == null || typeof opts === 'boolean' || opts.once !== true) {
+    return opts;
+  }
+  return {
+    capture: opts.capture,
+    passive: opts.passive,
+    signal: opts.signal,
+  };
 }
 function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
@@ -3166,16 +3212,24 @@ FragmentInstance.prototype.dispatchEvent = function (
         : document.createTextNode('');
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.addEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.addEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.appendChild(temp);
     const cancelable = temp.dispatchEvent(event);
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, listener, optionsOrUseCapture} = eventListeners[i];
-        temp.removeEventListener(type, listener, optionsOrUseCapture);
+        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+        temp.removeEventListener(
+          type,
+          attachedListener,
+          getAttachOptions(optionsOrUseCapture),
+        );
       }
     }
     parentHostInstance.removeChild(temp);
@@ -3730,8 +3784,12 @@ export function commitNewChildToFragmentInstance(
   const eventListeners = fragmentInstance._eventListeners;
   if (eventListeners !== null) {
     for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      childInstance.addEventListener(type, listener, optionsOrUseCapture);
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.addEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
     }
   }
   // Observers and fragment handles only apply to element children.
@@ -3756,8 +3814,12 @@ export function deleteChildFromFragmentInstance(
   const eventListeners = fragmentInstance._eventListeners;
   if (eventListeners !== null) {
     for (let i = 0; i < eventListeners.length; i++) {
-      const {type, listener, optionsOrUseCapture} = eventListeners[i];
-      childInstance.removeEventListener(type, listener, optionsOrUseCapture);
+      const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
+      childInstance.removeEventListener(
+        type,
+        attachedListener,
+        getAttachOptions(optionsOrUseCapture),
+      );
     }
   }
   if (childInstance.nodeType === TEXT_NODE) {
