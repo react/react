@@ -22,5 +22,12 @@ export default function createPublicInstance(
     __nativeTag: tag,
     __internalInstanceHandle: internalInstanceHandle,
     __rootPublicInstance: rootPublicInstance,
+    compareDocumentPosition(otherPublicInstance: PublicInstance): number {
+      return global.nativeFabricUIManager.compareDocumentPositionForJestTestsOnly(
+        tag,
+        // $FlowFixMe[prop-missing]
+        otherPublicInstance.__nativeTag,
+      );
+    },
   };
 }
