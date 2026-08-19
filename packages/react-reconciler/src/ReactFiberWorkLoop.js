@@ -64,6 +64,7 @@ import {
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import is from 'shared/objectIs';
+import isThenable from 'shared/isThenable';
 
 import reportGlobalError from 'shared/reportGlobalError';
 
@@ -2352,11 +2353,10 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
     // case where we think this should happen.
     workInProgressSuspendedReason = SuspendedOnHydration;
   } else {
-    // This is a regular error.
-    const isWakeable =
-      thrownValue !== null &&
-      typeof thrownValue === 'object' &&
-      typeof thrownValue.then === 'function';
+    // This is a regular error. `isThenable` is getter-safe: if a hostile
+    // `then` getter threw here, the exception would escape renderRootSync/
+    // renderRootConcurrent before `executionContext` is restored (#37323).
+    const isWakeable = isThenable(thrownValue);
 
     workInProgressSuspendedReason = isWakeable
       ? // A wakeable object was thrown by a legacy Suspense implementation.
