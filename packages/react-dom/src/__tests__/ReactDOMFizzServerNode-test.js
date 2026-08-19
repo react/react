@@ -87,6 +87,44 @@ describe('ReactDOMFizzServerNode', () => {
     expect(result).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
+  it('removes AbortSignal listeners when renderToReadableStream completes', async () => {
+    // Regression for #36763: long-lived/shared AbortSignals must not accumulate
+    // abort listeners across successful SSR requests.
+    const controller = new AbortController();
+    const signal = controller.signal;
+    let activeAbortListeners = 0;
+    const originalAdd = signal.addEventListener.bind(signal);
+    const originalRemove = signal.removeEventListener.bind(signal);
+    jest
+      .spyOn(signal, 'addEventListener')
+      .mockImplementation((type, listener, options) => {
+        if (type === 'abort') {
+          activeAbortListeners++;
+        }
+        return originalAdd(type, listener, options);
+      });
+    jest
+      .spyOn(signal, 'removeEventListener')
+      .mockImplementation((type, listener, options) => {
+        if (type === 'abort') {
+          activeAbortListeners--;
+        }
+        return originalRemove(type, listener, options);
+      });
+
+    for (let i = 0; i < 3; i++) {
+      const stream = await act(() =>
+        ReactDOMFizzServer.renderToReadableStream(<div>hello {i}</div>, {
+          signal,
+        }),
+      );
+      await readContentWeb(stream);
+      await stream.allReady;
+    }
+
+    expect(activeAbortListeners).toBe(0);
+  });
+
   it('flush fully if piping in on onShellReady', async () => {
     const {writable, output} = getTestWritable();
     await act(() => {
