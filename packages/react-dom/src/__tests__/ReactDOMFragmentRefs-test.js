@@ -17,12 +17,14 @@ let act;
 let container;
 let Fragment;
 let Activity;
+let Scheduler;
 let mockIntersectionObserver;
 let simulateIntersection;
 let setClientRects;
 let mockRangeClientRects;
 let assertConsoleErrorDev;
 let assertConsoleWarnDev;
+let assertLog;
 
 function Wrapper({children}) {
   return children;
@@ -38,6 +40,7 @@ describe('FragmentRefs', () => {
     ReactDOM = require('react-dom');
     createPortal = ReactDOM.createPortal;
     act = require('internal-test-utils').act;
+    Scheduler = require('scheduler');
     const IntersectionMocks = require('./utils/IntersectionMocks');
     mockIntersectionObserver = IntersectionMocks.mockIntersectionObserver;
     simulateIntersection = IntersectionMocks.simulateIntersection;
@@ -46,6 +49,7 @@ describe('FragmentRefs', () => {
     assertConsoleErrorDev =
       require('internal-test-utils').assertConsoleErrorDev;
     assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
+    assertLog = require('internal-test-utils').assertLog;
 
     container = document.createElement('div');
     document.body.innerHTML = '';
@@ -151,6 +155,157 @@ describe('FragmentRefs', () => {
     const childD = document.querySelector('#childD');
     expect(childD.reactFragments.has(fragmentRef.current)).toBe(false);
     expect(childD.reactFragments.has(fragmentParentRef.current)).toBe(true);
+  });
+
+  // @gate enableFragmentRefs
+  it('does not run the ref cleanup when an inline ref callback changes identity', async () => {
+    const fragmentInstances = [];
+    let rerender;
+
+    function Test() {
+      const [step, setStep] = React.useState(0);
+      rerender = () => {
+        setStep(p => p + 1);
+      };
+
+      return (
+        <Fragment
+          ref={fragmentInstance => {
+            fragmentInstances.push(fragmentInstance);
+            Scheduler.log(`fragment attach ${step}`);
+            return () => {
+              Scheduler.log(`fragment cleanup ${step}`);
+            };
+          }}>
+          <div
+            id="child"
+            ref={() => {
+              Scheduler.log(`host attach ${step}`);
+              return () => {
+                Scheduler.log(`host cleanup ${step}`);
+              };
+            }}
+          />
+        </Fragment>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<Test />));
+    assertLog(['fragment attach 0', 'host attach 0']);
+
+    await act(rerender);
+    // Both refs are inlined, so both change identity and are re-attached. The
+    // host ref runs its cleanup before re-attaching, but the Fragment ref does
+    // not.
+    // TODO: This is a bug. 'fragment cleanup 0' should run before
+    // 'fragment attach 1', the way the host ref pairs its cleanup with its
+    // re-attach. commitMutationEffectsOnFiber never calls safelyDetachRef for
+    // Fragment fibers, so the cleanup returned by the previous callback is
+    // overwritten by commitAttachRef without ever being called.
+    assertLog(['host cleanup 0', 'fragment attach 1', 'host attach 1']);
+
+    await act(() => root.render(null));
+    // Only the most recent cleanup survives to run on unmount.
+    assertLog(['fragment cleanup 1', 'host cleanup 1']);
+
+    // The same FragmentInstance is handed to every attach, so anything the
+    // callback registers on it, such as event listeners or observers,
+    // accumulates across renders.
+    expect(fragmentInstances).toHaveLength(2);
+    expect(fragmentInstances[0]).toBe(fragmentInstances[1]);
+  });
+
+  // @gate enableFragmentRefs
+  it('does not run the ref cleanup when the ref is removed from a mounted Fragment', async () => {
+    function Test({withRef}) {
+      return (
+        <Fragment
+          ref={
+            withRef
+              ? () => {
+                  Scheduler.log('attach');
+                  return () => {
+                    Scheduler.log('cleanup');
+                  };
+                }
+              : null
+          }>
+          <div id="child" />
+        </Fragment>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<Test withRef={true} />));
+    assertLog(['attach']);
+
+    // The Fragment stays mounted and only the ref goes away. commitAttachRef
+    // bails out on a null ref, so a detach in the mutation phase is the only
+    // thing that could run the cleanup.
+    // TODO: This is a bug. 'cleanup' should run here.
+    await act(() => root.render(<Test withRef={false} />));
+    assertLog([]);
+
+    // Deleting the Fragment does not run it either, because the ref it would
+    // detach against is already null. The cleanup is lost outright rather than
+    // deferred to unmount.
+    await act(() => root.render(null));
+    assertLog([]);
+  });
+
+  // @gate enableFragmentRefs
+  it('detaches and reattaches Fragment refs when StrictMode double invokes', async () => {
+    // This one collects its own log rather than using Scheduler.log, because
+    // setIsStrictModeForDevtools disables yield values for the duration of the
+    // double invoke to keep StrictMode tests quiet, which would hide the very
+    // detach and reattach this test is here to observe.
+    const logs = [];
+    let rerender;
+
+    function Test() {
+      const [step, setStep] = React.useState(0);
+      rerender = () => {
+        setStep(p => p + 1);
+      };
+
+      return (
+        <Fragment
+          ref={() => {
+            logs.push(`attach ${step}`);
+            return () => {
+              logs.push(`cleanup ${step}`);
+            };
+          }}>
+          <div id="child" />
+        </Fragment>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <React.StrictMode>
+          <Test />
+        </React.StrictMode>,
+      ),
+    );
+    if (__DEV__) {
+      // The double invoke goes through disappearLayoutEffects and
+      // reappearLayoutEffects rather than through the mutation and layout
+      // phases, so it exercises a separate pair of Fragment cases.
+      expect(logs).toEqual(['attach 0', 'cleanup 0', 'attach 0']);
+    } else {
+      expect(logs).toEqual(['attach 0']);
+    }
+
+    // The double invoke only applies to newly mounted fibers, so it does not
+    // reach the update. StrictMode neither causes nor hides the missing
+    // cleanup.
+    // TODO: This is a bug. 'cleanup 0' should run before 'attach 1'.
+    logs.length = 0;
+    await act(rerender);
+    expect(logs).toEqual(['attach 1']);
   });
 
   describe('focus methods', () => {
