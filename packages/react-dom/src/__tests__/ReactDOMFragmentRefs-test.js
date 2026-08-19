@@ -158,7 +158,7 @@ describe('FragmentRefs', () => {
   });
 
   // @gate enableFragmentRefs
-  it('does not run the ref cleanup when an inline ref callback changes identity', async () => {
+  it('runs the ref cleanup when an inline ref callback changes identity', async () => {
     const fragmentInstances = [];
     let rerender;
 
@@ -195,29 +195,29 @@ describe('FragmentRefs', () => {
     assertLog(['fragment attach 0', 'host attach 0']);
 
     await act(rerender);
-    // Both refs are inlined, so both change identity and are re-attached. The
-    // host ref runs its cleanup before re-attaching, but the Fragment ref does
-    // not.
-    // TODO: This is a bug. 'fragment cleanup 0' should run before
-    // 'fragment attach 1', the way the host ref pairs its cleanup with its
-    // re-attach. commitMutationEffectsOnFiber never calls safelyDetachRef for
-    // Fragment fibers, so the cleanup returned by the previous callback is
-    // overwritten by commitAttachRef without ever being called.
-    assertLog(['host cleanup 0', 'fragment attach 1', 'host attach 1']);
+    // Both refs are inlined, so both change identity and are detached before
+    // being re-attached. The Fragment detaches ahead of its children, which is
+    // the same order it uses when the Fragment itself is deleted.
+    assertLog([
+      'fragment cleanup 0',
+      'host cleanup 0',
+      'fragment attach 1',
+      'host attach 1',
+    ]);
 
     await act(() => root.render(null));
-    // Only the most recent cleanup survives to run on unmount.
+    // The cleanups created by the final render run on unmount.
     assertLog(['fragment cleanup 1', 'host cleanup 1']);
 
-    // The same FragmentInstance is handed to every attach, so anything the
-    // callback registers on it, such as event listeners or observers,
-    // accumulates across renders.
+    // The same FragmentInstance is handed to every attach, so a callback that
+    // registers event listeners or observers on it can rely on its cleanup to
+    // unregister them again.
     expect(fragmentInstances).toHaveLength(2);
     expect(fragmentInstances[0]).toBe(fragmentInstances[1]);
   });
 
   // @gate enableFragmentRefs
-  it('does not run the ref cleanup when the ref is removed from a mounted Fragment', async () => {
+  it('runs the ref cleanup when the ref is removed from a mounted Fragment', async () => {
     function Test({withRef}) {
       return (
         <Fragment
@@ -241,15 +241,12 @@ describe('FragmentRefs', () => {
     assertLog(['attach']);
 
     // The Fragment stays mounted and only the ref goes away. commitAttachRef
-    // bails out on a null ref, so a detach in the mutation phase is the only
-    // thing that could run the cleanup.
-    // TODO: This is a bug. 'cleanup' should run here.
+    // bails out on a null ref, so the detach is the only thing that can run the
+    // cleanup here.
     await act(() => root.render(<Test withRef={false} />));
-    assertLog([]);
+    assertLog(['cleanup']);
 
-    // Deleting the Fragment does not run it either, because the ref it would
-    // detach against is already null. The cleanup is lost outright rather than
-    // deferred to unmount.
+    // Nothing is left to clean up by the time the Fragment is deleted.
     await act(() => root.render(null));
     assertLog([]);
   });
@@ -299,13 +296,11 @@ describe('FragmentRefs', () => {
       expect(logs).toEqual(['attach 0']);
     }
 
-    // The double invoke only applies to newly mounted fibers, so it does not
-    // reach the update. StrictMode neither causes nor hides the missing
-    // cleanup.
-    // TODO: This is a bug. 'cleanup 0' should run before 'attach 1'.
+    // The double invoke only applies to newly mounted fibers, so an update
+    // detaches and reattaches once in both environments.
     logs.length = 0;
     await act(rerender);
-    expect(logs).toEqual(['attach 1']);
+    expect(logs).toEqual(['cleanup 0', 'attach 1']);
   });
 
   describe('focus methods', () => {
