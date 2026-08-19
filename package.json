@@ -102,6 +102,7 @@
     "random-seed": "^0.3.0",
     "react-lifecycles-compat": "^3.0.4",
     "rimraf": "^3.0.0",
+    "resolve.exports": "^2.0.0",
     "rollup": "^3.29.5",
     "rollup-plugin-dts": "^6.1.1",
     "rollup-plugin-prettier": "^4.1.1",

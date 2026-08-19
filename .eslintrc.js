@@ -330,6 +330,7 @@ module.exports = {
         'packages/react-server-dom-webpack/**/*.js',
         'packages/react-server-dom-turbopack/**/*.js',
         'packages/react-server-dom-parcel/**/*.js',
+        'packages/react-server-dom-rspack/**/*.js',
         'packages/react-server-dom-fb/**/*.js',
         'packages/react-flight-server-fb/**/*.js',
         'packages/react-server-dom-unbundled/**/*.js',
@@ -485,6 +486,14 @@ module.exports = {
       files: ['packages/react-server-dom-parcel/**/*.js'],
       globals: {
         parcelRequire: 'readonly',
+      },
+    },
+    {
+      files: ['packages/react-server-dom-rspack/**/*.js'],
+      globals: {
+        __webpack_chunk_load__: 'readonly',
+        __webpack_get_script_filename__: 'readonly',
+        __webpack_require__: 'readonly',
       },
     },
     {

@@ -755,4 +755,17 @@ describe('ReactFlightDOMReply', () => {
     }
     expect(error.message).toContain('Referenced Blob is not a Blob.');
   });
+
+  it('cannot deserialize a Blob reference backed by a string', async () => {
+    const formData = new FormData();
+    formData.set('1', '-'.repeat(50000));
+    formData.set('0', JSON.stringify(['$B1']));
+    let error;
+    try {
+      await ReactServerDOMServer.decodeReply(formData, webpackServerMap);
+    } catch (x) {
+      error = x;
+    }
+    expect(error.message).toContain('Referenced Blob is not a Blob.');
+  });
 });
