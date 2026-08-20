@@ -4383,6 +4383,21 @@ function logRecoverableError(
   return errorDigest || '';
 }
 
+// Creates an Error without capturing a stack. This reason is stored on
+// `cacheController.signal.reason` for the request's lifetime; a captured stack would
+// retain the render's async/cache scope and leak RSC responses under load (#37288).
+// try/finally because Error.stackTraceLimit is process-wide shared state: restore it
+// even if `new Error` throws, or every later stack trace silently loses frames.
+function createErrorWithoutStack(message: string): Error {
+  const previousStackTraceLimit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 0;
+  try {
+    return new Error(message);
+  } finally {
+    Error.stackTraceLimit = previousStackTraceLimit;
+  }
+}
+
 function fatalError(request: Request, error: mixed): void {
   const onFatalError = request.onFatalError;
   onFatalError(error);
@@ -4397,6 +4412,8 @@ function fatalError(request: Request, error: mixed): void {
     request.status = CLOSING;
     request.fatalError = error;
   }
+  // Unlike the success path (#37288), this runs at most once per request (not per
+  // completed render), so capturing a stack here is fine and not a leak source.
   const abortReason = new Error(
     'The render was aborted due to a fatal error.',
     {
@@ -6519,20 +6536,11 @@ function flushCompletedChunks(request: Request): void {
       cleanupTaintQueue(request);
     }
     if (request.status < ABORTING) {
-      // This reason is only used internally to abort the request's cacheSignals so
-      // unused resources can be cleaned up; it is never surfaced to the user. We must
-      // NOT capture a stack trace here: this runs on every successful render, and the
-      // captured CallSites retain the completed render's async context / cache scope
-      // (e.g. the fetch dedupe cache), which — because the reason is held for the
-      // request's lifetime as `cacheController.signal.reason` — causes an unbounded
-      // heap leak under load (RSC responses never released). Creating it with zero
-      // frames breaks that retention. See #37288.
-      const previousStackTraceLimit = Error.stackTraceLimit;
-      Error.stackTraceLimit = 0;
-      const abortReason = new Error(
+      // Internal cleanup signal, never surfaced to the user. It must not capture a
+      // stack — see createErrorWithoutStack (#37288).
+      const abortReason = createErrorWithoutStack(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
       );
-      Error.stackTraceLimit = previousStackTraceLimit;
       request.cacheController.abort(abortReason);
     }
     if (request.destination !== null) {
