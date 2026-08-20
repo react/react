@@ -942,7 +942,7 @@ function hasMemoCacheFunctionImport(
 }
 
 function isHookName(s: string): boolean {
-  return /^use[A-Z0-9]/.test(s);
+  return /^use[A-Z0-9]/.test(s) || s === 'use';
 }
 
 /*
