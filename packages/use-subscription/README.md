@@ -2,7 +2,7 @@
 
 React Hook for subscribing to external data sources.
 
-**You may now migrate to [`use-sync-external-store`](https://www.npmjs.com/package/use-sync-external-store) directly instead, which has the same API as [`React.useSyncExternalStore`](https://reactjs.org/docs/hooks-reference.html#usesyncexternalstore). The `use-subscription` package is now a thin wrapper over `use-sync-external-store` and will not be updated further.**
+**You may now migrate to [`use-sync-external-store`](https://www.npmjs.com/package/use-sync-external-store) directly instead, which has the same API as [`React.useSyncExternalStore`](https://react.dev/reference/react/useSyncExternalStore). The `use-subscription` package is now a thin wrapper over `use-sync-external-store` and will not be updated further.**
 
 # Installation
 

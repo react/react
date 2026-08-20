@@ -18,6 +18,10 @@ let NormalPriority;
 let IdlePriority;
 let runWithPriority;
 let startTransition;
+let waitForAll;
+let waitForPaint;
+let assertLog;
+let waitFor;
 
 describe('ReactSchedulerIntegration', () => {
   beforeEach(() => {
@@ -26,11 +30,17 @@ describe('ReactSchedulerIntegration', () => {
     React = require('react');
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
     NormalPriority = Scheduler.unstable_NormalPriority;
     IdlePriority = Scheduler.unstable_IdlePriority;
     runWithPriority = Scheduler.unstable_runWithPriority;
     startTransition = React.startTransition;
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForAll = InternalTestUtils.waitForAll;
+    waitForPaint = InternalTestUtils.waitForPaint;
+    assertLog = InternalTestUtils.assertLog;
+    waitFor = InternalTestUtils.waitFor;
   });
 
   // Note: This is based on a similar component we use in www. We can delete
@@ -50,37 +60,33 @@ describe('ReactSchedulerIntegration', () => {
     const {useEffect, useLayoutEffect} = React;
     function Effects({step}) {
       useLayoutEffect(() => {
-        Scheduler.unstable_yieldValue('Layout Effect');
+        Scheduler.log('Layout Effect');
         Scheduler.unstable_scheduleCallback(NormalPriority, () =>
-          Scheduler.unstable_yieldValue(
-            'Scheduled Normal Callback from Layout Effect',
-          ),
+          Scheduler.log('Scheduled Normal Callback from Layout Effect'),
         );
       });
       useEffect(() => {
-        Scheduler.unstable_yieldValue('Passive Effect');
+        Scheduler.log('Passive Effect');
       });
       return null;
     }
     function CleanupEffect() {
       useLayoutEffect(() => () => {
-        Scheduler.unstable_yieldValue('Cleanup Layout Effect');
+        Scheduler.log('Cleanup Layout Effect');
         Scheduler.unstable_scheduleCallback(NormalPriority, () =>
-          Scheduler.unstable_yieldValue(
-            'Scheduled Normal Callback from Cleanup Layout Effect',
-          ),
+          Scheduler.log('Scheduled Normal Callback from Cleanup Layout Effect'),
         );
       });
       return null;
     }
-    await act(async () => {
+    await act(() => {
       ReactNoop.render(<CleanupEffect />);
     });
-    expect(Scheduler).toHaveYielded([]);
-    await act(async () => {
+    assertLog([]);
+    await act(() => {
       ReactNoop.render(<Effects />);
     });
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       'Cleanup Layout Effect',
       'Layout Effect',
       'Passive Effect',
@@ -90,42 +96,45 @@ describe('ReactSchedulerIntegration', () => {
     ]);
   });
 
-  it('requests a paint after committing', () => {
+  it('requests a paint after committing', async () => {
     const scheduleCallback = Scheduler.unstable_scheduleCallback;
 
     const root = ReactNoop.createRoot();
     root.render('Initial');
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
+    expect(root).toMatchRenderedOutput('Initial');
 
-    scheduleCallback(NormalPriority, () => Scheduler.unstable_yieldValue('A'));
-    scheduleCallback(NormalPriority, () => Scheduler.unstable_yieldValue('B'));
-    scheduleCallback(NormalPriority, () => Scheduler.unstable_yieldValue('C'));
+    scheduleCallback(NormalPriority, () => Scheduler.log('A'));
+    scheduleCallback(NormalPriority, () => Scheduler.log('B'));
+    scheduleCallback(NormalPriority, () => Scheduler.log('C'));
 
     // Schedule a React render. React will request a paint after committing it.
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        root.render('Update');
-      });
-    } else {
+    React.startTransition(() => {
       root.render('Update');
-    }
+    });
 
-    // Advance time just to be sure the next tasks have lower priority
-    Scheduler.unstable_advanceTime(2000);
+    // Perform just a little bit of work. By now, the React task will have
+    // already been scheduled, behind A, B, and C.
+    await waitFor(['A']);
 
-    scheduleCallback(NormalPriority, () => Scheduler.unstable_yieldValue('D'));
-    scheduleCallback(NormalPriority, () => Scheduler.unstable_yieldValue('E'));
+    // Schedule some additional tasks. These won't fire until after the React
+    // update has finished.
+    scheduleCallback(NormalPriority, () => Scheduler.log('D'));
+    scheduleCallback(NormalPriority, () => Scheduler.log('E'));
 
     // Flush everything up to the next paint. Should yield after the
     // React commit.
-    Scheduler.unstable_flushUntilNextPaint();
-    expect(Scheduler).toHaveYielded(['A', 'B', 'C']);
+    await waitForPaint(['B', 'C']);
+    expect(root).toMatchRenderedOutput('Update');
+
+    // Now flush the rest of the work.
+    await waitForAll(['D', 'E']);
   });
 
-  // @gate www
+  // @gate enableLegacyHidden
   it('idle updates are not blocked by offscreen work', async () => {
     function Text({text}) {
-      Scheduler.unstable_yieldValue(text);
+      Scheduler.log(text);
       return text;
     }
 
@@ -145,7 +154,7 @@ describe('ReactSchedulerIntegration', () => {
       root.render(<App label="A" />);
 
       // Commit the visible content
-      expect(Scheduler).toFlushUntilNextPaint(['Visible: A']);
+      await waitForPaint(['Visible: A']);
       expect(root).toMatchRenderedOutput(
         <>
           Visible: A
@@ -160,7 +169,7 @@ describe('ReactSchedulerIntegration', () => {
       });
 
       // The next commit should only include the visible content
-      expect(Scheduler).toFlushUntilNextPaint(['Visible: B']);
+      await waitForPaint(['Visible: B']);
       expect(root).toMatchRenderedOutput(
         <>
           Visible: B
@@ -170,7 +179,7 @@ describe('ReactSchedulerIntegration', () => {
     });
 
     // The hidden content commits later
-    expect(Scheduler).toHaveYielded(['Hidden: B']);
+    assertLog(['Hidden: B']);
     expect(root).toMatchRenderedOutput(
       <>
         Visible: B<div hidden={true}>Hidden: B</div>
@@ -194,7 +203,7 @@ describe(
           ...actual,
           unstable_shouldYield() {
             if (logDuringShouldYield) {
-              actual.unstable_yieldValue('shouldYield');
+              actual.log('shouldYield');
             }
             return actual.unstable_shouldYield();
           },
@@ -205,6 +214,13 @@ describe(
       ReactNoop = require('react-noop-renderer');
       Scheduler = require('scheduler');
       startTransition = React.startTransition;
+
+      const InternalTestUtils = require('internal-test-utils');
+      waitForAll = InternalTestUtils.waitForAll;
+      waitForPaint = InternalTestUtils.waitForPaint;
+      assertLog = InternalTestUtils.assertLog;
+      waitFor = InternalTestUtils.waitFor;
+      act = InternalTestUtils.act;
     });
 
     afterEach(() => {
@@ -248,8 +264,8 @@ describe(
 
       await act(async () => {
         ReactNoop.render(<App />);
-        expect(Scheduler).toFlushUntilNextPaint([]);
-        expect(Scheduler).toFlushUntilNextPaint([]);
+        await waitForPaint([]);
+        await waitForPaint([]);
       });
     });
 
@@ -261,7 +277,7 @@ describe(
       // Scheduler API. That being said, feel free to rewrite or delete this
       // test if/when the API changes.
       function Text({text}) {
-        Scheduler.unstable_yieldValue(text);
+        Scheduler.log(text);
         return text;
       }
 
@@ -280,13 +296,12 @@ describe(
         startTransition(() => {
           ReactNoop.render(<App />);
         });
-        expect(Scheduler).toFlushAndYieldThrough(['A']);
+        await waitFor(['A']);
 
         // Start logging whenever shouldYield is called
         logDuringShouldYield = true;
         // Let's call it once to confirm the mock actually works
-        Scheduler.unstable_shouldYield();
-        expect(Scheduler).toHaveYielded(['shouldYield']);
+        await waitFor(['shouldYield']);
 
         // Expire the task
         Scheduler.unstable_advanceTime(10000);
@@ -299,12 +314,78 @@ describe(
         startTransition(() => {
           ReactNoop.render(<App />);
         });
-
         // Because the render expired, React should finish the tree without
         // consulting `shouldYield` again
-        Scheduler.unstable_flushNumberOfYields(1);
-        expect(Scheduler).toHaveYielded(['B', 'C']);
+        await waitFor(['B', 'C']);
       });
     });
   },
 );
+
+describe('`act` bypasses Scheduler methods completely,', () => {
+  let infiniteLoopGuard;
+
+  beforeEach(() => {
+    jest.resetModules();
+
+    infiniteLoopGuard = 0;
+
+    jest.mock('scheduler', () => {
+      const actual = jest.requireActual('scheduler/unstable_mock');
+      return {
+        ...actual,
+        unstable_shouldYield() {
+          // This simulates a bug report where `shouldYield` returns true in a
+          // unit testing environment. Because `act` will keep working until
+          // there's no more work left, it would fall into an infinite loop.
+          // The fix is that when performing work inside `act`, we should bypass
+          // `shouldYield` completely, because we can't trust it to be correct.
+          if (infiniteLoopGuard++ > 100) {
+            throw new Error('Detected an infinite loop');
+          }
+          return true;
+        },
+      };
+    });
+
+    React = require('react');
+    ReactNoop = require('react-noop-renderer');
+    startTransition = React.startTransition;
+  });
+
+  afterEach(() => {
+    jest.mock('scheduler', () => jest.requireActual('scheduler/unstable_mock'));
+  });
+
+  // @gate __DEV__
+  it('inside `act`, does not call `shouldYield`, even during a concurrent render', async () => {
+    function App() {
+      return (
+        <>
+          <div>A</div>
+          <div>B</div>
+          <div>C</div>
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    const publicAct = React.act;
+    const prevIsReactActEnvironment = global.IS_REACT_ACT_ENVIRONMENT;
+    try {
+      global.IS_REACT_ACT_ENVIRONMENT = true;
+      await publicAct(async () => {
+        startTransition(() => root.render(<App />));
+      });
+    } finally {
+      global.IS_REACT_ACT_ENVIRONMENT = prevIsReactActEnvironment;
+    }
+    expect(root).toMatchRenderedOutput(
+      <>
+        <div>A</div>
+        <div>B</div>
+        <div>C</div>
+      </>,
+    );
+  });
+});

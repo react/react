@@ -11,13 +11,13 @@ import * as React from 'react';
 import {Fragment} from 'react';
 
 class ErrorBoundary extends React.Component {
-  state = {hasError: false};
+  state: {hasError: boolean} = {hasError: false};
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: any): {hasError: boolean} {
     return {hasError: true};
   }
 
-  render() {
+  render(): any {
     const {hasError} = this.state;
     if (hasError) {
       return (
@@ -49,6 +49,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// $FlowFixMe[missing-local-annot]
 function Component({label}) {
   return <div>{label}</div>;
 }

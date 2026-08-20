@@ -3,7 +3,6 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  border-left: 1px solid var(--color-border);
   border-top: 1px solid var(--color-border);
 }
 
@@ -45,12 +44,13 @@
 .SelectedComponentName {
   flex: 1 1 auto;
   overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: normal;
+  display: flex;
+  padding: 0.25rem 0;
+  height: 100%;
+  align-items: flex-end;
 }
 
-.Component {
-  flex: 1 1 auto;
+.ComponentName {
   color: var(--color-component-name);
   font-family: var(--font-family-monospace);
   font-size: var(--font-size-monospace-normal);
@@ -60,14 +60,31 @@
   max-width: 100%;
 }
 
+.StrictModeNonCompliantComponentName {
+  color: var(--color-console-error-icon);
+}
+
 .Loading {
   padding: 0.25rem;
   color: var(--color-dimmer);
   font-style: italic;
-  border-left: 1px solid var(--color-border);
+}
+
+.NoInspectionFallback {
+  padding: 0.25rem;
+  font-style: italic;
 }
 
 .StrictModeNonCompliant {
-  margin-right: 0.25rem;
+  display: inline-flex;
+  padding: 0.25rem;
   color: var(--color-console-error-icon);
+}
+
+.VRule {
+  height: 20px;
+  width: 1px;
+  flex: 0 0 1px;
+  margin: 0 0.5rem;
+  background-color: var(--color-border);
 }

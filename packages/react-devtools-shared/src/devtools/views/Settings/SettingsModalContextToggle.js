@@ -20,15 +20,16 @@ export default function SettingsModalContextToggle(): React.Node {
   const store = useContext(StoreContext);
   const {profilerStore} = store;
 
-  const showFilterModal = useCallback(() => setIsModalShowing(true), [
-    setIsModalShowing,
-  ]);
+  const showFilterModal = useCallback(
+    () => setIsModalShowing(true),
+    [setIsModalShowing],
+  );
 
   // Updating preferences while profiling is in progress could break things (e.g. filtering)
   // Explicitly disallow it for now.
   const isProfilingSubscription = useMemo(
     () => ({
-      getCurrentValue: () => profilerStore.isProfiling,
+      getCurrentValue: () => profilerStore.isProfilingBasedOnUserInput,
       subscribe: (callback: Function) => {
         profilerStore.addListener('isProfiling', callback);
         return () => profilerStore.removeListener('isProfiling', callback);

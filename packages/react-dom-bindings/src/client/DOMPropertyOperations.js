@@ -7,104 +7,11 @@
  * @flow
  */
 
-import {
-  getPropertyInfo,
-  shouldIgnoreAttribute,
-  shouldRemoveAttribute,
-  isAttributeNameSafe,
-  BOOLEAN,
-  OVERLOADED_BOOLEAN,
-} from '../shared/DOMProperty';
-import sanitizeURL from '../shared/sanitizeURL';
-import {
-  disableJavaScriptURLs,
-  enableTrustedTypesIntegration,
-  enableCustomElementPropertySupport,
-} from 'shared/ReactFeatureFlags';
+import isAttributeNameSafe from '../shared/isAttributeNameSafe';
+import {enableTrustedTypesIntegration} from 'shared/ReactFeatureFlags';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
 import {getFiberCurrentPropsFromNode} from './ReactDOMComponentTree';
-
-import type {PropertyInfo} from '../shared/DOMProperty';
-
-/**
- * Get the value for a property on a node. Only used in DEV for SSR validation.
- * The "expected" argument is used as a hint of what the expected value is.
- * Some properties have multiple equivalent values.
- */
-export function getValueForProperty(
-  node: Element,
-  name: string,
-  expected: mixed,
-  propertyInfo: PropertyInfo,
-): mixed {
-  if (__DEV__) {
-    if (propertyInfo.mustUseProperty) {
-      const {propertyName} = propertyInfo;
-      return (node: any)[propertyName];
-    } else {
-      // This check protects multiple uses of `expected`, which is why the
-      // react-internal/safe-string-coercion rule is disabled in several spots
-      // below.
-      if (__DEV__) {
-        checkAttributeStringCoercion(expected, name);
-      }
-
-      if (!disableJavaScriptURLs && propertyInfo.sanitizeURL) {
-        // If we haven't fully disabled javascript: URLs, and if
-        // the hydration is successful of a javascript: URL, we
-        // still want to warn on the client.
-        // eslint-disable-next-line react-internal/safe-string-coercion
-        sanitizeURL('' + (expected: any));
-      }
-
-      const attributeName = propertyInfo.attributeName;
-
-      let stringValue = null;
-
-      if (propertyInfo.type === OVERLOADED_BOOLEAN) {
-        if (node.hasAttribute(attributeName)) {
-          const value = node.getAttribute(attributeName);
-          if (value === '') {
-            return true;
-          }
-          if (shouldRemoveAttribute(name, expected, propertyInfo, false)) {
-            return value;
-          }
-          // eslint-disable-next-line react-internal/safe-string-coercion
-          if (value === '' + (expected: any)) {
-            return expected;
-          }
-          return value;
-        }
-      } else if (node.hasAttribute(attributeName)) {
-        if (shouldRemoveAttribute(name, expected, propertyInfo, false)) {
-          // We had an attribute but shouldn't have had one, so read it
-          // for the error message.
-          return node.getAttribute(attributeName);
-        }
-        if (propertyInfo.type === BOOLEAN) {
-          // If this was a boolean, it doesn't matter what the value is
-          // the fact that we have it is the same as the expected.
-          return expected;
-        }
-        // Even if this property uses a namespace we use getAttribute
-        // because we assume its namespaced name is the same as our config.
-        // To use getAttributeNS we need the local name which we don't have
-        // in our config atm.
-        stringValue = node.getAttribute(attributeName);
-      }
-
-      if (shouldRemoveAttribute(name, expected, propertyInfo, false)) {
-        return stringValue === null ? expected : stringValue;
-        // eslint-disable-next-line react-internal/safe-string-coercion
-      } else if (stringValue === '' + (expected: any)) {
-        return expected;
-      } else {
-        return stringValue;
-      }
-    }
-  }
-}
+import {trackHostMutation} from 'react-reconciler/src/ReactFiberMutationTracking';
 
 /**
  * Get the value for a attribute on a node. Only used in DEV for SSR validation.
@@ -115,62 +22,190 @@ export function getValueForAttribute(
   node: Element,
   name: string,
   expected: mixed,
-  isCustomComponentTag: boolean,
 ): mixed {
   if (__DEV__) {
     if (!isAttributeNameSafe(name)) {
       return;
     }
     if (!node.hasAttribute(name)) {
+      // shouldRemoveAttribute
+      switch (typeof expected) {
+        case 'function':
+        case 'symbol':
+          return expected;
+        case 'boolean': {
+          const prefix = name.toLowerCase().slice(0, 5);
+          if (prefix !== 'data-' && prefix !== 'aria-') {
+            return expected;
+          }
+        }
+      }
       return expected === undefined ? undefined : null;
     }
-    const value = node.getAttribute(name);
-
-    if (enableCustomElementPropertySupport) {
-      if (isCustomComponentTag && value === '') {
-        return true;
-      }
-    }
-
+    // When CSP is enabled, browsers hide the nonce attribute
+    // so we need to access the nonce property directly
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
+    const isNonce = name.toLowerCase() === 'nonce';
+    const value = isNonce ? (node as any).nonce : node.getAttribute(name);
     if (__DEV__) {
       checkAttributeStringCoercion(expected, name);
     }
-    if (value === '' + (expected: any)) {
+    if (value === '' + (expected as any)) {
       return expected;
     }
     return value;
   }
 }
 
-/**
- * Sets the value for a property on a node.
- *
- * @param {DOMElement} node
- * @param {string} name
- * @param {*} value
- */
-export function setValueForProperty(
+export function getValueForAttributeOnCustomComponent(
+  node: Element,
+  name: string,
+  expected: mixed,
+): mixed {
+  if (__DEV__) {
+    if (!isAttributeNameSafe(name)) {
+      return;
+    }
+    if (!node.hasAttribute(name)) {
+      // shouldRemoveAttribute
+      switch (typeof expected) {
+        case 'symbol':
+        case 'object':
+          // Symbols and objects are ignored when they're emitted so
+          // it would be expected that they end up not having an attribute.
+          return expected;
+        case 'function':
+          return expected;
+        case 'boolean':
+          if (expected === false) {
+            return expected;
+          }
+      }
+      return expected === undefined ? undefined : null;
+    }
+    // When CSP is enabled, browsers hide the nonce attribute
+    // so we need to access the nonce property directly
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#cryptographicnonce
+    const isNonce = name.toLowerCase() === 'nonce';
+    const value = isNonce ? (node as any).nonce : node.getAttribute(name);
+
+    if (value === '' && expected === true) {
+      return true;
+    }
+
+    if (__DEV__) {
+      checkAttributeStringCoercion(expected, name);
+    }
+    if (value === '' + (expected as any)) {
+      return expected;
+    }
+    return value;
+  }
+}
+
+export function setValueForAttribute(
   node: Element,
   name: string,
   value: mixed,
-  isCustomComponentTag: boolean,
 ) {
-  const propertyInfo = getPropertyInfo(name);
-  if (shouldIgnoreAttribute(name, propertyInfo, isCustomComponentTag)) {
+  if (isAttributeNameSafe(name)) {
+    // If the prop isn't in the special list, treat it as a simple attribute.
+    // shouldRemoveAttribute
+    if (value === null) {
+      node.removeAttribute(name);
+      return;
+    }
+    switch (typeof value) {
+      case 'undefined':
+      case 'function':
+      case 'symbol':
+        node.removeAttribute(name);
+        return;
+      case 'boolean': {
+        const prefix = name.toLowerCase().slice(0, 5);
+        if (prefix !== 'data-' && prefix !== 'aria-') {
+          node.removeAttribute(name);
+          return;
+        }
+      }
+    }
+    if (__DEV__) {
+      checkAttributeStringCoercion(value, name);
+    }
+    node.setAttribute(
+      name,
+      enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
+    );
+  }
+}
+
+export function setValueForKnownAttribute(
+  node: Element,
+  name: string,
+  value: mixed,
+) {
+  if (value === null) {
+    node.removeAttribute(name);
     return;
   }
+  switch (typeof value) {
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+    case 'boolean': {
+      node.removeAttribute(name);
+      return;
+    }
+  }
+  if (__DEV__) {
+    checkAttributeStringCoercion(value, name);
+  }
+  node.setAttribute(
+    name,
+    enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
+  );
+}
 
-  if (
-    enableCustomElementPropertySupport &&
-    isCustomComponentTag &&
-    name[0] === 'o' &&
-    name[1] === 'n'
-  ) {
-    let eventName = name.replace(/Capture$/, '');
-    const useCapture = name !== eventName;
-    eventName = eventName.slice(2);
+export function setValueForNamespacedAttribute(
+  node: Element,
+  namespace: string,
+  name: string,
+  value: mixed,
+) {
+  if (value === null) {
+    node.removeAttribute(name);
+    return;
+  }
+  switch (typeof value) {
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+    case 'boolean': {
+      node.removeAttribute(name);
+      return;
+    }
+  }
+  if (__DEV__) {
+    checkAttributeStringCoercion(value, name);
+  }
+  node.setAttributeNS(
+    namespace,
+    name,
+    enableTrustedTypesIntegration ? (value as any) : '' + (value as any),
+  );
+}
+
+export function setValueForPropertyOnCustomComponent(
+  node: Element,
+  name: string,
+  value: mixed,
+) {
+  if (name[0] === 'o' && name[1] === 'n') {
+    const useCapture = name.endsWith('Capture');
+    const eventName = name.slice(2, useCapture ? name.length - 7 : undefined);
 
     const prevProps = getFiberCurrentPropsFromNode(node);
+    // $FlowFixMe[invalid-computed-prop]
     const prevValue = prevProps != null ? prevProps[name] : null;
     if (typeof prevValue === 'function') {
       node.removeEventListener(eventName, prevValue, useCapture);
@@ -179,98 +214,30 @@ export function setValueForProperty(
       if (typeof prevValue !== 'function' && prevValue !== null) {
         // If we previously assigned a non-function type into this node, then
         // remove it when switching to event listener mode.
-        if (name in (node: any)) {
-          (node: any)[name] = null;
+        if (name in (node as any)) {
+          (node as any)[name] = null;
         } else if (node.hasAttribute(name)) {
           node.removeAttribute(name);
         }
       }
-
-      // $FlowFixMe value can't be casted to EventListener.
-      node.addEventListener(eventName, (value: EventListener), useCapture);
+      // $FlowFixMe[incompatible-type] value can't be casted to EventListener.
+      node.addEventListener(eventName, value as EventListener, useCapture);
       return;
     }
   }
 
-  if (
-    enableCustomElementPropertySupport &&
-    isCustomComponentTag &&
-    name in (node: any)
-  ) {
-    (node: any)[name] = value;
+  trackHostMutation();
+
+  if (name in (node as any)) {
+    (node as any)[name] = value;
     return;
   }
 
-  if (shouldRemoveAttribute(name, value, propertyInfo, isCustomComponentTag)) {
-    value = null;
-  }
-  if (enableCustomElementPropertySupport) {
-    if (isCustomComponentTag && value === true) {
-      value = '';
-    }
+  if (value === true) {
+    node.setAttribute(name, '');
+    return;
   }
 
-  // If the prop isn't in the special list, treat it as a simple attribute.
-  if (isCustomComponentTag || propertyInfo === null) {
-    if (isAttributeNameSafe(name)) {
-      const attributeName = name;
-      if (value === null) {
-        node.removeAttribute(attributeName);
-      } else {
-        if (__DEV__) {
-          checkAttributeStringCoercion(value, name);
-        }
-        node.setAttribute(
-          attributeName,
-          enableTrustedTypesIntegration ? (value: any) : '' + (value: any),
-        );
-      }
-    }
-    return;
-  }
-  const {mustUseProperty} = propertyInfo;
-  if (mustUseProperty) {
-    const {propertyName} = propertyInfo;
-    if (value === null) {
-      const {type} = propertyInfo;
-      (node: any)[propertyName] = type === BOOLEAN ? false : '';
-    } else {
-      // Contrary to `setAttribute`, object properties are properly
-      // `toString`ed by IE8/9.
-      (node: any)[propertyName] = value;
-    }
-    return;
-  }
-  // The rest are treated as attributes with special cases.
-  const {attributeName, attributeNamespace} = propertyInfo;
-  if (value === null) {
-    node.removeAttribute(attributeName);
-  } else {
-    const {type} = propertyInfo;
-    let attributeValue;
-    if (type === BOOLEAN || (type === OVERLOADED_BOOLEAN && value === true)) {
-      // If attribute type is boolean, we know for sure it won't be an execution sink
-      // and we won't require Trusted Type here.
-      attributeValue = '';
-    } else {
-      // `setAttribute` with objects becomes only `[object]` in IE8/9,
-      // ('' + value) makes it output the correct toString()-value.
-      if (enableTrustedTypesIntegration) {
-        attributeValue = (value: any);
-      } else {
-        if (__DEV__) {
-          checkAttributeStringCoercion(value, attributeName);
-        }
-        attributeValue = '' + (value: any);
-      }
-      if (propertyInfo.sanitizeURL) {
-        sanitizeURL(attributeValue.toString());
-      }
-    }
-    if (attributeNamespace) {
-      node.setAttributeNS(attributeNamespace, attributeName, attributeValue);
-    } else {
-      node.setAttribute(attributeName, attributeValue);
-    }
-  }
+  // From here, it's the same as any attribute
+  setValueForAttribute(node, name, value);
 }

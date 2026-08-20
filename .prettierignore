@@ -1,11 +1,45 @@
+# react runtime
+build
+
 packages/react-devtools-core/dist
 packages/react-devtools-extensions/chrome/build
 packages/react-devtools-extensions/firefox/build
+packages/react-devtools-extensions/edge/build
 packages/react-devtools-extensions/shared/build
 packages/react-devtools-extensions/src/ErrorTesterCompiled.js
+packages/react-devtools-fusebox/dist
 packages/react-devtools-inline/dist
 packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__/
 packages/react-devtools-shared/src/hooks/__tests__/__source__/__untransformed__/
 packages/react-devtools-shell/dist
-packages/react-devtools-timeline/dist
-packages/react-devtools-timeline/static
+
+# react compiler
+compiler/**/dist
+compiler/**/__tests__/fixtures/**/*.expect.md
+compiler/**/.next
+
+# contains invalid graphql`...` which results in a promise rejection error from `yarn prettier-all`.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/error.todo-kitchensink.js
+# contains invalid const reassignment; the fixture asserts the compiler diagnostic.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/error.invalid-reassign-const.js
+# preserves the exact sequence-expression source shape used by the fixture.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/memoize-value-block-value-sequence.js
+# preserves minimized production input; formatting changes the reduced repro shape.
+compiler/packages/babel-plugin-react-compiler/src/__tests__/fixtures/compiler/todo-round3_promote_used_temps.js
+
+compiler/crates
+compiler/target
+compiler/apps/playground/public
+
+compiler/**/LICENSE
+compiler/*.md*
+compiler/*.json
+compiler/*.css
+compiler/*.webmanifest
+compiler/*.map
+compiler/*.sh
+compiler/*.txt
+compiler/*.ico
+compiler/*.svg
+compiler/*.lock
+compiler/*.toml

@@ -1,0 +1,59 @@
+.LoadHookNamesToggle,
+.ToggleError {
+  padding: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  bottom: -0.2em;
+  margin-block: -1em;
+}
+
+.ToggleError {
+  color: var(--color-error-text);
+}
+
+.Hook {
+  list-style-type: none;
+  margin: 0;
+  padding-left: 0.5rem;
+  line-height: 1.125rem;
+
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+}
+
+.Hook .Hook {
+  padding-left: 1rem;
+}
+
+.Name {
+  color: var(--color-dim);
+  flex: 0 0 auto;
+  cursor: default;
+}
+
+.PrimitiveHookName {
+  color: var(--color-text);
+  flex: 0 0 auto;
+  cursor: default;
+}
+
+.Name:after {
+  color: var(--color-text);
+  content: ': ';
+  margin-right: 0.5rem;
+}
+
+.PrimitiveHookNumber {
+  background-color: var(--color-primitive-hook-badge-background);
+  color: var(--color-primitive-hook-badge-text);
+  font-size: var(--font-size-monospace-small);
+  margin-right: 0.25rem;
+  border-radius: 0.125rem;
+  padding: 0.125rem 0.25rem;
+}
+
+.HookName {
+  color: var(--color-component-name);
+}

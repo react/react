@@ -32,7 +32,7 @@ if (process.env.NODE_ENV === 'production') {
   // DCE check should happen before ReactDOM bundle executes so that
   // DevTools can report bad minification during injection.
   checkDCE();
-  module.exports = require('./cjs/react-dom.production.min.js');
+  module.exports = require('./cjs/react-dom.production.js');
 } else {
   module.exports = require('./cjs/react-dom.development.js');
 }

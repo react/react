@@ -49,12 +49,12 @@ function handleRequest(res) {
 
 ### `react-dom`
 
-See https://reactjs.org/docs/react-dom.html
+See https://react.dev/reference/react-dom
 
 ### `react-dom/client`
 
-See https://reactjs.org/docs/react-dom-client.html
+See https://react.dev/reference/react-dom/client
 
 ### `react-dom/server`
 
-See https://reactjs.org/docs/react-dom-server.html
+See https://react.dev/reference/react-dom/server

@@ -1,0 +1,13 @@
+.root {
+  border-radius: 0.25rem;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    background-color: none;
+  }
+  50% {
+    background-color: var(--color-dimmest);
+  }
+}

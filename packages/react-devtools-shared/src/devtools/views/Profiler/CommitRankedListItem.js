@@ -21,15 +21,17 @@ type Props = {
   data: ItemData,
   index: number,
   style: Object,
-  ...
 };
 
 function CommitRankedListItem({data, index, style}: Props) {
   const {
     chartData,
+    currentSearchMatchID,
+    matchedFiberIDs,
     onElementMouseEnter,
     onElementMouseLeave,
     scaleX,
+    searchRegExp,
     selectedFiberIndex,
     selectFiber,
     width,
@@ -40,7 +42,7 @@ function CommitRankedListItem({data, index, style}: Props) {
   const {lineHeight} = useContext(SettingsContext);
 
   const handleClick = useCallback(
-    event => {
+    (event: $FlowFixMe) => {
       event.stopPropagation();
       const {id, name} = node;
       selectFiber(id, name);
@@ -67,12 +69,15 @@ function CommitRankedListItem({data, index, style}: Props) {
     <ChartNode
       color={getGradientColor(node.value / chartData.maxValue)}
       height={lineHeight}
+      isCurrentSearchMatch={node.id === currentSearchMatchID}
       isDimmed={index < selectedFiberIndex}
+      isSearchMatch={matchedFiberIDs.has(node.id)}
       key={node.id}
       label={node.label}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      searchRegExp={searchRegExp}
       width={Math.max(minBarWidth, scaleX(node.value, width))}
       x={0}
       y={top}
@@ -80,7 +85,6 @@ function CommitRankedListItem({data, index, style}: Props) {
   );
 }
 
-export default (memo(
-  CommitRankedListItem,
-  areEqual,
-): React.ComponentType<Props>);
+export default memo(CommitRankedListItem, areEqual) as component(
+  ...props: Props
+);

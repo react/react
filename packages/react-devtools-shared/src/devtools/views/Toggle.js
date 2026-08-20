@@ -42,10 +42,10 @@ export default function Toggle({
     defaultClassName = styles.ToggleOff;
   }
 
-  const handleClick = useCallback(() => onChange(!isChecked), [
-    isChecked,
-    onChange,
-  ]);
+  const handleClick = useCallback(
+    () => onChange(!isChecked),
+    [isChecked, onChange],
+  );
 
   let toggle = (
     <button

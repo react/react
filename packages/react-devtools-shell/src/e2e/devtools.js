@@ -1,6 +1,14 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @noflow
+ */
+
 import * as React from 'react';
-import * as ReactDOM from 'react-dom';
-import {createRoot} from 'react-dom/client';
+import * as ReactDOMClient from 'react-dom/client';
 import {
   activate as activateBackend,
   initialize as initializeBackend,
@@ -9,7 +17,6 @@ import {initialize as createDevTools} from 'react-devtools-inline/frontend';
 
 // This is a pretty gross hack to make the runtime loaded named-hooks-code work.
 // TODO (Webpack 5) Hoepfully we can remove this once we upgrade to Webpack 5.
-// $FlowFixMe
 __webpack_public_path__ = '/dist/'; // eslint-disable-line no-undef
 
 // TODO (Webpack 5) Hopefully we can remove this prop after the Webpack 5 migration.
@@ -33,8 +40,7 @@ function init(appIframe, devtoolsContainer, appSource) {
   const DevTools = createDevTools(contentWindow);
 
   inject(contentDocument, appSource, () => {
-    // $FlowFixMe Flow doesn't know about createRoot() yet.
-    createRoot(devtoolsContainer).render(
+    ReactDOMClient.createRoot(devtoolsContainer).render(
       <DevTools
         hookNamesModuleLoaderFunction={hookNamesModuleLoaderFunction}
         showTabBar={true}
@@ -51,4 +57,4 @@ const devtoolsContainer = document.getElementById('devtools');
 init(iframe, devtoolsContainer, 'dist/e2e-app.js');
 
 // ReactDOM Test Selector APIs used by Playwright e2e tests
-window.parent.REACT_DOM_DEVTOOLS = ReactDOM;
+window.parent.REACT_DOM_DEVTOOLS = ReactDOMClient;

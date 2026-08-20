@@ -10,16 +10,13 @@
 // $FlowFixMe[cannot-resolve-module]
 const dynamicFeatureFlags = require('SchedulerFeatureFlags');
 
-// Re-export dynamic flags from the www version.
-export const {
-  enableIsInputPending,
-  enableSchedulerDebugging,
-  enableProfiling: enableProfilingFeatureFlag,
-  enableIsInputPendingContinuous,
-  frameYieldMs,
-  continuousYieldMs,
-  maxYieldMs,
-} = dynamicFeatureFlags;
+export const {enableRequestPaint} = dynamicFeatureFlags;
 
-export const enableProfiling: boolean =
-  __PROFILE__ && enableProfilingFeatureFlag;
+export const enableProfiling = __DEV__;
+export const frameYieldMs = 10;
+
+export const userBlockingPriorityTimeout = 250;
+export const normalPriorityTimeout = 5000;
+export const lowPriorityTimeout = 10000;
+
+export const enableAlwaysYieldScheduler = false;

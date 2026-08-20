@@ -10,7 +10,9 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
+let root;
 
 const ChildComponent = ({id, eventHandler}) => (
   <div
@@ -68,9 +70,10 @@ describe('ReactTreeTraversal', () => {
   let outerNode1;
   let outerNode2;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
 
     mockFn.mockReset();
 
@@ -81,7 +84,10 @@ describe('ReactTreeTraversal', () => {
     document.body.appendChild(outerNode1);
     document.body.appendChild(outerNode2);
 
-    ReactDOM.render(<ParentComponent eventHandler={mockFn} />, container);
+    root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<ParentComponent eventHandler={mockFn} />);
+    });
   });
 
   afterEach(() => {

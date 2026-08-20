@@ -10,94 +10,99 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
-
-// In standard React, TextComponent keeps track of different Text templates
-// using comments. However, in React Fiber, those comments are not outputted due
-// to the way Fiber keeps track of the templates.
-// This function "Normalizes" childNodes lists to avoid the presence of comments
-// and make the child list identical in standard React and Fiber
-function filterOutComments(nodeList) {
-  return [].slice.call(nodeList).filter(node => !(node instanceof Comment));
-}
+let act;
 
 describe('ReactDOMTextComponent', () => {
   beforeEach(() => {
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
+    act = require('internal-test-utils').act;
   });
 
-  it('updates a mounted text component in place', () => {
-    const el = document.createElement('div');
-    let inst = ReactDOM.render(
-      <div>
-        <span />
-        {'foo'}
-        {'bar'}
-      </div>,
-      el,
-    );
-    let nodes = filterOutComments(inst.childNodes);
+  it('updates a mounted text component in place', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          <span />
+          {'foo'}
+          {'bar'}
+        </div>,
+      );
+    });
+    let inst = container.firstChild;
+    let nodes = inst.childNodes;
 
     const foo = nodes[1];
     const bar = nodes[2];
     expect(foo.data).toBe('foo');
     expect(bar.data).toBe('bar');
 
-    inst = ReactDOM.render(
-      <div>
-        <span />
-        {'baz'}
-        {'qux'}
-      </div>,
-      el,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          <span />
+          {'baz'}
+          {'qux'}
+        </div>,
+      );
+    });
+    inst = container.firstChild;
     // After the update, the text nodes should have stayed in place (as opposed
     // to getting unmounted and remounted)
-    nodes = filterOutComments(inst.childNodes);
+    nodes = inst.childNodes;
     expect(nodes[1]).toBe(foo);
     expect(nodes[2]).toBe(bar);
     expect(foo.data).toBe('baz');
     expect(bar.data).toBe('qux');
   });
 
-  it('can be toggled in and out of the markup', () => {
-    const el = document.createElement('div');
-    let inst = ReactDOM.render(
-      <div>
-        {'foo'}
-        <div />
-        {'bar'}
-      </div>,
-      el,
-    );
+  it('can be toggled in and out of the markup', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          {'foo'}
+          <div />
+          {'bar'}
+        </div>,
+      );
+    });
+    let inst = container.firstChild;
 
-    let childNodes = filterOutComments(inst.childNodes);
+    let childNodes = inst.childNodes;
     const childDiv = childNodes[1];
 
-    inst = ReactDOM.render(
-      <div>
-        {null}
-        <div />
-        {null}
-      </div>,
-      el,
-    );
-    childNodes = filterOutComments(inst.childNodes);
+    await act(() => {
+      root.render(
+        <div>
+          {null}
+          <div />
+          {null}
+        </div>,
+      );
+    });
+    inst = container.firstChild;
+    childNodes = inst.childNodes;
     expect(childNodes.length).toBe(1);
     expect(childNodes[0]).toBe(childDiv);
 
-    inst = ReactDOM.render(
-      <div>
-        {'foo'}
-        <div />
-        {'bar'}
-      </div>,
-      el,
-    );
-    childNodes = filterOutComments(inst.childNodes);
+    await act(() => {
+      root.render(
+        <div>
+          {'foo'}
+          <div />
+          {'bar'}
+        </div>,
+      );
+    });
+    inst = container.firstChild;
+    childNodes = inst.childNodes;
     expect(childNodes.length).toBe(3);
     expect(childNodes[0].data).toBe('foo');
     expect(childNodes[1]).toBe(childDiv);
@@ -106,101 +111,125 @@ describe('ReactDOMTextComponent', () => {
 
   /**
    * The following Node.normalize() tests are intentionally failing.
-   * See #9836 tracking whether we'll need to fix this or if it's unnecessary.
+   * See https://github.com/facebook/react/issues/9836 tracking whether we'll need to fix this or if it's unnecessary.
    */
+  // @gate TODO
+  it('can reconcile text merged by Node.normalize() alongside other elements', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          {'foo'}
+          {'bar'}
+          {'baz'}
+          <span />
+          {'qux'}
+        </div>,
+      );
+    });
 
-  xit('can reconcile text merged by Node.normalize() alongside other elements', () => {
-    const el = document.createElement('div');
-    let inst = ReactDOM.render(
-      <div>
-        {'foo'}
-        {'bar'}
-        {'baz'}
-        <span />
-        {'qux'}
-      </div>,
-      el,
-    );
+    const inst = container.firstChild;
 
     inst.normalize();
 
-    inst = ReactDOM.render(
-      <div>
-        {'bar'}
-        {'baz'}
-        {'qux'}
-        <span />
-        {'foo'}
-      </div>,
-      el,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          {'bar'}
+          {'baz'}
+          {'qux'}
+          <span />
+          {'foo'}
+        </div>,
+        container,
+      );
+    });
     expect(inst.textContent).toBe('barbazquxfoo');
   });
 
-  xit('can reconcile text merged by Node.normalize()', () => {
-    const el = document.createElement('div');
-    let inst = ReactDOM.render(
-      <div>
-        {'foo'}
-        {'bar'}
-        {'baz'}
-      </div>,
-      el,
-    );
+  // @gate TODO
+  it('can reconcile text merged by Node.normalize()', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          {'foo'}
+          {'bar'}
+          {'baz'}
+        </div>,
+      );
+    });
+    let inst = container.firstChild;
 
     inst.normalize();
 
-    inst = ReactDOM.render(
-      <div>
-        {'bar'}
-        {'baz'}
-        {'qux'}
-      </div>,
-      el,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          {'bar'}
+          {'baz'}
+          {'qux'}
+        </div>,
+        container,
+      );
+    });
+    inst = container.firstChild;
     expect(inst.textContent).toBe('barbazqux');
   });
 
-  it('can reconcile text from pre-rendered markup', () => {
-    const el = document.createElement('div');
-    let reactEl = (
+  it('can reconcile text from pre-rendered markup', async () => {
+    const container = document.createElement('div');
+    let children = (
       <div>
         {'foo'}
         {'bar'}
         {'baz'}
       </div>
     );
-    el.innerHTML = ReactDOMServer.renderToString(reactEl);
+    container.innerHTML = ReactDOMServer.renderToString(children);
 
-    ReactDOM.hydrate(reactEl, el);
-    expect(el.textContent).toBe('foobarbaz');
+    const root = await act(() => {
+      return ReactDOMClient.hydrateRoot(container, children);
+    });
+    expect(container.textContent).toBe('foobarbaz');
 
-    ReactDOM.unmountComponentAtNode(el);
+    await act(() => {
+      root.unmount();
+    });
 
-    reactEl = (
+    children = (
       <div>
         {''}
         {''}
         {''}
       </div>
     );
-    el.innerHTML = ReactDOMServer.renderToString(reactEl);
+    container.innerHTML = ReactDOMServer.renderToString(children);
 
-    ReactDOM.hydrate(reactEl, el);
-    expect(el.textContent).toBe('');
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, children);
+    });
+    expect(container.textContent).toBe('');
   });
 
-  xit('can reconcile text arbitrarily split into multiple nodes', () => {
-    const el = document.createElement('div');
-    let inst = ReactDOM.render(
-      <div>
-        <span />
-        {'foobarbaz'}
-      </div>,
-      el,
-    );
+  // @gate TODO
+  it('can reconcile text arbitrarily split into multiple nodes', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
 
-    const childNodes = filterOutComments(inst.childNodes);
+    await act(() => {
+      root.render(
+        <div>
+          <span />
+          {'foobarbaz'}
+        </div>,
+      );
+    });
+    let inst = container.firstChild;
+
+    const childNodes = inst.childNodes;
     const textNode = childNodes[1];
     textNode.textContent = 'foo';
     inst.insertBefore(
@@ -212,32 +241,40 @@ describe('ReactDOMTextComponent', () => {
       childNodes[1].nextSibling,
     );
 
-    inst = ReactDOM.render(
-      <div>
-        <span />
-        {'barbazqux'}
-      </div>,
-      el,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          <span />
+          {'barbazqux'}
+        </div>,
+        container,
+      );
+    });
+    inst = container.firstChild;
     expect(inst.textContent).toBe('barbazqux');
   });
 
-  xit('can reconcile text arbitrarily split into multiple nodes on some substitutions only', () => {
-    const el = document.createElement('div');
-    let inst = ReactDOM.render(
-      <div>
-        <span />
-        {'bar'}
-        <span />
-        {'foobarbaz'}
-        {'foo'}
-        {'barfoo'}
-        <span />
-      </div>,
-      el,
-    );
+  // @gate TODO
+  it('can reconcile text arbitrarily split into multiple nodes on some substitutions only', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          <span />
+          {'bar'}
+          <span />
+          {'foobarbaz'}
+          {'foo'}
+          {'barfoo'}
+          <span />
+        </div>,
+      );
+    });
 
-    const childNodes = filterOutComments(inst.childNodes);
+    let inst = container.firstChild;
+
+    const childNodes = inst.childNodes;
     const textNode = childNodes[3];
     textNode.textContent = 'foo';
     inst.insertBefore(
@@ -255,38 +292,48 @@ describe('ReactDOMTextComponent', () => {
       childNodes[5].nextSibling,
     );
 
-    inst = ReactDOM.render(
-      <div>
-        <span />
-        {'baz'}
-        <span />
-        {'barbazqux'}
-        {'bar'}
-        {'bazbar'}
-        <span />
-      </div>,
-      el,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          <span />
+          {'baz'}
+          <span />
+          {'barbazqux'}
+          {'bar'}
+          {'bazbar'}
+          <span />
+        </div>,
+        container,
+      );
+    });
+    inst = container.firstChild;
     expect(inst.textContent).toBe('bazbarbazquxbarbazbar');
   });
 
-  xit('can unmount normalized text nodes', () => {
-    const el = document.createElement('div');
-    ReactDOM.render(
-      <div>
-        {''}
-        {'foo'}
-        {'bar'}
-      </div>,
-      el,
-    );
-    el.normalize();
-    ReactDOM.render(<div />, el);
-    expect(el.innerHTML).toBe('<div></div>');
+  // @gate TODO
+  it('can unmount normalized text nodes', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <div>
+          {''}
+          {'foo'}
+          {'bar'}
+        </div>,
+      );
+    });
+
+    container.normalize();
+    await act(() => {
+      root.render(<div />);
+    });
+
+    expect(container.innerHTML).toBe('<div></div>');
   });
 
-  it('throws for Temporal-like text nodes', () => {
-    const el = document.createElement('div');
+  it('throws for Temporal-like text nodes', async () => {
+    const container = document.createElement('div');
     class TemporalLike {
       valueOf() {
         // Throwing here is the behavior of ECMAScript "Temporal" date/time API.
@@ -297,9 +344,12 @@ describe('ReactDOMTextComponent', () => {
         return '2020-01-01';
       }
     }
-    expect(() =>
-      ReactDOM.render(<div>{new TemporalLike()}</div>, el),
-    ).toThrowError(
+    const root = ReactDOMClient.createRoot(container);
+    await expect(
+      act(() => {
+        root.render(<div>{new TemporalLike()}</div>);
+      }),
+    ).rejects.toThrowError(
       new Error(
         'Objects are not valid as a React child (found: object with keys {}).' +
           ' If you meant to render a collection of children, use an array instead.',

@@ -1,4 +1,4 @@
-/* eslint-disable no-fallthrough, react/react-in-jsx-scope, react/jsx-no-undef */
+/* eslint-disable react/react-in-jsx-scope, react/jsx-no-undef */
 /* global React ReactCache ReactDOM SchedulerTracing ScheduleTracing  */
 
 const apps = [];

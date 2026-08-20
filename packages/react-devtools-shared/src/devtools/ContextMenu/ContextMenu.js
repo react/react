@@ -8,133 +8,120 @@
  */
 
 import * as React from 'react';
-import {useContext, useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {useLayoutEffect} from 'react';
 import {createPortal} from 'react-dom';
-import {RegistryContext} from './Contexts';
+
+import ContextMenuItem from './ContextMenuItem';
+
+import type {
+  ContextMenuItem as ContextMenuItemType,
+  ContextMenuPosition,
+} from './types';
 
 import styles from './ContextMenu.css';
 
-import type {RegistryContextType} from './Contexts';
-
-function repositionToFit(element: HTMLElement, pageX: number, pageY: number) {
+function repositionToFit(element: HTMLElement, x: number, y: number) {
   const ownerWindow = element.ownerDocument.defaultView;
-  if (element !== null) {
-    if (pageY + element.offsetHeight >= ownerWindow.innerHeight) {
-      if (pageY - element.offsetHeight > 0) {
-        element.style.top = `${pageY - element.offsetHeight}px`;
-      } else {
-        element.style.top = '0px';
-      }
+  if (y + element.offsetHeight >= ownerWindow.innerHeight) {
+    if (y - element.offsetHeight > 0) {
+      element.style.top = `${y - element.offsetHeight}px`;
     } else {
-      element.style.top = `${pageY}px`;
+      element.style.top = '0px';
     }
+  } else {
+    element.style.top = `${y}px`;
+  }
 
-    if (pageX + element.offsetWidth >= ownerWindow.innerWidth) {
-      if (pageX - element.offsetWidth > 0) {
-        element.style.left = `${pageX - element.offsetWidth}px`;
-      } else {
-        element.style.left = '0px';
-      }
+  if (x + element.offsetWidth >= ownerWindow.innerWidth) {
+    if (x - element.offsetWidth > 0) {
+      element.style.left = `${x - element.offsetWidth}px`;
     } else {
-      element.style.left = `${pageX}px`;
+      element.style.left = '0px';
     }
+  } else {
+    element.style.left = `${x}px`;
   }
 }
 
-const HIDDEN_STATE = {
-  data: null,
-  isVisible: false,
-  pageX: 0,
-  pageY: 0,
-};
-
 type Props = {
-  children: (data: Object) => React$Node,
-  id: string,
+  anchorElementRef: {current: React.ElementRef<any> | null},
+  items: ContextMenuItemType[],
+  position: ContextMenuPosition,
+  hide: () => void,
 };
 
-export default function ContextMenu({children, id}: Props): React.Node {
-  const {hideMenu, registerMenu} = useContext<RegistryContextType>(
-    RegistryContext,
+export default function ContextMenu({
+  anchorElementRef,
+  position,
+  items,
+  hide,
+}: Props): React.Node {
+  // This works on the assumption that ContextMenu component is only rendered when it should be shown
+  const anchor = anchorElementRef.current;
+
+  if (anchor == null) {
+    throw new Error(
+      'Attempted to open a context menu for an element, which is not mounted',
+    );
+  }
+
+  const ownerDocument = anchor.ownerDocument;
+  const portalContainer = ownerDocument.querySelector(
+    '[data-react-devtools-portal-root]',
   );
 
-  const [state, setState] = useState(HIDDEN_STATE);
-
-  const bodyAccessorRef = useRef(null);
-  const containerRef = useRef(null);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    const element = bodyAccessorRef.current;
-    if (element !== null) {
-      const ownerDocument = element.ownerDocument;
-      containerRef.current = ownerDocument.querySelector(
-        '[data-react-devtools-portal-root]',
-      );
-
-      if (containerRef.current == null) {
-        console.warn(
-          'DevTools tooltip root node not found; context menus will be disabled.',
-        );
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const showMenuFn = ({data, pageX, pageY}) => {
-      setState({data, isVisible: true, pageX, pageY});
-    };
-    const hideMenuFn = () => setState(HIDDEN_STATE);
-    return registerMenu(id, showMenuFn, hideMenuFn);
-  }, [id]);
+  const hideMenu = portalContainer == null || items.length === 0;
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
-    if (!state.isVisible) {
+    // Match the early-return condition below.
+    if (hideMenu) {
       return;
     }
-
-    const menu = ((menuRef.current: any): HTMLElement);
-    const container = containerRef.current;
-    if (container !== null) {
-      const hideUnlessContains = event => {
-        if (!menu.contains(event.target)) {
-          hideMenu();
-        }
-      };
-
-      const ownerDocument = container.ownerDocument;
-      ownerDocument.addEventListener('mousedown', hideUnlessContains);
-      ownerDocument.addEventListener('touchstart', hideUnlessContains);
-      ownerDocument.addEventListener('keydown', hideUnlessContains);
-
-      const ownerWindow = ownerDocument.defaultView;
-      ownerWindow.addEventListener('resize', hideMenu);
-
-      repositionToFit(menu, state.pageX, state.pageY);
-
-      return () => {
-        ownerDocument.removeEventListener('mousedown', hideUnlessContains);
-        ownerDocument.removeEventListener('touchstart', hideUnlessContains);
-        ownerDocument.removeEventListener('keydown', hideUnlessContains);
-
-        ownerWindow.removeEventListener('resize', hideMenu);
-      };
-    }
-  }, [state]);
-
-  if (!state.isVisible) {
-    return <div ref={bodyAccessorRef} />;
-  } else {
-    const container = containerRef.current;
-    if (container !== null) {
-      return createPortal(
-        <div ref={menuRef} className={styles.ContextMenu}>
-          {children(state.data)}
-        </div>,
-        container,
+    const maybeMenu = menuRef.current;
+    if (maybeMenu === null) {
+      throw new Error(
+        "Can't access context menu element. This is a bug in React DevTools.",
       );
-    } else {
-      return null;
     }
+    const menu = maybeMenu as HTMLDivElement;
+
+    function hideUnlessContains(event: Event) {
+      if (!menu.contains(event.target as any as Node)) {
+        hide();
+      }
+    }
+
+    ownerDocument.addEventListener('mousedown', hideUnlessContains);
+    ownerDocument.addEventListener('touchstart', hideUnlessContains);
+    ownerDocument.addEventListener('keydown', hideUnlessContains);
+
+    const ownerWindow = ownerDocument.defaultView;
+    ownerWindow.addEventListener('resize', hide);
+
+    repositionToFit(menu, position.x, position.y);
+
+    return () => {
+      ownerDocument.removeEventListener('mousedown', hideUnlessContains);
+      ownerDocument.removeEventListener('touchstart', hideUnlessContains);
+      ownerDocument.removeEventListener('keydown', hideUnlessContains);
+
+      ownerWindow.removeEventListener('resize', hide);
+    };
+  }, [hideMenu]);
+
+  if (hideMenu) {
+    return null;
   }
+
+  return createPortal(
+    <div className={styles.ContextMenu} ref={menuRef}>
+      {items.map(({onClick, content}, index) => (
+        <ContextMenuItem key={index} onClick={onClick} hide={hide}>
+          {content}
+        </ContextMenuItem>
+      ))}
+    </div>,
+    portalContainer,
+  );
 }

@@ -63,8 +63,7 @@ export default function ReportNewIssue({
         className={styles.ReportLink}
         href={bugURL}
         rel="noopener noreferrer"
-        target="_blank"
-        title="Report bug">
+        target="_blank">
         Report this issue
       </a>
       <div className={styles.ReproSteps}>

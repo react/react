@@ -21,7 +21,6 @@
 'use strict';
 
 var assign = Object.assign;
-var PropTypes = require('prop-types');
 var React = require('react');
 var ReactART = require('react-art');
 
@@ -36,13 +35,6 @@ var Path = ReactART.Path;
  */
 var Wedge = createReactClass({
   displayName: 'Wedge',
-
-  propTypes: {
-    outerRadius: PropTypes.number.isRequired,
-    startAngle: PropTypes.number.isRequired,
-    endAngle: PropTypes.number.isRequired,
-    innerRadius: PropTypes.number,
-  },
 
   circleRadians: Math.PI * 2,
 

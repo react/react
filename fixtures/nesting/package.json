@@ -15,9 +15,9 @@
     "watch:legacy": "cpx 'src/shared/**' 'src/legacy/shared/' --watch --no-initial",
     "watch:modern": "cpx 'src/shared/**' 'src/modern/shared/' --watch --no-initial",
     "prebuild": "run-p copy:*",
-    "prestart": "run-p copy:*",
-    "start": "run-p start-app watch:*",
-    "start-app": "react-scripts start",
+    "predev": "run-p copy:*",
+    "dev": "run-p dev-app watch:*",
+    "dev-app": "react-scripts start",
     "build": "react-scripts build",
     "eject": "react-scripts eject"
   },

@@ -1,0 +1,51 @@
+name: (Runtime) Discord Notify
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+    paths-ignore:
+      - packages/react-devtools**
+      - compiler/**
+      - .github/workflows/compiler_**.yml
+      - .github/workflows/devtools**.yml
+
+permissions: {}
+
+jobs:
+  check_access:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    outputs:
+      is_member_or_collaborator: ${{ steps.check_is_member_or_collaborator.outputs.is_member_or_collaborator }}
+    steps:
+      - run: echo ${{ github.event.pull_request.author_association }}
+      - name: Check is member or collaborator
+        id: check_is_member_or_collaborator
+        if: ${{ github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' }}
+        run: echo "is_member_or_collaborator=true" >> "$GITHUB_OUTPUT"
+
+  check_maintainer:
+    if: ${{ needs.check_access.outputs.is_member_or_collaborator == 'true' || needs.check_access.outputs.is_member_or_collaborator == true }}
+    needs: [check_access]
+    uses: react/react/.github/workflows/shared_check_maintainer.yml@main
+    permissions:
+      # Used by check_maintainer
+      contents: read
+    with:
+      actor: ${{ github.event.pull_request.user.login }}
+
+  notify:
+    if: ${{ needs.check_maintainer.outputs.is_core_team == 'true' }}
+    needs: check_maintainer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord Webhook Action
+        uses: tsickert/discord-webhook@86dc739f3f165f16dadc5666051c367efa1692f4
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          embed-author-name: ${{ github.event.pull_request.user.login }}
+          embed-author-url: ${{ github.event.pull_request.user.html_url }}
+          embed-author-icon-url: ${{ github.event.pull_request.user.avatar_url }}
+          embed-title: '#${{ github.event.number }} (+${{github.event.pull_request.additions}} -${{github.event.pull_request.deletions}}): ${{ github.event.pull_request.title }}'
+          embed-description: ${{ github.event.pull_request.body }}
+          embed-url: ${{ github.event.pull_request.html_url }}

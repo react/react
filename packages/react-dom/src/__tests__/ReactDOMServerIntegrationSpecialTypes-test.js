@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
@@ -12,30 +13,28 @@
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
-let ReactTestUtils;
 let forwardRef;
 let memo;
 let yieldedValues;
-let unstable_yieldValue;
-let clearYields;
+let log;
+let clearLog;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
-  ReactDOM = require('react-dom');
+  ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
-  ReactTestUtils = require('react-dom/test-utils');
   forwardRef = React.forwardRef;
   memo = React.memo;
 
   yieldedValues = [];
-  unstable_yieldValue = value => {
+  log = value => {
     yieldedValues.push(value);
   };
-  clearYields = () => {
+  clearLog = () => {
     const ret = yieldedValues;
     yieldedValues = [];
     return ret;
@@ -43,9 +42,8 @@ function initModules() {
 
   // Make them available to the helpers.
   return {
-    ReactDOM,
+    ReactDOMClient,
     ReactDOMServer,
-    ReactTestUtils,
   };
 }
 
@@ -92,7 +90,7 @@ describe('ReactDOMServerIntegration', () => {
     });
 
     function Text({text}) {
-      unstable_yieldValue(text);
+      log(text);
       return <span>{text}</span>;
     }
 
@@ -114,27 +112,25 @@ describe('ReactDOMServerIntegration', () => {
       ref.current = 0;
       await render(<MemoRefCounter ref={ref} />);
 
-      expect(clearYields()).toEqual(['Count: 0']);
+      expect(clearLog()).toEqual(['Count: 0']);
     });
 
     itRenders('with comparator', async render => {
       const MemoCounter = memo(Counter, (oldProps, newProps) => false);
       await render(<MemoCounter count={0} />);
-      expect(clearYields()).toEqual(['Count: 0']);
+      expect(clearLog()).toEqual(['Count: 0']);
     });
 
     itRenders(
       'comparator functions are not invoked on the server',
       async render => {
         const MemoCounter = React.memo(Counter, (oldProps, newProps) => {
-          unstable_yieldValue(
-            `Old count: ${oldProps.count}, New count: ${newProps.count}`,
-          );
+          log(`Old count: ${oldProps.count}, New count: ${newProps.count}`);
           return oldProps.count === newProps.count;
         });
 
         await render(<MemoCounter count={0} />);
-        expect(clearYields()).toEqual(['Count: 0']);
+        expect(clearLog()).toEqual(['Count: 0']);
       },
     );
   });

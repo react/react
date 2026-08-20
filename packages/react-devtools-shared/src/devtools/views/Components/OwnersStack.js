@@ -19,8 +19,8 @@ import {
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import Toggle from '../Toggle';
-import Badge from './Badge';
-import {OwnersListContext} from './OwnersListContext';
+import ElementBadges from './ElementBadges';
+import {OwnersListContext, useChangeOwnerAction} from './OwnersListContext';
 import {TreeDispatcherContext, TreeStateContext} from './TreeContext';
 import {useIsOverflowing} from '../hooks';
 import {StoreContext} from '../context';
@@ -32,7 +32,7 @@ import {
   MenuItem,
 } from '../Components/reach-ui/menu-button';
 
-import type {SerializedElement} from './types';
+import type {SerializedElement} from 'react-devtools-shared/src/frontend/types';
 
 import styles from './OwnersStack.css';
 
@@ -56,7 +56,7 @@ type State = {
   selectedIndex: number,
 };
 
-function dialogReducer(state, action) {
+function dialogReducer(state: State, action: Action) {
   switch (action.type) {
     case 'UPDATE_OWNER_ID':
       const selectedIndex = action.owners.findIndex(
@@ -77,10 +77,59 @@ function dialogReducer(state, action) {
   }
 }
 
+type OwnerStackFlatListProps = {
+  owners: Array<SerializedElement>,
+  selectedIndex: number,
+  selectOwner: SelectOwner,
+  setElementsTotalWidth: (width: number) => void,
+};
+
+function OwnerStackFlatList({
+  owners,
+  selectedIndex,
+  selectOwner,
+  setElementsTotalWidth,
+}: OwnerStackFlatListProps): React.Node {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (container === null) {
+      return;
+    }
+
+    const ResizeObserver = container.ownerDocument.defaultView.ResizeObserver;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      setElementsTotalWidth(entry.contentRect.width);
+    });
+
+    observer.observe(container);
+    return observer.disconnect.bind(observer);
+  }, []);
+
+  return (
+    <div className={styles.OwnerStackFlatListContainer} ref={containerRef}>
+      {owners.map((owner, index) => (
+        <Fragment key={index}>
+          <ElementView
+            owner={owner}
+            isSelected={index === selectedIndex}
+            selectOwner={selectOwner}
+          />
+          {index < owners.length - 1 && (
+            <span className={styles.OwnerStackFlatListSeparator}>»</span>
+          )}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
 export default function OwnerStack(): React.Node {
   const read = useContext(OwnersListContext);
   const {ownerID} = useContext(TreeStateContext);
   const treeDispatch = useContext(TreeDispatcherContext);
+  const changeOwnerAction = useChangeOwnerAction();
 
   const [state, dispatch] = useReducer<State, State, Action>(dialogReducer, {
     ownerID: null,
@@ -116,7 +165,7 @@ export default function OwnerStack(): React.Node {
           type: 'UPDATE_SELECTED_INDEX',
           selectedIndex: index >= 0 ? index : 0,
         });
-        treeDispatch({type: 'SELECT_OWNER', payload: owner.id});
+        changeOwnerAction(owner.id);
       } else {
         dispatch({
           type: 'UPDATE_SELECTED_INDEX',
@@ -134,32 +183,10 @@ export default function OwnerStack(): React.Node {
 
   const selectedOwner = owners[selectedIndex];
 
-  useLayoutEffect(() => {
-    // If we're already overflowing, then we don't need to re-measure items.
-    // That's because once the owners stack is open, it can only get larger (by drilling in).
-    // A totally new stack can only be reached by exiting this mode and re-entering it.
-    if (elementsBarRef.current === null || isOverflowing) {
-      return () => {};
-    }
-
-    let totalWidth = 0;
-    for (let i = 0; i < owners.length; i++) {
-      const element = elementsBarRef.current.children[i];
-      const computedStyle = getComputedStyle(element);
-
-      totalWidth +=
-        element.offsetWidth +
-        parseInt(computedStyle.marginLeft, 10) +
-        parseInt(computedStyle.marginRight, 10);
-    }
-
-    setElementsTotalWidth(totalWidth);
-  }, [elementsBarRef, isOverflowing, owners.length]);
-
   return (
     <div className={styles.OwnerStack}>
       <div className={styles.Bar} ref={elementsBarRef}>
-        {isOverflowing && (
+        {isOverflowing ? (
           <Fragment>
             <ElementsDropdown
               owners={owners}
@@ -179,22 +206,17 @@ export default function OwnerStack(): React.Node {
               />
             )}
           </Fragment>
+        ) : (
+          <OwnerStackFlatList
+            owners={owners}
+            selectedIndex={selectedIndex}
+            selectOwner={selectOwner}
+            setElementsTotalWidth={setElementsTotalWidth}
+          />
         )}
-        {!isOverflowing &&
-          owners.map((owner, index) => (
-            <ElementView
-              key={index}
-              owner={owner}
-              isSelected={index === selectedIndex}
-              selectOwner={selectOwner}
-            />
-          ))}
       </div>
       <div className={styles.VRule} />
-      <Button
-        className={styles.IconButton}
-        onClick={() => selectOwner(null)}
-        title="Back to tree view">
+      <Button onClick={() => selectOwner(null)} title="Back to tree view">
         <ButtonIcon type="close" />
       </Button>
     </div>
@@ -205,13 +227,8 @@ type ElementsDropdownProps = {
   owners: Array<SerializedElement>,
   selectedIndex: number,
   selectOwner: SelectOwner,
-  ...
 };
-function ElementsDropdown({
-  owners,
-  selectedIndex,
-  selectOwner,
-}: ElementsDropdownProps) {
+function ElementsDropdown({owners, selectOwner}: ElementsDropdownProps) {
   const store = useContext(StoreContext);
 
   const menuItems = [];
@@ -225,10 +242,11 @@ function ElementsDropdown({
         onSelect={() => (isInStore ? selectOwner(owner) : null)}>
         {owner.displayName}
 
-        <Badge
-          className={styles.Badge}
+        <ElementBadges
           hocDisplayNames={owner.hocDisplayNames}
-          type={owner.type}
+          environmentName={owner.env}
+          compiledWithForget={owner.compiledWithForget}
+          className={styles.BadgesBlock}
         />
       </MenuItem>,
     );
@@ -257,7 +275,7 @@ type ElementViewProps = {
 function ElementView({isSelected, owner, selectOwner}: ElementViewProps) {
   const store = useContext(StoreContext);
 
-  const {displayName, hocDisplayNames, type} = owner;
+  const {displayName, hocDisplayNames, compiledWithForget} = owner;
   const isInStore = store.containsElement(owner.id);
 
   const handleChange = useCallback(() => {
@@ -273,10 +291,11 @@ function ElementView({isSelected, owner, selectOwner}: ElementViewProps) {
       onChange={handleChange}>
       {displayName}
 
-      <Badge
-        className={styles.Badge}
+      <ElementBadges
         hocDisplayNames={hocDisplayNames}
-        type={type}
+        environmentName={owner.env}
+        compiledWithForget={compiledWithForget}
+        className={styles.BadgesBlock}
       />
     </Toggle>
   );

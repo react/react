@@ -14,6 +14,7 @@ import {StoreContext} from '../context';
 import {ProfilerContext} from 'react-devtools-shared/src/devtools/views/Profiler/ProfilerContext';
 
 import styles from './SettingsShared.css';
+import typeof {SyntheticEvent} from 'react-dom-bindings/src/events/SyntheticEvent';
 
 export default function ProfilerSettings(_: {}): React.Node {
   const {
@@ -39,13 +40,13 @@ export default function ProfilerSettings(_: {}): React.Node {
   );
 
   const updateRecordChangeDescriptions = useCallback(
-    ({currentTarget}) => {
+    ({currentTarget}: $FlowFixMe) => {
       store.recordChangeDescriptions = currentTarget.checked;
     },
     [store],
   );
   const updateMinCommitDuration = useCallback(
-    (event: SyntheticEvent<HTMLInputElement>) => {
+    (event: SyntheticEvent) => {
       const newValue = parseFloat(event.currentTarget.value);
       setMinCommitDuration(
         Number.isNaN(newValue) || newValue <= 0 ? 0 : newValue,
@@ -54,7 +55,7 @@ export default function ProfilerSettings(_: {}): React.Node {
     [setMinCommitDuration],
   );
   const updateIsCommitFilterEnabled = useCallback(
-    (event: SyntheticEvent<HTMLInputElement>) => {
+    (event: SyntheticEvent) => {
       const checked = event.currentTarget.checked;
       setIsCommitFilterEnabled(checked);
       if (checked) {
@@ -69,35 +70,37 @@ export default function ProfilerSettings(_: {}): React.Node {
   const minCommitDurationInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <div className={styles.Settings}>
-      <div className={styles.Setting}>
-        <label>
+    <div className={styles.SettingList}>
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
           <input
             type="checkbox"
             checked={recordChangeDescriptions}
             onChange={updateRecordChangeDescriptions}
-          />{' '}
-          Record why each component rendered while profiling.
+            className={styles.SettingRowCheckbox}
+          />
+          Record why each component rendered while profiling
         </label>
       </div>
 
-      <div className={styles.Setting}>
-        <label>
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
           <input
             checked={isCommitFilterEnabled}
             onChange={updateIsCommitFilterEnabled}
             type="checkbox"
-          />{' '}
+            className={styles.SettingRowCheckbox}
+          />
           Hide commits below
-        </label>{' '}
-        <input
-          className={styles.Input}
-          onChange={updateMinCommitDuration}
-          ref={minCommitDurationInputRef}
-          type="number"
-          value={minCommitDuration}
-        />{' '}
-        (ms)
+          <input
+            className={styles.Input}
+            onChange={updateMinCommitDuration}
+            ref={minCommitDurationInputRef}
+            type="number"
+            value={minCommitDuration}
+          />
+          &nbsp;(ms)
+        </label>
       </div>
     </div>
   );

@@ -7,43 +7,116 @@
  * @flow
  */
 
-import {copy} from 'clipboard-js';
 import * as React from 'react';
-import {Fragment, useCallback, useContext} from 'react';
-import {TreeDispatcherContext} from './TreeContext';
-import {BridgeContext, ContextMenuContext, StoreContext} from '../context';
-import ContextMenu from '../../ContextMenu/ContextMenu';
-import ContextMenuItem from '../../ContextMenu/ContextMenuItem';
-import Button from '../Button';
-import ButtonIcon from '../ButtonIcon';
-import Icon from '../Icon';
-import HocBadges from './HocBadges';
+import {Fragment, useContext, useState, use} from 'react';
+import {BridgeContext, StoreContext} from '../context';
+import InspectedElementBadges from './InspectedElementBadges';
 import InspectedElementContextTree from './InspectedElementContextTree';
 import InspectedElementErrorsAndWarningsTree from './InspectedElementErrorsAndWarningsTree';
 import InspectedElementHooksTree from './InspectedElementHooksTree';
 import InspectedElementPropsTree from './InspectedElementPropsTree';
 import InspectedElementStateTree from './InspectedElementStateTree';
 import InspectedElementStyleXPlugin from './InspectedElementStyleXPlugin';
-import InspectedElementSuspenseToggle from './InspectedElementSuspenseToggle';
+import InspectedElementSuspendedBy from './InspectedElementSuspendedBy';
 import NativeStyleEditor from './NativeStyleEditor';
-import Badge from './Badge';
-import {useHighlightNativeElement} from '../hooks';
-import {
-  copyInspectedElementPath as copyInspectedElementPathAPI,
-  storeAsGlobal as storeAsGlobalAPI,
-} from 'react-devtools-shared/src/backendAPI';
+import FetchFileWithCachingContext from './FetchFileWithCachingContext';
 import {enableStyleXFeatures} from 'react-devtools-feature-flags';
-import {logEvent} from 'react-devtools-shared/src/Logger';
+import InspectedElementSourcePanel from './InspectedElementSourcePanel';
+import StackTraceView, {IgnoreListToggleButton} from './StackTraceView';
+import OwnerView from './OwnerView';
+import Skeleton from './Skeleton';
+import {
+  ElementTypeSuspense,
+  ElementTypeActivity,
+} from 'react-devtools-shared/src/frontend/types';
+import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
 
 import styles from './InspectedElementView.css';
 
-import type {ContextMenuContextType} from '../context';
-import type {Element, InspectedElement, SerializedElement} from './types';
-import type {ElementType, HookNames} from 'react-devtools-shared/src/types';
+import type {
+  Element,
+  InspectedElement,
+} from 'react-devtools-shared/src/frontend/types';
+import type {HookNames} from 'react-devtools-shared/src/frontend/types';
 import type {ToggleParseHookNames} from './InspectedElementContext';
+import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
 
-export type CopyPath = (path: Array<string | number>) => void;
-export type InspectPath = (path: Array<string | number>) => void;
+type StackTraceGroupProps = {
+  children: (showIgnoreList: boolean) => React.Node,
+  componentStack: InspectedElement['stack'],
+  owners: InspectedElement['owners'],
+};
+
+function StackTraceGroup({
+  children,
+  componentStack,
+  owners,
+}: StackTraceGroupProps): React.Node {
+  const [showIgnoreList, setShowIgnoreList] = useState(false);
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const componentStackHasIgnoredFrames =
+    componentStack !== null &&
+    componentStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const ownerStacksHaveIgnoredFrames =
+    owners !== null &&
+    owners.some(owner => {
+      return (
+        owner.stack !== null &&
+        owner.stack.some(callSite => {
+          const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+          // symbolicated output is cached
+          const symbolicatedCallSite: null | SourceMappedLocation =
+            fetchFileWithCaching !== null
+              ? use(
+                  symbolicateSourceWithCache(
+                    fetchFileWithCaching,
+                    virtualURL,
+                    virtualLine,
+                    virtualColumn,
+                  ),
+                )
+              : null;
+
+          return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+        })
+      );
+    });
+
+  const hasIgnoredFrames =
+    componentStackHasIgnoredFrames || ownerStacksHaveIgnoredFrames;
+
+  return (
+    <>
+      {children(showIgnoreList)}
+      {hasIgnoredFrames && (
+        <IgnoreListToggleButton
+          onClick={() => setShowIgnoreList(prev => !prev)}
+          showIgnoreList={showIgnoreList}
+        />
+      )}
+    </>
+  );
+}
 
 type Props = {
   element: Element,
@@ -51,6 +124,7 @@ type Props = {
   inspectedElement: InspectedElement,
   parseHookNames: boolean,
   toggleParseHookNames: ToggleParseHookNames,
+  symbolicatedSourcePromise: Promise<SourceMappedLocation | null>,
 };
 
 export default function InspectedElementView({
@@ -59,280 +133,199 @@ export default function InspectedElementView({
   inspectedElement,
   parseHookNames,
   toggleParseHookNames,
+  symbolicatedSourcePromise,
 }: Props): React.Node {
-  const {id} = element;
   const {
+    stack,
     owners,
     rendererPackageName,
     rendererVersion,
     rootType,
     source,
+    nativeTag,
+    type,
   } = inspectedElement;
 
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
-
-  const {
-    isEnabledForInspectedElement: isContextMenuEnabledForInspectedElement,
-    viewAttributeSourceFunction,
-  } = useContext<ContextMenuContextType>(ContextMenuContext);
 
   const rendererLabel =
     rendererPackageName !== null && rendererVersion !== null
       ? `${rendererPackageName}@${rendererVersion}`
       : null;
   const showOwnersList = owners !== null && owners.length > 0;
+  const showStack = stack != null && stack.length > 0;
   const showRenderedBy =
-    showOwnersList || rendererLabel !== null || rootType !== null;
+    showStack || showOwnersList || rendererLabel !== null || rootType !== null;
+
+  const propsSection = (
+    <div className={styles.InspectedElementSection}>
+      <InspectedElementPropsTree
+        bridge={bridge}
+        element={element}
+        inspectedElement={inspectedElement}
+        store={store}
+      />
+    </div>
+  );
 
   return (
     <Fragment>
       <div className={styles.InspectedElement}>
-        <HocBadges element={element} />
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementBadges
+            hocDisplayNames={element.hocDisplayNames}
+            compiledWithForget={element.compiledWithForget}
+            nativeTag={nativeTag}
+          />
+        </div>
 
-        <InspectedElementPropsTree
-          bridge={bridge}
-          element={element}
-          inspectedElement={inspectedElement}
-          store={store}
-        />
+        {
+          // For Suspense and Activity we show the props further down.
+          type !== ElementTypeSuspense && type !== ElementTypeActivity
+            ? propsSection
+            : null
+        }
 
-        <InspectedElementSuspenseToggle
-          bridge={bridge}
-          inspectedElement={inspectedElement}
-          store={store}
-        />
-
-        <InspectedElementStateTree
-          bridge={bridge}
-          element={element}
-          inspectedElement={inspectedElement}
-          store={store}
-        />
-
-        <InspectedElementHooksTree
-          bridge={bridge}
-          element={element}
-          hookNames={hookNames}
-          inspectedElement={inspectedElement}
-          parseHookNames={parseHookNames}
-          store={store}
-          toggleParseHookNames={toggleParseHookNames}
-        />
-
-        <InspectedElementContextTree
-          bridge={bridge}
-          element={element}
-          inspectedElement={inspectedElement}
-          store={store}
-        />
-
-        {enableStyleXFeatures && (
-          <InspectedElementStyleXPlugin
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementStateTree
             bridge={bridge}
             element={element}
             inspectedElement={inspectedElement}
             store={store}
           />
-        )}
+        </div>
 
-        <InspectedElementErrorsAndWarningsTree
-          bridge={bridge}
-          element={element}
-          inspectedElement={inspectedElement}
-          store={store}
-        />
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementHooksTree
+            bridge={bridge}
+            element={element}
+            hookNames={hookNames}
+            inspectedElement={inspectedElement}
+            parseHookNames={parseHookNames}
+            store={store}
+            toggleParseHookNames={toggleParseHookNames}
+          />
+        </div>
 
-        <NativeStyleEditor />
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementContextTree
+            bridge={bridge}
+            element={element}
+            inspectedElement={inspectedElement}
+            store={store}
+          />
+        </div>
 
-        {showRenderedBy && (
-          <div
-            className={styles.Owners}
-            data-testname="InspectedElementView-Owners">
-            <div className={styles.OwnersHeader}>rendered by</div>
-            {showOwnersList &&
-              ((owners: any): Array<SerializedElement>).map(owner => (
-                <OwnerView
-                  key={owner.id}
-                  displayName={owner.displayName || 'Anonymous'}
-                  hocDisplayNames={owner.hocDisplayNames}
-                  id={owner.id}
-                  isInStore={store.containsElement(owner.id)}
-                  type={owner.type}
-                />
-              ))}
-            {rootType !== null && (
-              <div className={styles.OwnersMetaField}>{rootType}</div>
-            )}
-            {rendererLabel !== null && (
-              <div className={styles.OwnersMetaField}>{rendererLabel}</div>
-            )}
+        {enableStyleXFeatures && (
+          <div className={styles.InspectedElementSection}>
+            <InspectedElementStyleXPlugin
+              bridge={bridge}
+              element={element}
+              inspectedElement={inspectedElement}
+              store={store}
+            />
           </div>
         )}
 
-        {source !== null && (
-          <Source fileName={source.fileName} lineNumber={source.lineNumber} />
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementErrorsAndWarningsTree
+            bridge={bridge}
+            element={element}
+            inspectedElement={inspectedElement}
+            store={store}
+          />
+        </div>
+
+        <div className={styles.InspectedElementSection}>
+          <NativeStyleEditor />
+        </div>
+
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementSuspendedBy
+            bridge={bridge}
+            element={element}
+            inspectedElement={inspectedElement}
+            store={store}
+          />
+        </div>
+
+        {
+          // For Suspense and Activity we show the props below suspended by to give that more priority.
+          type !== ElementTypeSuspense && type !== ElementTypeActivity
+            ? null
+            : propsSection
+        }
+
+        {showRenderedBy && (
+          <div
+            className={styles.InspectedElementSection}
+            data-testname="InspectedElementView-Owners">
+            <div className={styles.OwnersHeader}>rendered by</div>
+            <React.Suspense
+              fallback={
+                <div className={styles.RenderedBySkeleton}>
+                  <Skeleton height={16} width="40%" />
+                </div>
+              }>
+              <StackTraceGroup componentStack={stack} owners={owners}>
+                {(showIgnoreList: boolean) => (
+                  <>
+                    {showStack ? (
+                      <StackTraceView
+                        stack={stack}
+                        showIgnoreList={showIgnoreList}
+                      />
+                    ) : null}
+                    {showOwnersList &&
+                      owners?.map(owner => (
+                        <Fragment key={owner.id}>
+                          <OwnerView
+                            displayName={owner.displayName || 'Anonymous'}
+                            hocDisplayNames={owner.hocDisplayNames}
+                            environmentName={
+                              inspectedElement.env === owner.env
+                                ? null
+                                : owner.env
+                            }
+                            compiledWithForget={owner.compiledWithForget}
+                            id={owner.id}
+                            isInStore={store.containsElement(owner.id)}
+                            type={owner.type}
+                          />
+                          {owner.stack != null && owner.stack.length > 0 ? (
+                            <StackTraceView
+                              stack={owner.stack}
+                              showIgnoreList={showIgnoreList}
+                            />
+                          ) : null}
+                        </Fragment>
+                      ))}
+
+                    {rootType !== null && (
+                      <div className={styles.OwnersMetaField}>{rootType}</div>
+                    )}
+                    {rendererLabel !== null && (
+                      <div className={styles.OwnersMetaField}>
+                        {rendererLabel}
+                      </div>
+                    )}
+                  </>
+                )}
+              </StackTraceGroup>
+            </React.Suspense>
+          </div>
+        )}
+
+        {source != null && (
+          <div className={styles.InspectedElementSection}>
+            <InspectedElementSourcePanel
+              source={source}
+              symbolicatedSourcePromise={symbolicatedSourcePromise}
+            />
+          </div>
         )}
       </div>
-
-      {isContextMenuEnabledForInspectedElement && (
-        <ContextMenu id="InspectedElement">
-          {({path, type: pathType}) => {
-            const copyInspectedElementPath = () => {
-              const rendererID = store.getRendererIDForElement(id);
-              if (rendererID !== null) {
-                copyInspectedElementPathAPI({
-                  bridge,
-                  id,
-                  path,
-                  rendererID,
-                });
-              }
-            };
-
-            const storeAsGlobal = () => {
-              const rendererID = store.getRendererIDForElement(id);
-              if (rendererID !== null) {
-                storeAsGlobalAPI({
-                  bridge,
-                  id,
-                  path,
-                  rendererID,
-                });
-              }
-            };
-
-            return (
-              <Fragment>
-                <ContextMenuItem
-                  onClick={copyInspectedElementPath}
-                  title="Copy value to clipboard">
-                  <Icon className={styles.ContextMenuIcon} type="copy" /> Copy
-                  value to clipboard
-                </ContextMenuItem>
-                <ContextMenuItem
-                  onClick={storeAsGlobal}
-                  title="Store as global variable">
-                  <Icon
-                    className={styles.ContextMenuIcon}
-                    type="store-as-global-variable"
-                  />{' '}
-                  Store as global variable
-                </ContextMenuItem>
-                {viewAttributeSourceFunction !== null &&
-                  pathType === 'function' && (
-                    <ContextMenuItem
-                      onClick={() => viewAttributeSourceFunction(id, path)}
-                      title="Go to definition">
-                      <Icon className={styles.ContextMenuIcon} type="code" /> Go
-                      to definition
-                    </ContextMenuItem>
-                  )}
-              </Fragment>
-            );
-          }}
-        </ContextMenu>
-      )}
     </Fragment>
-  );
-}
-
-// This function is based on describeComponentFrame() in packages/shared/ReactComponentStackFrame
-function formatSourceForDisplay(fileName: string, lineNumber: string) {
-  const BEFORE_SLASH_RE = /^(.*)[\\\/]/;
-
-  let nameOnly = fileName.replace(BEFORE_SLASH_RE, '');
-
-  // In DEV, include code for a common special case:
-  // prefer "folder/index.js" instead of just "index.js".
-  if (/^index\./.test(nameOnly)) {
-    const match = fileName.match(BEFORE_SLASH_RE);
-    if (match) {
-      const pathBeforeSlash = match[1];
-      if (pathBeforeSlash) {
-        const folderName = pathBeforeSlash.replace(BEFORE_SLASH_RE, '');
-        nameOnly = folderName + '/' + nameOnly;
-      }
-    }
-  }
-
-  return `${nameOnly}:${lineNumber}`;
-}
-
-type SourceProps = {
-  fileName: string,
-  lineNumber: string,
-};
-
-function Source({fileName, lineNumber}: SourceProps) {
-  const handleCopy = () => copy(`${fileName}:${lineNumber}`);
-  return (
-    <div className={styles.Source} data-testname="InspectedElementView-Source">
-      <div className={styles.SourceHeaderRow}>
-        <div className={styles.SourceHeader}>source</div>
-        <Button onClick={handleCopy} title="Copy to clipboard">
-          <ButtonIcon type="copy" />
-        </Button>
-      </div>
-      <div className={styles.SourceOneLiner}>
-        {formatSourceForDisplay(fileName, lineNumber)}
-      </div>
-    </div>
-  );
-}
-
-type OwnerViewProps = {
-  displayName: string,
-  hocDisplayNames: Array<string> | null,
-  id: number,
-  isInStore: boolean,
-  type: ElementType,
-};
-
-function OwnerView({
-  displayName,
-  hocDisplayNames,
-  id,
-  isInStore,
-  type,
-}: OwnerViewProps) {
-  const dispatch = useContext(TreeDispatcherContext);
-  const {
-    highlightNativeElement,
-    clearHighlightNativeElement,
-  } = useHighlightNativeElement();
-
-  const handleClick = useCallback(() => {
-    logEvent({
-      event_name: 'select-element',
-      metadata: {source: 'owner-view'},
-    });
-    dispatch({
-      type: 'SELECT_ELEMENT_BY_ID',
-      payload: id,
-    });
-  }, [dispatch, id]);
-
-  const onMouseEnter = () => highlightNativeElement(id);
-
-  const onMouseLeave = clearHighlightNativeElement;
-
-  return (
-    <Button
-      key={id}
-      className={styles.OwnerButton}
-      disabled={!isInStore}
-      onClick={handleClick}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}>
-      <span className={styles.OwnerContent}>
-        <span
-          className={`${styles.Owner} ${isInStore ? '' : styles.NotInStore}`}
-          title={displayName}>
-          {displayName}
-        </span>
-        <Badge hocDisplayNames={hocDisplayNames} type={type} />
-      </span>
-    </Button>
   );
 }

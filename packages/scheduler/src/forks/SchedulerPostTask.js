@@ -10,7 +10,7 @@
 import type {PriorityLevel} from '../SchedulerPriorities';
 
 declare class TaskController {
-  constructor(priority?: string): TaskController;
+  constructor(options?: {priority?: string}): TaskController;
   signal: mixed;
   abort(): void;
 }
@@ -55,10 +55,9 @@ export const unstable_now = getCurrentTime;
 const yieldInterval = 5;
 let deadline = 0;
 
-let currentPriorityLevel_DEPRECATED = NormalPriority;
+let currentPriorityLevel_DEPRECATED: PriorityLevel = NormalPriority;
 
-// `isInputPending` is not available. Since we have no way of knowing if
-// there's pending input, always yield at the end of the frame.
+// Always yield at the end of the frame.
 export function unstable_shouldYield(): boolean {
   return getCurrentTime() >= deadline;
 }
@@ -67,9 +66,7 @@ export function unstable_requestPaint() {
   // Since we yield every frame regardless, `requestPaint` has no effect.
 }
 
-type SchedulerCallback<T> = (
-  didTimeout_DEPRECATED: boolean,
-) =>
+type SchedulerCallback<T> = (didTimeout_DEPRECATED: boolean) =>
   | T
   // May return a continuation
   | SchedulerCallback<T>;
@@ -79,7 +76,7 @@ export function unstable_scheduleCallback<T>(
   callback: SchedulerCallback<T>,
   options?: {delay?: number},
 ): CallbackNode {
-  let postTaskPriority;
+  let postTaskPriority: PostTaskPriorityLevel;
   switch (priorityLevel) {
     case ImmediatePriority:
     case UserBlockingPriority:
@@ -97,9 +94,9 @@ export function unstable_scheduleCallback<T>(
       break;
   }
 
-  const controller = new TaskController();
+  const controller = new TaskController({priority: postTaskPriority});
   const postTaskOptions = {
-    priority: postTaskPriority,
+    // $FlowFixMe[invalid-compare]
     delay: typeof options === 'object' && options !== null ? options.delay : 0,
     signal: controller.signal,
   };
@@ -131,27 +128,29 @@ function runTask<T>(
     const result = callback(didTimeout_DEPRECATED);
     if (typeof result === 'function') {
       // Assume this is a continuation
-      const continuation: SchedulerCallback<T> = (result: any);
-      const continuationController = new TaskController();
+      const continuation: SchedulerCallback<T> = result as any;
       const continuationOptions = {
-        priority: postTaskPriority,
-        signal: continuationController.signal,
+        signal: node._controller.signal,
       };
-      // Update the original callback node's controller, since even though we're
-      // posting a new task, conceptually it's the same one.
-      node._controller = continuationController;
-      scheduler
-        .postTask(
-          runTask.bind(
-            null,
-            priorityLevel,
-            postTaskPriority,
-            node,
-            continuation,
-          ),
-          continuationOptions,
-        )
-        .catch(handleAbortError);
+
+      const nextTask = runTask.bind(
+        null,
+        priorityLevel,
+        postTaskPriority,
+        node,
+        continuation,
+      );
+
+      if (scheduler.yield !== undefined) {
+        scheduler
+          .yield(continuationOptions)
+          .then(nextTask)
+          .catch(handleAbortError);
+      } else {
+        scheduler
+          .postTask(nextTask, continuationOptions)
+          .catch(handleAbortError);
+      }
     }
   } catch (error) {
     // We're inside a `postTask` promise. If we don't handle this error, then it
@@ -168,7 +167,7 @@ function runTask<T>(
   }
 }
 
-function handleAbortError(error) {
+function handleAbortError(error: any) {
   // Abort errors are an implementation detail. We don't expose the
   // TaskController to the user, nor do we expose the promise that is returned
   // from `postTask`. So we should suppress them, since there's no way for the
@@ -198,7 +197,7 @@ export function unstable_getCurrentPriorityLevel(): PriorityLevel {
 }
 
 export function unstable_next<T>(callback: () => T): T {
-  let priorityLevel;
+  let priorityLevel: PriorityLevel;
   switch (currentPriorityLevel_DEPRECATED) {
     case ImmediatePriority:
     case UserBlockingPriority:
@@ -235,14 +234,6 @@ export function unstable_wrapCallback<T>(callback: () => T): () => T {
 }
 
 export function unstable_forceFrameRate() {}
-
-export function unstable_pauseExecution() {}
-
-export function unstable_continueExecution() {}
-
-export function unstable_getFirstCallbackNode(): null {
-  return null;
-}
 
 // Currently no profiling build
 export const unstable_Profiling = null;

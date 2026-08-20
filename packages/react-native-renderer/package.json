@@ -3,14 +3,14 @@
   "version": "16.0.0",
   "private": true,
   "repository": {
-    "type" : "git",
-    "url" : "https://github.com/facebook/react.git",
+    "type": "git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-native-renderer"
   },
   "dependencies": {
-    "scheduler": "^0.11.0"
+    "scheduler": "^0.28.0"
   },
   "peerDependencies": {
-    "react": "^17.0.0"
+    "react": "^18.0.0"
   }
 }

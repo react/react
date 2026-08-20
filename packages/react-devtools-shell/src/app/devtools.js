@@ -11,10 +11,10 @@ import {initDevTools} from 'react-devtools-shared/src/devtools';
 
 // This is a pretty gross hack to make the runtime loaded named-hooks-code work.
 // TODO (Webpack 5) Hoepfully we can remove this once we upgrade to Webpack 5.
-// $FlowFixMe
+// $FlowFixMe[cannot-resolve-name]
 __webpack_public_path__ = '/dist/'; // eslint-disable-line no-undef
 
-const iframe = ((document.getElementById('target'): any): HTMLIFrameElement);
+const iframe = document.getElementById('target') as any as HTMLIFrameElement;
 
 const {contentDocument, contentWindow} = iframe;
 
@@ -31,14 +31,14 @@ const DevTools = initializeFrontend(contentWindow);
 // Otherwise the Store may miss important initial tree op codes.
 activateBackend(contentWindow);
 
-const container = ((document.getElementById('devtools'): any): HTMLElement);
+const container = document.getElementById('devtools') as any as HTMLElement;
 
 let isTestAppMounted = true;
 
-const mountButton = ((document.getElementById(
+const mountButton = document.getElementById(
   'mountButton',
-): any): HTMLButtonElement);
-mountButton.addEventListener('click', function() {
+) as any as HTMLButtonElement;
+mountButton.addEventListener('click', function () {
   if (isTestAppMounted) {
     if (typeof window.unmountTestApp === 'function') {
       window.unmountTestApp();
@@ -81,10 +81,10 @@ inject('dist/app-index.js', () => {
   });
 });
 
-function inject(sourcePath, callback) {
+function inject(sourcePath: string, callback: () => void) {
   const script = contentDocument.createElement('script');
   script.onload = callback;
   script.src = sourcePath;
 
-  ((contentDocument.body: any): HTMLBodyElement).appendChild(script);
+  (contentDocument.body as any as HTMLBodyElement).appendChild(script);
 }

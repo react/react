@@ -8,8 +8,9 @@
  */
 
 import type {Writable} from 'stream';
+
 import {TextEncoder} from 'util';
-import {AsyncLocalStorage} from 'async_hooks';
+import {createHash} from 'crypto';
 
 interface MightBeFlushable {
   flush?: () => void;
@@ -19,10 +20,13 @@ export type Destination = Writable & MightBeFlushable;
 
 export type PrecomputedChunk = Uint8Array;
 export opaque type Chunk = string;
+export type BinaryChunk = Uint8Array;
 
 export function scheduleWork(callback: () => void) {
   setImmediate(callback);
 }
+
+export const scheduleMicrotask = queueMicrotask;
 
 export function flushBuffered(destination: Destination) {
   // If we don't have any more data to send right now.
@@ -34,12 +38,11 @@ export function flushBuffered(destination: Destination) {
   }
 }
 
-export const supportsRequestStorage = true;
-export const requestStorage: AsyncLocalStorage<
-  Map<Function, mixed>,
-> = new AsyncLocalStorage();
-
-const VIEW_SIZE = 2048;
+// Chunks larger than VIEW_SIZE are written directly, without copying into the
+// internal view buffer. This must be at least half of Node's internal Buffer
+// pool size (8192) to avoid corrupting the pool when using
+// renderToReadableStream, which uses a byte stream that detaches ArrayBuffers.
+const VIEW_SIZE = 4096;
 let currentView = null;
 let writtenBytes = 0;
 let destinationHasCapacity = true;
@@ -59,38 +62,46 @@ function writeStringChunk(destination: Destination, stringChunk: string) {
     if (writtenBytes > 0) {
       writeToDestination(
         destination,
-        ((currentView: any): Uint8Array).subarray(0, writtenBytes),
+        (currentView as any as Uint8Array).subarray(0, writtenBytes),
       );
       currentView = new Uint8Array(VIEW_SIZE);
       writtenBytes = 0;
     }
-    writeToDestination(destination, textEncoder.encode(stringChunk));
+    // Write the raw string chunk and let the consumer handle the encoding.
+    writeToDestination(destination, stringChunk);
     return;
   }
 
-  let target: Uint8Array = (currentView: any);
+  let target: Uint8Array = currentView as any;
   if (writtenBytes > 0) {
-    target = ((currentView: any): Uint8Array).subarray(writtenBytes);
+    target = (currentView as any as Uint8Array).subarray(writtenBytes);
   }
   const {read, written} = textEncoder.encodeInto(stringChunk, target);
   writtenBytes += written;
 
   if (read < stringChunk.length) {
-    writeToDestination(destination, (currentView: any));
+    writeToDestination(
+      destination,
+      (currentView as any).subarray(0, writtenBytes),
+    );
     currentView = new Uint8Array(VIEW_SIZE);
-    // $FlowFixMe[incompatible-call] found when upgrading Flow
-    writtenBytes = textEncoder.encodeInto(stringChunk.slice(read), currentView)
-      .written;
+    writtenBytes = textEncoder.encodeInto(
+      stringChunk.slice(read),
+      currentView as any,
+    ).written;
   }
 
   if (writtenBytes === VIEW_SIZE) {
-    writeToDestination(destination, (currentView: any));
+    writeToDestination(destination, currentView as any);
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
 }
 
-function writeViewChunk(destination: Destination, chunk: PrecomputedChunk) {
+function writeViewChunk(
+  destination: Destination,
+  chunk: PrecomputedChunk | BinaryChunk,
+) {
   if (chunk.byteLength === 0) {
     return;
   }
@@ -101,7 +112,7 @@ function writeViewChunk(destination: Destination, chunk: PrecomputedChunk) {
     if (writtenBytes > 0) {
       writeToDestination(
         destination,
-        ((currentView: any): Uint8Array).subarray(0, writtenBytes),
+        (currentView as any as Uint8Array).subarray(0, writtenBytes),
       );
       currentView = new Uint8Array(VIEW_SIZE);
       writtenBytes = 0;
@@ -111,32 +122,33 @@ function writeViewChunk(destination: Destination, chunk: PrecomputedChunk) {
   }
 
   let bytesToWrite = chunk;
-  const allowableBytes = ((currentView: any): Uint8Array).length - writtenBytes;
+  const allowableBytes =
+    (currentView as any as Uint8Array).length - writtenBytes;
   if (allowableBytes < bytesToWrite.byteLength) {
     // this chunk would overflow the current view. We enqueue a full view
     // and start a new view with the remaining chunk
     if (allowableBytes === 0) {
       // the current view is already full, send it
-      writeToDestination(destination, (currentView: any));
+      writeToDestination(destination, currentView as any);
     } else {
       // fill up the current view and apply the remaining chunk bytes
       // to a new view.
-      ((currentView: any): Uint8Array).set(
+      (currentView as any as Uint8Array).set(
         bytesToWrite.subarray(0, allowableBytes),
         writtenBytes,
       );
       writtenBytes += allowableBytes;
-      writeToDestination(destination, (currentView: any));
+      writeToDestination(destination, currentView as any);
       bytesToWrite = bytesToWrite.subarray(allowableBytes);
     }
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
-  ((currentView: any): Uint8Array).set(bytesToWrite, writtenBytes);
+  (currentView as any as Uint8Array).set(bytesToWrite, writtenBytes);
   writtenBytes += bytesToWrite.byteLength;
 
   if (writtenBytes === VIEW_SIZE) {
-    writeToDestination(destination, (currentView: any));
+    writeToDestination(destination, currentView as any);
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
@@ -144,16 +156,19 @@ function writeViewChunk(destination: Destination, chunk: PrecomputedChunk) {
 
 export function writeChunk(
   destination: Destination,
-  chunk: PrecomputedChunk | Chunk,
+  chunk: PrecomputedChunk | Chunk | BinaryChunk,
 ): void {
   if (typeof chunk === 'string') {
     writeStringChunk(destination, chunk);
   } else {
-    writeViewChunk(destination, ((chunk: any): PrecomputedChunk));
+    writeViewChunk(destination, chunk as any as PrecomputedChunk | BinaryChunk);
   }
 }
 
-function writeToDestination(destination: Destination, view: Uint8Array) {
+function writeToDestination(
+  destination: Destination,
+  view: string | Uint8Array,
+) {
   const currentHasCapacity = destination.write(view);
   destinationHasCapacity = destinationHasCapacity && currentHasCapacity;
 }
@@ -179,17 +194,58 @@ export function close(destination: Destination) {
   destination.end();
 }
 
-const textEncoder = new TextEncoder();
+export const textEncoder: TextEncoder = new TextEncoder();
 
 export function stringToChunk(content: string): Chunk {
   return content;
 }
 
 export function stringToPrecomputedChunk(content: string): PrecomputedChunk {
-  return textEncoder.encode(content);
+  const precomputedChunk = textEncoder.encode(content);
+
+  if (__DEV__) {
+    if (precomputedChunk.byteLength > VIEW_SIZE) {
+      console.error(
+        'precomputed chunks must be smaller than the view size configured for this host. This is a bug in React.',
+      );
+    }
+  }
+
+  return precomputedChunk;
+}
+
+export function typedArrayToBinaryChunk(
+  content: $ArrayBufferView,
+): BinaryChunk {
+  // Convert any non-Uint8Array array to Uint8Array. We could avoid this for Uint8Arrays.
+  return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
+}
+
+export function byteLengthOfChunk(chunk: Chunk | PrecomputedChunk): number {
+  return typeof chunk === 'string'
+    ? Buffer.byteLength(chunk, 'utf8')
+    : chunk.byteLength;
+}
+
+export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
+  return chunk.byteLength;
 }
 
 export function closeWithError(destination: Destination, error: mixed): void {
-  // $FlowFixMe: This is an Error object or the destination accepts other types.
+  // $FlowFixMe[incompatible-type]: This is an Error object or the destination accepts other types.
   destination.destroy(error);
+}
+
+export function createFastHash(input: string): string | number {
+  const hash = createHash('md5');
+  hash.update(input);
+  return hash.digest('hex');
+}
+
+export function readAsDataURL(blob: Blob): Promise<string> {
+  return blob.arrayBuffer().then(arrayBuffer => {
+    const encoded = Buffer.from(arrayBuffer).toString('base64');
+    const mimeType = blob.type || 'application/octet-stream';
+    return 'data:' + mimeType + ';base64,' + encoded;
+  });
 }

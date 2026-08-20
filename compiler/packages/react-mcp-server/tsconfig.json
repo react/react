@@ -1,0 +1,22 @@
+{
+  "extends": "@tsconfig/strictest/tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "rootDir": "../",
+    "noEmit": true,
+    "jsx": "react-jsxdev",
+    "lib": ["ES2022"],
+
+    // weaken strictness from preset
+    "importsNotUsedAsValues": "remove",
+    "noUncheckedIndexedAccess": false,
+    "noUnusedParameters": false,
+    "useUnknownInCatchVariables": false,
+    "target": "ES2022",
+    // ideally turn off only during dev, or on a per-file basis
+    "noUnusedLocals": false,
+  },
+  "exclude": ["node_modules"],
+  "include": ["src/**/*.ts"],
+}

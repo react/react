@@ -16,7 +16,6 @@ type Props = {
   placeholder?: string,
   testName?: ?string,
   value: any,
-  ...
 };
 
 export default function AutoSizeInput({
@@ -27,6 +26,7 @@ export default function AutoSizeInput({
   value,
   ...rest
 }: Props): React.Node {
+  // $FlowFixMe[missing-local-annot]
   const onFocusWrapper = event => {
     const input = event.target;
     if (input !== null) {
@@ -42,7 +42,7 @@ export default function AutoSizeInput({
   const isEmpty = value === '' || value === '""';
 
   return (
-    // $FlowFixMe unsafe rest spread
+    // $FlowFixMe[cannot-spread-inexact] unsafe rest spread
     <input
       className={[styles.Input, className].join(' ')}
       data-testname={testName}

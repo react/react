@@ -9,13 +9,15 @@
 
 describe('SyntheticFocusEvent', () => {
   let React;
-  let ReactDOM;
+  let ReactDOMClient;
+  let act;
   let container;
 
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -26,44 +28,54 @@ describe('SyntheticFocusEvent', () => {
     container = null;
   });
 
-  test('onFocus events have the focus type', () => {
+  it('onFocus events have the focus type', async () => {
     const log = [];
-    ReactDOM.render(
-      <button
-        onFocus={event => log.push(`onFocus: ${event.type}`)}
-        onFocusCapture={event => log.push(`onFocusCapture: ${event.type}`)}
-      />,
-      container,
-    );
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <button
+          onFocus={event => log.push(`onFocus: ${event.type}`)}
+          onFocusCapture={event => log.push(`onFocusCapture: ${event.type}`)}
+        />,
+      );
+    });
+
     const button = container.querySelector('button');
 
-    button.dispatchEvent(
-      new FocusEvent('focusin', {
-        bubbles: true,
-        cancelable: false,
-      }),
-    );
+    await act(() => {
+      button.dispatchEvent(
+        new FocusEvent('focusin', {
+          bubbles: true,
+          cancelable: false,
+        }),
+      );
+    });
 
     expect(log).toEqual(['onFocusCapture: focus', 'onFocus: focus']);
   });
 
-  test('onBlur events have the blur type', () => {
+  it('onBlur events have the blur type', async () => {
     const log = [];
-    ReactDOM.render(
-      <button
-        onBlur={event => log.push(`onBlur: ${event.type}`)}
-        onBlurCapture={event => log.push(`onBlurCapture: ${event.type}`)}
-      />,
-      container,
-    );
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <button
+          onBlur={event => log.push(`onBlur: ${event.type}`)}
+          onBlurCapture={event => log.push(`onBlurCapture: ${event.type}`)}
+        />,
+      );
+    });
+
     const button = container.querySelector('button');
 
-    button.dispatchEvent(
-      new FocusEvent('focusout', {
-        bubbles: true,
-        cancelable: false,
-      }),
-    );
+    await act(() => {
+      button.dispatchEvent(
+        new FocusEvent('focusout', {
+          bubbles: true,
+          cancelable: false,
+        }),
+      );
+    });
 
     expect(log).toEqual(['onBlurCapture: blur', 'onBlur: blur']);
   });

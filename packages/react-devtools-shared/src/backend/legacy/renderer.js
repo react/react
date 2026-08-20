@@ -13,14 +13,14 @@ import {
   ElementTypeRoot,
   ElementTypeHostComponent,
   ElementTypeOtherOrUnknown,
-} from 'react-devtools-shared/src/types';
+} from 'react-devtools-shared/src/frontend/types';
 import {getUID, utfEncodeString, printOperationsArray} from '../../utils';
 import {
   cleanForBridge,
-  copyToClipboard,
   copyWithDelete,
   copyWithRename,
   copyWithSet,
+  serializeToString,
 } from '../utils';
 import {
   deletePathInObject,
@@ -34,15 +34,18 @@ import {
   TREE_OPERATION_ADD,
   TREE_OPERATION_REMOVE,
   TREE_OPERATION_REORDER_CHILDREN,
+  SUSPENSE_TREE_OPERATION_ADD,
+  SUSPENSE_TREE_OPERATION_REMOVE,
+  UNKNOWN_SUSPENDERS_NONE,
 } from '../../constants';
 import {decorateMany, forceUpdate, restoreMany} from './utils';
 
 import type {
   DevToolsHook,
-  GetFiberIDForNative,
+  GetElementIDForHostInstance,
   InspectedElementPayload,
   InstanceAndStyle,
-  NativeType,
+  HostInstance,
   PathFrame,
   PathMatch,
   RendererInterface,
@@ -50,7 +53,7 @@ import type {
 import type {
   ComponentFilter,
   ElementType,
-} from 'react-devtools-shared/src/types';
+} from 'react-devtools-shared/src/frontend/types';
 import type {InspectedElement, SerializedElement} from '../types';
 
 export type InternalInstance = Object;
@@ -137,48 +140,51 @@ export function attach(
   global: Object,
 ): RendererInterface {
   const idToInternalInstanceMap: Map<number, InternalInstance> = new Map();
-  const internalInstanceToIDMap: WeakMap<
-    InternalInstance,
-    number,
-  > = new WeakMap();
-  const internalInstanceToRootIDMap: WeakMap<
-    InternalInstance,
-    number,
-  > = new WeakMap();
+  const internalInstanceToIDMap: WeakMap<InternalInstance, number> =
+    new WeakMap();
+  const internalInstanceToRootIDMap: WeakMap<InternalInstance, number> =
+    new WeakMap();
 
-  let getInternalIDForNative: GetFiberIDForNative = ((null: any): GetFiberIDForNative);
-  let findNativeNodeForInternalID: (id: number) => ?NativeType;
-  let getFiberForNative = (node: NativeType) => {
+  let getElementIDForHostInstance: GetElementIDForHostInstance =
+    null as any as GetElementIDForHostInstance;
+  let findHostInstanceForInternalID: (id: number) => ?HostInstance;
+  let getNearestMountedDOMNode = (node: Element): null | Element => {
     // Not implemented.
     return null;
   };
 
   if (renderer.ComponentTree) {
-    getInternalIDForNative = (node, findNearestUnfilteredAncestor) => {
-      const internalInstance = renderer.ComponentTree.getClosestInstanceFromNode(
-        node,
-      );
+    getElementIDForHostInstance = node => {
+      const internalInstance =
+        renderer.ComponentTree.getClosestInstanceFromNode(node);
       return internalInstanceToIDMap.get(internalInstance) || null;
     };
-    findNativeNodeForInternalID = (id: number) => {
+    findHostInstanceForInternalID = (id: number) => {
       const internalInstance = idToInternalInstanceMap.get(id);
       return renderer.ComponentTree.getNodeFromInstance(internalInstance);
     };
-    getFiberForNative = (node: NativeType) => {
-      return renderer.ComponentTree.getClosestInstanceFromNode(node);
+    getNearestMountedDOMNode = (node: Element): null | Element => {
+      const internalInstance =
+        renderer.ComponentTree.getClosestInstanceFromNode(node);
+      if (internalInstance != null) {
+        return renderer.ComponentTree.getNodeFromInstance(internalInstance);
+      }
+      return null;
     };
   } else if (renderer.Mount.getID && renderer.Mount.getNode) {
-    getInternalIDForNative = (node, findNearestUnfilteredAncestor) => {
+    getElementIDForHostInstance = node => {
       // Not implemented.
       return null;
     };
-    findNativeNodeForInternalID = (id: number) => {
+    findHostInstanceForInternalID = (id: number) => {
       // Not implemented.
       return null;
     };
   }
 
-  function getDisplayNameForFiberID(id: number): string | null {
+  const supportsTogglingSuspense = false;
+
+  function getDisplayNameForElementID(id: number): string | null {
     const internalInstance = idToInternalInstanceMap.get(id);
     return internalInstance ? getData(internalInstance).displayName : null;
   }
@@ -192,10 +198,10 @@ export function attach(
       internalInstanceToIDMap.set(internalInstance, id);
       idToInternalInstanceMap.set(id, internalInstance);
     }
-    return ((internalInstanceToIDMap.get(internalInstance): any): number);
+    return internalInstanceToIDMap.get(internalInstance) as any as number;
   }
 
-  function areEqualArrays(a, b) {
+  function areEqualArrays(a: Array<any>, b: Array<any>) {
     if (a.length !== b.length) {
       return false;
     }
@@ -248,7 +254,6 @@ export function attach(
           parentIDStack.pop();
           return result;
         } catch (err) {
-          // $FlowFixMe[incompatible-type] found when upgrading Flow
           parentIDStack = [];
           throw err;
         } finally {
@@ -285,7 +290,6 @@ export function attach(
           parentIDStack.pop();
           return result;
         } catch (err) {
-          // $FlowFixMe[incompatible-type] found when upgrading Flow
           parentIDStack = [];
           throw err;
         } finally {
@@ -322,7 +326,6 @@ export function attach(
           parentIDStack.pop();
           return result;
         } catch (err) {
-          // $FlowFixMe[incompatible-type] found when upgrading Flow
           parentIDStack = [];
           throw err;
         } finally {
@@ -354,7 +357,6 @@ export function attach(
 
           return result;
         } catch (err) {
-          // $FlowFixMe[incompatible-type] found when upgrading Flow
           parentIDStack = [];
           throw err;
         } finally {
@@ -388,6 +390,7 @@ export function attach(
   ) {
     const isRoot = parentID === 0;
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(
         '%crecordMount()',
@@ -410,6 +413,14 @@ export function attach(
       pushOperation(0); // Profiling flag
       pushOperation(0); // StrictMode supported?
       pushOperation(hasOwnerMetadata ? 1 : 0);
+
+      pushOperation(SUSPENSE_TREE_OPERATION_ADD);
+      pushOperation(id);
+      pushOperation(parentID);
+      pushOperation(getStringID(null)); // name
+      pushOperation(0); // isSuspended
+      // TODO: Measure rect of root
+      pushOperation(-1);
     } else {
       const type = getElementType(internalInstance);
       const {displayName, key} = getData(internalInstance);
@@ -429,6 +440,7 @@ export function attach(
       pushOperation(ownerID);
       pushOperation(displayNameStringID);
       pushOperation(keyStringID);
+      pushOperation(getStringID(null)); // name prop
     }
   }
 
@@ -447,7 +459,12 @@ export function attach(
   }
 
   function recordUnmount(internalInstance: InternalInstance, id: number) {
-    pendingUnmountedIDs.push(id);
+    const isRoot = parentIDStack.length === 0;
+    if (isRoot) {
+      pendingUnmountedRootID = id;
+    } else {
+      pendingUnmountedIDs.push(id);
+    }
     idToInternalInstanceMap.delete(id);
   }
 
@@ -456,6 +473,7 @@ export function attach(
     parentID: number,
     rootID: number,
   ) {
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.group('crawlAndRecordInitialMounts() id:', id);
     }
@@ -469,6 +487,7 @@ export function attach(
       );
     }
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.groupEnd();
     }
@@ -507,16 +526,18 @@ export function attach(
     const numUnmountIDs =
       pendingUnmountedIDs.length + (pendingUnmountedRootID === null ? 0 : 1);
 
-    const operations = new Array(
+    const operations = new Array<number>(
       // Identify which renderer this update is coming from.
       2 + // [rendererID, rootFiberID]
-      // How big is the string table?
-      1 + // [stringTableLength]
+        // How big is the string table?
+        1 + // [stringTableLength]
         // Then goes the actual string table.
         pendingStringTableLength +
         // All unmounts are batched in a single message.
         // [TREE_OPERATION_REMOVE, removedIDLength, ...ids]
         (numUnmountIDs > 0 ? 2 + numUnmountIDs : 0) +
+        // [SUSPENSE_TREE_OPERATION_REMOVE, 1, pendingUnmountedRootID]
+        (pendingUnmountedRootID === null ? 0 : 3) +
         // Mount operations
         pendingOperations.length,
     );
@@ -553,6 +574,10 @@ export function attach(
       if (pendingUnmountedRootID !== null) {
         operations[i] = pendingUnmountedRootID;
         i++;
+
+        operations[i++] = SUSPENSE_TREE_OPERATION_REMOVE;
+        operations[i++] = 1;
+        operations[i++] = pendingUnmountedRootID;
       }
     }
 
@@ -562,6 +587,7 @@ export function attach(
     }
     i += pendingOperations.length;
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       printOperationsArray(operations);
     }
@@ -705,10 +731,15 @@ export function attach(
     }
   }
 
-  function copyElementPath(id: number, path: Array<string | number>): void {
+  function getSerializedElementValueByPath(
+    id: number,
+    path: Array<string | number>,
+  ): ?string {
     const inspectedElement = inspectElementRaw(id);
     if (inspectedElement !== null) {
-      copyToClipboard(getInObject(inspectedElement, path));
+      const valueToCopy = getInObject(inspectedElement, path);
+
+      return serializeToString(valueToCopy);
     }
   }
 
@@ -753,6 +784,10 @@ export function attach(
       inspectedElement.state,
       createIsPathAllowed('state'),
     );
+    inspectedElement.suspendedBy = cleanForBridge(
+      inspectedElement.suspendedBy,
+      createIsPathAllowed('suspendedBy'),
+    );
 
     return {
       id,
@@ -769,28 +804,42 @@ export function attach(
       return null;
     }
 
-    const {displayName, key} = getData(internalInstance);
+    const rootID = internalInstanceToRootIDMap.get(internalInstance);
+    if (rootID === undefined) {
+      throw new Error('Expected to find root ID.');
+    }
+    const isRoot = rootID === id;
+    return isRoot
+      ? inspectRootsRaw(rootID)
+      : inspectInternalInstanceRaw(id, internalInstance);
+  }
+
+  function inspectInternalInstanceRaw(
+    id: number,
+    internalInstance: InternalInstance,
+  ): InspectedElement | null {
+    const {key} = getData(internalInstance);
     const type = getElementType(internalInstance);
 
     let context = null;
     let owners = null;
     let props = null;
     let state = null;
-    let source = null;
 
     const element = internalInstance._currentElement;
     if (element !== null) {
       props = element.props;
-      source = element._source != null ? element._source : null;
 
       let owner = element._owner;
       if (owner) {
-        owners = [];
+        owners = [] as Array<SerializedElement>;
         while (owner != null) {
           owners.push({
             displayName: getData(owner).displayName || 'Unknown',
             id: getID(owner),
             key: element.key,
+            env: null,
+            stack: null,
             type: getElementType(owner),
           });
           if (owner._currentElement) {
@@ -807,8 +856,8 @@ export function attach(
     }
 
     // Not implemented
-    const errors = [];
-    const warnings = [];
+    const errors: Array<[string, number]> = [];
+    const warnings: Array<[string, number]> = [];
 
     return {
       id,
@@ -826,18 +875,17 @@ export function attach(
       // Toggle error boundary did not exist in legacy versions
       canToggleError: false,
       isErrored: false,
-      targetErrorBoundaryID: null,
 
       // Suspense did not exist in legacy versions
       canToggleSuspense: false,
+      isSuspended: null,
 
-      // Can view component source location.
-      canViewSource: type === ElementTypeClass || type === ElementTypeFunction,
+      source: null,
+
+      stack: null,
 
       // Only legacy context exists in legacy versions.
       hasLegacyContext: true,
-
-      displayName: displayName,
 
       type: type,
 
@@ -851,11 +899,15 @@ export function attach(
       errors,
       warnings,
 
+      // Not supported in legacy renderers.
+      suspendedBy: [],
+      suspendedByRange: null,
+      unknownSuspenders: UNKNOWN_SUSPENDERS_NONE,
+
       // List of owners
       owners,
 
-      // Location of component in source code.
-      source,
+      env: null,
 
       rootType: null,
       rendererPackageName: null,
@@ -864,7 +916,101 @@ export function attach(
       plugins: {
         stylex: null,
       },
+
+      nativeTag: null,
     };
+  }
+
+  function inspectRootsRaw(arbitraryRootID: number): InspectedElement | null {
+    const roots =
+      renderer.Mount._instancesByReactRootID ||
+      renderer.Mount._instancesByContainerID;
+
+    const inspectedRoots: InspectedElement = {
+      // invariants
+      id: arbitraryRootID,
+      type: ElementTypeRoot,
+      // Properties we merge
+      isErrored: false,
+      errors: [],
+      warnings: [],
+      suspendedBy: [],
+      suspendedByRange: null,
+      // TODO: How to merge these?
+      unknownSuspenders: UNKNOWN_SUSPENDERS_NONE,
+      // Properties where merging doesn't make sense so we ignore them entirely in the UI
+      rootType: null,
+      plugins: {stylex: null},
+      nativeTag: null,
+      env: null,
+      source: null,
+      stack: null,
+      // TODO: We could make the Frontend accept an array to display
+      // a list of unique renderers contributing to this Screen.
+      rendererPackageName: null,
+      rendererVersion: null,
+      // These don't make sense for a Root. They're just bottom values.
+      key: null,
+      canEditFunctionProps: false,
+      canEditHooks: false,
+      canEditFunctionPropsDeletePaths: false,
+      canEditFunctionPropsRenamePaths: false,
+      canEditHooksAndDeletePaths: false,
+      canEditHooksAndRenamePaths: false,
+      canToggleError: false,
+      canToggleSuspense: false,
+      isSuspended: false,
+      hasLegacyContext: false,
+      context: null,
+      hooks: null,
+      props: null,
+      state: null,
+      owners: null,
+    };
+
+    let minSuspendedByRange = Infinity;
+    let maxSuspendedByRange = -Infinity;
+
+    for (const rootKey in roots) {
+      const internalInstance = roots[rootKey];
+      const id = getID(internalInstance);
+      const inspectedRoot = inspectInternalInstanceRaw(id, internalInstance);
+
+      if (inspectedRoot === null) {
+        return null;
+      }
+
+      if (inspectedRoot.isErrored) {
+        inspectedRoots.isErrored = true;
+      }
+      for (let i = 0; i < inspectedRoot.errors.length; i++) {
+        inspectedRoots.errors.push(inspectedRoot.errors[i]);
+      }
+      for (let i = 0; i < inspectedRoot.warnings.length; i++) {
+        inspectedRoots.warnings.push(inspectedRoot.warnings[i]);
+      }
+      for (let i = 0; i < inspectedRoot.suspendedBy.length; i++) {
+        inspectedRoots.suspendedBy.push(inspectedRoot.suspendedBy[i]);
+      }
+      const suspendedByRange = inspectedRoot.suspendedByRange;
+      if (suspendedByRange !== null) {
+        if (suspendedByRange[0] < minSuspendedByRange) {
+          minSuspendedByRange = suspendedByRange[0];
+        }
+        if (suspendedByRange[1] > maxSuspendedByRange) {
+          maxSuspendedByRange = suspendedByRange[1];
+        }
+      }
+    }
+
+    if (minSuspendedByRange !== Infinity || maxSuspendedByRange !== -Infinity) {
+      inspectedRoots.suspendedByRange = [
+        minSuspendedByRange,
+        maxSuspendedByRange,
+      ];
+    }
+
+    return inspectedRoots;
   }
 
   function logElementToConsole(id: number): void {
@@ -874,10 +1020,12 @@ export function attach(
       return;
     }
 
+    const displayName = getDisplayNameForElementID(id);
+
     const supportsGroup = typeof console.groupCollapsed === 'function';
     if (supportsGroup) {
       console.groupCollapsed(
-        `[Click to expand] %c<${result.displayName || 'Component'} />`,
+        `[Click to expand] %c<${displayName || 'Component'} />`,
         // --dom-tag-name-color is the CSS variable Chrome styles HTML elements with in the console.
         'color: var(--dom-tag-name-color); font-weight: normal;',
       );
@@ -891,9 +1039,9 @@ export function attach(
     if (result.context !== null) {
       console.log('Context:', result.context);
     }
-    const nativeNode = findNativeNodeForInternalID(id);
-    if (nativeNode !== null) {
-      console.log('Node:', nativeNode);
+    const hostInstance = findHostInstanceForInternalID(id);
+    if (hostInstance !== null) {
+      console.log('Node:', hostInstance);
     }
     if (window.chrome || /firefox/i.test(navigator.userAgent)) {
       console.log(
@@ -905,30 +1053,31 @@ export function attach(
     }
   }
 
-  function prepareViewAttributeSource(
+  function getElementAttributeByPath(
     id: number,
     path: Array<string | number>,
-  ): void {
+  ): mixed {
     const inspectedElement = inspectElementRaw(id);
     if (inspectedElement !== null) {
-      window.$attribute = getInObject(inspectedElement, path);
+      return getInObject(inspectedElement, path);
     }
+    return undefined;
   }
 
-  function prepareViewElementSource(id: number): void {
+  function getElementSourceFunctionById(id: number): null | Function {
     const internalInstance = idToInternalInstanceMap.get(id);
     if (internalInstance == null) {
       console.warn(`Could not find instance with id "${id}"`);
-      return;
+      return null;
     }
 
     const element = internalInstance._currentElement;
     if (element == null) {
       console.warn(`Could not find element with id "${id}"`);
-      return;
+      return null;
     }
 
-    global.$type = element.type;
+    return element.type;
   }
 
   function deletePath(
@@ -1054,6 +1203,9 @@ export function attach(
   const overrideSuspense = () => {
     throw new Error('overrideSuspense not supported by this renderer');
   };
+  const overrideSuspenseMilestone = () => {
+    throw new Error('overrideSuspenseMilestone not supported by this renderer');
+  };
   const startProfiling = () => {
     // Do not throw, since this would break a multi-root scenario where v15 and v16 were both present.
   };
@@ -1075,6 +1227,11 @@ export function attach(
     // Not implemented.
   }
 
+  function getEnvironmentNames(): Array<string> {
+    // No RSC support.
+    return [];
+  }
+
   function setTraceUpdatesEnabled(enabled: boolean) {
     // Not implemented.
   }
@@ -1092,34 +1249,40 @@ export function attach(
     // Not implemented
   }
 
-  function clearErrorsForFiberID(id: number) {
+  function clearErrorsForElementID(id: number) {
     // Not implemented
   }
 
-  function clearWarningsForFiberID(id: number) {
+  function clearWarningsForElementID(id: number) {
     // Not implemented
   }
 
-  function patchConsoleForStrictMode() {}
-
-  function unpatchConsoleForStrictMode() {}
+  function hasElementWithId(id: number): boolean {
+    return idToInternalInstanceMap.has(id);
+  }
 
   return {
     clearErrorsAndWarnings,
-    clearErrorsForFiberID,
-    clearWarningsForFiberID,
+    clearErrorsForElementID,
+    clearWarningsForElementID,
     cleanup,
-    copyElementPath,
+    getSerializedElementValueByPath,
     deletePath,
     flushInitialOperations,
     getBestMatchForTrackedPath,
-    getDisplayNameForFiberID,
-    getFiberForNative,
-    getFiberIDForNative: getInternalIDForNative,
+    getDisplayNameForElementID,
+    getNearestMountedDOMNode,
+    getElementIDForHostInstance,
+    getSuspenseNodeIDForHostInstance(id: number): null {
+      return null;
+    },
     getInstanceAndStyle,
-    findNativeNodesForFiberID: (id: number) => {
-      const nativeNode = findNativeNodeForInternalID(id);
-      return nativeNode == null ? null : [nativeNode];
+    findHostInstancesForElementID: (id: number) => {
+      const hostInstance = findHostInstanceForInternalID(id);
+      return hostInstance == null ? null : [hostInstance];
+    },
+    findLastKnownRectsForID() {
+      return null;
     },
     getOwnersList,
     getPathForElement,
@@ -1127,22 +1290,24 @@ export function attach(
     handleCommitFiberRoot,
     handleCommitFiberUnmount,
     handlePostCommitFiberRoot,
+    hasElementWithId,
     inspectElement,
     logElementToConsole,
     overrideError,
     overrideSuspense,
+    overrideSuspenseMilestone,
     overrideValueAtPath,
     renamePath,
-    patchConsoleForStrictMode,
-    prepareViewAttributeSource,
-    prepareViewElementSource,
+    getElementAttributeByPath,
+    getElementSourceFunctionById,
     renderer,
     setTraceUpdatesEnabled,
     setTrackedPath,
     startProfiling,
     stopProfiling,
     storeAsGlobal,
-    unpatchConsoleForStrictMode,
+    supportsTogglingSuspense,
     updateComponentFilters,
+    getEnvironmentNames,
   };
 }

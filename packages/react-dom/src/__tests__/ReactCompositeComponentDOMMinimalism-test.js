@@ -11,14 +11,12 @@
 
 // Requires
 let React;
-let ReactDOM;
-let ReactTestUtils;
+let ReactDOMClient;
+let act;
 
 // Test components
 let LowerLevelComposite;
 let MyCompositeComponent;
-
-let expectSingleChildlessDiv;
 
 /**
  * Integration test, testing the combination of JSX with our unit of
@@ -28,8 +26,8 @@ let expectSingleChildlessDiv;
 describe('ReactCompositeComponentDOMMinimalism', () => {
   beforeEach(() => {
     React = require('react');
-    ReactDOM = require('react-dom');
-    ReactTestUtils = require('react-dom/test-utils');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
 
     LowerLevelComposite = class extends React.Component {
       render() {
@@ -42,39 +40,51 @@ describe('ReactCompositeComponentDOMMinimalism', () => {
         return <LowerLevelComposite>{this.props.children}</LowerLevelComposite>;
       }
     };
-
-    expectSingleChildlessDiv = function(instance) {
-      const el = ReactDOM.findDOMNode(instance);
-      expect(el.tagName).toBe('DIV');
-      expect(el.children.length).toBe(0);
-    };
   });
 
-  it('should not render extra nodes for non-interpolated text', () => {
-    let instance = <MyCompositeComponent>A string child</MyCompositeComponent>;
-    instance = ReactTestUtils.renderIntoDocument(instance);
-    expectSingleChildlessDiv(instance);
+  it('should not render extra nodes for non-interpolated text', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<MyCompositeComponent>A string child</MyCompositeComponent>);
+    });
+
+    const instance = container.firstChild;
+    expect(instance.tagName).toBe('DIV');
+    expect(instance.children.length).toBe(0);
   });
 
-  it('should not render extra nodes for non-interpolated text', () => {
-    let instance = (
-      <MyCompositeComponent>{'Interpolated String Child'}</MyCompositeComponent>
-    );
-    instance = ReactTestUtils.renderIntoDocument(instance);
-    expectSingleChildlessDiv(instance);
+  it('should not render extra nodes for interpolated text', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <MyCompositeComponent>
+          {'Interpolated String Child'}
+        </MyCompositeComponent>,
+      );
+    });
+
+    const instance = container.firstChild;
+    expect(instance.tagName).toBe('DIV');
+    expect(instance.children.length).toBe(0);
   });
 
-  it('should not render extra nodes for non-interpolated text', () => {
-    let instance = (
-      <MyCompositeComponent>
-        <ul>This text causes no children in ul, just innerHTML</ul>
-      </MyCompositeComponent>
-    );
-    instance = ReactTestUtils.renderIntoDocument(instance);
-    const el = ReactDOM.findDOMNode(instance);
-    expect(el.tagName).toBe('DIV');
-    expect(el.children.length).toBe(1);
-    expect(el.children[0].tagName).toBe('UL');
-    expect(el.children[0].children.length).toBe(0);
+  it('should not render extra nodes for interpolated text children', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <MyCompositeComponent>
+          <ul>This text causes no children in ul, just innerHTML</ul>
+        </MyCompositeComponent>,
+      );
+    });
+
+    const instance = container.firstChild;
+    expect(instance.tagName).toBe('DIV');
+    expect(instance.children.length).toBe(1);
+    expect(instance.children[0].tagName).toBe('UL');
+    expect(instance.children[0].children.length).toBe(0);
   });
 });

@@ -9,15 +9,18 @@
 
 import type {HookSourceAndMetadata} from './loadSourceAndMetadata';
 import type {HooksNode, HooksTree} from 'react-debug-tools/src/ReactDebugHooks';
-import type {HookNames} from 'react-devtools-shared/src/types';
+import type {HookNames} from 'react-devtools-shared/src/frontend/types';
 import type {FetchFileWithCaching} from 'react-devtools-shared/src/devtools/views/Components/FetchFileWithCachingContext';
+
+import 'react';
 
 import {withAsyncPerfMeasurements} from 'react-devtools-shared/src/PerformanceLoggingUtils';
 import WorkerizedParseSourceAndMetadata from './parseSourceAndMetadata.worker';
 import typeof * as ParseSourceAndMetadataModule from './parseSourceAndMetadata';
 import {flattenHooksList, loadSourceAndMetadata} from './loadSourceAndMetadata';
 
-const workerizedParseHookNames: ParseSourceAndMetadataModule = WorkerizedParseSourceAndMetadata();
+const workerizedParseHookNames: ParseSourceAndMetadataModule =
+  WorkerizedParseSourceAndMetadata();
 
 export function parseSourceAndMetadata(
   hooksList: Array<HooksNode>,
@@ -31,7 +34,7 @@ export function parseSourceAndMetadata(
 
 export const purgeCachedMetadata = workerizedParseHookNames.purgeCachedMetadata;
 
-const EMPTY_MAP = new Map();
+const EMPTY_MAP: HookNames = new Map();
 
 export async function parseHookNames(
   hooksTree: HooksTree,

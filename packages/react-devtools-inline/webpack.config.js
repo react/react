@@ -1,12 +1,6 @@
 const {resolve} = require('path');
-const {DefinePlugin} = require('webpack');
+const Webpack = require('webpack');
 const {
-  DARK_MODE_DIMMED_WARNING_COLOR,
-  DARK_MODE_DIMMED_ERROR_COLOR,
-  DARK_MODE_DIMMED_LOG_COLOR,
-  LIGHT_MODE_DIMMED_WARNING_COLOR,
-  LIGHT_MODE_DIMMED_ERROR_COLOR,
-  LIGHT_MODE_DIMMED_LOG_COLOR,
   GITHUB_URL,
   getVersionString,
 } = require('react-devtools-extensions/utils');
@@ -43,10 +37,12 @@ module.exports = {
   },
   output: {
     path: __dirname + '/dist',
+    publicPath: '/dist/',
     filename: '[name].js',
     chunkFilename: '[name].chunk.js',
-    library: '[name]',
-    libraryTarget: 'commonjs2',
+    library: {
+      type: 'commonjs2',
+    },
   },
   externals: {
     react: 'react',
@@ -56,9 +52,7 @@ module.exports = {
     scheduler: 'scheduler',
   },
   node: {
-    // source-maps package has a dependency on 'fs'
-    // but this build won't trigger that code path
-    fs: 'empty',
+    global: false,
   },
   resolve: {
     alias: {
@@ -69,23 +63,25 @@ module.exports = {
     minimize: false,
   },
   plugins: [
-    new DefinePlugin({
+    new Webpack.ProvidePlugin({
+      process: 'process/browser',
+    }),
+    new Webpack.DefinePlugin({
       __DEV__,
       __EXPERIMENTAL__: true,
       __EXTENSION__: false,
       __PROFILE__: false,
       __TEST__: NODE_ENV === 'test',
+      // TODO: Should this be feature tested somehow?
+      __IS_CHROME__: false,
+      __IS_FIREFOX__: false,
+      __IS_EDGE__: false,
+      __IS_NATIVE__: false,
       'process.env.DEVTOOLS_PACKAGE': `"react-devtools-inline"`,
       'process.env.DEVTOOLS_VERSION': `"${DEVTOOLS_VERSION}"`,
       'process.env.EDITOR_URL': EDITOR_URL != null ? `"${EDITOR_URL}"` : null,
       'process.env.GITHUB_URL': `"${GITHUB_URL}"`,
       'process.env.NODE_ENV': `"${NODE_ENV}"`,
-      'process.env.DARK_MODE_DIMMED_WARNING_COLOR': `"${DARK_MODE_DIMMED_WARNING_COLOR}"`,
-      'process.env.DARK_MODE_DIMMED_ERROR_COLOR': `"${DARK_MODE_DIMMED_ERROR_COLOR}"`,
-      'process.env.DARK_MODE_DIMMED_LOG_COLOR': `"${DARK_MODE_DIMMED_LOG_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_WARNING_COLOR': `"${LIGHT_MODE_DIMMED_WARNING_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_ERROR_COLOR': `"${LIGHT_MODE_DIMMED_ERROR_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_LOG_COLOR': `"${LIGHT_MODE_DIMMED_LOG_COLOR}"`,
     }),
   ],
   module: {
@@ -96,6 +92,7 @@ module.exports = {
           {
             loader: 'workerize-loader',
             options: {
+              // Workers would have to be exposed on a public path in order to outline them.
               inline: true,
               name: '[name]',
             },

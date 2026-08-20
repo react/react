@@ -8,5 +8,4 @@
  */
 'use strict';
 
-/*:: export type ErrorMap = { [id: string]: string, ... }; */
-
+export type ErrorMap = {[id: string]: string, ...};

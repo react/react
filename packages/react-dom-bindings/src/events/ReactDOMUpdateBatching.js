@@ -10,20 +10,17 @@ import {
   restoreStateIfNeeded,
 } from './ReactDOMControlledComponent';
 
+import {
+  batchedUpdates as batchedUpdatesImpl,
+  discreteUpdates as discreteUpdatesImpl,
+  flushSyncWork,
+} from 'react-reconciler/src/ReactFiberReconciler';
+
 // Used as a way to call batchedUpdates when we don't have a reference to
 // the renderer. Such as when we're dispatching events or if third party
 // libraries need to call batchedUpdates. Eventually, this API will go away when
 // everything is batched by default. We'll then have a similar API to opt-out of
 // scheduled work and instead do synchronous work.
-
-// Defaults
-let batchedUpdatesImpl = function(fn, bookkeeping) {
-  return fn(bookkeeping);
-};
-let discreteUpdatesImpl = function(fn, a, b, c, d) {
-  return fn(a, b, c, d);
-};
-let flushSyncImpl = function() {};
 
 let isInsideEventHandler = false;
 
@@ -39,7 +36,9 @@ function finishEventHandler() {
     // bails out of the update without touching the DOM.
     // TODO: Restore state in the microtask, after the discrete updates flush,
     // instead of early flushing them here.
-    flushSyncImpl();
+    // @TODO Should move to flushSyncWork once legacy mode is removed but since this flushSync
+    // flushes passive effects we can't do this yet.
+    flushSyncWork();
     restoreStateIfNeeded();
   }
 }
@@ -62,14 +61,4 @@ export function batchedUpdates(fn, a, b) {
 // TODO: Replace with flushSync
 export function discreteUpdates(fn, a, b, c, d) {
   return discreteUpdatesImpl(fn, a, b, c, d);
-}
-
-export function setBatchingImplementation(
-  _batchedUpdatesImpl,
-  _discreteUpdatesImpl,
-  _flushSyncImpl,
-) {
-  batchedUpdatesImpl = _batchedUpdatesImpl;
-  discreteUpdatesImpl = _discreteUpdatesImpl;
-  flushSyncImpl = _flushSyncImpl;
 }

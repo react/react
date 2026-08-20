@@ -31,6 +31,9 @@ const vendorPrefixes = {
   animationend: makePrefixMap('Animation', 'AnimationEnd'),
   animationiteration: makePrefixMap('Animation', 'AnimationIteration'),
   animationstart: makePrefixMap('Animation', 'AnimationStart'),
+  transitionrun: makePrefixMap('Transition', 'TransitionRun'),
+  transitionstart: makePrefixMap('Transition', 'TransitionStart'),
+  transitioncancel: makePrefixMap('Transition', 'TransitionCancel'),
   transitionend: makePrefixMap('Transition', 'TransitionEnd'),
 };
 

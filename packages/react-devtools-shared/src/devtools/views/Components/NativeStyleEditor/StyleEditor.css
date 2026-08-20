@@ -2,7 +2,6 @@
   font-family: var(--font-family-monospace);
   font-size: var(--font-size-monospace-normal);
   padding: 0.25rem;
-  border-top: 1px solid var(--color-border);
 }
 
 .HeaderRow {
@@ -50,9 +49,3 @@
   box-shadow: 0px 1px 3px var(--color-shadow);
 }
 
-.Empty {
-  color: var(--color-dimmer);
-  font-style: italic;
-  user-select: none;
-  padding-left: 1rem;
-}

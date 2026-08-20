@@ -13,7 +13,7 @@ const spawn = require('child_process').spawn;
 const extension = process.platform === 'win32' ? '.cmd' : '';
 
 // sizebot public_repo token (this is publicly visible on purpose)
-const token = '0a7d5c3cad9a6dbec2d9' + '9a5222cf49062a4c1ef7';
+const token = 'ghp_UfuUaoow8veN3ZV1' + 'sGquTDgiVjRDmL2qLY1D';
 spawn(
   path.join('node_modules', '.bin', 'danger-ci' + extension),
   [
@@ -28,7 +28,7 @@ spawn(
       DANGER_GITHUB_API_TOKEN: token,
     },
   }
-).on('close', function(code) {
+).on('close', function (code) {
   if (code !== 0) {
     console.error('Danger failed');
   } else {

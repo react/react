@@ -5,17 +5,16 @@
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--color-border);
-
-  /* Default size will be adjusted by Tree after scrolling */
-  --indentation-size: 12px;
-}
-
-.List {
-  overflow-x: hidden !important;
 }
 
 .InnerElementType {
-  overflow-x: hidden;
+  position: relative;
+}
+
+.VerticalDelimiter {
+  position: absolute;
+  width: 0.025rem;
+  background: #b0b0b0;
 }
 
 .SearchInput {
@@ -39,6 +38,7 @@
   font-family: var(--font-family-monospace);
   font-size: var(--font-size-monospace-normal);
   line-height: var(--line-height-data);
+  user-select: none;
 }
 
 .VRule {

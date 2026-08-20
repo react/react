@@ -24,8 +24,8 @@ import {
 import {TreeStateContext} from './TreeContext';
 import {BridgeContext, StoreContext} from '../context';
 import {
-  checkForUpdate,
   inspectElement,
+  startElementUpdatesPolling,
 } from 'react-devtools-shared/src/inspectedElementCache';
 import {
   clearHookNamesCache,
@@ -36,14 +36,13 @@ import {loadModule} from 'react-devtools-shared/src/dynamicImportCache';
 import FetchFileWithCachingContext from 'react-devtools-shared/src/devtools/views/Components/FetchFileWithCachingContext';
 import HookNamesModuleLoaderContext from 'react-devtools-shared/src/devtools/views/Components/HookNamesModuleLoaderContext';
 import {SettingsContext} from '../Settings/SettingsContext';
-import {enableNamedHooksFeature} from 'react-devtools-feature-flags';
 
-import type {HookNames} from 'react-devtools-shared/src/types';
+import type {HookNames} from 'react-devtools-shared/src/frontend/types';
 import type {ReactNodeList} from 'shared/ReactTypes';
 import type {
   Element,
   InspectedElement,
-} from 'react-devtools-shared/src/devtools/views/Components/types';
+} from 'react-devtools-shared/src/frontend/types';
 
 type Path = Array<string | number>;
 type InspectPathFunction = (path: Path) => void;
@@ -57,11 +56,8 @@ type Context = {
   toggleParseHookNames: ToggleParseHookNames,
 };
 
-export const InspectedElementContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
-);
-
-const POLL_INTERVAL = 1000;
+export const InspectedElementContext: ReactContext<Context> =
+  createContext<Context>(null as any as Context);
 
 export type Props = {
   children: ReactNodeList,
@@ -70,7 +66,7 @@ export type Props = {
 export function InspectedElementContextController({
   children,
 }: Props): React.Node {
-  const {selectedElementID} = useContext(TreeStateContext);
+  const {inspectedElementID} = useContext(TreeStateContext);
   const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
@@ -97,7 +93,9 @@ export function InspectedElementContextController({
   });
 
   const element =
-    selectedElementID !== null ? store.getElementByID(selectedElementID) : null;
+    inspectedElementID !== null
+      ? store.getElementByID(inspectedElementID)
+      : null;
 
   const alreadyLoadedHookNames =
     element != null && hasAlreadyLoadedHookNames(element);
@@ -108,6 +106,8 @@ export function InspectedElementContextController({
   const [parseHookNames, setParseHookNames] = useState<boolean>(
     parseHookNamesByDefault || alreadyLoadedHookNames,
   );
+
+  const [bridgeIsAlive, setBridgeIsAliveStatus] = useState<boolean>(true);
 
   const elementHasChanged = element !== null && element !== state.element;
 
@@ -129,42 +129,39 @@ export function InspectedElementContextController({
   if (!elementHasChanged && element !== null) {
     inspectedElement = inspectElement(element, state.path, store, bridge);
 
-    if (enableNamedHooksFeature) {
-      if (typeof hookNamesModuleLoader === 'function') {
-        if (parseHookNames || alreadyLoadedHookNames) {
-          const hookNamesModule = loadModule(hookNamesModuleLoader);
-          if (hookNamesModule !== null) {
-            const {
-              parseHookNames: loadHookNamesFunction,
-              purgeCachedMetadata,
-            } = hookNamesModule;
+    if (typeof hookNamesModuleLoader === 'function') {
+      if (parseHookNames || alreadyLoadedHookNames) {
+        const hookNamesModule = loadModule(hookNamesModuleLoader);
+        if (hookNamesModule !== null) {
+          const {parseHookNames: loadHookNamesFunction, purgeCachedMetadata} =
+            hookNamesModule;
 
-            purgeCachedMetadataRef.current = purgeCachedMetadata;
+          purgeCachedMetadataRef.current = purgeCachedMetadata;
 
-            if (
-              inspectedElement !== null &&
-              inspectedElement.hooks !== null &&
-              loadHookNamesFunction !== null
-            ) {
-              hookNames = loadHookNames(
-                element,
-                inspectedElement.hooks,
-                loadHookNamesFunction,
-                fetchFileWithCaching,
-              );
-            }
+          if (
+            inspectedElement !== null &&
+            inspectedElement.hooks !== null &&
+            loadHookNamesFunction !== null
+          ) {
+            hookNames = loadHookNames(
+              element,
+              inspectedElement.hooks,
+              loadHookNamesFunction,
+              fetchFileWithCaching,
+            );
           }
         }
       }
     }
   }
 
-  const toggleParseHookNames: ToggleParseHookNames = useCallback<ToggleParseHookNames>(() => {
-    startTransition(() => {
-      setParseHookNames(value => !value);
-      refresh();
-    });
-  }, [setParseHookNames]);
+  const toggleParseHookNames: ToggleParseHookNames =
+    useCallback<ToggleParseHookNames>(() => {
+      startTransition(() => {
+        setParseHookNames(value => !value);
+        refresh();
+      });
+    }, [setParseHookNames]);
 
   const inspectPaths: InspectPathFunction = useCallback<InspectPathFunction>(
     (path: Path) => {
@@ -178,17 +175,6 @@ export function InspectedElementContextController({
     },
     [setState, state],
   );
-
-  const inspectedElementRef = useRef(null);
-  useEffect(() => {
-    if (
-      inspectedElement !== null &&
-      inspectedElement.hooks !== null &&
-      inspectedElementRef.current !== inspectedElement
-    ) {
-      inspectedElementRef.current = inspectedElement;
-    }
-  }, [inspectedElement]);
 
   useEffect(() => {
     const purgeCachedMetadata = purgeCachedMetadataRef.current;
@@ -218,16 +204,34 @@ export function InspectedElementContextController({
     }
   }, [state]);
 
+  useEffect(() => {
+    // Assuming that new bridge is always alive at this moment
+    setBridgeIsAliveStatus(true);
+
+    const listener = () => setBridgeIsAliveStatus(false);
+    bridge.addListener('shutdown', listener);
+
+    return () => bridge.removeListener('shutdown', listener);
+  }, [bridge]);
+
   // Periodically poll the selected element for updates.
   useEffect(() => {
-    if (element !== null) {
-      const checkForUpdateWrapper = () => {
-        checkForUpdate({bridge, element, refresh, store});
-        timeoutID = setTimeout(checkForUpdateWrapper, POLL_INTERVAL);
-      };
-      let timeoutID = setTimeout(checkForUpdateWrapper, POLL_INTERVAL);
+    if (element !== null && bridgeIsAlive) {
+      const {abort, pause, resume} = startElementUpdatesPolling({
+        bridge,
+        element,
+        refresh,
+        store,
+      });
+
+      bridge.addListener('resumeElementPolling', resume);
+      bridge.addListener('pauseElementPolling', pause);
+
       return () => {
-        clearTimeout(timeoutID);
+        bridge.removeListener('resumeElementPolling', resume);
+        bridge.removeListener('pauseElementPolling', pause);
+
+        abort();
       };
     }
   }, [
@@ -237,6 +241,7 @@ export function InspectedElementContextController({
     // No sense to ping right away after e.g. inspecting/hydrating a path.
     inspectedElement,
     state,
+    bridgeIsAlive,
   ]);
 
   const value = useMemo<Context>(

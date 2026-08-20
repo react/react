@@ -9,8 +9,7 @@
 
 import type {ReactContext} from 'shared/ReactTypes';
 
-import {REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED} from 'shared/ReactSymbols';
-import {isPrimaryRenderer} from './ReactServerFormatConfig';
+import {isPrimaryRenderer} from './ReactFizzConfig';
 
 let rendererSigil;
 if (__DEV__) {
@@ -40,6 +39,7 @@ export const rootContextSnapshot: ContextSnapshot = null;
 let currentActiveSnapshot: ContextSnapshot = null;
 
 function popNode(prev: ContextNode<any>): void {
+  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     prev.context._currentValue = prev.parentValue;
   } else {
@@ -48,6 +48,7 @@ function popNode(prev: ContextNode<any>): void {
 }
 
 function pushNode(next: ContextNode<any>): void {
+  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     next.context._currentValue = next.value;
   } else {
@@ -163,7 +164,7 @@ export function switchContext(newSnapshot: ContextSnapshot): void {
   const next = newSnapshot;
   if (prev !== next) {
     if (prev === null) {
-      // $FlowFixMe: This has to be non-null since it's not equal to prev.
+      // $FlowFixMe[incompatible-type]: This has to be non-null since it's not equal to prev.
       pushAllNext(next);
     } else if (next === null) {
       popAllPrevious(prev);
@@ -183,6 +184,7 @@ export function pushProvider<T>(
   nextValue: T,
 ): ContextSnapshot {
   let prevValue;
+  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     prevValue = context._currentValue;
     context._currentValue = nextValue;
@@ -244,13 +246,10 @@ export function popProvider<T>(context: ReactContext<T>): ContextSnapshot {
       );
     }
   }
+  // $FlowFixMe[constant-condition]
   if (isPrimaryRenderer) {
     const value = prevSnapshot.parentValue;
-    if (value === REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED) {
-      prevSnapshot.context._currentValue = prevSnapshot.context._defaultValue;
-    } else {
-      prevSnapshot.context._currentValue = value;
-    }
+    prevSnapshot.context._currentValue = value;
     if (__DEV__) {
       if (
         context._currentRenderer !== undefined &&
@@ -266,11 +265,7 @@ export function popProvider<T>(context: ReactContext<T>): ContextSnapshot {
     }
   } else {
     const value = prevSnapshot.parentValue;
-    if (value === REACT_SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED) {
-      prevSnapshot.context._currentValue2 = prevSnapshot.context._defaultValue;
-    } else {
-      prevSnapshot.context._currentValue2 = value;
-    }
+    prevSnapshot.context._currentValue2 = value;
     if (__DEV__) {
       if (
         context._currentRenderer2 !== undefined &&
@@ -293,6 +288,7 @@ export function getActiveContext(): ContextSnapshot {
 }
 
 export function readContext<T>(context: ReactContext<T>): T {
+  // $FlowFixMe[constant-condition]
   const value = isPrimaryRenderer
     ? context._currentValue
     : context._currentValue2;

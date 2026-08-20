@@ -7,14 +7,43 @@
  * @flow
  */
 
+import {getLegacyRenderImplementation} from './utils';
+
 describe('StoreStress (Legacy Mode)', () => {
   let React;
-  let ReactDOM;
   let act;
   let bridge;
   let store;
   let print;
-  let legacyRender;
+
+  function readValue(promise) {
+    if (typeof React.use === 'function') {
+      return React.use(promise);
+    }
+
+    // Support for React < 19.0
+    switch (promise.status) {
+      case 'fulfilled':
+        return promise.value;
+      case 'rejected':
+        throw promise.reason;
+      case 'pending':
+        throw promise;
+      default:
+        promise.status = 'pending';
+        promise.then(
+          value => {
+            promise.status = 'fulfilled';
+            promise.value = value;
+          },
+          reason => {
+            promise.status = 'rejected';
+            promise.reason = reason;
+          },
+        );
+        throw promise;
+    }
+  }
 
   beforeEach(() => {
     bridge = global.bridge;
@@ -22,18 +51,21 @@ describe('StoreStress (Legacy Mode)', () => {
     store.collapseNodesByDefault = false;
 
     React = require('react');
-    ReactDOM = require('react-dom');
 
     const utils = require('./utils');
     act = utils.act;
-    legacyRender = utils.legacyRender;
 
     print = require('./__serializers__/storeSerializer').print;
   });
 
+  const {render, unmount, createContainer, getContainer} =
+    getLegacyRenderImplementation();
+
   // This is a stress test for the tree mount/update/unmount traversal.
   // It renders different trees that should produce the same output.
   // @reactVersion >= 16.9
+  // @reactVersion < 19
+  // @gate !disableLegacyMode
   it('should handle a stress test with different tree operations (Legacy Mode)', () => {
     let setShowX;
     const A = () => 'a';
@@ -60,8 +92,7 @@ describe('StoreStress (Legacy Mode)', () => {
     }
 
     // 1. Render a normal version of [a, b, c, d, e].
-    let container = document.createElement('div');
-    act(() => legacyRender(<Parent>{[a, b, c, d, e]}</Parent>, container));
+    act(() => render(<Parent>{[a, b, c, d, e]}</Parent>));
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Parent>
@@ -71,7 +102,7 @@ describe('StoreStress (Legacy Mode)', () => {
             <D key="d">
             <E key="e">
     `);
-    expect(container.textContent).toMatch('abcde');
+    expect(getContainer().textContent).toMatch('abcde');
     const snapshotForABCDE = print(store);
 
     // 2. Render a version where <C /> renders an <X /> child instead of 'c'.
@@ -89,18 +120,18 @@ describe('StoreStress (Legacy Mode)', () => {
             <D key="d">
             <E key="e">
     `);
-    expect(container.textContent).toMatch('abxde');
+    expect(getContainer().textContent).toMatch('abxde');
     const snapshotForABXDE = print(store);
 
     // 3. Verify flipping it back produces the original result.
     act(() => {
       setShowX(false);
     });
-    expect(container.textContent).toMatch('abcde');
+    expect(getContainer().textContent).toMatch('abcde');
     expect(print(store)).toBe(snapshotForABCDE);
 
     // 4. Clean up.
-    act(() => ReactDOM.unmountComponentAtNode(container));
+    act(() => unmount());
     expect(print(store)).toBe('');
 
     // Now comes the interesting part.
@@ -138,61 +169,62 @@ describe('StoreStress (Legacy Mode)', () => {
     // 5. Test fresh mount for each case.
     for (let i = 0; i < cases.length; i++) {
       // Ensure fresh mount.
-      container = document.createElement('div');
+      createContainer();
 
       // Verify mounting 'abcde'.
-      act(() => legacyRender(<Parent>{cases[i]}</Parent>, container));
-      expect(container.textContent).toMatch('abcde');
+      act(() => render(<Parent>{cases[i]}</Parent>));
+      expect(getContainer().textContent).toMatch('abcde');
       expect(print(store)).toEqual(snapshotForABCDE);
 
       // Verify switching to 'abxde'.
       act(() => {
         setShowX(true);
       });
-      expect(container.textContent).toMatch('abxde');
+      expect(getContainer().textContent).toMatch('abxde');
       expect(print(store)).toBe(snapshotForABXDE);
 
       // Verify switching back to 'abcde'.
       act(() => {
         setShowX(false);
       });
-      expect(container.textContent).toMatch('abcde');
+      expect(getContainer().textContent).toMatch('abcde');
       expect(print(store)).toBe(snapshotForABCDE);
 
       // Clean up.
-      act(() => ReactDOM.unmountComponentAtNode(container));
+      act(() => unmount());
       expect(print(store)).toBe('');
     }
 
     // 6. Verify *updates* by reusing the container between iterations.
     // There'll be no unmounting until the very end.
-    container = document.createElement('div');
+    createContainer();
     for (let i = 0; i < cases.length; i++) {
       // Verify mounting 'abcde'.
-      act(() => legacyRender(<Parent>{cases[i]}</Parent>, container));
-      expect(container.textContent).toMatch('abcde');
+      act(() => render(<Parent>{cases[i]}</Parent>));
+      expect(getContainer().textContent).toMatch('abcde');
       expect(print(store)).toEqual(snapshotForABCDE);
 
       // Verify switching to 'abxde'.
       act(() => {
         setShowX(true);
       });
-      expect(container.textContent).toMatch('abxde');
+      expect(getContainer().textContent).toMatch('abxde');
       expect(print(store)).toBe(snapshotForABXDE);
 
       // Verify switching back to 'abcde'.
       act(() => {
         setShowX(false);
       });
-      expect(container.textContent).toMatch('abcde');
+      expect(getContainer().textContent).toMatch('abcde');
       expect(print(store)).toBe(snapshotForABCDE);
       // Don't unmount. Reuse the container between iterations.
     }
-    act(() => ReactDOM.unmountComponentAtNode(container));
+    act(() => unmount());
     expect(print(store)).toBe('');
   });
 
   // @reactVersion >= 16.9
+  // @reactVersion <= 18.2
   it('should handle stress test with reordering (Legacy Mode)', () => {
     const A = () => 'a';
     const B = () => 'b';
@@ -320,27 +352,29 @@ describe('StoreStress (Legacy Mode)', () => {
 
     // 1. Capture the expected render result.
     const snapshots = [];
-    let container = document.createElement('div');
     for (let i = 0; i < steps.length; i++) {
-      act(() => legacyRender(<Root>{steps[i]}</Root>, container));
+      createContainer();
+
+      act(() => render(<Root>{steps[i]}</Root>));
       // We snapshot each step once so it doesn't regress.
       expect(store).toMatchInlineSnapshot(stepsSnapshot[i]);
       snapshots.push(print(store));
-      act(() => ReactDOM.unmountComponentAtNode(container));
+      act(() => unmount());
       expect(print(store)).toBe('');
     }
 
     // 2. Verify that we can update from every step to every other step and back.
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
-        container = document.createElement('div');
-        act(() => legacyRender(<Root>{steps[i]}</Root>, container));
+        createContainer();
+
+        act(() => render(<Root>{steps[i]}</Root>));
         expect(print(store)).toMatch(snapshots[i]);
-        act(() => legacyRender(<Root>{steps[j]}</Root>, container));
+        act(() => render(<Root>{steps[j]}</Root>));
         expect(print(store)).toMatch(snapshots[j]);
-        act(() => legacyRender(<Root>{steps[i]}</Root>, container));
+        act(() => render(<Root>{steps[i]}</Root>));
         expect(print(store)).toMatch(snapshots[i]);
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -348,41 +382,40 @@ describe('StoreStress (Legacy Mode)', () => {
     // 3. Same test as above, but this time we wrap children in a host component.
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <div>{steps[i]}</div>
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toMatch(snapshots[i]);
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <div>{steps[j]}</div>
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toMatch(snapshots[j]);
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <div>{steps[i]}</div>
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toMatch(snapshots[i]);
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
   });
 
   // @reactVersion >= 18.0
+  // @reactVersion <= 18.2
   it('should handle a stress test for Suspense (Legacy Mode)', async () => {
     const A = () => 'a';
     const B = () => 'b';
@@ -411,114 +444,116 @@ describe('StoreStress (Legacy Mode)', () => {
       a,
     ];
 
+    // Excluding Suspense tree here due to different measurement semantics for fallbacks
     const stepsSnapshot = [
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+              <Y>"
       `,
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+              <Y>"
       `,
       `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <A key="a">
-                <B key="b">
-                <C key="c">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <B key="b">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
                 <B key="b">
-              <Y>
+                <C key="c">
+              <Y>"
       `,
       `
-        [root]
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <B key="b">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+                <B key="b">
+              <Y>"
       `,
       `
-        [root]
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
           ▾ <Root>
               <X>
               <Suspense>
-              <Y>
+              <Y>"
       `,
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <B key="b">
-              <Y>
+              <Y>"
       `,
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+              <Y>"
       `,
     ];
 
+    const never = new Promise(() => {});
     const Never = () => {
-      throw new Promise(() => {});
+      readValue(never);
     };
 
     const Root = ({children}) => {
@@ -528,29 +563,33 @@ describe('StoreStress (Legacy Mode)', () => {
     // 1. For each step, check Suspense can render them as initial primary content.
     // This is the only step where we use Jest snapshots.
     const snapshots = [];
-    let container = document.createElement('div');
     for (let i = 0; i < steps.length; i++) {
+      createContainer();
+
       act(() =>
-        legacyRender(
+        render(
           <Root>
             <X />
             <React.Suspense fallback={z}>{steps[i]}</React.Suspense>
             <Y />
           </Root>,
-          container,
         ),
       );
       // We snapshot each step once so it doesn't regress.
-      expect(store).toMatchInlineSnapshot(stepsSnapshot[i]);
-      snapshots.push(print(store));
-      act(() => ReactDOM.unmountComponentAtNode(container));
+      expect(print(store, undefined, undefined, false)).toMatchInlineSnapshot(
+        stepsSnapshot[i],
+      );
+      snapshots.push(print(store, undefined, undefined, false));
+      act(() => unmount());
       expect(print(store)).toBe('');
     }
 
     // 2. Verify check Suspense can render same steps as initial fallback content.
     for (let i = 0; i < steps.length; i++) {
+      createContainer();
+
       act(() =>
-        legacyRender(
+        render(
           <Root>
             <X />
             <React.Suspense fallback={steps[i]}>
@@ -560,11 +599,10 @@ describe('StoreStress (Legacy Mode)', () => {
             </React.Suspense>
             <Y />
           </Root>,
-          container,
         ),
       );
-      expect(print(store)).toEqual(snapshots[i]);
-      act(() => ReactDOM.unmountComponentAtNode(container));
+      expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
+      act(() => unmount());
       expect(print(store)).toBe('');
     }
 
@@ -572,45 +610,43 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>{steps[i]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>{steps[j]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>{steps[i]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -619,9 +655,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -631,13 +668,12 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -647,14 +683,13 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -664,12 +699,11 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -678,21 +712,21 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>{steps[i]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -702,25 +736,23 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>{steps[i]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -729,9 +761,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -741,26 +774,24 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>{steps[j]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -770,12 +801,11 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -784,15 +814,15 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>{steps[i]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
 
@@ -802,7 +832,7 @@ describe('StoreStress (Legacy Mode)', () => {
         const suspenseID = store.getElementIDAtIndex(2);
 
         // Force fallback.
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         act(() => {
           bridge.send('overrideSuspense', {
             id: suspenseID,
@@ -810,7 +840,7 @@ describe('StoreStress (Legacy Mode)', () => {
             forceFallback: true,
           });
         });
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Stop forcing fallback.
         act(() => {
@@ -820,11 +850,11 @@ describe('StoreStress (Legacy Mode)', () => {
             forceFallback: false,
           });
         });
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
 
         // Trigger actual fallback.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -834,10 +864,9 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Force fallback while we're in fallback mode.
         act(() => {
@@ -848,21 +877,20 @@ describe('StoreStress (Legacy Mode)', () => {
           });
         });
         // Keep seeing fallback content.
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Switch to primary mode.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>{steps[i]}</React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Fallback is still forced though.
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Stop forcing fallback. This reverts to primary content.
         act(() => {
@@ -873,16 +901,17 @@ describe('StoreStress (Legacy Mode)', () => {
           });
         });
         // Now we see primary content.
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
 
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
   });
 
   // @reactVersion >= 18.0
+  // @reactVersion <= 18.2
   it('should handle a stress test for Suspense without type change (Legacy Mode)', () => {
     const A = () => 'a';
     const B = () => 'b';
@@ -921,6 +950,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -931,63 +962,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <A key="a">
-                  <B key="b">
-                  <C key="c">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <B key="b">
-                  <A key="a">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <A key="a">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <A key="a">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <A key="a">
-                  <Z>
-              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -997,8 +973,77 @@ describe('StoreStress (Legacy Mode)', () => {
               ▾ <MaybeSuspend>
                   <A key="a">
                   <B key="b">
+                  <C key="c">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <B key="b">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <A key="a">
+                  <B key="b">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1009,6 +1054,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1018,6 +1065,8 @@ describe('StoreStress (Legacy Mode)', () => {
               ▾ <MaybeSuspend>
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1028,6 +1077,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <B key="b">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1038,6 +1089,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
     ];
 
@@ -1049,6 +1102,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1057,53 +1112,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <A key="a">
-                <B key="b">
-                <C key="c">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <B key="b">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1112,7 +1122,66 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
                 <B key="b">
+                <C key="c">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <B key="b">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <A key="a">
+                <B key="b">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1121,6 +1190,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1128,6 +1199,8 @@ describe('StoreStress (Legacy Mode)', () => {
               <X>
               <Suspense>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1136,6 +1209,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <B key="b">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1144,11 +1219,14 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
     ];
 
+    const never = new Promise(() => {});
     const Never = () => {
-      throw new Promise(() => {});
+      readValue(never);
     };
 
     const MaybeSuspend = ({children, suspend}) => {
@@ -1176,10 +1254,12 @@ describe('StoreStress (Legacy Mode)', () => {
     // 1. For each step, check Suspense can render them as initial primary content.
     // This is the only step where we use Jest snapshots.
     const snapshots = [];
-    let container = document.createElement('div');
+
     for (let i = 0; i < steps.length; i++) {
+      createContainer();
+
       act(() =>
-        legacyRender(
+        render(
           <Root>
             <X />
             <React.Suspense fallback={z}>
@@ -1187,13 +1267,12 @@ describe('StoreStress (Legacy Mode)', () => {
             </React.Suspense>
             <Y />
           </Root>,
-          container,
         ),
       );
       // We snapshot each step once so it doesn't regress.
       expect(store).toMatchInlineSnapshot(stepsSnapshot[i]);
       snapshots.push(print(store));
-      act(() => ReactDOM.unmountComponentAtNode(container));
+      act(() => unmount());
       expect(print(store)).toBe('');
     }
 
@@ -1202,8 +1281,10 @@ describe('StoreStress (Legacy Mode)', () => {
     // which is different from the snapshots above. So we take more snapshots.
     const fallbackSnapshots = [];
     for (let i = 0; i < steps.length; i++) {
+      createContainer();
+
       act(() =>
-        legacyRender(
+        render(
           <Root>
             <X />
             <React.Suspense fallback={steps[i]}>
@@ -1213,13 +1294,12 @@ describe('StoreStress (Legacy Mode)', () => {
             </React.Suspense>
             <Y />
           </Root>,
-          container,
         ),
       );
       // We snapshot each step once so it doesn't regress.
       expect(store).toMatchInlineSnapshot(stepsSnapshotTwo[i]);
-      fallbackSnapshots.push(print(store));
-      act(() => ReactDOM.unmountComponentAtNode(container));
+      fallbackSnapshots.push(print(store, undefined, undefined, false));
+      act(() => unmount());
       expect(print(store)).toBe('');
     }
 
@@ -1227,9 +1307,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>
@@ -1237,13 +1318,12 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>
@@ -1251,14 +1331,13 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
         expect(print(store)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>
@@ -1266,12 +1345,11 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toEqual(snapshots[i]);
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -1280,9 +1358,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -1295,13 +1374,14 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -1314,14 +1394,15 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -1334,12 +1415,13 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -1348,9 +1430,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>
@@ -1358,13 +1441,12 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -1372,14 +1454,15 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={z}>
@@ -1387,12 +1470,11 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         expect(print(store)).toEqual(snapshots[i]);
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -1401,9 +1483,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -1411,13 +1494,14 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Re-render with steps[j].
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -1425,14 +1509,13 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Verify the successful transition to steps[j].
         expect(print(store)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[i]}>
@@ -1440,12 +1523,13 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }
@@ -1454,9 +1538,10 @@ describe('StoreStress (Legacy Mode)', () => {
     for (let i = 0; i < steps.length; i++) {
       for (let j = 0; j < steps.length; j++) {
         // Always start with a fresh container and steps[i].
-        container = document.createElement('div');
+        createContainer();
+
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -1464,7 +1549,6 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
 
@@ -1482,7 +1566,9 @@ describe('StoreStress (Legacy Mode)', () => {
             forceFallback: true,
           });
         });
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Stop forcing fallback.
         act(() => {
@@ -1496,7 +1582,7 @@ describe('StoreStress (Legacy Mode)', () => {
 
         // Trigger actual fallback.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -1504,10 +1590,11 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Force fallback while we're in fallback mode.
         act(() => {
@@ -1518,11 +1605,13 @@ describe('StoreStress (Legacy Mode)', () => {
           });
         });
         // Keep seeing fallback content.
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Switch to primary mode.
         act(() =>
-          legacyRender(
+          render(
             <Root>
               <X />
               <React.Suspense fallback={steps[j]}>
@@ -1530,11 +1619,12 @@ describe('StoreStress (Legacy Mode)', () => {
               </React.Suspense>
               <Y />
             </Root>,
-            container,
           ),
         );
         // Fallback is still forced though.
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Stop forcing fallback. This reverts to primary content.
         act(() => {
@@ -1548,7 +1638,7 @@ describe('StoreStress (Legacy Mode)', () => {
         expect(print(store)).toEqual(snapshots[i]);
 
         // Clean up after every iteration.
-        act(() => ReactDOM.unmountComponentAtNode(container));
+        act(() => unmount());
         expect(print(store)).toBe('');
       }
     }

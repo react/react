@@ -1,6 +1,6 @@
 const MAX_DECIMAL_PLACES = 3;
 
-// test() is part of Jest's serializer API
+// `test` is part of Jest's serializer API
 export function test(maybeNumber) {
   return (
     typeof maybeNumber === 'number' &&

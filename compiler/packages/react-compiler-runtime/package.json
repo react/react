@@ -1,0 +1,25 @@
+{
+  "name": "react-compiler-runtime",
+  "version": "0.0.1",
+  "description": "Runtime for React Compiler",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "peerDependencies": {
+    "react": "^17.0.0 || ^18.0.0 || ^19.0.0 || ^0.0.0-experimental"
+  },
+  "scripts": {
+    "build": "rimraf dist && tsup",
+    "test": "echo 'no tests'",
+    "watch": "yarn build --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/react-compiler-runtime"
+  }
+}

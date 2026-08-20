@@ -41,6 +41,7 @@ function shallowEqual(objA: mixed, objB: mixed): boolean {
     const currentKey = keysA[i];
     if (
       !hasOwnProperty.call(objB, currentKey) ||
+      // $FlowFixMe[incompatible-use] lost refinement of `objB`
       !is(objA[currentKey], objB[currentKey])
     ) {
       return false;

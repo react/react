@@ -4,229 +4,171 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @format
+ * @noformat
+ * @nolint
  * @flow strict
  */
 
-import type {ElementRef, ElementType, Element, AbstractComponent} from 'react';
+import type {
+  // $FlowFixMe[nonstrict-import] TODO(@rubennorte)
+  HostInstance as PublicInstance,
+  // $FlowFixMe[nonstrict-import] TODO(@rubennorte)
+  MeasureOnSuccessCallback,
+  // $FlowFixMe[nonstrict-import] TODO(@rubennorte)
+  PublicRootInstance,
+  // $FlowFixMe[nonstrict-import] TODO(@rubennorte)
+  PublicTextInstance,
+} from 'react-native';
 
-export type MeasureOnSuccessCallback = (
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  pageX: number,
-  pageY: number,
-) => void;
-
-export type MeasureInWindowOnSuccessCallback = (
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) => void;
-
-export type MeasureLayoutOnSuccessCallback = (
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-) => void;
+import * as React from 'react';
 
 export type AttributeType<T, V> =
   | true
-  | $ReadOnly<{
+  | Readonly<{
       diff?: (arg1: T, arg2: T) => boolean,
       process?: (arg1: V) => T,
     }>;
 
-// We either force that `diff` and `process` always use mixed,
+// We either force that `diff` and `process` always use unknown,
 // or we allow them to define specific types and use this hack
 export type AnyAttributeType = AttributeType<$FlowFixMe, $FlowFixMe>;
 
-export type AttributeConfiguration = $ReadOnly<{
-  [propName: string]: AnyAttributeType,
-  style: $ReadOnly<{
+export type AttributeConfiguration = Readonly<{
+  [propName: string]: AnyAttributeType | void,
+  style?: Readonly<{
     [propName: string]: AnyAttributeType,
-    ...,
+    ...
   }>,
   ...
 }>;
 
-export type PartialAttributeConfiguration = $ReadOnly<{
-  [propName: string]: AnyAttributeType,
-  style?: $ReadOnly<{
-    [propName: string]: AnyAttributeType,
-    ...,
-  }>,
-  ...
-}>;
-
-export type ViewConfig = $ReadOnly<{
-  Commands?: $ReadOnly<{[commandName: string]: number, ...}>,
-  Constants?: $ReadOnly<{[name: string]: mixed, ...}>,
+export type ViewConfig = Readonly<{
+  Commands?: Readonly<{[commandName: string]: number, ...}>,
+  Constants?: Readonly<{[name: string]: unknown, ...}>,
   Manager?: string,
-  NativeProps?: $ReadOnly<{[propName: string]: string, ...}>,
+  NativeProps?: Readonly<{[propName: string]: string, ...}>,
   baseModuleName?: ?string,
-  bubblingEventTypes?: $ReadOnly<{
-    [eventName: string]: $ReadOnly<{
-      phasedRegistrationNames: $ReadOnly<{
+  bubblingEventTypes?: Readonly<{
+    [eventName: string]: Readonly<{
+      phasedRegistrationNames: Readonly<{
         captured: string,
         bubbled: string,
         skipBubbling?: ?boolean,
       }>,
     }>,
-    ...,
+    ...
   }>,
-  directEventTypes?: $ReadOnly<{
-    [eventName: string]: $ReadOnly<{
+  directEventTypes?: Readonly<{
+    [eventName: string]: Readonly<{
       registrationName: string,
     }>,
-    ...,
+    ...
   }>,
+  supportsRawText?: boolean,
   uiViewClassName: string,
   validAttributes: AttributeConfiguration,
 }>;
 
-export type PartialViewConfig = $ReadOnly<{
-  bubblingEventTypes?: $PropertyType<ViewConfig, 'bubblingEventTypes'>,
-  directEventTypes?: $PropertyType<ViewConfig, 'directEventTypes'>,
+export type PartialViewConfig = Readonly<{
+  bubblingEventTypes?: ViewConfig['bubblingEventTypes'],
+  directEventTypes?: ViewConfig['directEventTypes'],
+  supportsRawText?: boolean,
   uiViewClassName: string,
-  validAttributes?: PartialAttributeConfiguration,
+  validAttributes?: AttributeConfiguration,
 }>;
 
-export type NativeMethods = $ReadOnly<{
-  blur(): void,
-  focus(): void,
-  measure(callback: MeasureOnSuccessCallback): void,
-  measureInWindow(callback: MeasureInWindowOnSuccessCallback): void,
-  measureLayout(
-    relativeToNativeNode: number | ElementRef<HostComponent<mixed>>,
-    onSuccess: MeasureLayoutOnSuccessCallback,
-    onFail?: () => void,
-  ): void,
-  setNativeProps(nativeProps: {...}): void,
-}>;
-
-export type HostComponent<T> = AbstractComponent<T, $ReadOnly<NativeMethods>>;
-
-type SecretInternalsType = {
-  computeComponentStackForErrorReporting(tag: number): string,
-  // TODO (bvaughn) Decide which additional types to expose here?
-  // And how much information to fill in for the above types.
-  ...
-};
-
-type InspectorDataProps = $ReadOnly<{
+type InspectorDataProps = Readonly<{
   [propName: string]: string,
-  ...,
-}>;
-
-type InspectorDataSource = $ReadOnly<{
-  fileName?: string,
-  lineNumber?: number,
+  ...
 }>;
 
 type InspectorDataGetter = (
-  <TElementType: ElementType>(
-    componentOrHandle: ElementRef<TElementType> | number,
+  <TElementType extends React.ElementType>(
+    componentOrHandle: React.ElementRef<TElementType> | number,
   ) => ?number,
-) => $ReadOnly<{
+) => Readonly<{
   measure: (callback: MeasureOnSuccessCallback) => void,
   props: InspectorDataProps,
-  source: InspectorDataSource,
 }>;
 
-export type InspectorData = $ReadOnly<{
-  closestInstance?: mixed,
+export type InspectorData = Readonly<{
+  closestInstance?: unknown,
   hierarchy: Array<{
     name: ?string,
     getInspectorData: InspectorDataGetter,
   }>,
   selectedIndex: ?number,
   props: InspectorDataProps,
-  source: ?InspectorDataSource,
+  componentStack: string,
 }>;
 
-export type TouchedViewDataAtPoint = $ReadOnly<{
-  pointerY: number,
-  touchedViewTag?: number,
-  frame: $ReadOnly<{
-    top: number,
-    left: number,
-    width: number,
-    height: number,
-  }>,
-  ...InspectorData,
-}>;
+export type TouchedViewDataAtPoint = Readonly<
+  {
+    pointerY: number,
+    touchedViewTag?: number,
+    frame: Readonly<{
+      top: number,
+      left: number,
+      width: number,
+      height: number,
+    }>,
+    closestPublicInstance?: PublicInstance,
+  } & InspectorData,
+>;
 
-/**
- * Flat ReactNative renderer bundles are too big for Flow to parse efficiently.
- * Provide minimal Flow typing for the high-level RN API and call it a day.
- */
-export type ReactNativeType = {
-  findHostInstance_DEPRECATED<TElementType: ElementType>(
-    componentOrHandle: ?(ElementRef<TElementType> | number),
-  ): ?ElementRef<HostComponent<mixed>>,
-  findNodeHandle<TElementType: ElementType>(
-    componentOrHandle: ?(ElementRef<TElementType> | number),
-  ): ?number,
-  dispatchCommand(
-    handle: ElementRef<HostComponent<mixed>>,
-    command: string,
-    args: Array<mixed>,
-  ): void,
-  sendAccessibilityEvent(
-    handle: ElementRef<HostComponent<mixed>>,
-    eventType: string,
-  ): void,
-  render(
-    element: Element<ElementType>,
-    containerTag: number,
-    callback: ?() => void,
-  ): ?ElementRef<ElementType>,
-  unmountComponentAtNode(containerTag: number): void,
-  unmountComponentAtNodeAndRemoveContainer(containerTag: number): void,
-  unstable_batchedUpdates: <T>(fn: (T) => void, bookkeeping: T) => void,
-  __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED: SecretInternalsType,
-  ...
+export type RenderRootOptions = {
+  onUncaughtError?: (
+    error: unknown,
+    errorInfo: {readonly componentStack?: ?string},
+  ) => void,
+  onCaughtError?: (
+    error: unknown,
+    errorInfo: {
+      readonly componentStack?: ?string,
+      // $FlowFixMe[unclear-type] unknown props and state.
+      // $FlowFixMe[value-as-type] Component in react repo is any-typed, but it will be well typed externally.
+      readonly errorBoundary?: ?React.Component<any, any>,
+    },
+  ) => void,
+  onRecoverableError?: (
+    error: unknown,
+    errorInfo: {readonly componentStack?: ?string},
+  ) => void,
+  onDefaultTransitionIndicator?: () => void | (() => void),
 };
 
+export opaque type Node = unknown;
+export opaque type InternalInstanceHandle = unknown;
+
 export type ReactFabricType = {
-  findHostInstance_DEPRECATED<TElementType: ElementType>(
-    componentOrHandle: ?(ElementRef<TElementType> | number),
-  ): ?ElementRef<HostComponent<mixed>>,
-  findNodeHandle<TElementType: ElementType>(
-    componentOrHandle: ?(ElementRef<TElementType> | number),
+  findHostInstance_DEPRECATED<TElementType extends React.ElementType>(
+    componentOrHandle: ?(React.ElementRef<TElementType> | number),
+  ): ?PublicInstance,
+  findNodeHandle<TElementType extends React.ElementType>(
+    componentOrHandle: ?(React.ElementRef<TElementType> | number),
   ): ?number,
   dispatchCommand(
-    handle: ElementRef<HostComponent<mixed>>,
+    handle: PublicInstance,
     command: string,
-    args: Array<mixed>,
+    args: Array<unknown>,
   ): void,
-  sendAccessibilityEvent(
-    handle: ElementRef<HostComponent<mixed>>,
-    eventType: string,
-  ): void,
+  isChildPublicInstance(parent: PublicInstance, child: PublicInstance): boolean,
+  sendAccessibilityEvent(handle: PublicInstance, eventType: string): void,
   render(
-    element: Element<ElementType>,
+    element: React.MixedElement,
     containerTag: number,
     callback: ?() => void,
     concurrentRoot: ?boolean,
-  ): ?ElementRef<ElementType>,
+    options: ?RenderRootOptions,
+  ): ?React.ElementRef<React.ElementType>,
   unmountComponentAtNode(containerTag: number): void,
-  ...
-};
-
-export type ReactNativeEventTarget = {
-  node: {...},
-  canonical: {
-    _nativeTag: number,
-    viewConfig: ViewConfig,
-    currentProps: {...},
-    _internalInstanceHandle: {...},
-    ...
-  },
+  getNodeFromInternalInstanceHandle(
+    internalInstanceHandle: InternalInstanceHandle,
+  ): ?Node,
+  getPublicInstanceFromInternalInstanceHandle(
+    internalInstanceHandle: InternalInstanceHandle,
+  ): PublicInstance | PublicTextInstance | null,
+  getPublicInstanceFromRootTag(rootTag: number): PublicRootInstance | null,
   ...
 };
 
@@ -268,7 +210,7 @@ export type LayoutAnimationProperty =
   | 'scaleY'
   | 'scaleXY';
 
-export type LayoutAnimationAnimationConfig = $ReadOnly<{
+export type LayoutAnimationAnimationConfig = Readonly<{
   duration?: number,
   delay?: number,
   springDamping?: number,
@@ -277,7 +219,7 @@ export type LayoutAnimationAnimationConfig = $ReadOnly<{
   property?: LayoutAnimationProperty,
 }>;
 
-export type LayoutAnimationConfig = $ReadOnly<{
+export type LayoutAnimationConfig = Readonly<{
   duration: number,
   create?: LayoutAnimationAnimationConfig,
   update?: LayoutAnimationAnimationConfig,

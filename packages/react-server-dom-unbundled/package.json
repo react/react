@@ -1,0 +1,46 @@
+{
+  "name": "react-server-dom-unbundled",
+  "description": "React Server Components bindings for DOM using Node.js. This only exists for internal testing.",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "LICENSE",
+    "README.md",
+    "index.js",
+    "client.js",
+    "server.js",
+    "server.node.js",
+    "static.js",
+    "static.node.js",
+    "node-register.js",
+    "cjs/",
+    "esm/"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./server": {
+      "react-server": "./server.node.js",
+      "default": "./server.js"
+    },
+    "./server.node": "./server.node.js",
+    "./static": {
+      "react-server": "./static.node.js",
+      "default": "./static.js"
+    },
+    "./static.node": "./static.node.js",
+    "./node-loader": "./esm/react-server-dom-unbundled-node-loader.production.js",
+    "./node-register": "./node-register.js",
+    "./src/*": "./src/*.js",
+    "./package.json": "./package.json"
+  },
+  "main": "index.js",
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "acorn-loose": "^8.3.0",
+    "webpack-sources": "^3.2.0"
+  }
+}

@@ -1,0 +1,13 @@
+.Root {
+  background-color: var(--color-forget-badge-background);
+  color: var(--color-forget-text);
+  padding-right: 1.75em;
+  position: relative;
+}
+
+.Root::after {
+  bottom: 0;
+  content: '✨';
+  position: absolute;
+  right: 0.25em;
+}

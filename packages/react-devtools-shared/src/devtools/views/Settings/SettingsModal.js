@@ -26,9 +26,11 @@ import ProfilerSettings from './ProfilerSettings';
 
 import styles from './SettingsModal.css';
 
-type TabID = 'general' | 'components' | 'profiler';
+import type Store from 'react-devtools-shared/src/devtools/store';
 
-export default function SettingsModal(_: {}): React.Node {
+type TabID = 'general' | 'debugging' | 'components' | 'profiler';
+
+export default function SettingsModal(): React.Node {
   const {isModalShowing, setIsModalShowing} = useContext(SettingsModalContext);
   const store = useContext(StoreContext);
   const {profilerStore} = store;
@@ -37,7 +39,7 @@ export default function SettingsModal(_: {}): React.Node {
   // Explicitly disallow it for now.
   const isProfilingSubscription = useMemo(
     () => ({
-      getCurrentValue: () => profilerStore.isProfiling,
+      getCurrentValue: () => profilerStore.isProfilingBasedOnUserInput,
       subscribe: (callback: Function) => {
         profilerStore.addListener('isProfiling', callback);
         return () => profilerStore.removeListener('isProfiling', callback);
@@ -54,14 +56,18 @@ export default function SettingsModal(_: {}): React.Node {
     return null;
   }
 
-  return <SettingsModalImpl />;
+  return <SettingsModalImpl store={store} />;
 }
 
-function SettingsModalImpl(_: {}) {
-  const {setIsModalShowing} = useContext(SettingsModalContext);
-  const dismissModal = useCallback(() => setIsModalShowing(false), [
-    setIsModalShowing,
-  ]);
+type ImplProps = {store: Store};
+
+function SettingsModalImpl({store}: ImplProps) {
+  const {setIsModalShowing, environmentNames, hookSettings} =
+    useContext(SettingsModalContext);
+  const dismissModal = useCallback(
+    () => setIsModalShowing(false),
+    [setIsModalShowing],
+  );
 
   const [selectedTabID, selectTab] = useLocalStorage<TabID>(
     'React::DevTools::selectedSettingsTabID',
@@ -80,11 +86,10 @@ function SettingsModalImpl(_: {}) {
   let view = null;
   switch (selectedTabID) {
     case 'components':
-      view = <ComponentsSettings />;
+      view = <ComponentsSettings environmentNames={environmentNames} />;
       break;
-    // $FlowFixMe[incompatible-type] is this missing in TabID?
     case 'debugging':
-      view = <DebuggingSettings />;
+      view = <DebuggingSettings hookSettings={hookSettings} store={store} />;
       break;
     case 'general':
       view = <GeneralSettings />;

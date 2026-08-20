@@ -2,7 +2,7 @@ import hasOwnProperty from 'shared/hasOwnProperty';
 
 const FILTERED_VERSION_STRING = '<filtered-version>';
 
-// test() is part of Jest's serializer API
+// `test` is part of Jest's serializer API
 export function test(maybeProfile) {
   if (
     maybeProfile != null &&

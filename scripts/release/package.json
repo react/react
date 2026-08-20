@@ -19,7 +19,6 @@
     "prompt-promise": "^1.0.3",
     "puppeteer": "^1.11.0",
     "pushstate-server": "^3.0.1",
-    "request-promise-json": "^1.0.4",
     "semver": "^5.4.1"
   }
 }

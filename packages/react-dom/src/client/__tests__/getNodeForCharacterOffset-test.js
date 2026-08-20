@@ -10,8 +10,8 @@
 'use strict';
 
 // TODO: can we express this test with only public API?
-const getNodeForCharacterOffset = require('react-dom-bindings/src/client/getNodeForCharacterOffset')
-  .default;
+const getNodeForCharacterOffset =
+  require('react-dom-bindings/src/client/getNodeForCharacterOffset').default;
 
 // Create node from HTML string
 function createNode(html) {

@@ -30,18 +30,22 @@ type TextInstance = {
   hidden: boolean,
 };
 
+type ActivityInstance = {
+  children: Array<Instance | TextInstance | SuspenseInstance>,
+};
+
 type SuspenseInstance = {
   state: 'pending' | 'complete' | 'client-render',
   children: Array<Instance | TextInstance | SuspenseInstance>,
 };
 
 type Placeholder = {
-  parent: Instance | SuspenseInstance,
+  parent: Instance | Segment | SuspenseInstance,
   index: number,
 };
 
 type Segment = {
-  children: null | Instance | TextInstance | SuspenseInstance,
+  children: Array<Instance | TextInstance | SuspenseInstance>,
 };
 
 type Destination = {
@@ -51,8 +55,10 @@ type Destination = {
   stack: Array<Segment | Instance | SuspenseInstance>,
 };
 
-type Resources = null;
-type BoundaryResources = null;
+type ResumableState = null;
+type RenderState = null;
+type HoistableState = null;
+type PreambleState = null;
 
 const POP = Buffer.from('/', 'utf8');
 
@@ -63,7 +69,7 @@ function write(destination: Destination, buffer: Uint8Array): void {
     return;
   }
   // We assume one chunk is one instance.
-  const instance = JSON.parse(Buffer.from((buffer: any)).toString('utf8'));
+  const instance = JSON.parse(Buffer.from(buffer as any).toString('utf8'));
   if (stack.length === 0) {
     destination.root = instance;
   } else {
@@ -73,7 +79,12 @@ function write(destination: Destination, buffer: Uint8Array): void {
   stack.push(instance);
 }
 
+// $FlowFixMe[prop-missing]
+// $FlowFixMe[incompatible-type]
 const ReactNoopServer = ReactFizzServer({
+  scheduleMicrotask(callback: () => void) {
+    callback();
+  },
   scheduleWork(callback: () => void) {
     callback();
   },
@@ -90,21 +101,29 @@ const ReactNoopServer = ReactFizzServer({
   closeWithError(destination: Destination, error: mixed): void {},
   flushBuffered(destination: Destination): void {},
 
-  UNINITIALIZED_SUSPENSE_BOUNDARY_ID: null,
-
-  assignSuspenseBoundaryID(): SuspenseInstance {
-    // The ID is a pointer to the boundary itself.
-    return {state: 'pending', children: []};
-  },
+  byteLengthOfChunk: null,
 
   getChildFormatContext(): null {
     return null;
   },
+  getSuspenseFallbackFormatContext(): null {
+    return null;
+  },
+  getSuspenseContentFormatContext(): null {
+    return null;
+  },
+
+  getViewTransitionFormatContext(): null {
+    return null;
+  },
+
+  resetResumableState(): void {},
+  completeResumableState(): void {},
 
   pushTextInstance(
     target: Array<Uint8Array>,
     text: string,
-    responseState: ResponseState,
+    renderState: RenderState,
     textEmbedded: boolean,
   ): boolean {
     const textInstance: TextInstance = {
@@ -116,7 +135,6 @@ const ReactNoopServer = ReactFizzServer({
   },
   pushStartInstance(
     target: Array<Uint8Array>,
-    preamble: Array<Uint8Array>,
     type: string,
     props: Object,
   ): ReactNodeList {
@@ -132,7 +150,6 @@ const ReactNoopServer = ReactFizzServer({
 
   pushEndInstance(
     target: Array<Uint8Array>,
-    postamble: Array<Uint8Array>,
     type: string,
     props: Object,
   ): void {
@@ -142,22 +159,25 @@ const ReactNoopServer = ReactFizzServer({
   // This is a noop in ReactNoop
   pushSegmentFinale(
     target: Array<Uint8Array>,
-    responseState: ResponseState,
+    renderState: RenderState,
     lastPushedText: boolean,
     textEmbedded: boolean,
   ): void {},
 
   writeCompletedRoot(
     destination: Destination,
-    responseState: ResponseState,
+    resumableState: ResumableState,
+    renderState: RenderState,
+    isComplete: boolean,
   ): boolean {
     return true;
   },
 
   writePlaceholder(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     id: number,
+    // $FlowFixMe[incompatible-type]
   ): boolean {
     const parent = destination.stack[destination.stack.length - 1];
     destination.placeholders.set(id, {
@@ -166,53 +186,82 @@ const ReactNoopServer = ReactFizzServer({
     });
   },
 
+  pushStartActivityBoundary(
+    target: Array<Uint8Array>,
+    renderState: RenderState,
+  ): void {
+    const activityInstance: ActivityInstance = {
+      children: [],
+    };
+    target.push(Buffer.from(JSON.stringify(activityInstance), 'utf8'));
+  },
+
+  pushEndActivityBoundary(
+    target: Array<Uint8Array>,
+    renderState: RenderState,
+  ): void {
+    target.push(POP);
+  },
+
   writeStartCompletedSuspenseBoundary(
     destination: Destination,
-    responseState: ResponseState,
-    suspenseInstance: SuspenseInstance,
+    renderState: RenderState,
   ): boolean {
-    suspenseInstance.state = 'complete';
+    const suspenseInstance: SuspenseInstance = {
+      state: 'complete',
+      children: [],
+    };
     const parent = destination.stack[destination.stack.length - 1];
     parent.children.push(suspenseInstance);
     destination.stack.push(suspenseInstance);
+    return true;
   },
   writeStartPendingSuspenseBoundary(
     destination: Destination,
-    responseState: ResponseState,
-    suspenseInstance: SuspenseInstance,
+    renderState: RenderState,
   ): boolean {
-    suspenseInstance.state = 'pending';
+    const suspenseInstance: SuspenseInstance = {
+      state: 'pending',
+      children: [],
+    };
     const parent = destination.stack[destination.stack.length - 1];
     parent.children.push(suspenseInstance);
     destination.stack.push(suspenseInstance);
+    return true;
   },
   writeStartClientRenderedSuspenseBoundary(
     destination: Destination,
-    responseState: ResponseState,
-    suspenseInstance: SuspenseInstance,
+    renderState: RenderState,
   ): boolean {
-    suspenseInstance.state = 'client-render';
+    const suspenseInstance: SuspenseInstance = {
+      state: 'client-render',
+      children: [],
+    };
     const parent = destination.stack[destination.stack.length - 1];
     parent.children.push(suspenseInstance);
     destination.stack.push(suspenseInstance);
+    return true;
   },
   writeEndCompletedSuspenseBoundary(destination: Destination): boolean {
     destination.stack.pop();
+    return true;
   },
   writeEndPendingSuspenseBoundary(destination: Destination): boolean {
     destination.stack.pop();
+    return true;
   },
   writeEndClientRenderedSuspenseBoundary(destination: Destination): boolean {
     destination.stack.pop();
+    return true;
   },
 
   writeStartSegment(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     formatContext: null,
     id: number,
   ): boolean {
-    const segment = {
+    const segment: Segment = {
       children: [],
     };
     destination.segments.set(id, segment);
@@ -220,14 +269,16 @@ const ReactNoopServer = ReactFizzServer({
       throw new Error('Segments are only expected at the root of the stack.');
     }
     destination.stack.push(segment);
+    return true;
   },
   writeEndSegment(destination: Destination, formatContext: null): boolean {
     destination.stack.pop();
+    return true;
   },
 
   writeCompletedSegmentInstruction(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     contentSegmentID: number,
   ): boolean {
     const segment = destination.segments.get(contentSegmentID);
@@ -243,11 +294,12 @@ const ReactNoopServer = ReactFizzServer({
       0,
       ...segment.children,
     );
+    return true;
   },
 
   writeCompletedBoundaryInstruction(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     boundary: SuspenseInstance,
     contentSegmentID: number,
   ): boolean {
@@ -257,31 +309,48 @@ const ReactNoopServer = ReactFizzServer({
     }
     boundary.children = segment.children;
     boundary.state = 'complete';
+    return true;
   },
 
   writeClientRenderBoundaryInstruction(
     destination: Destination,
-    responseState: ResponseState,
+    renderState: RenderState,
     boundary: SuspenseInstance,
   ): boolean {
+    // $FlowFixMe[prop-missing]
     boundary.status = 'client-render';
+    return true;
   },
 
-  writeInitialResources() {},
-  writeImmediateResources() {},
-
-  createResources(): Resources {
+  writePreambleStart() {},
+  writePreambleEnd() {},
+  writeHoistables() {},
+  writeHoistablesForBoundary() {},
+  writePostamble() {},
+  hoistHoistables(parent: HoistableState, child: HoistableState) {},
+  hasSuspenseyContent(
+    hoistableState: HoistableState,
+    flushingInShell: boolean,
+  ): boolean {
+    return false;
+  },
+  createHoistableState(): HoistableState {
     return null;
   },
-
-  createBoundaryResources(): BoundaryResources {
+  emitEarlyPreloads() {},
+  createPreambleState(): PreambleState {
     return null;
   },
-
-  setCurrentlyRenderingBoundaryResourcesTarget(resources: BoundaryResources) {},
-
-  prepareToRender() {},
-  cleanupAfterRender() {},
+  canHavePreamble() {
+    return false;
+  },
+  hoistPreambleState() {},
+  isPreambleReady() {
+    return true;
+  },
+  isPreambleContext() {
+    return false;
+  },
 });
 
 type Options = {
@@ -289,9 +358,12 @@ type Options = {
   onShellReady?: () => void,
   onAllReady?: () => void,
   onError?: (error: mixed) => ?string,
+  onBrowserBailout?: (error: mixed) => void,
 };
 
 function render(children: React$Element<any>, options?: Options): Destination {
+  // $FlowFixMe[prop-missing]
+  // $FlowFixMe[incompatible-type]
   const destination: Destination = {
     root: null,
     placeholders: new Map(),
@@ -302,15 +374,22 @@ function render(children: React$Element<any>, options?: Options): Destination {
     },
   };
   const request = ReactNoopServer.createRequest(
+    // $FlowFixMe[incompatible-type]
     children,
+    // $FlowFixMe[incompatible-type]
     null,
+    // $FlowFixMe[incompatible-type]
+    null,
+    // $FlowFixMe[incompatible-type]
     null,
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
+    options ? options.onBrowserBailout : undefined,
     options ? options.onAllReady : undefined,
     options ? options.onShellReady : undefined,
   );
   ReactNoopServer.startWork(request);
+  // $FlowFixMe[incompatible-type]
   ReactNoopServer.startFlowing(request, destination);
   return destination;
 }

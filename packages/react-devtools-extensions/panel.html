@@ -22,11 +22,44 @@
                 right: 0;
                 bottom: 0;
             }
+            .no-react-disclaimer {
+              margin: 16px;
+              font-family: Courier, monospace, serif;
+              font-size: 16px;
+              animation: fadeIn .5s ease-in-out forwards;
+            }
+
+            @keyframes fadeIn {
+              0% {
+                opacity: 0;
+              }
+              100% {
+                opacity: 1;
+              }
+            }
+
+            @media (prefers-color-scheme: dark) {
+              :root {
+                color-scheme: dark;
+              }
+
+              @supports (-moz-appearance:none) {
+                :root {
+                  background: black;
+                }
+
+                body {
+                  color: white;
+                }
+              }
+            }
         </style>
     </head>
     <body>
         <!-- main react mount point -->
-        <div id="container">Unable to find React on the page.</div>
+        <div id="container">
+          <h1 class="no-react-disclaimer">Looks like this page doesn't have React, or it hasn't been loaded yet.</h1>
+        </div>
         <script src="./build/panel.js"></script>
     </body>
 </html>

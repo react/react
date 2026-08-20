@@ -23,7 +23,7 @@ const Tooltip = ({
 }): React.Node => {
   const style = useThemeStyles();
   return (
-    // $FlowFixMe unsafe spread
+    // $FlowFixMe[cannot-spread-inexact] unsafe spread
     <ReachTooltip
       className={`${tooltipStyles.Tooltip} ${className}`}
       style={style}

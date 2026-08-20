@@ -7,10 +7,12 @@
  * @flow strict
  */
 
-export const enableSchedulerDebugging = false;
-export const enableIsInputPending = false;
 export const enableProfiling = false;
-export const enableIsInputPendingContinuous = false;
 export const frameYieldMs = 5;
-export const continuousYieldMs = 50;
-export const maxYieldMs = 300;
+
+export const userBlockingPriorityTimeout = 250;
+export const normalPriorityTimeout = 5000;
+export const lowPriorityTimeout = 10000;
+export const enableRequestPaint = true;
+
+export const enableAlwaysYieldScheduler = __EXPERIMENTAL__;

@@ -1,0 +1,30 @@
+{
+  "name": "make-read-only-util",
+  "version": "0.0.1",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsup",
+    "test": "jest src",
+    "watch": "yarn build --watch"
+  },
+  "dependencies": {
+    "invariant": "^2.2.4",
+    "pretty-format": "^24"
+  },
+  "devDependencies": {
+    "@types/invariant": "^2.2.35",
+    "@types/jest": "^28.1.6",
+    "@types/node": "^20.2.5",
+    "jest": "^28.1.3",
+    "ts-jest": "^28.0.7",
+    "ts-node": "^10.9.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/make-read-only-util"
+  }
+}

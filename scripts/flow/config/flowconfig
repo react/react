@@ -2,51 +2,40 @@
 .*/scripts/bench/.*
 .*/build/.*
 .*/fixtures/.*
-.*/.tempUserDataDir/.*
+# Any hidden directory
+.*/\..*
 
 # These shims are copied into external projects:
 .*/rollup/shims/facebook-www/.*
 .*/rollup/shims/react-native/.*
 
-.*/node_modules/@snyk/.*
-.*/node_modules/y18n/.*
-.*/node_modules/chrome-devtools-frontend/.*
-.*/node_modules/devtools-timeline-model/.*
-.*/node_modules/create-react-class/.*
-.*/node_modules/react-native-web/.*
 .*/node_modules/fbjs/lib/keyMirrorRecursive.js.flow
+.*/node_modules/resolve/test/.*
 .*/__mocks__/.*
 .*/__tests__/.*
 
-# TODO: noop should get its own inlinedHostConfig entry
-.*/packages/react-noop-renderer/.*
 
 %REACT_RENDERER_FLOW_IGNORES%
-
-[include]
-./node_modules/
-./packages/
-./scripts/
 
 [libs]
 ./node_modules/fbjs/flow/lib/dev.js
 ./scripts/flow/environment.js
 ./scripts/flow/react-devtools.js
 ./scripts/flow/react-native-host-hooks.js
-./scripts/flow/react-relay-hooks.js
 ./scripts/flow/xplat.js
 
 [lints]
 untyped-type-import=error
+internal-type=off
+deprecated-type=off
+unsafe-object-assign=off
 
 [options]
-%CI_MAX_WORKERS%
-exact_by_default=true
 munge_underscores=false
-enforce_local_inference_annotations=false
+react.custom_jsx_typing=true
 
 # Substituted by createFlowConfig.js:
 %REACT_RENDERER_FLOW_OPTIONS%
 
 [version]
-^0.190.0
+%FLOW_VERSION%

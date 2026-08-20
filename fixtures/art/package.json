@@ -5,12 +5,13 @@
     "@babel/preset-env": "^7.10.4",
     "@babel/preset-react": "^7.10.4",
     "babel-loader": "^8.1.0",
-    "react": "link:../../build/node_modules/react",
-    "react-art": "link:../../build/node_modules/react-art/",
-    "react-dom": "link:../../build/node_modules/react-dom",
+    "react": "^19.0.0",
+    "react-art": "^19.0.0",
+    "react-dom": "^19.0.0",
     "webpack": "^1.14.0"
   },
   "scripts": {
+    "prebuild": "cp -r ../../build/oss-experimental/* ./node_modules/",
     "build": "webpack app.js bundle.js"
   }
 }

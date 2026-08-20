@@ -27,7 +27,7 @@ export default function InspectedElementErrorBoundaryWrapper({
 }: WrapperProps): React.Node {
   // Key on the selected element ID so that changing the selected element automatically hides the boundary.
   // This seems best since an error inspecting one element isn't likely to be relevant to another element.
-  const {selectedElementID} = useContext(TreeStateContext);
+  const {inspectedElementID} = useContext(TreeStateContext);
 
   const refresh = useCacheRefresh();
   const handleDsmiss = useCallback(() => {
@@ -37,7 +37,7 @@ export default function InspectedElementErrorBoundaryWrapper({
   return (
     <div className={styles.Wrapper}>
       <ErrorBoundary
-        key={selectedElementID}
+        key={inspectedElementID}
         canDismiss={true}
         onBeforeDismissCallback={handleDsmiss}>
         {children}

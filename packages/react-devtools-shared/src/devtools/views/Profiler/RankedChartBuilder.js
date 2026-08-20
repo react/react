@@ -10,7 +10,7 @@
 import {
   ElementTypeForwardRef,
   ElementTypeMemo,
-} from 'react-devtools-shared/src/types';
+} from 'react-devtools-shared/src/frontend/types';
 import {formatDuration} from './utils';
 import ProfilerStore from 'react-devtools-shared/src/devtools/ProfilerStore';
 
@@ -48,7 +48,7 @@ export function getChartData({
 
   const chartDataKey = `${rootID}-${commitIndex}`;
   if (cachedChartData.has(chartDataKey)) {
-    return ((cachedChartData.get(chartDataKey): any): ChartData);
+    return cachedChartData.get(chartDataKey) as any as ChartData;
   }
 
   let maxSelfDuration = 0;
@@ -61,7 +61,7 @@ export function getChartData({
       throw Error(`Could not find node with id "${id}" in commit tree`);
     }
 
-    const {displayName, key, parentID, type} = node;
+    const {displayName, key, parentID, type, compiledWithForget} = node;
 
     // Don't show the root node in this chart.
     if (parentID === 0) {
@@ -72,6 +72,7 @@ export function getChartData({
 
     const name = displayName || 'Anonymous';
     const maybeKey = key !== null ? ` key="${key}"` : '';
+    const maybeForgetBadge = compiledWithForget ? '✨ ' : '';
 
     let maybeBadge = '';
     if (type === ElementTypeForwardRef) {
@@ -80,7 +81,7 @@ export function getChartData({
       maybeBadge = ' (Memo)';
     }
 
-    const label = `${name}${maybeBadge}${maybeKey} (${formatDuration(
+    const label = `${maybeForgetBadge}${name}${maybeBadge}${maybeKey} (${formatDuration(
       selfDuration,
     )}ms)`;
     chartNodes.push({

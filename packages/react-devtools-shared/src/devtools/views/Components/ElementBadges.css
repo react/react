@@ -1,0 +1,14 @@
+.Root {
+  display: inline-flex;
+  align-items: center;
+}
+
+.Root *:not(:first-child) {
+  margin-left: 0.25rem;
+}
+
+.ExtraLabel {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-small);
+  color: var(--color-component-badge-count);
+}

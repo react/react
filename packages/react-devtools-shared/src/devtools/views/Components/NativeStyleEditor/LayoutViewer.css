@@ -1,6 +1,5 @@
 .LayoutViewer {
   padding: 0.25rem;
-  border-top: 1px solid var(--color-border);
   font-family: var(--font-family-monospace);
   font-size: var(--font-size-monospace-small);
 }

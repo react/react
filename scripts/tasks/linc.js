@@ -13,7 +13,6 @@ const runESLint = require('../eslint');
 async function main() {
   console.log('Linting changed files...');
 
-  // eslint-disable-next-line no-unused-vars
   const {_, ...cliOptions} = minimist(process.argv.slice(2));
 
   if (await runESLint({onlyChanged: true, ...cliOptions})) {

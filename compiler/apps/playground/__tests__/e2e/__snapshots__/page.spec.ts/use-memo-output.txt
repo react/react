@@ -1,0 +1,29 @@
+import { c as _c } from "react/compiler-runtime";
+function TestComponent(t0) {
+  "use memo";
+  const $ = _c(2);
+  const { x } = t0;
+  let t1;
+  if ($[0] !== x) {
+    t1 = <Button>{x}</Button>;
+    $[0] = x;
+    $[1] = t1;
+  } else {
+    t1 = $[1];
+  }
+  return t1;
+}
+const TestComponent2 = (t0) => {
+  "use memo";
+  const $ = _c(2);
+  const { x } = t0;
+  let t1;
+  if ($[0] !== x) {
+    t1 = <Button>{x}</Button>;
+    $[0] = x;
+    $[1] = t1;
+  } else {
+    t1 = $[1];
+  }
+  return t1;
+};

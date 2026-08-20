@@ -4,45 +4,49 @@
   "keywords": [
     "react"
   ],
-  "version": "18.2.0",
-  "homepage": "https://reactjs.org/",
-  "bugs": "https://github.com/facebook/react/issues",
+  "version": "19.3.0",
+  "homepage": "https://react.dev/",
+  "bugs": "https://github.com/react/react/issues",
   "license": "MIT",
   "files": [
     "LICENSE",
     "README.md",
     "index.js",
     "cjs/",
-    "umd/",
+    "compiler-runtime.js",
     "jsx-runtime.js",
+    "jsx-runtime.react-server.js",
     "jsx-dev-runtime.js",
-    "react.shared-subset.js"
+    "jsx-dev-runtime.react-server.js",
+    "react.react-server.js"
   ],
   "main": "index.js",
   "exports": {
     ".": {
-      "react-server": "./react.shared-subset.js",
+      "react-server": "./react.react-server.js",
       "default": "./index.js"
     },
     "./package.json": "./package.json",
-    "./jsx-runtime": "./jsx-runtime.js",
-    "./jsx-dev-runtime": "./jsx-dev-runtime.js",
+    "./jsx-runtime": {
+      "react-server": "./jsx-runtime.react-server.js",
+      "default": "./jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "react-server": "./jsx-dev-runtime.react-server.js",
+      "default": "./jsx-dev-runtime.js"
+    },
+    "./compiler-runtime": {
+      "react-server": "./compiler-runtime.js",
+      "default": "./compiler-runtime.js"
+    },
     "./src/*": "./src/*"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react"
   },
   "engines": {
     "node": ">=0.10.0"
-  },
-  "dependencies": {
-    "loose-envify": "^1.1.0"
-  },
-  "browserify": {
-    "transform": [
-      "loose-envify"
-    ]
   }
 }

@@ -7,13 +7,13 @@
  * @flow
  */
 
-import type {StyleXPlugin} from 'react-devtools-shared/src/types';
+import type {StyleXPlugin} from 'react-devtools-shared/src/frontend/types';
 import isArray from 'react-devtools-shared/src/isArray';
 
 const cachedStyleNameToValueMap: Map<string, string> = new Map();
 
 export function getStyleXData(data: any): StyleXPlugin {
-  const sources = new Set();
+  const sources = new Set<string>();
   const resolvedStyles = {};
 
   crawlData(data, sources, resolvedStyles);
@@ -67,7 +67,10 @@ function crawlObjectProperties(
         // Special case; this key is the name of the style's source/file/module.
         sources.add(key);
       } else {
-        resolvedStyles[key] = getPropertyValueForStyleName(value);
+        const propertyValue = getPropertyValueForStyleName(value);
+        if (propertyValue != null) {
+          resolvedStyles[key] = propertyValue;
+        }
       }
     } else {
       const nestedStyle = {};
@@ -79,7 +82,7 @@ function crawlObjectProperties(
 
 function getPropertyValueForStyleName(styleName: string): string | null {
   if (cachedStyleNameToValueMap.has(styleName)) {
-    return ((cachedStyleNameToValueMap.get(styleName): any): string);
+    return cachedStyleNameToValueMap.get(styleName) as any as string;
   }
 
   for (
@@ -87,16 +90,22 @@ function getPropertyValueForStyleName(styleName: string): string | null {
     styleSheetIndex < document.styleSheets.length;
     styleSheetIndex++
   ) {
-    const styleSheet = ((document.styleSheets[
+    const styleSheet = document.styleSheets[
       styleSheetIndex
-    ]: any): CSSStyleSheet);
-    // $FlowFixMe Flow doesn't konw about these properties
-    const rules = styleSheet.rules || styleSheet.cssRules;
-    // $FlowFixMe `rules` is mixed
+    ] as any as CSSStyleSheet;
+    let rules: CSSRuleList | null = null;
+    // this might throw if CORS rules are enforced https://www.w3.org/TR/cssom-1/#the-cssstylesheet-interface
+    try {
+      rules = styleSheet.cssRules;
+    } catch (_e) {
+      continue;
+    }
+
     for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
-      // $FlowFixMe `rules` is mixed
-      const rule = rules[ruleIndex];
-      // $FlowFixMe Flow doesn't konw about these properties
+      if (!(rules[ruleIndex] instanceof CSSStyleRule)) {
+        continue;
+      }
+      const rule = rules[ruleIndex] as any as CSSStyleRule;
       const {cssText, selectorText, style} = rule;
 
       if (selectorText != null) {

@@ -1,6 +1,7 @@
+blank_issues_enabled: false
 contact_links:
     - name: 📃 Documentation Issue
-      url: https://github.com/reactjs/reactjs.org/issues/new
+      url: https://github.com/reactjs/react.dev/issues/new/choose
       about: This issue tracker is not for documentation issues. Please file documentation issues here.
     - name: 🤔 Questions and Help
       url: https://reactjs.org/community/support.html

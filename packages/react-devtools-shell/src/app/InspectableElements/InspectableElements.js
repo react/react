@@ -18,6 +18,9 @@ import EdgeCaseObjects from './EdgeCaseObjects.js';
 import NestedProps from './NestedProps';
 import SimpleValues from './SimpleValues';
 import SymbolKeys from './SymbolKeys';
+import UseMemoCache from './UseMemoCache';
+import UseEffectEvent from './UseEffectEvent';
+import UseSyncExternalStore from './UseSyncExternalStore';
 
 // TODO Add Immutable JS example
 
@@ -34,6 +37,9 @@ export default function InspectableElements(): React.Node {
       <EdgeCaseObjects />
       <CircularReferences />
       <SymbolKeys />
+      <UseMemoCache />
+      <UseEffectEvent />
+      <UseSyncExternalStore />
     </Fragment>
   );
 }

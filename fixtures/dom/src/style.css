@@ -224,7 +224,7 @@ p {
 }
 
 .test-case__body {
-  padding: 10px;
+  padding: 10px 10px 0 10px;
 }
 
 .test-case__desc {
@@ -280,9 +280,15 @@ p {
 
 .test-fixture {
   padding: 20px;
-  margin: 0 -15px; /* opposite of .test-case padding */
+  margin: 0 -10px; /* opposite of .test-case padding */
   background-color: #f4f4f4;
   border-top: 1px solid #d9d9d9;
+}
+
+.test-fixture__controls {
+  margin: -20px -20px 20px -20px;
+  padding: 20px;
+  border: 1px solid #444;
 }
 
 .field-group {
@@ -308,4 +314,61 @@ th {
 
 tbody tr:nth-child(even) {
   background: #f0f0f0;
+}
+
+.card-container {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.card {
+  background: white;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.24);
+  margin: 10px;
+  padding: 10px;
+}
+
+.observable-card {
+  height: 200px;
+  border: 1px solid black;
+  background: #e0e0e0;
+  padding: 20px;
+  font-size: 18px;
+  overflow: auto;
+  margin-bottom: 50px;
+  position: relative;
+}
+
+.observable-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  border-top: 1px dotted red;
+}
+
+.fixed-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 200px;
+  z-index: 1000;
+  background-color: gray;
+  display: flex;
+  flex-direction: column;
+}
+
+.onscreen {
+  background-color: green;
+}
+
+.highlight-focused-children * {
+  margin-left: 10px;
+}
+
+.highlight-focused-children *:focus {
+  outline: 2px solid green;
 }

@@ -18,7 +18,6 @@
 'use strict';
 
 var assign = Object.assign;
-var PropTypes = require('prop-types');
 var React = require('react');
 var ReactART = require('react-art');
 
@@ -33,10 +32,6 @@ var Shape = ReactART.Shape;
  */
 var Circle = createReactClass({
   displayName: 'Circle',
-
-  propTypes: {
-    radius: PropTypes.number.isRequired,
-  },
 
   render: function render() {
     var radius = this.props.radius;

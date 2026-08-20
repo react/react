@@ -10,19 +10,67 @@
 import type {ReactContext} from 'shared/ReactTypes';
 
 import * as React from 'react';
-import {createContext, useCallback, useContext, useMemo, useState} from 'react';
-import {unstable_batchedUpdates as batchedUpdates} from 'react-dom';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useDeferredValue,
+  useMemo,
+  useState,
+  useEffect,
+} from 'react';
 import {useLocalStorage, useSubscription} from '../hooks';
 import {
   TreeDispatcherContext,
   TreeStateContext,
 } from '../Components/TreeContext';
 import {StoreContext} from '../context';
+import {createRegExp} from '../utils';
 import {logEvent} from 'react-devtools-shared/src/Logger';
+import {useCommitFilteringAndNavigation} from './useCommitFilteringAndNavigation';
 
-import type {ProfilingDataFrontend} from './types';
+import type {
+  CommitDataFrontend,
+  CommitTree,
+  CommitTreeNode,
+  ProfilingDataFrontend,
+} from './types';
 
-export type TabID = 'flame-chart' | 'ranked-chart' | 'timeline';
+export type TabID = 'flame-chart' | 'ranked-chart';
+
+type SearchResult = {id: number, name: string | null};
+
+function fiberMatchesQuery(node: CommitTreeNode, regExp: RegExp): boolean {
+  const {displayName, hocDisplayNames, key} = node;
+  return (
+    (displayName !== null && regExp.test(displayName)) ||
+    (hocDisplayNames !== null &&
+      hocDisplayNames.some(name => regExp.test(name))) ||
+    (key !== null && regExp.test(String(key)))
+  );
+}
+
+// Collect the fibers in a commit tree that match `text`, in tree (pre-order)
+// order. Kept module-level and pure so it isn't recreated on every render.
+function collectSearchMatches(
+  commitTree: CommitTree,
+  text: string,
+): Array<SearchResult> {
+  const regExp = createRegExp(text);
+  const matches: Array<SearchResult> = [];
+  const visit = (id: number) => {
+    const node = commitTree.nodes.get(id);
+    if (node == null) {
+      return;
+    }
+    if (fiberMatchesQuery(node, regExp)) {
+      matches.push({id, name: node.displayName});
+    }
+    node.children.forEach(visit);
+  };
+  visit(commitTree.rootID);
+  return matches;
+}
 
 export type Context = {
   // Which tab is selected in the Profiler UI?
@@ -62,15 +110,36 @@ export type Context = {
   // It impacts the flame graph and ranked charts.
   selectedCommitIndex: number | null,
   selectCommitIndex: (value: number | null) => void,
+  selectNextCommitIndex(): void,
+  selectPrevCommitIndex(): void,
+
+  // Which commits are currently filtered by duration?
+  filteredCommitIndices: Array<number>,
+  selectedFilteredCommitIndex: number | null,
 
   // Which fiber is currently selected in the Ranked or Flamegraph charts?
   selectedFiberID: number | null,
   selectedFiberName: string | null,
   selectFiber: (id: number | null, name: string | null) => void,
+
+  // Component search within the currently selected commit.
+  // Toggled by Cmd/Ctrl+F in the flame graph and ranked charts.
+  // Unlike the Components tab, results are scoped to the selected commit only.
+  isSearchInputVisible: boolean,
+  showSearchInput(): void,
+  hideSearchInput(): void,
+  searchText: string,
+  setSearchText: (text: string) => void,
+  searchResults: Array<SearchResult>,
+  searchIndex: number,
+  searchIsPending: boolean,
+  goToNextSearchResult(): void,
+  goToPreviousSearchResult(): void,
+  goToSearchResult: (index: number) => void,
 };
 
 const ProfilerContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 ProfilerContext.displayName = 'ProfilerContext';
 
@@ -88,7 +157,7 @@ type Props = {
 
 function ProfilerContextController({children}: Props): React.Node {
   const store = useContext(StoreContext);
-  const {selectedElementID} = useContext(TreeStateContext);
+  const {inspectedElementID} = useContext(TreeStateContext);
   const dispatch = useContext(TreeDispatcherContext);
 
   const {profilerStore} = store;
@@ -98,7 +167,7 @@ function ProfilerContextController({children}: Props): React.Node {
       getCurrentValue: () => ({
         didRecordCommits: profilerStore.didRecordCommits,
         isProcessingData: profilerStore.isProcessingData,
-        isProfiling: profilerStore.isProfiling,
+        isProfiling: profilerStore.isProfilingBasedOnUserInput,
         profilingData: profilerStore.profilingData,
         supportsProfiling: store.rootSupportsBasicProfiling,
       }),
@@ -125,13 +194,17 @@ function ProfilerContextController({children}: Props): React.Node {
     supportsProfiling,
   } = useSubscription<StoreProfilingState>(subscription);
 
-  const [
-    prevProfilingData,
-    setPrevProfilingData,
-  ] = useState<ProfilingDataFrontend | null>(null);
+  const [prevProfilingData, setPrevProfilingData] =
+    useState<ProfilingDataFrontend | null>(null);
   const [rootID, setRootID] = useState<number | null>(null);
   const [selectedFiberID, selectFiberID] = useState<number | null>(null);
   const [selectedFiberName, selectFiberName] = useState<string | null>(null);
+
+  // Component search (scoped to the currently selected commit).
+  const [isSearchInputVisible, setIsSearchInputVisible] =
+    useState<boolean>(false);
+  const [searchText, setSearchTextState] = useState<string>('');
+  const [searchIndex, setSearchIndex] = useState<number>(-1);
 
   const selectFiber = useCallback(
     (id: number | null, name: string | null) => {
@@ -167,48 +240,33 @@ function ProfilerContextController({children}: Props): React.Node {
     [setRootID, selectFiber],
   );
 
+  // Sync rootID with profilingData changes.
   if (prevProfilingData !== profilingData) {
-    batchedUpdates(() => {
-      setPrevProfilingData(profilingData);
+    setPrevProfilingData(profilingData);
 
-      const dataForRoots =
-        profilingData !== null ? profilingData.dataForRoots : null;
-      if (dataForRoots != null) {
-        const firstRootID = dataForRoots.keys().next().value || null;
+    const dataForRoots =
+      profilingData !== null ? profilingData.dataForRoots : null;
+    if (dataForRoots != null) {
+      const firstRootID = dataForRoots.keys().next().value || null;
 
-        if (rootID === null || !dataForRoots.has(rootID)) {
-          let selectedElementRootID = null;
-          if (selectedElementID !== null) {
-            selectedElementRootID = store.getRootIDForElement(
-              selectedElementID,
-            );
-          }
-          if (
-            selectedElementRootID !== null &&
-            dataForRoots.has(selectedElementRootID)
-          ) {
-            setRootIDAndClearFiber(selectedElementRootID);
-          } else {
-            setRootIDAndClearFiber(firstRootID);
-          }
+      if (rootID === null || !dataForRoots.has(rootID)) {
+        let selectedElementRootID = null;
+        if (inspectedElementID !== null) {
+          selectedElementRootID = store.getRootIDForElement(inspectedElementID);
+        }
+        if (
+          selectedElementRootID !== null &&
+          dataForRoots.has(selectedElementRootID)
+        ) {
+          setRootIDAndClearFiber(selectedElementRootID);
+        } else {
+          setRootIDAndClearFiber(firstRootID);
         }
       }
-    });
+    }
   }
 
-  const [
-    isCommitFilterEnabled,
-    setIsCommitFilterEnabled,
-  ] = useLocalStorage<boolean>('React::DevTools::isCommitFilterEnabled', false);
-  const [minCommitDuration, setMinCommitDuration] = useLocalStorage<number>(
-    'minCommitDuration',
-    0,
-  );
-
-  const [selectedCommitIndex, selectCommitIndex] = useState<number | null>(
-    null,
-  );
-  const [selectedTabID, selectTab] = useLocalStorage<TabID>(
+  const [persistedTabID, selectTab] = useLocalStorage<TabID>(
     'React::DevTools::Profiler::defaultTab',
     'flame-chart',
     value => {
@@ -221,28 +279,178 @@ function ProfilerContextController({children}: Props): React.Node {
     },
   );
 
+  // The persisted value may name a tab that no longer exists,
+  // e.g. the removed "timeline" tab. Fall back rather than render nothing.
+  const selectedTabID: TabID =
+    persistedTabID === 'ranked-chart' ? persistedTabID : 'flame-chart';
+
+  const stopProfiling = useCallback(
+    () => store.profilerStore.stopProfiling(),
+    [store],
+  );
+
+  // Get commit data for the current root
+  // NOTE: Unlike profilerStore.getDataForRoot() which uses Suspense (throws when data unavailable),
+  // this uses subscription pattern and returns [] when data isn't ready.
+  // Always check didRecordCommits before using commitData or filteredCommitIndices.
+  const commitData = useMemo(() => {
+    if (!didRecordCommits || rootID === null || profilingData === null) {
+      return [] as Array<CommitDataFrontend>;
+    }
+    const dataForRoot = profilingData.dataForRoots.get(rootID);
+    return dataForRoot
+      ? dataForRoot.commitData
+      : ([] as Array<CommitDataFrontend>);
+  }, [didRecordCommits, rootID, profilingData]);
+
+  // Commit filtering and navigation
+  const {
+    isCommitFilterEnabled,
+    setIsCommitFilterEnabled,
+    minCommitDuration,
+    setMinCommitDuration,
+    selectedCommitIndex,
+    selectCommitIndex,
+    filteredCommitIndices,
+    selectedFilteredCommitIndex,
+    selectNextCommitIndex,
+    selectPrevCommitIndex,
+  } = useCommitFilteringAndNavigation(commitData);
+
+  // Fibers in the selected commit matching `text`, scoped to the current
+  // commit only (never the whole trace).
+  const findMatches = useCallback(
+    (text: string): Array<SearchResult> => {
+      if (
+        text === '' ||
+        rootID === null ||
+        selectedCommitIndex === null ||
+        !didRecordCommits
+      ) {
+        return [];
+      }
+      const commitTree = profilerStore.profilingCache.getCommitTree({
+        commitIndex: selectedCommitIndex,
+        rootID,
+      });
+      return collectSearchMatches(commitTree, text);
+    },
+    [rootID, selectedCommitIndex, didRecordCommits, profilerStore],
+  );
+
+  // Keep the controlled input update synchronous (see setSearchText), but
+  // derive matches from a *deferred* value so the tree walk runs at transition
+  // priority and never blocks typing. Deriving via a memo also keeps results
+  // scoped to the current commit for free (findMatches tracks selectedCommitIndex).
+  const deferredSearchText = useDeferredValue(searchText);
+  const searchIsPending = searchText !== deferredSearchText;
+  const searchResults = useMemo<Array<SearchResult>>(
+    () => findMatches(deferredSearchText),
+    [findMatches, deferredSearchText],
+  );
+
+  const setSearchText = useCallback((text: string) => {
+    // Synchronous so the input stays responsive; searchResults recomputes off
+    // the deferred value at transition priority.
+    setSearchTextState(text);
+    setSearchIndex(text === '' ? -1 : 0);
+  }, []);
+
+  const goToNextSearchResult = useCallback(() => {
+    setSearchIndex(prevIndex => {
+      const count = searchResults.length;
+      if (count === 0) {
+        return -1;
+      }
+      return prevIndex < 0 || prevIndex >= count ? 0 : (prevIndex + 1) % count;
+    });
+  }, [searchResults.length]);
+
+  const goToPreviousSearchResult = useCallback(() => {
+    setSearchIndex(prevIndex => {
+      const count = searchResults.length;
+      if (count === 0) {
+        return -1;
+      }
+      const current = prevIndex < 0 || prevIndex >= count ? count : prevIndex;
+      return current <= 0 ? count - 1 : current - 1;
+    });
+  }, [searchResults.length]);
+
+  const goToSearchResult = useCallback(
+    (index: number) => setSearchIndex(index),
+    [],
+  );
+
+  // Keep the selected fiber in sync with the current search match *during
+  // render* rather than in an effect, so results and selection commit together
+  // (no post-paint frame showing a stale/empty selection). This mirrors the
+  // existing prevProfilingData pattern above and follows
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  // Note: only the profiler's own selection state is updated here (a render is
+  // not allowed to dispatch into the Components tree), so search navigation
+  // intentionally does not sync selection to the Components tab.
+  const [prevSearchResults, setPrevSearchResults] = useState(searchResults);
+  const [prevSearchIndex, setPrevSearchIndex] = useState(searchIndex);
+  if (prevSearchResults !== searchResults || prevSearchIndex !== searchIndex) {
+    setPrevSearchResults(searchResults);
+    setPrevSearchIndex(searchIndex);
+    if (searchText !== '') {
+      if (searchResults.length === 0) {
+        selectFiberID(null);
+        selectFiberName(null);
+      } else {
+        const index =
+          searchIndex < 0 || searchIndex >= searchResults.length
+            ? 0
+            : searchIndex;
+        const match = searchResults[index];
+        selectFiberID(match.id);
+        selectFiberName(match.name);
+      }
+    }
+  }
+
+  const showSearchInput = useCallback(() => setIsSearchInputVisible(true), []);
+
+  const hideSearchInput = useCallback(() => {
+    setIsSearchInputVisible(false);
+    setSearchTextState('');
+    setSearchIndex(-1);
+  }, []);
+
   const startProfiling = useCallback(() => {
     logEvent({
       event_name: 'profiling-start',
       metadata: {current_tab: selectedTabID},
     });
-    store.profilerStore.startProfiling();
-  }, [store, selectedTabID]);
-  const stopProfiling = useCallback(() => store.profilerStore.stopProfiling(), [
-    store,
-  ]);
 
-  if (isProfiling) {
-    batchedUpdates(() => {
-      if (selectedCommitIndex !== null) {
-        selectCommitIndex(null);
+    // Clear selections when starting a new profiling session
+    selectCommitIndex(null);
+    selectFiberID(null);
+    selectFiberName(null);
+
+    // Clear any active search from the previous session.
+    setIsSearchInputVisible(false);
+    setSearchTextState('');
+    setSearchIndex(-1);
+
+    store.profilerStore.startProfiling();
+  }, [store, selectedTabID, selectCommitIndex]);
+
+  // Auto-select first commit when profiling data becomes available and no commit is selected.
+  useEffect(() => {
+    if (
+      profilingData !== null &&
+      selectedCommitIndex === null &&
+      rootID !== null
+    ) {
+      const dataForRoot = profilingData.dataForRoots.get(rootID);
+      if (dataForRoot && dataForRoot.commitData.length > 0) {
+        selectCommitIndex(0);
       }
-      if (selectedFiberID !== null) {
-        selectFiberID(null);
-        selectFiberName(null);
-      }
-    });
-  }
+    }
+  }, [profilingData, rootID, selectCommitIndex]);
 
   const value = useMemo(
     () => ({
@@ -267,10 +475,26 @@ function ProfilerContextController({children}: Props): React.Node {
 
       selectedCommitIndex,
       selectCommitIndex,
+      selectNextCommitIndex,
+      selectPrevCommitIndex,
+      filteredCommitIndices,
+      selectedFilteredCommitIndex,
 
       selectedFiberID,
       selectedFiberName,
       selectFiber,
+
+      isSearchInputVisible,
+      showSearchInput,
+      hideSearchInput,
+      searchText,
+      setSearchText,
+      searchResults,
+      searchIndex,
+      searchIsPending,
+      goToNextSearchResult,
+      goToPreviousSearchResult,
+      goToSearchResult,
     }),
     [
       selectedTabID,
@@ -285,7 +509,6 @@ function ProfilerContextController({children}: Props): React.Node {
       supportsProfiling,
 
       rootID,
-      setRootID,
       setRootIDAndClearFiber,
 
       isCommitFilterEnabled,
@@ -295,10 +518,26 @@ function ProfilerContextController({children}: Props): React.Node {
 
       selectedCommitIndex,
       selectCommitIndex,
+      selectNextCommitIndex,
+      selectPrevCommitIndex,
+      filteredCommitIndices,
+      selectedFilteredCommitIndex,
 
       selectedFiberID,
       selectedFiberName,
       selectFiber,
+
+      isSearchInputVisible,
+      showSearchInput,
+      hideSearchInput,
+      searchText,
+      setSearchText,
+      searchResults,
+      searchIndex,
+      searchIsPending,
+      goToNextSearchResult,
+      goToPreviousSearchResult,
+      goToSearchResult,
     ],
   );
 

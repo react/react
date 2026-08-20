@@ -1,0 +1,17 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:disabled should render children 1`] = `"<div><span>outside span</span><span>inside span</span><span>function component</span></div>"`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:disabled should support an empty Profiler (with no children) 1`] = `""`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:disabled should support an empty Profiler (with no children) 2`] = `"<div></div>"`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:disabled should support nested Profilers 1`] = `"<div>outer function component</div><span>inner class component</span><span>inner span</span>"`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:enabled should render children 1`] = `"<div><span>outside span</span><span>inside span</span><span>function component</span></div>"`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:enabled should support an empty Profiler (with no children) 1`] = `""`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:enabled should support an empty Profiler (with no children) 2`] = `"<div></div>"`;
+
+exports[`Profiler works in profiling and non-profiling bundles enableProfilerTimer:enabled should support nested Profilers 1`] = `"<div>outer function component</div><span>inner class component</span><span>inner span</span>"`;

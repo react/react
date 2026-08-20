@@ -43,7 +43,7 @@ export default function EditableName({
   const [isValid, setIsValid] = useState(false);
 
   const handleChange = useCallback(
-    ({target}) => {
+    ({target}: $FlowFixMe) => {
       let value = target.value;
       if (!allowWhiteSpace) {
         value = value.trim();
@@ -61,7 +61,7 @@ export default function EditableName({
   );
 
   const handleKeyDown = useCallback(
-    event => {
+    (event: $FlowFixMe) => {
       // Prevent keydown events from e.g. change selected element in the tree
       event.stopPropagation();
 

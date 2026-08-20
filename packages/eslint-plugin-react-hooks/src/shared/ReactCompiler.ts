@@ -1,0 +1,270 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+/* eslint-disable no-for-of-loops/no-for-of-loops */
+
+import type {SourceLocation as BabelSourceLocation} from '@babel/types';
+import {
+  type CompilerSuggestion,
+  CompilerSuggestionOperation,
+  LintRules,
+  type LintRule,
+  ErrorSeverity,
+  LintRulePreset,
+} from 'babel-plugin-react-compiler';
+import type {CompileErrorDetail} from 'babel-plugin-react-compiler/src/Entrypoint';
+import {printCodeFrame} from 'babel-plugin-react-compiler/src/CompilerError';
+import {type Linter, type Rule} from 'eslint';
+import runReactCompiler, {RunCacheEntry} from './RunReactCompiler';
+
+function assertExhaustive(_: never, errorMsg: string): never {
+  throw new Error(errorMsg);
+}
+
+/**
+ * Get the primary source location from a CompileErrorDetail.
+ * Handles both the new format (details array) and legacy format (flat loc).
+ */
+function primaryLocation(
+  detail: CompileErrorDetail,
+): BabelSourceLocation | null {
+  if (detail.details != null) {
+    const firstError = detail.details.find(d => d.kind === 'error');
+    if (firstError != null) {
+      return firstError.loc ?? null;
+    }
+  }
+  return detail.loc ?? null;
+}
+
+/**
+ * Format an error message from a CompileErrorDetail.
+ */
+function printErrorMessage(source: string, error: CompileErrorDetail): string {
+  const buffer = [`[ReactCompilerError] ${error.reason}`];
+  if (error.description != null) {
+    buffer.push(`\n\n${error.description}.`);
+  }
+  /*
+   * A CompileError's source location(s) may be provided either as a `details`
+   * array (CompilerDiagnostic and the Rust compiler) or as a single flat `loc`
+   * (legacy CompilerErrorDetail). Normalize to a list so both shapes render
+   * code frames identically.
+   */
+  const details =
+    error.details ??
+    (error.loc != null
+      ? [{kind: 'error' as const, loc: error.loc, message: error.reason}]
+      : []);
+  for (const detail of details) {
+    if (detail.kind === 'error') {
+      const loc = detail.loc;
+      if (loc == null || typeof loc === 'symbol') {
+        continue;
+      }
+      let codeFrame: string;
+      try {
+        codeFrame = printCodeFrame(source, loc, detail.message ?? '');
+      } catch {
+        codeFrame = detail.message ?? '';
+      }
+      buffer.push('\n\n');
+      if (loc.filename != null) {
+        // ESLint uses 1-indexed columns
+        buffer.push(
+          `${loc.filename}:${loc.start.line}:${loc.start.column + 1}\n`,
+        );
+      }
+      buffer.push(codeFrame);
+    } else if (detail.kind === 'hint') {
+      buffer.push('\n\n');
+      buffer.push(detail.message ?? '');
+    }
+  }
+  return buffer.join('');
+}
+
+function makeSuggestions(
+  detail: CompileErrorDetail,
+): Array<Rule.SuggestionReportDescriptor> {
+  const suggest: Array<Rule.SuggestionReportDescriptor> = [];
+  if (Array.isArray(detail.suggestions)) {
+    for (const suggestion of detail.suggestions as Array<CompilerSuggestion>) {
+      switch (suggestion.op) {
+        case CompilerSuggestionOperation.InsertBefore:
+          suggest.push({
+            desc: suggestion.description,
+            fix(fixer) {
+              return fixer.insertTextBeforeRange(
+                suggestion.range,
+                suggestion.text,
+              );
+            },
+          });
+          break;
+        case CompilerSuggestionOperation.InsertAfter:
+          suggest.push({
+            desc: suggestion.description,
+            fix(fixer) {
+              return fixer.insertTextAfterRange(
+                suggestion.range,
+                suggestion.text,
+              );
+            },
+          });
+          break;
+        case CompilerSuggestionOperation.Replace:
+          suggest.push({
+            desc: suggestion.description,
+            fix(fixer) {
+              return fixer.replaceTextRange(suggestion.range, suggestion.text);
+            },
+          });
+          break;
+        case CompilerSuggestionOperation.Remove:
+          suggest.push({
+            desc: suggestion.description,
+            fix(fixer) {
+              return fixer.removeRange(suggestion.range);
+            },
+          });
+          break;
+        default:
+          assertExhaustive(suggestion, 'Unhandled suggestion operation');
+      }
+    }
+  }
+  return suggest;
+}
+
+function getReactCompilerResult(context: Rule.RuleContext): RunCacheEntry {
+  // Compat with older versions of eslint
+  const sourceCode = context.sourceCode ?? context.getSourceCode();
+  const filename = context.filename ?? context.getFilename();
+  const userOpts = context.options[0] ?? {};
+
+  const results = runReactCompiler({
+    sourceCode,
+    filename,
+    userOpts,
+  });
+
+  return results;
+}
+
+function hasFlowSuppression(
+  program: RunCacheEntry,
+  nodeLoc: BabelSourceLocation,
+  suppressions: Array<string>,
+): boolean {
+  for (const commentNode of program.flowSuppressions) {
+    if (
+      suppressions.includes(commentNode.code) &&
+      commentNode.line === nodeLoc.start.line - 1
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function makeRule(rule: LintRule): Rule.RuleModule {
+  const create = (context: Rule.RuleContext): Rule.RuleListener => {
+    const result = getReactCompilerResult(context);
+
+    for (const event of result.events) {
+      if (event.kind === 'CompileError') {
+        const detail = event.detail;
+        if (detail.category === rule.category) {
+          const loc = primaryLocation(detail);
+          if (loc == null) {
+            continue;
+          }
+          if (
+            hasFlowSuppression(result, loc, [
+              'react-rule-hook',
+              'react-rule-unsafe-ref',
+            ])
+          ) {
+            // If Flow already caught this error, we don't need to report it again.
+            continue;
+          }
+          /*
+           * TODO: if multiple rules report the same linter category,
+           * we should deduplicate them with a "reported" set
+           */
+          context.report({
+            message: printErrorMessage(result.sourceCode, detail),
+            loc,
+            suggest: makeSuggestions(detail),
+          });
+        }
+      }
+    }
+    return {};
+  };
+
+  return {
+    meta: {
+      type: 'problem',
+      docs: {
+        description: rule.description,
+        recommended: rule.preset === LintRulePreset.Recommended,
+        url: `https://react.dev/reference/eslint-plugin-react-hooks/lints/${rule.name}`,
+      },
+      fixable: 'code',
+      hasSuggestions: true,
+      // validation is done at runtime with zod
+      schema: [{type: 'object', additionalProperties: true}],
+    },
+    create,
+  };
+}
+
+type RulesConfig = {
+  [name: string]: {rule: Rule.RuleModule; severity: ErrorSeverity};
+};
+
+export const allRules: RulesConfig = LintRules.reduce((acc, rule) => {
+  acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
+  return acc;
+}, {} as RulesConfig);
+
+export const recommendedRules: RulesConfig = LintRules.filter(
+  rule => rule.preset === LintRulePreset.Recommended,
+).reduce((acc, rule) => {
+  acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
+  return acc;
+}, {} as RulesConfig);
+
+export const recommendedLatestRules: RulesConfig = LintRules.filter(
+  rule =>
+    rule.preset === LintRulePreset.Recommended ||
+    rule.preset === LintRulePreset.RecommendedLatest,
+).reduce((acc, rule) => {
+  acc[rule.name] = {rule: makeRule(rule), severity: rule.severity};
+  return acc;
+}, {} as RulesConfig);
+
+export function mapErrorSeverityToESlint(
+  severity: ErrorSeverity,
+): Linter.StringSeverity {
+  switch (severity) {
+    case ErrorSeverity.Error: {
+      return 'error';
+    }
+    case ErrorSeverity.Warning: {
+      return 'warn';
+    }
+    case ErrorSeverity.Hint:
+    case ErrorSeverity.Off: {
+      return 'off';
+    }
+    default: {
+      assertExhaustive(severity, `Unhandled severity: ${severity}`);
+    }
+  }
+}

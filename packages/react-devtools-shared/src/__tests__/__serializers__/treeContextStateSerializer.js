@@ -1,6 +1,6 @@
 import {printStore} from 'react-devtools-shared/src/devtools/utils';
 
-// test() is part of Jest's serializer API
+// `test` is part of Jest's serializer API
 export function test(maybeState) {
   if (maybeState === null || typeof maybeState !== 'object') {
     return false;

@@ -9,17 +9,25 @@
 
 'use strict';
 
+import {patchMessageChannel} from '../../../../scripts/jest/patchMessageChannel';
+
 // Polyfills for test environment
-global.ReadableStream = require('web-streams-polyfill/ponyfill/es6').ReadableStream;
+global.ReadableStream =
+  require('web-streams-polyfill/ponyfill/es6').ReadableStream;
 global.TextEncoder = require('util').TextEncoder;
 
 let React;
 let ReactDOMFizzServer;
 let Suspense;
+let serverAct;
 
 describe('ReactDOMFizzServerBrowser', () => {
   beforeEach(() => {
     jest.resetModules();
+
+    patchMessageChannel();
+    serverAct = require('internal-test-utils').serverAct;
+
     React = require('react');
     ReactDOMFizzServer = require('react-dom/server.browser');
     Suspense = React.Suspense;
@@ -47,37 +55,44 @@ describe('ReactDOMFizzServerBrowser', () => {
   }
 
   it('should call renderToReadableStream', async () => {
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <div>hello world</div>,
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>),
     );
     const result = await readResult(stream);
     expect(result).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
   it('should emit DOCTYPE at the root of the document', async () => {
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <html>
-        <body>hello world</body>
-      </html>,
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <html>
+          <body>hello world</body>
+        </html>,
+      ),
     );
     const result = await readResult(stream);
-    expect(result).toMatchInlineSnapshot(
-      `"<!DOCTYPE html><html><body>hello world</body></html>"`,
-    );
+    if (gate(flags => flags.enableFizzBlockingRender)) {
+      expect(result).toMatchInlineSnapshot(
+        `"<!DOCTYPE html><html><head><link rel="expect" href="#_R_" blocking="render"/></head><body>hello world<template id="_R_"></template></body></html>"`,
+      );
+    } else {
+      expect(result).toMatchInlineSnapshot(
+        `"<!DOCTYPE html><html><head></head><body>hello world</body></html>"`,
+      );
+    }
   });
 
   it('should emit bootstrap script src at the end', async () => {
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <div>hello world</div>,
-      {
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>, {
         bootstrapScriptContent: 'INIT();',
         bootstrapScripts: ['init.js'],
         bootstrapModules: ['init.mjs'],
-      },
+      }),
     );
     const result = await readResult(stream);
     expect(result).toMatchInlineSnapshot(
-      `"<div>hello world</div><script>INIT();</script><script src=\\"init.js\\" async=\\"\\"></script><script type=\\"module\\" src=\\"init.mjs\\" async=\\"\\"></script>"`,
+      `"<link rel="preload" as="script" fetchPriority="low" href="init.js"/><link rel="modulepreload" fetchPriority="low" href="init.mjs"/><div>hello world</div><script id="_R_">INIT();</script><script src="init.js" async=""></script><script type="module" src="init.mjs" async=""></script>"`,
     );
   });
 
@@ -92,23 +107,22 @@ describe('ReactDOMFizzServerBrowser', () => {
       return 'Done';
     }
     let isComplete = false;
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <Suspense fallback="Loading">
-          <Wait />
-        </Suspense>
-      </div>,
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <Suspense fallback="Loading">
+            <Wait />
+          </Suspense>
+        </div>,
+      ),
     );
 
     stream.allReady.then(() => (isComplete = true));
 
-    await jest.runAllTimers();
     expect(isComplete).toBe(false);
     // Resolve the loading.
     hasLoaded = true;
-    await resolve();
-
-    await jest.runAllTimers();
+    await serverAct(() => resolve());
 
     expect(isComplete).toBe(true);
 
@@ -122,15 +136,17 @@ describe('ReactDOMFizzServerBrowser', () => {
     const reportedErrors = [];
     let caughtError = null;
     try {
-      await ReactDOMFizzServer.renderToReadableStream(
-        <div>
-          <Throw />
-        </div>,
-        {
-          onError(x) {
-            reportedErrors.push(x);
+      await serverAct(() =>
+        ReactDOMFizzServer.renderToReadableStream(
+          <div>
+            <Throw />
+          </div>,
+          {
+            onError(x) {
+              reportedErrors.push(x);
+            },
           },
-        },
+        ),
       );
     } catch (error) {
       caughtError = error;
@@ -143,17 +159,19 @@ describe('ReactDOMFizzServerBrowser', () => {
     const reportedErrors = [];
     let caughtError = null;
     try {
-      await ReactDOMFizzServer.renderToReadableStream(
-        <div>
-          <Suspense fallback={<Throw />}>
-            <InfiniteSuspend />
-          </Suspense>
-        </div>,
-        {
-          onError(x) {
-            reportedErrors.push(x);
+      await serverAct(() =>
+        ReactDOMFizzServer.renderToReadableStream(
+          <div>
+            <Suspense fallback={<Throw />}>
+              <InfiniteSuspend />
+            </Suspense>
+          </div>,
+          {
+            onError(x) {
+              reportedErrors.push(x);
+            },
           },
-        },
+        ),
       );
     } catch (error) {
       caughtError = error;
@@ -164,17 +182,19 @@ describe('ReactDOMFizzServerBrowser', () => {
 
   it('should not error the stream when an error is thrown inside suspense boundary', async () => {
     const reportedErrors = [];
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <Suspense fallback={<div>Loading</div>}>
-          <Throw />
-        </Suspense>
-      </div>,
-      {
-        onError(x) {
-          reportedErrors.push(x);
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <Suspense fallback={<div>Loading</div>}>
+            <Throw />
+          </Suspense>
+        </div>,
+        {
+          onError(x) {
+            reportedErrors.push(x);
+          },
         },
-      },
+      ),
     );
 
     const result = await readResult(stream);
@@ -185,53 +205,53 @@ describe('ReactDOMFizzServerBrowser', () => {
   it('should be able to complete by aborting even if the promise never resolves', async () => {
     const errors = [];
     const controller = new AbortController();
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <Suspense fallback={<div>Loading</div>}>
-          <InfiniteSuspend />
-        </Suspense>
-      </div>,
-      {
-        signal: controller.signal,
-        onError(x) {
-          errors.push(x.message);
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <Suspense fallback={<div>Loading</div>}>
+            <InfiniteSuspend />
+          </Suspense>
+        </div>,
+        {
+          signal: controller.signal,
+          onError(x) {
+            errors.push(x.message);
+          },
         },
-      },
+      ),
     );
 
-    controller.abort();
+    await serverAct(() => {
+      controller.abort();
+    });
 
     const result = await readResult(stream);
     expect(result).toContain('Loading');
 
-    expect(errors).toEqual([
-      'The render was aborted by the server without a reason.',
-    ]);
+    expect(errors).toEqual(['The operation was aborted.']);
   });
 
   it('should reject if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();
-    const promise = ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <InfiniteSuspend />
-      </div>,
-      {
-        signal: controller.signal,
-        onError(x) {
-          errors.push(x.message);
+    const promise = serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <InfiniteSuspend />
+        </div>,
+        {
+          signal: controller.signal,
+          onError(x) {
+            errors.push(x.message);
+          },
         },
-      },
+      ),
     );
 
-    await jest.runAllTimers();
-
     const theReason = new Error('aborted for reasons');
-    // @TODO this is a hack to work around lack of support for abortSignal.reason in node
-    // The abort call itself should set this property but since we are testing in node we
-    // set it here manually
-    controller.signal.reason = theReason;
-    controller.abort(theReason);
+    await serverAct(() => {
+      controller.abort(theReason);
+    });
 
     let caughtError = null;
     try {
@@ -254,16 +274,18 @@ describe('ReactDOMFizzServerBrowser', () => {
         </Suspense>
       );
     }
-    const streamPromise = ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <App />
-      </div>,
-      {
-        signal: controller.signal,
-        onError(x) {
-          errors.push(x.message);
+    const streamPromise = serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <App />
+        </div>,
+        {
+          signal: controller.signal,
+          onError(x) {
+            errors.push(x.message);
+          },
         },
-      },
+      ),
     );
 
     let caughtError = null;
@@ -272,36 +294,30 @@ describe('ReactDOMFizzServerBrowser', () => {
     } catch (error) {
       caughtError = error;
     }
-    expect(caughtError.message).toBe(
-      'The render was aborted by the server without a reason.',
-    );
-    expect(errors).toEqual([
-      'The render was aborted by the server without a reason.',
-    ]);
+    expect(caughtError.message).toBe('The operation was aborted.');
+    expect(errors).toEqual(['The operation was aborted.']);
   });
 
   it('should reject if passing an already aborted signal', async () => {
     const errors = [];
     const controller = new AbortController();
     const theReason = new Error('aborted for reasons');
-    // @TODO this is a hack to work around lack of support for abortSignal.reason in node
-    // The abort call itself should set this property but since we are testing in node we
-    // set it here manually
-    controller.signal.reason = theReason;
     controller.abort(theReason);
 
-    const promise = ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <Suspense fallback={<div>Loading</div>}>
-          <InfiniteSuspend />
-        </Suspense>
-      </div>,
-      {
-        signal: controller.signal,
-        onError(x) {
-          errors.push(x.message);
+    const promise = serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <Suspense fallback={<div>Loading</div>}>
+            <InfiniteSuspend />
+          </Suspense>
+        </div>,
+        {
+          signal: controller.signal,
+          onError(x) {
+            errors.push(x.message);
+          },
         },
-      },
+      ),
     );
 
     // Technically we could still continue rendering the shell but currently the
@@ -330,17 +346,19 @@ describe('ReactDOMFizzServerBrowser', () => {
       return 'Done';
     }
     const errors = [];
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <div>
-        <Suspense fallback={<div>Loading</div>}>
-          <Wait />
-        </Suspense>
-      </div>,
-      {
-        onError(x) {
-          errors.push(x.message);
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <div>
+          <Suspense fallback={<div>Loading</div>}>
+            <Wait />
+          </Suspense>
+        </div>,
+        {
+          onError(x) {
+            errors.push(x.message);
+          },
         },
-      },
+      ),
     );
 
     stream.allReady.then(() => (isComplete = true));
@@ -349,19 +367,22 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(isComplete).toBe(false);
 
     const reader = stream.getReader();
-    reader.cancel();
+    await reader.read();
+    await serverAct(() => reader.cancel());
 
     expect(errors).toEqual([
       'The render was aborted by the server without a reason.',
     ]);
 
     hasLoaded = true;
-    resolve();
-
-    await jest.runAllTimers();
+    await serverAct(() => resolve());
 
     expect(rendered).toBe(false);
     expect(isComplete).toBe(true);
+
+    expect(errors).toEqual([
+      'The render was aborted by the server without a reason.',
+    ]);
   });
 
   it('should stream large contents that might overlow individual buffers', async () => {
@@ -374,32 +395,41 @@ describe('ReactDOMFizzServerBrowser', () => {
     // as such for now. I don't think it needs to be maintained if in the future
     // the view sizes change or become dynamic becasue of the use of byobRequest
     let stream;
-    stream = await ReactDOMFizzServer.renderToReadableStream(
-      <>
-        <div>
-          <span>{''}</span>
-        </div>
-        <div>{str492}</div>
-        <div>{str492}</div>
-      </>,
+    stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <>
+          <div>
+            <span>{''}</span>
+          </div>
+          <div>{str492}</div>
+          <div>{str492}</div>
+        </>,
+      ),
     );
 
     let result;
     result = await readResult(stream);
+
     expect(result).toMatchInlineSnapshot(
+      // TODO: remove interpolation because it prevents snapshot updates.
+      // eslint-disable-next-line jest/no-interpolation-in-snapshots
       `"<div><span></span></div><div>${str492}</div><div>${str492}</div>"`,
     );
 
     // this size 2049 was chosen to be a couple base 2 orders larger than the current view
     // size. if the size changes in the future hopefully this will still exercise
     // a chunk that is too large for the view size.
-    stream = await ReactDOMFizzServer.renderToReadableStream(
-      <>
-        <div>{str2049}</div>
-      </>,
+    stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <>
+          <div>{str2049}</div>
+        </>,
+      ),
     );
 
     result = await readResult(stream);
+    // TODO: remove interpolation because it prevents snapshot updates.
+    // eslint-disable-next-line jest/no-interpolation-in-snapshots
     expect(result).toMatchInlineSnapshot(`"<div>${str2049}</div>"`);
   });
 
@@ -427,19 +457,19 @@ describe('ReactDOMFizzServerBrowser', () => {
 
     const errors = [];
     const controller = new AbortController();
-    await ReactDOMFizzServer.renderToReadableStream(<App />, {
-      signal: controller.signal,
-      onError(x) {
-        errors.push(x);
-        return 'a digest';
-      },
-    });
+    await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<App />, {
+        signal: controller.signal,
+        onError(x) {
+          errors.push(x);
+          return 'a digest';
+        },
+      }),
+    );
 
-    // @TODO this is a hack to work around lack of support for abortSignal.reason in node
-    // The abort call itself should set this property but since we are testing in node we
-    // set it here manually
-    controller.signal.reason = 'foobar';
-    controller.abort('foobar');
+    await serverAct(() => {
+      controller.abort('foobar');
+    });
 
     expect(errors).toEqual(['foobar', 'foobar']);
   });
@@ -468,37 +498,65 @@ describe('ReactDOMFizzServerBrowser', () => {
 
     const errors = [];
     const controller = new AbortController();
-    await ReactDOMFizzServer.renderToReadableStream(<App />, {
-      signal: controller.signal,
-      onError(x) {
-        errors.push(x.message);
-        return 'a digest';
-      },
-    });
+    await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<App />, {
+        signal: controller.signal,
+        onError(x) {
+          errors.push(x.message);
+          return 'a digest';
+        },
+      }),
+    );
 
-    // @TODO this is a hack to work around lack of support for abortSignal.reason in node
-    // The abort call itself should set this property but since we are testing in node we
-    // set it here manually
-    controller.signal.reason = new Error('uh oh');
-    controller.abort(new Error('uh oh'));
+    await serverAct(() => {
+      controller.abort(new Error('uh oh'));
+    });
 
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });
 
   // https://github.com/facebook/react/pull/25534/files - fix transposed escape functions
   it('should encode title properly', async () => {
-    const stream = await ReactDOMFizzServer.renderToReadableStream(
-      <html>
-        <head>
-          <title>foo</title>
-        </head>
-        <body>bar</body>
-      </html>,
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(
+        <html>
+          <head>
+            <title>foo</title>
+          </head>
+          <body>bar</body>
+        </html>,
+      ),
     );
 
     const result = await readResult(stream);
     expect(result).toEqual(
-      '<!DOCTYPE html><html><head><title>foo</title></head><body>bar</body></html>',
+      '<!DOCTYPE html><html><head>' +
+        (gate(flags => flags.enableFizzBlockingRender)
+          ? '<link rel="expect" href="#_R_" blocking="render"/>'
+          : '') +
+        '<title>foo</title></head><body>bar' +
+        (gate(flags => flags.enableFizzBlockingRender)
+          ? '<template id="_R_"></template>'
+          : '') +
+        '</body></html>',
+    );
+  });
+
+  it('should support nonce attribute for bootstrap scripts', async () => {
+    const nonce = 'R4nd0m';
+    const stream = await serverAct(() =>
+      ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>, {
+        nonce,
+        bootstrapScriptContent: 'INIT();',
+        bootstrapScripts: ['init.js'],
+        bootstrapModules: ['init.mjs'],
+      }),
+    );
+    const result = await readResult(stream);
+    expect(result).toMatchInlineSnapshot(
+      // TODO: remove interpolation because it prevents snapshot updates.
+      // eslint-disable-next-line jest/no-interpolation-in-snapshots
+      `"<link rel="preload" as="script" fetchPriority="low" nonce="R4nd0m" href="init.js"/><link rel="modulepreload" fetchPriority="low" nonce="R4nd0m" href="init.mjs"/><div>hello world</div><script nonce="${nonce}" id="_R_">INIT();</script><script src="init.js" nonce="${nonce}" async=""></script><script type="module" src="init.mjs" nonce="${nonce}" async=""></script>"`,
     );
   });
 });

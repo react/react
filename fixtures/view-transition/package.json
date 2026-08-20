@@ -1,0 +1,49 @@
+{
+  "name": "react-fixtures-view-transition",
+  "version": "0.1.0",
+  "private": true,
+  "devDependencies": {
+    "concurrently": "3.1.0",
+    "http-proxy-middleware": "3.0.3",
+    "react-scripts": "5.0.1",
+    "@babel/plugin-proposal-private-property-in-object": "7.21.11"
+  },
+  "dependencies": {
+    "@babel/register": "^7.25.9",
+    "express": "^4.14.0",
+    "ignore-styles": "^5.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "animation-timelines": "^0.0.4"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "scripts": {
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "prebuild": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "BROWSER=none PORT=3001 react-scripts start",
+    "dev:server": "NODE_ENV=development node --experimental-loader ./loader/server.js server",
+    "start": "react-scripts build && NODE_ENV=production node --experimental-loader ./loader/server.js server",
+    "build": "react-scripts build",
+    "test": "react-scripts test --env=jsdom",
+    "eject": "react-scripts eject"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

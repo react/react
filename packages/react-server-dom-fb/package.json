@@ -1,0 +1,17 @@
+{
+  "name": "react-server-dom-fb",
+  "version": "0.1.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/react/react.git",
+    "directory": "packages/react-server-dom-fb"
+  },
+  "dependencies": {
+    "scheduler": "^0.28.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}

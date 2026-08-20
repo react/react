@@ -29,7 +29,7 @@ function Graph(props) {
   });
 
   var edgeLabels = {};
-  React.Children.forEach(props.children, function(child) {
+  React.Children.forEach(props.children, function (child) {
     if (!child) {
       return;
     }

@@ -45,7 +45,7 @@ export default function List(props: Props): React.Node {
   }, [newItemText, items, uid]);
 
   const handleKeyPress = useCallback(
-    event => {
+    (event: $FlowFixMe) => {
       if (event.key === 'Enter') {
         handleClick();
       }
@@ -54,19 +54,20 @@ export default function List(props: Props): React.Node {
   );
 
   const handleChange = useCallback(
-    event => {
+    (event: $FlowFixMe) => {
       setNewItemText(event.currentTarget.value);
     },
     [setNewItemText],
   );
 
   const removeItem = useCallback(
-    itemToRemove => setItems(items.filter(item => item !== itemToRemove)),
+    (itemToRemove: $FlowFixMe) =>
+      setItems(items.filter(item => item !== itemToRemove)),
     [items],
   );
 
   const toggleItem = useCallback(
-    itemToToggle => {
+    (itemToToggle: $FlowFixMe) => {
       // Dont use indexOf()
       // because editing props in DevTools creates a new Object.
       const index = items.findIndex(item => item.id === itemToToggle.id);

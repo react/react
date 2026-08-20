@@ -9,11 +9,11 @@
 
 import type Store from 'react-devtools-shared/src/devtools/store';
 
+import {getVersionedRenderImplementation} from './utils';
+
 describe('commit tree', () => {
-  let React;
-  let ReactDOMClient;
+  let React = require('react');
   let Scheduler;
-  let legacyRender;
   let store: Store;
   let utils;
 
@@ -21,16 +21,15 @@ describe('commit tree', () => {
     utils = require('./utils');
     utils.beforeEachProfiling();
 
-    legacyRender = utils.legacyRender;
-
     store = global.store;
     store.collapseNodesByDefault = false;
     store.recordChangeDescriptions = true;
 
     React = require('react');
-    ReactDOMClient = require('react-dom/client');
     Scheduler = require('scheduler');
   });
+
+  const {render} = getVersionedRenderImplementation();
 
   // @reactVersion >= 16.9
   it('should be able to rebuild the store tree for each commit', () => {
@@ -45,16 +44,14 @@ describe('commit tree', () => {
       return null;
     });
 
-    const container = document.createElement('div');
-
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() => legacyRender(<Parent count={1} />, container));
+    utils.act(() => render(<Parent count={1} />));
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Parent>
             <Child key="0"> [Memo]
     `);
-    utils.act(() => legacyRender(<Parent count={3} />, container));
+    utils.act(() => render(<Parent count={3} />));
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Parent>
@@ -62,14 +59,14 @@ describe('commit tree', () => {
             <Child key="1"> [Memo]
             <Child key="2"> [Memo]
     `);
-    utils.act(() => legacyRender(<Parent count={2} />, container));
+    utils.act(() => render(<Parent count={2} />));
     expect(store).toMatchInlineSnapshot(`
       [root]
         ▾ <Parent>
             <Child key="0"> [Memo]
             <Child key="1"> [Memo]
     `);
-    utils.act(() => legacyRender(<Parent count={0} />, container));
+    utils.act(() => render(<Parent count={0} />));
     expect(store).toMatchInlineSnapshot(`
       [root]
           <Parent>
@@ -118,25 +115,27 @@ describe('commit tree', () => {
     });
 
     // @reactVersion >= 16.9
-    it('should support Lazy components (legacy render)', async () => {
-      const container = document.createElement('div');
-
+    it('should support Lazy components', async () => {
       utils.act(() => store.profilerStore.startProfiling());
-      utils.act(() => legacyRender(<App renderChildren={true} />, container));
+      utils.act(() => render(<App renderChildren={true} />));
       await Promise.resolve();
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <App>
               <Suspense>
+        [suspense-root]  rects={null}
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
-      utils.act(() => legacyRender(<App renderChildren={true} />, container));
+      utils.act(() => render(<App renderChildren={true} />));
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <App>
             ▾ <Suspense>
                 <LazyInnerComponent>
+        [suspense-root]  rects={null}
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
-      utils.act(() => legacyRender(<App renderChildren={false} />, container));
+      utils.act(() => render(<App renderChildren={false} />));
       expect(store).toMatchInlineSnapshot(`
         [root]
             <App>
@@ -154,66 +153,23 @@ describe('commit tree', () => {
         );
       }
 
-      expect(commitTrees[0].nodes.size).toBe(3); // <Root> + <App> + <Suspense>
-      expect(commitTrees[1].nodes.size).toBe(4); // <Root> + <App> + <Suspense> + <LazyInnerComponent>
-      expect(commitTrees[2].nodes.size).toBe(2); // <Root> + <App>
-    });
-
-    // @reactVersion >= 18.0
-    it('should support Lazy components (createRoot)', async () => {
-      const container = document.createElement('div');
-      const root = ReactDOMClient.createRoot(container);
-
-      utils.act(() => store.profilerStore.startProfiling());
-      utils.act(() => root.render(<App renderChildren={true} />));
-      await Promise.resolve();
-      expect(store).toMatchInlineSnapshot(`
-        [root]
-          ▾ <App>
-              <Suspense>
-      `);
-      utils.act(() => root.render(<App renderChildren={true} />));
-      expect(store).toMatchInlineSnapshot(`
-        [root]
-          ▾ <App>
-            ▾ <Suspense>
-                <LazyInnerComponent>
-      `);
-      utils.act(() => root.render(<App renderChildren={false} />));
-      expect(store).toMatchInlineSnapshot(`
-        [root]
-            <App>
-      `);
-      utils.act(() => store.profilerStore.stopProfiling());
-
-      const rootID = store.roots[0];
-      const commitTrees = [];
-      for (let commitIndex = 0; commitIndex < 3; commitIndex++) {
-        commitTrees.push(
-          store.profilerStore.profilingCache.getCommitTree({
-            commitIndex,
-            rootID,
-          }),
-        );
-      }
-
-      expect(commitTrees[0].nodes.size).toBe(3); // <Root> + <App> + <Suspense>
+      expect(commitTrees[0].nodes.size).toBe(3);
       expect(commitTrees[1].nodes.size).toBe(4); // <Root> + <App> + <Suspense> + <LazyInnerComponent>
       expect(commitTrees[2].nodes.size).toBe(2); // <Root> + <App>
     });
 
     // @reactVersion >= 16.9
-    it('should support Lazy components that are unmounted before resolving (legacy render)', async () => {
-      const container = document.createElement('div');
-
+    it('should support Lazy components that are unmounted before resolving', async () => {
       utils.act(() => store.profilerStore.startProfiling());
-      utils.act(() => legacyRender(<App renderChildren={true} />, container));
+      utils.act(() => render(<App renderChildren={true} />));
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <App>
               <Suspense>
+        [suspense-root]  rects={null}
+          <Suspense name="App" uniqueSuspenders={true} rects={null}>
       `);
-      utils.act(() => legacyRender(<App renderChildren={false} />, container));
+      utils.act(() => render(<App renderChildren={false} />));
       expect(store).toMatchInlineSnapshot(`
         [root]
             <App>
@@ -231,42 +187,77 @@ describe('commit tree', () => {
         );
       }
 
-      expect(commitTrees[0].nodes.size).toBe(3); // <Root> + <App> + <Suspense>
+      expect(commitTrees[0].nodes.size).toBe(3);
       expect(commitTrees[1].nodes.size).toBe(2); // <Root> + <App>
     });
+  });
 
-    // @reactVersion >= 18.0
-    it('should support Lazy components that are unmounted before resolving (createRoot)', async () => {
-      const container = document.createElement('div');
-      const root = ReactDOMClient.createRoot(container);
+  describe('Suspense', () => {
+    it('should handle transitioning from fallback back to content during profiling', async () => {
+      let resolvePromise;
+      let promise = null;
+      let childTreeBaseDuration = 10;
 
-      utils.act(() => store.profilerStore.startProfiling());
-      utils.act(() => root.render(<App renderChildren={true} />));
-      expect(store).toMatchInlineSnapshot(`
-        [root]
-          ▾ <App>
-              <Suspense>
-      `);
-      utils.act(() => root.render(<App renderChildren={false} />));
-      expect(store).toMatchInlineSnapshot(`
-        [root]
-            <App>
-      `);
-      utils.act(() => store.profilerStore.stopProfiling());
+      function Wrapper({children}) {
+        Scheduler.unstable_advanceTime(2);
+        return children;
+      }
 
-      const rootID = store.roots[0];
-      const commitTrees = [];
-      for (let commitIndex = 0; commitIndex < 2; commitIndex++) {
-        commitTrees.push(
-          store.profilerStore.profilingCache.getCommitTree({
-            commitIndex,
-            rootID,
-          }),
+      function Child() {
+        Scheduler.unstable_advanceTime(childTreeBaseDuration);
+        if (promise !== null) {
+          React.use(promise);
+        }
+        return <GrandChild />;
+      }
+
+      function GrandChild() {
+        Scheduler.unstable_advanceTime(5);
+        return null;
+      }
+
+      function Fallback() {
+        Scheduler.unstable_advanceTime(2);
+        return null;
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Suspense fallback={<Fallback />}>
+            <Wrapper>
+              <Child />
+            </Wrapper>
+          </React.Suspense>
         );
       }
 
-      expect(commitTrees[0].nodes.size).toBe(3); // <Root> + <App> + <Suspense>
-      expect(commitTrees[1].nodes.size).toBe(2); // <Root> + <App>
+      utils.act(() => store.profilerStore.startProfiling());
+
+      // Commit 1: Mount with primary
+      utils.act(() => render(<App step={1} />));
+
+      // Commit 2: Suspend, show fallback
+      promise = new Promise(resolve => (resolvePromise = resolve));
+      await utils.actAsync(() => render(<App step={2} />));
+
+      // Commit 3: Resolve suspended promise, show primary content with a different duration.
+      childTreeBaseDuration = 20;
+      promise = null;
+      await utils.actAsync(resolvePromise);
+      utils.act(() => render(<App step={3} />));
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const dataForRoot = store.profilerStore.getDataForRoot(rootID);
+      const numCommits = dataForRoot.commitData.length;
+      for (let commitIndex = 0; commitIndex < numCommits; commitIndex++) {
+        store.profilerStore.profilingCache.getCommitTree({
+          commitIndex,
+          rootID,
+        });
+      }
     });
   });
 });

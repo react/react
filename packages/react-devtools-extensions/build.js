@@ -6,7 +6,7 @@ const archiver = require('archiver');
 const {execSync} = require('child_process');
 const {readFileSync, writeFileSync, createWriteStream} = require('fs');
 const {copy, ensureDir, move, remove, pathExistsSync} = require('fs-extra');
-const {join, resolve} = require('path');
+const {join, resolve, basename} = require('path');
 const {getGitCommit} = require('./utils');
 
 // These files are copied along with Webpack-bundled files
@@ -52,31 +52,17 @@ const preProcess = async (destinationPath, tempPath) => {
   await ensureDir(tempPath); // Create temp dir for this new build
 };
 
-const build = async (tempPath, manifestPath) => {
+const build = async (tempPath, manifestPath, envExtension = {}) => {
   const binPath = join(tempPath, 'bin');
   const zipPath = join(tempPath, 'zip');
+  const mergedEnv = {...process.env, ...envExtension};
 
-  const webpackPath = join(
-    __dirname,
-    '..',
-    '..',
-    'node_modules',
-    '.bin',
-    'webpack',
-  );
+  const webpackPath = join(__dirname, 'node_modules', '.bin', 'webpack');
   execSync(
     `${webpackPath} --config webpack.config.js --output-path ${binPath}`,
     {
       cwd: __dirname,
-      env: process.env,
-      stdio: 'inherit',
-    },
-  );
-  execSync(
-    `${webpackPath} --config webpack.backend.js --output-path ${binPath}`,
-    {
-      cwd: __dirname,
-      env: process.env,
+      env: mergedEnv,
       stdio: 'inherit',
     },
   );
@@ -86,8 +72,25 @@ const build = async (tempPath, manifestPath) => {
 
   const copiedManifestPath = join(zipPath, 'manifest.json');
 
+  let webpackStatsFilePath = null;
   // Copy unbuilt source files to zip dir to be packaged:
-  await copy(binPath, join(zipPath, 'build'));
+  await copy(binPath, join(zipPath, 'build'), {
+    filter: filePath => {
+      if (basename(filePath).startsWith('webpack-stats.')) {
+        webpackStatsFilePath = filePath;
+        // The ZIP is the actual extension and doesn't need this metadata.
+        return false;
+      }
+      return true;
+    },
+  });
+  if (webpackStatsFilePath !== null) {
+    await copy(
+      webpackStatsFilePath,
+      join(tempPath, basename(webpackStatsFilePath)),
+    );
+    webpackStatsFilePath = join(tempPath, basename(webpackStatsFilePath));
+  }
   await copy(manifestPath, copiedManifestPath);
   await Promise.all(
     STATIC_FILES.map(file => copy(join(__dirname, file), join(zipPath, file))),
@@ -126,9 +129,11 @@ const build = async (tempPath, manifestPath) => {
     archive.finalize();
     zipStream.on('close', () => resolvePromise());
   });
+
+  return webpackStatsFilePath;
 };
 
-const postProcess = async (tempPath, destinationPath) => {
+const postProcess = async (tempPath, destinationPath, webpackStatsFilePath) => {
   const unpackedSourcePath = join(tempPath, 'zip');
   const packedSourcePath = join(tempPath, 'ReactDevTools.zip');
   const packedDestPath = join(destinationPath, 'ReactDevTools.zip');
@@ -136,22 +141,50 @@ const postProcess = async (tempPath, destinationPath) => {
 
   await move(unpackedSourcePath, unpackedDestPath); // Copy built files to destination
   await move(packedSourcePath, packedDestPath); // Copy built files to destination
+  if (webpackStatsFilePath !== null) {
+    await move(
+      webpackStatsFilePath,
+      join(destinationPath, basename(webpackStatsFilePath)),
+    );
+  } else {
+    console.log('No webpack-stats.json file was generated.');
+  }
   await remove(tempPath); // Clean up temp directory and files
 };
 
+const SUPPORTED_BUILDS = ['chrome', 'firefox', 'edge'];
+
 const main = async buildId => {
+  if (!SUPPORTED_BUILDS.includes(buildId)) {
+    throw new Error(
+      `Unexpected build id - "${buildId}". Use one of ${JSON.stringify(
+        SUPPORTED_BUILDS,
+      )}.`,
+    );
+  }
+
   const root = join(__dirname, buildId);
   const manifestPath = join(root, 'manifest.json');
   const destinationPath = join(root, 'build');
+
+  const envExtension = {
+    IS_CHROME: buildId === 'chrome',
+    IS_FIREFOX: buildId === 'firefox',
+    IS_EDGE: buildId === 'edge',
+  };
 
   try {
     const tempPath = join(__dirname, 'build', buildId);
     await ensureLocalBuild();
     await preProcess(destinationPath, tempPath);
-    await build(tempPath, manifestPath);
+    const webpackStatsFilePath = await build(
+      tempPath,
+      manifestPath,
+      envExtension,
+    );
 
     const builtUnpackedPath = join(destinationPath, 'unpacked');
-    await postProcess(tempPath, destinationPath);
+    await postProcess(tempPath, destinationPath, webpackStatsFilePath);
 
     return builtUnpackedPath;
   } catch (error) {

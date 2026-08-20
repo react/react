@@ -8,20 +8,21 @@
  */
 
 import * as React from 'react';
-import {Fragment, useContext} from 'react';
+import {Fragment, useContext, useEffect, useRef, useEffectEvent} from 'react';
 import {ModalDialog} from '../ModalDialog';
 import {ProfilerContext} from './ProfilerContext';
+import Button from '../Button';
+import ButtonIcon from '../ButtonIcon';
 import TabBar from '../TabBar';
 import ClearProfilingDataButton from './ClearProfilingDataButton';
 import CommitFlamegraph from './CommitFlamegraph';
 import CommitRanked from './CommitRanked';
 import RootSelector from './RootSelector';
-import {Timeline} from 'react-devtools-timeline/src/Timeline';
-import SidebarEventInfo from './SidebarEventInfo';
 import RecordToggle from './RecordToggle';
 import ReloadAndProfileButton from './ReloadAndProfileButton';
 import ProfilingImportExportButtons from './ProfilingImportExportButtons';
 import SnapshotSelector from './SnapshotSelector';
+import ProfilerSearchInput from './ProfilerSearchInput';
 import SidebarCommitInfo from './SidebarCommitInfo';
 import NoProfilingData from './NoProfilingData';
 import RecordingInProgress from './RecordingInProgress';
@@ -32,13 +33,15 @@ import SettingsModal from 'react-devtools-shared/src/devtools/views/Settings/Set
 import SettingsModalContextToggle from 'react-devtools-shared/src/devtools/views/Settings/SettingsModalContextToggle';
 import {SettingsModalContextController} from 'react-devtools-shared/src/devtools/views/Settings/SettingsModalContext';
 import portaledContent from '../portaledContent';
-import {StoreContext} from '../context';
-import {TimelineContext} from 'react-devtools-timeline/src/TimelineContext';
-import {enableProfilerComponentTree} from 'react-devtools-feature-flags';
 
 import styles from './Profiler.css';
 
 function Profiler(_: {}) {
+  const profilerRef = useRef<HTMLDivElement | null>(null);
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
   const {
     didRecordCommits,
     isProcessingData,
@@ -48,29 +51,75 @@ function Profiler(_: {}) {
     selectedTabID,
     selectTab,
     supportsProfiling,
+    startProfiling,
+    stopProfiling,
+    selectPrevCommitIndex,
+    selectNextCommitIndex,
+    isSearchInputVisible,
+    showSearchInput,
+    hideSearchInput,
   } = useContext(ProfilerContext);
 
-  const {file: timelineTraceEventData, searchInputContainerRef} = useContext(
-    TimelineContext,
-  );
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    const correctModifier = isMac ? event.metaKey : event.ctrlKey;
+    // Cmd+E to start/stop profiler recording
+    if (correctModifier && event.key === 'e') {
+      if (isProfiling) {
+        stopProfiling();
+      } else {
+        startProfiling();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (didRecordCommits && correctModifier && event.key === 'f') {
+      // Cmd+F (Mac) or Ctrl+F (Windows/Linux) to search components in the commit
+      showSearchInput();
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (isSearchInputVisible && event.key === 'Escape') {
+      // Escape closes the search input.
+      hideSearchInput();
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (didRecordCommits && selectedCommitIndex !== null) {
+      // Cmd+Left/Right (Mac) or Ctrl+Left/Right (Windows/Linux) to navigate commits
+      if (
+        correctModifier &&
+        (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+      ) {
+        if (event.key === 'ArrowLeft') {
+          selectPrevCommitIndex();
+        } else {
+          selectNextCommitIndex();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+  });
 
-  const {supportsTimeline} = useContext(StoreContext);
-
-  const isLegacyProfilerSelected = selectedTabID !== 'timeline';
-  const isRightColumnVisible =
-    isLegacyProfilerSelected || enableProfilerComponentTree;
+  useEffect(() => {
+    const div = profilerRef.current;
+    if (!div) {
+      return;
+    }
+    const ownerWindow = div.ownerDocument.defaultView;
+    // Capture phase: Cmd/Ctrl+F is a reserved browser shortcut (Find), so we
+    // must intercept it before the browser to open our own search instead.
+    ownerWindow.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      ownerWindow.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, []);
 
   let view = null;
-  if (didRecordCommits || selectedTabID === 'timeline') {
+  if (didRecordCommits) {
     switch (selectedTabID) {
       case 'flame-chart':
         view = <CommitFlamegraph />;
         break;
       case 'ranked-chart':
         view = <CommitRanked />;
-        break;
-      case 'timeline':
-        view = <Timeline />;
         break;
       default:
         break;
@@ -79,8 +128,6 @@ function Profiler(_: {}) {
     view = <RecordingInProgress />;
   } else if (isProcessingData) {
     view = <ProcessingData />;
-  } else if (timelineTraceEventData) {
-    view = <OnlyTimelineData />;
   } else if (supportsProfiling) {
     view = <NoProfilingData />;
   } else {
@@ -106,9 +153,6 @@ function Profiler(_: {}) {
           }
         }
         break;
-      case 'timeline':
-        sidebar = <SidebarEventInfo />;
-        break;
       default:
         break;
     }
@@ -116,7 +160,7 @@ function Profiler(_: {}) {
 
   return (
     <SettingsModalContextController>
-      <div className={styles.Profiler}>
+      <div ref={profilerRef} className={styles.Profiler}>
         <div className={styles.LeftColumn}>
           <div className={styles.Toolbar}>
             <RecordToggle disabled={!supportsProfiling} />
@@ -128,47 +172,45 @@ function Profiler(_: {}) {
               currentTab={selectedTabID}
               id="Profiler"
               selectTab={selectTab}
-              tabs={supportsTimeline ? tabsWithTimeline : tabs}
+              tabs={tabs}
               type="profiler"
             />
             <RootSelector />
             <div className={styles.Spacer} />
-            {!isLegacyProfilerSelected && (
-              <div
-                ref={searchInputContainerRef}
-                className={styles.TimelineSearchInputContainer}
-              />
-            )}
             <SettingsModalContextToggle />
-            {isLegacyProfilerSelected && didRecordCommits && (
+            {didRecordCommits && (
               <Fragment>
                 <div className={styles.VRule} />
+                <Button
+                  onClick={
+                    isSearchInputVisible ? hideSearchInput : showSearchInput
+                  }
+                  title={`Search components in this commit (${
+                    isMac ? '⌘' : 'Ctrl+'
+                  }F)`}
+                  data-testname="ProfilerSearchButton">
+                  <ButtonIcon type="find" />
+                </Button>
                 <SnapshotSelector />
               </Fragment>
             )}
           </div>
           <div className={styles.Content}>
+            {didRecordCommits && isSearchInputVisible && (
+              <div className={styles.SearchInputOverlay}>
+                <ProfilerSearchInput />
+              </div>
+            )}
             {view}
             <ModalDialog />
           </div>
         </div>
-        {isRightColumnVisible && (
-          <div className={styles.RightColumn}>{sidebar}</div>
-        )}
+        <div className={styles.RightColumn}>{sidebar}</div>
         <SettingsModal />
       </div>
     </SettingsModalContextController>
   );
 }
-
-const OnlyTimelineData = () => (
-  <div className={styles.Column}>
-    <div className={styles.Header}>Timeline only</div>
-    <div className={styles.Row}>
-      The current profile contains only Timeline data.
-    </div>
-  </div>
-);
 
 const tabs = [
   {
@@ -185,15 +227,4 @@ const tabs = [
   },
 ];
 
-const tabsWithTimeline = [
-  ...tabs,
-  null, // Divider/separator
-  {
-    id: 'timeline',
-    icon: 'timeline',
-    label: 'Timeline',
-    title: 'Timeline',
-  },
-];
-
-export default (portaledContent(Profiler): React.ComponentType<{}>);
+export default portaledContent(Profiler) as component();

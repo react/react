@@ -4,6 +4,8 @@ import Theme, {ThemeToggleButton} from './Theme';
 
 import './Chrome.css';
 
+import LargeContent from './LargeContent';
+
 export default class Chrome extends Component {
   state = {theme: 'light'};
   render() {
@@ -25,7 +27,6 @@ export default class Chrome extends Component {
           />
           <Suspense fallback="Loading...">
             <Theme.Provider value={this.state.theme}>
-              {this.props.children}
               <div>
                 <ThemeToggleButton
                   onChange={theme => {
@@ -35,8 +36,10 @@ export default class Chrome extends Component {
                   }}
                 />
               </div>
+              {this.props.children}
             </Theme.Provider>
           </Suspense>
+          <LargeContent />
           <script
             dangerouslySetInnerHTML={{
               __html: `assetManifest = ${JSON.stringify(assets)};`,

@@ -36,10 +36,10 @@ export function createRegExp(string: string): RegExp {
   // Allow /regex/ syntax with optional last /
   if (string[0] === '/') {
     // Cut off first slash
-    string = string.substring(1);
+    string = string.slice(1);
     // Cut off last slash, but only if it's there
     if (string[string.length - 1] === '/') {
-      string = string.substring(0, string.length - 1);
+      string = string.slice(0, string.length - 1);
     }
     try {
       return new RegExp(string, 'i');
@@ -121,7 +121,7 @@ function sanitize(data: Object): void {
 }
 
 export function serializeDataForCopy(props: Object): string {
-  const cloned = Object.assign({}, props);
+  const cloned = isArray(props) ? props.slice(0) : Object.assign({}, props);
 
   sanitize(cloned);
 
@@ -133,8 +133,8 @@ export function serializeDataForCopy(props: Object): string {
 }
 
 export function serializeHooksForCopy(hooks: HooksTree | null): string {
-  // $FlowFixMe "HooksTree is not an object"
-  const cloned = Object.assign([], hooks);
+  // $FlowFixMe[not-an-object] "HooksTree is not an object"
+  const cloned = Object.assign([] as Array<any>, hooks);
 
   const queue = [...cloned];
 
@@ -142,10 +142,14 @@ export function serializeHooksForCopy(hooks: HooksTree | null): string {
     const current = queue.pop();
 
     // These aren't meaningful
+    // $FlowFixMe[incompatible-use]
     delete current.id;
+    // $FlowFixMe[incompatible-use]
     delete current.isStateEditable;
 
+    // $FlowFixMe[incompatible-use]
     if (current.subHooks.length > 0) {
+      // $FlowFixMe[incompatible-use]
       queue.push(...current.subHooks);
     }
   }
@@ -186,11 +190,68 @@ export function truncateText(text: string, maxLength: number): string {
   const {length} = text;
   if (length > maxLength) {
     return (
-      text.substr(0, Math.floor(maxLength / 2)) +
+      text.slice(0, Math.floor(maxLength / 2)) +
       '…' +
-      text.substr(length - Math.ceil(maxLength / 2) - 1)
+      text.slice(length - Math.ceil(maxLength / 2) - 1)
     );
   } else {
     return text;
   }
+}
+
+export function pluralize(word: string): string {
+  if (!/^[a-z]+$/i.test(word)) {
+    // If it's not a single a-z word, give up.
+    return word;
+  }
+
+  // Bail out if it's already plural.
+  switch (word) {
+    case 'men':
+    case 'women':
+    case 'children':
+    case 'feet':
+    case 'teeth':
+    case 'mice':
+    case 'people':
+      return word;
+  }
+
+  if (
+    /(ches|shes|ses|xes|zes)$/i.test(word) ||
+    /[^s]ies$/i.test(word) ||
+    /ves$/i.test(word) ||
+    /[^s]s$/i.test(word)
+  ) {
+    return word;
+  }
+
+  switch (word) {
+    case 'man':
+      return 'men';
+    case 'woman':
+      return 'women';
+    case 'child':
+      return 'children';
+    case 'foot':
+      return 'feet';
+    case 'tooth':
+      return 'teeth';
+    case 'mouse':
+      return 'mice';
+    case 'person':
+      return 'people';
+  }
+
+  // Words ending in s, x, z, ch, sh → add "es"
+  if (/(s|x|z|ch|sh)$/i.test(word)) return word + 'es';
+
+  // Words ending in consonant + y → replace y with "ies"
+  if (/[bcdfghjklmnpqrstvwxz]y$/i.test(word)) return word.slice(0, -1) + 'ies';
+
+  // Words ending in f or fe → replace with "ves"
+  if (/(?:f|fe)$/i.test(word)) return word.replace(/(?:f|fe)$/i, 'ves');
+
+  // Default: just add "s"
+  return word + 's';
 }

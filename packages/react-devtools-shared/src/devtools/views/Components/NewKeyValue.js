@@ -15,7 +15,7 @@ import EditableValue from './EditableValue';
 import {parseHookPathForEdit} from './utils';
 import styles from './NewKeyValue.css';
 
-import type {InspectedElement} from './types';
+import type {InspectedElement} from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 
 type Props = {
@@ -42,11 +42,15 @@ export default function NewKeyValue({
   const [newPropKey, setNewPropKey] = useState<number>(0);
   const [newPropName, setNewPropName] = useState<string>('');
 
-  const overrideNewEntryName = (oldPath, newPath) => {
+  // $FlowFixMe[missing-local-annot]
+  const overrideNewEntryName = (oldPath: any, newPath) => {
     setNewPropName(newPath[newPath.length - 1]);
   };
 
-  const overrideNewEntryValue = (newPath, value) => {
+  const overrideNewEntryValue = (
+    newPath: Array<string | number>,
+    value: any,
+  ) => {
     if (!newPropName) {
       return;
     }
@@ -75,6 +79,7 @@ export default function NewKeyValue({
 
   return (
     <div
+      data-testname="NewKeyValue"
       key={newPropKey}
       hidden={hidden}
       style={{

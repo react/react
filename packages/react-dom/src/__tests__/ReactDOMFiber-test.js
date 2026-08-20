@@ -9,174 +9,142 @@
 
 'use strict';
 
-const React = require('react');
-const ReactDOM = require('react-dom');
-const PropTypes = require('prop-types');
+let React;
+let ReactDOM;
+let PropTypes;
+let ReactDOMClient;
+let Scheduler;
+
+let act;
+let assertConsoleErrorDev;
+let assertLog;
+let root;
+let JSDOM;
 
 describe('ReactDOMFiber', () => {
   let container;
 
   beforeEach(() => {
+    jest.resetModules();
+
+    // JSDOM needs to be setup with a TextEncoder and TextDecoder when used standalone
+    // https://github.com/jsdom/jsdom/issues/2524
+    (() => {
+      const {TextEncoder, TextDecoder} = require('util');
+      global.TextEncoder = TextEncoder;
+      global.TextDecoder = TextDecoder;
+      JSDOM = require('jsdom').JSDOM;
+    })();
+
+    React = require('react');
+    ReactDOM = require('react-dom');
+    PropTypes = require('prop-types');
+    ReactDOMClient = require('react-dom/client');
+    Scheduler = require('scheduler');
+    act = require('internal-test-utils').act;
+    ({assertConsoleErrorDev, assertLog} = require('internal-test-utils'));
+
     container = document.createElement('div');
     document.body.appendChild(container);
+    root = ReactDOMClient.createRoot(container);
   });
 
   afterEach(() => {
     document.body.removeChild(container);
     container = null;
+    jest.restoreAllMocks();
   });
 
-  it('should render strings as children', () => {
+  it('should render strings as children', async () => {
     const Box = ({value}) => <div>{value}</div>;
-
-    ReactDOM.render(<Box value="foo" />, container);
-    expect(container.textContent).toEqual('foo');
-  });
-
-  it('should render numbers as children', () => {
-    const Box = ({value}) => <div>{value}</div>;
-
-    ReactDOM.render(<Box value={10} />, container);
-
-    expect(container.textContent).toEqual('10');
-  });
-
-  it('should be called a callback argument', () => {
-    // mounting phase
-    let called = false;
-    ReactDOM.render(<div>Foo</div>, container, () => (called = true));
-    expect(called).toEqual(true);
-
-    // updating phase
-    called = false;
-    ReactDOM.render(<div>Foo</div>, container, () => (called = true));
-    expect(called).toEqual(true);
-  });
-
-  it('should call a callback argument when the same element is re-rendered', () => {
-    class Foo extends React.Component {
-      render() {
-        return <div>Foo</div>;
-      }
-    }
-    const element = <Foo />;
-
-    // mounting phase
-    let called = false;
-    ReactDOM.render(element, container, () => (called = true));
-    expect(called).toEqual(true);
-
-    // updating phase
-    called = false;
-    ReactDOM.unstable_batchedUpdates(() => {
-      ReactDOM.render(element, container, () => (called = true));
+    await act(async () => {
+      root.render(<Box value="foo" />);
     });
-    expect(called).toEqual(true);
-  });
-
-  it('should render a component returning strings directly from render', () => {
-    const Text = ({value}) => value;
-
-    ReactDOM.render(<Text value="foo" />, container);
     expect(container.textContent).toEqual('foo');
   });
 
-  it('should render a component returning numbers directly from render', () => {
-    const Text = ({value}) => value;
+  it('should render numbers as children', async () => {
+    const Box = ({value}) => <div>{value}</div>;
 
-    ReactDOM.render(<Text value={10} />, container);
+    await act(async () => {
+      root.render(<Box value={10} />);
+    });
 
     expect(container.textContent).toEqual('10');
   });
 
-  it('finds the DOM Text node of a string child', () => {
-    class Text extends React.Component {
-      render() {
-        return this.props.value;
-      }
-    }
+  it('should render bigints as children', async () => {
+    const Box = ({value}) => <div>{value}</div>;
 
-    let instance = null;
-    ReactDOM.render(
-      <Text value="foo" ref={ref => (instance = ref)} />,
-      container,
-    );
+    await act(async () => {
+      root.render(<Box value={10n} />);
+    });
 
-    const textNode = ReactDOM.findDOMNode(instance);
-    expect(textNode).toBe(container.firstChild);
-    expect(textNode.nodeType).toBe(3);
-    expect(textNode.nodeValue).toBe('foo');
+    expect(container.textContent).toEqual('10');
   });
 
-  it('finds the first child when a component returns a fragment', () => {
-    class Fragment extends React.Component {
-      render() {
-        return [<div key="a" />, <span key="b" />];
-      }
+  it('should call an effect after mount/update (replacing render callback pattern)', async () => {
+    function Component() {
+      React.useEffect(() => {
+        Scheduler.log('Callback');
+      });
+      return <div>Foo</div>;
     }
 
-    let instance = null;
-    ReactDOM.render(<Fragment ref={ref => (instance = ref)} />, container);
+    // mounting phase
+    await act(async () => {
+      root.render(<Component />);
+    });
+    assertLog(['Callback']);
 
-    expect(container.childNodes.length).toBe(2);
-
-    const firstNode = ReactDOM.findDOMNode(instance);
-    expect(firstNode).toBe(container.firstChild);
-    expect(firstNode.tagName).toBe('DIV');
+    // updating phase
+    await act(async () => {
+      root.render(<Component />);
+    });
+    assertLog(['Callback']);
   });
 
-  it('finds the first child even when fragment is nested', () => {
-    class Wrapper extends React.Component {
-      render() {
-        return this.props.children;
-      }
+  it('should call an effect when the same element is re-rendered (replacing render callback pattern)', async () => {
+    function Component({prop}) {
+      React.useEffect(() => {
+        Scheduler.log('Callback');
+      });
+      return <div>{prop}</div>;
     }
 
-    class Fragment extends React.Component {
-      render() {
-        return [
-          <Wrapper key="a">
-            <div />
-          </Wrapper>,
-          <span key="b" />,
-        ];
-      }
-    }
+    // mounting phase
+    await act(async () => {
+      root.render(<Component prop="Foo" />);
+    });
+    assertLog(['Callback']);
 
-    let instance = null;
-    ReactDOM.render(<Fragment ref={ref => (instance = ref)} />, container);
-
-    expect(container.childNodes.length).toBe(2);
-
-    const firstNode = ReactDOM.findDOMNode(instance);
-    expect(firstNode).toBe(container.firstChild);
-    expect(firstNode.tagName).toBe('DIV');
+    // updating phase
+    await act(async () => {
+      root.render(<Component prop="Bar" />);
+    });
+    assertLog(['Callback']);
   });
 
-  it('finds the first child even when first child renders null', () => {
-    class NullComponent extends React.Component {
-      render() {
-        return null;
-      }
-    }
+  it('should render a component returning strings directly from render', async () => {
+    const Text = ({value}) => value;
 
-    class Fragment extends React.Component {
-      render() {
-        return [<NullComponent key="a" />, <div key="b" />, <span key="c" />];
-      }
-    }
+    await act(async () => {
+      root.render(<Text value="foo" />);
+    });
 
-    let instance = null;
-    ReactDOM.render(<Fragment ref={ref => (instance = ref)} />, container);
-
-    expect(container.childNodes.length).toBe(2);
-
-    const firstNode = ReactDOM.findDOMNode(instance);
-    expect(firstNode).toBe(container.firstChild);
-    expect(firstNode.tagName).toBe('DIV');
+    expect(container.textContent).toEqual('foo');
   });
 
-  it('renders an empty fragment', () => {
+  it('should render a component returning numbers directly from render', async () => {
+    const Text = ({value}) => value;
+    await act(async () => {
+      root.render(<Text value={10} />);
+    });
+
+    expect(container.textContent).toEqual('10');
+  });
+
+  it('renders an empty fragment', async () => {
     const Div = () => <div />;
     const EmptyFragment = () => <></>;
     const NonEmptyFragment = () => (
@@ -185,19 +153,29 @@ describe('ReactDOMFiber', () => {
       </>
     );
 
-    ReactDOM.render(<EmptyFragment />, container);
+    await act(async () => {
+      root.render(<EmptyFragment />);
+    });
     expect(container.firstChild).toBe(null);
 
-    ReactDOM.render(<NonEmptyFragment />, container);
+    await act(async () => {
+      root.render(<NonEmptyFragment />);
+    });
     expect(container.firstChild.tagName).toBe('DIV');
 
-    ReactDOM.render(<EmptyFragment />, container);
+    await act(async () => {
+      root.render(<EmptyFragment />);
+    });
     expect(container.firstChild).toBe(null);
 
-    ReactDOM.render(<Div />, container);
+    await act(async () => {
+      root.render(<Div />);
+    });
     expect(container.firstChild.tagName).toBe('DIV');
 
-    ReactDOM.render(<EmptyFragment />, container);
+    await act(async () => {
+      root.render(<EmptyFragment />);
+    });
     expect(container.firstChild).toBe(null);
   });
 
@@ -206,17 +184,20 @@ describe('ReactDOMFiber', () => {
   const expectHTML = {ref: el => htmlEls.push(el)};
   const expectMath = {ref: el => mathEls.push(el)};
 
-  const usePortal = function(tree) {
+  const usePortal = function (tree) {
     return ReactDOM.createPortal(tree, document.createElement('div'));
   };
 
-  const assertNamespacesMatch = function(tree) {
+  const assertNamespacesMatch = async function (tree) {
     const testContainer = document.createElement('div');
     svgEls = [];
     htmlEls = [];
     mathEls = [];
 
-    ReactDOM.render(tree, testContainer);
+    const testRoot = ReactDOMClient.createRoot(testContainer);
+    await act(async () => {
+      testRoot.render(tree);
+    });
     svgEls.forEach(el => {
       expect(el.namespaceURI).toBe('http://www.w3.org/2000/svg');
     });
@@ -227,39 +208,39 @@ describe('ReactDOMFiber', () => {
       expect(el.namespaceURI).toBe('http://www.w3.org/1998/Math/MathML');
     });
 
-    ReactDOM.unmountComponentAtNode(testContainer);
+    testRoot.unmount();
     expect(testContainer.innerHTML).toBe('');
   };
 
-  it('should render one portal', () => {
+  it('should render one portal', async () => {
     const portalContainer = document.createElement('div');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(<div>portal</div>, portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div>{ReactDOM.createPortal(<div>portal</div>, portalContainer)}</div>,
+      );
+    });
     expect(portalContainer.innerHTML).toBe('<div>portal</div>');
     expect(container.innerHTML).toBe('<div></div>');
 
-    ReactDOM.unmountComponentAtNode(container);
+    root.unmount();
     expect(portalContainer.innerHTML).toBe('');
     expect(container.innerHTML).toBe('');
   });
 
-  it('should render many portals', () => {
+  it('should render many portals', async () => {
     const portalContainer1 = document.createElement('div');
     const portalContainer2 = document.createElement('div');
 
-    const ops = [];
     class Child extends React.Component {
       componentDidMount() {
-        ops.push(`${this.props.name} componentDidMount`);
+        Scheduler.log(`${this.props.name} componentDidMount`);
       }
       componentDidUpdate() {
-        ops.push(`${this.props.name} componentDidUpdate`);
+        Scheduler.log(`${this.props.name} componentDidUpdate`);
       }
       componentWillUnmount() {
-        ops.push(`${this.props.name} componentWillUnmount`);
+        Scheduler.log(`${this.props.name} componentWillUnmount`);
       }
       render() {
         return <div>{this.props.name}</div>;
@@ -268,13 +249,13 @@ describe('ReactDOMFiber', () => {
 
     class Parent extends React.Component {
       componentDidMount() {
-        ops.push(`Parent:${this.props.step} componentDidMount`);
+        Scheduler.log(`Parent:${this.props.step} componentDidMount`);
       }
       componentDidUpdate() {
-        ops.push(`Parent:${this.props.step} componentDidUpdate`);
+        Scheduler.log(`Parent:${this.props.step} componentDidUpdate`);
       }
       componentWillUnmount() {
-        ops.push(`Parent:${this.props.step} componentWillUnmount`);
+        Scheduler.log(`Parent:${this.props.step} componentWillUnmount`);
       }
       render() {
         const {step} = this.props;
@@ -296,7 +277,9 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    ReactDOM.render(<Parent step="a" />, container);
+    await act(() => {
+      root.render(<Parent step="a" />);
+    });
     expect(portalContainer1.innerHTML).toBe('<div>portal1[0]:a</div>');
     expect(portalContainer2.innerHTML).toBe(
       '<div>portal2[0]:a</div><div>portal2[1]:a</div>',
@@ -304,7 +287,7 @@ describe('ReactDOMFiber', () => {
     expect(container.innerHTML).toBe(
       '<div>normal[0]:a</div><div>normal[1]:a</div>',
     );
-    expect(ops).toEqual([
+    assertLog([
       'normal[0]:a componentDidMount',
       'portal1[0]:a componentDidMount',
       'normal[1]:a componentDidMount',
@@ -313,8 +296,9 @@ describe('ReactDOMFiber', () => {
       'Parent:a componentDidMount',
     ]);
 
-    ops.length = 0;
-    ReactDOM.render(<Parent step="b" />, container);
+    await act(() => {
+      root.render(<Parent step="b" />);
+    });
     expect(portalContainer1.innerHTML).toBe('<div>portal1[0]:b</div>');
     expect(portalContainer2.innerHTML).toBe(
       '<div>portal2[0]:b</div><div>portal2[1]:b</div>',
@@ -322,7 +306,7 @@ describe('ReactDOMFiber', () => {
     expect(container.innerHTML).toBe(
       '<div>normal[0]:b</div><div>normal[1]:b</div>',
     );
-    expect(ops).toEqual([
+    assertLog([
       'normal[0]:b componentDidUpdate',
       'portal1[0]:b componentDidUpdate',
       'normal[1]:b componentDidUpdate',
@@ -331,12 +315,11 @@ describe('ReactDOMFiber', () => {
       'Parent:b componentDidUpdate',
     ]);
 
-    ops.length = 0;
-    ReactDOM.unmountComponentAtNode(container);
+    root.unmount();
     expect(portalContainer1.innerHTML).toBe('');
     expect(portalContainer2.innerHTML).toBe('');
     expect(container.innerHTML).toBe('');
-    expect(ops).toEqual([
+    assertLog([
       'Parent:b componentWillUnmount',
       'normal[0]:b componentWillUnmount',
       'portal1[0]:b componentWillUnmount',
@@ -346,13 +329,13 @@ describe('ReactDOMFiber', () => {
     ]);
   });
 
-  it('should render nested portals', () => {
+  it('should render nested portals', async () => {
     const portalContainer1 = document.createElement('div');
     const portalContainer2 = document.createElement('div');
     const portalContainer3 = document.createElement('div');
 
-    ReactDOM.render(
-      [
+    await act(() => {
+      root.render([
         <div key="a">normal[0]</div>,
         ReactDOM.createPortal(
           [
@@ -370,9 +353,8 @@ describe('ReactDOMFiber', () => {
           portalContainer1,
         ),
         <div key="f">normal[1]</div>,
-      ],
-      container,
-    );
+      ]);
+    });
     expect(portalContainer1.innerHTML).toBe(
       '<div>portal1[0]</div><div>portal1[1]</div>',
     );
@@ -382,65 +364,74 @@ describe('ReactDOMFiber', () => {
       '<div>normal[0]</div><div>normal[1]</div>',
     );
 
-    ReactDOM.unmountComponentAtNode(container);
+    root.unmount();
     expect(portalContainer1.innerHTML).toBe('');
     expect(portalContainer2.innerHTML).toBe('');
     expect(portalContainer3.innerHTML).toBe('');
     expect(container.innerHTML).toBe('');
   });
 
-  it('should reconcile portal children', () => {
+  it('should reconcile portal children', async () => {
     const portalContainer = document.createElement('div');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(<div>portal:1</div>, portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          {ReactDOM.createPortal(<div>portal:1</div>, portalContainer)}
+        </div>,
+      );
+    });
     expect(portalContainer.innerHTML).toBe('<div>portal:1</div>');
     expect(container.innerHTML).toBe('<div></div>');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(<div>portal:2</div>, portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div>
+          {ReactDOM.createPortal(<div>portal:2</div>, portalContainer)}
+        </div>,
+      );
+    });
     expect(portalContainer.innerHTML).toBe('<div>portal:2</div>');
     expect(container.innerHTML).toBe('<div></div>');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(<p>portal:3</p>, portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div>{ReactDOM.createPortal(<p>portal:3</p>, portalContainer)}</div>,
+      );
+    });
     expect(portalContainer.innerHTML).toBe('<p>portal:3</p>');
     expect(container.innerHTML).toBe('<div></div>');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(['Hi', 'Bye'], portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div>{ReactDOM.createPortal(['Hi', 'Bye'], portalContainer)}</div>,
+      );
+    });
     expect(portalContainer.innerHTML).toBe('HiBye');
     expect(container.innerHTML).toBe('<div></div>');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(['Bye', 'Hi'], portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div>{ReactDOM.createPortal(['Bye', 'Hi'], portalContainer)}</div>,
+      );
+    });
     expect(portalContainer.innerHTML).toBe('ByeHi');
     expect(container.innerHTML).toBe('<div></div>');
 
-    ReactDOM.render(
-      <div>{ReactDOM.createPortal(null, portalContainer)}</div>,
-      container,
-    );
+    await act(() => {
+      root.render(<div>{ReactDOM.createPortal(null, portalContainer)}</div>);
+    });
     expect(portalContainer.innerHTML).toBe('');
     expect(container.innerHTML).toBe('<div></div>');
   });
 
-  it('should unmount empty portal component wherever it appears', () => {
+  it('should unmount empty portal component wherever it appears', async () => {
     const portalContainer = document.createElement('div');
-
+    let instance;
     class Wrapper extends React.Component {
       constructor(props) {
         super(props);
+        instance = this;
         this.state = {
           show: true,
         };
@@ -460,31 +451,35 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    const instance = ReactDOM.render(<Wrapper />, container);
+    await act(() => {
+      root.render(<Wrapper />);
+    });
     expect(container.innerHTML).toBe(
       '<div><div>child</div><div>parent</div></div>',
     );
-    instance.setState({show: false});
+    await act(() => {
+      instance.setState({show: false});
+    });
     expect(instance.state.show).toBe(false);
     expect(container.innerHTML).toBe('<div><div>parent</div></div>');
   });
 
-  it('should keep track of namespace across portals (simple)', () => {
-    assertNamespacesMatch(
+  it('should keep track of namespace across portals (simple)', async () => {
+    await assertNamespacesMatch(
       <svg {...expectSVG}>
         <image {...expectSVG} />
         {usePortal(<div {...expectHTML} />)}
         <image {...expectSVG} />
       </svg>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <math {...expectMath}>
         <mi {...expectMath} />
         {usePortal(<div {...expectHTML} />)}
         <mi {...expectMath} />
       </math>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <div {...expectHTML}>
         <p {...expectHTML} />
         {usePortal(
@@ -497,8 +492,8 @@ describe('ReactDOMFiber', () => {
     );
   });
 
-  it('should keep track of namespace across portals (medium)', () => {
-    assertNamespacesMatch(
+  it('should keep track of namespace across portals (medium)', async () => {
+    await assertNamespacesMatch(
       <svg {...expectSVG}>
         <image {...expectSVG} />
         {usePortal(<div {...expectHTML} />)}
@@ -507,7 +502,7 @@ describe('ReactDOMFiber', () => {
         <image {...expectSVG} />
       </svg>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <div {...expectHTML}>
         <math {...expectMath}>
           <mi {...expectMath} />
@@ -520,7 +515,7 @@ describe('ReactDOMFiber', () => {
         <p {...expectHTML} />
       </div>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <math {...expectMath}>
         <mi {...expectMath} />
         {usePortal(
@@ -539,7 +534,7 @@ describe('ReactDOMFiber', () => {
         <mi {...expectMath} />
       </math>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <div {...expectHTML}>
         {usePortal(
           <svg {...expectSVG}>
@@ -550,7 +545,7 @@ describe('ReactDOMFiber', () => {
         <p {...expectHTML} />
       </div>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <svg {...expectSVG}>
         <svg {...expectSVG}>
           {usePortal(<div {...expectHTML} />)}
@@ -561,8 +556,8 @@ describe('ReactDOMFiber', () => {
     );
   });
 
-  it('should keep track of namespace across portals (complex)', () => {
-    assertNamespacesMatch(
+  it('should keep track of namespace across portals (complex)', async () => {
+    await assertNamespacesMatch(
       <div {...expectHTML}>
         {usePortal(
           <svg {...expectSVG}>
@@ -582,7 +577,7 @@ describe('ReactDOMFiber', () => {
         <p {...expectHTML} />
       </div>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <div {...expectHTML}>
         <svg {...expectSVG}>
           <svg {...expectSVG}>
@@ -608,7 +603,7 @@ describe('ReactDOMFiber', () => {
         <p {...expectHTML} />
       </div>,
     );
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <div {...expectHTML}>
         <svg {...expectSVG}>
           <foreignObject {...expectSVG}>
@@ -635,22 +630,22 @@ describe('ReactDOMFiber', () => {
     );
   });
 
-  it('should unwind namespaces on uncaught errors', () => {
+  it('should unwind namespaces on uncaught errors', async () => {
     function BrokenRender() {
       throw new Error('Hello');
     }
 
-    expect(() => {
-      assertNamespacesMatch(
+    await expect(async () => {
+      await assertNamespacesMatch(
         <svg {...expectSVG}>
           <BrokenRender />
         </svg>,
       );
-    }).toThrow('Hello');
-    assertNamespacesMatch(<div {...expectHTML} />);
+    }).rejects.toThrow('Hello');
+    await assertNamespacesMatch(<div {...expectHTML} />);
   });
 
-  it('should unwind namespaces on caught errors', () => {
+  it('should unwind namespaces on caught errors', async () => {
     function BrokenRender() {
       throw new Error('Hello');
     }
@@ -668,7 +663,7 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <svg {...expectSVG}>
         <foreignObject {...expectSVG}>
           <ErrorBoundary>
@@ -680,10 +675,10 @@ describe('ReactDOMFiber', () => {
         <image {...expectSVG} />
       </svg>,
     );
-    assertNamespacesMatch(<div {...expectHTML} />);
+    await assertNamespacesMatch(<div {...expectHTML} />);
   });
 
-  it('should unwind namespaces on caught errors in a portal', () => {
+  it('should unwind namespaces on caught errors in a portal', async () => {
     function BrokenRender() {
       throw new Error('Hello');
     }
@@ -701,7 +696,7 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    assertNamespacesMatch(
+    await assertNamespacesMatch(
       <svg {...expectSVG}>
         <ErrorBoundary>
           {usePortal(
@@ -717,7 +712,8 @@ describe('ReactDOMFiber', () => {
     );
   });
 
-  it('should pass portal context when rendering subtree elsewhere', () => {
+  // @gate !disableLegacyContext
+  it('should pass portal context when rendering subtree elsewhere', async () => {
     const portalContainer = document.createElement('div');
 
     class Component extends React.Component {
@@ -746,151 +742,58 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    ReactDOM.render(<Parent />, container);
+    await act(async () => {
+      root.render(<Parent />);
+    });
+    assertConsoleErrorDev([
+      'Parent uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Parent (at **)',
+      'Component uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Parent (at **)',
+    ]);
     expect(container.innerHTML).toBe('');
     expect(portalContainer.innerHTML).toBe('<div>bar</div>');
   });
 
-  it('should update portal context if it changes due to setState', () => {
-    const portalContainer = document.createElement('div');
-
-    class Component extends React.Component {
-      static contextTypes = {
-        foo: PropTypes.string.isRequired,
-        getFoo: PropTypes.func.isRequired,
-      };
-
-      render() {
-        return <div>{this.context.foo + '-' + this.context.getFoo()}</div>;
-      }
-    }
-
-    class Parent extends React.Component {
-      static childContextTypes = {
-        foo: PropTypes.string.isRequired,
-        getFoo: PropTypes.func.isRequired,
-      };
-
-      state = {
-        bar: 'initial',
-      };
-
-      getChildContext() {
-        return {
-          foo: this.state.bar,
-          getFoo: () => this.state.bar,
-        };
-      }
-
-      render() {
-        return ReactDOM.createPortal(<Component />, portalContainer);
-      }
-    }
-
-    const instance = ReactDOM.render(<Parent />, container);
-    expect(portalContainer.innerHTML).toBe('<div>initial-initial</div>');
-    expect(container.innerHTML).toBe('');
-    instance.setState({bar: 'changed'});
-    expect(portalContainer.innerHTML).toBe('<div>changed-changed</div>');
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('should update portal context if it changes due to re-render', () => {
-    const portalContainer = document.createElement('div');
-
-    class Component extends React.Component {
-      static contextTypes = {
-        foo: PropTypes.string.isRequired,
-        getFoo: PropTypes.func.isRequired,
-      };
-
-      render() {
-        return <div>{this.context.foo + '-' + this.context.getFoo()}</div>;
-      }
-    }
-
-    class Parent extends React.Component {
-      static childContextTypes = {
-        foo: PropTypes.string.isRequired,
-        getFoo: PropTypes.func.isRequired,
-      };
-
-      getChildContext() {
-        return {
-          foo: this.props.bar,
-          getFoo: () => this.props.bar,
-        };
-      }
-
-      render() {
-        return ReactDOM.createPortal(<Component />, portalContainer);
-      }
-    }
-
-    ReactDOM.render(<Parent bar="initial" />, container);
-    expect(portalContainer.innerHTML).toBe('<div>initial-initial</div>');
-    expect(container.innerHTML).toBe('');
-    ReactDOM.render(<Parent bar="changed" />, container);
-    expect(portalContainer.innerHTML).toBe('<div>changed-changed</div>');
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('findDOMNode should find dom element after expanding a fragment', () => {
-    class MyNode extends React.Component {
-      render() {
-        return !this.props.flag
-          ? [<div key="a" />]
-          : [<span key="b" />, <div key="a" />];
-      }
-    }
-
-    const myNodeA = ReactDOM.render(<MyNode />, container);
-    const a = ReactDOM.findDOMNode(myNodeA);
-    expect(a.tagName).toBe('DIV');
-
-    const myNodeB = ReactDOM.render(<MyNode flag={true} />, container);
-    expect(myNodeA === myNodeB).toBe(true);
-
-    const b = ReactDOM.findDOMNode(myNodeB);
-    expect(b.tagName).toBe('SPAN');
-  });
-
-  it('should bubble events from the portal to the parent', () => {
+  it('should bubble events from the portal to the parent', async () => {
     const portalContainer = document.createElement('div');
     document.body.appendChild(portalContainer);
     try {
-      const ops = [];
       let portal = null;
 
-      ReactDOM.render(
-        <div onClick={() => ops.push('parent clicked')}>
-          {ReactDOM.createPortal(
-            <div
-              onClick={() => ops.push('portal clicked')}
-              ref={n => (portal = n)}>
-              portal
-            </div>,
-            portalContainer,
-          )}
-        </div>,
-        container,
-      );
+      await act(() => {
+        root.render(
+          <div onClick={() => Scheduler.log('parent clicked')}>
+            {ReactDOM.createPortal(
+              <div
+                onClick={() => Scheduler.log('portal clicked')}
+                ref={n => (portal = n)}>
+                portal
+              </div>,
+              portalContainer,
+            )}
+          </div>,
+        );
+      });
 
       expect(portal.tagName).toBe('DIV');
 
-      portal.click();
+      await act(() => {
+        portal.click();
+      });
 
-      expect(ops).toEqual(['portal clicked', 'parent clicked']);
+      assertLog(['portal clicked', 'parent clicked']);
     } finally {
       document.body.removeChild(portalContainer);
     }
   });
 
-  it('should not onMouseLeave when staying in the portal', () => {
+  it('should not onMouseLeave when staying in the portal', async () => {
     const portalContainer = document.createElement('div');
     document.body.appendChild(portalContainer);
 
-    let ops = [];
     let firstTarget = null;
     let secondTarget = null;
     let thirdTarget = null;
@@ -917,42 +820,44 @@ describe('ReactDOMFiber', () => {
     }
 
     try {
-      ReactDOM.render(
-        <div>
-          <div
-            onMouseEnter={() => ops.push('enter parent')}
-            onMouseLeave={() => ops.push('leave parent')}>
-            <div ref={n => (firstTarget = n)} />
-            {ReactDOM.createPortal(
-              <div
-                onMouseEnter={() => ops.push('enter portal')}
-                onMouseLeave={() => ops.push('leave portal')}
-                ref={n => (secondTarget = n)}>
-                portal
-              </div>,
-              portalContainer,
-            )}
-          </div>
-          <div ref={n => (thirdTarget = n)} />
-        </div>,
-        container,
-      );
+      await act(() => {
+        root.render(
+          <div>
+            <div
+              onMouseEnter={() => Scheduler.log('enter parent')}
+              onMouseLeave={() => Scheduler.log('leave parent')}>
+              <div ref={n => (firstTarget = n)} />
+              {ReactDOM.createPortal(
+                <div
+                  onMouseEnter={() => Scheduler.log('enter portal')}
+                  onMouseLeave={() => Scheduler.log('leave portal')}
+                  ref={n => (secondTarget = n)}>
+                  portal
+                </div>,
+                portalContainer,
+              )}
+            </div>
+            <div ref={n => (thirdTarget = n)} />
+          </div>,
+        );
+      });
+      await act(() => {
+        simulateMouseMove(null, firstTarget);
+      });
+      assertLog(['enter parent']);
 
-      simulateMouseMove(null, firstTarget);
-      expect(ops).toEqual(['enter parent']);
-
-      ops = [];
-
-      simulateMouseMove(firstTarget, secondTarget);
-      expect(ops).toEqual([
+      await act(() => {
+        simulateMouseMove(firstTarget, secondTarget);
+      });
+      assertLog([
         // Parent did not invoke leave because we're still inside the portal.
         'enter portal',
       ]);
 
-      ops = [];
-
-      simulateMouseMove(secondTarget, thirdTarget);
-      expect(ops).toEqual([
+      await act(() => {
+        simulateMouseMove(secondTarget, thirdTarget);
+      });
+      assertLog([
         'leave portal',
         'leave parent', // Only when we leave the portal does onMouseLeave fire.
       ]);
@@ -962,8 +867,7 @@ describe('ReactDOMFiber', () => {
   });
 
   // Regression test for https://github.com/facebook/react/issues/19562
-  it('does not fire mouseEnter twice when relatedTarget is the root node', () => {
-    let ops = [];
+  it('does not fire mouseEnter twice when relatedTarget is the root node', async () => {
     let target = null;
 
     function simulateMouseMove(from, to) {
@@ -987,45 +891,57 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    ReactDOM.render(
-      <div
-        ref={n => (target = n)}
-        onMouseEnter={() => ops.push('enter')}
-        onMouseLeave={() => ops.push('leave')}
-      />,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div
+          ref={n => (target = n)}
+          onMouseEnter={() => Scheduler.log('enter')}
+          onMouseLeave={() => Scheduler.log('leave')}
+        />,
+      );
+    });
 
-    simulateMouseMove(null, container);
-    expect(ops).toEqual([]);
+    await act(() => {
+      simulateMouseMove(null, container);
+    });
+    assertLog([]);
 
-    ops = [];
-    simulateMouseMove(container, target);
-    expect(ops).toEqual(['enter']);
+    await act(() => {
+      simulateMouseMove(container, target);
+    });
+    assertLog(['enter']);
 
-    ops = [];
-    simulateMouseMove(target, container);
-    expect(ops).toEqual(['leave']);
+    await act(() => {
+      simulateMouseMove(target, container);
+    });
+    assertLog(['leave']);
 
-    ops = [];
-    simulateMouseMove(container, null);
-    expect(ops).toEqual([]);
+    await act(() => {
+      simulateMouseMove(container, null);
+    });
+    assertLog([]);
   });
 
-  it('listens to events that do not exist in the Portal subtree', () => {
+  it('listens to events that do not exist in the Portal subtree', async () => {
     const onClick = jest.fn();
 
     const ref = React.createRef();
-    ReactDOM.render(
-      <div onClick={onClick}>
-        {ReactDOM.createPortal(<button ref={ref}>click</button>, document.body)}
-      </div>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <div onClick={onClick}>
+          {ReactDOM.createPortal(
+            <button ref={ref}>click</button>,
+            document.body,
+          )}
+        </div>,
+      );
+    });
     const event = new MouseEvent('click', {
       bubbles: true,
     });
-    ref.current.dispatchEvent(event);
+    await act(() => {
+      ref.current.dispatchEvent(event);
+    });
 
     expect(onClick).toHaveBeenCalledTimes(1);
   });
@@ -1045,11 +961,14 @@ describe('ReactDOMFiber', () => {
         return <div onClick="woops" />;
       }
     }
-    expect(() => ReactDOM.render(<Example />, container)).toErrorDev(
+    ReactDOM.flushSync(() => {
+      root.render(<Example />);
+    });
+    assertConsoleErrorDev([
       'Expected `onClick` listener to be a function, instead got a value of `string` type.\n' +
         '    in div (at **)\n' +
         '    in Example (at **)',
-    );
+    ]);
   });
 
   it('should warn with a special message for `false` event listeners', () => {
@@ -1058,21 +977,21 @@ describe('ReactDOMFiber', () => {
         return <div onClick={false} />;
       }
     }
-    expect(() => ReactDOM.render(<Example />, container)).toErrorDev(
+    ReactDOM.flushSync(() => {
+      root.render(<Example />);
+    });
+    assertConsoleErrorDev([
       'Expected `onClick` listener to be a function, instead got `false`.\n\n' +
         'If you used to conditionally omit it with onClick={condition && value}, ' +
         'pass onClick={condition ? value : undefined} instead.\n' +
         '    in div (at **)\n' +
         '    in Example (at **)',
-    );
+    ]);
   });
 
-  it('should not update event handlers until commit', () => {
-    spyOnDev(console, 'error');
-
-    let ops = [];
-    const handlerA = () => ops.push('A');
-    const handlerB = () => ops.push('B');
+  it('should not update event handlers until commit', async () => {
+    const handlerA = () => Scheduler.log('A');
+    const handlerB = () => Scheduler.log('B');
 
     function click() {
       const event = new MouseEvent('click', {
@@ -1110,141 +1029,157 @@ describe('ReactDOMFiber', () => {
     }
 
     let inst;
-    ReactDOM.render([<Example key="a" ref={n => (inst = n)} />], container);
+    await act(() => {
+      root.render([<Example key="a" ref={n => (inst = n)} />]);
+    });
     const node = container.firstChild;
     expect(node.tagName).toEqual('DIV');
 
-    click();
+    await act(() => {
+      click();
+    });
 
-    expect(ops).toEqual(['A']);
-    ops = [];
+    assertLog(['A']);
 
     // Render with the other event handler.
-    inst.flip();
+    await act(() => {
+      inst.flip();
+    });
 
-    click();
+    await act(() => {
+      click();
+    });
 
-    expect(ops).toEqual(['B']);
-    ops = [];
+    assertLog(['B']);
 
     // Rerender without changing any props.
-    inst.tick();
+    await act(() => {
+      inst.tick();
+    });
 
-    click();
+    await act(() => {
+      click();
+    });
 
-    expect(ops).toEqual(['B']);
-    ops = [];
+    assertLog(['B']);
 
     // Render a flip back to the A handler. The second component invokes the
     // click handler during render to simulate a click during an aborted
     // render. I use this hack because at current time we don't have a way to
     // test aborted ReactDOM renders.
-    ReactDOM.render(
-      [<Example key="a" forceA={true} />, <Click key="b" />],
-      container,
-    );
+    await act(() => {
+      root.render([<Example key="a" forceA={true} />, <Click key="b" />]);
+    });
 
     // Because the new click handler has not yet committed, we should still
     // invoke B.
-    expect(ops).toEqual(['B']);
-    ops = [];
+    assertLog(['B']);
 
     // Any click that happens after commit, should invoke A.
-    click();
-    expect(ops).toEqual(['A']);
-
-    if (__DEV__) {
-      expect(console.error.calls.count()).toBe(2);
-      expect(console.error.calls.argsFor(0)[0]).toMatch(
-        'ReactDOM.render is no longer supported in React 18',
-      );
-      expect(console.error.calls.argsFor(1)[0]).toMatch(
-        'ReactDOM.render is no longer supported in React 18',
-      );
-    }
+    await act(() => {
+      click();
+    });
+    assertLog(['A']);
   });
 
-  it('should not crash encountering low-priority tree', () => {
-    ReactDOM.render(
-      <div hidden={true}>
-        <div />
-      </div>,
-      container,
-    );
+  it('should not crash encountering low-priority tree', async () => {
+    await act(() => {
+      root.render(
+        <div hidden={true}>
+          <div />
+        </div>,
+      );
+    });
+
+    expect(container.innerHTML).toBe('<div hidden=""><div></div></div>');
   });
 
-  it('should not warn when rendering into an empty container', () => {
-    ReactDOM.render(<div>foo</div>, container);
+  it('should not warn when rendering into an empty container', async () => {
+    await act(() => {
+      root.render(<div>foo</div>);
+    });
     expect(container.innerHTML).toBe('<div>foo</div>');
-    ReactDOM.render(null, container);
+    await act(() => {
+      root.render(null);
+    });
     expect(container.innerHTML).toBe('');
-    ReactDOM.render(<div>bar</div>, container);
+    await act(() => {
+      root.render(<div>bar</div>);
+    });
     expect(container.innerHTML).toBe('<div>bar</div>');
   });
 
-  it('should warn when replacing a container which was manually updated outside of React', () => {
+  it('should warn when replacing a container which was manually updated outside of React', async () => {
     // when not messing with the DOM outside of React
-    ReactDOM.render(<div key="1">foo</div>, container);
-    ReactDOM.render(<div key="1">bar</div>, container);
+    await act(() => {
+      root.render(<div key="1">foo</div>);
+    });
+    expect(container.innerHTML).toBe('<div>foo</div>');
+
+    await act(() => {
+      root.render(<div key="1">bar</div>);
+    });
     expect(container.innerHTML).toBe('<div>bar</div>');
+
     // then we mess with the DOM before an update
     // we know this will error - that is expected right now
     // It's an error of type 'NotFoundError' with no message
     container.innerHTML = '<div>MEOW.</div>';
 
-    expect(() => {
-      expect(() =>
-        ReactDOM.render(<div key="2">baz</div>, container),
-      ).toErrorDev(
-        'render(...): ' +
-          'It looks like the React-rendered content of this container was ' +
-          'removed without using React. This is not supported and will ' +
-          'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
-          'to empty a container.',
-        {withoutStack: true},
-      );
-    }).toThrowError();
+    await expect(async () => {
+      await act(() => {
+        ReactDOM.flushSync(() => {
+          root.render(<div key="2">baz</div>);
+        });
+      });
+    }).rejects.toThrow('The node to be removed is not a child of this node');
   });
 
-  it('should warn when doing an update to a container manually updated outside of React', () => {
+  it('should not warn when doing an update to a container manually updated outside of React', async () => {
     // when not messing with the DOM outside of React
-    ReactDOM.render(<div>foo</div>, container);
-    ReactDOM.render(<div>bar</div>, container);
+    await act(() => {
+      root.render(<div>foo</div>);
+    });
+    expect(container.innerHTML).toBe('<div>foo</div>');
+
+    await act(() => {
+      root.render(<div>bar</div>);
+    });
     expect(container.innerHTML).toBe('<div>bar</div>');
+
     // then we mess with the DOM before an update
     container.innerHTML = '<div>MEOW.</div>';
-    expect(() =>
-      ReactDOM.render(<div>baz</div>, container),
-    ).toErrorDev(
-      'render(...): ' +
-        'It looks like the React-rendered content of this container was ' +
-        'removed without using React. This is not supported and will ' +
-        'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
-        'to empty a container.',
-      {withoutStack: true},
-    );
+
+    await act(() => {
+      root.render(<div>baz</div>);
+    });
+    // TODO: why not, and no error?
+    expect(container.innerHTML).toBe('<div>MEOW.</div>');
   });
 
-  it('should warn when doing an update to a container manually cleared outside of React', () => {
+  it('should not warn when doing an update to a container manually cleared outside of React', async () => {
     // when not messing with the DOM outside of React
-    ReactDOM.render(<div>foo</div>, container);
-    ReactDOM.render(<div>bar</div>, container);
+    await act(() => {
+      root.render(<div>foo</div>);
+    });
+    expect(container.innerHTML).toBe('<div>foo</div>');
+
+    await act(() => {
+      root.render(<div>bar</div>);
+    });
     expect(container.innerHTML).toBe('<div>bar</div>');
+
     // then we mess with the DOM before an update
     container.innerHTML = '';
-    expect(() =>
-      ReactDOM.render(<div>baz</div>, container),
-    ).toErrorDev(
-      'render(...): ' +
-        'It looks like the React-rendered content of this container was ' +
-        'removed without using React. This is not supported and will ' +
-        'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
-        'to empty a container.',
-      {withoutStack: true},
-    );
+
+    await act(() => {
+      root.render(<div>baz</div>);
+    });
+    // TODO: why not, and no error?
+    expect(container.innerHTML).toBe('');
   });
 
-  it('should render a text component with a text DOM node on the same document as the container', () => {
+  it('should render a text component with a text DOM node on the same document as the container', async () => {
     // 1. Create a new document through the use of iframe
     // 2. Set up the spy to make asserts when a text component
     //    is rendered inside the iframe container
@@ -1261,12 +1196,15 @@ describe('ReactDOMFiber', () => {
     let actualDocument;
     let textNode;
 
-    spyOnDevAndProd(iframeContainer, 'appendChild').and.callFake(node => {
+    spyOnDevAndProd(iframeContainer, 'appendChild').mockImplementation(node => {
       actualDocument = node.ownerDocument;
       textNode = node;
     });
 
-    ReactDOM.render(textContent, iframeContainer);
+    const iFrameRoot = ReactDOMClient.createRoot(iframeContainer);
+    await act(() => {
+      iFrameRoot.render(textContent);
+    });
 
     expect(textNode.textContent).toBe(textContent);
     expect(actualDocument).not.toBe(document);
@@ -1274,16 +1212,19 @@ describe('ReactDOMFiber', () => {
     expect(iframeContainer.appendChild).toHaveBeenCalledTimes(1);
   });
 
-  it('should mount into a document fragment', () => {
+  it('should mount into a document fragment', async () => {
     const fragment = document.createDocumentFragment();
-    ReactDOM.render(<div>foo</div>, fragment);
+    const fragmentRoot = ReactDOMClient.createRoot(fragment);
+    await act(() => {
+      fragmentRoot.render(<div>foo</div>);
+    });
     expect(container.innerHTML).toBe('');
     container.appendChild(fragment);
     expect(container.innerHTML).toBe('<div>foo</div>');
   });
 
   // Regression test for https://github.com/facebook/react/issues/12643#issuecomment-413727104
-  it('should not diff memoized host components', () => {
+  it('should not diff memoized host components', async () => {
     const inputRef = React.createRef();
     let didCallOnChange = false;
 
@@ -1332,44 +1273,60 @@ describe('ReactDOMFiber', () => {
       }
     }
 
-    ReactDOM.render(<Parent />, container);
-    inputRef.current.dispatchEvent(
-      new MouseEvent('click', {
-        bubbles: true,
-      }),
-    );
+    await act(() => {
+      root.render(<Parent />);
+    });
+    await act(() => {
+      inputRef.current.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+        }),
+      );
+    });
     expect(didCallOnChange).toBe(true);
   });
 
-  it('unmounted legacy roots should never clear newer root content from a container', () => {
-    const ref = React.createRef();
+  it('should restore selection in the correct window', async () => {
+    // creating new JSDOM instance to get a second window as window.open is not implemented
+    // https://github.com/jsdom/jsdom/blob/c53efc81e75f38a0558fbf3ed75d30b78b4c4898/lib/jsdom/browser/Window.js#L987
+    const {window: newWindow} = new JSDOM('');
+    // creating a new container since the default cleanup expects the existing container to be in the document
+    const newContainer = newWindow.document.createElement('div');
+    newWindow.document.body.appendChild(newContainer);
+    root = ReactDOMClient.createRoot(newContainer);
 
-    function OldApp() {
-      const hideOnFocus = () => {
-        // This app unmounts itself inside of a focus event.
-        ReactDOM.unmountComponentAtNode(container);
+    const Test = () => {
+      const [reverse, setReverse] = React.useState(false);
+      const [items] = React.useState(() => ['a', 'b', 'c']);
+      const onClick = () => {
+        setReverse(true);
       };
 
+      // shuffle the items so that the react commit needs to restore focus
+      // to the correct element after commit
+      const itemsToRender = reverse ? items.reverse() : items;
+
       return (
-        <button onFocus={hideOnFocus} ref={ref}>
-          old
-        </button>
+        <div>
+          {itemsToRender.map(item => (
+            <button onClick={onClick} key={item} id={item}>
+              {item}
+            </button>
+          ))}
+        </div>
       );
-    }
+    };
 
-    function NewApp() {
-      return <button ref={ref}>new</button>;
-    }
+    await act(() => {
+      root.render(<Test />);
+    });
 
-    ReactDOM.render(<OldApp />, container);
-    ref.current.focus();
+    newWindow.document.getElementById('a').focus();
+    await act(() => {
+      newWindow.document.getElementById('a').click();
+    });
 
-    ReactDOM.render(<NewApp />, container);
-
-    // Calling focus again will flush previously scheduled discrete work for the old root-
-    // but this should not clear out the newly mounted app.
-    ref.current.focus();
-
-    expect(container.textContent).toBe('new');
+    expect(newWindow.document.activeElement).not.toBe(newWindow.document.body);
+    expect(newWindow.document.activeElement.innerHTML).toBe('a');
   });
 });

@@ -1,12 +1,12 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "React Developer Tools",
   "description": "Adds React debugging tools to the Firefox Developer Tools.",
-  "version": "4.26.1",
-  "applications": {
+  "version": "7.0.1",
+  "browser_specific_settings": {
     "gecko": {
       "id": "@react-devtools",
-      "strict_min_version": "55.0"
+      "strict_min_version": "128.0"
     }
   },
   "icons": {
@@ -15,25 +15,32 @@
     "48": "icons/48-production.png",
     "128": "icons/128-production.png"
   },
-  "browser_action": {
+  "action": {
     "default_icon": {
       "16": "icons/16-disabled.png",
       "32": "icons/32-disabled.png",
       "48": "icons/48-disabled.png",
       "128": "icons/128-disabled.png"
     },
-    "default_popup": "popups/disabled.html",
-    "browser_style": true
+    "default_popup": "popups/disabled.html"
   },
   "devtools_page": "main.html",
-  "content_security_policy": "script-src 'self' 'unsafe-eval' blob:; object-src 'self'",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "web_accessible_resources": [
-    "main.html",
-    "panel.html",
-    "build/react_devtools_backend.js",
-    "build/proxy.js",
-    "build/renderer.js",
-    "build/installHook.js"
+    {
+      "resources": [
+        "main.html",
+        "panel.html",
+        "build/*.js",
+        "build/*.js.map"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "extension_ids": []
+    }
   ],
   "background": {
     "scripts": [
@@ -41,10 +48,13 @@
     ]
   },
   "permissions": [
-    "file:///*",
-    "http://*/*",
-    "https://*/*",
+    "scripting",
+    "storage",
+    "tabs",
     "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "content_scripts": [
     {

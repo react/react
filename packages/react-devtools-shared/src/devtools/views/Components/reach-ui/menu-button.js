@@ -25,7 +25,7 @@ const MenuList = ({
 }): React.Node => {
   const style = useThemeStyles();
   return (
-    // $FlowFixMe unsafe spread
+    // $FlowFixMe[cannot-spread-inexact] unsafe spread
     <ReachMenuList style={style} {...props}>
       {children}
     </ReachMenuList>

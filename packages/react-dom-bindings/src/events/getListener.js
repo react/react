@@ -7,7 +7,7 @@
  */
 
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
-import type {Props} from '../client/ReactDOMHostConfig';
+import type {Props} from '../client/ReactFiberConfigDOM';
 
 import {getFiberCurrentPropsFromNode} from '../client/ReactDOMComponentTree';
 
@@ -62,6 +62,7 @@ export default function getListener(
     // Work in progress.
     return null;
   }
+  // $FlowFixMe[invalid-computed-prop]
   const listener = props[registrationName];
   if (shouldPreventMouseEvent(registrationName, inst.type, props)) {
     return null;

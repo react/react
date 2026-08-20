@@ -1,12 +1,6 @@
 const {resolve} = require('path');
-const {DefinePlugin} = require('webpack');
+const Webpack = require('webpack');
 const {
-  DARK_MODE_DIMMED_WARNING_COLOR,
-  DARK_MODE_DIMMED_ERROR_COLOR,
-  DARK_MODE_DIMMED_LOG_COLOR,
-  LIGHT_MODE_DIMMED_WARNING_COLOR,
-  LIGHT_MODE_DIMMED_ERROR_COLOR,
-  LIGHT_MODE_DIMMED_LOG_COLOR,
   GITHUB_URL,
   getVersionString,
 } = require('react-devtools-extensions/utils');
@@ -47,7 +41,7 @@ const babelOptions = {
 
 module.exports = {
   mode: __DEV__ ? 'development' : 'production',
-  devtool: __DEV__ ? 'cheap-module-eval-source-map' : 'source-map',
+  devtool: __DEV__ ? 'eval-cheap-module-source-map' : 'source-map',
   target: 'electron-main',
   entry: {
     standalone: './src/standalone.js',
@@ -56,8 +50,13 @@ module.exports = {
     path: __dirname + '/dist',
     filename: '[name].js',
     chunkFilename: '[name].chunk.js',
-    library: '[name]',
-    libraryTarget: 'commonjs2',
+    library: {
+      type: 'commonjs2',
+    },
+  },
+  externals: {
+    bufferutil: 'commonjs bufferutil',
+    'utf-8-validate': 'commonjs utf-8-validate',
   },
   resolve: {
     alias: {
@@ -75,26 +74,29 @@ module.exports = {
     // This would break the standalone DevTools ability to load the backend.
     // see https://github.com/facebook/react-devtools/issues/1269
     __dirname: false,
+
+    global: false,
   },
   plugins: [
-    new DefinePlugin({
+    new Webpack.ProvidePlugin({
+      process: 'process/browser',
+    }),
+    new Webpack.DefinePlugin({
       __DEV__,
       __EXPERIMENTAL__: true,
       __EXTENSION__: false,
       __PROFILE__: false,
       __TEST__: NODE_ENV === 'test',
+      __IS_NATIVE__: true,
+      __IS_FIREFOX__: false,
+      __IS_CHROME__: false,
+      __IS_EDGE__: false,
       'process.env.DEVTOOLS_PACKAGE': `"react-devtools-core"`,
       'process.env.DEVTOOLS_VERSION': `"${DEVTOOLS_VERSION}"`,
       'process.env.EDITOR_URL': EDITOR_URL != null ? `"${EDITOR_URL}"` : null,
       'process.env.GITHUB_URL': `"${GITHUB_URL}"`,
       'process.env.LOGGING_URL': `"${LOGGING_URL}"`,
       'process.env.NODE_ENV': `"${NODE_ENV}"`,
-      'process.env.DARK_MODE_DIMMED_WARNING_COLOR': `"${DARK_MODE_DIMMED_WARNING_COLOR}"`,
-      'process.env.DARK_MODE_DIMMED_ERROR_COLOR': `"${DARK_MODE_DIMMED_ERROR_COLOR}"`,
-      'process.env.DARK_MODE_DIMMED_LOG_COLOR': `"${DARK_MODE_DIMMED_LOG_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_WARNING_COLOR': `"${LIGHT_MODE_DIMMED_WARNING_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_ERROR_COLOR': `"${LIGHT_MODE_DIMMED_ERROR_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_LOG_COLOR': `"${LIGHT_MODE_DIMMED_LOG_COLOR}"`,
     }),
   ],
   module: {
@@ -105,6 +107,7 @@ module.exports = {
           {
             loader: 'workerize-loader',
             options: {
+              // Workers would have to be exposed on a public path in order to outline them.
               inline: true,
               name: '[name]',
             },

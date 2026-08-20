@@ -19,6 +19,9 @@ let allSchedulerTags;
 let allSchedulerTypes;
 let onCommitRootShouldYield;
 let act;
+let waitFor;
+let waitForAll;
+let assertLog;
 
 describe('updaters', () => {
   beforeEach(() => {
@@ -31,14 +34,13 @@ describe('updaters', () => {
 
     ReactFeatureFlags = require('shared/ReactFeatureFlags');
     ReactFeatureFlags.enableUpdaterTracking = true;
-    ReactFeatureFlags.debugRenderPhaseSideEffectsForStrictMode = false;
 
     mockDevToolsHook = {
       injectInternals: jest.fn(() => {}),
       isDevToolsPresent: true,
       onCommitRoot: jest.fn(fiberRoot => {
         if (onCommitRootShouldYield) {
-          Scheduler.unstable_yieldValue('onCommitRoot');
+          Scheduler.log('onCommitRoot');
         }
         const schedulerTags = [];
         const schedulerTypes = [];
@@ -81,11 +83,7 @@ describe('updaters', () => {
     };
 
     jest.mock(
-      'react-reconciler/src/ReactFiberDevToolsHook.old',
-      () => mockDevToolsHook,
-    );
-    jest.mock(
-      'react-reconciler/src/ReactFiberDevToolsHook.new',
+      'react-reconciler/src/ReactFiberDevToolsHook',
       () => mockDevToolsHook,
     );
 
@@ -94,7 +92,12 @@ describe('updaters', () => {
     ReactDOMClient = require('react-dom/client');
     Scheduler = require('scheduler');
 
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitFor = InternalTestUtils.waitFor;
+    waitForAll = InternalTestUtils.waitForAll;
+    assertLog = InternalTestUtils.assertLog;
   });
 
   it('should report the (host) root as the scheduler for root-level render', async () => {
@@ -102,17 +105,19 @@ describe('updaters', () => {
 
     const Parent = () => <Child />;
     const Child = () => null;
-    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
 
-    await act(async () => {
-      ReactDOM.render(<Parent />, container);
+    await act(() => {
+      root.render(<Parent />);
     });
     expect(allSchedulerTags).toEqual([[HostRoot]]);
+    assertLog(['onCommitRoot']);
 
-    await act(async () => {
-      ReactDOM.render(<Parent />, container);
+    await act(() => {
+      root.render(<Parent />);
     });
     expect(allSchedulerTags).toEqual([[HostRoot], [HostRoot]]);
+    assertLog(['onCommitRoot']);
   });
 
   it('should report a function component as the scheduler for a hooks update', async () => {
@@ -137,19 +142,21 @@ describe('updaters', () => {
     };
     const Child = () => null;
 
-    await act(async () => {
-      ReactDOM.render(<Parent />, document.createElement('div'));
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      root.render(<Parent />);
     });
     expect(scheduleForA).not.toBeNull();
     expect(scheduleForB).not.toBeNull();
     expect(allSchedulerTypes).toEqual([[null]]);
+    assertLog(['onCommitRoot']);
 
-    await act(async () => {
+    await act(() => {
       scheduleForA();
     });
     expect(allSchedulerTypes).toEqual([[null], [SchedulingComponentA]]);
-
-    await act(async () => {
+    assertLog(['onCommitRoot']);
+    await act(() => {
       scheduleForB();
     });
     expect(allSchedulerTypes).toEqual([
@@ -157,6 +164,7 @@ describe('updaters', () => {
       [SchedulingComponentA],
       [SchedulingComponentB],
     ]);
+    assertLog(['onCommitRoot']);
   });
 
   it('should report a class component as the scheduler for a setState update', async () => {
@@ -170,13 +178,14 @@ describe('updaters', () => {
     }
     const Child = () => null;
     let instance;
-    await act(async () => {
-      ReactDOM.render(<Parent />, document.createElement('div'));
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      root.render(<Parent />);
     });
     expect(allSchedulerTypes).toEqual([[null]]);
-
+    assertLog(['onCommitRoot']);
     expect(instance).not.toBeNull();
-    await act(async () => {
+    await act(() => {
       instance.setState({});
     });
     expect(allSchedulerTypes).toEqual([[null], [SchedulingComponent]]);
@@ -195,7 +204,7 @@ describe('updaters', () => {
     };
     const CascadingChild = ({cascade}) => {
       const [count, setCount] = React.useState(0);
-      Scheduler.unstable_yieldValue(`CascadingChild ${count}`);
+      Scheduler.log(`CascadingChild ${count}`);
       React.useLayoutEffect(() => {
         if (cascade === 'active') {
           setCount(prevCount => prevCount + 1);
@@ -214,10 +223,7 @@ describe('updaters', () => {
     const root = ReactDOMClient.createRoot(document.createElement('div'));
     await act(async () => {
       root.render(<Parent />);
-      expect(Scheduler).toFlushAndYieldThrough([
-        'CascadingChild 0',
-        'onCommitRoot',
-      ]);
+      await waitFor(['CascadingChild 0', 'onCommitRoot']);
     });
     expect(triggerActiveCascade).not.toBeNull();
     expect(triggerPassiveCascade).not.toBeNull();
@@ -225,7 +231,7 @@ describe('updaters', () => {
 
     await act(async () => {
       triggerActiveCascade();
-      expect(Scheduler).toFlushAndYieldThrough([
+      await waitFor([
         'CascadingChild 0',
         'onCommitRoot',
         'CascadingChild 1',
@@ -240,7 +246,7 @@ describe('updaters', () => {
 
     await act(async () => {
       triggerPassiveCascade();
-      expect(Scheduler).toFlushAndYieldThrough([
+      await waitFor([
         'CascadingChild 1',
         'onCommitRoot',
         'CascadingChild 2',
@@ -256,10 +262,13 @@ describe('updaters', () => {
     ]);
 
     // Verify no outstanding flushes
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
   });
 
-  it('should cover suspense pings', async done => {
+  // This test should be convertable to createRoot but the allScheduledTypes assertions are no longer the same
+  // So I'm leaving it in legacy mode for now and just disabling if legacy mode is turned off
+  // @gate !disableLegacyMode
+  it('should cover suspense pings', async () => {
     let data = null;
     let resolver = null;
     let promise = null;
@@ -293,17 +302,17 @@ describe('updaters', () => {
       }
     };
 
-    await act(async () => {
+    await act(() => {
       ReactDOM.render(<Parent />, document.createElement('div'));
-      expect(Scheduler).toHaveYielded(['onCommitRoot']);
+      assertLog(['onCommitRoot']);
     });
     expect(setShouldSuspend).not.toBeNull();
     expect(allSchedulerTypes).toEqual([[null]]);
 
-    await act(async () => {
+    await act(() => {
       setShouldSuspend(true);
     });
-    expect(Scheduler).toHaveYielded(['onCommitRoot']);
+    assertLog(['onCommitRoot']);
     expect(allSchedulerTypes).toEqual([[null], [Suspender]]);
 
     expect(resolver).not.toBeNull();
@@ -311,13 +320,11 @@ describe('updaters', () => {
       resolver('abc');
       return promise;
     });
-    expect(Scheduler).toHaveYielded(['onCommitRoot']);
+    assertLog(['onCommitRoot']);
     expect(allSchedulerTypes).toEqual([[null], [Suspender], [Suspender]]);
 
     // Verify no outstanding flushes
-    Scheduler.unstable_flushAll();
-
-    done();
+    await waitForAll([]);
   });
 
   it('should cover error handling', async () => {
@@ -349,7 +356,7 @@ describe('updaters', () => {
       }
     }
     const Yield = ({value}) => {
-      Scheduler.unstable_yieldValue(value);
+      Scheduler.log(value);
       return null;
     };
     const BrokenRender = () => {
@@ -357,23 +364,23 @@ describe('updaters', () => {
     };
 
     const root = ReactDOMClient.createRoot(document.createElement('div'));
-    await act(async () => {
+    await act(() => {
       root.render(<Parent shouldError={false} />);
     });
-    expect(Scheduler).toHaveYielded(['initial', 'onCommitRoot']);
+    assertLog(['initial', 'onCommitRoot']);
     expect(triggerError).not.toBeNull();
 
     allSchedulerTypes.splice(0);
     onCommitRootShouldYield = true;
 
-    await act(async () => {
+    await act(() => {
       triggerError();
     });
-    expect(Scheduler).toHaveYielded(['onCommitRoot', 'error', 'onCommitRoot']);
+    assertLog(['onCommitRoot', 'error', 'onCommitRoot']);
     expect(allSchedulerTypes).toEqual([[Parent], [ErrorBoundary]]);
 
     // Verify no outstanding flushes
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
   });
 
   it('should distinguish between updaters in the case of interleaved work', async () => {
@@ -388,7 +395,7 @@ describe('updaters', () => {
     const SyncPriorityUpdater = () => {
       const [count, setCount] = React.useState(0);
       triggerSyncPriorityUpdate = () => setCount(prevCount => prevCount + 1);
-      Scheduler.unstable_yieldValue(`SyncPriorityUpdater ${count}`);
+      Scheduler.log(`SyncPriorityUpdater ${count}`);
       return <Yield value={`HighPriority ${count}`} />;
     };
     const LowPriorityUpdater = () => {
@@ -398,11 +405,11 @@ describe('updaters', () => {
           setCount(prevCount => prevCount + 1);
         });
       };
-      Scheduler.unstable_yieldValue(`LowPriorityUpdater ${count}`);
+      Scheduler.log(`LowPriorityUpdater ${count}`);
       return <Yield value={`LowPriority ${count}`} />;
     };
     const Yield = ({value}) => {
-      Scheduler.unstable_yieldValue(`Yield ${value}`);
+      Scheduler.log(`Yield ${value}`);
       return null;
     };
 
@@ -415,7 +422,7 @@ describe('updaters', () => {
     );
 
     // Render everything initially.
-    expect(Scheduler).toFlushAndYield([
+    await waitForAll([
       'SyncPriorityUpdater 0',
       'Yield HighPriority 0',
       'LowPriorityUpdater 0',
@@ -427,14 +434,14 @@ describe('updaters', () => {
     expect(allSchedulerTags).toEqual([[HostRoot]]);
 
     // Render a partial update, but don't finish.
-    act(() => {
+    await act(async () => {
       triggerLowPriorityUpdate();
-      expect(Scheduler).toFlushAndYieldThrough(['LowPriorityUpdater 1']);
+      await waitFor(['LowPriorityUpdater 1']);
       expect(allSchedulerTags).toEqual([[HostRoot]]);
 
       // Interrupt with higher priority work.
       ReactDOM.flushSync(triggerSyncPriorityUpdate);
-      expect(Scheduler).toHaveYielded([
+      assertLog([
         'SyncPriorityUpdater 1',
         'Yield HighPriority 1',
         'onCommitRoot',
@@ -443,7 +450,7 @@ describe('updaters', () => {
 
       // Finish the initial partial update
       triggerLowPriorityUpdate();
-      expect(Scheduler).toFlushAndYield([
+      await waitForAll([
         'LowPriorityUpdater 2',
         'Yield LowPriority 2',
         'onCommitRoot',
@@ -461,6 +468,6 @@ describe('updaters', () => {
     ]);
 
     // Verify no outstanding flushes
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
   });
 });

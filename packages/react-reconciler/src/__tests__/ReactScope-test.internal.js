@@ -12,7 +12,7 @@
 let React;
 let ReactFeatureFlags;
 let ReactDOMServer;
-let Scheduler;
+let act;
 
 describe('ReactScope', () => {
   beforeEach(() => {
@@ -20,16 +20,16 @@ describe('ReactScope', () => {
     ReactFeatureFlags = require('shared/ReactFeatureFlags');
     ReactFeatureFlags.enableScopeAPI = true;
     React = require('react');
-    Scheduler = require('scheduler');
+
+    const InternalTestUtils = require('internal-test-utils');
+    act = InternalTestUtils.act;
   });
 
   describe('ReactDOM', () => {
-    let ReactDOM;
     let ReactDOMClient;
     let container;
 
     beforeEach(() => {
-      ReactDOM = require('react-dom');
       ReactDOMClient = require('react-dom/client');
       ReactDOMServer = require('react-dom/server');
       container = document.createElement('div');
@@ -41,8 +41,8 @@ describe('ReactScope', () => {
       container = null;
     });
 
-    // @gate www
-    it('DO_NOT_USE_queryAllNodes() works as intended', () => {
+    // @gate enableScopeAPI
+    it('DO_NOT_USE_queryAllNodes() works as intended', async () => {
       const testScopeQuery = (type, props) => true;
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
@@ -66,18 +66,28 @@ describe('ReactScope', () => {
         );
       }
 
-      ReactDOM.render(<Test toggle={true} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Test toggle={true} />);
+      });
+
       let nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(nodes).toEqual([divRef.current, spanRef.current, aRef.current]);
-      ReactDOM.render(<Test toggle={false} />, container);
+      await act(() => {
+        root.render(<Test toggle={false} />);
+      });
+
       nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(nodes).toEqual([aRef.current, divRef.current, spanRef.current]);
-      ReactDOM.render(null, container);
+      await act(() => {
+        root.render(null);
+      });
+
       expect(scopeRef.current).toBe(null);
     });
 
-    // @gate www
-    it('DO_NOT_USE_queryAllNodes() provides the correct host instance', () => {
+    // @gate enableScopeAPI
+    it('DO_NOT_USE_queryAllNodes() provides the correct host instance', async () => {
       const testScopeQuery = (type, props) => type === 'div';
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
@@ -101,7 +111,11 @@ describe('ReactScope', () => {
         );
       }
 
-      ReactDOM.render(<Test toggle={true} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Test toggle={true} />);
+      });
+
       let nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(nodes).toEqual([divRef.current]);
       let filterQuery = (type, props, instance) =>
@@ -113,18 +127,24 @@ describe('ReactScope', () => {
         testScopeQuery(type, props);
       nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(filterQuery);
       expect(nodes).toEqual([divRef.current, spanRef.current, aRef.current]);
-      ReactDOM.render(<Test toggle={false} />, container);
+      await act(() => {
+        root.render(<Test toggle={false} />);
+      });
+
       filterQuery = (type, props, instance) =>
         [spanRef.current, aRef.current].includes(instance) ||
         testScopeQuery(type, props);
       nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(filterQuery);
       expect(nodes).toEqual([aRef.current, divRef.current, spanRef.current]);
-      ReactDOM.render(null, container);
+      await act(() => {
+        root.render(null);
+      });
+
       expect(scopeRef.current).toBe(null);
     });
 
-    // @gate www
-    it('DO_NOT_USE_queryFirstNode() works as intended', () => {
+    // @gate enableScopeAPI
+    it('DO_NOT_USE_queryFirstNode() works as intended', async () => {
       const testScopeQuery = (type, props) => true;
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
@@ -148,18 +168,28 @@ describe('ReactScope', () => {
         );
       }
 
-      ReactDOM.render(<Test toggle={true} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Test toggle={true} />);
+      });
+
       let node = scopeRef.current.DO_NOT_USE_queryFirstNode(testScopeQuery);
       expect(node).toEqual(divRef.current);
-      ReactDOM.render(<Test toggle={false} />, container);
+      await act(() => {
+        root.render(<Test toggle={false} />);
+      });
+
       node = scopeRef.current.DO_NOT_USE_queryFirstNode(testScopeQuery);
       expect(node).toEqual(aRef.current);
-      ReactDOM.render(null, container);
+      await act(() => {
+        root.render(null);
+      });
+
       expect(scopeRef.current).toBe(null);
     });
 
-    // @gate www
-    it('containsNode() works as intended', () => {
+    // @gate enableScopeAPI
+    it('containsNode() works as intended', async () => {
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
       const divRef = React.createRef();
@@ -192,24 +222,34 @@ describe('ReactScope', () => {
         );
       }
 
-      ReactDOM.render(<Test toggle={true} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Test toggle={true} />);
+      });
+
       expect(scopeRef.current.containsNode(divRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(spanRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(aRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(outerSpan.current)).toBe(false);
       expect(scopeRef.current.containsNode(emRef.current)).toBe(false);
-      ReactDOM.render(<Test toggle={false} />, container);
+      await act(() => {
+        root.render(<Test toggle={false} />);
+      });
+
       expect(scopeRef.current.containsNode(divRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(spanRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(aRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(outerSpan.current)).toBe(false);
       expect(scopeRef.current.containsNode(emRef.current)).toBe(true);
-      ReactDOM.render(<Test toggle={true} />, container);
+      await act(() => {
+        root.render(<Test toggle={true} />);
+      });
+
       expect(scopeRef.current.containsNode(emRef.current)).toBe(false);
     });
 
-    // @gate www
-    it('scopes support server-side rendering and hydration', () => {
+    // @gate enableScopeAPI
+    it('scopes support server-side rendering and hydration', async () => {
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
       const divRef = React.createRef();
@@ -233,14 +273,16 @@ describe('ReactScope', () => {
         '<div><div>DIV</div><span>SPAN</span><a>A</a><div>Outside content!</div></div>',
       );
       container.innerHTML = html;
-      ReactDOM.hydrate(<Test />, container);
+      await act(() => {
+        ReactDOMClient.hydrateRoot(container, <Test />);
+      });
       const testScopeQuery = (type, props) => true;
       const nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(nodes).toEqual([divRef.current, spanRef.current, aRef.current]);
     });
 
-    // @gate www
-    it('getChildContextValues() works as intended', () => {
+    // @gate enableScopeAPI
+    it('getChildContextValues() works as intended', async () => {
       const TestContext = React.createContext();
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
@@ -258,17 +300,27 @@ describe('ReactScope', () => {
         );
       }
 
-      ReactDOM.render(<Test toggle={true} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Test toggle={true} />);
+      });
+
       let nodes = scopeRef.current.getChildContextValues(TestContext);
       expect(nodes).toEqual([1]);
-      ReactDOM.render(<Test toggle={false} />, container);
+      await act(() => {
+        root.render(<Test toggle={false} />);
+      });
+
       nodes = scopeRef.current.getChildContextValues(TestContext);
       expect(nodes).toEqual([1, 2]);
-      ReactDOM.render(null, container);
+      await act(() => {
+        root.render(null);
+      });
+
       expect(scopeRef.current).toBe(null);
     });
 
-    // @gate www
+    // @gate enableScopeAPI
     it('correctly works with suspended boundaries that are hydrated', async () => {
       let suspend = false;
       let resolve;
@@ -314,9 +366,7 @@ describe('ReactScope', () => {
       // On the client we don't have all data yet but we want to start
       // hydrating anyway.
       suspend = true;
-      ReactDOMClient.hydrateRoot(container2, <App />);
-      Scheduler.unstable_flushAll();
-      jest.runAllTimers();
+      await act(() => ReactDOMClient.hydrateRoot(container2, <App />));
 
       // This should not cause a runtime exception, see:
       // https://github.com/facebook/react/pull/18184
@@ -325,10 +375,10 @@ describe('ReactScope', () => {
 
       // Resolving the promise should continue hydration
       suspend = false;
-      resolve();
-      await promise;
-      Scheduler.unstable_flushAll();
-      jest.runAllTimers();
+      await act(async () => {
+        resolve();
+        await promise;
+      });
 
       // We should now have hydrated with a ref on the existing span.
       expect(ref.current).toBe(span);
@@ -342,8 +392,8 @@ describe('ReactScope', () => {
       ReactTestRenderer = require('react-test-renderer');
     });
 
-    // @gate www
-    it('DO_NOT_USE_queryAllNodes() works as intended', () => {
+    // @gate enableScopeAPI
+    it('DO_NOT_USE_queryAllNodes() works as intended', async () => {
       const testScopeQuery = (type, props) => true;
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
@@ -367,20 +417,25 @@ describe('ReactScope', () => {
         );
       }
 
-      const renderer = ReactTestRenderer.create(<Test toggle={true} />, {
-        createNodeMock: element => {
-          return element;
-        },
-      });
+      let renderer;
+      await act(
+        () =>
+          (renderer = ReactTestRenderer.create(<Test toggle={true} />, {
+            createNodeMock: element => {
+              return element;
+            },
+            unstable_isConcurrent: true,
+          })),
+      );
       let nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(nodes).toEqual([divRef.current, spanRef.current, aRef.current]);
-      renderer.update(<Test toggle={false} />);
+      await act(() => renderer.update(<Test toggle={false} />));
       nodes = scopeRef.current.DO_NOT_USE_queryAllNodes(testScopeQuery);
       expect(nodes).toEqual([aRef.current, divRef.current, spanRef.current]);
     });
 
-    // @gate www
-    it('DO_NOT_USE_queryFirstNode() works as intended', () => {
+    // @gate enableScopeAPI
+    it('DO_NOT_USE_queryFirstNode() works as intended', async () => {
       const testScopeQuery = (type, props) => true;
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
@@ -404,20 +459,26 @@ describe('ReactScope', () => {
         );
       }
 
-      const renderer = ReactTestRenderer.create(<Test toggle={true} />, {
-        createNodeMock: element => {
-          return element;
-        },
-      });
+      let renderer;
+      await act(
+        () =>
+          (renderer = ReactTestRenderer.create(<Test toggle={true} />, {
+            createNodeMock: element => {
+              return element;
+            },
+            unstable_isConcurrent: true,
+          })),
+      );
       let node = scopeRef.current.DO_NOT_USE_queryFirstNode(testScopeQuery);
       expect(node).toEqual(divRef.current);
-      renderer.update(<Test toggle={false} />);
+      await act(() => renderer.update(<Test toggle={false} />));
+
       node = scopeRef.current.DO_NOT_USE_queryFirstNode(testScopeQuery);
       expect(node).toEqual(aRef.current);
     });
 
-    // @gate www
-    it('containsNode() works as intended', () => {
+    // @gate enableScopeAPI
+    it('containsNode() works as intended', async () => {
       const TestScope = React.unstable_Scope;
       const scopeRef = React.createRef();
       const divRef = React.createRef();
@@ -450,23 +511,28 @@ describe('ReactScope', () => {
         );
       }
 
-      const renderer = ReactTestRenderer.create(<Test toggle={true} />, {
-        createNodeMock: element => {
-          return element;
-        },
-      });
+      let renderer;
+      await act(
+        () =>
+          (renderer = ReactTestRenderer.create(<Test toggle={true} />, {
+            createNodeMock: element => {
+              return element;
+            },
+            unstable_isConcurrent: true,
+          })),
+      );
       expect(scopeRef.current.containsNode(divRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(spanRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(aRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(outerSpan.current)).toBe(false);
       expect(scopeRef.current.containsNode(emRef.current)).toBe(false);
-      renderer.update(<Test toggle={false} />);
+      await act(() => renderer.update(<Test toggle={false} />));
       expect(scopeRef.current.containsNode(divRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(spanRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(aRef.current)).toBe(true);
       expect(scopeRef.current.containsNode(outerSpan.current)).toBe(false);
       expect(scopeRef.current.containsNode(emRef.current)).toBe(true);
-      renderer.update(<Test toggle={true} />);
+      await act(() => renderer.update(<Test toggle={true} />));
       expect(scopeRef.current.containsNode(emRef.current)).toBe(false);
     });
   });

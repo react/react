@@ -14,15 +14,15 @@ describe('EventPluginRegistry', () => {
   let createPlugin;
 
   beforeEach(() => {
-    jest.resetModuleRegistry();
+    jest.resetModules();
     // These tests are intentionally testing the private injection interface.
     // The public API surface of this is covered by other tests so
     // if `EventPluginRegistry` is ever deleted, these tests should be
     // safe to remove too.
     EventPluginRegistry = require('react-native-renderer/src/legacy-events/EventPluginRegistry');
 
-    createPlugin = function(properties) {
-      return Object.assign({extractEvents: function() {}}, properties);
+    createPlugin = function (properties) {
+      return Object.assign({extractEvents: function () {}}, properties);
     };
   });
 
@@ -92,7 +92,7 @@ describe('EventPluginRegistry', () => {
 
     EventPluginRegistry.injectEventPluginOrder(['bad']);
 
-    expect(function() {
+    expect(function () {
       EventPluginRegistry.injectEventPluginsByName({
         bad: BadPlugin,
       });
@@ -108,7 +108,7 @@ describe('EventPluginRegistry', () => {
 
     EventPluginRegistry.injectEventPluginOrder(['one']);
 
-    expect(function() {
+    expect(function () {
       EventPluginRegistry.injectEventPluginsByName({
         one: OnePlugin,
         random: RandomPlugin,
@@ -124,7 +124,7 @@ describe('EventPluginRegistry', () => {
 
     EventPluginRegistry.injectEventPluginOrder(pluginOrdering);
 
-    expect(function() {
+    expect(function () {
       EventPluginRegistry.injectEventPluginOrder(pluginOrdering);
     }).toThrowError(
       'EventPluginRegistry: Cannot inject event plugin ordering more than ' +
@@ -138,7 +138,7 @@ describe('EventPluginRegistry', () => {
 
     EventPluginRegistry.injectEventPluginsByName({same: OnePlugin});
 
-    expect(function() {
+    expect(function () {
       EventPluginRegistry.injectEventPluginsByName({same: TwoPlugin});
     }).toThrowError(
       'EventPluginRegistry: Cannot inject two different event plugins using ' +
@@ -208,7 +208,7 @@ describe('EventPluginRegistry', () => {
       two: TwoPlugin,
     });
 
-    expect(function() {
+    expect(function () {
       EventPluginRegistry.injectEventPluginOrder(['one', 'two']);
     }).toThrowError(
       'EventPluginRegistry: More than one plugin attempted to publish the same ' +
@@ -227,7 +227,7 @@ describe('EventPluginRegistry', () => {
 
     EventPluginRegistry.injectEventPluginsByName({one: OnePlugin});
 
-    expect(function() {
+    expect(function () {
       EventPluginRegistry.injectEventPluginOrder(['one']);
     }).toThrowError(
       'EventPluginRegistry: Failed to publish event `badEvent` for plugin ' +

@@ -1,3 +1,12 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @noflow
+ */
+
 import * as React from 'react';
 import {createRoot} from 'react-dom/client';
 import {
@@ -34,6 +43,12 @@ function init(appIframe, devtoolsContainer, appSource) {
       }
 
       wall._listeners.push(listener);
+      return () => {
+        const index = wall._listeners.indexOf(listener);
+        if (index !== -1) {
+          wall._listeners.splice(index, 1);
+        }
+      };
     },
     send(event, payload) {
       if (__DEBUG__) {

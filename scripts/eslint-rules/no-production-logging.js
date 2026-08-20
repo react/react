@@ -14,7 +14,7 @@ module.exports = {
     fixable: 'code',
     schema: [],
   },
-  create: function(context) {
+  create: function (context) {
     function isInDEVBlock(node) {
       let done = false;
       while (!done) {
@@ -43,7 +43,7 @@ module.exports = {
         data: {
           identifier: node.property.name,
         },
-        fix: function(fixer) {
+        fix: function (fixer) {
           return [
             fixer.insertTextBefore(node.parent, `if (__DEV__) {`),
             fixer.insertTextAfter(node.parent, '}'),
@@ -60,7 +60,7 @@ module.exports = {
     }
 
     return {
-      MemberExpression: function(node) {
+      MemberExpression: function (node) {
         if (
           node.object.type === 'Identifier' &&
           node.object.name === 'console' &&

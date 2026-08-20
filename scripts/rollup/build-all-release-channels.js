@@ -7,20 +7,21 @@ const fse = require('fs-extra');
 const {spawnSync} = require('child_process');
 const path = require('path');
 const tmp = require('tmp');
-
+const shell = require('shelljs');
 const {
   ReactVersion,
   stablePackages,
   experimentalPackages,
-  nextChannelLabel,
+  canaryChannelLabel,
+  rcNumber,
 } = require('../../ReactVersions');
+const yargs = require('yargs');
+const Bundles = require('./bundles');
 
 // Runs the build script for both stable and experimental release channels,
 // by configuring an environment variable.
 
-const sha = String(
-  spawnSync('git', ['show', '-s', '--no-show-signature', '--format=%h']).stdout
-).trim();
+const sha = String(spawnSync('git', ['rev-parse', 'HEAD']).stdout).slice(0, 8);
 
 let dateString = String(
   spawnSync('git', [
@@ -35,7 +36,7 @@ let dateString = String(
 
 // On CI environment, this string is wrapped with quotes '...'s
 if (dateString.startsWith("'")) {
-  dateString = dateString.substr(1, 8);
+  dateString = dateString.slice(1, 9);
 }
 
 // Build the artifacts using a placeholder React version. We'll then do a string
@@ -43,7 +44,7 @@ if (dateString.startsWith("'")) {
 //
 // The placeholder version is the same format that the "next" channel uses
 const PLACEHOLDER_REACT_VERSION =
-  ReactVersion + '-' + nextChannelLabel + '-' + sha + '-' + dateString;
+  ReactVersion + '-' + canaryChannelLabel + '-' + sha + '-' + dateString;
 
 // TODO: We should inject the React version using a build-time parameter
 // instead of overwriting the source files.
@@ -52,67 +53,141 @@ fs.writeFileSync(
   `export default '${PLACEHOLDER_REACT_VERSION}';\n`
 );
 
-if (process.env.CIRCLE_NODE_TOTAL) {
-  // In CI, we use multiple concurrent processes. Allocate half the processes to
-  // build the stable channel, and the other half for experimental. Override
-  // the environment variables to "trick" the underlying build script.
-  const total = parseInt(process.env.CIRCLE_NODE_TOTAL, 10);
-  const halfTotal = Math.floor(total / 2);
-  const index = parseInt(process.env.CIRCLE_NODE_INDEX, 10);
-  if (index < halfTotal) {
-    const nodeTotal = halfTotal;
-    const nodeIndex = index;
-    buildForChannel('stable', nodeTotal, nodeIndex);
-    processStable('./build');
+const argv = yargs.wrap(yargs.terminalWidth()).options({
+  releaseChannel: {
+    alias: 'r',
+    describe: 'Build the given release channel.',
+    requiresArg: true,
+    type: 'string',
+    choices: ['experimental', 'stable'],
+  },
+  index: {
+    alias: 'i',
+    describe: 'Worker id.',
+    requiresArg: true,
+    type: 'number',
+  },
+  total: {
+    alias: 't',
+    describe: 'Total number of workers.',
+    requiresArg: true,
+    type: 'number',
+  },
+  ci: {
+    describe: 'Run tests in CI',
+    requiresArg: false,
+    type: 'boolean',
+    default: false,
+  },
+  type: {
+    describe: `Build the given bundle type. (${Object.values(
+      Bundles.bundleTypes
+    )})`,
+    requiresArg: false,
+    type: 'string',
+  },
+  pretty: {
+    describe: 'Force pretty output.',
+    requiresArg: false,
+    type: 'boolean',
+  },
+  'sync-fbsource': {
+    describe: 'Include to sync build to fbsource.',
+    requiresArg: false,
+    type: 'string',
+  },
+  'sync-www': {
+    describe: 'Include to sync build to www.',
+    requiresArg: false,
+    type: 'string',
+  },
+  'unsafe-partial': {
+    describe: 'Do not clean ./build first.',
+    requiresArg: false,
+    type: 'boolean',
+  },
+}).argv;
+
+async function main() {
+  if (argv.ci === true) {
+    buildForChannel(argv.releaseChannel, argv.total, argv.index);
+    switch (argv.releaseChannel) {
+      case 'stable': {
+        processStable('./build');
+        break;
+      }
+      case 'experimental': {
+        processExperimental('./build');
+        break;
+      }
+      default:
+        throw new Error(`Unknown release channel ${argv.releaseChannel}`);
+    }
   } else {
-    const nodeTotal = total - halfTotal;
-    const nodeIndex = index - halfTotal;
-    buildForChannel('experimental', nodeTotal, nodeIndex);
-    processExperimental('./build');
+    const releaseChannel = argv.releaseChannel;
+    if (releaseChannel === 'stable') {
+      buildForChannel('stable', '', '');
+      processStable('./build');
+    } else if (releaseChannel === 'experimental') {
+      buildForChannel('experimental', '', '');
+      processExperimental('./build');
+    } else {
+      // Running locally, no concurrency. Move each channel's build artifacts into
+      // a temporary directory so that they don't conflict.
+      buildForChannel('stable', '', '');
+      const stableDir = tmp.dirSync().name;
+      crossDeviceRenameSync('./build', stableDir);
+      processStable(stableDir);
+      buildForChannel('experimental', '', '');
+      const experimentalDir = tmp.dirSync().name;
+      crossDeviceRenameSync('./build', experimentalDir);
+      processExperimental(experimentalDir);
+
+      // Then merge the experimental folder into the stable one. processExperimental
+      // will have already removed conflicting files.
+      //
+      // In CI, merging is handled by the GitHub Download Artifacts plugin.
+      mergeDirsSync(experimentalDir + '/', stableDir + '/');
+
+      // Now restore the combined directory back to its original name
+      crossDeviceRenameSync(stableDir, './build');
+    }
   }
-} else {
-  // Running locally, no concurrency. Move each channel's build artifacts into
-  // a temporary directory so that they don't conflict.
-  buildForChannel('stable', '', '');
-  const stableDir = tmp.dirSync().name;
-  crossDeviceRenameSync('./build', stableDir);
-  processStable(stableDir);
-  buildForChannel('experimental', '', '');
-  const experimentalDir = tmp.dirSync().name;
-  crossDeviceRenameSync('./build', experimentalDir);
-  processExperimental(experimentalDir);
-
-  // Then merge the experimental folder into the stable one. processExperimental
-  // will have already removed conflicting files.
-  //
-  // In CI, merging is handled automatically by CircleCI's workspace feature.
-  mergeDirsSync(experimentalDir + '/', stableDir + '/');
-
-  // Now restore the combined directory back to its original name
-  crossDeviceRenameSync(stableDir, './build');
 }
 
-function buildForChannel(channel, nodeTotal, nodeIndex) {
-  spawnSync('node', ['./scripts/rollup/build.js', ...process.argv.slice(2)], {
-    stdio: ['pipe', process.stdout, process.stderr],
-    env: {
-      ...process.env,
-      RELEASE_CHANNEL: channel,
-      CIRCLE_NODE_TOTAL: nodeTotal,
-      CIRCLE_NODE_INDEX: nodeIndex,
-    },
-  });
+function buildForChannel(channel, total, index) {
+  const {status} = spawnSync(
+    'node',
+    ['./scripts/rollup/build.js', ...process.argv.slice(2)],
+    {
+      stdio: ['pipe', process.stdout, process.stderr],
+      env: {
+        ...process.env,
+        RELEASE_CHANNEL: channel,
+        CI_TOTAL: total,
+        CI_INDEX: index,
+      },
+    }
+  );
+
+  if (status !== 0) {
+    // Error of spawned process is already piped to this stderr
+    process.exit(status);
+  }
 }
 
 function processStable(buildDir) {
   if (fs.existsSync(buildDir + '/node_modules')) {
     // Identical to `oss-stable` but with real, semver versions. This is what
     // will get published to @latest.
-    spawnSync('cp', [
-      '-r',
-      buildDir + '/node_modules',
-      buildDir + '/oss-stable-semver',
-    ]);
+    shell.cp('-r', buildDir + '/node_modules', buildDir + '/oss-stable-semver');
+    if (canaryChannelLabel === 'rc') {
+      // During the RC phase, we also generate an RC build that pins to exact
+      // versions but does not include a SHA, e.g. `19.0.0-rc.0`. This is purely
+      // for signaling purposes — aside from the version, it's no different from
+      // the corresponding canary.
+      shell.cp('-r', buildDir + '/node_modules', buildDir + '/oss-stable-rc');
+    }
 
     const defaultVersionIfNotFound = '0.0.0' + '-' + sha + '-' + dateString;
     const versionsMap = new Map();
@@ -120,7 +195,7 @@ function processStable(buildDir) {
       const version = stablePackages[moduleName];
       versionsMap.set(
         moduleName,
-        version + '-' + nextChannelLabel + '-' + sha + '-' + dateString,
+        version + '-' + canaryChannelLabel + '-' + sha + '-' + dateString,
         defaultVersionIfNotFound
       );
     }
@@ -133,8 +208,56 @@ function processStable(buildDir) {
     fs.renameSync(buildDir + '/node_modules', buildDir + '/oss-stable');
     updatePlaceholderReactVersionInCompiledArtifacts(
       buildDir + '/oss-stable',
-      ReactVersion + '-' + nextChannelLabel + '-' + sha + '-' + dateString
+      ReactVersion + '-' + canaryChannelLabel + '-' + sha + '-' + dateString
     );
+
+    if (canaryChannelLabel === 'rc') {
+      const rcVersionsMap = new Map();
+      for (const moduleName in stablePackages) {
+        const version = stablePackages[moduleName];
+        rcVersionsMap.set(moduleName, version + `-rc.${rcNumber}`);
+      }
+      updatePackageVersions(
+        buildDir + '/oss-stable-rc',
+        rcVersionsMap,
+        defaultVersionIfNotFound,
+        // For RCs, we pin to exact versions, like we do for canaries.
+        true
+      );
+      updatePlaceholderReactVersionInCompiledArtifacts(
+        buildDir + '/oss-stable-rc',
+        ReactVersion
+      );
+    }
+
+    const rnVersionString =
+      ReactVersion + '-native-fb-' + sha + '-' + dateString;
+    if (fs.existsSync(buildDir + '/facebook-react-native')) {
+      updatePlaceholderReactVersionInCompiledArtifacts(
+        buildDir + '/facebook-react-native',
+        rnVersionString
+      );
+
+      // Also save a file with the version number.
+      fs.writeFileSync(
+        buildDir + '/facebook-react-native/VERSION_NATIVE_FB',
+        rnVersionString
+      );
+    }
+
+    if (fs.existsSync(buildDir + '/react-native')) {
+      updatePlaceholderReactVersionInCompiledArtifacts(
+        buildDir + '/react-native',
+        rnVersionString,
+        filename => filename.endsWith('.fb.js')
+      );
+
+      updatePlaceholderReactVersionInCompiledArtifacts(
+        buildDir + '/react-native',
+        ReactVersion,
+        filename => !filename.endsWith('.fb.js') && filename.endsWith('.js')
+      );
+    }
 
     // Now do the semver ones
     const semverVersionsMap = new Map();
@@ -146,6 +269,7 @@ function processStable(buildDir) {
       buildDir + '/oss-stable-semver',
       semverVersionsMap,
       defaultVersionIfNotFound,
+      // Use ^ only for non-prerelease versions
       false
     );
     updatePlaceholderReactVersionInCompiledArtifacts(
@@ -162,10 +286,14 @@ function processStable(buildDir) {
         fs.renameSync(filePath, filePath.replace('.js', '.classic.js'));
       }
     }
+    const versionString =
+      ReactVersion + '-www-classic-' + sha + '-' + dateString;
     updatePlaceholderReactVersionInCompiledArtifacts(
       buildDir + '/facebook-www',
-      ReactVersion + '-www-classic-' + sha + '-' + dateString
+      versionString
     );
+    // Also save a file with the version number
+    fs.writeFileSync(buildDir + '/facebook-www/VERSION_CLASSIC', versionString);
   }
 
   if (fs.existsSync(buildDir + '/sizes')) {
@@ -208,14 +336,48 @@ function processExperimental(buildDir, version) {
         fs.renameSync(filePath, filePath.replace('.js', '.modern.js'));
       }
     }
+    const versionString =
+      ReactVersion + '-www-modern-' + sha + '-' + dateString;
     updatePlaceholderReactVersionInCompiledArtifacts(
       buildDir + '/facebook-www',
-      ReactVersion + '-www-modern-' + sha + '-' + dateString
+      versionString
+    );
+
+    // Also save a file with the version number
+    fs.writeFileSync(buildDir + '/facebook-www/VERSION_MODERN', versionString);
+  }
+
+  const rnVersionString = ReactVersion + '-native-fb-' + sha + '-' + dateString;
+  if (fs.existsSync(buildDir + '/facebook-react-native')) {
+    updatePlaceholderReactVersionInCompiledArtifacts(
+      buildDir + '/facebook-react-native',
+      rnVersionString
+    );
+    // NOTE: VERSION_NATIVE_FB is written in processStable
+  }
+
+  if (fs.existsSync(buildDir + '/react-native')) {
+    updatePlaceholderReactVersionInCompiledArtifacts(
+      buildDir + '/react-native',
+      rnVersionString,
+      filename => filename.endsWith('.fb.js')
+    );
+
+    updatePlaceholderReactVersionInCompiledArtifacts(
+      buildDir + '/react-native',
+      ReactVersion,
+      filename => !filename.endsWith('.fb.js') && filename.endsWith('.js')
     );
   }
 
   if (fs.existsSync(buildDir + '/sizes')) {
     fs.renameSync(buildDir + '/sizes', buildDir + '/sizes-experimental');
+  }
+  if (fs.existsSync(buildDir + '/bundle-sizes.json')) {
+    fs.renameSync(
+      buildDir + '/bundle-sizes.json',
+      buildDir + '/bundle-sizes-experimental.json'
+    );
   }
 
   // Delete all other artifacts that weren't handled above. We assume they are
@@ -228,7 +390,10 @@ function processExperimental(buildDir, version) {
       pathName !== 'facebook-www' &&
       pathName !== 'sizes-experimental'
     ) {
-      spawnSync('rm', ['-rm', buildDir + '/' + pathName]);
+      fs.rmSync(path.join(buildDir, pathName), {
+        recursive: true,
+        force: true,
+      });
     }
   }
 }
@@ -305,10 +470,15 @@ function updatePackageVersions(
 
 function updatePlaceholderReactVersionInCompiledArtifacts(
   artifactsDirectory,
-  newVersion
+  newVersion,
+  filteringClosure
 ) {
   // Update the version of React in the compiled artifacts by searching for
   // the placeholder string and replacing it with a new one.
+  if (filteringClosure == null) {
+    filteringClosure = filename => filename.endsWith('.js');
+  }
+
   const artifactFilenames = String(
     spawnSync('grep', [
       '-lr',
@@ -319,11 +489,11 @@ function updatePlaceholderReactVersionInCompiledArtifacts(
   )
     .trim()
     .split('\n')
-    .filter(filename => filename.endsWith('.js'));
+    .filter(filteringClosure);
 
   for (const artifactFilename of artifactFilenames) {
     const originalText = fs.readFileSync(artifactFilename, 'utf8');
-    const replacedText = originalText.replace(
+    const replacedText = originalText.replaceAll(
       PLACEHOLDER_REACT_VERSION,
       newVersion
     );
@@ -350,3 +520,5 @@ function mergeDirsSync(source, destination) {
     }
   }
 }
+
+main();

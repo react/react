@@ -16,6 +16,7 @@ import Button from './Button';
 import ButtonIcon from './ButtonIcon';
 import {copy} from 'clipboard-js';
 import styles from './UnsupportedBridgeProtocolDialog.css';
+import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
 
 import type {BridgeProtocol} from 'react-devtools-shared/src/bridge';
 
@@ -82,7 +83,10 @@ function DialogContent({
         <pre className={styles.NpmCommand}>
           {upgradeInstructions}
           <Button
-            onClick={() => copy(upgradeInstructions)}
+            onClick={withPermissionsCheck(
+              {permissions: ['clipboardWrite']},
+              () => copy(upgradeInstructions),
+            )}
             title="Copy upgrade command to clipboard">
             <ButtonIcon type="copy" />
           </Button>
@@ -99,7 +103,10 @@ function DialogContent({
         <pre className={styles.NpmCommand}>
           {downgradeInstructions}
           <Button
-            onClick={() => copy(downgradeInstructions)}
+            onClick={withPermissionsCheck(
+              {permissions: ['clipboardWrite']},
+              () => copy(downgradeInstructions),
+            )}
             title="Copy downgrade command to clipboard">
             <ButtonIcon type="copy" />
           </Button>

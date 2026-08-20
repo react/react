@@ -1,0 +1,23 @@
+{
+  "extends": "@tsconfig/strictest/tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": true,
+    "outDir": "dist",
+    "jsx": "react-jsxdev",
+    "lib": ["ES2022"],
+
+    // weaken strictness from preset
+    "importsNotUsedAsValues": "remove",
+    "noUncheckedIndexedAccess": false,
+    "noUnusedParameters": false,
+    "useUnknownInCatchVariables": false,
+    "target": "ES2015",
+    // ideally turn off only during dev, or on a per-file basis
+    "noUnusedLocals": false,
+    "sourceMap": true
+  },
+  "exclude": ["node_modules"],
+  "include": ["src/**/*.ts"],
+}

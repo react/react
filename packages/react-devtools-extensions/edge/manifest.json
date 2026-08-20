@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "React Developer Tools",
   "description": "Adds React debugging tools to the Microsoft Edge Developer Tools.",
-  "version": "4.26.1",
-  "version_name": "4.26.1",
-  "minimum_chrome_version": "88",
+  "version": "7.0.1",
+  "version_name": "7.0.1",
+  "minimum_chrome_version": "114",
   "icons": {
     "16": "icons/16-production.png",
     "32": "icons/32-production.png",
@@ -29,10 +29,7 @@
       "resources": [
         "main.html",
         "panel.html",
-        "build/react_devtools_backend.js",
-        "build/proxy.js",
-        "build/renderer.js",
-        "build/installHook.js"
+        "build/*.js"
       ],
       "matches": [
         "<all_urls>"
@@ -44,8 +41,12 @@
     "service_worker": "build/background.js"
   },
   "permissions": [
+    "scripting",
     "storage",
-    "scripting"
+    "tabs"
+  ],
+  "optional_permissions": [
+    "clipboardWrite"
   ],
   "host_permissions": [
     "<all_urls>"

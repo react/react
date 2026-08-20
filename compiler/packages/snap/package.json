@@ -1,0 +1,65 @@
+{
+  "name": "snap",
+  "version": "0.0.1",
+  "public": false,
+  "description": "Snapshot testing CLI tool",
+  "main": "dist/main.js",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "postinstall": "./scripts/link-react-compiler-runtime.sh && perl -p -i -e 's/react\\.element/react.transitional.element/' ../../node_modules/fbt/lib/FbtReactUtil.js && perl -p -i -e 's/didWarnAboutUsingAct = false;/didWarnAboutUsingAct = true;/' ../../node_modules/react-dom/cjs/react-dom-test-utils.development.js",
+    "build": "rimraf dist && concurrently -n snap,runtime \"tsc --build\" \"yarn --silent workspace react-compiler-runtime build\"",
+    "snap": "node dist/main.js",
+    "test": "echo 'no tests'",
+    "prettier": "prettier --write 'src/**/*.ts'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/snap"
+  },
+  "dependencies": {
+    "@babel/code-frame": "^7.22.5",
+    "@babel/generator": "^7.19.1",
+    "@babel/plugin-syntax-jsx": "^7.18.6",
+    "@babel/preset-flow": "^7.7.4",
+    "@babel/preset-typescript": "^7.26.0",
+    "@parcel/watcher": "^2.1.0",
+    "@testing-library/react": "^13.4.0",
+    "babel-plugin-idx": "^3.0.3",
+    "babel-plugin-syntax-hermes-parser": "^0.25.1",
+    "chalk": "4",
+    "fbt": "^1.0.2",
+    "glob": "^10.3.10",
+    "hermes-parser": "^0.32.0",
+    "jsdom": "^22.1.0",
+    "react": "0.0.0-experimental-4beb1fd8-20241118",
+    "react-dom": "0.0.0-experimental-4beb1fd8-20241118",
+    "readline": "^1.3.0",
+    "yargs": "^17.7.1",
+    "zod": "^3.25.0 || ^4.0.0",
+    "zod-validation-error": "^3.5.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.19.1",
+    "@babel/parser": "^7.20.15",
+    "@babel/plugin-transform-modules-commonjs": "^7.18.6",
+    "@babel/preset-react": "^7.18.6",
+    "@babel/traverse": "^7.19.1",
+    "@types/babel__code-frame": "^7.0.6",
+    "@types/fbt": "^1.0.4",
+    "@types/glob": "^8.1.0",
+    "@types/node": "^18.7.18",
+    "@typescript-eslint/eslint-plugin": "^7.4.0",
+    "@typescript-eslint/parser": "^7.4.0",
+    "object-assign": "^4.1.1"
+  },
+  "resolutions": {
+    "./**/@babel/parser": "7.7.4",
+    "./**/@babel/types": "7.7.4",
+    "@babel/generator": "7.2.0",
+    "@babel/preset-flow": "7.22.5"
+  }
+}

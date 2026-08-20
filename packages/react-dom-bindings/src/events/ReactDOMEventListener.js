@@ -10,23 +10,30 @@
 import type {EventPriority} from 'react-reconciler/src/ReactEventPriorities';
 import type {AnyNativeEvent} from '../events/PluginModuleType';
 import type {Fiber, FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
-import type {Container, SuspenseInstance} from '../client/ReactDOMHostConfig';
+import type {
+  Container,
+  ActivityInstance,
+  SuspenseInstance,
+} from '../client/ReactFiberConfigDOM';
 import type {DOMEventName} from '../events/DOMEventNames';
-import {enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay} from 'shared/ReactFeatureFlags';
+
 import {
   isDiscreteEventThatRequiresHydration,
-  queueDiscreteEvent,
-  hasQueuedDiscreteEvents,
   clearIfContinuousEvent,
   queueIfContinuousEvent,
-  attemptSynchronousHydration,
 } from './ReactDOMEventReplaying';
+import {attemptSynchronousHydration} from 'react-reconciler/src/ReactFiberReconciler';
 import {
   getNearestMountedFiber,
   getContainerFromFiber,
+  getActivityInstanceFromFiber,
   getSuspenseInstanceFromFiber,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
-import {HostRoot, SuspenseComponent} from 'react-reconciler/src/ReactWorkTags';
+import {
+  HostRoot,
+  ActivityComponent,
+  SuspenseComponent,
+} from 'react-reconciler/src/ReactWorkTags';
 import {type EventSystemFlags, IS_CAPTURE_PHASE} from './EventSystemFlags';
 
 import getEventTarget from './getEventTarget';
@@ -36,6 +43,10 @@ import {
 } from '../client/ReactDOMComponentTree';
 
 import {dispatchEventForPluginEventSystem} from './DOMPluginEventSystem';
+import {
+  getCurrentUpdatePriority,
+  setCurrentUpdatePriority,
+} from '../client/ReactDOMUpdatePriority';
 
 import {
   getCurrentPriorityLevel as getCurrentSchedulerPriorityLevel,
@@ -50,16 +61,12 @@ import {
   ContinuousEventPriority,
   DefaultEventPriority,
   IdleEventPriority,
-  getCurrentUpdatePriority,
-  setCurrentUpdatePriority,
 } from 'react-reconciler/src/ReactEventPriorities';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {isRootDehydrated} from 'react-reconciler/src/ReactFiberShellHydration';
 
-const {ReactCurrentBatchConfig} = ReactSharedInternals;
-
 // TODO: can we stop exporting these?
-export let _enabled: boolean = true;
+let _enabled: boolean = true;
 
 // This is exported in FB builds for use by legacy FB layer infra.
 // We'd like to remove this but it's not clear if this is safe.
@@ -112,38 +119,38 @@ export function createEventListenerWrapperWithPriority(
 }
 
 function dispatchDiscreteEvent(
-  domEventName,
-  eventSystemFlags,
-  container,
-  nativeEvent,
+  domEventName: DOMEventName,
+  eventSystemFlags: EventSystemFlags,
+  container: EventTarget,
+  nativeEvent: AnyNativeEvent,
 ) {
+  const prevTransition = ReactSharedInternals.T;
+  ReactSharedInternals.T = null;
   const previousPriority = getCurrentUpdatePriority();
-  const prevTransition = ReactCurrentBatchConfig.transition;
-  ReactCurrentBatchConfig.transition = null;
   try {
     setCurrentUpdatePriority(DiscreteEventPriority);
     dispatchEvent(domEventName, eventSystemFlags, container, nativeEvent);
   } finally {
     setCurrentUpdatePriority(previousPriority);
-    ReactCurrentBatchConfig.transition = prevTransition;
+    ReactSharedInternals.T = prevTransition;
   }
 }
 
 function dispatchContinuousEvent(
-  domEventName,
-  eventSystemFlags,
-  container,
-  nativeEvent,
+  domEventName: DOMEventName,
+  eventSystemFlags: EventSystemFlags,
+  container: EventTarget,
+  nativeEvent: AnyNativeEvent,
 ) {
+  const prevTransition = ReactSharedInternals.T;
+  ReactSharedInternals.T = null;
   const previousPriority = getCurrentUpdatePriority();
-  const prevTransition = ReactCurrentBatchConfig.transition;
-  ReactCurrentBatchConfig.transition = null;
   try {
     setCurrentUpdatePriority(ContinuousEventPriority);
     dispatchEvent(domEventName, eventSystemFlags, container, nativeEvent);
   } finally {
     setCurrentUpdatePriority(previousPriority);
-    ReactCurrentBatchConfig.transition = prevTransition;
+    ReactSharedInternals.T = prevTransition;
   }
 }
 
@@ -156,125 +163,8 @@ export function dispatchEvent(
   if (!_enabled) {
     return;
   }
-  if (enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay) {
-    dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay(
-      domEventName,
-      eventSystemFlags,
-      targetContainer,
-      nativeEvent,
-    );
-  } else {
-    dispatchEventOriginal(
-      domEventName,
-      eventSystemFlags,
-      targetContainer,
-      nativeEvent,
-    );
-  }
-}
 
-function dispatchEventOriginal(
-  domEventName: DOMEventName,
-  eventSystemFlags: EventSystemFlags,
-  targetContainer: EventTarget,
-  nativeEvent: AnyNativeEvent,
-) {
-  // TODO: replaying capture phase events is currently broken
-  // because we used to do it during top-level native bubble handlers
-  // but now we use different bubble and capture handlers.
-  // In eager mode, we attach capture listeners early, so we need
-  // to filter them out until we fix the logic to handle them correctly.
-  const allowReplay = (eventSystemFlags & IS_CAPTURE_PHASE) === 0;
-
-  if (
-    allowReplay &&
-    hasQueuedDiscreteEvents() &&
-    isDiscreteEventThatRequiresHydration(domEventName)
-  ) {
-    // If we already have a queue of discrete events, and this is another discrete
-    // event, then we can't dispatch it regardless of its target, since they
-    // need to dispatch in order.
-    queueDiscreteEvent(
-      null, // Flags that we're not actually blocked on anything as far as we know.
-      domEventName,
-      eventSystemFlags,
-      targetContainer,
-      nativeEvent,
-    );
-    return;
-  }
-
-  const blockedOn = findInstanceBlockingEvent(
-    domEventName,
-    eventSystemFlags,
-    targetContainer,
-    nativeEvent,
-  );
-  if (blockedOn === null) {
-    dispatchEventForPluginEventSystem(
-      domEventName,
-      eventSystemFlags,
-      nativeEvent,
-      return_targetInst,
-      targetContainer,
-    );
-    if (allowReplay) {
-      clearIfContinuousEvent(domEventName, nativeEvent);
-    }
-    return;
-  }
-
-  if (allowReplay) {
-    if (isDiscreteEventThatRequiresHydration(domEventName)) {
-      // This to be replayed later once the target is available.
-      queueDiscreteEvent(
-        blockedOn,
-        domEventName,
-        eventSystemFlags,
-        targetContainer,
-        nativeEvent,
-      );
-      return;
-    }
-    if (
-      queueIfContinuousEvent(
-        blockedOn,
-        domEventName,
-        eventSystemFlags,
-        targetContainer,
-        nativeEvent,
-      )
-    ) {
-      return;
-    }
-    // We need to clear only if we didn't queue because
-    // queueing is accumulative.
-    clearIfContinuousEvent(domEventName, nativeEvent);
-  }
-
-  // This is not replayable so we'll invoke it but without a target,
-  // in case the event system needs to trace it.
-  dispatchEventForPluginEventSystem(
-    domEventName,
-    eventSystemFlags,
-    nativeEvent,
-    null,
-    targetContainer,
-  );
-}
-
-function dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay(
-  domEventName: DOMEventName,
-  eventSystemFlags: EventSystemFlags,
-  targetContainer: EventTarget,
-  nativeEvent: AnyNativeEvent,
-) {
-  let blockedOn = findInstanceBlockingEvent(
-    domEventName,
-    eventSystemFlags,
-    targetContainer,
-    nativeEvent,
-  );
+  let blockedOn = findInstanceBlockingEvent(nativeEvent);
   if (blockedOn === null) {
     dispatchEventForPluginEventSystem(
       domEventName,
@@ -312,12 +202,7 @@ function dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEve
       if (fiber !== null) {
         attemptSynchronousHydration(fiber);
       }
-      const nextBlockedOn = findInstanceBlockingEvent(
-        domEventName,
-        eventSystemFlags,
-        targetContainer,
-        nativeEvent,
-      );
+      const nextBlockedOn = findInstanceBlockingEvent(nativeEvent);
       if (nextBlockedOn === null) {
         dispatchEventForPluginEventSystem(
           domEventName,
@@ -349,22 +234,25 @@ function dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEve
   );
 }
 
+export function findInstanceBlockingEvent(
+  nativeEvent: AnyNativeEvent,
+): null | Container | SuspenseInstance | ActivityInstance {
+  const nativeEventTarget = getEventTarget(nativeEvent);
+  return findInstanceBlockingTarget(nativeEventTarget);
+}
+
 export let return_targetInst: null | Fiber = null;
 
-// Returns a SuspenseInstance or Container if it's blocked.
+// Returns a SuspenseInstance, ActivityInstance or Container if it's blocked.
 // The return_targetInst field above is conceptually part of the return value.
-export function findInstanceBlockingEvent(
-  domEventName: DOMEventName,
-  eventSystemFlags: EventSystemFlags,
-  targetContainer: EventTarget,
-  nativeEvent: AnyNativeEvent,
-): null | Container | SuspenseInstance {
+export function findInstanceBlockingTarget(
+  targetNode: Node,
+): null | Container | SuspenseInstance | ActivityInstance {
   // TODO: Warn if _enabled is false.
 
   return_targetInst = null;
 
-  const nativeEventTarget = getEventTarget(nativeEvent);
-  let targetInst = getClosestInstanceFromNode(nativeEventTarget);
+  let targetInst = getClosestInstanceFromNode(targetNode);
 
   if (targetInst !== null) {
     const nearestMounted = getNearestMountedFiber(targetInst);
@@ -375,6 +263,19 @@ export function findInstanceBlockingEvent(
       const tag = nearestMounted.tag;
       if (tag === SuspenseComponent) {
         const instance = getSuspenseInstanceFromFiber(nearestMounted);
+        if (instance !== null) {
+          // Queue the event to be replayed later. Abort dispatching since we
+          // don't want this event dispatched twice through the event system.
+          // TODO: If this is the first discrete event in the queue. Schedule an increased
+          // priority for this boundary.
+          return instance;
+        }
+        // This shouldn't happen, something went wrong but to avoid blocking
+        // the whole system, dispatch the event without a target.
+        // TODO: Warn.
+        targetInst = null;
+      } else if (tag === ActivityComponent) {
+        const instance = getActivityInstanceFromFiber(nearestMounted);
         if (instance !== null) {
           // Queue the event to be replayed later. Abort dispatching since we
           // don't want this event dispatched twice through the event system.
@@ -411,6 +312,7 @@ export function findInstanceBlockingEvent(
 export function getEventPriority(domEventName: DOMEventName): EventPriority {
   switch (domEventName) {
     // Used by SimpleEventPlugin:
+    case 'beforetoggle':
     case 'cancel':
     case 'click':
     case 'close':
@@ -439,30 +341,28 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'pointerup':
     case 'ratechange':
     case 'reset':
-    case 'resize':
     case 'seeked':
     case 'submit':
+    case 'toggle':
     case 'touchcancel':
     case 'touchend':
     case 'touchstart':
     case 'volumechange':
-    // Used by polyfills:
-    // eslint-disable-next-line no-fallthrough
+    // Used by polyfills: (fall through)
     case 'change':
     case 'selectionchange':
     case 'textInput':
     case 'compositionstart':
     case 'compositionend':
     case 'compositionupdate':
-    // Only enableCreateEventHandleAPI:
-    // eslint-disable-next-line no-fallthrough
+    // Only enableCreateEventHandleAPI: (fall through)
     case 'beforeblur':
     case 'afterblur':
-    // Not used by React but could be by user code:
-    // eslint-disable-next-line no-fallthrough
+    // Not used by React but could be by user code: (fall through)
     case 'beforeinput':
     case 'blur':
     case 'fullscreenchange':
+    case 'fullscreenerror':
     case 'focus':
     case 'hashchange':
     case 'popstate':
@@ -480,12 +380,11 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'pointermove':
     case 'pointerout':
     case 'pointerover':
+    case 'resize':
     case 'scroll':
-    case 'toggle':
     case 'touchmove':
     case 'wheel':
-    // Not used by React but could be by user code:
-    // eslint-disable-next-line no-fallthrough
+    // Not used by React but could be by user code: (fall through)
     case 'mouseenter':
     case 'mouseleave':
     case 'pointerenter':

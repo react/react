@@ -1,0 +1,52 @@
+{
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git"
+  },
+  "scripts": {
+    "copyright": "node scripts/copyright.js",
+    "hash": "scripts/hash.sh",
+    "start": "yarn workspace playground run start",
+    "next": "yarn workspace playground run dev",
+    "build": "yarn workspaces run build",
+    "dev": "cd apps/playground && yarn dev",
+    "test": "yarn workspaces run test",
+    "snap": "yarn workspace babel-plugin-react-compiler run snap",
+    "snap:build": "yarn workspace snap run build",
+    "npm:publish": "node scripts/release/publish",
+    "eslint-docs": "yarn workspace babel-plugin-react-compiler build && node scripts/build-eslint-docs.js"
+  },
+  "dependencies": {
+    "fs-extra": "^4.0.2",
+    "react-is": "0.0.0-experimental-4beb1fd8-20241118"
+  },
+  "devDependencies": {
+    "@babel/types": "^7.26.0",
+    "@tsconfig/strictest": "^2.0.5",
+    "concurrently": "^7.4.0",
+    "esbuild": "^0.25.0",
+    "folder-hash": "^4.0.4",
+    "npm-dts": "^1.3.13",
+    "object-assign": "^4.1.1",
+    "ora": "5.4.1",
+    "prettier": "^3.3.3",
+    "prettier-plugin-hermes-parser": "^0.26.0",
+    "prompt-promise": "^1.0.3",
+    "rimraf": "^6.0.1",
+    "to-fast-properties": "^2.0.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.4.3",
+    "wait-on": "^7.2.0",
+    "yargs": "^17.7.2"
+  },
+  "resolutions": {
+    "@babel/types": "7.26.3"
+  },
+  "packageManager": "yarn@1.22.22"
+}

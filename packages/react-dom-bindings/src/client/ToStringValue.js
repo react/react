@@ -12,6 +12,7 @@ import {checkFormFieldValueStringCoercion} from 'shared/CheckStringCoercion';
 export opaque type ToStringValue =
   | boolean
   | number
+  | bigint
   | Object
   | string
   | null
@@ -23,11 +24,12 @@ export opaque type ToStringValue =
 export function toString(value: ToStringValue): string {
   // The coercion safety check is performed in getToStringValue().
   // eslint-disable-next-line react-internal/safe-string-coercion
-  return '' + (value: any);
+  return '' + (value as any);
 }
 
 export function getToStringValue(value: mixed): ToStringValue {
   switch (typeof value) {
+    case 'bigint':
     case 'boolean':
     case 'number':
     case 'string':

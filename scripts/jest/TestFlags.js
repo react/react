@@ -50,9 +50,6 @@ const environmentFlags = {
   FIXME: false,
   TODO: false,
 
-  // Turn these flags back on (or delete) once the effect list is removed in
-  // favor of a depth-first traversal using `subtreeTags`.
-  dfsEffectsRefactor: true,
   enableUseJSStackToTrackPassiveDurations: false,
 };
 
@@ -63,33 +60,47 @@ function getTestFlags() {
   const schedulerFeatureFlags = require('scheduler/src/SchedulerFeatureFlags');
 
   const www = global.__WWW__ === true;
+  const xplat = global.__XPLAT__ === true;
   const releaseChannel = www
     ? __EXPERIMENTAL__
       ? 'modern'
       : 'classic'
     : __EXPERIMENTAL__
-    ? 'experimental'
-    : 'stable';
+      ? 'experimental'
+      : 'stable';
 
   // Return a proxy so we can throw if you attempt to access a flag that
   // doesn't exist.
   return new Proxy(
     {
-      // Feature flag aliases
-      old: featureFlags.enableNewReconciler === false,
-      new: featureFlags.enableNewReconciler === true,
-
       channel: releaseChannel,
       modern: releaseChannel === 'modern',
       classic: releaseChannel === 'classic',
       source: !process.env.IS_BUILD,
       www,
+      fb: www || xplat,
 
-      // This isn't a flag, just a useful alias for tests.
-      enableUseSyncExternalStoreShim: !__VARIANT__,
-      enableSuspenseList: releaseChannel === 'experimental' || www,
-      enableOffscreen: releaseChannel === 'experimental' || www,
+      // These aren't flags, just a useful aliases for tests.
+      enableSuspenseList: releaseChannel === 'experimental' || www || xplat,
       enableLegacyHidden: www,
+      // TODO: Suspending the work loop during the render phase is currently
+      // not compatible with sibling prerendering. We will add this optimization
+      // back in a later step.
+      enableSuspendingDuringWorkLoop: false,
+
+      // This flag is used to determine whether we should run Fizz tests using
+      // the external runtime or the inline script runtime.
+      // For Meta we use variant to gate the feature. For OSS we use experimental
+      shouldUseFizzExternalRuntime: !featureFlags.enableFizzExternalRuntime
+        ? false
+        : www
+          ? __VARIANT__
+          : __EXPERIMENTAL__,
+
+      // This is used by useSyncExternalStoresShared-test.js to decide whether
+      // to test the shim or the native implementation of useSES.
+
+      enableUseSyncExternalStoreShim: !__VARIANT__,
 
       // If there's a naming conflict between scheduler and React feature flags, the
       // React ones take precedence.

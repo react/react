@@ -87,7 +87,31 @@ This will ensure the developer tools are connected. **Don’t forget to remove i
 
 ## Advanced
 
-By default DevTools listen to port `8097` on `localhost`. If you need to customize host, port, or other settings, see the `react-devtools-core` package instead.
+By default DevTools listen to port `8097` on `localhost`. If you need to customize the server or client connection settings, the following environment variables are available:
+
+| Env Var | Default | Description |
+|---|---|---|
+| `HOST` | `"localhost"` | Host the local server binds to. |
+| `PORT` | `8097` | Port the local server listens on. |
+| `REACT_DEVTOOLS_PORT` | | Alias for `PORT`. Takes precedence if both are set. |
+| `KEY` | | Path to an SSL key file. Enables HTTPS when set alongside `CERT`. |
+| `CERT` | | Path to an SSL certificate file. Enables HTTPS when set alongside `KEY`. |
+| `REACT_DEVTOOLS_PATH` | | Path appended to the WebSocket URI served to clients (e.g. `/__react_devtools__/`). |
+| `REACT_DEVTOOLS_CLIENT_HOST` | `HOST` | Overrides the host in the script served to connecting clients. |
+| `REACT_DEVTOOLS_CLIENT_PORT` | `PORT` | Overrides the port in the script served to connecting clients. |
+| `REACT_DEVTOOLS_CLIENT_USE_HTTPS` | | Set to `"true"` to make the served client script use `wss://`. |
+
+When connecting through a reverse proxy, use the `REACT_DEVTOOLS_CLIENT_*` variables to tell clients to connect to a different host/port/protocol than the local server:
+
+```sh
+REACT_DEVTOOLS_CLIENT_HOST=remote.example.com \
+REACT_DEVTOOLS_CLIENT_PORT=443 \
+REACT_DEVTOOLS_CLIENT_USE_HTTPS=true \
+REACT_DEVTOOLS_PATH=/__react_devtools__/ \
+react-devtools
+```
+
+For more details, see the [`react-devtools-core` documentation](https://github.com/facebook/react/tree/main/packages/react-devtools-core).
 
 ## FAQ
 
@@ -105,12 +129,17 @@ Or you could develop with a local HTTP server like [`serve`](https://www.npmjs.c
 
 **If your app is inside an iframe, a Chrome extension, React Native, or in another unusual environment**, try [the standalone version instead](https://github.com/facebook/react/tree/main/packages/react-devtools). Chrome apps are currently not inspectable.
 
-**If your Components tab is empty, refer to "Chrome v101 and earlier" section below**, please read the "the issue with Chrome v101 and earlier versions" part below.
+**If your Components tab is empty, refer to "The React tab shows no components" section below**.
 
 **If you still have issues** please [report them](https://github.com/facebook/react/issues/new?labels=Component:%20Developer%20Tools). Don't forget to specify your OS, browser version, extension version, and the exact instructions to reproduce the issue with a screenshot.
 
-### The Issue with Chrome v101 and earlier
-As we migrate to a Chrome Extension Manifest V3, we start to use a new method to hook the DevTools with the inspected page. This new method is more secure, but relies on a new API that's only supported in Chrome v102+. For Chrome v101 or earlier, we use a fallback method, which can cause malfunctions (e.g. empty React component tab) if the JS resources on your page is loaded from cache. Please upgrade to Chrome v102+ to avoid this issue.
+### The React tab shows no components
+
+#### The Issue with Chrome v101 and earlier
+As we migrate to a Chrome Extension Manifest V3, we start to use a new method to hook the DevTools with the inspected page. This new method is more secure, but relies on a new API that's only supported in Chrome v102+. For Chrome v101 or earlier, we use a fallback method, which can cause malfunctions (e.g. failure to load React Elements in the Components tab) if the JS resources on your page is loaded from cache. Please upgrade to Chrome v102+ to avoid this issue.
+
+#### Service Worker malfunction
+Go to chrome://extensions. If you see "service worker (inactive)" in the React Developer Tools extension, try disabling and re-enabling the extension. This will restart the service worker. Then go to the page you want to inspect, close the DevTools, and reload the page. Open the DevTools again and the React components tab should be working.
 
 ## Local development
 The standalone DevTools app can be built and tested from source following the instructions below.

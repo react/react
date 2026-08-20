@@ -1,0 +1,36 @@
+{
+  "name": "flight-parcel",
+  "private": true,
+  "source": "src/server.tsx",
+  "server": "dist/server.js",
+  "targets": {
+    "server": {
+      "context": "react-server",
+      "includeNodeModules": {
+        "express": false
+      }
+    }
+  },
+  "scripts": {
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "prebuild": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "dev": "parcel",
+    "build": "parcel build",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@types/parcel-env": "^0.0.6",
+    "@types/express": "*",
+    "@types/node": "^22.10.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^7.3.0",
+    "express": "^4.18.2",
+    "parcel": "canary",
+    "process": "^0.11.10",
+    "react": "experimental",
+    "react-dom": "experimental",
+    "react-server-dom-parcel": "experimental",
+    "rsc-html-stream": "^0.0.4"
+  }
+}

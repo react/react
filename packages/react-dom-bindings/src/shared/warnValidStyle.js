@@ -5,29 +5,27 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-let warnValidStyle = () => {};
+// 'msTransform' is correct, but the other prefixes should be capitalized
+const badVendoredStyleNamePattern = /^(?:webkit|moz|o)[A-Z]/;
+const msPattern = /^-ms-/;
+const hyphenPattern = /-(.)/g;
 
-if (__DEV__) {
-  // 'msTransform' is correct, but the other prefixes should be capitalized
-  const badVendoredStyleNamePattern = /^(?:webkit|moz|o)[A-Z]/;
-  const msPattern = /^-ms-/;
-  const hyphenPattern = /-(.)/g;
+// style values shouldn't contain a semicolon
+const badStyleValueWithSemicolonPattern = /;\s*$/;
 
-  // style values shouldn't contain a semicolon
-  const badStyleValueWithSemicolonPattern = /;\s*$/;
+const warnedStyleNames = {};
+const warnedStyleValues = {};
+let warnedForNaNValue = false;
+let warnedForInfinityValue = false;
 
-  const warnedStyleNames = {};
-  const warnedStyleValues = {};
-  let warnedForNaNValue = false;
-  let warnedForInfinityValue = false;
+function camelize(string) {
+  return string.replace(hyphenPattern, function (_, character) {
+    return character.toUpperCase();
+  });
+}
 
-  const camelize = function(string) {
-    return string.replace(hyphenPattern, function(_, character) {
-      return character.toUpperCase();
-    });
-  };
-
-  const warnHyphenatedStyleName = function(name) {
+function warnHyphenatedStyleName(name) {
+  if (__DEV__) {
     if (warnedStyleNames.hasOwnProperty(name) && warnedStyleNames[name]) {
       return;
     }
@@ -41,9 +39,11 @@ if (__DEV__) {
       // is converted to lowercase `ms`.
       camelize(name.replace(msPattern, 'ms-')),
     );
-  };
+  }
+}
 
-  const warnBadVendoredStyleName = function(name) {
+function warnBadVendoredStyleName(name) {
+  if (__DEV__) {
     if (warnedStyleNames.hasOwnProperty(name) && warnedStyleNames[name]) {
       return;
     }
@@ -54,9 +54,11 @@ if (__DEV__) {
       name,
       name.charAt(0).toUpperCase() + name.slice(1),
     );
-  };
+  }
+}
 
-  const warnStyleValueWithSemicolon = function(name, value) {
+function warnStyleValueWithSemicolon(name, value) {
+  if (__DEV__) {
     if (warnedStyleValues.hasOwnProperty(value) && warnedStyleValues[value]) {
       return;
     }
@@ -68,9 +70,11 @@ if (__DEV__) {
       name,
       value.replace(badStyleValueWithSemicolonPattern, ''),
     );
-  };
+  }
+}
 
-  const warnStyleValueIsNaN = function(name, value) {
+function warnStyleValueIsNaN(name, value) {
+  if (__DEV__) {
     if (warnedForNaNValue) {
       return;
     }
@@ -80,9 +84,11 @@ if (__DEV__) {
       '`NaN` is an invalid value for the `%s` css style property.',
       name,
     );
-  };
+  }
+}
 
-  const warnStyleValueIsInfinity = function(name, value) {
+function warnStyleValueIsInfinity(name, value) {
+  if (__DEV__) {
     if (warnedForInfinityValue) {
       return;
     }
@@ -92,9 +98,11 @@ if (__DEV__) {
       '`Infinity` is an invalid value for the `%s` css style property.',
       name,
     );
-  };
+  }
+}
 
-  warnValidStyle = function(name, value) {
+function warnValidStyle(name, value) {
+  if (__DEV__) {
     if (name.indexOf('-') > -1) {
       warnHyphenatedStyleName(name);
     } else if (badVendoredStyleNamePattern.test(name)) {
@@ -110,7 +118,7 @@ if (__DEV__) {
         warnStyleValueIsInfinity(name, value);
       }
     }
-  };
+  }
 }
 
 export default warnValidStyle;

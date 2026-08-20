@@ -1,7 +1,12 @@
 'use strict';
 
+var s;
 if (process.env.NODE_ENV === 'production') {
-  module.exports = require('./cjs/react-dom-static.browser.production.min.js');
+  s = require('./cjs/react-dom-server.browser.production.js');
 } else {
-  module.exports = require('./cjs/react-dom-static.browser.development.js');
+  s = require('./cjs/react-dom-server.browser.development.js');
 }
+
+exports.version = s.version;
+exports.prerender = s.prerender;
+exports.resumeAndPrerender = s.resumeAndPrerender;

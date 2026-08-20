@@ -1,0 +1,25 @@
+{
+  "private": "true",
+  "name": "react-forgive-server",
+  "version": "0.0.0",
+  "description": "Experimental LSP server",
+  "license": "MIT",
+  "scripts": {
+    "build": "rimraf dist && rollup --config --bundleConfigAsCjs",
+    "test": "echo 'no tests'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/react-forgive"
+  },
+  "dependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/parser": "^7.26.0",
+    "@babel/plugin-syntax-typescript": "^7.25.9",
+    "@babel/types": "^7.26.0",
+    "prettier": "^3.3.3",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  }
+}

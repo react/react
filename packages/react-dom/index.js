@@ -7,25 +7,20 @@
  * @flow
  */
 
-// Export all exports so that they're available in tests.
-// We can't use export * from in Flow for some reason.
-export {default as __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED} from './src/ReactDOMSharedInternals';
+export {default as __DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE} from './src/ReactDOMSharedInternals';
 export {
+  browser,
   createPortal,
-  createRoot,
-  hydrateRoot,
-  findDOMNode,
   flushSync,
-  hydrate,
-  render,
-  unmountComponentAtNode,
-  unstable_batchedUpdates,
-  unstable_createEventHandle,
-  unstable_flushControlled,
-  unstable_isNewReconciler,
-  unstable_renderSubtreeIntoContainer,
-  unstable_runWithPriority, // DO NOT USE: Temporarily exposed to migrate off of Scheduler.runWithPriority.
-  preinit,
+  prefetchDNS,
+  preconnect,
   preload,
+  preloadModule,
+  preinit,
+  preinitModule,
+  requestFormReset,
+  unstable_batchedUpdates,
+  useFormState,
+  useFormStatus,
   version,
-} from './src/client/ReactDOM';
+} from './src/shared/ReactDOM';

@@ -1,9 +1,19 @@
 .Toolbar {
   padding: 0.25rem 0;
-  margin-bottom: 0.25rem;
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.BadgesContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.BadgesContainer:not(:empty) {
+  padding-bottom: 0.25rem;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -20,14 +30,11 @@
   white-space: nowrap;
   overflow-x: hidden;
   text-overflow: ellipsis;
-}
-
-.Label {
-  font-weight: bold;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .CurrentCommit {
-  margin: 0.25rem 0;
   display: block;
   width: 100%;
   text-align: left;

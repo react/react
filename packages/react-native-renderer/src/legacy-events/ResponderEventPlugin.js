@@ -3,6 +3,8 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
+ *
+ * @noflow
  */
 
 import {
@@ -42,7 +44,7 @@ let responderInst = null;
  */
 let trackedTouchCount = 0;
 
-const changeResponder = function(nextResponderInst, blockHostResponder) {
+function changeResponder(nextResponderInst, blockHostResponder) {
   const oldResponderInst = responderInst;
   responderInst = nextResponderInst;
   if (ResponderEventPlugin.GlobalResponderHandler !== null) {
@@ -52,7 +54,7 @@ const changeResponder = function(nextResponderInst, blockHostResponder) {
       blockHostResponder,
     );
   }
-};
+}
 
 const eventTypes = {
   /**
@@ -540,10 +542,10 @@ function setResponderAndExtractTransfer(
   const shouldSetEventType = isStartish(topLevelType)
     ? eventTypes.startShouldSetResponder
     : isMoveish(topLevelType)
-    ? eventTypes.moveShouldSetResponder
-    : topLevelType === TOP_SELECTION_CHANGE
-    ? eventTypes.selectionChangeShouldSetResponder
-    : eventTypes.scrollShouldSetResponder;
+      ? eventTypes.moveShouldSetResponder
+      : topLevelType === TOP_SELECTION_CHANGE
+        ? eventTypes.selectionChangeShouldSetResponder
+        : eventTypes.scrollShouldSetResponder;
 
   // TODO: stop one short of the current responder.
   const bubbleShouldSetFrom = !responderInst
@@ -681,7 +683,7 @@ function noResponderTouches(nativeEvent) {
 
 const ResponderEventPlugin = {
   /* For unit testing only */
-  _getResponder: function() {
+  _getResponder: function () {
     return responderInst;
   },
 
@@ -692,7 +694,7 @@ const ResponderEventPlugin = {
    * `touchEnd`. On certain platforms, this means that a native scroll has
    * assumed control and the original touch targets are destroyed.
    */
-  extractEvents: function(
+  extractEvents: function (
     topLevelType,
     targetInst,
     nativeEvent,
@@ -740,10 +742,10 @@ const ResponderEventPlugin = {
     const incrementalTouch = isResponderTouchStart
       ? eventTypes.responderStart
       : isResponderTouchMove
-      ? eventTypes.responderMove
-      : isResponderTouchEnd
-      ? eventTypes.responderEnd
-      : null;
+        ? eventTypes.responderMove
+        : isResponderTouchEnd
+          ? eventTypes.responderEnd
+          : null;
 
     if (incrementalTouch) {
       const gesture = ResponderSyntheticEvent.getPooled(
@@ -767,8 +769,8 @@ const ResponderEventPlugin = {
     const finalTouch = isResponderTerminate
       ? eventTypes.responderTerminate
       : isResponderRelease
-      ? eventTypes.responderRelease
-      : null;
+        ? eventTypes.responderRelease
+        : null;
     if (finalTouch) {
       const finalEvent = ResponderSyntheticEvent.getPooled(
         finalTouch,

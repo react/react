@@ -8,11 +8,11 @@
  */
 
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
-import type {Instance} from './ReactFiberHostConfig';
+import type {Instance} from './ReactFiberConfig';
 
 import {
   HostComponent,
-  HostResource,
+  HostHoistable,
   HostSingleton,
   HostText,
 } from 'react-reconciler/src/ReactWorkTags';
@@ -27,7 +27,7 @@ import {
   setFocusIfFocusable,
   setupIntersectionObserver,
   supportsTestSelectors,
-} from './ReactFiberHostConfig';
+} from './ReactFiberConfig';
 
 let COMPONENT_TYPE: symbol | number = 0b000;
 let HAS_PSEUDO_CLASS_TYPE: symbol | number = 0b001;
@@ -48,7 +48,7 @@ type Type = symbol | number;
 
 type ComponentSelector = {
   $$typeof: Type,
-  value: React$AbstractComponent<empty, mixed>,
+  value: component(),
 };
 
 type HasPseudoClassSelector = {
@@ -79,7 +79,7 @@ type Selector =
   | TestNameSelector;
 
 export function createComponentSelector(
-  component: React$AbstractComponent<empty, mixed>,
+  component: component(),
 ): ComponentSelector {
   return {
     $$typeof: COMPONENT_TYPE,
@@ -118,7 +118,7 @@ export function createTestNameSelector(id: string): TestNameSelector {
 }
 
 function findFiberRootForHostRoot(hostRoot: Instance): Fiber {
-  const maybeFiber = getInstanceFromNode((hostRoot: any));
+  const maybeFiber = getInstanceFromNode(hostRoot as any);
   if (maybeFiber != null) {
     if (typeof maybeFiber.memoizedProps['data-testname'] !== 'string') {
       throw new Error(
@@ -126,10 +126,11 @@ function findFiberRootForHostRoot(hostRoot: Instance): Fiber {
       );
     }
 
-    return ((maybeFiber: any): Fiber);
+    return maybeFiber as any as Fiber;
   } else {
     const fiberRoot = findFiberRoot(hostRoot);
 
+    // $FlowFixMe[invalid-compare]
     if (fiberRoot === null) {
       throw new Error(
         'Could not find React container within specified host subtree.',
@@ -138,7 +139,7 @@ function findFiberRootForHostRoot(hostRoot: Instance): Fiber {
 
     // The Flow type for FiberRoot is a little funky.
     // createFiberRoot() cheats this by treating the root as :any and adding stateNode lazily.
-    return ((fiberRoot: any).stateNode.current: Fiber);
+    return (fiberRoot as any).stateNode.current as Fiber;
   }
 }
 
@@ -153,17 +154,17 @@ function matchSelector(fiber: Fiber, selector: Selector): boolean {
     case HAS_PSEUDO_CLASS_TYPE:
       return hasMatchingPaths(
         fiber,
-        ((selector: any): HasPseudoClassSelector).value,
+        (selector as any as HasPseudoClassSelector).value,
       );
     case ROLE_TYPE:
       if (
         tag === HostComponent ||
-        tag === HostResource ||
+        tag === HostHoistable ||
         tag === HostSingleton
       ) {
         const node = fiber.stateNode;
         if (
-          matchAccessibilityRole(node, ((selector: any): RoleSelector).value)
+          matchAccessibilityRole(node, (selector as any as RoleSelector).value)
         ) {
           return true;
         }
@@ -173,13 +174,15 @@ function matchSelector(fiber: Fiber, selector: Selector): boolean {
       if (
         tag === HostComponent ||
         tag === HostText ||
-        tag === HostResource ||
+        tag === HostHoistable ||
         tag === HostSingleton
       ) {
         const textContent = getTextContent(fiber);
+        // $FlowFixMe[invalid-compare]
         if (
+          // $FlowFixMe[invalid-compare]
           textContent !== null &&
-          textContent.indexOf(((selector: any): TextSelector).value) >= 0
+          textContent.indexOf((selector as any as TextSelector).value) >= 0
         ) {
           return true;
         }
@@ -188,14 +191,14 @@ function matchSelector(fiber: Fiber, selector: Selector): boolean {
     case TEST_NAME_TYPE:
       if (
         tag === HostComponent ||
-        tag === HostResource ||
+        tag === HostHoistable ||
         tag === HostSingleton
       ) {
         const dataTestID = fiber.memoizedProps['data-testname'];
         if (
           typeof dataTestID === 'string' &&
           dataTestID.toLowerCase() ===
-            ((selector: any): TestNameSelector).value.toLowerCase()
+            (selector as any as TestNameSelector).value.toLowerCase()
         ) {
           return true;
         }
@@ -216,11 +219,11 @@ function selectorToString(selector: Selector): string | null {
     case HAS_PSEUDO_CLASS_TYPE:
       return `:has(${selectorToString(selector) || ''})`;
     case ROLE_TYPE:
-      return `[role="${((selector: any): RoleSelector).value}"]`;
+      return `[role="${(selector as any as RoleSelector).value}"]`;
     case TEXT_TYPE:
-      return `"${((selector: any): TextSelector).value}"`;
+      return `"${(selector as any as TextSelector).value}"`;
     case TEST_NAME_TYPE:
-      return `[data-testname="${((selector: any): TestNameSelector).value}"]`;
+      return `[data-testname="${(selector as any as TestNameSelector).value}"]`;
     default:
       throw new Error('Invalid selector type specified.');
   }
@@ -232,14 +235,14 @@ function findPaths(root: Fiber, selectors: Array<Selector>): Array<Fiber> {
   const stack = [root, 0];
   let index = 0;
   while (index < stack.length) {
-    const fiber = ((stack[index++]: any): Fiber);
+    const fiber = stack[index++] as any as Fiber;
     const tag = fiber.tag;
-    let selectorIndex = ((stack[index++]: any): number);
+    let selectorIndex = stack[index++] as any as number;
     let selector = selectors[selectorIndex];
 
     if (
       (tag === HostComponent ||
-        tag === HostResource ||
+        tag === HostHoistable ||
         tag === HostSingleton) &&
       isHiddenSubtree(fiber)
     ) {
@@ -270,14 +273,14 @@ function hasMatchingPaths(root: Fiber, selectors: Array<Selector>): boolean {
   const stack = [root, 0];
   let index = 0;
   while (index < stack.length) {
-    const fiber = ((stack[index++]: any): Fiber);
+    const fiber = stack[index++] as any as Fiber;
     const tag = fiber.tag;
-    let selectorIndex = ((stack[index++]: any): number);
+    let selectorIndex = stack[index++] as any as number;
     let selector = selectors[selectorIndex];
 
     if (
       (tag === HostComponent ||
-        tag === HostResource ||
+        tag === HostHoistable ||
         tag === HostSingleton) &&
       isHiddenSubtree(fiber)
     ) {
@@ -307,6 +310,7 @@ export function findAllNodes(
   hostRoot: Instance,
   selectors: Array<Selector>,
 ): Array<Instance> {
+  // $FlowFixMe[constant-condition]
   if (!supportsTestSelectors) {
     throw new Error('Test selector API is not supported by this renderer.');
   }
@@ -319,11 +323,11 @@ export function findAllNodes(
   const stack = Array.from(matchingFibers);
   let index = 0;
   while (index < stack.length) {
-    const node = ((stack[index++]: any): Fiber);
+    const node = stack[index++] as any as Fiber;
     const tag = node.tag;
     if (
       tag === HostComponent ||
-      tag === HostResource ||
+      tag === HostHoistable ||
       tag === HostSingleton
     ) {
       if (isHiddenSubtree(node)) {
@@ -346,6 +350,7 @@ export function getFindAllNodesFailureDescription(
   hostRoot: Instance,
   selectors: Array<Selector>,
 ): string | null {
+  // $FlowFixMe[constant-condition]
   if (!supportsTestSelectors) {
     throw new Error('Test selector API is not supported by this renderer.');
   }
@@ -359,14 +364,14 @@ export function getFindAllNodesFailureDescription(
   const stack = [root, 0];
   let index = 0;
   while (index < stack.length) {
-    const fiber = ((stack[index++]: any): Fiber);
+    const fiber = stack[index++] as any as Fiber;
     const tag = fiber.tag;
-    let selectorIndex = ((stack[index++]: any): number);
+    let selectorIndex = stack[index++] as any as number;
     const selector = selectors[selectorIndex];
 
     if (
       (tag === HostComponent ||
-        tag === HostResource ||
+        tag === HostHoistable ||
         tag === HostSingleton) &&
       isHiddenSubtree(fiber)
     ) {
@@ -417,6 +422,7 @@ export function findBoundingRects(
   hostRoot: Instance,
   selectors: Array<Selector>,
 ): Array<BoundingRect> {
+  // $FlowFixMe[constant-condition]
   if (!supportsTestSelectors) {
     throw new Error('Test selector API is not supported by this renderer.');
   }
@@ -507,6 +513,7 @@ export function focusWithin(
   hostRoot: Instance,
   selectors: Array<Selector>,
 ): boolean {
+  // $FlowFixMe[constant-condition]
   if (!supportsTestSelectors) {
     throw new Error('Test selector API is not supported by this renderer.');
   }
@@ -517,14 +524,14 @@ export function focusWithin(
   const stack = Array.from(matchingFibers);
   let index = 0;
   while (index < stack.length) {
-    const fiber = ((stack[index++]: any): Fiber);
+    const fiber = stack[index++] as any as Fiber;
     const tag = fiber.tag;
     if (isHiddenSubtree(fiber)) {
       continue;
     }
     if (
       tag === HostComponent ||
-      tag === HostResource ||
+      tag === HostHoistable ||
       tag === HostSingleton
     ) {
       const node = fiber.stateNode;
@@ -545,6 +552,7 @@ export function focusWithin(
 const commitHooks: Array<Function> = [];
 
 export function onCommitRoot(): void {
+  // $FlowFixMe[constant-condition]
   if (supportsTestSelectors) {
     commitHooks.forEach(commitHook => commitHook());
   }
@@ -562,6 +570,7 @@ export function observeVisibleRects(
   callback: (intersections: Array<{ratio: number, rect: BoundingRect}>) => void,
   options?: IntersectionObserverOptions,
 ): {disconnect: () => void} {
+  // $FlowFixMe[constant-condition]
   if (!supportsTestSelectors) {
     throw new Error('Test selector API is not supported by this renderer.');
   }

@@ -16,4 +16,5 @@ declare module 'react-dom' {
   export function render(element : any, container : any) : any
   export function unmountComponentAtNode(container : any) : void
   export function findDOMNode(instance : any) : any
+  export function flushSync(cb : any) : any
 }

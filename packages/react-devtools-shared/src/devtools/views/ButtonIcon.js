@@ -23,6 +23,7 @@ export type IconType =
   | 'expanded'
   | 'export'
   | 'filter'
+  | 'find'
   | 'import'
   | 'log-data'
   | 'more'
@@ -34,6 +35,18 @@ export type IconType =
   | 'save'
   | 'search'
   | 'settings'
+  | 'panel-left-close'
+  | 'panel-left-open'
+  | 'panel-right-close'
+  | 'panel-right-open'
+  | 'panel-bottom-open'
+  | 'panel-bottom-close'
+  | 'filter-on'
+  | 'filter-off'
+  | 'play'
+  | 'pause'
+  | 'skip-previous'
+  | 'skip-next'
   | 'error'
   | 'suspend'
   | 'undo'
@@ -46,8 +59,10 @@ type Props = {
   type: IconType,
 };
 
+const panelIcons = '96 -864 768 768';
 export default function ButtonIcon({className = '', type}: Props): React.Node {
   let pathData = null;
+  let viewBox = '0 0 24 24';
   switch (type) {
     case 'add':
       pathData = PATH_ADD;
@@ -115,11 +130,63 @@ export default function ButtonIcon({className = '', type}: Props): React.Node {
     case 'search':
       pathData = PATH_SEARCH;
       break;
+    case 'find':
+      pathData = PATH_FIND;
+      viewBox = '0 0 16 16';
+      break;
     case 'settings':
       pathData = PATH_SETTINGS;
       break;
     case 'error':
       pathData = PATH_ERROR;
+      break;
+    case 'panel-left-close':
+      pathData = PATH_MATERIAL_PANEL_LEFT_CLOSE;
+      viewBox = panelIcons;
+      break;
+    case 'panel-left-open':
+      pathData = PATH_MATERIAL_PANEL_LEFT_OPEN;
+      viewBox = panelIcons;
+      break;
+    case 'panel-right-close':
+      pathData = PATH_MATERIAL_PANEL_RIGHT_CLOSE;
+      viewBox = panelIcons;
+      break;
+    case 'panel-right-open':
+      pathData = PATH_MATERIAL_PANEL_RIGHT_OPEN;
+      viewBox = panelIcons;
+      break;
+    case 'panel-bottom-open':
+      pathData = PATH_MATERIAL_PANEL_BOTTOM_OPEN;
+      viewBox = panelIcons;
+      break;
+    case 'panel-bottom-close':
+      pathData = PATH_MATERIAL_PANEL_BOTTOM_CLOSE;
+      viewBox = panelIcons;
+      break;
+    case 'filter-on':
+      pathData = PATH_MATERIAL_FILTER_ALT;
+      viewBox = panelIcons;
+      break;
+    case 'filter-off':
+      pathData = PATH_MATERIAL_FILTER_ALT_OFF;
+      viewBox = panelIcons;
+      break;
+    case 'play':
+      pathData = PATH_MATERIAL_PLAY_ARROW;
+      viewBox = panelIcons;
+      break;
+    case 'pause':
+      pathData = PATH_MATERIAL_PAUSE;
+      viewBox = panelIcons;
+      break;
+    case 'skip-previous':
+      pathData = PATH_MATERIAL_SKIP_PREVIOUS_ARROW;
+      viewBox = panelIcons;
+      break;
+    case 'skip-next':
+      pathData = PATH_MATERIAL_SKIP_NEXT_ARROW;
+      viewBox = panelIcons;
       break;
     case 'suspend':
       pathData = PATH_SUSPEND;
@@ -147,13 +214,9 @@ export default function ButtonIcon({className = '', type}: Props): React.Node {
       className={`${styles.ButtonIcon} ${className}`}
       width="24"
       height="24"
-      viewBox="0 0 24 24">
+      viewBox={viewBox}>
       <path d="M0 0h24v24H0z" fill="none" />
-      {typeof pathData === 'string' ? (
-        <path fill="currentColor" d={pathData} />
-      ) : (
-        pathData
-      )}
+      <path fill="currentColor" d={pathData} />
     </svg>
   );
 }
@@ -238,6 +301,10 @@ const PATH_SEARCH = `
   M23,13.9l-4.6,3.6l4.6,4.6l-1.1,1.1l-4.7-4.4l-3.3,4.4l-3.2-12.3L23,13.9z
 `;
 
+const PATH_FIND =
+  'M6.5 0.5a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 1.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z' +
+  'M11.17 10.03l3.7 3.7a0.8 0.8 0 0 1-1.14 1.14l-3.7-3.7z';
+
 const PATH_SETTINGS = `
   M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49
   1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38
@@ -275,4 +342,64 @@ const PATH_VIEW_SOURCE = `
 
 const PATH_EDITOR = `
   M7 5h10v2h2V3c0-1.1-.9-1.99-2-1.99L7 1c-1.1 0-2 .9-2 2v4h2V5zm8.41 11.59L20 12l-4.59-4.59L14 8.83 17.17 12 14 15.17l1.41 1.42zM10 15.17L6.83 12 10 8.83 8.59 7.41 4 12l4.59 4.59L10 15.17zM17 19H7v-2H5v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-4h-2v2z
+`;
+
+// Source: Material Design Icons left_panel_close
+const PATH_MATERIAL_PANEL_LEFT_CLOSE = `
+  M648-324v-312L480-480l168 156ZM211-144q-27.64 0-47.32-19.68T144-211v-538q0-27.64 19.68-47.32T211-816h538q27.64 0 47.32 19.68T816-749v538q0 27.64-19.68 47.32T749-144H211Zm125-72v-528H216v528h120Zm72 0h336v-528H408v528Zm-72 0H216h120Z
+`;
+
+// Source: Material Design Icons left_panel_open
+const PATH_MATERIAL_PANEL_LEFT_OPEN = `
+  M504-595v230q0 12.25 10.5 16.62Q525-344 534-352l110-102q11-11.18 11-26.09T644-506L534-608q-8.82-8-19.41-3.5T504-595ZM211-144q-27.64 0-47.32-19.68T144-211v-538q0-27.64 19.68-47.32T211-816h538q27.64 0 47.32 19.68T816-749v538q0 27.64-19.68 47.32T749-144H211Zm125-72v-528H216v528h120Zm72 0h336v-528H408v528Zm-72 0H216h120Z
+`;
+
+// Source: Material Design Icons right_panel_close
+const PATH_MATERIAL_PANEL_RIGHT_CLOSE = `
+  M312-365q0 12.25 10.5 16.62Q333-344 342-352l110-102q11-11.18 11-26.09T452-506L342-608q-8.82-8-19.41-3.5T312-595v230ZM211-144q-27.64 0-47.32-19.68T144-211v-538q0-27.64 19.68-47.32T211-816h538q27.64 0 47.32 19.68T816-749v538q0 27.64-19.68 47.32T749-144H211Zm413-72h120v-528H624v528Zm-72 0v-528H216v528h336Zm72 0h120-120Z
+`;
+
+// Source: Material Design Icons right_panel_open
+const PATH_MATERIAL_PANEL_RIGHT_OPEN = `
+  M456-365v-230q0-12.25-10.5-16.63Q435-616 426-608L316-506q-11 11.18-11 26.09T316-454l110 102q8.82 8 19.41 3.5T456-365ZM211-144q-27.64 0-47.32-19.68T144-211v-538q0-27.64 19.68-47.32T211-816h538q27.64 0 47.32 19.68T816-749v538q0 27.64-19.68 47.32T749-144H211Zm413-72h120v-528H624v528Zm-72 0v-528H216v528h336Zm72 0h120-120Z
+`;
+
+// Source: Material Design Icons bottom_panel_open
+const PATH_MATERIAL_PANEL_BOTTOM_OPEN = `
+  M365-504h230q12.25 0 16.63-10.5Q616-525 608-534L506-644q-11.18-11-26.09-11T454-644L352-534q-8 8.82-3.5 19.41T365-504ZM211-144q-27.64 0-47.32-19.68T144-211v-538q0-27.64 19.68-47.32T211-816h538q27.64 0 47.32 19.68T816-749v538q0 27.64-19.68 47.32T749-144H211Zm5-192v120h528v-120H216Zm0-72h528v-336H216v336Zm0 72v120-120Z
+`;
+
+// Source: Material Design Icons bottom_panel_close
+const PATH_MATERIAL_PANEL_BOTTOM_CLOSE = `
+  m506-508 102-110q8-8.82 3.5-19.41T595-648H365q-12.25 0-16.62 10.5Q344-627 352-618l102 110q11.18 11 26.09 11T506-508Zm243-308q27.64 0 47.32 19.68T816-749v538q0 27.64-19.68 47.32T749-144H211q-27.64 0-47.32-19.68T144-211v-538q0-27.64 19.68-47.32T211-816h538ZM216-336v120h528v-120H216Zm528-72v-336H216v336h528Zm-528 72v120-120Z
+`;
+
+// Source: Material Design Icons filter_alt
+const PATH_MATERIAL_FILTER_ALT = `
+  M440-160q-17 0-28.5-11.5T400-200v-240L168-736q-15-20-4.5-42t36.5-22h560q26 0 36.5 22t-4.5 42L560-440v240q0 17-11.5 28.5T520-160h-80Zm40-308 198-252H282l198 252Zm0 0Z
+`;
+
+// Source: Material Design Icons filter_alt_off
+const PATH_MATERIAL_FILTER_ALT_OFF = `
+  m592-481-57-57 143-182H353l-80-80h487q25 0 36 22t-4 42L592-481ZM791-56 560-287v87q0 17-11.5 28.5T520-160h-80q-17 0-28.5-11.5T400-200v-247L56-791l56-57 736 736-57 56ZM535-538Z
+`;
+
+// Source: Material Design Icons play_arrow
+const PATH_MATERIAL_PLAY_ARROW = `
+  M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z
+`;
+
+// Source: Material Design Icons pause
+const PATH_MATERIAL_PAUSE = `
+  M520-200v-560h240v560H520Zm-320 0v-560h240v560H200Zm400-80h80v-400h-80v400Zm-320 0h80v-400h-80v400Zm0-400v400-400Zm320 0v400-400Z
+`;
+
+// Source: Material Design Icons skip_previous
+const PATH_MATERIAL_SKIP_PREVIOUS_ARROW = `
+  M220-240v-480h80v480h-80Zm520 0L380-480l360-240v480Zm-80-240Zm0 90v-180l-136 90 136 90Z
+`;
+
+// Source: Material Design Icons skip_next
+const PATH_MATERIAL_SKIP_NEXT_ARROW = `
+  M660-240v-480h80v480h-80Zm-440 0v-480l360 240-360 240Zm80-240Zm0 90 136-90-136-90v180Z
 `;

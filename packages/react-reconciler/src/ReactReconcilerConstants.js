@@ -11,6 +11,7 @@
 // Only expose the minimal subset necessary to implement a host config.
 
 export {
+  NoEventPriority,
   DiscreteEventPriority,
   ContinuousEventPriority,
   DefaultEventPriority,

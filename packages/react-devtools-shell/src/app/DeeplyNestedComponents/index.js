@@ -10,19 +10,18 @@
 import * as React from 'react';
 import {Fragment} from 'react';
 
-function wrapWithHoc(Component, index) {
+function wrapWithHoc(Component: () => any, index: number) {
   function HOC() {
     return <Component />;
   }
 
-  const displayName = Component.displayName || Component.name;
+  const displayName = (Component as any).displayName || Component.name;
 
-  // $FlowFixMe[incompatible-type] found when upgrading Flow
   HOC.displayName = `withHoc${index}(${displayName})`;
   return HOC;
 }
 
-function wrapWithNested(Component, times) {
+function wrapWithNested(Component: () => any, times: number) {
   for (let i = 0; i < times; i++) {
     Component = wrapWithHoc(Component, i);
   }

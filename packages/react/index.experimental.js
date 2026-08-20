@@ -8,8 +8,8 @@
  */
 
 export {
-  __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,
-  act as unstable_act,
+  __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
+  __COMPILER_RUNTIME,
   Children,
   Component,
   Fragment,
@@ -17,42 +17,59 @@ export {
   PureComponent,
   StrictMode,
   Suspense,
-  SuspenseList,
   cloneElement,
   createContext,
   createElement,
-  createFactory,
   createRef,
-  createServerContext,
   use,
   forwardRef,
   isValidElement,
   lazy,
   memo,
   cache,
+  cacheSignal,
   startTransition,
-  unstable_Cache,
-  unstable_DebugTracingMode,
-  unstable_Offscreen,
-  unstable_getCacheSignal,
+  optimisticKey,
+  Activity,
+  Activity as unstable_Activity,
   unstable_getCacheForType,
+  unstable_SuspenseList,
+  ViewTransition,
+  unstable_startGestureTransition,
+  addTransitionType,
   unstable_useCacheRefresh,
-  unstable_useMemoCache,
   useId,
   useCallback,
   useContext,
   useDebugValue,
   useDeferredValue,
   useEffect,
-  experimental_useEvent,
+  useEffectEvent,
   useImperativeHandle,
   useInsertionEffect,
   useLayoutEffect,
   useMemo,
+  useOptimistic,
   useReducer,
   useRef,
   useState,
   useSyncExternalStore,
   useTransition,
+  useActionState,
   version,
-} from './src/React';
+} from './src/ReactClient';
+
+import {useOptimistic} from './src/ReactClient';
+
+export function experimental_useOptimistic<S, A>(
+  passthrough: S,
+  reducer: ?(S, A) => S,
+): [S, (A) => void] {
+  if (__DEV__) {
+    console.error(
+      'useOptimistic is now in canary. Remove the experimental_ prefix. ' +
+        'The prefixed alias will be removed in an upcoming release.',
+    );
+  }
+  return useOptimistic(passthrough, reducer);
+}

@@ -12,14 +12,17 @@
     "ignore-styles": "^5.0.1",
     "import-export": "^1.0.1",
     "node-fetch": "^1.6.3",
-    "react": "link:../../build/node_modules/react",
-    "react-dom": "link:../../build/node_modules/react-dom"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "scripts": {
-    "start": "concurrently \"npm run start:server\" \"npm run start:client\"",
-    "start:client": "PORT=3001 react-scripts start",
-    "start:server": "NODE_ENV=development node server",
-    "start:prod": "react-scripts build && NODE_ENV=production node server",
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "prebuild": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "BROWSER=none PORT=3001 react-scripts start",
+    "dev:server": "NODE_ENV=development node server",
+    "start": "react-scripts build && NODE_ENV=production node server",
     "build": "react-scripts build",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject"

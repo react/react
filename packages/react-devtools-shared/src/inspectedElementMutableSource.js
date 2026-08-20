@@ -12,23 +12,25 @@ import {
   convertInspectedElementBackendToFrontend,
   hydrateHelper,
   inspectElement as inspectElementAPI,
+  inspectScreen as inspectScreenAPI,
 } from 'react-devtools-shared/src/backendAPI';
 import {fillInPath} from 'react-devtools-shared/src/hydration';
 
-import type {LRUCache} from 'react-devtools-shared/src/types';
+import type {LRUCache} from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 import type {
   InspectElementError,
   InspectElementFullData,
   InspectElementHydratedPath,
 } from 'react-devtools-shared/src/backend/types';
+import UserError from 'react-devtools-shared/src/errors/UserError';
+import UnknownHookError from 'react-devtools-shared/src/errors/UnknownHookError';
 import type {
   Element,
   InspectedElement as InspectedElementFrontend,
   InspectedElementResponseType,
-} from 'react-devtools-shared/src/devtools/views/Components/types';
-import UserError from 'react-devtools-shared/src/errors/UserError';
-import UnknownHookError from 'react-devtools-shared/src/errors/UnknownHookError';
+  InspectedElementPath,
+} from 'react-devtools-shared/src/frontend/types';
 
 // Maps element ID to inspected data.
 // We use an LRU for this rather than a WeakMap because of how the "no-change" optimization works.
@@ -39,51 +41,54 @@ import UnknownHookError from 'react-devtools-shared/src/errors/UnknownHookError'
 // This doens't work properly though when component filters are changed,
 // because this will cause the Store to dump all roots and re-initialize the tree (recreating the Element objects).
 // So instead we key on Element ID (which is stable in this case) and use an LRU for eviction.
-const inspectedElementCache: LRUCache<
-  number,
-  InspectedElementFrontend,
-> = new LRU({
-  max: 25,
-});
-
-type Path = Array<string | number>;
+const inspectedElementCache: LRUCache<number, InspectedElementFrontend> =
+  new LRU({
+    max: 25,
+  });
 
 type InspectElementReturnType = [
   InspectedElementFrontend,
   InspectedElementResponseType,
 ];
 
-export function inspectElement({
-  bridge,
-  element,
-  path,
-  rendererID,
-}: {
+export function inspectElement(
   bridge: FrontendBridge,
   element: Element,
-  path: Path | null,
+  path: InspectedElementPath | null,
   rendererID: number,
-}): Promise<InspectElementReturnType> {
-  const {id} = element;
+  shouldListenToPauseEvents: boolean = false,
+): Promise<InspectElementReturnType> {
+  const {id, parentID} = element;
 
   // This could indicate that the DevTools UI has been closed and reopened.
   // The in-memory cache will be clear but the backend still thinks we have cached data.
   // In this case, we need to tell it to resend the full data.
   const forceFullData = !inspectedElementCache.has(id);
+  const isRoot = parentID === 0;
+  const promisedElement = isRoot
+    ? inspectScreenAPI(
+        bridge,
+        forceFullData,
+        id,
+        path,
+        shouldListenToPauseEvents,
+      )
+    : inspectElementAPI(
+        bridge,
+        forceFullData,
+        id,
+        path,
+        rendererID,
+        shouldListenToPauseEvents,
+      );
 
-  return inspectElementAPI({
-    bridge,
-    forceFullData,
-    id,
-    path,
-    rendererID,
-  }).then((data: any) => {
+  return promisedElement.then((data: any) => {
     const {type} = data;
 
     let inspectedElement;
     switch (type) {
       case 'error': {
-        const {message, stack, errorType} = ((data: any): InspectElementError);
+        const {message, stack, errorType} = data as any as InspectElementError;
 
         // create a different error class for each error type
         // and keep useful information from backend.
@@ -119,7 +124,7 @@ export function inspectElement({
         throw Error(`Element "${id}" not found`);
 
       case 'full-data':
-        const fullData = ((data: any): InspectElementFullData);
+        const fullData = data as any as InspectElementFullData;
 
         // New data has come in.
         // We should replace the data in our local mutable copy.
@@ -132,23 +137,26 @@ export function inspectElement({
         return [inspectedElement, type];
 
       case 'hydrated-path':
-        const hydratedPathData = ((data: any): InspectElementHydratedPath);
+        const hydratedPathData = data as any as InspectElementHydratedPath;
         const {value} = hydratedPathData;
 
         // A path has been hydrated.
         // Merge it with the latest copy we have locally and resolve with the merged value.
         inspectedElement = inspectedElementCache.get(id) || null;
+        // $FlowFixMe[invalid-compare]
         if (inspectedElement !== null) {
           // Clone element
           inspectedElement = {...inspectedElement};
 
           // Merge hydrated data
-          fillInPath(
-            inspectedElement,
-            value,
-            ((path: any): Path),
-            hydrateHelper(value, ((path: any): Path)),
-          );
+          if (path != null) {
+            fillInPath(
+              inspectedElement,
+              value,
+              path,
+              hydrateHelper(value, path),
+            );
+          }
 
           inspectedElementCache.set(id, inspectedElement);
 

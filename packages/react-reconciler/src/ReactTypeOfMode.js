@@ -9,11 +9,13 @@
 
 export type TypeOfMode = number;
 
-export const NoMode = /*                         */ 0b000000;
+export const NoMode = /*                         */ 0b0000000;
 // TODO: Remove ConcurrentMode by reading from the root tag instead
-export const ConcurrentMode = /*                 */ 0b000001;
-export const ProfileMode = /*                    */ 0b000010;
-export const DebugTracingMode = /*               */ 0b000100;
-export const StrictLegacyMode = /*               */ 0b001000;
-export const StrictEffectsMode = /*              */ 0b010000;
-export const ConcurrentUpdatesByDefaultMode = /* */ 0b100000;
+export const ConcurrentMode = /*                 */ 0b0000001;
+export const ProfileMode = /*                    */ 0b0000010;
+//export const DebugTracingMode = /*             */ 0b0000100; // Removed
+export const StrictLegacyMode = /*               */ 0b0001000;
+export const StrictEffectsMode = /*              */ 0b0010000;
+// Keep track of if we're in a SuspenseyImages eligible subtree.
+// TODO: Remove this when enableSuspenseyImages ship where it's always on.
+export const SuspenseyImagesMode = /*            */ 0b0100000;

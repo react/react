@@ -7,13 +7,12 @@
  * @flow
  */
 
-// test() is part of Jest's serializer API
+// `test` is part of Jest's serializer API
 export function test(maybeDehydratedValue) {
   const {meta} = require('react-devtools-shared/src/hydration');
 
-  const hasOwnProperty = Object.prototype.hasOwnProperty.bind(
-    maybeDehydratedValue,
-  );
+  const hasOwnProperty =
+    Object.prototype.hasOwnProperty.bind(maybeDehydratedValue);
   return (
     maybeDehydratedValue !== null &&
     typeof maybeDehydratedValue === 'object' &&

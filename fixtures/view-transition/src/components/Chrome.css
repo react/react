@@ -1,0 +1,16 @@
+html {
+  touch-action: pan-x pan-y;
+}
+
+body {
+  margin: 10px;
+  padding: 0;
+  font-family: sans-serif;
+}
+
+::view-transition-group(*),
+::view-transition-image-pair(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  pointer-events: none;
+}

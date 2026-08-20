@@ -24,6 +24,9 @@ let cancelCallback;
 // let wrapCallback;
 // let getCurrentPriorityLevel;
 // let shouldYield;
+let waitForAll;
+let waitFor;
+let waitForThrow;
 
 function priorityLevelToString(priorityLevel) {
   switch (priorityLevel) {
@@ -69,6 +72,11 @@ describe('Scheduler', () => {
     // wrapCallback = Scheduler.unstable_wrapCallback;
     // getCurrentPriorityLevel = Scheduler.unstable_getCurrentPriorityLevel;
     // shouldYield = Scheduler.unstable_shouldYield;
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForAll = InternalTestUtils.waitForAll;
+    waitFor = InternalTestUtils.waitFor;
+    waitForThrow = InternalTestUtils.waitForThrow;
   });
 
   const TaskStartEvent = 1;
@@ -81,7 +89,8 @@ describe('Scheduler', () => {
   const SchedulerResumeEvent = 8;
 
   function stopProfilingAndPrintFlamegraph() {
-    const eventBuffer = Scheduler.unstable_Profiling.stopLoggingProfilingEvents();
+    const eventBuffer =
+      Scheduler.unstable_Profiling.stopLoggingProfilingEvents();
     if (eventBuffer === null) {
       return '(empty profile)';
     }
@@ -253,7 +262,7 @@ describe('Scheduler', () => {
     return '\n' + result;
   }
 
-  it('creates a basic flamegraph', () => {
+  it('creates a basic flamegraph', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
     Scheduler.unstable_advanceTime(100);
@@ -261,27 +270,27 @@ describe('Scheduler', () => {
       NormalPriority,
       () => {
         Scheduler.unstable_advanceTime(300);
-        Scheduler.unstable_yieldValue('Yield 1');
+        Scheduler.log('Yield 1');
         scheduleCallback(
           UserBlockingPriority,
           () => {
-            Scheduler.unstable_yieldValue('Yield 2');
+            Scheduler.log('Yield 2');
             Scheduler.unstable_advanceTime(300);
           },
           {label: 'Bar'},
         );
         Scheduler.unstable_advanceTime(100);
-        Scheduler.unstable_yieldValue('Yield 3');
+        Scheduler.log('Yield 3');
         return () => {
-          Scheduler.unstable_yieldValue('Yield 4');
+          Scheduler.log('Yield 4');
           Scheduler.unstable_advanceTime(300);
         };
       },
       {label: 'Foo'},
     );
-    expect(Scheduler).toFlushAndYieldThrough(['Yield 1', 'Yield 3']);
+    await waitFor(['Yield 1', 'Yield 3']);
     Scheduler.unstable_advanceTime(100);
-    expect(Scheduler).toFlushAndYield(['Yield 2', 'Yield 4']);
+    await waitForAll(['Yield 2', 'Yield 4']);
 
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
@@ -292,26 +301,26 @@ Task 1 [Normal]              │  ████████░░░░░░░�
     );
   });
 
-  it('marks when a task is canceled', () => {
+  it('marks when a task is canceled', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
     const task = scheduleCallback(NormalPriority, () => {
-      Scheduler.unstable_yieldValue('Yield 1');
+      Scheduler.log('Yield 1');
       Scheduler.unstable_advanceTime(300);
-      Scheduler.unstable_yieldValue('Yield 2');
+      Scheduler.log('Yield 2');
       return () => {
-        Scheduler.unstable_yieldValue('Continuation');
+        Scheduler.log('Continuation');
         Scheduler.unstable_advanceTime(200);
       };
     });
 
-    expect(Scheduler).toFlushAndYieldThrough(['Yield 1', 'Yield 2']);
+    await waitFor(['Yield 1', 'Yield 2']);
     Scheduler.unstable_advanceTime(100);
 
     cancelCallback(task);
 
     Scheduler.unstable_advanceTime(1000);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
 !!! Main thread              │░░░░░░██████████████████████
@@ -320,7 +329,7 @@ Task 1 [Normal]              │██████░░🡐 canceled
     );
   });
 
-  it('marks when a task errors', () => {
+  it('marks when a task errors', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
     scheduleCallback(NormalPriority, () => {
@@ -328,11 +337,11 @@ Task 1 [Normal]              │██████░░🡐 canceled
       throw Error('Oops');
     });
 
-    expect(Scheduler).toFlushAndThrow('Oops');
+    await waitForThrow('Oops');
     Scheduler.unstable_advanceTime(100);
 
     Scheduler.unstable_advanceTime(1000);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
 !!! Main thread              │░░░░░░██████████████████████
@@ -341,29 +350,29 @@ Task 1 [Normal]              │██████🡐 errored
     );
   });
 
-  it('marks when multiple tasks are canceled', () => {
+  it('marks when multiple tasks are canceled', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
     const task1 = scheduleCallback(NormalPriority, () => {
-      Scheduler.unstable_yieldValue('Yield 1');
+      Scheduler.log('Yield 1');
       Scheduler.unstable_advanceTime(300);
-      Scheduler.unstable_yieldValue('Yield 2');
+      Scheduler.log('Yield 2');
       return () => {
-        Scheduler.unstable_yieldValue('Continuation');
+        Scheduler.log('Continuation');
         Scheduler.unstable_advanceTime(200);
       };
     });
     const task2 = scheduleCallback(NormalPriority, () => {
-      Scheduler.unstable_yieldValue('Yield 3');
+      Scheduler.log('Yield 3');
       Scheduler.unstable_advanceTime(300);
-      Scheduler.unstable_yieldValue('Yield 4');
+      Scheduler.log('Yield 4');
       return () => {
-        Scheduler.unstable_yieldValue('Continuation');
+        Scheduler.log('Continuation');
         Scheduler.unstable_advanceTime(200);
       };
     });
 
-    expect(Scheduler).toFlushAndYieldThrough(['Yield 1', 'Yield 2']);
+    await waitFor(['Yield 1', 'Yield 2']);
     Scheduler.unstable_advanceTime(100);
 
     cancelCallback(task1);
@@ -372,7 +381,7 @@ Task 1 [Normal]              │██████🡐 errored
     // Advance more time. This should not affect the size of the main
     // thread row, since the Scheduler queue is empty.
     Scheduler.unstable_advanceTime(1000);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
     // The main thread row should end when the callback is cancelled.
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
@@ -384,14 +393,14 @@ Task 2 [Normal]              │░░░░░░░░🡐 canceled
     );
   });
 
-  it('handles cancelling a task that already finished', () => {
+  it('handles cancelling a task that already finished', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
     const task = scheduleCallback(NormalPriority, () => {
-      Scheduler.unstable_yieldValue('A');
+      Scheduler.log('A');
       Scheduler.unstable_advanceTime(1000);
     });
-    expect(Scheduler).toFlushAndYield(['A']);
+    await waitForAll(['A']);
     cancelCallback(task);
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
@@ -401,13 +410,13 @@ Task 1 [Normal]              │████████████████
     );
   });
 
-  it('handles cancelling a task multiple times', () => {
+  it('handles cancelling a task multiple times', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
     scheduleCallback(
       NormalPriority,
       () => {
-        Scheduler.unstable_yieldValue('A');
+        Scheduler.log('A');
         Scheduler.unstable_advanceTime(1000);
       },
       {label: 'A'},
@@ -416,7 +425,7 @@ Task 1 [Normal]              │████████████████
     const task = scheduleCallback(
       NormalPriority,
       () => {
-        Scheduler.unstable_yieldValue('B');
+        Scheduler.log('B');
         Scheduler.unstable_advanceTime(1000);
       },
       {label: 'B'},
@@ -425,7 +434,7 @@ Task 1 [Normal]              │████████████████
     cancelCallback(task);
     cancelCallback(task);
     cancelCallback(task);
-    expect(Scheduler).toFlushAndYield(['A']);
+    await waitForAll(['A']);
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
 !!! Main thread              │████████████░░░░░░░░░░░░░░░░░░░░
@@ -435,23 +444,23 @@ Task 2 [Normal]              │    ░░░░░░░░🡐 canceled
     );
   });
 
-  it('handles delayed tasks', () => {
+  it('handles delayed tasks', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
     scheduleCallback(
       NormalPriority,
       () => {
         Scheduler.unstable_advanceTime(1000);
-        Scheduler.unstable_yieldValue('A');
+        Scheduler.log('A');
       },
       {
         delay: 1000,
       },
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
     Scheduler.unstable_advanceTime(1000);
 
-    expect(Scheduler).toFlushAndYield(['A']);
+    await waitForAll(['A']);
 
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
@@ -461,15 +470,13 @@ Task 1 [Normal]              │                    █████████�
     );
   });
 
-  it('handles cancelling a delayed task', () => {
+  it('handles cancelling a delayed task', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
-    const task = scheduleCallback(
-      NormalPriority,
-      () => Scheduler.unstable_yieldValue('A'),
-      {delay: 1000},
-    );
+    const task = scheduleCallback(NormalPriority, () => Scheduler.log('A'), {
+      delay: 1000,
+    });
     cancelCallback(task);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
 !!! Main thread              │
@@ -480,22 +487,22 @@ Task 1 [Normal]              │                    █████████�
   it('automatically stops profiling and warns if event log gets too big', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
-    spyOnDevAndProd(console, 'error');
+    spyOnDevAndProd(console, 'error').mockImplementation(() => {});
 
     // Increase infinite loop guard limit
     const originalMaxIterations = global.__MAX_ITERATIONS__;
     global.__MAX_ITERATIONS__ = 120000;
 
     let taskId = 1;
-    while (console.error.calls.count() === 0) {
+    while (console.error.mock.calls.length === 0) {
       taskId++;
       const task = scheduleCallback(NormalPriority, () => {});
       cancelCallback(task);
-      expect(Scheduler).toFlushAndYield([]);
+      Scheduler.unstable_flushAll();
     }
 
     expect(console.error).toHaveBeenCalledTimes(1);
-    expect(console.error.calls.argsFor(0)[0]).toBe(
+    expect(console.error.mock.calls[0][0]).toBe(
       "Scheduler Profiling: Event log exceeded maximum size. Don't forget " +
         'to call `stopLoggingProfilingEvents()`.',
     );
@@ -508,7 +515,7 @@ Task 1 [Normal]              │                    █████████�
     scheduleCallback(NormalPriority, () => {
       Scheduler.unstable_advanceTime(1000);
     });
-    expect(Scheduler).toFlushAndYield([]);
+    await waitForAll([]);
 
     // Note: The exact task id is not super important. That just how many tasks
     // it happens to take before the array is resized.

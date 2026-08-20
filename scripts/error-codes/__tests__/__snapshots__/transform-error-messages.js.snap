@@ -1,26 +1,29 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`error transform handles deeply nested expressions 1`] = `
-"var val = (a, (b, // eslint-disable-next-line react-internal/prod-error-codes
+"var val = (a, (b,
+// eslint-disable-next-line react-internal/prod-error-codes
 new Error('foo')));"
 `;
 
 exports[`error transform handles deeply nested expressions 2`] = `
-"var val = (a, ( // eslint-disable-next-line react-internal/prod-error-codes
+"var val = (a, (
+// eslint-disable-next-line react-internal/prod-error-codes
 b, new Error('foo')));"
 `;
 
 exports[`error transform handles escaped backticks in template string 1`] = `
-"import _formatProdErrorMessage from \\"shared/formatProdErrorMessage\\";
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
 Error(_formatProdErrorMessage(231, listener, type));"
 `;
 
 exports[`error transform handles ignoring errors that are comment-excluded inside ternary expressions 1`] = `
 "/*! FIXME (minify-errors-in-prod): Unminified error message in production build!*/
-
-/*! <expected-error-format>\\"bar\\"</expected-error-format>*/
-var val = someBool ? //eslint-disable-next-line react-internal/prod-error-codes
-new Error('foo') : someOtherBool ? new Error('bar') : //eslint-disable-next-line react-internal/prod-error-codes
+/*! <expected-error-format>"bar"</expected-error-format>*/
+var val = someBool ?
+//eslint-disable-next-line react-internal/prod-error-codes
+new Error('foo') : someOtherBool ? new Error('bar') :
+//eslint-disable-next-line react-internal/prod-error-codes
 new Error('baz');"
 `;
 
@@ -36,8 +39,7 @@ NotAnError();"
 
 exports[`error transform should output FIXME for errors that don't have a matching error code 1`] = `
 "/*! FIXME (minify-errors-in-prod): Unminified error message in production build!*/
-
-/*! <expected-error-format>\\"This is not a real error message.\\"</expected-error-format>*/
+/*! <expected-error-format>"This is not a real error message."</expected-error-format>*/
 Error('This is not a real error message.');"
 `;
 
@@ -47,26 +49,33 @@ Error('This is not a real error message.');"
 `;
 
 exports[`error transform should replace error constructors (no new) 1`] = `
-"import _formatProdErrorMessage from \\"shared/formatProdErrorMessage\\";
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
 Error(_formatProdErrorMessage(16));"
 `;
 
 exports[`error transform should replace error constructors 1`] = `
-"import _formatProdErrorMessage from \\"shared/formatProdErrorMessage\\";
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
 Error(_formatProdErrorMessage(16));"
 `;
 
 exports[`error transform should support error constructors with concatenated messages 1`] = `
-"import _formatProdErrorMessage from \\"shared/formatProdErrorMessage\\";
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
 Error(_formatProdErrorMessage(7, foo, bar));"
 `;
 
+exports[`error transform should support extra arguments to error constructor 1`] = `
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
+Error(_formatProdErrorMessage(7, foo, bar), {
+  cause: error
+});"
+`;
+
 exports[`error transform should support interpolating arguments with concatenation 1`] = `
-"import _formatProdErrorMessage from \\"shared/formatProdErrorMessage\\";
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
 Error(_formatProdErrorMessage(7, foo, bar));"
 `;
 
 exports[`error transform should support interpolating arguments with template strings 1`] = `
-"import _formatProdErrorMessage from \\"shared/formatProdErrorMessage\\";
+"import _formatProdErrorMessage from "shared/formatProdErrorMessage";
 Error(_formatProdErrorMessage(7, foo, bar));"
 `;

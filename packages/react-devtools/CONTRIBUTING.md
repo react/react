@@ -65,7 +65,7 @@ yarn build:chrome && yarn test:chrome --url=<url-to-test>
 ```
 
 # Unit tests
-Core DevTools functionality is typically unit tested (see [here](https://github.com/facebook/react/tree/main/packages/react-devtools-shared/src/__tests__) and [here](https://github.com/facebook/react/tree/main/packages/react-devtools-extensions/src/__tests__)). To run tests, you'll first need to build or download React and React DOM ([as explained above](#build-react-and-react-dom)) and then use the following NPM script:
+Core DevTools functionality is typically unit tested (see [here](https://github.com/facebook/react/tree/main/packages/react-devtools-shared/src/__tests__)). To run tests, you'll first need to build or download React and React DOM ([as explained above](#build-react-and-react-dom)) and then use the following NPM script:
 ```sh
 yarn test-build-devtools
 ```

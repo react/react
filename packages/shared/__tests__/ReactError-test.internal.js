@@ -9,7 +9,8 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
 
 describe('ReactError', () => {
   let globalErrorMock;
@@ -27,7 +28,8 @@ describe('ReactError', () => {
     }
     jest.resetModules();
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
   });
 
   afterEach(() => {
@@ -39,20 +41,35 @@ describe('ReactError', () => {
   // @gate build === "production"
   // @gate !source
   it('should error with minified error code', () => {
-    expect(() => ReactDOM.render('Hi', null)).toThrowError(
+    expect(() => {
+      ReactDOMClient.createRoot(null);
+    }).toThrowError(
       'Minified React error #200; visit ' +
-        'https://reactjs.org/docs/error-decoder.html?invariant=200' +
+        'https://react.dev/errors/200' +
         ' for the full message or use the non-minified dev environment' +
         ' for full errors and additional helpful warnings.',
     );
   });
 
-  it('should serialize arguments', () => {
+  // @gate build === "production"
+  // @gate !source
+  it('should serialize arguments', async () => {
     function Oops() {
-      return;
+      return {};
     }
     Oops.displayName = '#wtf';
+
     const container = document.createElement('div');
-    expect(() => ReactDOM.render(<Oops />, container)).not.toThrowError();
+    const root = ReactDOMClient.createRoot(container);
+    await expect(async () => {
+      await act(async () => {
+        root.render(<Oops />);
+      });
+    }).rejects.toThrow(
+      'Minified React error #152; visit ' +
+        'https://reactjs.org/docs/error-decoder.html?invariant=152&args[]=%23wtf' +
+        ' for the full message or use the non-minified dev environment' +
+        ' for full errors and additional helpful warnings.',
+    );
   });
 });

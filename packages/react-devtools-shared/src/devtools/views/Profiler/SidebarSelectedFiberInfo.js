@@ -9,18 +9,18 @@
 
 import * as React from 'react';
 import {Fragment, useContext, useEffect, useRef} from 'react';
+
 import WhatChanged from './WhatChanged';
 import {ProfilerContext} from './ProfilerContext';
 import {formatDuration, formatTime} from './utils';
 import {StoreContext} from '../context';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
+import InspectedElementBadges from '../Components/InspectedElementBadges';
 
 import styles from './SidebarSelectedFiberInfo.css';
 
-export type Props = {};
-
-export default function SidebarSelectedFiberInfo(_: Props): React.Node {
+export default function SidebarSelectedFiberInfo(): React.Node {
   const {profilerStore} = useContext(StoreContext);
   const {
     rootID,
@@ -33,14 +33,41 @@ export default function SidebarSelectedFiberInfo(_: Props): React.Node {
   const {profilingCache} = profilerStore;
   const selectedListItemRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => {
+    const selectedElement = selectedListItemRef.current;
+    if (
+      selectedElement !== null &&
+      // $FlowFixMe[method-unbinding]
+      typeof selectedElement.scrollIntoView === 'function'
+    ) {
+      selectedElement.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    }
+  }, [selectedCommitIndex]);
+
+  if (
+    selectedFiberID === null ||
+    rootID === null ||
+    selectedCommitIndex === null
+  ) {
+    return null;
+  }
+
   const commitIndices = profilingCache.getFiberCommits({
-    fiberID: ((selectedFiberID: any): number),
-    rootID: ((rootID: any): number),
+    fiberID: selectedFiberID,
+    rootID: rootID,
   });
 
+  const {nodes} = profilingCache.getCommitTree({
+    rootID,
+    commitIndex: selectedCommitIndex,
+  });
+  const node = nodes.get(selectedFiberID);
+
+  // $FlowFixMe[missing-local-annot]
   const handleKeyDown = event => {
     switch (event.key) {
       case 'ArrowUp':
+        // $FlowFixMe[invalid-compare]
         if (selectedCommitIndex !== null) {
           const prevIndex = commitIndices.indexOf(selectedCommitIndex);
           const nextIndex =
@@ -50,6 +77,7 @@ export default function SidebarSelectedFiberInfo(_: Props): React.Node {
         event.preventDefault();
         break;
       case 'ArrowDown':
+        // $FlowFixMe[invalid-compare]
         if (selectedCommitIndex !== null) {
           const prevIndex = commitIndices.indexOf(selectedCommitIndex);
           const nextIndex =
@@ -63,24 +91,13 @@ export default function SidebarSelectedFiberInfo(_: Props): React.Node {
     }
   };
 
-  useEffect(() => {
-    const selectedElement = selectedListItemRef.current;
-    if (
-      selectedElement !== null &&
-      // $FlowFixMe[method-unbinding]
-      typeof selectedElement.scrollIntoView === 'function'
-    ) {
-      selectedElement.scrollIntoView({block: 'nearest', inline: 'nearest'});
-    }
-  }, [selectedCommitIndex]);
-
   const listItems = [];
   let i = 0;
   for (i = 0; i < commitIndices.length; i++) {
     const commitIndex = commitIndices[i];
 
     const {duration, timestamp} = profilerStore.getCommitData(
-      ((rootID: any): number),
+      rootID as any as number,
       commitIndex,
     );
 
@@ -107,22 +124,36 @@ export default function SidebarSelectedFiberInfo(_: Props): React.Node {
         </div>
 
         <Button
-          className={styles.IconButton}
           onClick={() => selectFiber(null, null)}
           title="Back to commit view">
           <ButtonIcon type="close" />
         </Button>
       </div>
-      <div className={styles.Content} onKeyDown={handleKeyDown} tabIndex={0}>
-        <WhatChanged fiberID={((selectedFiberID: any): number)} />
-        {listItems.length > 0 && (
-          <Fragment>
-            <label className={styles.Label}>Rendered at</label>: {listItems}
-          </Fragment>
-        )}
-        {listItems.length === 0 && (
-          <div>Did not render during this profiling session.</div>
-        )}
+      <div className={styles.Content}>
+        <div className={styles.RenderInfo}>
+          <div className={styles.RenderInfoContent}>
+            {node != null && (
+              <InspectedElementBadges
+                hocDisplayNames={node.hocDisplayNames}
+                compiledWithForget={node.compiledWithForget}
+              />
+            )}
+            <WhatChanged fiberID={selectedFiberID as any as number} />
+          </div>
+        </div>
+        <div className={styles.CommitList} onKeyDown={handleKeyDown}>
+          {listItems.length > 0 && (
+            <div>
+              <label className={styles.Label}>Rendered at: </label>
+              {listItems}
+            </div>
+          )}
+          {listItems.length === 0 && (
+            <div>
+              Did not render on the client during this profiling session.
+            </div>
+          )}
+        </div>
       </div>
     </Fragment>
   );

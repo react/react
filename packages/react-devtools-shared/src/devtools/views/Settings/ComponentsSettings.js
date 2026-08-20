@@ -15,9 +15,9 @@ import {
   useMemo,
   useRef,
   useState,
+  use,
 } from 'react';
-import {LOCAL_STORAGE_OPEN_IN_EDITOR_URL} from '../../../constants';
-import {useLocalStorage, useSubscription} from '../hooks';
+import {useSubscription} from '../hooks';
 import {StoreContext} from '../context';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
@@ -28,6 +28,8 @@ import {
   ComponentFilterElementType,
   ComponentFilterHOC,
   ComponentFilterLocation,
+  ComponentFilterEnvironmentName,
+  ComponentFilterActivitySlice,
   ElementTypeClass,
   ElementTypeContext,
   ElementTypeFunction,
@@ -37,8 +39,9 @@ import {
   ElementTypeOtherOrUnknown,
   ElementTypeProfiler,
   ElementTypeSuspense,
-} from 'react-devtools-shared/src/types';
-import {getDefaultOpenInEditorURL} from 'react-devtools-shared/src/utils';
+  ElementTypeActivity,
+  ElementTypeViewTransition,
+} from 'react-devtools-shared/src/frontend/types';
 
 import styles from './SettingsShared.css';
 
@@ -49,9 +52,15 @@ import type {
   ElementType,
   ElementTypeComponentFilter,
   RegExpComponentFilter,
-} from 'react-devtools-shared/src/types';
+  EnvironmentNameComponentFilter,
+} from 'react-devtools-shared/src/frontend/types';
+import {isInternalFacebookBuild} from 'react-devtools-feature-flags';
 
-export default function ComponentsSettings(_: {}): React.Node {
+export default function ComponentsSettings({
+  environmentNames,
+}: {
+  environmentNames: Promise<Array<string>>,
+}): React.Node {
   const store = useContext(StoreContext);
   const {parseHookNames, setParseHookNames} = useContext(SettingsContext);
 
@@ -70,27 +79,46 @@ export default function ComponentsSettings(_: {}): React.Node {
   );
 
   const updateCollapseNodesByDefault = useCallback(
-    ({currentTarget}) => {
+    ({currentTarget}: $FlowFixMe) => {
       store.collapseNodesByDefault = !currentTarget.checked;
     },
     [store],
   );
 
   const updateParseHookNames = useCallback(
-    ({currentTarget}) => {
+    ({currentTarget}: $FlowFixMe) => {
       setParseHookNames(currentTarget.checked);
     },
     [setParseHookNames],
   );
 
-  const [openInEditorURL, setOpenInEditorURL] = useLocalStorage<string>(
-    LOCAL_STORAGE_OPEN_IN_EDITOR_URL,
-    getDefaultOpenInEditorURL(),
-  );
-
   const [componentFilters, setComponentFilters] = useState<
     Array<ComponentFilter>,
   >(() => [...store.componentFilters]);
+
+  const usedEnvironmentNames = use(environmentNames);
+
+  const resolvedEnvironmentNames = useMemo(() => {
+    const set = new Set(usedEnvironmentNames);
+    // If there are other filters already specified but are not currently
+    // on the page, we still allow them as options.
+    for (let i = 0; i < componentFilters.length; i++) {
+      const filter = componentFilters[i];
+      if (filter.type === ComponentFilterEnvironmentName) {
+        set.add(filter.value);
+      }
+    }
+    // Client is special and is always available as a default.
+    if (set.size > 0) {
+      // Only show any options at all if there's any other option already
+      // used by a filter or if any environments are used by the page.
+      // Note that "Client" can have been added above which would mean
+      // that we should show it as an option regardless if it's the only
+      // option.
+      set.add('Client');
+    }
+    return Array.from(set).sort();
+  }, [usedEnvironmentNames, componentFilters]);
 
   const addFilter = useCallback(() => {
     setComponentFilters(prevComponentFilters => {
@@ -137,6 +165,15 @@ export default function ComponentsSettings(_: {}): React.Node {
               isEnabled: componentFilter.isEnabled,
               isValid: true,
             };
+          } else if (type === ComponentFilterEnvironmentName) {
+            cloned[index] = {
+              type: ComponentFilterEnvironmentName,
+              isEnabled: componentFilter.isEnabled,
+              isValid: true,
+              value: 'Client',
+            };
+          } else if (type === ComponentFilterActivitySlice) {
+            // TODO: Allow changing type
           }
         }
         return cloned;
@@ -201,6 +238,29 @@ export default function ComponentsSettings(_: {}): React.Node {
     [],
   );
 
+  const updateFilterValueEnvironmentName = useCallback(
+    (componentFilter: ComponentFilter, value: string) => {
+      if (componentFilter.type !== ComponentFilterEnvironmentName) {
+        throw Error('Invalid value for environment name filter');
+      }
+
+      setComponentFilters(prevComponentFilters => {
+        const cloned: Array<ComponentFilter> = [...prevComponentFilters];
+        if (componentFilter.type === ComponentFilterEnvironmentName) {
+          const index = prevComponentFilters.indexOf(componentFilter);
+          if (index >= 0) {
+            cloned[index] = {
+              ...componentFilter,
+              value,
+            };
+          }
+        }
+        return cloned;
+      });
+    },
+    [],
+  );
+
   const removeFilter = useCallback((index: number) => {
     setComponentFilters(prevComponentFilters => {
       const cloned: Array<ComponentFilter> = [...prevComponentFilters];
@@ -208,6 +268,10 @@ export default function ComponentsSettings(_: {}): React.Node {
       return cloned;
     });
   }, []);
+
+  const removeAllFilter = () => {
+    setComponentFilters([]);
+  };
 
   const toggleFilterIsEnabled = useCallback(
     (componentFilter: ComponentFilter, isEnabled: boolean) => {
@@ -217,7 +281,7 @@ export default function ComponentsSettings(_: {}): React.Node {
         if (index >= 0) {
           if (componentFilter.type === ComponentFilterElementType) {
             cloned[index] = {
-              ...((cloned[index]: any): ElementTypeComponentFilter),
+              ...(cloned[index] as any as ElementTypeComponentFilter),
               isEnabled,
             };
           } else if (
@@ -225,12 +289,17 @@ export default function ComponentsSettings(_: {}): React.Node {
             componentFilter.type === ComponentFilterLocation
           ) {
             cloned[index] = {
-              ...((cloned[index]: any): RegExpComponentFilter),
+              ...(cloned[index] as any as RegExpComponentFilter),
               isEnabled,
             };
           } else if (componentFilter.type === ComponentFilterHOC) {
             cloned[index] = {
-              ...((cloned[index]: any): BooleanComponentFilter),
+              ...(cloned[index] as any as BooleanComponentFilter),
+              isEnabled,
+            };
+          } else if (componentFilter.type === ComponentFilterEnvironmentName) {
+            cloned[index] = {
+              ...(cloned[index] as any as EnvironmentNameComponentFilter),
               isEnabled,
             };
           }
@@ -258,38 +327,31 @@ export default function ComponentsSettings(_: {}): React.Node {
   );
 
   return (
-    <div className={styles.Settings}>
-      <label className={styles.Setting}>
-        <input
-          type="checkbox"
-          checked={!collapseNodesByDefault}
-          onChange={updateCollapseNodesByDefault}
-        />{' '}
-        Expand component tree by default
-      </label>
+    <div className={styles.SettingList}>
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <input
+            type="checkbox"
+            checked={!collapseNodesByDefault}
+            onChange={updateCollapseNodesByDefault}
+            className={styles.SettingRowCheckbox}
+          />
+          Expand component tree by default
+        </label>
+      </div>
 
-      <label className={styles.Setting}>
-        <input
-          type="checkbox"
-          checked={parseHookNames}
-          onChange={updateParseHookNames}
-        />{' '}
-        Always parse hook names from source{' '}
-        <span className={styles.Warning}>(may be slow)</span>
-      </label>
-
-      <label className={styles.OpenInURLSetting}>
-        Open in Editor URL:{' '}
-        <input
-          className={styles.Input}
-          type="text"
-          placeholder={process.env.EDITOR_URL ?? 'vscode://file/{path}:{line}'}
-          value={openInEditorURL}
-          onChange={event => {
-            setOpenInEditorURL(event.target.value);
-          }}
-        />
-      </label>
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <input
+            type="checkbox"
+            checked={parseHookNames}
+            onChange={updateParseHookNames}
+            className={styles.SettingRowCheckbox}
+          />
+          Always parse hook names from source&nbsp;
+          <span className={styles.Warning}>(may be slow)</span>
+        </label>
+      </div>
 
       <div className={styles.Header}>Hide components where...</div>
 
@@ -305,80 +367,108 @@ export default function ComponentsSettings(_: {}): React.Node {
           {componentFilters.map((componentFilter, index) => (
             <tr className={styles.TableRow} key={index}>
               <td className={styles.TableCell}>
-                <Toggle
-                  className={
-                    componentFilter.isValid !== false
-                      ? ''
-                      : styles.InvalidRegExp
-                  }
-                  isChecked={componentFilter.isEnabled}
-                  onChange={isEnabled =>
-                    toggleFilterIsEnabled(componentFilter, isEnabled)
-                  }
-                  title={
-                    componentFilter.isValid === false
-                      ? 'Filter invalid'
-                      : componentFilter.isEnabled
-                      ? 'Filter enabled'
-                      : 'Filter disabled'
-                  }>
-                  <ToggleIcon
-                    isEnabled={componentFilter.isEnabled}
-                    isValid={
-                      componentFilter.isValid == null ||
-                      componentFilter.isValid === true
+                {componentFilter.type !== ComponentFilterActivitySlice && (
+                  <Toggle
+                    className={
+                      componentFilter.isValid !== false
+                        ? ''
+                        : styles.InvalidRegExp
                     }
-                  />
-                </Toggle>
+                    isChecked={componentFilter.isEnabled}
+                    onChange={isEnabled =>
+                      toggleFilterIsEnabled(componentFilter, isEnabled)
+                    }
+                    title={
+                      componentFilter.isValid === false
+                        ? 'Filter invalid'
+                        : componentFilter.isEnabled
+                          ? 'Filter enabled'
+                          : 'Filter disabled'
+                    }>
+                    <ToggleIcon
+                      isEnabled={componentFilter.isEnabled}
+                      isValid={
+                        componentFilter.isValid == null ||
+                        componentFilter.isValid === true
+                      }
+                    />
+                  </Toggle>
+                )}
               </td>
               <td className={styles.TableCell}>
                 <select
-                  className={styles.Select}
+                  disabled={
+                    componentFilter.type === ComponentFilterActivitySlice
+                  }
                   value={componentFilter.type}
                   onChange={({currentTarget}) =>
                     changeFilterType(
                       componentFilter,
-                      ((parseInt(
+                      parseInt(
                         currentTarget.value,
                         10,
-                      ): any): ComponentFilterType),
+                      ) as any as ComponentFilterType,
                     )
                   }>
-                  <option value={ComponentFilterLocation}>location</option>
+                  {/* TODO: currently disabled, need find a new way of doing this
+                    <option value={ComponentFilterLocation}>location</option>
+                  */}
                   <option value={ComponentFilterDisplayName}>name</option>
                   <option value={ComponentFilterElementType}>type</option>
                   <option value={ComponentFilterHOC}>hoc</option>
+                  {resolvedEnvironmentNames.length > 0 && (
+                    <option value={ComponentFilterEnvironmentName}>
+                      environment
+                    </option>
+                  )}
+                  {componentFilter.type === ComponentFilterActivitySlice && (
+                    <option value={ComponentFilterActivitySlice}>
+                      component
+                    </option>
+                  )}
                 </select>
               </td>
               <td className={styles.TableCell}>
-                {componentFilter.type === ComponentFilterElementType &&
+                {(componentFilter.type === ComponentFilterElementType ||
+                  componentFilter.type === ComponentFilterEnvironmentName) &&
                   'equals'}
                 {(componentFilter.type === ComponentFilterLocation ||
                   componentFilter.type === ComponentFilterDisplayName) &&
                   'matches'}
+                {componentFilter.type === ComponentFilterActivitySlice &&
+                  'within'}
               </td>
               <td className={styles.TableCell}>
                 {componentFilter.type === ComponentFilterElementType && (
                   <select
-                    className={styles.Select}
                     value={componentFilter.value}
                     onChange={({currentTarget}) =>
                       updateFilterValueElementType(
                         componentFilter,
-                        ((parseInt(currentTarget.value, 10): any): ElementType),
+                        parseInt(currentTarget.value, 10) as any as ElementType,
                       )
                     }>
+                    {isInternalFacebookBuild && (
+                      <option value={ElementTypeActivity}>activity</option>
+                    )}
                     <option value={ElementTypeClass}>class</option>
                     <option value={ElementTypeContext}>context</option>
                     <option value={ElementTypeFunction}>function</option>
                     <option value={ElementTypeForwardRef}>forward ref</option>
                     <option value={ElementTypeHostComponent}>
-                      host (e.g. &lt;div&gt;)
+                      {__IS_NATIVE__
+                        ? 'host components (e.g. <RCTText>)'
+                        : 'dom nodes (e.g. <div>)'}
                     </option>
                     <option value={ElementTypeMemo}>memo</option>
                     <option value={ElementTypeOtherOrUnknown}>other</option>
                     <option value={ElementTypeProfiler}>profiler</option>
                     <option value={ElementTypeSuspense}>suspense</option>
+                    {isInternalFacebookBuild && (
+                      <option value={ElementTypeViewTransition}>
+                        view transition
+                      </option>
+                    )}
                   </select>
                 )}
                 {(componentFilter.type === ComponentFilterLocation ||
@@ -396,6 +486,25 @@ export default function ComponentsSettings(_: {}): React.Node {
                     value={componentFilter.value}
                   />
                 )}
+                {componentFilter.type === ComponentFilterEnvironmentName && (
+                  <select
+                    value={componentFilter.value}
+                    onChange={({currentTarget}) =>
+                      updateFilterValueEnvironmentName(
+                        componentFilter,
+                        currentTarget.value,
+                      )
+                    }>
+                    {resolvedEnvironmentNames.map(name => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {componentFilter.type === ComponentFilterActivitySlice && (
+                  <span>Activity Slice</span>
+                )}
               </td>
               <td className={styles.TableCell}>
                 <Button
@@ -408,11 +517,16 @@ export default function ComponentsSettings(_: {}): React.Node {
           ))}
         </tbody>
       </table>
-
-      <Button onClick={addFilter}>
+      <Button onClick={addFilter} title="Add filter">
         <ButtonIcon className={styles.ButtonIcon} type="add" />
         Add filter
       </Button>
+      {componentFilters.length > 0 && (
+        <Button onClick={removeAllFilter} title="Delete all filters">
+          <ButtonIcon className={styles.ButtonIcon} type="delete" />
+          Delete all filters
+        </Button>
+      )}
     </div>
   );
 }

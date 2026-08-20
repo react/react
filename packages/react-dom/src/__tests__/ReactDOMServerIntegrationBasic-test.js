@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
@@ -14,23 +15,20 @@ const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegratio
 const TEXT_NODE_TYPE = 3;
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
-let ReactTestUtils;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
-  ReactDOM = require('react-dom');
+  ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
-  ReactTestUtils = require('react-dom/test-utils');
 
   // Make them available to the helpers.
   return {
-    ReactDOM,
+    ReactDOMClient,
     ReactDOMServer,
-    ReactTestUtils,
   };
 }
 
@@ -41,7 +39,7 @@ describe('ReactDOMServerIntegration', () => {
     resetModules();
   });
 
-  describe('basic rendering', function() {
+  describe('basic rendering', function () {
     itRenders('a blank div', async render => {
       const e = await render(<div />);
       expect(e.tagName).toBe('DIV');
@@ -70,6 +68,12 @@ describe('ReactDOMServerIntegration', () => {
 
     itRenders('a number', async render => {
       const e = await render(42);
+      expect(e.nodeType).toBe(3);
+      expect(e.nodeValue).toMatch('42');
+    });
+
+    itRenders('a bigint', async render => {
+      const e = await render(42n);
       expect(e.nodeType).toBe(3);
       expect(e.nodeValue).toMatch('42');
     });
@@ -115,10 +119,10 @@ describe('ReactDOMServerIntegration', () => {
 
     itRenders('an iterable', async render => {
       const threeDivIterable = {
-        '@@iterator': function() {
+        '@@iterator': function () {
           let i = 0;
           return {
-            next: function() {
+            next: function () {
               if (i++ < 3) {
                 return {value: <div key={i} />, done: false};
               } else {
@@ -148,8 +152,10 @@ describe('ReactDOMServerIntegration', () => {
       expect(await render([])).toBe(null);
       expect(await render(false)).toBe(null);
       expect(await render(true)).toBe(null);
-      expect(await render(undefined)).toBe(null);
       expect(await render([[[false]], undefined])).toBe(null);
+
+      // hydrateRoot errors for undefined children.
+      expect(await render(undefined, 1)).toBe(null);
     });
   });
 });

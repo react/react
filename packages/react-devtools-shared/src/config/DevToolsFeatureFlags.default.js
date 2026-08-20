@@ -13,10 +13,7 @@
  * It should always be imported from "react-devtools-feature-flags".
  ************************************************************************/
 
-export const consoleManagedByDevToolsDuringStrictMode = true;
-export const enableLogger = false;
-export const enableNamedHooksFeature = true;
-export const enableProfilerChangedHookIndices = true;
-export const enableStyleXFeatures = false;
-export const isInternalFacebookBuild = false;
-export const enableProfilerComponentTree = true;
+export const enableActivitySlices: boolean = __DEV__;
+export const enableLogger: boolean = false;
+export const enableStyleXFeatures: boolean = false;
+export const isInternalFacebookBuild: boolean = false;

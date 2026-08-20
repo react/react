@@ -17,6 +17,7 @@ import {SettingsContext} from '../Settings/SettingsContext';
 
 import type {ChartNode as ChartNodeType} from './FlamegraphChartBuilder';
 import type {ItemData} from './CommitFlamegraph';
+import typeof {SyntheticMouseEvent} from 'react-dom-bindings/src/events/SyntheticEvent';
 
 type Props = {
   data: ItemData,
@@ -28,9 +29,12 @@ type Props = {
 function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
   const {
     chartData,
+    currentSearchMatchID,
+    matchedFiberIDs,
     onElementMouseEnter,
     onElementMouseLeave,
     scaleX,
+    searchRegExp,
     selectedChartNode,
     selectedChartNodeIndex,
     selectFiber,
@@ -41,7 +45,7 @@ function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
   const {lineHeight} = useContext(SettingsContext);
 
   const handleClick = useCallback(
-    (event: SyntheticMouseEvent<EventTarget>, id: number, name: string) => {
+    (event: SyntheticMouseEvent, id: number, name: string) => {
       event.stopPropagation();
       selectFiber(id, name);
     },
@@ -114,12 +118,15 @@ function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
           <ChartNode
             color={color}
             height={lineHeight}
+            isCurrentSearchMatch={id === currentSearchMatchID}
             isDimmed={index < selectedChartNodeIndex}
+            isSearchMatch={matchedFiberIDs.has(id)}
             key={id}
             label={label}
             onClick={event => handleClick(event, id, name)}
             onMouseEnter={() => handleMouseEnter(chartNode)}
             onMouseLeave={handleMouseLeave}
+            searchRegExp={searchRegExp}
             textStyle={{color: textColor}}
             width={nodeWidth}
             x={nodeOffset - selectedNodeOffset}
@@ -131,7 +138,6 @@ function CommitFlamegraphListItem({data, index, style}: Props): React.Node {
   );
 }
 
-export default (memo(
-  CommitFlamegraphListItem,
-  areEqual,
-): React.ComponentType<Props>);
+export default memo(CommitFlamegraphListItem, areEqual) as component(
+  ...props: Props
+);

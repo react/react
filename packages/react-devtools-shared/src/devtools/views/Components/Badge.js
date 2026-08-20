@@ -8,36 +8,23 @@
  */
 
 import * as React from 'react';
-import {Fragment} from 'react';
-import styles from './Badge.css';
 
-import type {ElementType} from 'react-devtools-shared/src/types';
+import styles from './Badge.css';
 
 type Props = {
   className?: string,
-  hocDisplayNames: Array<string> | null,
-  type: ElementType,
   children: React$Node,
+  ...
 };
 
 export default function Badge({
-  className,
-  hocDisplayNames,
-  type,
+  className = '',
   children,
+  ...props
 }: Props): React.Node {
-  if (hocDisplayNames === null || hocDisplayNames.length === 0) {
-    return null;
-  }
-
-  const totalBadgeCount = hocDisplayNames.length;
-
   return (
-    <Fragment>
-      <div className={`${styles.Badge} ${className || ''}`}>{children}</div>
-      {totalBadgeCount > 1 && (
-        <div className={styles.ExtraLabel}>+{totalBadgeCount - 1}</div>
-      )}
-    </Fragment>
+    <div {...props} className={`${styles.Badge} ${className}`}>
+      {children}
+    </div>
   );
 }

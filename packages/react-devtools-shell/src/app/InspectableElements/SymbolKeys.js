@@ -16,6 +16,7 @@ const base = Object.create(Object.prototype, {
     enumerable: true,
     configurable: true,
   },
+  // $FlowFixMe[invalid-computed-prop]
   [Symbol('enumerableSymbolBase')]: {
     value: 1,
     writable: true,
@@ -28,6 +29,7 @@ const base = Object.create(Object.prototype, {
     enumerable: false,
     configurable: true,
   },
+  // $FlowFixMe[invalid-computed-prop]
   [Symbol('nonEnumerableSymbolBase')]: {
     value: 1,
     writable: true,
@@ -55,12 +57,14 @@ const data = Object.create(base, {
     enumerable: true,
     configurable: true,
   },
+  // $FlowFixMe[invalid-computed-prop]
   [Symbol('nonEnumerableSymbol')]: {
     value: 2,
     writable: true,
     enumerable: false,
     configurable: true,
   },
+  // $FlowFixMe[invalid-computed-prop]
   [Symbol('enumerableSymbol')]: {
     value: 3,
     writable: true,

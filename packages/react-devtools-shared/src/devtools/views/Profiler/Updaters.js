@@ -8,13 +8,13 @@
  */
 
 import type {CommitTree} from './types';
-import type {SerializedElement} from '../Components/types';
+import type {SerializedElement} from 'react-devtools-shared/src/frontend/types';
 
 import * as React from 'react';
 import {useContext} from 'react';
 import {ProfilerContext} from './ProfilerContext';
 import styles from './Updaters.css';
-import {ElementTypeRoot} from '../../../types';
+import {ElementTypeRoot} from '../../../frontend/types';
 
 export type Props = {
   commitTree: CommitTree,

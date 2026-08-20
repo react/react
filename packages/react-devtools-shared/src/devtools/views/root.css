@@ -1,4 +1,4 @@
-:root {
+:is(:root, :host) {
   /* Font smoothing */
   --font-smoothing: auto;
 

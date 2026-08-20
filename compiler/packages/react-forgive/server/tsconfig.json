@@ -1,0 +1,15 @@
+{
+  "extends": "@tsconfig/strictest/tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2015",
+    "moduleResolution": "Bundler",
+    "rootDir": "../../..",
+    "noEmit": true,
+    "jsx": "react-jsxdev",
+    "target": "ES2015",
+    "sourceMap": false,
+    "removeComments": true,
+  },
+  "exclude": ["node_modules", ".vscode-test"],
+  "include": ["src/**/*.ts"]
+}

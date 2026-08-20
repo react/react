@@ -7,37 +7,40 @@
  * @flow
  */
 
-import type {Source} from 'shared/ReactElementType';
 import type {
   RefObject,
   ReactContext,
-  MutableSourceSubscribeFn,
-  MutableSourceGetSnapshotFn,
-  MutableSourceVersion,
-  MutableSource,
   StartTransitionOptions,
   Wakeable,
   Usable,
+  ReactFormState,
+  Awaited,
+  ReactComponentInfo,
+  ReactDebugInfo,
+  ReactKey,
 } from 'shared/ReactTypes';
+import type {TransitionTypes} from 'react/src/ReactTransitionType';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Flags} from './ReactFiberFlags';
-import type {Lane, Lanes, LaneMap} from './ReactFiberLane.old';
+import type {Lane, Lanes, LaneMap} from './ReactFiberLane';
 import type {RootTag} from './ReactRootTags';
 import type {
   Container,
+  Instance,
   TimeoutHandle,
   NoTimeout,
+  ActivityInstance,
   SuspenseInstance,
-} from './ReactFiberHostConfig';
-import type {Cache} from './ReactFiberCacheComponent.old';
-// Doing this because there's a merge conflict because of the way sync-reconciler-fork
-// is implemented
-import type {
-  TracingMarkerInstance,
-  Transition,
-} from './ReactFiberTracingMarkerComponent.new';
-import type {ConcurrentUpdate} from './ReactFiberConcurrentUpdates.new';
+  TransitionStatus,
+} from './ReactFiberConfig';
+import type {Cache} from './ReactFiberCacheComponent';
+import type {Transition} from 'react/src/ReactStartTransition';
+import type {TracingMarkerInstance} from './ReactFiberTracingMarkerComponent';
+import type {ConcurrentUpdate} from './ReactFiberConcurrentUpdates';
+import type {ComponentStackNode} from 'react-server/src/ReactFizzComponentStack';
+import type {ThenableState} from './ReactFiberThenable';
+import type {ScheduledGesture} from './ReactFiberGestureScheduler';
 
 // Unwind Circular: moved from ReactFiberHooks.old
 export type HookType =
@@ -46,7 +49,7 @@ export type HookType =
   | 'useContext'
   | 'useRef'
   | 'useEffect'
-  | 'useEvent'
+  | 'useEffectEvent'
   | 'useInsertionEffect'
   | 'useLayoutEffect'
   | 'useCallback'
@@ -55,10 +58,12 @@ export type HookType =
   | 'useDebugValue'
   | 'useDeferredValue'
   | 'useTransition'
-  | 'useMutableSource'
   | 'useSyncExternalStore'
   | 'useId'
-  | 'useCacheRefresh';
+  | 'useCacheRefresh'
+  | 'useOptimistic'
+  | 'useFormState'
+  | 'useActionState';
 
 export type ContextDependency<T> = {
   context: ReactContext<T>,
@@ -70,6 +75,7 @@ export type ContextDependency<T> = {
 export type Dependencies = {
   lanes: Lanes,
   firstContext: ContextDependency<mixed> | null,
+  _debugThenableState?: null | ThenableState, // DEV-only
   ...
 };
 
@@ -95,7 +101,7 @@ export type Fiber = {
   tag: WorkTag,
 
   // Unique identifier of this child.
-  key: null | string,
+  key: ReactKey,
 
   // The value of element.type which is used to preserve the identity during
   // reconciliation of this child.
@@ -131,6 +137,8 @@ export type Fiber = {
     | (((handle: mixed) => void) & {_stringRef: ?string, ...})
     | RefObject,
 
+  refCleanup: null | (() => void),
+
   // Input is the data coming into process this fiber. Arguments. Props.
   pendingProps: any, // This type will be more specific once we overload the tag.
   memoizedProps: any, // The props used to create the output.
@@ -156,15 +164,6 @@ export type Fiber = {
   flags: Flags,
   subtreeFlags: Flags,
   deletions: Array<Fiber> | null,
-
-  // Singly linked list fast path to the next fiber with side-effects.
-  nextEffect: Fiber | null,
-
-  // The first and last fiber with side-effect within this subtree. This allows
-  // us to reuse a slice of the linked list when we reuse the work done within
-  // this fiber.
-  firstEffect: Fiber | null,
-  lastEffect: Fiber | null,
 
   lanes: Lanes,
   childLanes: Lanes,
@@ -200,9 +199,10 @@ export type Fiber = {
   // to be the same as work in progress.
   // __DEV__ only
 
-  _debugSource?: Source | null,
-  _debugOwner?: Fiber | null,
-  _debugIsCurrentlyTiming?: boolean,
+  _debugInfo?: ReactDebugInfo | null,
+  _debugOwner?: ReactComponentInfo | Fiber | null,
+  _debugStack?: Error | null,
+  _debugTask?: ConsoleTask | null,
   _debugNeedsRemount?: boolean,
 
   // Used to verify that the order of hooks does not change between renders.
@@ -222,36 +222,36 @@ type BaseFiberRootProperties = {
 
   pingCache: WeakMap<Wakeable, Set<mixed>> | Map<Wakeable, Set<mixed>> | null,
 
-  // A finished work-in-progress HostRoot that's ready to be committed.
-  finishedWork: Fiber | null,
   // Timeout handle returned by setTimeout. Used to cancel a pending timeout, if
   // it's superseded by a new one.
   timeoutHandle: TimeoutHandle | NoTimeout,
+  // When a root has a pending commit scheduled, calling this function will
+  // cancel it.
+  // TODO: Can this be consolidated with timeoutHandle?
+  cancelPendingCommit: null | (() => void),
   // Top context object, used by renderSubtreeIntoContainer
   context: Object | null,
   pendingContext: Object | null,
 
-  // Used by useMutableSource hook to avoid tearing during hydration.
-  mutableSourceEagerHydrationData?: Array<
-    MutableSource<any> | MutableSourceVersion,
-  > | null,
+  // Used to create a linked list that represent all the roots that have
+  // pending work scheduled on them.
+  next: FiberRoot | null,
 
   // Node returned by Scheduler.scheduleCallback. Represents the next rendering
   // task that the root will work on.
   callbackNode: any,
   callbackPriority: Lane,
-  eventTimes: LaneMap<number>,
   expirationTimes: LaneMap<number>,
   hiddenUpdates: LaneMap<Array<ConcurrentUpdate> | null>,
 
   pendingLanes: Lanes,
   suspendedLanes: Lanes,
   pingedLanes: Lanes,
+  warmLanes: Lanes,
   expiredLanes: Lanes,
-  mutableReadLanes: Lanes,
+  indicatorLanes: Lanes, // enableDefaultTransitionIndicator only
   errorRecoveryDisabledLanes: Lanes,
-
-  finishedLanes: Lanes,
+  shellSuspendCounter: number,
 
   entangledLanes: Lanes,
   entanglements: LaneMap<Lanes>,
@@ -266,10 +266,33 @@ type BaseFiberRootProperties = {
   // a reference to.
   identifierPrefix: string,
 
+  onUncaughtError: (
+    error: mixed,
+    errorInfo: {+componentStack?: ?string},
+  ) => void,
+  onCaughtError: (
+    error: mixed,
+    errorInfo: {
+      +componentStack?: ?string,
+      +errorBoundary?: ?component(...props: any),
+    },
+  ) => void,
   onRecoverableError: (
     error: mixed,
-    errorInfo: {digest?: ?string, componentStack?: ?string},
+    errorInfo: {+componentStack?: ?string},
   ) => void,
+
+  // enableDefaultTransitionIndicator only
+  onDefaultTransitionIndicator: () => void | (() => void),
+  pendingIndicator: null | (() => void),
+
+  formState: ReactFormState<any, any> | null,
+
+  // enableViewTransition only
+  transitionTypes: null | TransitionTypes, // TODO: Make this a LaneMap.
+  // enableGestureTransition only
+  pendingGestures: null | ScheduledGesture,
+  gestureClone: null | Instance,
 };
 
 // The following attributes are only used by DevTools and are only present in DEV builds.
@@ -280,8 +303,10 @@ type UpdaterTrackingOnlyFiberRootProperties = {
 };
 
 export type SuspenseHydrationCallbacks = {
-  onHydrated?: (suspenseInstance: SuspenseInstance) => void,
-  onDeleted?: (suspenseInstance: SuspenseInstance) => void,
+  +onHydrated?: (
+    hydrationBoundary: SuspenseInstance | ActivityInstance,
+  ) => void,
+  +onDeleted?: (hydrationBoundary: SuspenseInstance | ActivityInstance) => void,
   ...
 };
 
@@ -340,7 +365,7 @@ export type TransitionTracingCallbacks = {
 // The following fields are only used in transition tracing in Profile builds
 type TransitionTracingOnlyFiberRootProperties = {
   transitionCallbacks: null | TransitionTracingCallbacks,
-  transitionLanes: Array<Set<Transition> | null>,
+  transitionLanes: LaneMap<Set<Transition> | null>,
   // Transitions on the root can be represented as a bunch of tracing markers.
   // Each entangled group of transitions can be treated as a tracing marker.
   // It will have a set of pending suspense boundaries. These transitions
@@ -348,6 +373,11 @@ type TransitionTracingOnlyFiberRootProperties = {
   // empty. We can represent this as a Map of transitions to suspense
   // boundary sets
   incompleteTransitions: Map<Transition, TracingMarkerInstance>,
+};
+
+type ProfilerCommitHooksOnlyFiberRootProperties = {
+  effectDuration: number,
+  passiveEffectDuration: number,
 };
 
 // Exported FiberRoot type includes all properties,
@@ -358,14 +388,14 @@ export type FiberRoot = {
   ...SuspenseCallbackOnlyFiberRootProperties,
   ...UpdaterTrackingOnlyFiberRootProperties,
   ...TransitionTracingOnlyFiberRootProperties,
-  ...
+  ...ProfilerCommitHooksOnlyFiberRootProperties,
 };
 
 type BasicStateAction<S> = (S => S) | S;
 type Dispatch<A> = A => void;
 
 export type Dispatcher = {
-  use?: <T>(Usable<T>) => T,
+  use: <T>(Usable<T>) => T,
   readContext<T>(context: ReactContext<T>): T,
   useState<S>(initialState: (() => S) | S): [S, Dispatch<BasicStateAction<S>>],
   useReducer<S, I, A>(
@@ -379,7 +409,7 @@ export type Dispatcher = {
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,
   ): void,
-  useEvent?: <Args, Return, F: (...Array<Args>) => Return>(callback: F) => F,
+  useEffectEvent: <Args, F: (...Array<Args>) => mixed>(callback: F) => F,
   useInsertionEffect(
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,
@@ -396,29 +426,39 @@ export type Dispatcher = {
     deps: Array<mixed> | void | null,
   ): void,
   useDebugValue<T>(value: T, formatterFn: ?(value: T) => mixed): void,
-  useDeferredValue<T>(value: T): T,
+  useDeferredValue<T>(value: T, initialValue?: T): T,
   useTransition(): [
     boolean,
     (callback: () => void, options?: StartTransitionOptions) => void,
   ],
-  useMutableSource<Source, Snapshot>(
-    source: MutableSource<Source>,
-    getSnapshot: MutableSourceGetSnapshotFn<Source, Snapshot>,
-    subscribe: MutableSourceSubscribeFn<Source, Snapshot>,
-  ): Snapshot,
   useSyncExternalStore<T>(
     subscribe: (() => void) => () => void,
     getSnapshot: () => T,
     getServerSnapshot?: () => T,
   ): T,
   useId(): string,
-  useCacheRefresh?: () => <T>(?() => T, ?T) => void,
-  useMemoCache?: (size: number) => Array<any>,
-
-  unstable_isNewReconciler?: boolean,
+  useCacheRefresh: () => <T>(?() => T, ?T) => void,
+  useMemoCache: (size: number) => Array<any>,
+  useHostTransitionStatus: () => TransitionStatus,
+  useOptimistic: <S, A>(
+    passthrough: S,
+    reducer: ?(S, A) => S,
+  ) => [S, (A) => void],
+  useFormState: <S, P>(
+    action: (Awaited<S>, P) => S,
+    initialState: Awaited<S>,
+    permalink?: string,
+  ) => [Awaited<S>, (P) => void, boolean],
+  useActionState: <S, P>(
+    action: (Awaited<S>, P) => S,
+    initialState: Awaited<S>,
+    permalink?: string,
+  ) => [Awaited<S>, (P) => void, boolean],
 };
 
-export type CacheDispatcher = {
-  getCacheSignal: () => AbortSignal,
+export type AsyncDispatcher = {
   getCacheForType: <T>(resourceType: () => T) => T,
+  cacheSignal: () => null | AbortSignal,
+  // DEV-only
+  getOwner: () => null | Fiber | ReactComponentInfo | ComponentStackNode,
 };

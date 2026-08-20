@@ -1,0 +1,58 @@
+name: (Shared) Check maintainer
+
+on:
+  workflow_call:
+    inputs:
+      actor:
+        required: true
+        type: string
+    outputs:
+      is_core_team:
+        value: ${{ jobs.check_maintainer.outputs.is_core_team }}
+
+permissions: {}
+
+env:
+  TZ: /usr/share/zoneinfo/America/Los_Angeles
+  # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+
+jobs:
+  check_maintainer:
+    runs-on: ubuntu-latest
+    permissions:
+      # We fetch the contents of the MAINTAINERS file
+      contents: read
+    outputs:
+      is_core_team: ${{ steps.check_if_actor_is_maintainer.outputs.result }}
+    steps:
+      - name: Check if actor is maintainer
+        id: check_if_actor_is_maintainer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const actor = '${{ inputs.actor }}';
+            const res = await github.rest.repos.getContent({
+              owner: 'facebook',
+              repo: 'react',
+              path: 'MAINTAINERS',
+              ref: 'main',
+              headers: { Accept: 'application/vnd.github+json' }
+            });
+            if (res.status !== 200) {
+              console.error(res);
+              throw new Error('Unable to fetch MAINTAINERS file');
+            }
+            content = Buffer.from(res.data.content, 'base64').toString();
+            if (content == null || typeof content !== 'string') {
+              throw new Error('Unable to retrieve MAINTAINERS file');
+            }
+
+            const maintainers = new Set(content.split('\n'));
+            if (maintainers.has(actor)) {
+              console.log(`🟢 ${actor} is a maintainer`);
+              return true;
+            }
+            console.log(`🔴 ${actor} is NOT a maintainer`);
+            return null;

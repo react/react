@@ -3,11 +3,13 @@
 import * as React from 'react';
 import {Fragment, useEffect, useRef, useState} from 'react';
 
+// $FlowFixMe[missing-local-annot]
 function WarnDuringRender({children = null}) {
   console.warn('This warning fires during every render');
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function WarnOnMount({children = null}) {
   useEffect(() => {
     console.warn('This warning fires on initial mount only');
@@ -15,6 +17,7 @@ function WarnOnMount({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function WarnOnUpdate({children = null}) {
   const didMountRef = useRef(false);
   useEffect(() => {
@@ -27,6 +30,7 @@ function WarnOnUpdate({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function WarnOnUnmount({children = null}) {
   useEffect(() => {
     return () => {
@@ -36,11 +40,13 @@ function WarnOnUnmount({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorDuringRender({children = null}) {
   console.error('This error fires during every render');
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorOnMount({children = null}) {
   useEffect(() => {
     console.error('This error fires on initial mount only');
@@ -48,6 +54,7 @@ function ErrorOnMount({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorOnUpdate({children = null}) {
   const didMountRef = useRef(false);
   useEffect(() => {
@@ -60,6 +67,7 @@ function ErrorOnUpdate({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorOnUnmount({children = null}) {
   useEffect(() => {
     return () => {
@@ -69,12 +77,14 @@ function ErrorOnUnmount({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorAndWarningDuringRender({children = null}) {
   console.warn('This warning fires during every render');
   console.error('This error fires during every render');
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorAndWarningOnMount({children = null}) {
   useEffect(() => {
     console.warn('This warning fires on initial mount only');
@@ -83,6 +93,7 @@ function ErrorAndWarningOnMount({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorAndWarningOnUpdate({children = null}) {
   const didMountRef = useRef(false);
   useEffect(() => {
@@ -96,6 +107,7 @@ function ErrorAndWarningOnUpdate({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorAndWarningOnUnmount({children = null}) {
   useEffect(() => {
     return () => {
@@ -106,6 +118,7 @@ function ErrorAndWarningOnUnmount({children = null}) {
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ReallyLongErrorMessageThatWillCauseTextToBeTruncated({
   children = null,
 }) {
@@ -115,20 +128,24 @@ function ReallyLongErrorMessageThatWillCauseTextToBeTruncated({
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorWithMultipleArgs({children = null}) {
   console.error('This error', 'passes console', 4, 'arguments');
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ErrorWithStringSubstitutions({children = null}) {
   console.error('This error uses "%s" substitutions', 'string');
   return children;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ReactErrorOnHostComponent({children = null}) {
   return <div data-camelCasedAttribute="should-lower-case">{children}</div>;
 }
 
+// $FlowFixMe[missing-local-annot]
 function DuplicateWarningsAndErrors({children = null}) {
   console.warn('this warning is logged twice per render');
   console.warn('this warning is logged twice per render');
@@ -137,6 +154,7 @@ function DuplicateWarningsAndErrors({children = null}) {
   return <div data-camelCasedAttribute="should-lower-case">{children}</div>;
 }
 
+// $FlowFixMe[missing-local-annot]
 function MultipleWarningsAndErrors({children = null}) {
   console.warn('this is the first warning logged');
   console.warn('this is the second warning logged');
@@ -145,6 +163,7 @@ function MultipleWarningsAndErrors({children = null}) {
   return <div data-camelCasedAttribute="should-lower-case">{children}</div>;
 }
 
+// $FlowFixMe[missing-local-annot]
 function ComponentWithMissingKey({children}) {
   return [<div />];
 }

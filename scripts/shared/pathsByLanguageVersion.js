@@ -16,8 +16,6 @@ const esNextPaths = [
   // Source files
   'packages/*/src/**/*.js',
   'packages/dom-event-testing-library/**/*.js',
-  'packages/react-interactions/**/*.js',
-  'packages/react-interactions/**/*.js',
   'packages/shared/**/*.js',
   // Shims and Flow environment
   'scripts/flow/*.js',

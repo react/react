@@ -11,24 +11,25 @@
 
 describe('forwardRef', () => {
   let React;
-  let ReactFeatureFlags;
   let ReactNoop;
   let Scheduler;
+  let waitForAll;
 
   beforeEach(() => {
     jest.resetModules();
-    ReactFeatureFlags = require('shared/ReactFeatureFlags');
 
-    ReactFeatureFlags.replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
     React = require('react');
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForAll = InternalTestUtils.waitForAll;
   });
 
-  it('should work without a ref to be forwarded', () => {
+  it('should work without a ref to be forwarded', async () => {
     class Child extends React.Component {
       render() {
-        Scheduler.unstable_yieldValue(this.props.value);
+        Scheduler.log(this.props.value);
         return null;
       }
     }
@@ -42,13 +43,13 @@ describe('forwardRef', () => {
     ));
 
     ReactNoop.render(<RefForwardingComponent value={123} />);
-    expect(Scheduler).toFlushAndYield([123]);
+    await waitForAll([123]);
   });
 
-  it('should forward a ref for a single child', () => {
+  it('should forward a ref for a single child', async () => {
     class Child extends React.Component {
       render() {
-        Scheduler.unstable_yieldValue(this.props.value);
+        Scheduler.log(this.props.value);
         return null;
       }
     }
@@ -64,14 +65,14 @@ describe('forwardRef', () => {
     const ref = React.createRef();
 
     ReactNoop.render(<RefForwardingComponent ref={ref} value={123} />);
-    expect(Scheduler).toFlushAndYield([123]);
+    await waitForAll([123]);
     expect(ref.current instanceof Child).toBe(true);
   });
 
-  it('should forward a ref for multiple children', () => {
+  it('should forward a ref for multiple children', async () => {
     class Child extends React.Component {
       render() {
-        Scheduler.unstable_yieldValue(this.props.value);
+        Scheduler.log(this.props.value);
         return null;
       }
     }
@@ -93,17 +94,17 @@ describe('forwardRef', () => {
         <div />
       </div>,
     );
-    expect(Scheduler).toFlushAndYield([123]);
+    await waitForAll([123]);
     expect(ref.current instanceof Child).toBe(true);
   });
 
-  it('should maintain child instance and ref through updates', () => {
+  it('should maintain child instance and ref through updates', async () => {
     class Child extends React.Component {
       constructor(props) {
         super(props);
       }
       render() {
-        Scheduler.unstable_yieldValue(this.props.value);
+        Scheduler.log(this.props.value);
         return null;
       }
     }
@@ -125,42 +126,42 @@ describe('forwardRef', () => {
     };
 
     ReactNoop.render(<RefForwardingComponent ref={setRef} value={123} />);
-    expect(Scheduler).toFlushAndYield([123]);
+    await waitForAll([123]);
     expect(ref instanceof Child).toBe(true);
     expect(setRefCount).toBe(1);
     ReactNoop.render(<RefForwardingComponent ref={setRef} value={456} />);
-    expect(Scheduler).toFlushAndYield([456]);
+    await waitForAll([456]);
     expect(ref instanceof Child).toBe(true);
     expect(setRefCount).toBe(1);
   });
 
-  it('should not break lifecycle error handling', () => {
+  it('should not break lifecycle error handling', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('ErrorBoundary.componentDidCatch');
+        Scheduler.log('ErrorBoundary.componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary.render: catch');
+          Scheduler.log('ErrorBoundary.render: catch');
           return null;
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary.render: try');
+        Scheduler.log('ErrorBoundary.render: try');
         return this.props.children;
       }
     }
 
     class BadRender extends React.Component {
       render() {
-        Scheduler.unstable_yieldValue('BadRender throw');
+        Scheduler.log('BadRender throw');
         throw new Error('oops!');
       }
     }
 
     function Wrapper(props) {
       const forwardedRef = props.forwardedRef;
-      Scheduler.unstable_yieldValue('Wrapper');
+      Scheduler.log('Wrapper');
       return <BadRender {...props} ref={forwardedRef} />;
     }
 
@@ -175,7 +176,7 @@ describe('forwardRef', () => {
         <RefForwardingComponent ref={ref} />
       </ErrorBoundary>,
     );
-    expect(Scheduler).toFlushAndYield([
+    await waitForAll([
       'ErrorBoundary.render: try',
       'Wrapper',
       'BadRender throw',
@@ -192,36 +193,36 @@ describe('forwardRef', () => {
     expect(ref.current).toBe(null);
   });
 
-  it('should not re-run the render callback on a deep setState', () => {
+  it('should not re-run the render callback on a deep setState', async () => {
     let inst;
 
     class Inner extends React.Component {
       render() {
-        Scheduler.unstable_yieldValue('Inner');
+        Scheduler.log('Inner');
         inst = this;
         return <div ref={this.props.forwardedRef} />;
       }
     }
 
     function Middle(props) {
-      Scheduler.unstable_yieldValue('Middle');
+      Scheduler.log('Middle');
       return <Inner {...props} />;
     }
 
     const Forward = React.forwardRef((props, ref) => {
-      Scheduler.unstable_yieldValue('Forward');
+      Scheduler.log('Forward');
       return <Middle {...props} forwardedRef={ref} />;
     });
 
     function App() {
-      Scheduler.unstable_yieldValue('App');
+      Scheduler.log('App');
       return <Forward />;
     }
 
     ReactNoop.render(<App />);
-    expect(Scheduler).toFlushAndYield(['App', 'Forward', 'Middle', 'Inner']);
+    await waitForAll(['App', 'Forward', 'Middle', 'Inner']);
 
     inst.setState({});
-    expect(Scheduler).toFlushAndYield(['Inner']);
+    await waitForAll(['Inner']);
   });
 });

@@ -2,10 +2,6 @@
   display: flex;
 }
 
-.DisabledItem {
-  opacity: 0.5;
-}
-
 .Name {
   color: var(--color-attribute-name-not-editable);
   flex: 0 0 auto;
@@ -38,20 +34,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  cursor: pointer;
+  border-radius: 0.125rem;
+  padding: 0px 2px;
 }
 
-.None {
-  color: var(--color-dimmer);
-  font-style: italic;
+.Link:hover {
+  background-color: var(--color-background-hover);
 }
+
 
 .ExpandCollapseToggleSpacer {
   flex: 0 0 1rem;
   width: 1rem;
-}
-
-.Empty {
-  color: var(--color-dimmer);
 }
 
 .DeleteArrayItemButton {

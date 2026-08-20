@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf8">
+    <title>React DevTools</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial,
+          sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      #iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 60vh;
+      }
+      #devtools {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100vw;
+        height: 40vh;
+      }
+      #load-devtools {
+        margin: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="iframe"></iframe>
+    <div id="devtools">
+      <button id="load-devtools">Load DevTools</button>
+    </div>
+    <script src="dist/perf-regression-devtools.js"></script>
+  </body>
+</html>

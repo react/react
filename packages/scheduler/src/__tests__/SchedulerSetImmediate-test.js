@@ -8,8 +8,6 @@
  * @jest-environment node
  */
 
-/* eslint-disable no-for-of-loops/no-for-of-loops */
-
 'use strict';
 
 let Scheduler;
@@ -76,7 +74,7 @@ describe('SchedulerDOMSetImmediate', () => {
     };
 
     // Unused: we expect setImmediate to be preferred.
-    global.MessageChannel = function() {
+    global.MessageChannel = function () {
       return {
         port1: {},
         port2: {
@@ -88,7 +86,7 @@ describe('SchedulerDOMSetImmediate', () => {
     };
 
     let pendingSetImmediateCallback = null;
-    global.setImmediate = function(cb) {
+    global.setImmediate = function (cb) {
       if (pendingSetImmediateCallback) {
         throw Error('Message event already scheduled');
       }
@@ -173,7 +171,7 @@ describe('SchedulerDOMSetImmediate', () => {
     runtime.assertLog([
       'setImmediate Callback',
       'Task',
-      'Yield at 5ms',
+      gate(flags => (flags.www ? 'Yield at 10ms' : 'Yield at 5ms')),
       'Set Immediate',
     ]);
 
@@ -190,7 +188,13 @@ describe('SchedulerDOMSetImmediate', () => {
     });
     runtime.assertLog(['Set Immediate']);
     runtime.fireSetImmediate();
-    runtime.assertLog(['setImmediate Callback', 'A', 'B']);
+    if (gate(flags => flags.enableAlwaysYieldScheduler)) {
+      runtime.assertLog(['setImmediate Callback', 'A', 'Set Immediate']);
+      runtime.fireSetImmediate();
+      runtime.assertLog(['setImmediate Callback', 'B']);
+    } else {
+      runtime.assertLog(['setImmediate Callback', 'A', 'B']);
+    }
   });
 
   it('multiple tasks at different priority', () => {
@@ -202,7 +206,13 @@ describe('SchedulerDOMSetImmediate', () => {
     });
     runtime.assertLog(['Set Immediate']);
     runtime.fireSetImmediate();
-    runtime.assertLog(['setImmediate Callback', 'B', 'A']);
+    if (gate(flags => flags.enableAlwaysYieldScheduler)) {
+      runtime.assertLog(['setImmediate Callback', 'B', 'Set Immediate']);
+      runtime.fireSetImmediate();
+      runtime.assertLog(['setImmediate Callback', 'A']);
+    } else {
+      runtime.assertLog(['setImmediate Callback', 'B', 'A']);
+    }
   });
 
   it('multiple tasks with a yield in between', () => {
@@ -248,7 +258,13 @@ describe('SchedulerDOMSetImmediate', () => {
     runtime.assertLog(['setImmediate Callback', 'Oops!', 'Set Immediate']);
 
     runtime.fireSetImmediate();
-    runtime.assertLog(['setImmediate Callback', 'Yay']);
+    if (gate(flags => flags.enableAlwaysYieldScheduler)) {
+      runtime.assertLog(['setImmediate Callback', 'Set Immediate']);
+      runtime.fireSetImmediate();
+      runtime.assertLog(['setImmediate Callback', 'Yay']);
+    } else {
+      runtime.assertLog(['setImmediate Callback', 'Yay']);
+    }
   });
 
   it('schedule new task after queue has emptied', () => {
@@ -288,7 +304,7 @@ describe('SchedulerDOMSetImmediate', () => {
   });
 });
 
-it('does not crash if setImmediate is undefined', () => {
+test('does not crash if setImmediate is undefined', () => {
   jest.resetModules();
   const originalSetImmediate = global.setImmediate;
   try {

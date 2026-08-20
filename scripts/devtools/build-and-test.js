@@ -50,13 +50,13 @@ async function main() {
   });
 
   const archivePath = await archiveGitRevision();
-  const buildID = await downloadLatestReactBuild();
+  const currentCommitHash = await downloadLatestReactBuild();
 
   await buildAndTestInlinePackage();
   await buildAndTestStandalonePackage();
   await buildAndTestExtensions();
 
-  saveBuildMetadata({archivePath, buildID});
+  saveBuildMetadata({archivePath, currentCommitHash});
 
   printFinalInstructions();
 }
@@ -197,12 +197,17 @@ async function downloadLatestReactBuild() {
 
   console.log('');
 
+  const currentCommitHash = (await exec('git rev-parse HEAD')).stdout.trim();
+  if (!currentCommitHash) {
+    throw new Error('Failed to get current commit hash');
+  }
+
   const {commit} = await inquirer.prompt([
     {
       type: 'input',
       name: 'commit',
       message: 'Which React version (commit) should be used?',
-      default: 'main',
+      default: currentCommitHash,
     },
   ]);
   console.log('');
@@ -215,24 +220,11 @@ async function downloadLatestReactBuild() {
     `"${downloadScriptPath}" --commit=${commit}`
   );
 
-  const output = await logger(
-    downloadPromise,
-    'Downloading React artifacts from CI.',
-    {estimate: 15000}
-  );
+  await logger(downloadPromise, 'Downloading React artifacts from CI.', {
+    estimate: 15000,
+  });
 
-  const match = output.match('--build=([0-9]+)');
-  if (match.length === 0) {
-    console.error(chalk.red(`No build ID found in "${output}"`));
-    process.exit(1);
-  }
-
-  const buildID = match[1];
-
-  console.log('');
-  console.log(`Downloaded artifacts for CI build ${chalk.bold(buildID)}.`);
-
-  return buildID;
+  return currentCommitHash;
 }
 
 function printFinalInstructions() {

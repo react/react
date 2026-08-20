@@ -18,6 +18,8 @@ let ReactDOMClient;
 let ReactDOMServer;
 let Scheduler;
 let act;
+let waitForAll;
+let waitFor;
 
 function dispatchEvent(element, type) {
   const event = document.createEvent('Event');
@@ -33,12 +35,12 @@ const eventListenersToClear = [];
 
 function startNativeEventListenerClearDown() {
   const nativeWindowEventListener = window.addEventListener;
-  window.addEventListener = function(...params) {
+  window.addEventListener = function (...params) {
     eventListenersToClear.push({target: window, params});
     return nativeWindowEventListener.apply(this, params);
   };
   const nativeDocumentEventListener = document.addEventListener;
-  document.addEventListener = function(...params) {
+  document.addEventListener = function (...params) {
     eventListenersToClear.push({target: document, params});
     return nativeDocumentEventListener.apply(this, params);
   };
@@ -78,7 +80,12 @@ describe('DOMPluginEventSystem', () => {
           ReactDOMClient = require('react-dom/client');
           Scheduler = require('scheduler');
           ReactDOMServer = require('react-dom/server');
-          act = require('jest-react').act;
+
+          const InternalTestUtils = require('internal-test-utils');
+          waitForAll = InternalTestUtils.waitForAll;
+          waitFor = InternalTestUtils.waitFor;
+          act = InternalTestUtils.act;
+
           container = document.createElement('div');
           document.body.appendChild(container);
           startNativeEventListenerClearDown();
@@ -90,7 +97,7 @@ describe('DOMPluginEventSystem', () => {
           endNativeEventListenerClearDown();
         });
 
-        it('does not pool events', () => {
+        it('does not pool events', async () => {
           const buttonRef = React.createRef();
           const log = [];
           const onClick = jest.fn(e => log.push(e));
@@ -99,7 +106,10 @@ describe('DOMPluginEventSystem', () => {
             return <button ref={buttonRef} onClick={onClick} />;
           }
 
-          ReactDOM.render(<Test />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Test />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -111,7 +121,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[1].type).toBe('click');
         });
 
-        it('handle propagation of click events', () => {
+        it('handle propagation of click events', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -136,7 +146,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Test />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Test />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -156,7 +169,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of click events combined with sync clicks', () => {
+        it('handle propagation of click events combined with sync clicks', async () => {
           const buttonRef = React.createRef();
           let clicks = 0;
 
@@ -181,7 +194,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Test />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Test />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -189,7 +205,7 @@ describe('DOMPluginEventSystem', () => {
           expect(clicks).toBe(1);
         });
 
-        it('handle propagation of click events between roots', () => {
+        it('handle propagation of click events between roots', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const childRef = React.createRef();
@@ -221,8 +237,14 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
-          ReactDOM.render(<Child />, childRef.current);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
+          const childRoot = ReactDOMClient.createRoot(childRef.current);
+          await act(() => {
+            childRoot.render(<Child />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -241,7 +263,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of click events between disjointed roots', () => {
+        it('handle propagation of click events between disjointed roots', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -272,9 +294,16 @@ describe('DOMPluginEventSystem', () => {
           }
 
           const disjointedNode = document.createElement('div');
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
+
           buttonRef.current.appendChild(disjointedNode);
-          ReactDOM.render(<Child />, disjointedNode);
+          const disjointedNodeRoot = ReactDOMClient.createRoot(disjointedNode);
+          await act(() => {
+            disjointedNodeRoot.render(<Child />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -293,7 +322,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of click events between disjointed roots #2', () => {
+        it('handle propagation of click events between disjointed roots #2', async () => {
           const buttonRef = React.createRef();
           const button2Ref = React.createRef();
           const divRef = React.createRef();
@@ -346,9 +375,18 @@ describe('DOMPluginEventSystem', () => {
           const parentContainer = document.createElement('div');
           const childContainer = document.createElement('div');
 
-          ReactDOM.render(<GrandParent />, container);
-          ReactDOM.render(<Parent />, parentContainer);
-          ReactDOM.render(<Child />, childContainer);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<GrandParent />);
+          });
+          const parentRoot = ReactDOMClient.createRoot(parentContainer);
+          await act(() => {
+            parentRoot.render(<Parent />);
+          });
+          const childRoot = ReactDOMClient.createRoot(childContainer);
+          await act(() => {
+            childRoot.render(<Child />);
+          });
 
           parentContainer.appendChild(childContainer);
           spanRef.current.appendChild(parentContainer);
@@ -382,7 +420,8 @@ describe('DOMPluginEventSystem', () => {
           expect(log[9]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of click events between disjointed comment roots', () => {
+        // @gate !disableCommentsAsDOMContainers
+        it('handle propagation of click events between disjointed comment roots', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -416,19 +455,29 @@ describe('DOMPluginEventSystem', () => {
           const disjointedNode = document.createComment(
             ' react-mount-point-unstable ',
           );
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
           buttonRef.current.appendChild(disjointedNode);
-          ReactDOM.render(<Child />, disjointedNode);
+          const disjointedNodeRoot = ReactDOMClient.createRoot(disjointedNode);
+          await act(() => {
+            disjointedNodeRoot.render(<Child />);
+          });
 
           const buttonElement = buttonRef.current;
-          dispatchClickEvent(buttonElement);
+          await act(() => {
+            dispatchClickEvent(buttonElement);
+          });
           expect(onClick).toHaveBeenCalledTimes(1);
           expect(onClickCapture).toHaveBeenCalledTimes(1);
           expect(log[0]).toEqual(['capture', buttonElement]);
           expect(log[1]).toEqual(['bubble', buttonElement]);
 
           const divElement = divRef.current;
-          dispatchClickEvent(divElement);
+          await act(() => {
+            dispatchClickEvent(divElement);
+          });
           expect(onClick).toHaveBeenCalledTimes(3);
           expect(onClickCapture).toHaveBeenCalledTimes(3);
           expect(log[2]).toEqual(['capture', buttonElement]);
@@ -437,7 +486,8 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of click events between disjointed comment roots #2', () => {
+        // @gate !disableCommentsAsDOMContainers
+        it('handle propagation of click events between disjointed comment roots #2', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const spanRef = React.createRef();
@@ -473,19 +523,29 @@ describe('DOMPluginEventSystem', () => {
           const disjointedNode = document.createComment(
             ' react-mount-point-unstable ',
           );
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
           spanRef.current.appendChild(disjointedNode);
-          ReactDOM.render(<Child />, disjointedNode);
+          const disjointedNodeRoot = ReactDOMClient.createRoot(disjointedNode);
+          await act(() => {
+            disjointedNodeRoot.render(<Child />);
+          });
 
           const buttonElement = buttonRef.current;
-          dispatchClickEvent(buttonElement);
+          await act(() => {
+            dispatchClickEvent(buttonElement);
+          });
           expect(onClick).toHaveBeenCalledTimes(1);
           expect(onClickCapture).toHaveBeenCalledTimes(1);
           expect(log[0]).toEqual(['capture', buttonElement]);
           expect(log[1]).toEqual(['bubble', buttonElement]);
 
           const divElement = divRef.current;
-          dispatchClickEvent(divElement);
+          await act(() => {
+            dispatchClickEvent(divElement);
+          });
           expect(onClick).toHaveBeenCalledTimes(3);
           expect(onClickCapture).toHaveBeenCalledTimes(3);
           expect(log[2]).toEqual(['capture', buttonElement]);
@@ -494,7 +554,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of click events between portals', () => {
+        it('handle propagation of click events between portals', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -528,7 +588,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -549,7 +612,7 @@ describe('DOMPluginEventSystem', () => {
           document.body.removeChild(portalElement);
         });
 
-        it('handle click events on document.body portals', () => {
+        it('handle click events on document.body portals', async () => {
           const log = [];
 
           function Child({label}) {
@@ -571,7 +634,11 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
+
           const second = document.body.lastChild;
           expect(second.textContent).toEqual('second');
           dispatchClickEvent(second);
@@ -628,8 +695,9 @@ describe('DOMPluginEventSystem', () => {
           // We're going to use a different root as a parent.
           // This lets us detect whether an event goes through React's event system.
           const parentRoot = ReactDOMClient.createRoot(parentContainer);
-          parentRoot.render(<Parent />);
-          Scheduler.unstable_flushAll();
+          await act(() => {
+            parentRoot.render(<Parent />);
+          });
 
           childSlotRef.current.appendChild(childContainer);
 
@@ -640,12 +708,12 @@ describe('DOMPluginEventSystem', () => {
           suspend = true;
 
           // Hydrate asynchronously.
-          ReactDOMClient.hydrateRoot(childContainer, <App />);
-          jest.runAllTimers();
-          Scheduler.unstable_flushAll();
+          await act(() => {
+            ReactDOMClient.hydrateRoot(childContainer, <App />);
+          });
 
           // The Suspense boundary is not yet hydrated.
-          await act(async () => {
+          await act(() => {
             a.click();
           });
           expect(clicks).toBe(0);
@@ -658,18 +726,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // We're now full hydrated.
-
-          if (
-            gate(
-              flags =>
-                flags.enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay,
-            )
-          ) {
-            expect(clicks).toBe(0);
-          } else {
-            expect(clicks).toBe(1);
-          }
-
+          expect(clicks).toBe(0);
           document.body.removeChild(parentContainer);
         });
 
@@ -696,14 +753,15 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          await act(async () => {
-            ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
           });
 
           const parent = container.lastChild;
           expect(parent.id).toEqual('parent');
 
-          await act(async () => {
+          await act(() => {
             dispatchClickEvent(parent);
           });
 
@@ -712,7 +770,7 @@ describe('DOMPluginEventSystem', () => {
           const child = parent.lastChild;
           expect(child.id).toEqual('child');
 
-          await act(async () => {
+          await act(() => {
             dispatchClickEvent(child);
           });
 
@@ -745,14 +803,15 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          await act(async () => {
-            ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
           });
 
           const parent = container.lastChild;
           expect(parent.id).toEqual('parent');
 
-          await act(async () => {
+          await act(() => {
             dispatchClickEvent(parent);
           });
 
@@ -761,7 +820,7 @@ describe('DOMPluginEventSystem', () => {
           const child = parent.lastChild;
           expect(child.id).toEqual('child');
 
-          await act(async () => {
+          await act(() => {
             dispatchClickEvent(child);
           });
 
@@ -769,7 +828,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log).toEqual(['parent', 'child', 'parent']);
         });
 
-        it('native stopPropagation on click events between portals', () => {
+        it('native stopPropagation on click events between portals', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const middleDivRef = React.createRef();
@@ -814,7 +873,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
 
           const buttonElement = buttonRef.current;
           dispatchClickEvent(buttonElement);
@@ -831,7 +893,7 @@ describe('DOMPluginEventSystem', () => {
           document.body.removeChild(portalElement);
         });
 
-        it('handle propagation of focus events', () => {
+        it('handle propagation of focus events', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -857,7 +919,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Test />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Test />);
+          });
 
           const buttonElement = buttonRef.current;
           buttonElement.focus();
@@ -876,7 +941,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of focus events between roots', () => {
+        it('handle propagation of focus events between roots', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const childRef = React.createRef();
@@ -909,8 +974,14 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
-          ReactDOM.render(<Child />, childRef.current);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
+          const childRoot = ReactDOMClient.createRoot(childRef.current);
+          await act(() => {
+            childRoot.render(<Child />);
+          });
 
           const buttonElement = buttonRef.current;
           buttonElement.focus();
@@ -929,7 +1000,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[5]).toEqual(['bubble', buttonElement]);
         });
 
-        it('handle propagation of focus events between portals', () => {
+        it('handle propagation of focus events between portals', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -964,7 +1035,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
 
           const buttonElement = buttonRef.current;
           buttonElement.focus();
@@ -985,7 +1059,7 @@ describe('DOMPluginEventSystem', () => {
           document.body.removeChild(portalElement);
         });
 
-        it('native stopPropagation on focus events between portals', () => {
+        it('native stopPropagation on focus events between portals', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const middleDivRef = React.createRef();
@@ -1031,7 +1105,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
 
           const buttonElement = buttonRef.current;
           buttonElement.focus();
@@ -1048,7 +1125,7 @@ describe('DOMPluginEventSystem', () => {
           document.body.removeChild(portalElement);
         });
 
-        it('handle propagation of enter and leave events between portals', () => {
+        it('handle propagation of enter and leave events between portals', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const log = [];
@@ -1079,7 +1156,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
 
           const buttonElement = buttonRef.current;
           buttonElement.dispatchEvent(
@@ -1115,7 +1195,7 @@ describe('DOMPluginEventSystem', () => {
           document.body.removeChild(portalElement);
         });
 
-        it('handle propagation of enter and leave events between portals #2', () => {
+        it('handle propagation of enter and leave events between portals #2', async () => {
           const buttonRef = React.createRef();
           const divRef = React.createRef();
           const portalRef = React.createRef();
@@ -1150,7 +1230,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Parent />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Parent />);
+          });
 
           const buttonElement = buttonRef.current;
           buttonElement.dispatchEvent(
@@ -1184,7 +1267,7 @@ describe('DOMPluginEventSystem', () => {
           expect(log[1]).toEqual(divElement);
         });
 
-        it('should preserve bubble/capture order between roots and nested portals', () => {
+        it('should preserve bubble/capture order between roots and nested portals', async () => {
           const targetRef = React.createRef();
           let log = [];
           const onClickRoot = jest.fn(e => log.push('bubble root'));
@@ -1229,7 +1312,10 @@ describe('DOMPluginEventSystem', () => {
             );
           }
 
-          ReactDOM.render(<Root />, container);
+          const root = ReactDOMClient.createRoot(container);
+          await act(() => {
+            root.render(<Root />);
+          });
 
           const divElement = targetRef.current;
           dispatchClickEvent(divElement);
@@ -1272,7 +1358,11 @@ describe('DOMPluginEventSystem', () => {
             ReactDOMClient = require('react-dom/client');
             Scheduler = require('scheduler');
             ReactDOMServer = require('react-dom/server');
-            act = require('jest-react').act;
+            act = require('internal-test-utils').act;
+
+            const InternalTestUtils = require('internal-test-utils');
+            waitForAll = InternalTestUtils.waitForAll;
+            waitFor = InternalTestUtils.waitFor;
           });
 
           // @gate www
@@ -1294,7 +1384,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('can render correctly with the ReactDOMServer hydration', () => {
+          it('can render correctly with the ReactDOMServer hydration', async () => {
             const clickEvent = jest.fn();
             const spanRef = React.createRef();
             const setClick = ReactDOM.unstable_createEventHandle('click');
@@ -1313,14 +1403,15 @@ describe('DOMPluginEventSystem', () => {
             const output = ReactDOMServer.renderToString(<Test />);
             expect(output).toBe(`<div><span>Hello world</span></div>`);
             container.innerHTML = output;
-            ReactDOM.hydrate(<Test />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              ReactDOMClient.hydrateRoot(container, <Test />);
+            });
             dispatchClickEvent(spanRef.current);
             expect(clickEvent).toHaveBeenCalledTimes(1);
           });
 
           // @gate www
-          it('should correctly work for a basic "click" listener', () => {
+          it('should correctly work for a basic "click" listener', async () => {
             let log = [];
             const clickEvent = jest.fn(event => {
               log.push({
@@ -1346,8 +1437,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             expect(container.innerHTML).toBe(
               '<button><div>Click me!</div></button>',
@@ -1367,15 +1460,17 @@ describe('DOMPluginEventSystem', () => {
             expect(clickEvent).toBeCalledTimes(1);
 
             // Unmounting the container and clicking should not work
-            ReactDOM.render(null, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(null);
+            });
 
             dispatchClickEvent(divElement);
             expect(clickEvent).toBeCalledTimes(1);
 
             // Re-rendering the container and clicking should work
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test />);
+            });
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
@@ -1410,8 +1505,9 @@ describe('DOMPluginEventSystem', () => {
             }
 
             let clickEvent2 = jest.fn();
-            ReactDOM.render(<Test2 clickEvent2={clickEvent2} />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test2 clickEvent2={clickEvent2} />);
+            });
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
@@ -1419,8 +1515,9 @@ describe('DOMPluginEventSystem', () => {
 
             // Reset the function we pass in, so it's different
             clickEvent2 = jest.fn();
-            ReactDOM.render(<Test2 clickEvent2={clickEvent2} />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test2 clickEvent2={clickEvent2} />);
+            });
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
@@ -1428,7 +1525,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly work for setting and clearing a basic "click" listener', () => {
+          it('should correctly work for setting and clearing a basic "click" listener', async () => {
             const clickEvent = jest.fn();
             const divRef = React.createRef();
             const buttonRef = React.createRef();
@@ -1450,16 +1547,20 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test off={false} />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+
+            await act(() => {
+              root.render(<Test off={false} />);
+            });
 
             let divElement = divRef.current;
             dispatchClickEvent(divElement);
             expect(clickEvent).toBeCalledTimes(1);
 
             // The listener should get unmounted
-            ReactDOM.render(<Test off={true} />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test off={true} />);
+            });
 
             clickEvent.mockClear();
 
@@ -1469,7 +1570,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should handle the target being a text node', () => {
+          it('should handle the target being a text node', async () => {
             const clickEvent = jest.fn();
             const buttonRef = React.createRef();
             const setClick = ReactDOM.unstable_createEventHandle('click');
@@ -1482,8 +1583,10 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const textNode = buttonRef.current.firstChild;
             dispatchClickEvent(textNode);
@@ -1491,7 +1594,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('handle propagation of click events', () => {
+          it('handle propagation of click events', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const log = [];
@@ -1535,8 +1638,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -1560,7 +1665,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('handle propagation of click events mixed with onClick events', () => {
+          it('handle propagation of click events mixed with onClick events', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const log = [];
@@ -1599,8 +1704,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -1620,7 +1727,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly work for a basic "click" listener on the outer target', () => {
+          it('should correctly work for a basic "click" listener on the outer target', async () => {
             const log = [];
             const clickEvent = jest.fn(event => {
               log.push({
@@ -1646,8 +1753,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             expect(container.innerHTML).toBe(
               '<button><div>Click me!</div></button>',
@@ -1666,13 +1775,17 @@ describe('DOMPluginEventSystem', () => {
             ]);
 
             // Unmounting the container and clicking should not work
-            ReactDOM.render(null, container);
+            await act(() => {
+              root.render(null);
+            });
+
             dispatchClickEvent(divElement);
             expect(clickEvent).toBeCalledTimes(1);
 
             // Re-rendering the container and clicking should work
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test />);
+            });
 
             divElement = divRef.current;
             dispatchClickEvent(divElement);
@@ -1685,7 +1798,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly handle many nested target listeners', () => {
+          it('should correctly handle many nested target listeners', async () => {
             const buttonRef = React.createRef();
             const targetListener1 = jest.fn();
             const targetListener2 = jest.fn();
@@ -1730,8 +1843,10 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             let buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -1776,8 +1891,9 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test2 />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test2 />);
+            });
 
             buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -1788,7 +1904,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly handle stopPropagation correctly for target events', () => {
+          it('should correctly handle stopPropagation correctly for target events', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const clickEvent = jest.fn();
@@ -1817,8 +1933,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const divElement = divRef.current;
             dispatchClickEvent(divElement);
@@ -1826,7 +1944,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly handle stopPropagation correctly for many target events', () => {
+          it('should correctly handle stopPropagation correctly for many target events', async () => {
             const buttonRef = React.createRef();
             const targetListener1 = jest.fn(e => e.stopPropagation());
             const targetListener2 = jest.fn(e => e.stopPropagation());
@@ -1867,8 +1985,10 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -1879,7 +1999,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly handle stopPropagation for mixed capture/bubbling target listeners', () => {
+          it('should correctly handle stopPropagation for mixed capture/bubbling target listeners', async () => {
             const buttonRef = React.createRef();
             const targetListener1 = jest.fn(e => e.stopPropagation());
             const targetListener2 = jest.fn(e => e.stopPropagation());
@@ -1924,8 +2044,10 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -1948,14 +2070,14 @@ describe('DOMPluginEventSystem', () => {
                 });
               });
 
-              Scheduler.unstable_yieldValue('Test');
+              Scheduler.log('Test');
               return <button ref={ref}>Press me</button>;
             }
 
             const root = ReactDOMClient.createRoot(container);
             root.render(<Test counter={0} />);
 
-            expect(Scheduler).toFlushAndYield(['Test']);
+            await waitForAll(['Test']);
 
             // Click the button
             dispatchClickEvent(ref.current);
@@ -1965,15 +2087,11 @@ describe('DOMPluginEventSystem', () => {
             log.length = 0;
 
             // Increase counter
-            if (gate(flags => flags.enableSyncDefaultUpdates)) {
-              React.startTransition(() => {
-                root.render(<Test counter={1} />);
-              });
-            } else {
+            React.startTransition(() => {
               root.render(<Test counter={1} />);
-            }
+            });
             // Yield before committing
-            expect(Scheduler).toFlushAndYieldThrough(['Test']);
+            await waitFor(['Test']);
 
             // Click the button again
             dispatchClickEvent(ref.current);
@@ -1983,13 +2101,13 @@ describe('DOMPluginEventSystem', () => {
             log.length = 0;
 
             // Commit
-            expect(Scheduler).toFlushAndYield([]);
+            await waitForAll([]);
             dispatchClickEvent(ref.current);
             expect(log).toEqual([{counter: 1}]);
           });
 
           // @gate www
-          it('should correctly work for a basic "click" window listener', () => {
+          it('should correctly work for a basic "click" window listener', async () => {
             const log = [];
             const clickEvent = jest.fn(event => {
               log.push({
@@ -2008,8 +2126,10 @@ describe('DOMPluginEventSystem', () => {
 
               return <button>Click anything!</button>;
             }
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             expect(container.innerHTML).toBe(
               '<button>Click anything!</button>',
@@ -2025,22 +2145,25 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // Unmounting the container and clicking should not work
-            ReactDOM.render(null, container);
-            Scheduler.unstable_flushAll();
+
+            await act(() => {
+              root.render(null);
+            });
 
             dispatchClickEvent(document.body);
             expect(clickEvent).toBeCalledTimes(1);
 
             // Re-rendering and clicking the body should work again
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Test />);
+            });
 
             dispatchClickEvent(document.body);
             expect(clickEvent).toBeCalledTimes(2);
           });
 
           // @gate www
-          it('handle propagation of click events on the window', () => {
+          it('handle propagation of click events on the window', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const log = [];
@@ -2091,8 +2214,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -2120,7 +2245,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly handle stopPropagation for mixed listeners', () => {
+          it('should correctly handle stopPropagation for mixed listeners', async () => {
             const buttonRef = React.createRef();
             const rootListener1 = jest.fn(e => e.stopPropagation());
             const rootListener2 = jest.fn();
@@ -2159,8 +2284,10 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -2171,7 +2298,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('should correctly handle stopPropagation for delegated listeners', () => {
+          it('should correctly handle stopPropagation for delegated listeners', async () => {
             const buttonRef = React.createRef();
             const rootListener1 = jest.fn(e => e.stopPropagation());
             const rootListener2 = jest.fn();
@@ -2204,9 +2331,10 @@ describe('DOMPluginEventSystem', () => {
               return <button ref={buttonRef}>Click me!</button>;
             }
 
-            ReactDOM.render(<Test />, container);
-
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -2217,7 +2345,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('handle propagation of click events on the window and document', () => {
+          it('handle propagation of click events on the window and document', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const log = [];
@@ -2275,8 +2403,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Test />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -2342,7 +2472,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('beforeblur and afterblur are called after a focused element is unmounted', () => {
+          it('beforeblur and afterblur are called after a focused element is unmounted', async () => {
             const log = [];
             // We have to persist here because we want to read relatedTarget later.
             const onAfterBlur = jest.fn(e => {
@@ -2352,12 +2482,10 @@ describe('DOMPluginEventSystem', () => {
             const onBeforeBlur = jest.fn(e => log.push(e.type));
             const innerRef = React.createRef();
             const innerRef2 = React.createRef();
-            const setAfterBlurHandle = ReactDOM.unstable_createEventHandle(
-              'afterblur',
-            );
-            const setBeforeBlurHandle = ReactDOM.unstable_createEventHandle(
-              'beforeblur',
-            );
+            const setAfterBlurHandle =
+              ReactDOM.unstable_createEventHandle('afterblur');
+            const setBeforeBlurHandle =
+              ReactDOM.unstable_createEventHandle('beforeblur');
 
             const Component = ({show}) => {
               const ref = React.useRef(null);
@@ -2380,8 +2508,10 @@ describe('DOMPluginEventSystem', () => {
               );
             };
 
-            ReactDOM.render(<Component show={true} />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Component show={true} />);
+            });
 
             const inner = innerRef.current;
             const target = createEventTarget(inner);
@@ -2389,8 +2519,9 @@ describe('DOMPluginEventSystem', () => {
             expect(onBeforeBlur).toHaveBeenCalledTimes(0);
             expect(onAfterBlur).toHaveBeenCalledTimes(0);
 
-            ReactDOM.render(<Component show={false} />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Component show={false} />);
+            });
 
             expect(onBeforeBlur).toHaveBeenCalledTimes(1);
             expect(onAfterBlur).toHaveBeenCalledTimes(1);
@@ -2401,7 +2532,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('beforeblur and afterblur are called after a nested focused element is unmounted', () => {
+          it('beforeblur and afterblur are called after a nested focused element is unmounted', async () => {
             const log = [];
             // We have to persist here because we want to read relatedTarget later.
             const onAfterBlur = jest.fn(e => {
@@ -2411,12 +2542,10 @@ describe('DOMPluginEventSystem', () => {
             const onBeforeBlur = jest.fn(e => log.push(e.type));
             const innerRef = React.createRef();
             const innerRef2 = React.createRef();
-            const setAfterBlurHandle = ReactDOM.unstable_createEventHandle(
-              'afterblur',
-            );
-            const setBeforeBlurHandle = ReactDOM.unstable_createEventHandle(
-              'beforeblur',
-            );
+            const setAfterBlurHandle =
+              ReactDOM.unstable_createEventHandle('afterblur');
+            const setBeforeBlurHandle =
+              ReactDOM.unstable_createEventHandle('beforeblur');
 
             const Component = ({show}) => {
               const ref = React.useRef(null);
@@ -2443,8 +2572,10 @@ describe('DOMPluginEventSystem', () => {
               );
             };
 
-            ReactDOM.render(<Component show={true} />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Component show={true} />);
+            });
 
             const inner = innerRef.current;
             const target = createEventTarget(inner);
@@ -2452,8 +2583,9 @@ describe('DOMPluginEventSystem', () => {
             expect(onBeforeBlur).toHaveBeenCalledTimes(0);
             expect(onAfterBlur).toHaveBeenCalledTimes(0);
 
-            ReactDOM.render(<Component show={false} />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Component show={false} />);
+            });
 
             expect(onBeforeBlur).toHaveBeenCalledTimes(1);
             expect(onAfterBlur).toHaveBeenCalledTimes(1);
@@ -2464,13 +2596,12 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('beforeblur should skip handlers from a deleted subtree after the focused element is unmounted', () => {
+          it('beforeblur should skip handlers from a deleted subtree after the focused element is unmounted', async () => {
             const onBeforeBlur = jest.fn();
             const innerRef = React.createRef();
             const innerRef2 = React.createRef();
-            const setBeforeBlurHandle = ReactDOM.unstable_createEventHandle(
-              'beforeblur',
-            );
+            const setBeforeBlurHandle =
+              ReactDOM.unstable_createEventHandle('beforeblur');
             const ref2 = React.createRef();
 
             const Component = ({show}) => {
@@ -2503,22 +2634,25 @@ describe('DOMPluginEventSystem', () => {
               );
             };
 
-            ReactDOM.render(<Component show={true} />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Component show={true} />);
+            });
 
             const inner = innerRef.current;
             const target = createEventTarget(inner);
             target.focus();
             expect(onBeforeBlur).toHaveBeenCalledTimes(0);
 
-            ReactDOM.render(<Component show={false} />, container);
-            Scheduler.unstable_flushAll();
+            await act(() => {
+              root.render(<Component show={false} />);
+            });
 
             expect(onBeforeBlur).toHaveBeenCalledTimes(1);
           });
 
           // @gate www
-          it('beforeblur and afterblur are called after a focused element is suspended', () => {
+          it('beforeblur and afterblur are called after a focused element is suspended', async () => {
             const log = [];
             // We have to persist here because we want to read relatedTarget later.
             const onAfterBlur = jest.fn(e => {
@@ -2533,12 +2667,10 @@ describe('DOMPluginEventSystem', () => {
             const promise = new Promise(
               resolvePromise => (resolve = resolvePromise),
             );
-            const setAfterBlurHandle = ReactDOM.unstable_createEventHandle(
-              'afterblur',
-            );
-            const setBeforeBlurHandle = ReactDOM.unstable_createEventHandle(
-              'beforeblur',
-            );
+            const setAfterBlurHandle =
+              ReactDOM.unstable_createEventHandle('afterblur');
+            const setBeforeBlurHandle =
+              ReactDOM.unstable_createEventHandle('beforeblur');
 
             function Child() {
               if (suspend) {
@@ -2575,7 +2707,7 @@ describe('DOMPluginEventSystem', () => {
 
             const root = ReactDOMClient.createRoot(container2);
 
-            act(() => {
+            await act(() => {
               root.render(<Component />);
             });
             jest.runAllTimers();
@@ -2587,7 +2719,7 @@ describe('DOMPluginEventSystem', () => {
             expect(onAfterBlur).toHaveBeenCalledTimes(0);
 
             suspend = true;
-            act(() => {
+            await act(() => {
               root.render(<Component />);
             });
             jest.runAllTimers();
@@ -2604,13 +2736,12 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('beforeblur should skip handlers from a deleted subtree after the focused element is suspended', () => {
+          it('beforeblur should skip handlers from a deleted subtree after the focused element is suspended', async () => {
             const onBeforeBlur = jest.fn();
             const innerRef = React.createRef();
             const innerRef2 = React.createRef();
-            const setBeforeBlurHandle = ReactDOM.unstable_createEventHandle(
-              'beforeblur',
-            );
+            const setBeforeBlurHandle =
+              ReactDOM.unstable_createEventHandle('beforeblur');
             const ref2 = React.createRef();
             const Suspense = React.Suspense;
             let suspend = false;
@@ -2662,7 +2793,7 @@ describe('DOMPluginEventSystem', () => {
 
             const root = ReactDOMClient.createRoot(container2);
 
-            act(() => {
+            await act(() => {
               root.render(<Component />);
             });
             jest.runAllTimers();
@@ -2673,7 +2804,7 @@ describe('DOMPluginEventSystem', () => {
             expect(onBeforeBlur).toHaveBeenCalledTimes(0);
 
             suspend = true;
-            act(() => {
+            await act(() => {
               root.render(<Component />);
             });
             jest.runAllTimers();
@@ -2685,18 +2816,17 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('regression: does not fire beforeblur/afterblur if target is already hidden', () => {
+          it('regression: does not fire beforeblur/afterblur if target is already hidden', async () => {
             const Suspense = React.Suspense;
             let suspend = false;
-            const promise = Promise.resolve();
-            const setBeforeBlurHandle = ReactDOM.unstable_createEventHandle(
-              'beforeblur',
-            );
+            const fakePromise = {then() {}};
+            const setBeforeBlurHandle =
+              ReactDOM.unstable_createEventHandle('beforeblur');
             const innerRef = React.createRef();
 
             function Child() {
               if (suspend) {
-                throw promise;
+                throw fakePromise;
               }
               return <input ref={innerRef} />;
             }
@@ -2728,7 +2858,7 @@ describe('DOMPluginEventSystem', () => {
             document.body.appendChild(container2);
 
             const root = ReactDOMClient.createRoot(container2);
-            act(() => {
+            await act(() => {
               root.render(<Component />);
             });
 
@@ -2739,15 +2869,15 @@ describe('DOMPluginEventSystem', () => {
 
             // Suspend. This hides the input node, causing it to lose focus.
             suspend = true;
-            act(() => {
+            await act(() => {
               root.render(<Component />);
             });
 
             document.body.removeChild(container2);
           });
 
-          // @gate www
-          it('handle propagation of click events between disjointed comment roots', () => {
+          // @gate !disableCommentsAsDOMContainers
+          it('handle propagation of click events between disjointed comment roots', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const log = [];
@@ -2794,11 +2924,16 @@ describe('DOMPluginEventSystem', () => {
             const disjointedNode = document.createComment(
               ' react-mount-point-unstable ',
             );
-            ReactDOM.render(<Parent />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Parent />);
+            });
             buttonRef.current.appendChild(disjointedNode);
-            ReactDOM.render(<Child />, disjointedNode);
-            Scheduler.unstable_flushAll();
+            const disjointedNodeRoot =
+              ReactDOMClient.createRoot(disjointedNode);
+            await act(() => {
+              disjointedNodeRoot.render(<Child />);
+            });
 
             const buttonElement = buttonRef.current;
             dispatchClickEvent(buttonElement);
@@ -2818,7 +2953,7 @@ describe('DOMPluginEventSystem', () => {
           });
 
           // @gate www
-          it('propagates known createEventHandle events through portals without inner listeners', () => {
+          it('propagates known createEventHandle events through portals without inner listeners', async () => {
             const buttonRef = React.createRef();
             const divRef = React.createRef();
             const log = [];
@@ -2861,8 +2996,10 @@ describe('DOMPluginEventSystem', () => {
               );
             }
 
-            ReactDOM.render(<Parent />, container);
-            Scheduler.unstable_flushAll();
+            const root = ReactDOMClient.createRoot(container);
+            await act(() => {
+              root.render(<Parent />);
+            });
 
             const divElement = divRef.current;
             const buttonElement = buttonRef.current;
@@ -2887,10 +3024,11 @@ describe('DOMPluginEventSystem', () => {
               ReactDOMClient = require('react-dom/client');
               Scheduler = require('scheduler');
               ReactDOMServer = require('react-dom/server');
+              act = require('internal-test-utils').act;
             });
 
             // @gate www
-            it('handle propagation of click events on a scope', () => {
+            it('handle propagation of click events on a scope', async () => {
               const buttonRef = React.createRef();
               const log = [];
               const onClick = jest.fn(e =>
@@ -2931,8 +3069,10 @@ describe('DOMPluginEventSystem', () => {
                 );
               }
 
-              ReactDOM.render(<Test />, container);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Test />);
+              });
 
               const buttonElement = buttonRef.current;
               dispatchClickEvent(buttonElement);
@@ -2946,7 +3086,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // @gate www
-            it('handle mixed propagation of click events on a scope', () => {
+            it('handle mixed propagation of click events on a scope', async () => {
               const buttonRef = React.createRef();
               const divRef = React.createRef();
               const log = [];
@@ -3002,8 +3142,10 @@ describe('DOMPluginEventSystem', () => {
                 );
               }
 
-              ReactDOM.render(<Test />, container);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Test />);
+              });
 
               const buttonElement = buttonRef.current;
               dispatchClickEvent(buttonElement);
@@ -3037,7 +3179,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // @gate www
-            it('should not handle the target being a dangling text node within a scope', () => {
+            it('should not handle the target being a dangling text node within a scope', async () => {
               const clickEvent = jest.fn();
               const buttonRef = React.createRef();
               const TestScope = React.unstable_Scope;
@@ -3057,8 +3199,10 @@ describe('DOMPluginEventSystem', () => {
                 );
               }
 
-              ReactDOM.render(<Test />, container);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Test />);
+              });
 
               const textNode = buttonRef.current.firstChild;
               dispatchClickEvent(textNode);
@@ -3068,7 +3212,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // @gate www
-            it('handle stopPropagation (inner) correctly between scopes', () => {
+            it('handle stopPropagation (inner) correctly between scopes', async () => {
               const buttonRef = React.createRef();
               const outerOnClick = jest.fn();
               const innerOnClick = jest.fn(e => e.stopPropagation());
@@ -3099,8 +3243,10 @@ describe('DOMPluginEventSystem', () => {
                 );
               }
 
-              ReactDOM.render(<Test />, container);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Test />);
+              });
 
               const buttonElement = buttonRef.current;
               dispatchClickEvent(buttonElement);
@@ -3110,7 +3256,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // @gate www
-            it('handle stopPropagation (outer) correctly between scopes', () => {
+            it('handle stopPropagation (outer) correctly between scopes', async () => {
               const buttonRef = React.createRef();
               const outerOnClick = jest.fn(e => e.stopPropagation());
               const innerOnClick = jest.fn();
@@ -3141,8 +3287,10 @@ describe('DOMPluginEventSystem', () => {
                 );
               }
 
-              ReactDOM.render(<Test />, container);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Test />);
+              });
 
               const buttonElement = buttonRef.current;
               dispatchClickEvent(buttonElement);
@@ -3152,7 +3300,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // @gate www
-            it('handle stopPropagation (inner and outer) correctly between scopes', () => {
+            it('handle stopPropagation (inner and outer) correctly between scopes', async () => {
               const buttonRef = React.createRef();
               const onClick = jest.fn(e => e.stopPropagation());
               const TestScope = React.unstable_Scope;
@@ -3182,8 +3330,10 @@ describe('DOMPluginEventSystem', () => {
                 );
               }
 
-              ReactDOM.render(<Test />, container);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(container);
+              await act(() => {
+                root.render(<Test />);
+              });
 
               const buttonElement = buttonRef.current;
               dispatchClickEvent(buttonElement);
@@ -3192,7 +3342,7 @@ describe('DOMPluginEventSystem', () => {
             });
 
             // @gate www
-            it('should be able to register handlers for events affected by the intervention', () => {
+            it('should be able to register handlers for events affected by the intervention', async () => {
               const rootContainer = document.createElement('div');
               container.appendChild(rootContainer);
 
@@ -3208,12 +3358,10 @@ describe('DOMPluginEventSystem', () => {
               container.addEventListener('wheel', handler);
 
               const ref = React.createRef();
-              const setTouchStart = ReactDOM.unstable_createEventHandle(
-                'touchstart',
-              );
-              const setTouchMove = ReactDOM.unstable_createEventHandle(
-                'touchmove',
-              );
+              const setTouchStart =
+                ReactDOM.unstable_createEventHandle('touchstart');
+              const setTouchMove =
+                ReactDOM.unstable_createEventHandle('touchmove');
               const setWheel = ReactDOM.unstable_createEventHandle('wheel');
 
               function Component() {
@@ -3236,8 +3384,10 @@ describe('DOMPluginEventSystem', () => {
                 return <div ref={ref}>test</div>;
               }
 
-              ReactDOM.render(<Component />, rootContainer);
-              Scheduler.unstable_flushAll();
+              const root = ReactDOMClient.createRoot(rootContainer);
+              await act(() => {
+                root.render(<Component />);
+              });
 
               dispatchEvent(ref.current, 'touchstart');
               dispatchEvent(ref.current, 'touchmove');

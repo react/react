@@ -7,10 +7,11 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
 
 # production
 /build
-/dist
 .eslintcache
 
 # misc

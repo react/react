@@ -14,7 +14,7 @@ export default function App(): React.Node {
 }
 
 class List extends React.Component {
-  constructor(props) {
+  constructor(props: any) {
     super(props);
     this.state = {
       items: ['one', 'two', 'three'],
@@ -28,7 +28,7 @@ class List extends React.Component {
     }
   };
 
-  render() {
+  render(): any {
     return (
       <div>
         <input
@@ -50,6 +50,7 @@ class List extends React.Component {
   }
 }
 
+// $FlowFixMe[missing-local-annot]
 function ListItem({label}) {
   return <li data-testname="ListItem">{label}</li>;
 }

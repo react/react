@@ -7,104 +7,102 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-/* eslint-disable max-len */
-
 'use strict';
 
-(function(global, factory) {
-  // eslint-disable-next-line no-unused-expressions
+(function (global, factory) {
+  // eslint-disable-next-line ft-flow/no-unused-expressions
   typeof exports === 'object' && typeof module !== 'undefined'
     ? (module.exports = factory(require('react')))
     : typeof define === 'function' && define.amd // eslint-disable-line no-undef
-    ? define(['react'], factory) // eslint-disable-line no-undef
-    : (global.Scheduler = factory(global));
-})(this, function(global) {
+      ? define(['react'], factory) // eslint-disable-line no-undef
+      : (global.Scheduler = factory(global));
+})(this, function (global) {
   function unstable_now() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_now.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_now.apply(
       this,
       arguments
     );
   }
 
   function unstable_scheduleCallback() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_scheduleCallback.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_scheduleCallback.apply(
       this,
       arguments
     );
   }
 
   function unstable_cancelCallback() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_cancelCallback.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_cancelCallback.apply(
       this,
       arguments
     );
   }
 
   function unstable_shouldYield() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_shouldYield.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_shouldYield.apply(
       this,
       arguments
     );
   }
 
   function unstable_requestPaint() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_requestPaint.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_requestPaint.apply(
       this,
       arguments
     );
   }
 
   function unstable_runWithPriority() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_runWithPriority.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_runWithPriority.apply(
       this,
       arguments
     );
   }
 
   function unstable_next() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_next.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_next.apply(
       this,
       arguments
     );
   }
 
   function unstable_wrapCallback() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_wrapCallback.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_wrapCallback.apply(
       this,
       arguments
     );
   }
 
   function unstable_getCurrentPriorityLevel() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_getCurrentPriorityLevel.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_getCurrentPriorityLevel.apply(
       this,
       arguments
     );
   }
 
   function unstable_getFirstCallbackNode() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_getFirstCallbackNode.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_getFirstCallbackNode.apply(
       this,
       arguments
     );
   }
 
   function unstable_pauseExecution() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_pauseExecution.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_pauseExecution.apply(
       this,
       arguments
     );
   }
 
   function unstable_continueExecution() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_continueExecution.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_continueExecution.apply(
       this,
       arguments
     );
   }
 
   function unstable_forceFrameRate() {
-    return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.Scheduler.unstable_forceFrameRate.apply(
+    return global.React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.Scheduler.unstable_forceFrameRate.apply(
       this,
       arguments
     );
@@ -125,27 +123,33 @@
     unstable_getFirstCallbackNode: unstable_getFirstCallbackNode,
     unstable_forceFrameRate: unstable_forceFrameRate,
     get unstable_IdlePriority() {
-      return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+      return global.React
+        .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .Scheduler.unstable_IdlePriority;
     },
     get unstable_ImmediatePriority() {
-      return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+      return global.React
+        .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .Scheduler.unstable_ImmediatePriority;
     },
     get unstable_LowPriority() {
-      return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+      return global.React
+        .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .Scheduler.unstable_LowPriority;
     },
     get unstable_NormalPriority() {
-      return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+      return global.React
+        .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .Scheduler.unstable_NormalPriority;
     },
     get unstable_UserBlockingPriority() {
-      return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+      return global.React
+        .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .Scheduler.unstable_UserBlockingPriority;
     },
     get unstable_Profiling() {
-      return global.React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+      return global.React
+        .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE
         .Scheduler.unstable_Profiling;
     },
   });

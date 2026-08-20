@@ -1,0 +1,42 @@
+.Owner {
+  color: var(--color-component-name);
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.25rem;
+  background: none;
+  border: none;
+  display: block;
+}
+.Owner:focus {
+  outline: none;
+  background-color: var(--color-button-background-focus);
+}
+
+.OwnerButton {
+  cursor: pointer;
+  width: 100%;
+  padding: 0;
+}
+
+.OwnerContent {
+  display: flex;
+  align-items: center;
+  padding-left: 1rem;
+  width: 100%;
+  border-radius: 0.25rem;
+}
+
+.OwnerContent:hover {
+  background-color: var(--color-background-hover);
+}
+
+.NotInStore {
+  color: var(--color-dim);
+  cursor: default;
+}

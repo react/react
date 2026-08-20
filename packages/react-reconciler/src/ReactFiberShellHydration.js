@@ -8,7 +8,7 @@
  */
 
 import type {FiberRoot} from './ReactInternalTypes';
-import type {RootState} from './ReactFiberRoot.new';
+import type {RootState} from './ReactFiberRoot';
 
 // This is imported by the event replaying implementation in React DOM. It's
 // in a separate file to break a circular dependency between the renderer and

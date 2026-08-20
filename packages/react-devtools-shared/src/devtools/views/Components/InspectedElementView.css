@@ -1,45 +1,5 @@
-.Owners {
-  padding: 0.25rem;
-  border-top: 1px solid var(--color-border);
-}
-
 .OwnersHeader {
   font-family: var(--font-family-sans);
-}
-
-.Source {
-  padding: 0.25rem;
-  border-top: 1px solid var(--color-border);
-}
-
-.SourceHeaderRow {
-  display: flex;
-  align-items: center;
-}
-
-.SourceHeader {
-  flex: 1 1;
-  font-family: var(--font-family-sans);
-}
-
-.SourceOneLiner {
-  font-family: var(--font-family-monospace);
-  font-size: var(--font-size-monospace-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  margin-left: 1rem;
-}
-
-.Owner {
-  color: var(--color-component-name);
-  font-family: var(--font-family-monospace);
-  font-size: var(--font-size-monospace-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
 }
 
 .InspectedElement {
@@ -50,43 +10,12 @@
   line-height: var(--line-height-data);
 }
 
-.Owner {
-  border-radius: 0.25rem;
-  padding: 0.125rem 0.25rem;
-  background: none;
-  border: none;
-  display: block;
-}
-.Owner:focus {
-  outline: none;
-  background-color: var(--color-button-background-focus);
-}
+.InspectedElementSection:not(:empty) {
+  padding: 0.25rem;
 
-.NotInStore {
-  color: var(--color-dim);
-  cursor: default;
-}
-
-.OwnerButton {
-  cursor: pointer;
-  width: 100%;
-  padding: 0;
-}
-
-.OwnerContent {
-  display: flex;
-  align-items: center;
-  padding-left: 1rem;
-  width: 100%;
-  border-radius: 0.25rem;
-}
-
-.OwnerContent:hover {
-  background-color: var(--color-background-hover);
-}
-
-.ContextMenuIcon {
-  margin-right: 0.5rem;
+  &:not(:last-of-type) {
+    border-bottom: 1px solid var(--color-border);
+  }
 }
 
 .OwnersMetaField {
@@ -94,4 +23,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.RenderedBySkeleton {
+  padding-left: 1.25rem;
 }

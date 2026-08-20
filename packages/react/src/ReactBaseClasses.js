@@ -53,14 +53,14 @@ Component.prototype.isReactComponent = {};
  * @final
  * @protected
  */
-Component.prototype.setState = function(partialState, callback) {
+Component.prototype.setState = function (partialState, callback) {
   if (
     typeof partialState !== 'object' &&
     typeof partialState !== 'function' &&
     partialState != null
   ) {
     throw new Error(
-      'setState(...): takes an object of state variables to update or a ' +
+      'takes an object of state variables to update or a ' +
         'function which returns an object of state variables.',
     );
   }
@@ -82,7 +82,7 @@ Component.prototype.setState = function(partialState, callback) {
  * @final
  * @protected
  */
-Component.prototype.forceUpdate = function(callback) {
+Component.prototype.forceUpdate = function (callback) {
   this.updater.enqueueForceUpdate(this, callback, 'forceUpdate');
 };
 
@@ -104,9 +104,9 @@ if (__DEV__) {
         'https://github.com/facebook/react/issues/3236).',
     ],
   };
-  const defineDeprecationWarning = function(methodName, info) {
+  const defineDeprecationWarning = function (methodName, info) {
     Object.defineProperty(Component.prototype, methodName, {
-      get: function() {
+      get: function () {
         console.warn(
           '%s(...) is deprecated in plain JavaScript React classes. %s',
           info[0],

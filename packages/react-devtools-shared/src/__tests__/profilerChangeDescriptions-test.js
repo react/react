@@ -7,17 +7,16 @@
  * @flow
  */
 
+import {getVersionedRenderImplementation} from './utils';
+
 describe('Profiler change descriptions', () => {
   let React;
-  let legacyRender;
-  let store: Store;
+  let store;
   let utils;
 
   beforeEach(() => {
     utils = require('./utils');
     utils.beforeEachProfiling();
-
-    legacyRender = utils.legacyRender;
 
     store = global.store;
     store.collapseNodesByDefault = false;
@@ -25,6 +24,8 @@ describe('Profiler change descriptions', () => {
 
     React = require('react');
   });
+
+  const {render} = getVersionedRenderImplementation();
 
   // @reactVersion >=18.0
   it('should identify useContext as the cause for a re-render', () => {
@@ -40,12 +41,11 @@ describe('Profiler change descriptions', () => {
     }
 
     const MemoizedChild = React.memo(Child, areEqual);
-    const ForwardRefChild = React.forwardRef(function RefForwardingComponent(
-      props,
-      ref,
-    ) {
-      return <Child />;
-    });
+    const ForwardRefChild = React.forwardRef(
+      function RefForwardingComponent(props, ref) {
+        return <Child />;
+      },
+    );
 
     let forceUpdate = null;
 
@@ -63,10 +63,8 @@ describe('Profiler change descriptions', () => {
       );
     };
 
-    const container = document.createElement('div');
-
     utils.act(() => store.profilerStore.startProfiling());
-    utils.act(() => legacyRender(<App />, container));
+    utils.act(() => render(<App />));
     utils.act(() => forceUpdate());
     utils.act(() => store.profilerStore.stopProfiling());
 
@@ -89,12 +87,12 @@ describe('Profiler change descriptions', () => {
     expect(element.hocDisplayNames).toBeNull();
     expect(commitData.changeDescriptions.get(element.id))
       .toMatchInlineSnapshot(`
-      Object {
+      {
         "context": true,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
-        "props": Array [],
+        "props": [],
         "state": null,
       }
     `);
@@ -109,12 +107,12 @@ describe('Profiler change descriptions', () => {
     expect(element.hocDisplayNames).toBeNull();
     expect(commitData.changeDescriptions.get(element.id))
       .toMatchInlineSnapshot(`
-      Object {
+      {
         "context": true,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
-        "props": Array [],
+        "props": [],
         "state": null,
       }
     `);
@@ -124,12 +122,12 @@ describe('Profiler change descriptions', () => {
     expect(element.hocDisplayNames).toEqual(['ForwardRef']);
     expect(commitData.changeDescriptions.get(element.id))
       .toMatchInlineSnapshot(`
-      Object {
-        "context": null,
+      {
+        "context": false,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
-        "props": Array [],
+        "props": [],
         "state": null,
       }
     `);
@@ -139,12 +137,12 @@ describe('Profiler change descriptions', () => {
     expect(element.hocDisplayNames).toBeNull();
     expect(commitData.changeDescriptions.get(element.id))
       .toMatchInlineSnapshot(`
-      Object {
+      {
         "context": true,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
-        "props": Array [],
+        "props": [],
         "state": null,
       }
     `);

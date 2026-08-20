@@ -8,14 +8,17 @@
   font-family: var(--font-family-sans);
   font-size: var(--font-size-sans-normal);
 }
+
 .ContextMenuItem:first-of-type {
   border-top: none;
 }
+
 .ContextMenuItem:hover,
 .ContextMenuItem:focus {
   outline: 0;
   background-color: var(--color-context-background-hover);
 }
+
 .ContextMenuItem:active {
   background-color: var(--color-context-background-selected);
   color: var(--color-context-text-selected);

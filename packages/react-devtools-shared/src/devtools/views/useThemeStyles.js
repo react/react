@@ -9,7 +9,7 @@
 
 import {useContext, useMemo} from 'react';
 import {SettingsContext} from './Settings/SettingsContext';
-import {THEME_STYLES} from '../../constants';
+import {THEME_STYLES} from '../constants';
 
 const useThemeStyles = (): any => {
   const {theme, displayDensity, browserTheme} = useContext(SettingsContext);

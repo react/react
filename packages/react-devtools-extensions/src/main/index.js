@@ -1,0 +1,817 @@
+/* global chrome, ExtensionRuntimePort */
+/** @flow */
+
+import type {RootType} from 'react-dom/src/client/ReactDOMRoot';
+import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
+import type {
+  TabID,
+  ViewElementSource,
+} from 'react-devtools-shared/src/devtools/views/DevTools';
+import type {SourceSelection} from 'react-devtools-shared/src/devtools/views/Editor/EditorPane';
+import type {Element} from 'react-devtools-shared/src/frontend/types';
+
+import {createElement} from 'react';
+import {flushSync} from 'react-dom';
+import {createRoot} from 'react-dom/client';
+import Bridge from 'react-devtools-shared/src/bridge';
+import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
+import {getBrowserTheme} from '../utils';
+import {
+  localStorageGetItem,
+  localStorageSetItem,
+} from 'react-devtools-shared/src/storage';
+import DevTools from 'react-devtools-shared/src/devtools/views/DevTools';
+import {
+  LOCAL_STORAGE_SUPPORTS_PROFILING_KEY,
+  LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY,
+} from 'react-devtools-shared/src/constants';
+import {logEvent} from 'react-devtools-shared/src/Logger';
+import {
+  getAlwaysOpenInEditor,
+  getOpenInEditorURL,
+  normalizeUrlIfValid,
+} from 'react-devtools-shared/src/utils';
+import {checkConditions} from 'react-devtools-shared/src/devtools/views/Editor/utils';
+import * as parseHookNames from 'react-devtools-shared/src/hooks/parseHookNames';
+
+import {
+  setBrowserSelectionFromReact,
+  setReactSelectionFromBrowser,
+} from './elementSelection';
+import {viewAttributeSource} from './sourceSelection';
+
+import {evalInInspectedWindow} from './evalInInspectedWindow';
+import {startReactPolling} from './reactPolling';
+import {cloneStyleTags} from './cloneStyleTags';
+import fetchFileWithCaching from './fetchFileWithCaching';
+import injectBackendManager from './injectBackendManager';
+import registerEventsLogger from './registerEventsLogger';
+import getProfilingFlags from './getProfilingFlags';
+import debounce from './debounce';
+import {
+  EXTENSION_BRIDGE_CONNECTION_DISCONNECTED,
+  EXTENSION_BRIDGE_CONNECTION_READY,
+  getExtensionBridgeConnectionType,
+} from '../constants';
+import './requestAnimationFramePolyfill';
+
+const resolvedParseHookNames = Promise.resolve(parseHookNames);
+// DevTools assumes this is a dynamically imported module. Since we outline
+// workers in this bundle, we can sync require the module since it's just a thin
+// wrapper around calling the worker.
+const hookNamesModuleLoaderFunction = () => resolvedParseHookNames;
+
+type PendingBridgeMessage = {
+  event: string,
+  payload: mixed,
+  transferable?: $ReadOnlyArray<mixed>,
+};
+
+type DevToolsInstance = {
+  bridge: FrontendBridge,
+  store: Store,
+  render: (overrideTab?: TabID) => void,
+  root: RootType,
+};
+
+function flushPendingBridgeMessages(): void {
+  const currentPort = port;
+  if (!isBridgeConnected || currentPort === null) {
+    return;
+  }
+
+  let sentCount = 0;
+  while (sentCount < pendingBridgeMessages.length) {
+    const {event, payload, transferable} = pendingBridgeMessages[sentCount];
+    try {
+      currentPort.postMessage({event, payload}, transferable);
+      sentCount++;
+    } catch (error) {
+      isBridgeConnected = false;
+      break;
+    }
+  }
+
+  if (sentCount > 0) {
+    pendingBridgeMessages.splice(0, sentCount);
+  }
+}
+
+function handleBridgeConnectionMessage(message: mixed): void {
+  switch (getExtensionBridgeConnectionType(message)) {
+    case EXTENSION_BRIDGE_CONNECTION_READY:
+      isBridgeConnected = true;
+      flushPendingBridgeMessages();
+      break;
+    case EXTENSION_BRIDGE_CONNECTION_DISCONNECTED:
+      isBridgeConnected = false;
+      break;
+  }
+}
+
+function removeBridgePortListener(): void {
+  if (subscribedBridgePort !== null && bridgePortListener !== null) {
+    subscribedBridgePort.onMessage.removeListener(bridgePortListener);
+  }
+  subscribedBridgePort = null;
+  bridgePortListener = null;
+}
+
+function addBridgePortListener(nextPort: ExtensionRuntimePort): void {
+  const bridgeListener = lastSubscribedBridgeListener;
+  if (bridgeListener === null) {
+    return;
+  }
+
+  removeBridgePortListener();
+
+  const nextBridgePortListener = (message: mixed) => {
+    if (port === nextPort) {
+      bridgeListener(message);
+    }
+  };
+  nextPort.onMessage.addListener(nextBridgePortListener);
+  subscribedBridgePort = nextPort;
+  bridgePortListener = nextBridgePortListener;
+}
+
+function createBridge(): FrontendBridge {
+  const bridge: FrontendBridge = new Bridge({
+    listen(fn) {
+      const currentPort = port;
+      if (currentPort === null) {
+        throw new Error('DevTools port is not connected.');
+      }
+      if (lastSubscribedBridgeListener !== null) {
+        throw new Error('The Bridge already has a Wall listener.');
+      }
+
+      lastSubscribedBridgeListener = fn;
+      addBridgePortListener(currentPort);
+
+      return () => {
+        if (lastSubscribedBridgeListener === fn) {
+          lastSubscribedBridgeListener = null;
+          removeBridgePortListener();
+        }
+      };
+    },
+
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
+      pendingBridgeMessages.push({event, payload, transferable});
+      flushPendingBridgeMessages();
+    },
+  });
+
+  bridge.addListener('reloadAppForProfiling', () => {
+    localStorageSetItem(LOCAL_STORAGE_SUPPORTS_PROFILING_KEY, 'true');
+    evalInInspectedWindow('reload', [], () => {});
+  });
+
+  bridge.addListener(
+    'syncSelectionToBuiltinElementsPanel',
+    setBrowserSelectionFromReact,
+  );
+
+  bridge.addListener('extensionBackendInitialized', () => {
+    // Initialize the renderer's trace-updates setting.
+    // This handles the case of navigating to a new page after the DevTools have already been shown.
+    bridge.send(
+      'setTraceUpdatesEnabled',
+      localStorageGetItem(LOCAL_STORAGE_TRACE_UPDATES_ENABLED_KEY) === 'true',
+    );
+  });
+
+  const sourcesPanel = chrome.devtools.panels.sources;
+
+  const onBrowserElementSelectionChanged = () =>
+    setReactSelectionFromBrowser(bridge);
+  const onBrowserSourceSelectionChanged = (location: {
+    url: string,
+    startLine: number,
+    startColumn: number,
+    endLine: number,
+    endColumn: number,
+  }) => {
+    if (
+      currentSelectedSource === null ||
+      currentSelectedSource.url !== location.url
+    ) {
+      currentSelectedSource = {
+        url: location.url,
+        selectionRef: {
+          // We use 1-based line and column, Chrome provides them 0-based.
+          line: location.startLine + 1,
+          column: location.startColumn + 1,
+        },
+      };
+      // Rerender with the new file selection.
+      const instance = devToolsInstance;
+      if (instance === null) {
+        throw new Error(
+          'Cannot sync source selection: DevTools instance is not initialized.',
+        );
+      }
+      instance.render();
+    } else {
+      // Update the ref to the latest position without updating the url. No need to rerender.
+      const selectionRef = currentSelectedSource.selectionRef;
+      selectionRef.line = location.startLine + 1;
+      selectionRef.column = location.startColumn + 1;
+    }
+  };
+  const onBridgeShutdown = () => {
+    chrome.devtools.panels.elements.onSelectionChanged.removeListener(
+      onBrowserElementSelectionChanged,
+    );
+    if (sourcesPanel && sourcesPanel.onSelectionChanged) {
+      currentSelectedSource = null;
+      sourcesPanel.onSelectionChanged.removeListener(
+        onBrowserSourceSelectionChanged,
+      );
+    }
+  };
+
+  bridge.addListener('shutdown', onBridgeShutdown);
+
+  chrome.devtools.panels.elements.onSelectionChanged.addListener(
+    onBrowserElementSelectionChanged,
+  );
+  if (sourcesPanel && sourcesPanel.onSelectionChanged) {
+    sourcesPanel.onSelectionChanged.addListener(
+      onBrowserSourceSelectionChanged,
+    );
+  }
+
+  return bridge;
+}
+
+function createDevToolsInstance(): DevToolsInstance {
+  const bridge = createBridge();
+
+  const {isProfiling} = getProfilingFlags();
+
+  const store = new Store(bridge, {
+    isProfiling,
+    supportsReloadAndProfile: __IS_CHROME__ || __IS_EDGE__,
+    supportsTraceUpdates: true,
+    supportsInspectMatchingDOMElement: true,
+    supportsClickToInspect: true,
+  });
+  subscribeToStoreErrors(store, bridge);
+
+  store.addListener('settingsUpdated', (hookSettings, componentFilters) => {
+    chrome.storage.local.set({...hookSettings, componentFilters});
+  });
+
+  if (!isProfiling) {
+    // We previously stored this in performCleanup function
+    store.profilerStore.profilingData = profilingData;
+  }
+
+  // Initialize the backend only once the Store has been initialized.
+  // Otherwise, the Store may miss important initial tree op codes.
+  injectBackendManager(chrome.devtools.inspectedWindow.tabId);
+
+  const viewAttributeSourceFunction = (
+    id: Element['id'],
+    path: Array<string | number>,
+  ) => {
+    const rendererID = store.getRendererIDForElement(id);
+    if (rendererID != null) {
+      viewAttributeSource(rendererID, id, path);
+    }
+  };
+
+  const viewElementSourceFunction: ViewElementSource = (
+    source,
+    symbolicatedSource,
+  ) => {
+    const [, sourceURL, line, column] = symbolicatedSource
+      ? symbolicatedSource
+      : source;
+
+    // We use 1-based line and column, Chrome expects them 0-based.
+    chrome.devtools.panels.openResource(
+      normalizeUrlIfValid(sourceURL),
+      line - 1,
+      column - 1,
+    );
+  };
+
+  const root = createRoot(document.createElement('div'));
+
+  const render = (overrideTab: TabID | null = mostRecentOverrideTab) => {
+    mostRecentOverrideTab = overrideTab;
+
+    root.render(
+      createElement(DevTools, {
+        bridge,
+        browserTheme: getBrowserTheme(),
+        componentsPortalContainer,
+        inspectedElementPortalContainer,
+        profilerPortalContainer,
+        editorPortalContainer,
+        currentSelectedSource,
+        enabledInspectedElementContextMenu: true,
+        fetchFileWithCaching,
+        hookNamesModuleLoaderFunction,
+        overrideTab,
+        showTabBar: false,
+        store,
+        suspensePortalContainer,
+        warnIfUnsupportedVersionDetected: true,
+        viewAttributeSourceFunction,
+        // Firefox doesn't support chrome.devtools.panels.openResource yet
+        canViewElementSourceFunction: () => __IS_CHROME__ || __IS_EDGE__,
+        viewElementSourceFunction,
+      }),
+    );
+  };
+
+  return {bridge, store, render, root};
+}
+
+function ensureInitialHTMLIsCleared(
+  container: HTMLElement & {_hasInitialHTMLBeenCleared?: boolean},
+) {
+  if (container._hasInitialHTMLBeenCleared) {
+    return;
+  }
+
+  container.innerHTML = '';
+  container._hasInitialHTMLBeenCleared = true;
+}
+
+function createComponentsPanel() {
+  if (componentsPanel) {
+    // Panel is created, but wasn't opened yet, so no document is present for it
+    return;
+  }
+
+  chrome.devtools.panels.create(
+    __IS_CHROME__ || __IS_EDGE__ ? 'Components ⚛' : 'Components',
+    __IS_EDGE__ ? 'icons/production.svg' : '',
+    'panel.html',
+    createdPanel => {
+      componentsPanel = createdPanel;
+
+      createdPanel.onShown.addListener(portal => {
+        componentsPortalContainer = portal.container;
+        const currentInstance = devToolsInstance;
+        if (componentsPortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(componentsPortalContainer);
+
+            currentInstance.render('components');
+
+            logEvent({event_name: 'selected-components-tab'});
+          }
+          portal.injectStyles(cloneStyleTags);
+        }
+      });
+
+      createdPanel.onShown.addListener(() => {
+        devToolsInstance?.bridge.emit('extensionComponentsPanelShown');
+      });
+      createdPanel.onHidden.addListener(() => {
+        devToolsInstance?.bridge.emit('extensionComponentsPanelHidden');
+      });
+    },
+  );
+}
+
+function createElementsInspectPanel() {
+  if (inspectedElementPane) {
+    // Panel is created, but wasn't opened yet, so no document is present for it
+    return;
+  }
+
+  const elementsPanel = chrome.devtools.panels.elements;
+  if (__IS_FIREFOX__ || !elementsPanel || !elementsPanel.createSidebarPane) {
+    // Firefox will not pass the window to the onShown listener despite setPage
+    // being called.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=2010549
+
+    // May not be supported in some browsers.
+    // See https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/devtools/panels/ElementsPanel/createSidebarPane#browser_compatibility
+    return;
+  }
+
+  elementsPanel.createSidebarPane('React Element ⚛', createdPane => {
+    inspectedElementPane = createdPane;
+
+    createdPane.setPage('panel.html');
+    createdPane.setHeight('75px');
+
+    createdPane.onShown.addListener(portal => {
+      inspectedElementPortalContainer = portal.container;
+      const currentInstance = devToolsInstance;
+      if (inspectedElementPortalContainer != null) {
+        if (currentInstance !== null) {
+          ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
+          currentInstance.bridge.send('syncSelectionFromBuiltinElementsPanel');
+
+          currentInstance.render();
+
+          logEvent({event_name: 'selected-inspected-element-pane'});
+        }
+        portal.injectStyles(cloneStyleTags);
+      }
+    });
+  });
+}
+
+function createProfilerPanel() {
+  if (profilerPanel) {
+    // Panel is created, but wasn't opened yet, so no document is present for it
+    return;
+  }
+
+  chrome.devtools.panels.create(
+    __IS_CHROME__ || __IS_EDGE__ ? 'Profiler ⚛' : 'Profiler',
+    __IS_EDGE__ ? 'icons/production.svg' : '',
+    'panel.html',
+    createdPanel => {
+      profilerPanel = createdPanel;
+
+      createdPanel.onShown.addListener(portal => {
+        profilerPortalContainer = portal.container;
+        const currentInstance = devToolsInstance;
+        if (profilerPortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(profilerPortalContainer);
+
+            currentInstance.render('profiler');
+
+            logEvent({event_name: 'selected-profiler-tab'});
+          }
+          portal.injectStyles(cloneStyleTags);
+        }
+      });
+    },
+  );
+}
+
+function createSourcesEditorPanel() {
+  if (editorPane) {
+    // Panel is created, but wasn't opened yet, so no document is present for it
+    return;
+  }
+
+  const sourcesPanel = chrome.devtools.panels.sources;
+  if (!sourcesPanel || !sourcesPanel.createSidebarPane) {
+    // Firefox doesn't currently support extending the source panel.
+    return;
+  }
+
+  sourcesPanel.createSidebarPane('Code Editor ⚛', createdPane => {
+    editorPane = createdPane;
+
+    createdPane.setPage('panel.html');
+    createdPane.setHeight('75px');
+
+    createdPane.onShown.addListener(portal => {
+      editorPortalContainer = portal.container;
+      const currentInstance = devToolsInstance;
+      if (editorPortalContainer != null) {
+        if (currentInstance !== null) {
+          ensureInitialHTMLIsCleared(editorPortalContainer);
+
+          currentInstance.render();
+
+          logEvent({event_name: 'selected-editor-pane'});
+        }
+        portal.injectStyles(cloneStyleTags);
+      }
+    });
+  });
+}
+
+function createSuspensePanel() {
+  if (suspensePanel) {
+    // Panel is created, but wasn't opened yet, so no document is present for it
+    return;
+  }
+
+  chrome.devtools.panels.create(
+    __IS_CHROME__ || __IS_EDGE__ ? 'Suspense ⚛' : 'Suspense',
+    __IS_EDGE__ ? 'icons/production.svg' : '',
+    'panel.html',
+    createdPanel => {
+      suspensePanel = createdPanel;
+
+      createdPanel.onShown.addListener(portal => {
+        suspensePortalContainer = portal.container;
+        const currentInstance = devToolsInstance;
+        if (suspensePortalContainer != null) {
+          if (currentInstance !== null) {
+            ensureInitialHTMLIsCleared(suspensePortalContainer);
+
+            currentInstance.render('suspense');
+
+            logEvent({event_name: 'selected-suspense-tab'});
+          }
+          portal.injectStyles(cloneStyleTags);
+        }
+      });
+    },
+  );
+}
+
+function createDevToolsPanels(): void {
+  createComponentsPanel();
+  createProfilerPanel();
+  createSourcesEditorPanel();
+  createElementsInspectPanel();
+  createSuspensePanel();
+}
+
+function renderOpenedDevToolsPanels(instance: DevToolsInstance): void {
+  if (componentsPortalContainer) {
+    ensureInitialHTMLIsCleared(componentsPortalContainer);
+    instance.render('components');
+  }
+
+  if (profilerPortalContainer) {
+    ensureInitialHTMLIsCleared(profilerPortalContainer);
+    instance.render('profiler');
+  }
+
+  if (editorPortalContainer) {
+    ensureInitialHTMLIsCleared(editorPortalContainer);
+    instance.render();
+  }
+
+  if (inspectedElementPortalContainer) {
+    ensureInitialHTMLIsCleared(inspectedElementPortalContainer);
+    instance.bridge.send('syncSelectionFromBuiltinElementsPanel');
+    instance.render();
+  }
+
+  if (suspensePortalContainer) {
+    ensureInitialHTMLIsCleared(suspensePortalContainer);
+    instance.render('suspense');
+  }
+}
+
+function performInTabNavigationCleanup() {
+  // Potentially, if react hasn't loaded yet and user performs in-tab navigation
+  clearReactPollingInstance();
+
+  const instance = devToolsInstance;
+  if (instance !== null) {
+    // Store profiling data, so it can be used later
+    profilingData = instance.store.profilerStore.profilingData;
+  }
+
+  // If panels were already created, and we have already mounted React root to display
+  // tabs (Components or Profiler), we should unmount root first and render them again
+  if (
+    (componentsPortalContainer ||
+      profilerPortalContainer ||
+      suspensePortalContainer) &&
+    instance !== null
+  ) {
+    // It's easiest to recreate the DevTools panel (to clean up potential stale state).
+    // We can revisit this in the future as a small optimization.
+    // This should also emit bridge.shutdown, but only if this root was mounted
+    flushSync(() => instance.root.unmount());
+  } else {
+    // In case Browser DevTools were opened, but user never pressed on extension panels
+    // They were never mounted and there is nothing to unmount, but we need to emit shutdown event
+    // because bridge was already created
+    instance?.bridge.shutdown();
+  }
+
+  // Do not nullify componentsPanelPortal and profilerPanelPortal on purpose,
+  // They are not recreated when user does in-tab navigation, and they can only be accessed via
+  // callback in onShown listener, which is called only when panel has been shown
+  // This event won't be emitted again after in-tab navigation, if DevTools panel keeps being opened
+
+  // Do not clean mostRecentOverrideTab on purpose, so we remember last opened
+  // React DevTools tab, when user does in-tab navigation
+
+  devToolsInstance = null;
+  pendingBridgeMessages.length = 0;
+}
+
+function performFullCleanup() {
+  // Potentially, if react hasn't loaded yet and user closed the browser DevTools
+  clearReactPollingInstance();
+
+  const instance = devToolsInstance;
+  if (
+    (componentsPortalContainer ||
+      profilerPortalContainer ||
+      suspensePortalContainer) &&
+    instance !== null
+  ) {
+    // This should also emit bridge.shutdown, but only if this root was mounted
+    flushSync(() => instance.root.unmount());
+  } else {
+    instance?.bridge.shutdown();
+  }
+
+  componentsPortalContainer = null;
+  profilerPortalContainer = null;
+  suspensePortalContainer = null;
+
+  mostRecentOverrideTab = null;
+  devToolsInstance = null;
+  pendingBridgeMessages.length = 0;
+
+  port?.disconnect();
+  port = null;
+}
+
+function connectExtensionPort(): void {
+  if (port) {
+    throw new Error('DevTools port was already connected');
+  }
+
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  isBridgeConnected = false;
+  const nextPort = chrome.runtime.connect({
+    name: String(tabId),
+  });
+  port = nextPort;
+  nextPort.onMessage.addListener(message => {
+    if (port === nextPort) {
+      handleBridgeConnectionMessage(message);
+    }
+  });
+
+  // If DevTools port was reconnected and Bridge was already created
+  // We should subscribe bridge to this port events
+  // This could happen if service worker dies and all ports are disconnected,
+  // but later user continues the session and Chrome reconnects all ports
+  // Bridge object is still in-memory, though
+  addBridgePortListener(nextPort);
+
+  // This port may be disconnected by Chrome at some point, this callback
+  // will be executed only if this port was disconnected from the other end
+  // so, when we call `port.disconnect()` from this script,
+  // this should not trigger this callback and port reconnection
+  nextPort.onDisconnect.addListener(() => {
+    if (port !== nextPort) {
+      return;
+    }
+    isBridgeConnected = false;
+    port = null;
+    connectExtensionPort();
+  });
+}
+
+function mountReactDevTools() {
+  reactPollingInstance = null;
+
+  registerEventsLogger();
+
+  const instance = createDevToolsInstance();
+  devToolsInstance = instance;
+
+  renderOpenedDevToolsPanels(instance);
+}
+
+let reactPollingInstance = null;
+function clearReactPollingInstance() {
+  reactPollingInstance?.abort();
+  reactPollingInstance = null;
+}
+
+function showNoReactDisclaimer() {
+  if (componentsPortalContainer) {
+    componentsPortalContainer.innerHTML =
+      '<h1 class="no-react-disclaimer">Looks like this page doesn\'t have React, or it hasn\'t been loaded yet.</h1>';
+    delete componentsPortalContainer._hasInitialHTMLBeenCleared;
+  }
+
+  if (profilerPortalContainer) {
+    profilerPortalContainer.innerHTML =
+      '<h1 class="no-react-disclaimer">Looks like this page doesn\'t have React, or it hasn\'t been loaded yet.</h1>';
+    delete profilerPortalContainer._hasInitialHTMLBeenCleared;
+  }
+
+  if (suspensePortalContainer) {
+    suspensePortalContainer.innerHTML =
+      '<h1 class="no-react-disclaimer">Looks like this page doesn\'t have React, or it hasn\'t been loaded yet.</h1>';
+    delete suspensePortalContainer._hasInitialHTMLBeenCleared;
+  }
+}
+
+function mountReactDevToolsWhenReactHasLoaded() {
+  reactPollingInstance = startReactPolling(
+    mountReactDevTools,
+    5, // ~5 seconds
+    showNoReactDisclaimer,
+  );
+}
+
+let devToolsInstance: DevToolsInstance | null = null;
+let lastSubscribedBridgeListener: ((message: mixed) => void) | null = null;
+let subscribedBridgePort: ExtensionRuntimePort | null = null;
+let bridgePortListener: ((message: mixed) => void) | null = null;
+
+let profilingData = null;
+
+let componentsPanel = null;
+let profilerPanel = null;
+let suspensePanel = null;
+let editorPane = null;
+let inspectedElementPane = null;
+let componentsPortalContainer = null;
+let profilerPortalContainer = null;
+let suspensePortalContainer = null;
+let editorPortalContainer = null;
+let inspectedElementPortalContainer = null;
+
+let mostRecentOverrideTab: null | TabID = null;
+
+let currentSelectedSource: null | SourceSelection = null;
+
+let port: ExtensionRuntimePort | null = null;
+let isBridgeConnected: boolean = false;
+const pendingBridgeMessages: Array<PendingBridgeMessage> = [];
+
+// In case when multiple navigation events emitted in a short period of time
+// This debounced callback primarily used to avoid mounting React DevTools multiple times, which results
+// into subscribing to the same events from Bridge and window multiple times
+// In this case, we will handle `operations` event twice or more and user will see
+// `Cannot add node "1" because a node with that id is already in the Store.`
+const debouncedMountReactDevToolsCallback = debounce(
+  mountReactDevToolsWhenReactHasLoaded,
+  500,
+);
+
+// Clean up everything, but remount React DevTools if user stays at this page
+function onNavigatedToOtherPage() {
+  performInTabNavigationCleanup();
+  debouncedMountReactDevToolsCallback();
+}
+
+// Cleanup previous page state and remount everything
+chrome.devtools.network.onNavigated.addListener(onNavigatedToOtherPage);
+
+// Should be emitted when browser DevTools are closed
+if (__IS_FIREFOX__) {
+  // For some reason Firefox doesn't emit onBeforeUnload event
+  window.addEventListener('unload', performFullCleanup);
+} else {
+  window.addEventListener('beforeunload', performFullCleanup);
+}
+
+connectExtensionPort();
+
+createDevToolsPanels();
+
+mountReactDevToolsWhenReactHasLoaded();
+
+function onThemeChanged() {
+  // Rerender with the new theme
+  devToolsInstance?.render();
+}
+
+if (chrome.devtools.panels.setThemeChangeHandler) {
+  // Chrome
+  chrome.devtools.panels.setThemeChangeHandler(onThemeChanged);
+} else if (chrome.devtools.panels.onThemeChanged) {
+  // Firefox
+  chrome.devtools.panels.onThemeChanged.addListener(onThemeChanged);
+}
+
+// Firefox doesn't support resources handlers yet.
+if (chrome.devtools.panels.setOpenResourceHandler) {
+  chrome.devtools.panels.setOpenResourceHandler(
+    (
+      resource,
+      lineNumber = 1,
+      // The column is a new feature so we have to specify a default if it doesn't exist
+      columnNumber = 1,
+    ) => {
+      const alwaysOpenInEditor = getAlwaysOpenInEditor();
+      const editorURL = getOpenInEditorURL();
+      if (alwaysOpenInEditor && editorURL) {
+        const location = ['', resource.url, lineNumber, columnNumber];
+        const {url, shouldDisableButton} = checkConditions(editorURL, location);
+        if (!shouldDisableButton) {
+          window.open(url);
+          return;
+        }
+      }
+      // Otherwise fallback to the built-in behavior.
+      chrome.devtools.panels.openResource(
+        resource.url,
+        lineNumber - 1,
+        columnNumber - 1,
+        maybeError => {
+          if (maybeError && maybeError.isError) {
+            // Not a resource Chrome can open. Fallback to browser default behavior.
+            window.open(resource.url);
+          }
+        },
+      );
+    },
+  );
+}

@@ -9,7 +9,6 @@
 
 import * as React from 'react';
 import {Fragment, useState} from 'react';
-// $FlowFixMe
 import {Button, Text, View} from 'react-native-web';
 
 export default function ReactNativeWeb(): React.Node {

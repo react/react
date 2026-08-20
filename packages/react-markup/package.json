@@ -1,0 +1,37 @@
+{
+  "name": "react-markup",
+  "version": "19.3.0",
+  "description": "React package generating embedded markup such as e-mails with support for Server Components.",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/react/react.git",
+    "directory": "packages/react-markup"
+  },
+  "keywords": [
+    "react"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/react/react/issues"
+  },
+  "homepage": "https://react.dev/",
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "index.js",
+    "react-markup.react-server.js",
+    "cjs/"
+  ],
+  "exports": {
+    ".": {
+      "react-server": "./react-markup.react-server.js",
+      "default": "./index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  }
+}

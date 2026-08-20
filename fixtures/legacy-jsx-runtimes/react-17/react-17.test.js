@@ -254,10 +254,10 @@ it('does not warn for arrays of elements with keys', () => {
 
 it('does not warn for iterable elements with keys', () => {
   const iterable = {
-    '@@iterator': function() {
+    '@@iterator': function () {
       let i = 0;
       return {
-        next: function() {
+        next: function () {
           const done = ++i > 2;
           return {
             value: done ? undefined : <Component key={'#' + i} />,
@@ -273,10 +273,10 @@ it('does not warn for iterable elements with keys', () => {
 
 it('does not warn for numeric keys in entry iterable as a child', () => {
   const iterable = {
-    '@@iterator': function() {
+    '@@iterator': function () {
       let i = 0;
       return {
-        next: function() {
+        next: function () {
           const done = ++i > 2;
           return {value: done ? undefined : [i, <Component />], done: done};
         },
@@ -330,9 +330,7 @@ it('gives a helpful error when passing null, undefined, or boolean', () => {
   const Null = null;
   const True = true;
   const Div = 'div';
-  expect(
-    () => void (<Undefined />)
-  ).toErrorDev(
+  expect(() => void (<Undefined />)).toErrorDev(
     'Warning: React.jsx: type is invalid -- expected a string ' +
       '(for built-in components) or a class/function (for composite ' +
       'components) but got: undefined. You likely forgot to export your ' +
@@ -343,9 +341,7 @@ it('gives a helpful error when passing null, undefined, or boolean', () => {
         : ''),
     {withoutStack: true}
   );
-  expect(
-    () => void (<Null />)
-  ).toErrorDev(
+  expect(() => void (<Null />)).toErrorDev(
     'Warning: React.jsx: type is invalid -- expected a string ' +
       '(for built-in components) or a class/function (for composite ' +
       'components) but got: null.' +
@@ -354,9 +350,7 @@ it('gives a helpful error when passing null, undefined, or boolean', () => {
         : ''),
     {withoutStack: true}
   );
-  expect(
-    () => void (<True />)
-  ).toErrorDev(
+  expect(() => void (<True />)).toErrorDev(
     'Warning: React.jsx: type is invalid -- expected a string ' +
       '(for built-in components) or a class/function (for composite ' +
       'components) but got: boolean.' +

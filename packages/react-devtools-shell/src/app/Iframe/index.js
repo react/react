@@ -19,14 +19,16 @@ export default function Iframe(): React.Node {
 
 const iframeStyle = {border: '2px solid #eee', height: 80};
 
+// $FlowFixMe[missing-local-annot]
 function Frame(props) {
   const [element, setElement] = React.useState(null);
 
   const ref = React.useRef();
 
-  React.useLayoutEffect(function() {
+  React.useLayoutEffect(function () {
     const iframe = ref.current;
 
+    // $FlowFixMe[constant-condition]
     if (iframe) {
       const html = `
     <!DOCTYPE html>
@@ -56,6 +58,7 @@ function Frame(props) {
         style={iframeStyle}
       />
 
+      {/* $FlowFixMe[constant-condition] */}
       {element ? createPortal(props.children, element) : null}
     </Fragment>
   );

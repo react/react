@@ -28,7 +28,7 @@ export default function Button({
   ...rest
 }: Props): React.Node {
   let button = (
-    // $FlowFixMe unsafe spread
+    // $FlowFixMe[cannot-spread-inexact] unsafe spread
     <button
       className={`${styles.Button} ${className}`}
       data-testname={testName}

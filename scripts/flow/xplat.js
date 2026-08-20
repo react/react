@@ -8,5 +8,5 @@
  */
 
 declare module 'ReactNativeInternalFeatureFlags' {
-  declare export var enableUseRefAccessWarning: boolean;
+  declare module.exports: any;
 }

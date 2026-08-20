@@ -1,4 +1,4 @@
-import {clientRenderBoundary} from './ReactDOMFizzInstructionSet';
+import {clientRenderBoundary} from './ReactDOMFizzInstructionSetShared';
 
 // This is a string so Closure's advanced compilation mode doesn't mangle it.
 // eslint-disable-next-line dot-notation

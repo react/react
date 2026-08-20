@@ -7,7 +7,12 @@
  * @flow
  */
 
-import type {Thenable} from 'shared/ReactTypes';
+import type {
+  ReactContext,
+  Thenable,
+  FulfilledThenable,
+  RejectedThenable,
+} from 'shared/ReactTypes';
 
 import * as React from 'react';
 import {createContext} from 'react';
@@ -15,7 +20,7 @@ import {createContext} from 'react';
 // TODO (cache) Remove this cache; it is outdated and will not work with newer APIs like startTransition.
 
 // Cache implementation was forked from the React repo:
-// https://github.com/facebook/react/blob/main/packages/react-cache/src/ReactCache.js
+// https://github.com/facebook/react/blob/main/packages/react-cache/src/ReactCacheOld.js
 //
 // This cache is simpler than react-cache in that:
 // 1. Individual items don't need to be invalidated.
@@ -26,53 +31,39 @@ import {createContext} from 'react';
 
 export type {Thenable};
 
-interface Suspender {
-  then(resolve: () => mixed, reject: () => mixed): mixed;
-}
-
-type PendingResult = {
-  status: 0,
-  value: Suspender,
-};
-
-type ResolvedResult<Value> = {
-  status: 1,
-  value: Value,
-};
-
-type RejectedResult = {
-  status: 2,
-  value: mixed,
-};
-
-type Result<Value> = PendingResult | ResolvedResult<Value> | RejectedResult;
-
 export type Resource<Input, Key, Value> = {
   clear(): void,
   invalidate(Key): void,
   read(Input): Value,
   preload(Input): void,
   write(Key, Value): void,
-  ...
 };
 
-const Pending = 0;
-const Resolved = 1;
-const Rejected = 2;
-
-const ReactCurrentDispatcher = (React: any)
-  .__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher;
-
-function readContext(Context) {
-  const dispatcher = ReactCurrentDispatcher.current;
-  if (dispatcher === null) {
-    throw new Error(
-      'react-cache: read and preload may only be called from within a ' +
-        "component's render. They are not supported in event handlers or " +
-        'lifecycle methods.',
-    );
-  }
-  return dispatcher.readContext(Context);
+let readContext;
+if (typeof React.use === 'function') {
+  readContext = function (Context: ReactContext<null>) {
+    // eslint-disable-next-line react-hooks-published/rules-of-hooks
+    return React.use(Context);
+  };
+} else if (
+  typeof (React as any).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED ===
+  'object'
+) {
+  const ReactCurrentDispatcher = (React as any)
+    .__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher;
+  readContext = function (Context: ReactContext<null>) {
+    const dispatcher = ReactCurrentDispatcher.current;
+    if (dispatcher === null) {
+      throw new Error(
+        'react-cache: read and preload may only be called from within a ' +
+          "component's render. They are not supported in event handlers or " +
+          'lifecycle methods.',
+      );
+    }
+    return dispatcher.readContext(Context);
+  };
+} else {
+  throw new Error('react-cache: Unsupported React version');
 }
 
 const CacheContext = createContext(null);
@@ -88,9 +79,9 @@ const resourceConfigs: Map<Resource<any, any, any>, Config> = new Map();
 function getEntriesForResource(
   resource: any,
 ): Map<any, any> | WeakMap<any, any> {
-  let entriesForResource: Map<any, any> | WeakMap<any, any> = ((entries.get(
+  let entriesForResource: Map<any, any> | WeakMap<any, any> = entries.get(
     resource,
-  ): any): Map<any, any>);
+  ) as any as Map<any, any>;
   if (entriesForResource === undefined) {
     const config = resourceConfigs.get(resource);
     entriesForResource =
@@ -105,33 +96,25 @@ function accessResult<Input, Key, Value>(
   fetch: Input => Thenable<Value>,
   input: Input,
   key: Key,
-): Result<Value> {
+): Thenable<Value> {
   const entriesForResource = getEntriesForResource(resource);
   const entry = entriesForResource.get(key);
   if (entry === undefined) {
     const thenable = fetch(input);
     thenable.then(
       value => {
-        if (newResult.status === Pending) {
-          const resolvedResult: ResolvedResult<Value> = (newResult: any);
-          resolvedResult.status = Resolved;
-          resolvedResult.value = value;
-        }
+        const fulfilledThenable: FulfilledThenable<Value> = thenable as any;
+        fulfilledThenable.status = 'fulfilled';
+        fulfilledThenable.value = value;
       },
       error => {
-        if (newResult.status === Pending) {
-          const rejectedResult: RejectedResult = (newResult: any);
-          rejectedResult.status = Rejected;
-          rejectedResult.value = error;
-        }
+        const rejectedThenable: RejectedThenable<Value> = thenable as any;
+        rejectedThenable.status = 'rejected';
+        rejectedThenable.reason = error;
       },
     );
-    const newResult: PendingResult = {
-      status: Pending,
-      value: thenable,
-    };
-    entriesForResource.set(key, newResult);
-    return newResult;
+    entriesForResource.set(key, thenable);
+    return thenable;
   } else {
     return entry;
   }
@@ -157,23 +140,23 @@ export function createResource<Input, Key, Value>(
       readContext(CacheContext);
 
       const key = hashInput(input);
-      const result: Result<Value> = accessResult(resource, fetch, input, key);
+      const result: Thenable<Value> = accessResult(resource, fetch, input, key);
+      if (typeof React.use === 'function') {
+        // eslint-disable-next-line react-hooks-published/rules-of-hooks
+        return React.use(result);
+      }
+
       switch (result.status) {
-        case Pending: {
-          const suspender = result.value;
-          throw suspender;
-        }
-        case Resolved: {
+        case 'fulfilled': {
           const value = result.value;
           return value;
         }
-        case Rejected: {
-          const error = result.value;
+        case 'rejected': {
+          const error = result.reason;
           throw error;
         }
         default:
-          // Should be unreachable
-          return (undefined: any);
+          throw result;
       }
     },
 
@@ -188,12 +171,13 @@ export function createResource<Input, Key, Value>(
     write(key: Key, value: Value): void {
       const entriesForResource = getEntriesForResource(resource);
 
-      const resolvedResult: ResolvedResult<Value> = {
-        status: Resolved,
+      const fulfilledThenable: FulfilledThenable<Value> = Promise.resolve(
         value,
-      };
+      ) as any;
+      fulfilledThenable.status = 'fulfilled';
+      fulfilledThenable.value = value;
 
-      entriesForResource.set(key, resolvedResult);
+      entriesForResource.set(key, fulfilledThenable);
     },
   };
 

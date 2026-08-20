@@ -10,21 +10,23 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
 
 describe('ReactCompositeComponentNestedState-state', () => {
   beforeEach(() => {
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
   });
 
-  it('should provide up to date values for props', () => {
+  it('should provide up to date values for props', async () => {
     class ParentComponent extends React.Component {
       state = {color: 'blue'};
 
       handleColor = color => {
         this.props.logger('parent-handleColor', this.state.color);
-        this.setState({color: color}, function() {
+        this.setState({color: color}, function () {
           this.props.logger('parent-after-setState', this.state.color);
         });
       };
@@ -52,7 +54,7 @@ describe('ReactCompositeComponentNestedState-state', () => {
         this.props.logger('handleHue', this.state.hue, this.props.color);
         this.props.onSelectColor(color);
         this.setState(
-          function(state, props) {
+          function (state, props) {
             this.props.logger(
               'setState-this',
               this.state.hue,
@@ -61,7 +63,7 @@ describe('ReactCompositeComponentNestedState-state', () => {
             this.props.logger('setState-args', state.hue, props.color);
             return {hue: shade + ' ' + props.color};
           },
-          function() {
+          function () {
             this.props.logger(
               'after-setState',
               this.state.hue,
@@ -96,11 +98,16 @@ describe('ReactCompositeComponentNestedState-state', () => {
     document.body.appendChild(container);
 
     const logger = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
 
-    void ReactDOM.render(<ParentComponent logger={logger} />, container);
+    await act(async () => {
+      root.render(<ParentComponent logger={logger} />);
+    });
 
-    // click "light green"
-    container.childNodes[0].childNodes[3].click();
+    await act(async () => {
+      // click "light green"
+      container.childNodes[0].childNodes[3].click();
+    });
 
     expect(logger.mock.calls).toEqual([
       ['parent-render', 'blue'],

@@ -16,7 +16,10 @@ import * as React from 'react';
 export const useSyncExternalStore = React.useSyncExternalStore;
 
 if (__DEV__) {
-  console.error(
+  // Avoid transforming the `console.error` call as it would cause the built artifact
+  // to access React internals, which exist under different paths depending on the
+  // React version.
+  console['error'](
     "The main 'use-sync-external-store' entry point is not supported; all it " +
       "does is re-export useSyncExternalStore from the 'react' package, so " +
       'it only works with React 18+.' +

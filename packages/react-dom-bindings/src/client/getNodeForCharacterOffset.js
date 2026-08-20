@@ -7,7 +7,7 @@
  * @flow
  */
 
-import {TEXT_NODE} from '../shared/HTMLNodeType';
+import {TEXT_NODE} from './HTMLNodeType';
 
 /**
  * Given any node return the first leaf node without children.
@@ -15,7 +15,7 @@ import {TEXT_NODE} from '../shared/HTMLNodeType';
  * @param {DOMElement|DOMTextNode} node
  * @return {DOMElement|DOMTextNode}
  */
-function getLeafNode(node) {
+function getLeafNode(node: ?(Node | Element)) {
   while (node && node.firstChild) {
     node = node.firstChild;
   }
@@ -29,7 +29,7 @@ function getLeafNode(node) {
  * @param {DOMElement|DOMTextNode} node
  * @return {?DOMElement|DOMTextNode}
  */
-function getSiblingNode(node) {
+function getSiblingNode(node: ?(Node | Element)) {
   while (node) {
     if (node.nextSibling) {
       return node.nextSibling;

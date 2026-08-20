@@ -1,0 +1,43 @@
+name: (Shared) Close Direct Sync Branch PRs
+
+on:
+  pull_request:
+    branches:
+      - 'builds/facebook-**'
+
+permissions: {}
+
+env:
+  TZ: /usr/share/zoneinfo/America/Los_Angeles
+  # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+
+jobs:
+  close_pr:
+    runs-on: ubuntu-latest
+    permissions:
+      # Used to create a review and close PRs
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Close PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pullNumber = ${{ github.event.number }};
+
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: pullNumber,
+              body: 'Do not land changes to `${{ github.event.pull_request.base.ref }}`. Please re-open your PR targeting `main` instead.',
+              event: 'REQUEST_CHANGES'
+            });
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number: pullNumber,
+              state: 'closed'
+            });

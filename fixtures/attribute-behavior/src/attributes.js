@@ -119,6 +119,7 @@ const attributes = [
   },
   {name: 'aria', read: getAttribute('aria')},
   {name: 'aria-', read: getAttribute('aria-')},
+  {name: 'aria-hidden', read: getProperty('ariaHidden')},
   {name: 'aria-invalidattribute', read: getAttribute('aria-invalidattribute')},
   {name: 'as', tagName: 'link'},
   {
@@ -356,7 +357,7 @@ const attributes = [
   },
   {name: 'cols', tagName: 'textarea'},
   {name: 'colSpan', containerTagName: 'tr', tagName: 'td'},
-  {name: 'content', tagName: 'meta'},
+  {name: 'content', containerTagName: 'head', tagName: 'meta'},
   {name: 'contentEditable'},
   {
     name: 'contentScriptType',
@@ -572,6 +573,24 @@ const attributes = [
     containerTagName: 'svg',
     tagName: 'path',
     read: getSVGAttribute('externalResourcesRequired'),
+  },
+  {
+    name: 'fetchPriority',
+    overrideStringValue: 'high',
+    tagName: 'img',
+    read: getProperty('fetchPriority'),
+  },
+  {
+    name: 'fetchpriority',
+    overrideStringValue: 'high',
+    tagName: 'img',
+    read: getProperty('fetchPriority'),
+  },
+  {
+    name: 'fetchPriority',
+    overrideStringValue: 'high',
+    tagName: 'link',
+    read: getProperty('fetchPriority'),
   },
   {
     name: 'fill',
@@ -887,7 +906,7 @@ const attributes = [
     read: getSVGProperty('height'),
     overrideStringValue: '100%',
   },
-  {name: 'hidden'},
+  {name: 'hidden', overrideStringValue: 'until-found'},
   {name: 'high', tagName: 'meter'},
   {
     name: 'horiz-adv-x',
@@ -916,8 +935,13 @@ const attributes = [
   {name: 'href', tagName: 'a', overrideStringValue: 'https://reactjs.com'},
   {name: 'hrefLang', read: getAttribute('hreflang')},
   {name: 'htmlFor', tagName: 'label'},
-  {name: 'http-equiv', tagName: 'meta', read: getProperty('httpEquiv')},
-  {name: 'httpEquiv', tagName: 'meta'},
+  {
+    name: 'http-equiv',
+    containerTagName: 'head',
+    tagName: 'meta',
+    read: getProperty('httpEquiv'),
+  },
+  {name: 'httpEquiv', containerTagName: 'head', tagName: 'meta'},
   {name: 'icon', tagName: 'command', read: getAttribute('icon')},
   {name: 'id'},
   {name: 'ID', read: getProperty('id')},
@@ -945,6 +969,7 @@ const attributes = [
     containerTagName: 'svg',
     tagName: 'feBlend',
   },
+  {name: 'inert'},
   {
     name: 'in2',
     read: getSVGProperty('in2'),
@@ -954,7 +979,7 @@ const attributes = [
   {name: 'initialChecked', read: getAttribute('initialchecked')},
   {name: 'initialValue', read: getAttribute('initialvalue')},
   {name: 'inlist', read: getAttribute('inlist')},
-  {name: 'inputMode', tagName: 'input', read: getAttribute('inputmode')}, // TODO: Should use property but it's not implemented in Chrome
+  {name: 'inputMode', tagName: 'input'},
   {name: 'integrity', tagName: 'script'},
   {
     name: 'intercept',
@@ -1058,6 +1083,7 @@ const attributes = [
   {name: 'label', tagName: 'track'},
   {name: 'LANG', read: getProperty('lang')},
   {name: 'lang'},
+  {name: 'lang', containerTagName: 'document', tagName: 'html'},
   {name: 'length', read: getAttribute('length')},
   {
     name: 'lengthAdjust',
@@ -1421,6 +1447,22 @@ const attributes = [
     containerTagName: 'svg',
     tagName: 'feSpotLight',
   },
+  {name: 'popover', overrideStringValue: 'manual'},
+  {
+    name: 'popoverTarget',
+    read: element => {
+      document.body.appendChild(element);
+      try {
+        // trigger and target need to be connected for `popoverTargetElement` to read the actual value.
+        return element.popoverTargetElement;
+      } finally {
+        document.body.removeChild(element);
+      }
+    },
+    overrideStringValue: 'popover-target',
+    tagName: 'button',
+  },
+  {name: 'popoverTargetAction', overrideStringValue: 'show', tagName: 'button'},
   {
     name: 'poster',
     tagName: 'video',
@@ -1962,6 +2004,16 @@ const attributes = [
     tagName: 'a',
     overrideStringValue:
       'translate(-10,-20) scale(2) rotate(45) translate(5,10)',
+  },
+  {
+    name: 'transform-origin',
+    tagName: 'svg',
+    read: getSVGAttribute('transform-origin'),
+  },
+  {
+    name: 'transformOrigin',
+    tagName: 'svg',
+    read: getSVGAttribute('transform-origin'),
   },
   {name: 'type', tagName: 'button', overrideStringValue: 'reset'},
   {

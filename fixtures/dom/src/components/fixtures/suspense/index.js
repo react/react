@@ -213,7 +213,7 @@ class TextInputFixtures extends React.Component {
 
           <Fixture>
             <SuspendyTree>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/e/ee/Atom_%282%29.png" />
+              <img src="https://upload.wikimedia.org/wikipedia/commons/1/1b/Atom.png" />
               React is cool
             </SuspendyTree>
           </Fixture>

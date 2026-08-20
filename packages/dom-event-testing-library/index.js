@@ -93,7 +93,7 @@ const createEventTarget = node => ({
    * Utilities
    */
   setBoundingClientRect({x, y, width, height}) {
-    node.getBoundingClientRect = function() {
+    node.getBoundingClientRect = function () {
       return {
         width,
         height,

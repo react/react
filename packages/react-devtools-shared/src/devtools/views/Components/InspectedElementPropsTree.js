@@ -17,11 +17,16 @@ import NewKeyValue from './NewKeyValue';
 import {alphaSortEntries, serializeDataForCopy} from '../utils';
 import Store from '../../store';
 import styles from './InspectedElementSharedStyles.css';
-import {ElementTypeClass} from 'react-devtools-shared/src/types';
+import {
+  ElementTypeClass,
+  ElementTypeSuspense,
+  ElementTypeActivity,
+} from 'react-devtools-shared/src/frontend/types';
+import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
 
-import type {InspectedElement} from './types';
+import type {InspectedElement} from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
-import type {Element} from 'react-devtools-shared/src/devtools/views/Components/types';
+import type {Element} from 'react-devtools-shared/src/frontend/types';
 
 type Props = {
   bridge: FrontendBridge,
@@ -49,23 +54,31 @@ export default function InspectedElementPropsTree({
   const canDeletePaths =
     type === ElementTypeClass || canEditFunctionPropsDeletePaths;
   const canEditValues =
-    !readOnly && (type === ElementTypeClass || canEditFunctionProps);
+    !readOnly &&
+    (type === ElementTypeClass || canEditFunctionProps) &&
+    // Make it read-only for Suspense to make it a bit cleaner. It's not
+    // useful to edit children anyway.
+    type !== ElementTypeSuspense &&
+    type !== ElementTypeActivity;
   const canRenamePaths =
     type === ElementTypeClass || canEditFunctionPropsRenamePaths;
 
-  const entries = props != null ? Object.entries(props) : null;
-  if (entries !== null) {
-    entries.sort(alphaSortEntries);
+  // Skip the section for null props.
+  if (props == null) {
+    return null;
   }
 
-  const isEmpty = entries === null || entries.length === 0;
+  const entries = Object.entries(props);
+  entries.sort(alphaSortEntries);
+  const isEmpty = entries.length === 0;
 
-  const handleCopy = () => copy(serializeDataForCopy(((props: any): Object)));
+  const handleCopy = withPermissionsCheck(
+    {permissions: ['clipboardWrite']},
+    () => copy(serializeDataForCopy(props)),
+  );
 
   return (
-    <div
-      className={styles.InspectedElementTree}
-      data-testname="InspectedElementPropsTree">
+    <div data-testname="InspectedElementPropsTree">
       <div className={styles.HeaderRow}>
         <div className={styles.Header}>props</div>
         {!isEmpty && (
@@ -75,7 +88,7 @@ export default function InspectedElementPropsTree({
         )}
       </div>
       {!isEmpty &&
-        (entries: any).map(([name, value]) => (
+        entries.map(([name, value]) => (
           <KeyValue
             key={name}
             alphaSort={true}

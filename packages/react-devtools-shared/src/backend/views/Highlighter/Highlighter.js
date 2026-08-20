@@ -8,6 +8,9 @@
  */
 
 import type Agent from 'react-devtools-shared/src/backend/agent';
+import type {HostInstance} from '../../types';
+
+import {isReactNativeEnvironment} from 'react-devtools-shared/src/backend/utils';
 
 import Overlay from './Overlay';
 
@@ -16,11 +19,11 @@ const SHOW_DURATION = 2000;
 let timeoutID: TimeoutID | null = null;
 let overlay: Overlay | null = null;
 
-export function hideOverlay(agent: Agent) {
-  if (window.document == null) {
-    agent.emit('hideNativeHighlight');
-    return;
-  }
+function hideOverlayNative(agent: Agent): void {
+  agent.emit('hideNativeHighlight');
+}
+
+function hideOverlayWeb(): void {
   timeoutID = null;
 
   if (overlay !== null) {
@@ -29,25 +32,27 @@ export function hideOverlay(agent: Agent) {
   }
 }
 
-export function showOverlay(
-  elements: Array<HTMLElement> | null,
+export function hideOverlay(agent: Agent): void {
+  return isReactNativeEnvironment()
+    ? hideOverlayNative(agent)
+    : hideOverlayWeb();
+}
+
+function showOverlayNative(
+  elements: $ReadOnlyArray<HostInstance>,
+  agent: Agent,
+): void {
+  agent.emit('showNativeHighlight', elements);
+}
+
+function showOverlayWeb(
+  elements: $ReadOnlyArray<HTMLElement>,
   componentName: string | null,
   agent: Agent,
   hideAfterTimeout: boolean,
-) {
-  if (window.document == null) {
-    if (elements != null && elements[0] != null) {
-      agent.emit('showNativeHighlight', elements[0]);
-    }
-    return;
-  }
-
+): void {
   if (timeoutID !== null) {
     clearTimeout(timeoutID);
-  }
-
-  if (elements == null) {
-    return;
   }
 
   if (overlay === null) {
@@ -59,4 +64,20 @@ export function showOverlay(
   if (hideAfterTimeout) {
     timeoutID = setTimeout(() => hideOverlay(agent), SHOW_DURATION);
   }
+}
+
+export function showOverlay(
+  elements: $ReadOnlyArray<HostInstance>,
+  componentName: string | null,
+  agent: Agent,
+  hideAfterTimeout: boolean,
+): void {
+  return isReactNativeEnvironment()
+    ? showOverlayNative(elements, agent)
+    : showOverlayWeb(
+        elements as $ReadOnlyArray<any>,
+        componentName,
+        agent,
+        hideAfterTimeout,
+      );
 }

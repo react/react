@@ -1,12 +1,10 @@
 'use strict';
 
+const fs = require('node:fs');
 const {bundleTypes, moduleTypes} = require('./bundles');
 const inlinedHostConfigs = require('../shared/inlinedHostConfigs');
 
 const {
-  UMD_DEV,
-  UMD_PROD,
-  UMD_PROFILING,
   FB_WWW_DEV,
   FB_WWW_PROD,
   FB_WWW_PROFILING,
@@ -28,6 +26,22 @@ const __EXPERIMENTAL__ =
     ? RELEASE_CHANNEL === 'experimental'
     : true;
 
+function findNearestExistingForkFile(path, segmentedIdentifier, suffix) {
+  const segments = segmentedIdentifier.split('-');
+  while (segments.length) {
+    const candidate = segments.join('-');
+    const forkPath = path + candidate + suffix;
+    try {
+      fs.statSync(forkPath);
+      return forkPath;
+    } catch (error) {
+      // Try the next candidate.
+    }
+    segments.pop();
+  }
+  return null;
+}
+
 // If you need to replace a file with another file for a specific environment,
 // add it to this list with the logic for choosing the right replacement.
 
@@ -41,10 +55,24 @@ const forks = Object.freeze({
   './packages/shared/ReactSharedInternals.js': (
     bundleType,
     entry,
-    dependencies
+    dependencies,
+    _moduleType,
+    bundle
   ) => {
-    if (entry === 'react' || entry === 'react/src/ReactSharedSubset.js') {
-      return './packages/react/src/ReactSharedInternals.js';
+    if (entry === 'react') {
+      return './packages/react/src/ReactSharedInternalsClient.js';
+    }
+    if (entry === 'react/src/ReactServer.js') {
+      return './packages/react/src/ReactSharedInternalsServer.js';
+    }
+    if (entry === 'react-markup/src/ReactMarkupServer.js') {
+      // Inside the ReactMarkupServer render we don't refer to any shared internals
+      // but instead use our own internal copy of the state because you cannot use
+      // any of this state from a component anyway. E.g. you can't use a client hook.
+      return './packages/react/src/ReactSharedInternalsClient.js';
+    }
+    if (bundle.condition === 'react-server') {
+      return './packages/react-server/src/ReactSharedInternalsServer.js';
     }
     if (!entry.startsWith('react/') && dependencies.indexOf('react') === -1) {
       // React internals are unavailable if we can't reference the package.
@@ -67,8 +95,23 @@ const forks = Object.freeze({
     entry,
     dependencies
   ) => {
-    if (entry === 'react-dom' || entry === 'react-dom/server-rendering-stub') {
-      return './packages/react-dom/src/ReactDOMSharedInternals.js';
+    if (
+      entry === 'react-dom' ||
+      entry === 'react-dom/src/ReactDOMFB.js' ||
+      entry === 'react-dom/src/ReactDOMTestingFB.js' ||
+      entry === 'react-dom/src/ReactDOMServer.js' ||
+      entry === 'react-markup/src/ReactMarkupClient.js' ||
+      entry === 'react-markup/src/ReactMarkupServer.js'
+    ) {
+      if (
+        bundleType === FB_WWW_DEV ||
+        bundleType === FB_WWW_PROD ||
+        bundleType === FB_WWW_PROFILING
+      ) {
+        return './packages/react-dom/src/ReactDOMSharedInternalsFB.js';
+      } else {
+        return './packages/react-dom/src/ReactDOMSharedInternals.js';
+      }
     }
     if (
       !entry.startsWith('react-dom/') &&
@@ -90,21 +133,6 @@ const forks = Object.freeze({
   // We have a few forks for different environments.
   './packages/shared/ReactFeatureFlags.js': (bundleType, entry) => {
     switch (entry) {
-      case 'react-native-renderer':
-        switch (bundleType) {
-          case RN_FB_DEV:
-          case RN_FB_PROD:
-          case RN_FB_PROFILING:
-            return './packages/shared/forks/ReactFeatureFlags.native-fb.js';
-          case RN_OSS_DEV:
-          case RN_OSS_PROD:
-          case RN_OSS_PROFILING:
-            return './packages/shared/forks/ReactFeatureFlags.native-oss.js';
-          default:
-            throw Error(
-              `Unexpected entry (${entry}) and bundleType (${bundleType})`
-            );
-        }
       case 'react-native-renderer/fabric':
         switch (bundleType) {
           case RN_FB_DEV:
@@ -120,29 +148,26 @@ const forks = Object.freeze({
               `Unexpected entry (${entry}) and bundleType (${bundleType})`
             );
         }
+      case 'eslint-plugin-react-hooks/src/index.ts':
+        switch (bundleType) {
+          case FB_WWW_DEV:
+          case FB_WWW_PROD:
+          case FB_WWW_PROFILING:
+            return './packages/shared/forks/ReactFeatureFlags.eslint-plugin.www.js';
+        }
+        return null;
       case 'react-test-renderer':
         switch (bundleType) {
           case RN_FB_DEV:
           case RN_FB_PROD:
           case RN_FB_PROFILING:
-          case RN_OSS_DEV:
-          case RN_OSS_PROD:
-          case RN_OSS_PROFILING:
-            return './packages/shared/forks/ReactFeatureFlags.test-renderer.native.js';
+            return './packages/shared/forks/ReactFeatureFlags.test-renderer.native-fb.js';
           case FB_WWW_DEV:
           case FB_WWW_PROD:
           case FB_WWW_PROFILING:
             return './packages/shared/forks/ReactFeatureFlags.test-renderer.www.js';
         }
         return './packages/shared/forks/ReactFeatureFlags.test-renderer.js';
-      case 'react-dom/unstable_testing':
-        switch (bundleType) {
-          case FB_WWW_DEV:
-          case FB_WWW_PROD:
-          case FB_WWW_PROFILING:
-            return './packages/shared/forks/ReactFeatureFlags.testing.www.js';
-        }
-        return './packages/shared/forks/ReactFeatureFlags.testing.js';
       default:
         switch (bundleType) {
           case FB_WWW_DEV:
@@ -158,163 +183,56 @@ const forks = Object.freeze({
     return null;
   },
 
-  './packages/scheduler/index.js': (bundleType, entry, dependencies) => {
-    switch (bundleType) {
-      case UMD_DEV:
-      case UMD_PROD:
-      case UMD_PROFILING:
-        if (dependencies.indexOf('react') === -1) {
-          // It's only safe to use this fork for modules that depend on React,
-          // because they read the re-exported API from the SECRET_INTERNALS object.
-          return null;
-        }
-        // Optimization: for UMDs, use the API that is already a part of the React
-        // package instead of requiring it to be loaded via a separate <script> tag
-        return './packages/shared/forks/Scheduler.umd.js';
-      default:
-        // For other bundles, use the shared NPM package.
-        return null;
-    }
-  },
-
   './packages/scheduler/src/SchedulerFeatureFlags.js': (
     bundleType,
     entry,
     dependencies
   ) => {
-    if (
-      bundleType === FB_WWW_DEV ||
-      bundleType === FB_WWW_PROD ||
-      bundleType === FB_WWW_PROFILING
-    ) {
-      return './packages/scheduler/src/forks/SchedulerFeatureFlags.www.js';
-    }
-    return './packages/scheduler/src/SchedulerFeatureFlags.js';
-  },
-
-  './packages/shared/consoleWithStackDev.js': (bundleType, entry) => {
-    switch (bundleType) {
-      case FB_WWW_DEV:
-        return './packages/shared/forks/consoleWithStackDev.www.js';
-      default:
-        return null;
-    }
-  },
-
-  './packages/react/src/ReactSharedInternals.js': (bundleType, entry) => {
-    switch (bundleType) {
-      case UMD_DEV:
-      case UMD_PROD:
-      case UMD_PROFILING:
-        return './packages/react/src/forks/ReactSharedInternals.umd.js';
-      default:
-        return null;
-    }
-  },
-
-  // Different wrapping/reporting for caught errors.
-  './packages/shared/invokeGuardedCallbackImpl.js': (bundleType, entry) => {
     switch (bundleType) {
       case FB_WWW_DEV:
       case FB_WWW_PROD:
       case FB_WWW_PROFILING:
-        return './packages/shared/forks/invokeGuardedCallbackImpl.www.js';
-      default:
-        return null;
-    }
-  },
-
-  './packages/react-reconciler/src/ReactFiberReconciler.js': (
-    bundleType,
-    entry,
-    dependencies,
-    moduleType,
-    bundle
-  ) => {
-    if (bundle.enableNewReconciler) {
-      switch (bundleType) {
-        case FB_WWW_DEV:
-        case FB_WWW_PROD:
-        case FB_WWW_PROFILING:
-          // Use the forked version of the reconciler
-          return './packages/react-reconciler/src/ReactFiberReconciler.new.js';
-      }
-    }
-    // Otherwise, use the non-forked version.
-    return './packages/react-reconciler/src/ReactFiberReconciler.old.js';
-  },
-
-  './packages/react-reconciler/src/ReactEventPriorities.js': (
-    bundleType,
-    entry,
-    dependencies,
-    moduleType,
-    bundle
-  ) => {
-    if (bundle.enableNewReconciler) {
-      switch (bundleType) {
-        case FB_WWW_DEV:
-        case FB_WWW_PROD:
-        case FB_WWW_PROFILING:
-          // Use the forked version of the reconciler
-          return './packages/react-reconciler/src/ReactEventPriorities.new.js';
-      }
-    }
-    // Otherwise, use the non-forked version.
-    return './packages/react-reconciler/src/ReactEventPriorities.old.js';
-  },
-
-  './packages/react-reconciler/src/ReactFiberHotReloading.js': (
-    bundleType,
-    entry,
-    dependencies,
-    moduleType,
-    bundle
-  ) => {
-    if (bundle.enableNewReconciler) {
-      switch (bundleType) {
-        case FB_WWW_DEV:
-        case FB_WWW_PROD:
-        case FB_WWW_PROFILING:
-          // Use the forked version of the reconciler
-          return './packages/react-reconciler/src/ReactFiberHotReloading.new.js';
-      }
-    }
-    // Otherwise, use the non-forked version.
-    return './packages/react-reconciler/src/ReactFiberHotReloading.old.js';
-  },
-
-  // Different dialogs for caught errors.
-  './packages/react-reconciler/src/ReactFiberErrorDialog.js': (
-    bundleType,
-    entry
-  ) => {
-    switch (bundleType) {
-      case FB_WWW_DEV:
-      case FB_WWW_PROD:
-      case FB_WWW_PROFILING:
-        // Use the www fork which shows an error dialog.
-        return './packages/react-reconciler/src/forks/ReactFiberErrorDialog.www.js';
-      case RN_OSS_DEV:
-      case RN_OSS_PROD:
-      case RN_OSS_PROFILING:
+        return './packages/scheduler/src/forks/SchedulerFeatureFlags.www.js';
       case RN_FB_DEV:
       case RN_FB_PROD:
       case RN_FB_PROFILING:
-        switch (entry) {
-          case 'react-native-renderer':
-          case 'react-native-renderer/fabric':
-            // Use the RN fork which plays well with redbox.
-            return './packages/react-reconciler/src/forks/ReactFiberErrorDialog.native.js';
-          default:
-            return null;
-        }
+        return './packages/scheduler/src/forks/SchedulerFeatureFlags.native-fb.js';
       default:
-        return null;
+        return './packages/scheduler/src/SchedulerFeatureFlags.js';
     }
   },
 
-  './packages/react-reconciler/src/ReactFiberHostConfig.js': (
+  './packages/shared/DefaultPrepareStackTrace.js': (
+    bundleType,
+    entry,
+    dependencies,
+    moduleType
+  ) => {
+    if (moduleType !== RENDERER && moduleType !== RECONCILER) {
+      return null;
+    }
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (let rendererInfo of inlinedHostConfigs) {
+      if (rendererInfo.entryPoints.indexOf(entry) !== -1) {
+        if (!rendererInfo.isServerSupported) {
+          return null;
+        }
+        const foundFork = findNearestExistingForkFile(
+          './packages/shared/forks/DefaultPrepareStackTrace.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
+      }
+    }
+    return null;
+  },
+
+  './packages/react-reconciler/src/ReactFiberConfig.js': (
     bundleType,
     entry,
     dependencies,
@@ -329,11 +247,20 @@ const forks = Object.freeze({
     // eslint-disable-next-line no-for-of-loops/no-for-of-loops
     for (let rendererInfo of inlinedHostConfigs) {
       if (rendererInfo.entryPoints.indexOf(entry) !== -1) {
-        return `./packages/react-reconciler/src/forks/ReactFiberHostConfig.${rendererInfo.shortName}.js`;
+        const foundFork = findNearestExistingForkFile(
+          './packages/react-reconciler/src/forks/ReactFiberConfig.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
       }
     }
     throw new Error(
-      'Expected ReactFiberHostConfig to always be replaced with a shim, but ' +
+      'Expected ReactFiberConfig to always be replaced with a shim, but ' +
         `found no mention of "${entry}" entry point in ./scripts/shared/inlinedHostConfigs.js. ` +
         'Did you mean to add it there to associate it with a specific renderer?'
     );
@@ -357,7 +284,16 @@ const forks = Object.freeze({
         if (!rendererInfo.isServerSupported) {
           return null;
         }
-        return `./packages/react-server/src/forks/ReactServerStreamConfig.${rendererInfo.shortName}.js`;
+        const foundFork = findNearestExistingForkFile(
+          './packages/react-server/src/forks/ReactServerStreamConfig.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
       }
     }
     throw new Error(
@@ -367,7 +303,7 @@ const forks = Object.freeze({
     );
   },
 
-  './packages/react-server/src/ReactServerFormatConfig.js': (
+  './packages/react-server/src/ReactFizzConfig.js': (
     bundleType,
     entry,
     dependencies,
@@ -385,11 +321,20 @@ const forks = Object.freeze({
         if (!rendererInfo.isServerSupported) {
           return null;
         }
-        return `./packages/react-server/src/forks/ReactServerFormatConfig.${rendererInfo.shortName}.js`;
+        const foundFork = findNearestExistingForkFile(
+          './packages/react-server/src/forks/ReactFizzConfig.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
       }
     }
     throw new Error(
-      'Expected ReactServerFormatConfig to always be replaced with a shim, but ' +
+      'Expected ReactFizzConfig to always be replaced with a shim, but ' +
         `found no mention of "${entry}" entry point in ./scripts/shared/inlinedHostConfigs.js. ` +
         'Did you mean to add it there to associate it with a specific renderer?'
     );
@@ -413,7 +358,23 @@ const forks = Object.freeze({
         if (!rendererInfo.isServerSupported) {
           return null;
         }
-        return `./packages/react-server/src/forks/ReactFlightServerConfig.${rendererInfo.shortName}.js`;
+        if (rendererInfo.isFlightSupported === false) {
+          return new Error(
+            `Expected not to use ReactFlightServerConfig with "${entry}" entry point ` +
+              'in ./scripts/shared/inlinedHostConfigs.js. Update the renderer config to ' +
+              'activate flight suppport and add a matching fork implementation for ReactFlightServerConfig.'
+          );
+        }
+        const foundFork = findNearestExistingForkFile(
+          './packages/react-server/src/forks/ReactFlightServerConfig.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
       }
     }
     throw new Error(
@@ -423,7 +384,7 @@ const forks = Object.freeze({
     );
   },
 
-  './packages/react-client/src/ReactFlightClientHostConfig.js': (
+  './packages/react-client/src/ReactFlightClientConfig.js': (
     bundleType,
     entry,
     dependencies,
@@ -441,11 +402,27 @@ const forks = Object.freeze({
         if (!rendererInfo.isServerSupported) {
           return null;
         }
-        return `./packages/react-client/src/forks/ReactFlightClientHostConfig.${rendererInfo.shortName}.js`;
+        if (rendererInfo.isFlightSupported === false) {
+          return new Error(
+            `Expected not to use ReactFlightClientConfig with "${entry}" entry point ` +
+              'in ./scripts/shared/inlinedHostConfigs.js. Update the renderer config to ' +
+              'activate flight suppport and add a matching fork implementation for ReactFlightClientConfig.'
+          );
+        }
+        const foundFork = findNearestExistingForkFile(
+          './packages/react-client/src/forks/ReactFlightClientConfig.',
+          rendererInfo.shortName,
+          '.js'
+        );
+        if (foundFork) {
+          return foundFork;
+        }
+        // fall through to error
+        break;
       }
     }
     throw new Error(
-      'Expected ReactFlightClientHostConfig to always be replaced with a shim, but ' +
+      'Expected ReactFlightClientConfig to always be replaced with a shim, but ' +
         `found no mention of "${entry}" entry point in ./scripts/shared/inlinedHostConfigs.js. ` +
         'Did you mean to add it there to associate it with a specific renderer?'
     );

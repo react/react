@@ -8,6 +8,7 @@
     "build:chrome": "cross-env NODE_ENV=production node ./chrome/build",
     "build:chrome:fb": "cross-env NODE_ENV=production FEATURE_FLAG_TARGET=extension-fb node ./chrome/build --crx",
     "build:chrome:local": "cross-env NODE_ENV=development node ./chrome/build",
+    "build:chrome:fb:local": "cross-env NODE_ENV=development FEATURE_FLAG_TARGET=extension-fb node ./chrome/build",
     "build:firefox": "cross-env NODE_ENV=production node ./firefox/build",
     "build:firefox:local": "cross-env NODE_ENV=development node ./firefox/build",
     "build:edge": "cross-env NODE_ENV=production node ./edge/build",
@@ -27,12 +28,14 @@
     "@babel/plugin-transform-modules-commonjs": "^7.10.4",
     "@babel/plugin-transform-react-jsx-source": "^7.10.5",
     "@babel/preset-react": "^7.10.4",
+    "@jridgewell/sourcemap-codec": "1.5.5",
     "acorn-jsx": "^5.2.0",
     "archiver": "^3.0.0",
     "babel-core": "^7.0.0-bridge",
     "babel-eslint": "^9.0.0",
     "babel-loader": "^8.0.4",
     "babel-preset-minify": "^0.5.1",
+    "buffer": "^6.0.3",
     "chalk": "^4.1.1",
     "child-process-promise": "^2.2.1",
     "chrome-launch": "^1.1.4",
@@ -54,20 +57,18 @@
     "open": "^7.0.2",
     "os-name": "^3.1.0",
     "parse-filepath": "^1.0.2",
+    "process": "0.11.10",
     "raw-loader": "^3.1.0",
-    "rollup": "^1.19.4",
-    "rollup-plugin-babel": "^4.0.1",
-    "rollup-plugin-commonjs": "^9.3.4",
-    "rollup-plugin-node-resolve": "^2.1.1",
+    "rimraf": "^5.0.1",
     "source-map-js": "^0.6.2",
-    "sourcemap-codec": "^1.4.8",
     "style-loader": "^0.23.1",
-    "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.11",
-    "webpack-dev-server": "^3.10.3",
-    "workerize-loader": "^1.3.0"
+    "webpack": "^5.82.1",
+    "webpack-cli": "^5.1.1",
+    "webpack-dev-server": "^4.15.0",
+    "webpack-stats-plugin": "^1.1.3",
+    "workerize-loader": "^2.0.2"
   },
   "dependencies": {
-    "web-ext": "^4"
+    "web-ext": "^8"
   }
 }

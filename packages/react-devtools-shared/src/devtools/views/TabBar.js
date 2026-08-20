@@ -41,16 +41,16 @@ export default function TabBar({
   type,
 }: Props): React.Node {
   if (!tabs.some(tab => tab !== null && tab.id === currentTab)) {
-    const firstTab = ((tabs.find(tab => tab !== null): any): TabInfo);
+    const firstTab = tabs.find(tab => tab !== null) as any as TabInfo;
     selectTab(firstTab.id);
   }
 
   const onChange = useCallback(
-    ({currentTarget}) => selectTab(currentTarget.value),
+    ({currentTarget}: $FlowFixMe) => selectTab(currentTarget.value),
     [selectTab],
   );
 
-  const handleKeyDown = useCallback(event => {
+  const handleKeyDown = useCallback((event: $FlowFixMe) => {
     switch (event.key) {
       case 'ArrowDown':
       case 'ArrowLeft':

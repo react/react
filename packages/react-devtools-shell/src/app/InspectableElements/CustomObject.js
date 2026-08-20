@@ -11,7 +11,7 @@ import * as React from 'react';
 
 class Custom {
   _number = 42;
-  get number() {
+  get number(): number {
     return this._number;
   }
 }

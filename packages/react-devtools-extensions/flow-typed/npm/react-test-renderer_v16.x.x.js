@@ -6,6 +6,8 @@
 
 'use strict';
 
+/* eslint-disable no-unused-vars */
+
 type ReactComponentInstance = React$Component<any>;
 
 type ReactTestRendererJSON = {
@@ -50,7 +52,6 @@ type TestRendererOptions = {
 };
 
 declare module 'react-test-renderer' {
-  // eslint-disable-next-line no-inner-declarations
   declare export type ReactTestRenderer = {
     toJSON(): null | ReactTestRendererJSON,
     toTree(): null | ReactTestRendererTree,
@@ -77,7 +78,6 @@ declare module 'react-test-renderer/shallow' {
     static createRenderer(): ShallowRenderer;
     getMountedInstance(): ReactTestInstance;
     getRenderOutput<E: React$Element<any>>(): E;
-    getRenderOutput(): React$Element<any>;
     render(element: React$Element<any>, context?: any): void;
     unmount(): void;
   }

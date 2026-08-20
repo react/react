@@ -209,11 +209,11 @@ async function reviewChangelogPrompt() {
   console.log(`  ${chalk.bold(CHANGELOG_PATH)}`);
   console.log('');
   console.log('Please review the new changelog text for the following:');
-  console.log('  1. Organize the list into Features vs Bugfixes');
   console.log('  1. Filter out any non-user-visible changes (e.g. typo fixes)');
-  console.log('  1. Combine related PRs into a single bullet list.');
+  console.log('  2. Organize the list into Features vs Bugfixes');
+  console.log('  3. Combine related PRs into a single bullet list');
   console.log(
-    '  1. Replacing the "USERNAME" placeholder text with the GitHub username(s)'
+    '  4. Replacing the "USERNAME" placeholder text with the GitHub username(s)'
   );
   console.log('');
   console.log(`  ${chalk.bold.green(`open ${CHANGELOG_PATH}`)}`);

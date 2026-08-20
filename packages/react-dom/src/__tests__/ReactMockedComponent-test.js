@@ -10,7 +10,8 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
 
 let MockedComponent;
 let ReactDOMServer;
@@ -18,8 +19,9 @@ let ReactDOMServer;
 describe('ReactMockedComponent', () => {
   beforeEach(() => {
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
+    act = require('internal-test-utils').act;
 
     MockedComponent = class extends React.Component {
       render() {
@@ -30,15 +32,23 @@ describe('ReactMockedComponent', () => {
     MockedComponent.prototype.render = jest.fn();
   });
 
-  it('should allow a mocked component to be rendered', () => {
+  it('should allow a mocked component to be rendered', async () => {
     const container = document.createElement('container');
-    ReactDOM.render(<MockedComponent />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<MockedComponent />);
+    });
   });
 
-  it('should allow a mocked component to be updated in dev', () => {
+  it('should allow a mocked component to be updated in dev', async () => {
     const container = document.createElement('container');
-    ReactDOM.render(<MockedComponent />, container);
-    ReactDOM.render(<MockedComponent />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<MockedComponent />);
+    });
+    await act(() => {
+      root.render(<MockedComponent />);
+    });
   });
 
   it('should allow a mocked component to be rendered in dev (SSR)', () => {

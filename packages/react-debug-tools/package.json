@@ -6,8 +6,8 @@
   "keywords": [
     "react"
   ],
-  "homepage": "https://reactjs.org/",
-  "bugs": "https://github.com/facebook/react/issues",
+  "homepage": "https://react.dev/",
+  "bugs": "https://github.com/react/react/issues",
   "license": "MIT",
   "files": [
     "LICENSE",
@@ -18,7 +18,7 @@
   "main": "index.js",
   "repository": {
     "type" : "git",
-    "url" : "https://github.com/facebook/react.git",
+    "url" : "https://github.com/react/react.git",
     "directory": "packages/react-debug-tools"
   },
   "engines": {
@@ -28,6 +28,6 @@
     "react": "^17.0.0"
   },
   "dependencies": {
-    "error-stack-parser": "^2.0.2"
+    "error-stack-parser": "^2.1.4"
   }
 }

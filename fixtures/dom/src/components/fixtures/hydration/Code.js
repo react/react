@@ -34,7 +34,7 @@ export class CodeEditor extends React.Component {
       lineNumbers: true,
     });
 
-    this.editor.on('change', function(doc) {
+    this.editor.on('change', function (doc) {
       onChange(doc.getValue());
     });
   }

@@ -1,0 +1,9 @@
+.EditorSettings {
+  display: flex;
+  flex: 1 0 auto;
+}
+
+.EditorLabel {
+  display: inline;
+  margin-right: 0.5rem;
+}

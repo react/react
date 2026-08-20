@@ -9,18 +9,30 @@
 
 'use strict';
 
-describe('SimpleEventPlugin', function() {
+// polyfill missing JSDOM support
+class ToggleEvent extends Event {
+  constructor(type, eventInit) {
+    super(type, eventInit);
+    this.newState = eventInit.newState;
+    this.oldState = eventInit.oldState;
+  }
+}
+
+describe('SimpleEventPlugin', function () {
   let React;
-  let ReactDOM;
   let ReactDOMClient;
   let Scheduler;
   let act;
 
   let onClick;
   let container;
+  let assertLog;
+  let waitForAll;
 
-  function expectClickThru(element) {
-    element.click();
+  async function expectClickThru(element) {
+    await act(() => {
+      element.click();
+    });
     expect(onClick).toHaveBeenCalledTimes(1);
   }
 
@@ -29,19 +41,27 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(0);
   }
 
-  function mounted(element) {
+  async function mounted(element) {
     container = document.createElement('div');
     document.body.appendChild(container);
-    element = ReactDOM.render(element, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(element);
+    });
+    element = container.firstChild;
     return element;
   }
 
-  beforeEach(function() {
+  beforeEach(function () {
     jest.resetModules();
     React = require('react');
-    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     Scheduler = require('scheduler');
+
+    const InternalTestUtils = require('internal-test-utils');
+    assertLog = InternalTestUtils.assertLog;
+    waitForAll = InternalTestUtils.waitForAll;
+    act = InternalTestUtils.act;
 
     onClick = jest.fn();
   });
@@ -53,13 +73,13 @@ describe('SimpleEventPlugin', function() {
     }
   });
 
-  it('A non-interactive tags click when disabled', function() {
+  it('A non-interactive tags click when disabled', async function () {
     const element = <div onClick={onClick} />;
-    expectClickThru(mounted(element));
+    await expectClickThru(await mounted(element));
   });
 
-  it('A non-interactive tags clicks bubble when disabled', function() {
-    const element = mounted(
+  it('A non-interactive tags clicks bubble when disabled', async function () {
+    const element = await mounted(
       <div onClick={onClick}>
         <div />
       </div>,
@@ -69,8 +89,8 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('does not register a click when clicking a child of a disabled element', function() {
-    const element = mounted(
+  it('does not register a click when clicking a child of a disabled element', async function () {
+    const element = await mounted(
       <button onClick={onClick} disabled={true}>
         <span />
       </button>,
@@ -81,8 +101,8 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(0);
   });
 
-  it('triggers click events for children of disabled elements', function() {
-    const element = mounted(
+  it('triggers click events for children of disabled elements', async function () {
+    const element = await mounted(
       <button disabled={true}>
         <span onClick={onClick} />
       </button>,
@@ -93,8 +113,8 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers parent captured click events when target is a child of a disabled elements', function() {
-    const element = mounted(
+  it('triggers parent captured click events when target is a child of a disabled elements', async function () {
+    const element = await mounted(
       <div onClickCapture={onClick}>
         <button disabled={true}>
           <span />
@@ -107,8 +127,8 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers captured click events for children of disabled elements', function() {
-    const element = mounted(
+  it('triggers captured click events for children of disabled elements', async function () {
+    const element = await mounted(
       <button disabled={true}>
         <span onClickCapture={onClick} />
       </button>,
@@ -119,70 +139,79 @@ describe('SimpleEventPlugin', function() {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  ['button', 'input', 'select', 'textarea'].forEach(function(tagName) {
-    describe(tagName, function() {
-      it('should forward clicks when it starts out not disabled', () => {
+  describe.each(['button', 'input', 'select', 'textarea'])(
+    '%s',
+    function (tagName) {
+      it('should forward clicks when it starts out not disabled', async () => {
         const element = React.createElement(tagName, {
           onClick: onClick,
         });
 
-        expectClickThru(mounted(element));
+        await expectClickThru(await mounted(element));
       });
 
-      it('should not forward clicks when it starts out disabled', () => {
+      it('should not forward clicks when it starts out disabled', async () => {
         const element = React.createElement(tagName, {
           onClick: onClick,
           disabled: true,
         });
 
-        expectNoClickThru(mounted(element));
+        await expectNoClickThru(await mounted(element));
       });
 
-      it('should forward clicks when it becomes not disabled', () => {
+      it('should forward clicks when it becomes not disabled', async () => {
         container = document.createElement('div');
         document.body.appendChild(container);
-        let element = ReactDOM.render(
-          React.createElement(tagName, {onClick: onClick, disabled: true}),
-          container,
-        );
-        element = ReactDOM.render(
-          React.createElement(tagName, {onClick: onClick}),
-          container,
-        );
-        expectClickThru(element);
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(
+            React.createElement(tagName, {onClick: onClick, disabled: true}),
+          );
+        });
+        await act(() => {
+          root.render(React.createElement(tagName, {onClick: onClick}));
+        });
+        const element = container.firstChild;
+        await expectClickThru(element);
       });
 
-      it('should not forward clicks when it becomes disabled', () => {
+      it('should not forward clicks when it becomes disabled', async () => {
         container = document.createElement('div');
         document.body.appendChild(container);
-        let element = ReactDOM.render(
-          React.createElement(tagName, {onClick: onClick}),
-          container,
-        );
-        element = ReactDOM.render(
-          React.createElement(tagName, {onClick: onClick, disabled: true}),
-          container,
-        );
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(React.createElement(tagName, {onClick: onClick}));
+        });
+        await act(() => {
+          root.render(
+            React.createElement(tagName, {onClick: onClick, disabled: true}),
+          );
+        });
+        const element = container.firstChild;
         expectNoClickThru(element);
       });
 
-      it('should work correctly if the listener is changed', () => {
+      it('should work correctly if the listener is changed', async () => {
         container = document.createElement('div');
         document.body.appendChild(container);
-        let element = ReactDOM.render(
-          React.createElement(tagName, {onClick: onClick, disabled: true}),
-          container,
-        );
-        element = ReactDOM.render(
-          React.createElement(tagName, {onClick: onClick, disabled: false}),
-          container,
-        );
-        expectClickThru(element);
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(
+            React.createElement(tagName, {onClick: onClick, disabled: true}),
+          );
+        });
+        await act(() => {
+          root.render(
+            React.createElement(tagName, {onClick: onClick, disabled: false}),
+          );
+        });
+        const element = container.firstChild;
+        await expectClickThru(element);
       });
-    });
-  });
+    },
+  );
 
-  it('batches updates that occur as a result of a nested event dispatch', () => {
+  it('batches updates that occur as a result of a nested event dispatch', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -194,7 +223,7 @@ describe('SimpleEventPlugin', function() {
           count: state.count + 1,
         }));
       componentDidUpdate() {
-        Scheduler.unstable_yieldValue(`didUpdate - Count: ${this.state.count}`);
+        Scheduler.log(`didUpdate - Count: ${this.state.count}`);
       }
       render() {
         return (
@@ -220,14 +249,19 @@ describe('SimpleEventPlugin', function() {
       );
     }
 
-    ReactDOM.render(<Button />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<Button />);
+    });
+
     expect(button.textContent).toEqual('Count: 0');
-    expect(Scheduler).toHaveYielded([]);
+    assertLog([]);
 
-    click();
-
+    await act(() => {
+      click();
+    });
     // There should be exactly one update.
-    expect(Scheduler).toHaveYielded(['didUpdate - Count: 3']);
+    assertLog(['didUpdate - Count: 3']);
     expect(button.textContent).toEqual('Count: 3');
   });
 
@@ -236,11 +270,14 @@ describe('SimpleEventPlugin', function() {
       jest.resetModules();
 
       React = require('react');
-      ReactDOM = require('react-dom');
       ReactDOMClient = require('react-dom/client');
       Scheduler = require('scheduler');
 
-      act = require('jest-react').act;
+      const InternalTestUtils = require('internal-test-utils');
+      assertLog = InternalTestUtils.assertLog;
+      waitForAll = InternalTestUtils.waitForAll;
+
+      act = require('internal-test-utils').act;
     });
 
     it('flushes pending interactive work before exiting event handler', async () => {
@@ -253,12 +290,12 @@ describe('SimpleEventPlugin', function() {
         state = {disabled: false};
         onClick = () => {
           // Perform some side-effect
-          Scheduler.unstable_yieldValue('Side-effect');
+          Scheduler.log('Side-effect');
           // Disable the button
           this.setState({disabled: true});
         };
         render() {
-          Scheduler.unstable_yieldValue(
+          Scheduler.log(
             `render button: ${this.state.disabled ? 'disabled' : 'enabled'}`,
           );
           return (
@@ -274,10 +311,10 @@ describe('SimpleEventPlugin', function() {
       // Initial mount
       root.render(<Button />);
       // Should not have flushed yet because it's async
-      expect(Scheduler).toHaveYielded([]);
+      assertLog([]);
       expect(button).toBe(undefined);
       // Flush async work
-      expect(Scheduler).toFlushAndYield(['render button: enabled']);
+      await waitForAll(['render button: enabled']);
 
       function click() {
         const event = new MouseEvent('click', {
@@ -291,8 +328,8 @@ describe('SimpleEventPlugin', function() {
       }
 
       // Click the button to trigger the side-effect
-      await act(async () => click());
-      expect(Scheduler).toHaveYielded([
+      await act(() => click());
+      assertLog([
         // The handler fired
         'Side-effect',
         // The component re-rendered synchronously, even in concurrent mode.
@@ -301,7 +338,7 @@ describe('SimpleEventPlugin', function() {
 
       // Click the button again
       click();
-      expect(Scheduler).toHaveYielded([
+      assertLog([
         // The event handler was removed from the button, so there's no effect.
       ]);
 
@@ -312,7 +349,7 @@ describe('SimpleEventPlugin', function() {
       click();
       click();
       click();
-      expect(Scheduler).toFlushAndYield([]);
+      await waitForAll([]);
     });
 
     // NOTE: This test was written for the old behavior of discrete updates,
@@ -345,7 +382,7 @@ describe('SimpleEventPlugin', function() {
       // Should not have flushed yet because it's async
       expect(button).toBe(undefined);
       // Flush async work
-      Scheduler.unstable_flushAll();
+      await waitForAll([]);
       expect(button.textContent).toEqual('Count: 0');
 
       function click() {
@@ -360,32 +397,35 @@ describe('SimpleEventPlugin', function() {
       }
 
       // Click the button a single time
-      await act(async () => click());
+      await act(() => click());
       // The counter should update synchronously, even in concurrent mode.
       expect(button.textContent).toEqual('Count: 1');
 
       // Click the button many more times
-      await act(async () => click());
-      await act(async () => click());
-      await act(async () => click());
-      await act(async () => click());
-      await act(async () => click());
-      await act(async () => click());
+      await act(() => click());
+      await act(() => click());
+      await act(() => click());
+      await act(() => click());
+      await act(() => click());
+      await act(() => click());
 
       // Flush the remaining work
-      Scheduler.unstable_flushAll();
+      await waitForAll([]);
       // The counter should equal the total number of clicks
       expect(button.textContent).toEqual('Count: 7');
     });
   });
 
-  describe('iOS bubbling click fix', function() {
+  describe('iOS bubbling click fix', function () {
     // See http://www.quirksmode.org/blog/archives/2010/09/click_event_del.html
 
-    it('does not add a local click to interactive elements', function() {
+    it('does not add a local click to interactive elements', async function () {
       container = document.createElement('div');
 
-      ReactDOM.render(<button onClick={onClick} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<button onClick={onClick} />);
+      });
 
       const node = container.firstChild;
 
@@ -394,24 +434,29 @@ describe('SimpleEventPlugin', function() {
       expect(onClick).toHaveBeenCalledTimes(0);
     });
 
-    it('adds a local click listener to non-interactive elements', function() {
+    it('adds a local click listener to non-interactive elements', async function () {
       container = document.createElement('div');
 
-      ReactDOM.render(<div onClick={onClick} />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<div onClick={onClick} />);
+      });
 
       const node = container.firstChild;
 
-      node.dispatchEvent(new MouseEvent('click'));
+      await act(() => {
+        node.dispatchEvent(new MouseEvent('click'));
+      });
 
       expect(onClick).toHaveBeenCalledTimes(0);
     });
 
-    it('registers passive handlers for events affected by the intervention', () => {
+    it('registers passive handlers for events affected by the intervention', async () => {
       container = document.createElement('div');
 
       const passiveEvents = [];
       const nativeAddEventListener = container.addEventListener;
-      container.addEventListener = function(type, fn, options) {
+      container.addEventListener = function (type, fn, options) {
         if (options !== null && typeof options === 'object') {
           if (options.passive) {
             passiveEvents.push(type);
@@ -420,7 +465,10 @@ describe('SimpleEventPlugin', function() {
         return nativeAddEventListener.apply(this, arguments);
       };
 
-      ReactDOM.render(<div />, container);
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<div />);
+      });
 
       expect(passiveEvents).toEqual([
         'touchstart',
@@ -431,5 +479,148 @@ describe('SimpleEventPlugin', function() {
         'wheel',
       ]);
     });
+
+    it('dispatches synthetic toggle events when the Popover API is used', async () => {
+      container = document.createElement('div');
+
+      const onToggle = jest.fn();
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <>
+            <button popoverTarget="popover">Toggle popover</button>
+            <div id="popover" popover="" onToggle={onToggle}>
+              popover content
+            </div>
+          </>,
+        );
+      });
+
+      const target = container.querySelector('#popover');
+      target.dispatchEvent(
+        new ToggleEvent('toggle', {
+          bubbles: false,
+          cancelable: true,
+          oldState: 'closed',
+          newState: 'open',
+        }),
+      );
+
+      expect(onToggle).toHaveBeenCalledTimes(1);
+      let event = onToggle.mock.calls[0][0];
+      expect(event).toEqual(
+        expect.objectContaining({
+          oldState: 'closed',
+          newState: 'open',
+        }),
+      );
+
+      target.dispatchEvent(
+        new ToggleEvent('toggle', {
+          bubbles: false,
+          cancelable: true,
+          oldState: 'open',
+          newState: 'closed',
+        }),
+      );
+
+      expect(onToggle).toHaveBeenCalledTimes(2);
+      event = onToggle.mock.calls[1][0];
+      expect(event).toEqual(
+        expect.objectContaining({
+          oldState: 'open',
+          newState: 'closed',
+        }),
+      );
+    });
+
+    it('dispatches synthetic toggle events when <details> is used', async () => {
+      // This test just replays browser behavior.
+      // The real test would be if browsers dispatch ToggleEvent on <details>.
+      // This case only exists because MDN claims <details> doesn't receive ToggleEvent.
+      // However, Chrome dispatches ToggleEvent on <details> and the spec confirms that behavior: https://html.spec.whatwg.org/multipage/indices.html#event-toggle
+
+      container = document.createElement('div');
+
+      const onToggle = jest.fn();
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <details id="details" onToggle={onToggle}>
+            <summary>Summary</summary>
+            Details
+          </details>,
+        );
+      });
+
+      const target = container.querySelector('#details');
+      target.dispatchEvent(
+        new ToggleEvent('toggle', {
+          bubbles: false,
+          cancelable: true,
+          oldState: 'closed',
+          newState: 'open',
+        }),
+      );
+
+      expect(onToggle).toHaveBeenCalledTimes(1);
+      let event = onToggle.mock.calls[0][0];
+      expect(event).toEqual(
+        expect.objectContaining({
+          oldState: 'closed',
+          newState: 'open',
+        }),
+      );
+
+      target.dispatchEvent(
+        new ToggleEvent('toggle', {
+          bubbles: false,
+          cancelable: true,
+          oldState: 'open',
+          newState: 'closed',
+        }),
+      );
+
+      expect(onToggle).toHaveBeenCalledTimes(2);
+      event = onToggle.mock.calls[1][0];
+      expect(event).toEqual(
+        expect.objectContaining({
+          oldState: 'open',
+          newState: 'closed',
+        }),
+      );
+    });
+  });
+
+  it('includes the submitter in submit events', async function () {
+    container = document.createElement('div');
+
+    const onSubmit = jest.fn(event => {
+      event.preventDefault();
+    });
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onSubmit={onSubmit}>
+          <button type="submit" id="submitter">
+            Submit
+          </button>
+        </form>,
+      );
+    });
+
+    const submitter = container.querySelector('#submitter');
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+      submitter: submitter,
+    });
+    await act(() => {
+      submitter.dispatchEvent(submitEvent);
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const event = onSubmit.mock.calls[0][0];
+    expect(event.submitter).toBe(submitter);
   });
 });

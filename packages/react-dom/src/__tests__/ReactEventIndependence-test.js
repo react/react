@@ -10,68 +10,75 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
 
 describe('ReactEventIndependence', () => {
   beforeEach(() => {
     jest.resetModules();
 
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
   });
 
-  it('does not crash with other react inside', () => {
+  it('does not crash with other react inside', async () => {
     let clicks = 0;
     const container = document.createElement('div');
     document.body.appendChild(container);
+    const root = ReactDOMClient.createRoot(container);
     try {
-      const div = ReactDOM.render(
-        <div
-          onClick={() => clicks++}
-          dangerouslySetInnerHTML={{
-            __html: '<button data-reactid=".z">click me</div>',
-          }}
-        />,
-        container,
-      );
+      await act(() => {
+        root.render(
+          <div
+            onClick={() => clicks++}
+            dangerouslySetInnerHTML={{
+              __html: '<button data-reactid=".z">click me</div>',
+            }}
+          />,
+        );
+      });
 
-      div.firstChild.click();
+      container.firstElementChild.click();
       expect(clicks).toBe(1);
     } finally {
       document.body.removeChild(container);
     }
   });
 
-  it('does not crash with other react outside', () => {
+  it('does not crash with other react outside', async () => {
     let clicks = 0;
     const outer = document.createElement('div');
     document.body.appendChild(outer);
+    const root = ReactDOMClient.createRoot(outer);
     try {
       outer.setAttribute('data-reactid', '.z');
-      const inner = ReactDOM.render(
-        <button onClick={() => clicks++}>click me</button>,
-        outer,
-      );
-      inner.click();
+      await act(() => {
+        root.render(<button onClick={() => clicks++}>click me</button>);
+      });
+      outer.firstElementChild.click();
       expect(clicks).toBe(1);
     } finally {
       document.body.removeChild(outer);
     }
   });
 
-  it('does not when event fired on unmounted tree', () => {
+  it('does not when event fired on unmounted tree', async () => {
     let clicks = 0;
     const container = document.createElement('div');
     document.body.appendChild(container);
     try {
-      const button = ReactDOM.render(
-        <button onClick={() => clicks++}>click me</button>,
-        container,
-      );
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<button onClick={() => clicks++}>click me</button>);
+      });
+
+      const button = container.firstChild;
 
       // Now we unmount the component, as if caused by a non-React event handler
       // for the same click we're about to simulate, like closing a layer:
-      ReactDOM.unmountComponentAtNode(container);
+      root.unmount();
       button.click();
 
       // Since the tree is unmounted, we don't dispatch the click event.

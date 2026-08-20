@@ -1,0 +1,35 @@
+.SourceHeaderRow {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+.SourceHeader {
+  flex: 1 1;
+  font-family: var(--font-family-sans);
+}
+
+.SourceOneLiner {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  margin-left: 1rem;
+}
+
+.Link {
+  color: var(--color-link);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  cursor: pointer;
+  border-radius: 0.125rem;
+  padding: 0px 2px;
+}
+
+.Link:hover {
+  background-color: var(--color-background-hover);
+}

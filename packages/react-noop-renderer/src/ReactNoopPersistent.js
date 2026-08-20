@@ -20,12 +20,17 @@ import createReactNoop from './createReactNoop';
 export const {
   _Scheduler,
   getChildren,
+  dangerouslyGetChildren,
   getPendingChildren,
+  dangerouslyGetPendingChildren,
   getOrCreateRootContainer,
   createRoot,
   createLegacyRoot,
   getChildrenAsJSX,
   getPendingChildrenAsJSX,
+  getSuspenseyThingStatus,
+  resolveSuspenseyThing,
+  resetSuspenseyThingCache,
   createPortal,
   render,
   renderLegacySyncRoot,
@@ -33,7 +38,8 @@ export const {
   unmountRootWithID,
   findInstance,
   flushNextYield,
-  flushWithHostCounters,
+  startTrackingHostCounters,
+  stopTrackingHostCounters,
   expire,
   flushExpired,
   batchedUpdates,
@@ -49,6 +55,7 @@ export const {
   // TODO: Remove this once callers migrate to alternatives.
   // This should only be used by React internals.
   unstable_runWithPriority,
+  // $FlowFixMe[signature-verification-failure]
 } = createReactNoop(
   ReactFiberReconciler, // reconciler
   false, // useMutation

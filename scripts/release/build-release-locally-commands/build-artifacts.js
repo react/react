@@ -5,6 +5,7 @@
 const {exec} = require('child-process-promise');
 const {join} = require('path');
 const {logPromise} = require('../utils');
+const shell = require('shelljs');
 
 const run = async ({cwd, dry, tempDirectory}) => {
   const defaultOptions = {
@@ -17,7 +18,7 @@ const run = async ({cwd, dry, tempDirectory}) => {
   const tempNodeModulesPath = join(tempDirectory, 'build', 'node_modules');
   const buildPath = join(cwd, 'build');
 
-  await exec(`cp -r ${tempNodeModulesPath} ${buildPath}`);
+  shell.cp('-r', tempNodeModulesPath, buildPath);
 };
 
 module.exports = async params => {

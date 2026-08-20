@@ -1,0 +1,46 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+/test-results
+
+# next.js
+/.next/
+/out/
+/next-env.d.ts
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+
+# external fonts
+public/fonts/Optimistic_Display_W_Lt.woff2
+public/fonts/Optimistic_Display_W_Md.woff2
+public/fonts/Optimistic_Display_W_Bd.woff2
+
+# vscode
+.vscode/*
+!.vscode/extensions.json

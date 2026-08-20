@@ -5,7 +5,7 @@
 const {exec, execSync} = require('child_process');
 const {readFileSync, writeFileSync} = require('fs');
 const {join} = require('path');
-
+const shell = require('shelljs');
 const main = async buildId => {
   const root = join(__dirname, buildId);
   const buildPath = join(root, 'build');
@@ -18,19 +18,12 @@ const main = async buildId => {
     },
     stdio: 'inherit',
   });
-
-  await exec(`cp ${join(root, 'now.json')} ${join(buildPath, 'now.json')}`, {
-    cwd: root,
-  });
-
+  shell.cp(join(root, 'now.json'), join(buildPath, 'now.json'));
   const file = readFileSync(join(root, 'now.json'));
   const json = JSON.parse(file);
   const alias = json.alias[0];
 
-  const commit = execSync('git rev-parse HEAD')
-    .toString()
-    .trim()
-    .substr(0, 7);
+  const commit = execSync('git rev-parse HEAD').toString().trim().slice(0, 7);
 
   let date = new Date();
   date = `${date.toLocaleDateString()} – ${date.toLocaleTimeString()}`;

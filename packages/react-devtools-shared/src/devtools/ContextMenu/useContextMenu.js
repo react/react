@@ -7,47 +7,67 @@
  * @flow
  */
 
-import {useContext, useEffect} from 'react';
-import {RegistryContext} from './Contexts';
+import * as React from 'react';
+import {useState, useEffect, useCallback} from 'react';
 
-import type {OnChangeFn, RegistryContextType} from './Contexts';
-import type {ElementRef} from 'react';
+import type {ContextMenuPosition} from './types';
 
-export default function useContextMenu({
-  data,
-  id,
-  onChange,
-  ref,
-}: {
-  data: Object,
-  id: string,
-  onChange?: OnChangeFn,
-  ref: {current: ElementRef<any> | null},
-}) {
-  const {showMenu} = useContext<RegistryContextType>(RegistryContext);
+type Payload = {
+  shouldShow: boolean,
+  position: ContextMenuPosition | null,
+  hide: () => void,
+};
+
+export default function useContextMenu(anchorElementRef: {
+  current: React.ElementRef<any> | null,
+}): Payload {
+  const [shouldShow, setShouldShow] = useState(false);
+  const [position, setPosition] = React.useState<ContextMenuPosition | null>(
+    null,
+  );
+
+  const hide = useCallback(() => {
+    setShouldShow(false);
+    setPosition(null);
+  }, []);
 
   useEffect(() => {
-    if (ref.current !== null) {
-      const handleContextMenu = (event: MouseEvent | TouchEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
+    const anchor = anchorElementRef.current;
+    if (anchor == null) return;
 
-        const pageX =
-          (event: any).pageX ||
-          (event.touches && (event: any).touches[0].pageX);
-        const pageY =
-          (event: any).pageY ||
-          (event.touches && (event: any).touches[0].pageY);
+    function handleAnchorContextMenu(e: MouseEvent) {
+      e.preventDefault();
+      e.stopPropagation();
 
-        showMenu({data, id, onChange, pageX, pageY});
-      };
+      const {pageX, pageY} = e;
 
-      const trigger = ref.current;
-      trigger.addEventListener('contextmenu', handleContextMenu);
+      const ownerDocument = anchor?.ownerDocument;
+      const portalContainer = ownerDocument?.querySelector(
+        '[data-react-devtools-portal-root]',
+      );
 
-      return () => {
-        trigger.removeEventListener('contextmenu', handleContextMenu);
-      };
+      if (portalContainer == null) {
+        throw new Error(
+          "DevTools tooltip root node not found: can't display the context menu",
+        );
+      }
+
+      // `x` and `y` should be relative to the container, to which these context menus will be portaled
+      // we can't use just `pageX` or `pageY` for Fusebox integration, because RDT frontend is inlined with the whole document
+      // meaning that `pageY` will have an offset of 27, which is the tab bar height
+      // for the browser extension, these will equal to 0
+      const {top: containerTop, left: containerLeft} =
+        portalContainer.getBoundingClientRect();
+
+      setShouldShow(true);
+      setPosition({x: pageX - containerLeft, y: pageY - containerTop});
     }
-  }, [data, id, showMenu]);
+
+    anchor.addEventListener('contextmenu', handleAnchorContextMenu);
+    return () => {
+      anchor.removeEventListener('contextmenu', handleAnchorContextMenu);
+    };
+  }, [anchorElementRef]);
+
+  return {shouldShow, position, hide};
 }

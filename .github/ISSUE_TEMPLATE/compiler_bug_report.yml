@@ -1,0 +1,64 @@
+name: "⚛️ ✨ Compiler bug report"
+description: "Report a problem with React Compiler. Please provide enough information that we can reproduce the problem."
+title: "[Compiler Bug]: "
+labels: ["Component: Optimizing Compiler", "Type: Bug", "Status: Unconfirmed"]
+body:
+- type: checkboxes
+  attributes:
+    label: What kind of issue is this?
+    description: |
+      Please indicate if this issue affects the following tools provided by React Compiler.
+    options:
+      - label: React Compiler core (the JS output is incorrect, or your app works incorrectly after optimization)
+      - label: babel-plugin-react-compiler (build issue installing or using the Babel plugin)
+      - label: eslint-plugin-react-hooks (build issue installing or using the eslint plugin)
+      - label: react-compiler-healthcheck (build issue installing or using the healthcheck script)
+- type: input
+  attributes:
+    label: Link to repro
+    description: |
+      Please provide a repro by either sharing a [Playground link](https://playground.react.dev), or a public GitHub repo so the React team can reproduce the error being reported. Please do not share localhost links!
+    placeholder: |
+      e.g. public GitHub repo, or Playground link
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: Repro steps
+    description: |
+      What were you doing when the bug happened? Detailed information helps maintainers reproduce and fix bugs.
+
+      Issues filed without repro steps will be closed.
+    placeholder: |
+      Example bug report:
+      1. Log in with username/password
+      2. Click "Messages" on the left menu
+      3. Open any message in the list
+  validations:
+    required: true
+- type: dropdown
+  attributes:
+    label: How often does this bug happen?
+    description: |
+      Following the repro steps above, how easily are you able to reproduce this bug?
+    options:
+      - Every time
+      - Often
+      - Sometimes
+      - Only once
+  validations:
+    required: true
+- type: input
+  attributes:
+    label: What version of React are you using?
+    description: |
+      Please provide your React version in the app where this issue occurred.
+  validations:
+    required: true
+- type: input
+  attributes:
+    label: What version of React Compiler are you using?
+    description: |
+      Please provide the exact React Compiler version in the app where this issue occurred.
+  validations:
+    required: true

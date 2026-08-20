@@ -10,37 +10,46 @@
 import type {Dispatcher} from 'react-reconciler/src/ReactInternalTypes';
 
 import type {
-  MutableSource,
-  MutableSourceGetSnapshotFn,
-  MutableSourceSubscribeFn,
   ReactContext,
   StartTransitionOptions,
   Thenable,
   Usable,
+  ReactRecoverable,
+  ReactCustomFormAction,
+  Awaited,
 } from 'shared/ReactTypes';
 
-import type {ResponseState} from './ReactServerFormatConfig';
-import type {Task} from './ReactFizzServer';
+import type {ResumableState} from './ReactFizzConfig';
+import type {Request, Task, KeyNode} from './ReactFizzServer';
 import type {ThenableState} from './ReactFizzThenable';
+import type {TransitionStatus} from './ReactFizzConfig';
 
 import {readContext as readContextImpl} from './ReactFizzNewContext';
 import {getTreeId} from './ReactFizzTreeContext';
-import {createThenableState, trackUsedThenable} from './ReactFizzThenable';
-
-import {makeId} from './ReactServerFormatConfig';
+import {
+  createThenableState,
+  trackUsedThenable,
+  readPreviousThenable,
+} from './ReactFizzThenable';
 
 import {
-  enableCache,
-  enableUseHook,
-  enableUseEventHook,
-  enableUseMemoCacheHook,
-} from 'shared/ReactFeatureFlags';
+  makeId,
+  NotPendingTransition,
+  supportsClientAPIs,
+} from './ReactFizzConfig';
+import {createFastHash} from './ReactServerStreamConfig';
+
 import is from 'shared/objectIs';
+import hasOwnProperty from 'shared/hasOwnProperty';
 import {
-  REACT_SERVER_CONTEXT_TYPE,
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_MEMO_CACHE_SENTINEL,
 } from 'shared/ReactSymbols';
+import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
+import {getFormState} from './ReactFizzServer';
+
+import noop from 'shared/noop';
 
 type BasicStateAction<S> = (S => S) | S;
 type Dispatch<A> = A => void;
@@ -63,6 +72,8 @@ type Hook = {
 
 let currentlyRenderingComponent: Object | null = null;
 let currentlyRenderingTask: Task | null = null;
+let currentlyRenderingRequest: Request | null = null;
+let currentlyRenderingKeyPath: KeyNode | null = null;
 let firstWorkInProgressHook: Hook | null = null;
 let workInProgressHook: Hook | null = null;
 // Whether the work-in-progress hook is a re-rendered hook
@@ -71,9 +82,80 @@ let isReRender: boolean = false;
 let didScheduleRenderPhaseUpdate: boolean = false;
 // Counts the number of useId hooks in this component
 let localIdCounter: number = 0;
+// Chunks that should be pushed to the stream once the component
+// finishes rendering.
+// Counts the number of useActionState calls in this component
+let actionStateCounter: number = 0;
+// The index of the useActionState hook that matches the one passed in at the
+// root during an MPA navigation, if any.
+let actionStateMatchingIndex: number = -1;
 // Counts the number of use(thenable) calls in this component
 let thenableIndexCounter: number = 0;
 let thenableState: ThenableState | null = null;
+
+const browserReasonInitializationFallback =
+  'The reason for browser-only rendering could not be determined because its ' +
+  'initializer threw.';
+
+export function createRecoverableError(recoverable: ReactRecoverable): Error {
+  const reason = recoverable._reason;
+  let initializedReason;
+  if (typeof reason === 'function') {
+    try {
+      initializedReason = reason();
+    } catch {
+      // A reason is only diagnostic metadata. Its initializer must not affect
+      // whether the renderer can defer this subtree to the browser.
+      initializedReason = browserReasonInitializationFallback;
+    }
+  } else {
+    initializedReason = reason;
+  }
+  // Always create the recoverable at the consumption point so its stack
+  // identifies the relevant use() or abort() call. A lazy reason is diagnostic
+  // metadata and can be any value supported by Error.cause.
+  const error = new Error(
+    'Browser-only rendering was requested by `browser()`.',
+    reason === undefined ? undefined : {cause: initializedReason},
+  );
+  Object.defineProperty(error, REACT_RECOVERABLE_TYPE, {value: true});
+  return error;
+}
+
+export function isRecoverableError(error: mixed): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  return (error as any)[REACT_RECOVERABLE_TYPE] === true;
+}
+
+export function cloneRecoverableErrorAsFatal(recoverableError: Error): Error {
+  // Create a separate diagnostic for fatal reporting without changing the
+  // branded recoverable error that other tasks may still need to observe.
+  const fatalRecoverableError = new Error(
+    'The server render could not complete because client rendering was ' +
+      "requested outside a Suspense boundary. See this error's cause for " +
+      'additional details.',
+    hasOwnProperty.call(recoverableError, 'cause')
+      ? {cause: (recoverableError as any).cause}
+      : undefined,
+  );
+  // Keep the frames captured where the recoverable was consumed, but replace
+  // the first line with the fatal error's message.
+  const stack = recoverableError.stack;
+  if (stack !== undefined) {
+    const frameStart = stack.indexOf('\n');
+    fatalRecoverableError.stack =
+      fatalRecoverableError.name +
+      ': ' +
+      fatalRecoverableError.message +
+      (frameStart === -1 ? '' : stack.slice(frameStart));
+  } else {
+    (fatalRecoverableError as any).stack = undefined;
+  }
+  return fatalRecoverableError;
+}
+
 // Lazily created map of render-phase updates
 let renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null = null;
 // Counter to prevent infinite loops.
@@ -93,7 +175,7 @@ function resolveCurrentlyRenderingComponent(): Object {
         '1. You might have mismatching versions of React and the renderer (such as React DOM)\n' +
         '2. You might be breaking the Rules of Hooks\n' +
         '3. You might have more than one copy of React in the same app\n' +
-        'See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.',
+        'See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.',
     );
   }
 
@@ -103,7 +185,7 @@ function resolveCurrentlyRenderingComponent(): Object {
         'Do not call Hooks inside useEffect(...), useMemo(...), or other built-in Hooks. ' +
           'You can only call Hooks at the top level of your React function. ' +
           'For more information, see ' +
-          'https://reactjs.org/link/rules-of-hooks',
+          'https://react.dev/link/rules-of-hooks',
       );
     }
   }
@@ -189,12 +271,16 @@ function createWorkInProgressHook(): Hook {
 }
 
 export function prepareToUseHooks(
+  request: Request,
   task: Task,
+  keyPath: KeyNode | null,
   componentIdentity: Object,
   prevThenableState: ThenableState | null,
 ): void {
   currentlyRenderingComponent = componentIdentity;
   currentlyRenderingTask = task;
+  currentlyRenderingRequest = request;
+  currentlyRenderingKeyPath = keyPath;
   if (__DEV__) {
     isInHookUserCodeInDev = false;
   }
@@ -207,6 +293,15 @@ export function prepareToUseHooks(
   // workInProgressHook = null;
 
   localIdCounter = 0;
+  actionStateCounter = 0;
+  actionStateMatchingIndex = -1;
+  thenableIndexCounter = 0;
+  thenableState = prevThenableState;
+}
+
+export function prepareToUseThenableState(
+  prevThenableState: ThenableState | null,
+): void {
   thenableIndexCounter = 0;
   thenableState = prevThenableState;
 }
@@ -227,6 +322,8 @@ export function finishHooks(
     // restarting until no more updates are scheduled.
     didScheduleRenderPhaseUpdate = false;
     localIdCounter = 0;
+    actionStateCounter = 0;
+    actionStateMatchingIndex = -1;
     thenableIndexCounter = 0;
     numberOfReRenders += 1;
 
@@ -235,6 +332,7 @@ export function finishHooks(
 
     children = Component(props, refOrContext);
   }
+
   resetHooksState();
   return children;
 }
@@ -253,6 +351,19 @@ export function checkDidRenderIdHook(): boolean {
   return didRenderIdHook;
 }
 
+export function getActionStateCount(): number {
+  // This should be called immediately after every finishHooks call.
+  // Conceptually, it's part of the return value of finishHooks; it's only a
+  // separate function to avoid using an array tuple.
+  return actionStateCounter;
+}
+export function getActionStateMatchingIndex(): number {
+  // This should be called immediately after every finishHooks call.
+  // Conceptually, it's part of the return value of finishHooks; it's only a
+  // separate function to avoid using an array tuple.
+  return actionStateMatchingIndex;
+}
+
 // Reset the internal hooks state if an error occurs while rendering a component
 export function resetHooksState(): void {
   if (__DEV__) {
@@ -261,6 +372,8 @@ export function resetHooksState(): void {
 
   currentlyRenderingComponent = null;
   currentlyRenderingTask = null;
+  currentlyRenderingRequest = null;
+  currentlyRenderingKeyPath = null;
   didScheduleRenderPhaseUpdate = false;
   firstWorkInProgressHook = null;
   numberOfReRenders = 0;
@@ -291,7 +404,7 @@ function useContext<T>(context: ReactContext<T>): T {
 }
 
 function basicStateReducer<S>(state: S, action: BasicStateAction<S>): S {
-  // $FlowFixMe: Flow doesn't like mixed types
+  // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types
   return typeof action === 'function' ? action(state) : action;
 }
 
@@ -304,7 +417,7 @@ export function useState<S>(
   return useReducer(
     basicStateReducer,
     // useReducer has a special case to support lazy useState initializers
-    (initialState: any),
+    initialState as any,
   );
 }
 
@@ -314,6 +427,7 @@ export function useReducer<S, I, A>(
   init?: I => S,
 ): [S, Dispatch<A>] {
   if (__DEV__) {
+    // $FlowFixMe[invalid-compare]
     if (reducer !== basicStateReducer) {
       currentHookNameInDev = 'useReducer';
     }
@@ -323,8 +437,8 @@ export function useReducer<S, I, A>(
   if (isReRender) {
     // This is a re-render. Apply the new render phase updates to the previous
     // current hook.
-    const queue: UpdateQueue<A> = (workInProgressHook.queue: any);
-    const dispatch: Dispatch<A> = (queue.dispatch: any);
+    const queue: UpdateQueue<A> = workInProgressHook.queue as any;
+    const dispatch: Dispatch<A> = queue.dispatch as any;
     if (renderPhaseUpdates !== null) {
       // Render phase updates are stored in a map of queue -> linked list
       const firstRenderPhaseUpdate = renderPhaseUpdates.get(queue);
@@ -363,15 +477,16 @@ export function useReducer<S, I, A>(
       isInHookUserCodeInDev = true;
     }
     let initialState;
+    // $FlowFixMe[invalid-compare]
     if (reducer === basicStateReducer) {
       // Special case for `useState`.
       initialState =
         typeof initialArg === 'function'
-          ? ((initialArg: any): () => S)()
-          : ((initialArg: any): S);
+          ? (initialArg as any as () => S)()
+          : (initialArg as any as S);
     } else {
       initialState =
-        init !== undefined ? init(initialArg) : ((initialArg: any): S);
+        init !== undefined ? init(initialArg) : (initialArg as any as S);
     }
     if (__DEV__) {
       isInHookUserCodeInDev = false;
@@ -383,11 +498,11 @@ export function useReducer<S, I, A>(
       last: null,
       dispatch: null,
     });
-    const dispatch: Dispatch<A> = (queue.dispatch = (dispatchAction.bind(
+    const dispatch: Dispatch<A> = (queue.dispatch = dispatchAction.bind(
       null,
       currentlyRenderingComponent,
       queue,
-    ): any));
+    ) as any);
     // $FlowFixMe[incompatible-use] found when upgrading Flow
     return [workInProgressHook.memoizedState, dispatch];
   }
@@ -399,6 +514,7 @@ function useMemo<T>(nextCreate: () => T, deps: Array<mixed> | void | null): T {
 
   const nextDeps = deps === undefined ? null : deps;
 
+  // $FlowFixMe[invalid-compare]
   if (workInProgressHook !== null) {
     const prevState = workInProgressHook.memoizedState;
     if (prevState !== null) {
@@ -440,28 +556,11 @@ function useRef<T>(initialValue: T): {current: T} {
   }
 }
 
-export function useLayoutEffect(
-  create: () => (() => void) | void,
-  inputs: Array<mixed> | void | null,
-) {
-  if (__DEV__) {
-    currentHookNameInDev = 'useLayoutEffect';
-    console.error(
-      'useLayoutEffect does nothing on the server, because its effect cannot ' +
-        "be encoded into the server renderer's output format. This will lead " +
-        'to a mismatch between the initial, non-hydrated UI and the intended ' +
-        'UI. To avoid this, useLayoutEffect should only be used in ' +
-        'components that render exclusively on the client. ' +
-        'See https://reactjs.org/link/uselayouteffect-ssr for common fixes.',
-    );
-  }
-}
-
 function dispatchAction<A>(
   componentIdentity: Object,
   queue: UpdateQueue<A>,
   action: A,
-) {
+): void {
   if (numberOfReRenders >= RE_RENDER_LIMIT) {
     throw new Error(
       'Too many re-renders. React limits the number of renders to prevent ' +
@@ -507,29 +606,17 @@ export function useCallback<T>(
   return useMemo(() => callback, deps);
 }
 
-function throwOnUseEventCall() {
+function throwOnUseEffectEventCall() {
   throw new Error(
-    "A function wrapped in useEvent can't be called during rendering.",
+    "A function wrapped in useEffectEvent can't be called during rendering.",
   );
 }
 
-export function useEvent<Args, Return, F: (...Array<Args>) => Return>(
+export function useEffectEvent<Args, Return, F: (...Array<Args>) => Return>(
   callback: F,
 ): F {
-  // $FlowIgnore[incompatible-return]
-  return throwOnUseEventCall;
-}
-
-// TODO Decide on how to implement this hook for server rendering.
-// If a mutation occurs during render, consider triggering a Suspense boundary
-// and falling back to client rendering.
-function useMutableSource<Source, Snapshot>(
-  source: MutableSource<Source>,
-  getSnapshot: MutableSourceGetSnapshotFn<Source, Snapshot>,
-  subscribe: MutableSourceSubscribeFn<Source, Snapshot>,
-): Snapshot {
-  resolveCurrentlyRenderingComponent();
-  return getSnapshot(source._source);
+  // $FlowFixMe[incompatible-type]
+  return throwOnUseEffectEventCall;
 }
 
 function useSyncExternalStore<T>(
@@ -546,9 +633,9 @@ function useSyncExternalStore<T>(
   return getServerSnapshot();
 }
 
-function useDeferredValue<T>(value: T): T {
+function useDeferredValue<T>(value: T, initialValue?: T): T {
   resolveCurrentlyRenderingComponent();
-  return value;
+  return initialValue !== undefined ? initialValue : value;
 }
 
 function unsupportedStartTransition() {
@@ -563,47 +650,211 @@ function useTransition(): [
   return [false, unsupportedStartTransition];
 }
 
+function useHostTransitionStatus(): TransitionStatus {
+  resolveCurrentlyRenderingComponent();
+  return NotPendingTransition;
+}
+
+function unsupportedSetOptimisticState() {
+  throw new Error('Cannot update optimistic state while rendering.');
+}
+
+function useOptimistic<S, A>(
+  passthrough: S,
+  reducer: ?(S, A) => S,
+): [S, (A) => void] {
+  resolveCurrentlyRenderingComponent();
+  return [passthrough, unsupportedSetOptimisticState];
+}
+
+function createPostbackActionStateKey(
+  permalink: string | void,
+  componentKeyPath: KeyNode | null,
+  hookIndex: number,
+): string {
+  if (permalink !== undefined) {
+    // Don't bother to hash a permalink-based key since it's already short.
+    return 'p' + permalink;
+  } else {
+    // Append a node to the key path that represents the form state hook.
+    const keyPath: KeyNode = [componentKeyPath, null, hookIndex];
+    // Key paths are hashed to reduce the size. It does not need to be secure,
+    // and it's more important that it's fast than that it's completely
+    // collision-free.
+    const keyPathHash = createFastHash(JSON.stringify(keyPath));
+    return 'k' + keyPathHash;
+  }
+}
+
+function useActionState<S, P>(
+  action: (Awaited<S>, P) => S,
+  initialState: Awaited<S>,
+  permalink?: string,
+): [Awaited<S>, (P) => void, boolean] {
+  resolveCurrentlyRenderingComponent();
+
+  // Count the number of useActionState hooks per component. We also use this to
+  // track the position of this useActionState hook relative to the other ones in
+  // this component, so we can generate a unique key for each one.
+  const actionStateHookIndex = actionStateCounter++;
+  const request: Request = currentlyRenderingRequest as any;
+
+  // $FlowFixMe[prop-missing]
+  const formAction = action.$$FORM_ACTION;
+  if (typeof formAction === 'function') {
+    // This is a server action. These have additional features to enable
+    // MPA-style form submissions with progressive enhancement.
+
+    // TODO: If the same permalink is passed to multiple useActionStates, and
+    // they all have the same action signature, Fizz will pass the postback
+    // state to all of them. We should probably only pass it to the first one,
+    // and/or warn.
+
+    // The key is lazily generated and deduped so the that the keypath doesn't
+    // get JSON.stringify-ed unnecessarily, and at most once.
+    let nextPostbackStateKey = null;
+
+    // Determine the current form state. If we received state during an MPA form
+    // submission, then we will reuse that, if the action identity matches.
+    // Otherwise, we'll use the initial state argument. We will emit a comment
+    // marker into the stream that indicates whether the state was reused.
+    let state = initialState;
+    const componentKeyPath = currentlyRenderingKeyPath as any;
+    const postbackActionState = getFormState(request);
+    // $FlowFixMe[prop-missing]
+    const isSignatureEqual = action.$$IS_SIGNATURE_EQUAL;
+    if (
+      postbackActionState !== null &&
+      typeof isSignatureEqual === 'function'
+    ) {
+      const postbackKey = postbackActionState[1];
+      const postbackReferenceId = postbackActionState[2];
+      const postbackBoundArity = postbackActionState[3];
+      if (
+        isSignatureEqual.call(action, postbackReferenceId, postbackBoundArity)
+      ) {
+        nextPostbackStateKey = createPostbackActionStateKey(
+          permalink,
+          componentKeyPath,
+          actionStateHookIndex,
+        );
+        if (postbackKey === nextPostbackStateKey) {
+          // This was a match
+          actionStateMatchingIndex = actionStateHookIndex;
+          // Reuse the state that was submitted by the form.
+          state = postbackActionState[0];
+        }
+      }
+    }
+
+    // Bind the state to the first argument of the action.
+    const boundAction = action.bind(null, state);
+
+    // Wrap the action so the return value is void.
+    const dispatch = (payload: P): void => {
+      boundAction(payload);
+    };
+
+    // $FlowIgnore[prop-missing]
+    if (typeof boundAction.$$FORM_ACTION === 'function') {
+      // $FlowFixMe[prop-missing]
+      dispatch.$$FORM_ACTION = (prefix: string) => {
+        const metadata: ReactCustomFormAction =
+          boundAction.$$FORM_ACTION(prefix);
+
+        // Override the action URL
+        if (permalink !== undefined) {
+          if (__DEV__) {
+            checkAttributeStringCoercion(permalink, 'target');
+          }
+          permalink += '';
+          metadata.action = permalink;
+        }
+
+        const formData = metadata.data;
+        if (formData) {
+          if (nextPostbackStateKey === null) {
+            nextPostbackStateKey = createPostbackActionStateKey(
+              permalink,
+              componentKeyPath,
+              actionStateHookIndex,
+            );
+          }
+          formData.append('$ACTION_KEY', nextPostbackStateKey);
+        }
+        return metadata;
+      };
+    }
+
+    return [state, dispatch, false];
+  } else {
+    // This is not a server action, so the implementation is much simpler.
+
+    // Bind the state to the first argument of the action.
+    const boundAction = action.bind(null, initialState);
+    // Wrap the action so the return value is void.
+    const dispatch = (payload: P): void => {
+      boundAction(payload);
+    };
+    return [initialState, dispatch, false];
+  }
+}
+
 function useId(): string {
-  const task: Task = (currentlyRenderingTask: any);
+  const task: Task = currentlyRenderingTask as any;
   const treeId = getTreeId(task.treeContext);
 
-  const responseState = currentResponseState;
-  if (responseState === null) {
+  const resumableState = currentResumableState;
+  if (resumableState === null) {
     throw new Error(
       'Invalid hook call. Hooks can only be called inside of the body of a function component.',
     );
   }
 
   const localId = localIdCounter++;
-  return makeId(responseState, treeId, localId);
+  return makeId(resumableState, treeId, localId);
 }
 
 function use<T>(usable: Usable<T>): T {
+  // $FlowFixMe[invalid-compare]
   if (usable !== null && typeof usable === 'object') {
     // $FlowFixMe[method-unbinding]
     if (typeof usable.then === 'function') {
       // This is a thenable.
-      const thenable: Thenable<T> = (usable: any);
-
-      // Track the position of the thenable within this fiber.
-      const index = thenableIndexCounter;
-      thenableIndexCounter += 1;
-
-      if (thenableState === null) {
-        thenableState = createThenableState();
-      }
-      return trackUsedThenable(thenableState, thenable, index);
-    } else if (
-      usable.$$typeof === REACT_CONTEXT_TYPE ||
-      usable.$$typeof === REACT_SERVER_CONTEXT_TYPE
-    ) {
-      const context: ReactContext<T> = (usable: any);
+      const thenable: Thenable<T> = usable as any;
+      return unwrapThenable(thenable);
+    } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Create the recoverable error here so its stack captures the component
+      // that passed this value to use(). The internal brand lets the renderer
+      // distinguish it from an Error thrown by application code.
+      const recoverable: ReactRecoverable = usable as any;
+      throw createRecoverableError(recoverable);
+    } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
+      const context: ReactContext<T> = usable as any;
       return readContext(context);
     }
   }
 
   // eslint-disable-next-line react-internal/safe-string-coercion
   throw new Error('An unsupported type was passed to use(): ' + String(usable));
+}
+
+export function unwrapThenable<T>(thenable: Thenable<T>): T {
+  const index = thenableIndexCounter;
+  thenableIndexCounter += 1;
+  if (thenableState === null) {
+    thenableState = createThenableState();
+  }
+  return trackUsedThenable(thenableState, thenable, index);
+}
+
+export function readPreviousThenableFromState<T>(): T | void {
+  const index = thenableIndexCounter;
+  thenableIndexCounter += 1;
+  if (thenableState === null) {
+    return undefined;
+  }
+  return readPreviousThenable(thenableState, index);
 }
 
 function unsupportedRefresh() {
@@ -614,56 +865,83 @@ function useCacheRefresh(): <T>(?() => T, ?T) => void {
   return unsupportedRefresh;
 }
 
-function useMemoCache(size: number): Array<any> {
-  const data = new Array(size);
+function useMemoCache(size: number): Array<mixed> {
+  const data = new Array<any>(size);
   for (let i = 0; i < size; i++) {
     data[i] = REACT_MEMO_CACHE_SENTINEL;
   }
   return data;
 }
 
-function noop(): void {}
-
-export const HooksDispatcher: Dispatcher = {
-  readContext,
-  useContext,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-  useInsertionEffect: noop,
-  useLayoutEffect,
-  useCallback,
-  // useImperativeHandle is not run in the server environment
-  useImperativeHandle: noop,
-  // Effects are not run in the server environment.
-  useEffect: noop,
-  // Debugging effect
-  useDebugValue: noop,
-  useDeferredValue,
-  useTransition,
-  useId,
-  // Subscriptions are not setup in a server environment.
-  useMutableSource,
-  useSyncExternalStore,
-};
-
-if (enableCache) {
-  HooksDispatcher.useCacheRefresh = useCacheRefresh;
-}
-if (enableUseEventHook) {
-  HooksDispatcher.useEvent = useEvent;
-}
-if (enableUseMemoCacheHook) {
-  HooksDispatcher.useMemoCache = useMemoCache;
-}
-if (enableUseHook) {
-  HooksDispatcher.use = use;
+function clientHookNotSupported() {
+  throw new Error(
+    'Cannot use state or effect Hooks in renderToHTML because ' +
+      'this component will never be hydrated.',
+  );
 }
 
-export let currentResponseState: null | ResponseState = (null: any);
-export function setCurrentResponseState(
-  responseState: null | ResponseState,
+// $FlowFixMe[constant-condition]
+export const HooksDispatcher: Dispatcher = supportsClientAPIs
+  ? {
+      readContext,
+      use,
+      useContext,
+      useMemo,
+      useReducer,
+      useRef,
+      useState,
+      useInsertionEffect: noop,
+      useLayoutEffect: noop,
+      useCallback,
+      // useImperativeHandle is not run in the server environment
+      useImperativeHandle: noop,
+      // Effects are not run in the server environment.
+      useEffect: noop,
+      // Debugging effect
+      useDebugValue: noop,
+      useDeferredValue,
+      useTransition,
+      useId,
+      // Subscriptions are not setup in a server environment.
+      useSyncExternalStore,
+      useOptimistic,
+      useActionState,
+      useFormState: useActionState,
+      useHostTransitionStatus,
+      useMemoCache,
+      useCacheRefresh,
+      useEffectEvent,
+    }
+  : {
+      readContext,
+      use,
+      useCallback,
+      useContext,
+      useEffect: clientHookNotSupported,
+      useImperativeHandle: clientHookNotSupported,
+      useInsertionEffect: clientHookNotSupported,
+      useLayoutEffect: clientHookNotSupported,
+      useMemo,
+      useReducer: clientHookNotSupported,
+      useRef: clientHookNotSupported,
+      useState: clientHookNotSupported,
+      useDebugValue: noop,
+      useDeferredValue: clientHookNotSupported,
+      useTransition: clientHookNotSupported,
+      useSyncExternalStore: clientHookNotSupported,
+      useId,
+      useHostTransitionStatus,
+      useFormState: useActionState,
+      useActionState,
+      useOptimistic,
+      useMemoCache,
+      useCacheRefresh,
+      useEffectEvent,
+    };
+
+export let currentResumableState: null | ResumableState = null as any;
+export function setCurrentResumableState(
+  resumableState: null | ResumableState,
 ): void {
-  currentResponseState = responseState;
+  currentResumableState = resumableState;
 }

@@ -13,13 +13,10 @@
  * It should always be imported from "react-devtools-feature-flags".
  ************************************************************************/
 
-export const consoleManagedByDevToolsDuringStrictMode = true;
-export const enableLogger = true;
-export const enableNamedHooksFeature = true;
-export const enableProfilerChangedHookIndices = true;
-export const enableStyleXFeatures = true;
-export const isInternalFacebookBuild = true;
-export const enableProfilerComponentTree = true;
+export const enableActivitySlices: boolean = false;
+export const enableLogger: boolean = true;
+export const enableStyleXFeatures: boolean = true;
+export const isInternalFacebookBuild: boolean = true;
 
 /************************************************************************
  * Do not edit the code below.
@@ -30,4 +27,4 @@ import typeof * as FeatureFlagsType from './DevToolsFeatureFlags.default';
 import typeof * as ExportsType from './DevToolsFeatureFlags.extension-fb';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

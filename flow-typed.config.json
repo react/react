@@ -1,0 +1,20 @@
+{
+  "env": [
+    "bom",
+    "cssom",
+    "dom",
+    "geometry",
+    "html",
+    "node",
+    "serviceworkers",
+    "streams",
+    "web-animations"
+  ],
+  "ignore": [
+    "create-react-class",
+    "jest",
+    "regenerator-runtime",
+    "webpack",
+    "ws"
+  ]
+}

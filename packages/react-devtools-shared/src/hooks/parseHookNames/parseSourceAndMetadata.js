@@ -15,7 +15,7 @@ import LRU from 'lru-cache';
 import {getHookName} from '../astUtils';
 import {areSourceMapsAppliedToErrors} from '../ErrorTester';
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
-import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookNamesCache';
+import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookSourceLocation';
 import {SourceMapMetadataConsumer} from '../SourceMapMetadataConsumer';
 import {
   withAsyncPerfMeasurements,
@@ -29,7 +29,10 @@ import type {
   LocationKeyToHookSourceAndMetadata,
 } from './loadSourceAndMetadata';
 import type {HookSource} from 'react-debug-tools/src/ReactDebugHooks';
-import type {HookNames, LRUCache} from 'react-devtools-shared/src/types';
+import type {
+  HookNames,
+  LRUCache,
+} from 'react-devtools-shared/src/frontend/types';
 
 type AST = mixed;
 
@@ -64,29 +67,29 @@ type CachedRuntimeCodeMetadata = {
   sourceMapConsumer: SourceMapConsumerType | null,
 };
 
-const runtimeURLToMetadataCache: LRUCache<
-  string,
-  CachedRuntimeCodeMetadata,
-> = new LRU({max: 50});
+const runtimeURLToMetadataCache: LRUCache<string, CachedRuntimeCodeMetadata> =
+  new LRU({max: 50});
 
 type CachedSourceCodeMetadata = {
   originalSourceAST: AST,
   originalSourceCode: string,
 };
 
-const originalURLToMetadataCache: LRUCache<
-  string,
-  CachedSourceCodeMetadata,
-> = new LRU({
-  max: 50,
-  dispose: (originalSourceURL: string, metadata: CachedSourceCodeMetadata) => {
-    if (__DEBUG__) {
-      console.log(
-        `originalURLToMetadataCache.dispose() Evicting cached metadata for "${originalSourceURL}"`,
-      );
-    }
-  },
-});
+const originalURLToMetadataCache: LRUCache<string, CachedSourceCodeMetadata> =
+  new LRU({
+    max: 50,
+    dispose: (
+      originalSourceURL: string,
+      metadata: CachedSourceCodeMetadata,
+    ) => {
+      // $FlowFixMe[constant-condition]
+      if (__DEBUG__) {
+        console.log(
+          `originalURLToMetadataCache.dispose() Evicting cached metadata for "${originalSourceURL}"`,
+        );
+      }
+    },
+  });
 
 export async function parseSourceAndMetadata(
   hooksList: HooksList,
@@ -126,7 +129,7 @@ function findHookNames(
 
   hooksList.map(hook => {
     // We already guard against a null HookSource in parseHookNames()
-    const hookSource = ((hook.hookSource: any): HookSource);
+    const hookSource = hook.hookSource as any as HookSource;
     const fileName = hookSource.fileName;
     if (!fileName) {
       return null; // Should not be reachable.
@@ -174,13 +177,14 @@ function findHookNames(
         getHookName(
           hook,
           hookParsedMetadata.originalSourceAST,
-          ((hookParsedMetadata.originalSourceCode: any): string),
-          ((originalSourceLineNumber: any): number),
+          hookParsedMetadata.originalSourceCode as any as string,
+          originalSourceLineNumber as any as number,
           originalSourceColumnNumber,
         ),
       );
     }
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(`findHookNames() Found name "${name || '-'}"`);
     }
@@ -196,7 +200,8 @@ function initializeHookParsedMetadata(
   locationKeyToHookSourceAndMetadata: LocationKeyToHookSourceAndMetadata,
 ) {
   // Create map of unique source locations (file names plus line and column numbers) to metadata about hooks.
-  const locationKeyToHookParsedMetadata: LocationKeyToHookParsedMetadata = new Map();
+  const locationKeyToHookParsedMetadata: LocationKeyToHookParsedMetadata =
+    new Map();
   locationKeyToHookSourceAndMetadata.forEach(
     (hookSourceAndMetadata, locationKey) => {
       const hookParsedMetadata: HookParsedMetadata = {
@@ -222,9 +227,8 @@ function parseSourceAST(
 ): void {
   locationKeyToHookSourceAndMetadata.forEach(
     (hookSourceAndMetadata, locationKey) => {
-      const hookParsedMetadata = locationKeyToHookParsedMetadata.get(
-        locationKey,
-      );
+      const hookParsedMetadata =
+        locationKeyToHookParsedMetadata.get(locationKey);
       if (hookParsedMetadata == null) {
         throw Error(`Expected to find HookParsedMetadata for "${locationKey}"`);
       }
@@ -250,7 +254,8 @@ function parseSourceAST(
       }
 
       const {metadataConsumer, sourceMapConsumer} = hookParsedMetadata;
-      const runtimeSourceCode = ((hookSourceAndMetadata.runtimeSourceCode: any): string);
+      const runtimeSourceCode =
+        hookSourceAndMetadata.runtimeSourceCode as any as string;
       let hasHookMap = false;
       let originalSourceURL;
       let originalSourceCode;
@@ -268,15 +273,16 @@ function parseSourceAST(
         // Namespace them?
         originalSourceURL = hookSourceAndMetadata.runtimeSourceURL;
       } else {
-        const {
-          column,
-          line,
-          sourceContent,
-          sourceURL,
-        } = sourceMapConsumer.originalPositionFor({
-          columnNumber,
-          lineNumber,
-        });
+        const {column, line, sourceContent, sourceURL} =
+          sourceMapConsumer.originalPositionFor({
+            columnNumber,
+            lineNumber,
+          });
+        if (sourceContent === null || sourceURL === null) {
+          throw Error(
+            `Could not find original source for line:${lineNumber} and column:${columnNumber}`,
+          );
+        }
 
         originalSourceColumnNumber = column;
         originalSourceLineNumber = line;
@@ -287,7 +293,8 @@ function parseSourceAST(
       hookParsedMetadata.originalSourceCode = originalSourceCode;
       hookParsedMetadata.originalSourceURL = originalSourceURL;
       hookParsedMetadata.originalSourceLineNumber = originalSourceLineNumber;
-      hookParsedMetadata.originalSourceColumnNumber = originalSourceColumnNumber;
+      hookParsedMetadata.originalSourceColumnNumber =
+        originalSourceColumnNumber;
 
       if (
         metadataConsumer != null &&
@@ -296,6 +303,7 @@ function parseSourceAST(
         hasHookMap = true;
       }
 
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `parseSourceAST() mapped line ${lineNumber}->${originalSourceLineNumber} and column ${columnNumber}->${originalSourceColumnNumber}`,
@@ -303,6 +311,7 @@ function parseSourceAST(
       }
 
       if (hasHookMap) {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.log(
             `parseSourceAST() Found hookMap and skipping parsing for "${originalSourceURL}"`,
@@ -314,6 +323,7 @@ function parseSourceAST(
         return;
       }
 
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `parseSourceAST() Did not find hook map for "${originalSourceURL}"`,
@@ -324,6 +334,7 @@ function parseSourceAST(
       // This may need to change if we switch to async parsing.
       const sourceMetadata = originalURLToMetadataCache.get(originalSourceURL);
       if (sourceMetadata != null) {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.groupCollapsed(
             `parseSourceAST() Found cached source metadata for "${originalSourceURL}"`,
@@ -354,6 +365,7 @@ function parseSourceAST(
           );
           hookParsedMetadata.originalSourceAST = originalSourceAST;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             console.log(
               `parseSourceAST() Caching source metadata for "${originalSourceURL}"`,
@@ -381,9 +393,8 @@ function parseSourceMaps(
 ) {
   locationKeyToHookSourceAndMetadata.forEach(
     (hookSourceAndMetadata, locationKey) => {
-      const hookParsedMetadata = locationKeyToHookParsedMetadata.get(
-        locationKey,
-      );
+      const hookParsedMetadata =
+        locationKeyToHookParsedMetadata.get(locationKey);
       if (hookParsedMetadata == null) {
         throw Error(`Expected to find HookParsedMetadata for "${locationKey}"`);
       }
@@ -394,6 +405,7 @@ function parseSourceMaps(
       // we can skip reloading it (and more importantly, re-parsing it).
       const runtimeMetadata = runtimeURLToMetadataCache.get(runtimeSourceURL);
       if (runtimeMetadata != null) {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.groupCollapsed(
             `parseHookNames() Found cached runtime metadata for file "${runtimeSourceURL}"`,

@@ -291,7 +291,11 @@ function checkBinaryExpression(context, node) {
     (isEmptyLiteral(node.left) || isEmptyLiteral(node.right))
   ) {
     let valueToTest = isEmptyLiteral(node.left) ? node.right : node.left;
-    if (valueToTest.type === 'TypeCastExpression' && valueToTest.expression) {
+    if (
+      (valueToTest.type === 'TypeCastExpression' ||
+        valueToTest.type === 'AsExpression') &&
+      valueToTest.expression
+    ) {
       valueToTest = valueToTest.expression;
     }
 

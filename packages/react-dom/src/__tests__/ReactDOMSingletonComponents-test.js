@@ -5,14 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
 
 let JSDOM;
 let Stream;
-let Scheduler;
 let React;
+let ReactDOM;
 let ReactDOMClient;
 let ReactDOMFizzServer;
 let document;
@@ -21,16 +22,31 @@ let container;
 let buffer = '';
 let hasErrored = false;
 let fatalError = undefined;
+let waitForAll;
+let assertConsoleErrorDev;
+
+function normalizeError(msg) {
+  // Take the first sentence to make it easier to assert on.
+  const idx = msg.indexOf('.');
+  if (idx > -1) {
+    return msg.slice(0, idx + 1);
+  }
+  return msg;
+}
 
 describe('ReactDOM HostSingleton', () => {
   beforeEach(() => {
     jest.resetModules();
     JSDOM = require('jsdom').JSDOM;
-    Scheduler = require('scheduler');
     React = require('react');
+    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMFizzServer = require('react-dom/server');
     Stream = require('stream');
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForAll = InternalTestUtils.waitForAll;
+    assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
 
     // Test Environment
     const jsdom = new JSDOM(
@@ -82,12 +98,17 @@ describe('ReactDOM HostSingleton', () => {
     let node = element.firstChild;
     while (node) {
       if (node.nodeType === 1) {
+        const el: Element = (node: any);
         if (
-          node.tagName !== 'SCRIPT' &&
-          node.tagName !== 'TEMPLATE' &&
-          node.tagName !== 'template' &&
-          !node.hasAttribute('hidden') &&
-          !node.hasAttribute('aria-hidden')
+          (el.tagName !== 'SCRIPT' &&
+            el.tagName !== 'TEMPLATE' &&
+            el.tagName !== 'template' &&
+            !el.hasAttribute('hidden') &&
+            !el.hasAttribute('aria-hidden') &&
+            // Ignore the render blocking expect
+            (node.getAttribute('rel') !== 'expect' ||
+              node.getAttribute('blocking') !== 'render')) ||
+          el.hasAttribute('data-meaningful')
         ) {
           const props = {};
           const attributes = node.attributes;
@@ -112,11 +133,10 @@ describe('ReactDOM HostSingleton', () => {
     return children.length === 0
       ? undefined
       : children.length === 1
-      ? children[0]
-      : children;
+        ? children[0]
+        : children;
   }
 
-  // @gate enableHostSingletons
   it('warns if you render the same singleton twice at the same time', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -127,7 +147,7 @@ describe('ReactDOM HostSingleton', () => {
         <body />
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head lang="en">
@@ -147,11 +167,15 @@ describe('ReactDOM HostSingleton', () => {
         <body />
       </html>,
     );
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toErrorDev(
-      'Warning: You are mounting a new head component when a previous one has not first unmounted. It is an error to render more than one head component at a time and attributes and children of these components will likely fail in unpredictable ways. Please only render a single instance of <head> and if you need to mount a new one, ensure any previous ones have unmounted first',
-    );
+    await waitForAll([]);
+    assertConsoleErrorDev([
+      'You are mounting a new head component when a previous one has not first unmounted. ' +
+        'It is an error to render more than one head component at a time and attributes and ' +
+        'children of these components will likely fail in unpredictable ways. ' +
+        'Please only render a single instance of <head> and if you need to mount a new one, ' +
+        'ensure any previous ones have unmounted first.\n' +
+        '    in head (at **)',
+    ]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head lang="es" data-foo="foo">
@@ -172,7 +196,7 @@ describe('ReactDOM HostSingleton', () => {
         <body />
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head lang="fr">
@@ -190,7 +214,7 @@ describe('ReactDOM HostSingleton', () => {
         <body />
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head lang="en">
@@ -201,16 +225,321 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  // @gate enableHostSingletons
-  it('renders into html, head, and body persistently so the node identities never change and extraneous styles are retained', async () => {
-    gate(flags => {
-      if (flags.enableHostSingletons !== true) {
-        // We throw here because when this test fails it ends up with sync work in a microtask
-        // that throws after the expectTestToFail check asserts the failure. this causes even the
-        // expected failure to fail. This just fails explicitly and early
-        throw new Error('manually opting out of test');
-      }
+  it('resets property-backed state when a singleton is released', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const head = document.head;
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head onClick={() => {}} />
+        <body
+          data-react-owned="true"
+          onClick={() => {}}
+          style={{color: 'red'}}
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.body).toBe(body);
+    expect(head.onclick).not.toBe(null);
+    expect(body.onclick).not.toBe(null);
+    expect(body.textContent).toBe('managed content');
+    expect(body.getAttribute('data-react-owned')).toBe('true');
+    expect(body.style.color).toBe('red');
+
+    // Simulate an inline script or third-party code adding its own attribute,
+    // style, and click listener while React owns the singleton.
+    const externalClickHandler = jest.fn();
+    body.setAttribute('data-external', 'true');
+    body.style.backgroundColor = 'blue';
+    body.onclick = externalClickHandler;
+
+    root.render(<html />);
+    await waitForAll([]);
+
+    expect(document.head).toBe(head);
+    expect(document.body).toBe(body);
+    expect(head.onclick).toBe(null);
+    expect(body.onclick).toBe(externalClickHandler);
+    expect(body.textContent).toBe('');
+    expect(body.hasAttribute('data-react-owned')).toBe(false);
+    expect(body.getAttribute('data-external')).toBe('true');
+    expect(body.style.color).toBe('');
+    expect(body.style.backgroundColor).toBe('blue');
+  });
+
+  // @gate TODO
+  it('clears dangerouslySetInnerHTML when it becomes undefined', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+    const undefinedHTML = undefined;
+
+    root.render(
+      <html>
+        <head />
+        <body
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.textContent).toBe('managed content');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={undefinedHTML} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.textContent).toBe('');
+  });
+
+  // @gate TODO
+  it('clears dangerouslySetInnerHTML when __html becomes undefined', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.textContent).toBe('managed content');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: undefined}} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.textContent).toBe('');
+  });
+
+  it('updates dangerouslySetInnerHTML on a singleton', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: '<div>first</div>'}} />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.innerHTML).toBe('<div>first</div>');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: '<span>second</span>'}} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.innerHTML).toBe('<span>second</span>');
+  });
+
+  it('replaces singleton children with dangerouslySetInnerHTML', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body>
+          <div>managed child</div>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.innerHTML).toBe('<div>managed child</div>');
+
+    root.render(
+      <html>
+        <head />
+        <body dangerouslySetInnerHTML={{__html: '<span>managed HTML</span>'}} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.innerHTML).toBe('<span>managed HTML</span>');
+  });
+
+  // @gate TODO
+  it('replaces dangerouslySetInnerHTML with singleton children', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+
+    root.render(
+      <html>
+        <head />
+        <body
+          dangerouslySetInnerHTML={{__html: '<div>managed content</div>'}}
+        />
+      </html>,
+    );
+    await waitForAll([]);
+    expect(body.innerHTML).toBe('<div>managed content</div>');
+
+    root.render(
+      <html>
+        <head />
+        <body>
+          <span>managed child</span>
+        </body>
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(body.innerHTML).toBe('<span>managed child</span>');
+  });
+
+  // @gate TODO
+  it('preserves imperative attributes when acquiring a singleton', async () => {
+    const body = document.body;
+    body.setAttribute('data-external', 'true');
+
+    const root = ReactDOMClient.createRoot(document);
+    root.render(
+      <html>
+        <head />
+        <body />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.body).toBe(body);
+    expect(body.getAttribute('data-external')).toBe('true');
+  });
+
+  // @gate TODO
+  it('preserves imperative attributes when clearing a preamble contribution', async () => {
+    const body = document.body;
+    body.setAttribute('data-react-owned', 'true');
+    body.setAttribute('data-external', 'true');
+    // This is the shape Fizz emits when a completed Suspense boundary
+    // contributes props to the body singleton.
+    body.innerHTML = '<!--$--><!--body--><div>server</div><!--/$-->';
+
+    ReactDOMClient.hydrateRoot(
+      document,
+      <html>
+        <head />
+        <body data-react-owned="true" suppressHydrationWarning={true}>
+          <React.Suspense fallback={null}>
+            <span>client</span>
+          </React.Suspense>
+        </body>
+      </html>,
+      {
+        onRecoverableError() {},
+      },
+    );
+    await waitForAll([]);
+
+    expect(body.textContent).toBe('client');
+    expect(body.getAttribute('data-external')).toBe('true');
+  });
+
+  it('does not duplicate native listeners when a singleton is reacquired', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const body = document.body;
+    const onScroll = jest.fn();
+
+    root.render(
+      <html>
+        <head />
+        <body onScroll={onScroll} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    body.dispatchEvent(new document.defaultView.Event('scroll'));
+    expect(onScroll).toHaveBeenCalledTimes(1);
+
+    root.render(
+      <html>
+        <head />
+      </html>,
+    );
+    await waitForAll([]);
+
+    body.dispatchEvent(new document.defaultView.Event('scroll'));
+    expect(onScroll).toHaveBeenCalledTimes(1);
+
+    root.render(
+      <html>
+        <head />
+        <body onScroll={onScroll} />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.body).toBe(body);
+    body.dispatchEvent(new document.defaultView.Event('scroll'));
+    expect(onScroll).toHaveBeenCalledTimes(2);
+  });
+
+  // @gate __DEV__
+  it('does not release or reacquire singletons when double invoking effects during hydration', async () => {
+    const effectLog = [];
+    const html = '<span id="managed">managed content</span>';
+
+    function Effect() {
+      React.useLayoutEffect(() => {
+        effectLog.push('mount');
+        return () => {
+          effectLog.push('unmount');
+        };
+      }, []);
+      return <meta name="strict-effect" />;
+    }
+
+    await actIntoEmptyDocument(() => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
+        <html>
+          <head>
+            <meta name="strict-effect" />
+          </head>
+          <body dangerouslySetInnerHTML={{__html: html}} />
+        </html>,
+      );
+      pipe(writable);
     });
+    const serverBodyHTML = document.body.innerHTML;
+    const managedElement = document.getElementById('managed');
+
+    ReactDOMClient.hydrateRoot(
+      document,
+      <React.StrictMode>
+        <html>
+          <head>
+            <Effect />
+          </head>
+          <body dangerouslySetInnerHTML={{__html: serverBodyHTML}} />
+        </html>
+      </React.StrictMode>,
+    );
+    await waitForAll([]);
+
+    // The Strict Mode effects are still double invoked.
+    expect(effectLog).toEqual(['mount', 'unmount', 'mount']);
+    // Hydrating a matching tree should preserve the server-rendered nodes.
+    expect(document.getElementById('managed')).toBe(managedElement);
+  });
+
+  it('renders into html, head, and body persistently so the node identities never change and extraneous styles are retained', async () => {
     // Server render some html that will get replaced with a client render
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -238,9 +567,6 @@ describe('ReactDOM HostSingleton', () => {
     expect(getVisibleChildren(document)).toEqual(
       <html data-foo="foo">
         <head data-bar="bar">
-          <link rel="preload" href="resource" as="style" />
-          <link rel="preload" href="3rdparty" as="style" />
-          <link rel="preload" href="3rdparty2" as="style" />
           <title>a server title</title>
           <link rel="stylesheet" href="resource" />
           <link rel="stylesheet" href="3rdparty" />
@@ -277,7 +603,7 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(persistentElements).toEqual([
       document.documentElement,
       document.head,
@@ -317,7 +643,7 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(persistentElements).toEqual([
       document.documentElement,
       document.head,
@@ -330,6 +656,7 @@ describe('ReactDOM HostSingleton', () => {
           <link rel="stylesheet" href="3rdparty" />
           <link rel="stylesheet" href="3rdparty2" />
           <title>a client title</title>
+          <meta />
         </head>
         <body data-client-baz="baz">
           <style>
@@ -355,7 +682,7 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(persistentElements).toEqual([
       document.documentElement,
       document.head,
@@ -391,7 +718,7 @@ describe('ReactDOM HostSingleton', () => {
         </head>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(persistentElements).toEqual([
       document.documentElement,
       document.head,
@@ -418,7 +745,7 @@ describe('ReactDOM HostSingleton', () => {
 
     // unmount the root
     root.unmount();
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(persistentElements).toEqual([
       document.documentElement,
       document.head,
@@ -459,7 +786,7 @@ describe('ReactDOM HostSingleton', () => {
       {
         onRecoverableError(error, errorInfo) {
           hydrationErrors.push([
-            error.message,
+            normalizeError(error.message),
             errorInfo.componentStack
               ? errorInfo.componentStack.split('\n')[1].trim()
               : null,
@@ -467,26 +794,11 @@ describe('ReactDOM HostSingleton', () => {
         },
       },
     );
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toErrorDev(
-      [
-        `Warning: Expected server HTML to contain a matching <div> in <body>.
-    in div (at **)
-    in body (at **)
-    in html (at **)`,
-        `Warning: An error occurred during hydration. The server HTML was replaced with client content in <#document>.`,
-      ],
-      {withoutStack: 1},
-    );
+    await waitForAll([]);
     expect(hydrationErrors).toEqual([
       [
-        'Hydration failed because the initial UI does not match what was rendered on the server.',
-        'at div',
-      ],
-      [
-        'There was an error while hydrating. Because the error happened outside of a Suspense boundary, the entire root will switch to client rendering.',
-        null,
+        "Hydration failed because the server rendered HTML didn't match the client.",
+        'at div (<anonymous>)',
       ],
     ]);
     expect(persistentElements).toEqual([
@@ -551,7 +863,31 @@ describe('ReactDOM HostSingleton', () => {
       },
     );
     expect(hydrationErrors).toEqual([]);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
+    assertConsoleErrorDev([
+      "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
+        "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
+        '\n' +
+        "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
+        "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
+        "- Date formatting in a user's locale which doesn't match the server.\n" +
+        '- External changing data without sending a snapshot of it along with the HTML.\n' +
+        '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed ' +
+        'which messes with the HTML before React loaded.\n' +
+        '\n' +
+        'https://react.dev/link/hydration-mismatch\n' +
+        '\n' +
+        '  <html\n' +
+        '+   data-client-foo="foo"\n' +
+        '-   data-client-foo={null}\n' +
+        '  >\n' +
+        '    <head>\n' +
+        '    <body\n' +
+        '+     data-client-baz="baz"\n' +
+        '-     data-client-baz={null}\n' +
+        '    >\n' +
+        '\n    in body (at **)',
+    ]);
     expect(persistentElements).toEqual([
       document.documentElement,
       document.head,
@@ -596,8 +932,8 @@ describe('ReactDOM HostSingleton', () => {
   });
 
   // This test is not supported in this implementation. If we reintroduce insertion edge we should revisit
-  // @gate enableHostSingletons
-  xit('is able to maintain insertions in head and body between tree-adjacent Nodes', async () => {
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('is able to maintain insertions in head and body between tree-adjacent Nodes', async () => {
     // Server render some html and hydrate on the client
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -623,7 +959,7 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
     // We construct and insert some artificial stylesheets mimicing what a 3rd party script might do
     // In the future we could hydrate with these already in the document but the rules are restrictive
@@ -679,7 +1015,7 @@ describe('ReactDOM HostSingleton', () => {
       </html>,
     );
 
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head>
@@ -707,7 +1043,7 @@ describe('ReactDOM HostSingleton', () => {
         </head>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head>
@@ -727,7 +1063,6 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  // @gate enableHostSingletons
   it('clears persistent head and body when html is the container', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -736,11 +1071,13 @@ describe('ReactDOM HostSingleton', () => {
             <link rel="stylesheet" href="headbefore" />
             <title>this should be removed</title>
             <link rel="stylesheet" href="headafter" />
+            <script data-meaningful="">true</script>
           </head>
           <body>
             <link rel="stylesheet" href="bodybefore" />
             <div>this should be removed</div>
             <link rel="stylesheet" href="bodyafter" />
+            <script data-meaningful="">true</script>
           </body>
         </html>,
       );
@@ -759,24 +1096,25 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head>
           <link rel="stylesheet" href="headbefore" />
           <link rel="stylesheet" href="headafter" />
+          <script data-meaningful="">true</script>
           <title>something new</title>
         </head>
         <body>
           <link rel="stylesheet" href="bodybefore" />
           <link rel="stylesheet" href="bodyafter" />
+          <script data-meaningful="">true</script>
           <div>something new</div>
         </body>
       </html>,
     );
   });
 
-  // @gate enableHostSingletons
   it('clears persistent head when it is the container', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -795,7 +1133,7 @@ describe('ReactDOM HostSingleton', () => {
 
     const root = ReactDOMClient.createRoot(container);
     root.render(<title>something new</title>);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head>
@@ -808,7 +1146,6 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  // @gate enableHostSingletons && enableFloat
   it('clears persistent body when it is the container', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -825,22 +1162,12 @@ describe('ReactDOM HostSingleton', () => {
     });
     container = document.body;
 
-    let root;
-    // Given our new capabilities to render "safely" into the body we should consider removing this warning
-    expect(() => {
-      root = ReactDOMClient.createRoot(container);
-    }).toErrorDev(
-      'Warning: createRoot(): Creating roots directly with document.body is discouraged, since its children are often manipulated by third-party scripts and browser extensions. This may lead to subtle reconciliation issues. Try using a container element created for your app.',
-      {withoutStack: true},
-    );
+    const root = ReactDOMClient.createRoot(container);
     root.render(<div>something new</div>);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
-        <head>
-          <link rel="preload" as="style" href="before" />
-          <link rel="preload" as="style" href="after" />
-        </head>
+        <head />
         <body>
           <link rel="stylesheet" href="before" />
           <link rel="stylesheet" href="after" />
@@ -868,7 +1195,7 @@ describe('ReactDOM HostSingleton', () => {
         <body>foo</body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -882,7 +1209,7 @@ describe('ReactDOM HostSingleton', () => {
         <body>bar</body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -899,7 +1226,7 @@ describe('ReactDOM HostSingleton', () => {
         <body>baz</body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -916,7 +1243,7 @@ describe('ReactDOM HostSingleton', () => {
         <body>foo</body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -932,7 +1259,7 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -948,7 +1275,7 @@ describe('ReactDOM HostSingleton', () => {
         <body>foo</body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -964,7 +1291,7 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
@@ -975,7 +1302,6 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  // @gate enableHostSingletons
   it('allows for hydrating without a head', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -999,12 +1325,30 @@ describe('ReactDOM HostSingleton', () => {
         <body>foo</body>
       </html>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(getVisibleChildren(document)).toEqual(
       <html>
         <head />
         <body>foo</body>
       </html>,
     );
+  });
+
+  // https://github.com/facebook/react/issues/26128
+  // @gate !disableLegacyMode
+  it('(#26128) does not throw when rendering at body in legacy mode', async () => {
+    ReactDOM.render(<div />, document.body);
+  });
+
+  // https://github.com/facebook/react/issues/26128
+  // @gate !disableLegacyMode
+  it('(#26128) does not throw when rendering at <html> in legacy mode', async () => {
+    ReactDOM.render(<body />, document.documentElement);
+  });
+
+  // https://github.com/facebook/react/issues/26128
+  // @gate !disableLegacyMode
+  it('(#26128) does not throw when rendering at document in legacy mode', async () => {
+    ReactDOM.render(<html />, document);
   });
 });

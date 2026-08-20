@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {TEXT_NODE} from '../shared/HTMLNodeType';
+import {TEXT_NODE} from '../client/HTMLNodeType';
 
 /**
  * Gets the target node from a native browser event by accounting for

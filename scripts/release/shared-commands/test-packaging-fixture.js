@@ -26,9 +26,8 @@ const validate = async () => {
       for (let i = 0; i < iframes.length; i++) {
         const iframe = iframes[i];
         // Don't include the <script> Babel tag
-        const container = iframe.contentDocument.body.getElementsByTagName(
-          'div'
-        )[0];
+        const container =
+          iframe.contentDocument.body.getElementsByTagName('div')[0];
         if (container.textContent !== 'Hello World!') {
           return `Unexpected fixture content, "${container.textContent}"`;
         }

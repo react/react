@@ -91,19 +91,8 @@
       <div> If the counter advanced while you were away from this tab, it's correct.</div>
     </li>
     <li>
-      <p>Can pause execution, dump scheduled callbacks, and continue where it left off</p>
-      <button onClick="runTestEight()">Run Test 8</button>
-      <div><b>Click the button above, press "continue" to finish the test after it pauses:</b></div>
-      <button onClick="continueTestEight()">continue</button>
-      <div><b>Expected:</b></div>
-      <div id="test-8-expected">
-      </div>
-      <div> -------------------------------------------------</div>
-      <div> If the test didn't progress until you hit "continue" and </div>
-      <div> you see the same above and below afterwards it's correct.
-        <div> -------------------------------------------------</div>
-        <div><b>Actual:</b></div>
-        <div id="test-8"></div>
+      <p>Test Eight Removed</p>
+      <p>Test 8 was removed because it was testing a feature that was removed from the scheduler.</p>
     </li>
     <li>
       <p>Can force a specific framerate</p>
@@ -148,17 +137,14 @@
       </div>
     </li>
   </ol>
-  <script src="../../build/node_modules/react/umd/react.production.min.js"></script>
-  <script src="../../build/node_modules/scheduler/umd/scheduler.production.min.js"></script>
+  <script src="../../build/oss-experimental/react/umd/react.production.min.js"></script>
+  <script src="../../build/oss-experimental/scheduler/umd/scheduler.production.min.js"></script>
   <script src="https://unpkg.com/babel-standalone@6/babel.js"></script>
   <script type="text/babel">
 const {
   unstable_scheduleCallback: scheduleCallback,
   unstable_cancelCallback: cancelCallback,
   unstable_now: now,
-  unstable_getFirstCallbackNode: getFirstCallbackNode,
-  unstable_pauseExecution: pauseExecution,
-  unstable_continueExecution: continueExecution,
   unstable_forceFrameRate: forceFrameRate,
   unstable_shouldYield: shouldYield,
   unstable_NormalPriority: NormalPriority,
@@ -585,50 +571,6 @@ function runTestSeven() {
     scheduleCallback(NormalPriority, incrementCounterAndScheduleNextCallback);
   }
   scheduleCallback(NormalPriority, incrementCounterAndScheduleNextCallback);
-}
-
-function runTestEight() {
-  // Test 8
-  // Pauses execution, dumps the queue, and continues execution
-  clearTestResult(8);
-
-  function countNodesInStack(firstCallbackNode) {
-    var node = firstCallbackNode;
-    var count = 0;
-    if (node !== null) {
-      do {
-        count = count + 1;
-        node = node.next;
-      } while (node !== firstCallbackNode);
-    }
-    return count;
-  }
-
-  scheduleCallback(NormalPriority, () => {
-
-    // size should be 0
-    updateTestResult(8, `Queue size: ${countNodesInStack(getFirstCallbackNode())}.`);
-    updateTestResult(8, 'Pausing... press continue to resume.');
-    pauseExecution();
-
-    scheduleCallback(NormalPriority, function () {
-      updateTestResult(8, 'Finishing...');
-      displayTestResult(8);
-    })
-    scheduleCallback(NormalPriority, function () {
-      updateTestResult(8, 'Done!');
-      displayTestResult(8);
-      checkTestResult(8);
-    })
-
-    // new size should be 2 now
-    updateTestResult(8, `Queue size: ${countNodesInStack(getFirstCallbackNode())}.`);
-    displayTestResult(8);
-  });
-}
-
-function continueTestEight() {
-  continueExecution();
 }
 
 function runTestNine() {

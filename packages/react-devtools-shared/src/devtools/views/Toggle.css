@@ -20,9 +20,16 @@
   background: var(--color-button-background);
   color: var(--color-button);
 }
+
 .ToggleOff:hover {
   color: var(--color-button-hover);
 }
+
+.ToggleOn:hover,
+.ToggleOff:hover {
+ background-color: var(--color-button-background-hover);
+}
+
 
 .ToggleOn,
 .ToggleOn:active {
@@ -45,10 +52,4 @@
   background: var(--color-button-background);
   color: var(--color-button-disabled);
   cursor: default;
-}
-
-.Input {
-  width: 0;
-  margin: 0;
-  opacity: 0;
 }

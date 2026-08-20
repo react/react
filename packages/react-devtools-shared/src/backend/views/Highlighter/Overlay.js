@@ -187,13 +187,17 @@ export default class Overlay {
     }
   }
 
-  inspect(nodes: Array<HTMLElement>, name?: ?string) {
+  inspect(nodes: $ReadOnlyArray<HTMLElement | Text>, name?: ?string) {
     // We can't get the size of text nodes or comment nodes. React as of v15
     // heavily uses comment nodes to delimit text.
-    const elements = nodes.filter(node => node.nodeType === Node.ELEMENT_NODE);
+    // TODO: We actually can measure text nodes. We should.
+    const elements: $ReadOnlyArray<HTMLElement> = nodes.filter(
+      node => node.nodeType === Node.ELEMENT_NODE,
+    ) as any;
 
     while (this.rects.length > elements.length) {
       const rect = this.rects.pop();
+      // $FlowFixMe[incompatible-use]
       rect.remove();
     }
     if (elements.length === 0) {
@@ -233,20 +237,9 @@ export default class Overlay {
       name = elements[0].nodeName.toLowerCase();
 
       const node = elements[0];
-      const rendererInterface = this.agent.getBestMatchingRendererInterface(
-        node,
-      );
-      if (rendererInterface) {
-        const id = rendererInterface.getFiberIDForNative(node, true);
-        if (id) {
-          const ownerName = rendererInterface.getDisplayNameForFiberID(
-            id,
-            true,
-          );
-          if (ownerName) {
-            name += ' (in ' + ownerName + ')';
-          }
-        }
+      const ownerName = this.agent.getComponentNameForHostInstance(node);
+      if (ownerName) {
+        name += ' (in ' + ownerName + ')';
       }
     }
 
@@ -277,7 +270,11 @@ export default class Overlay {
   }
 }
 
-function findTipPos(dims, bounds, tipSize) {
+function findTipPos(
+  dims: Box,
+  bounds: Box,
+  tipSize: {height: number, width: number},
+) {
   const tipHeight = Math.max(tipSize.height, 20);
   const tipWidth = Math.max(tipSize.width, 60);
   const margin = 5;
@@ -314,7 +311,7 @@ function findTipPos(dims, bounds, tipSize) {
   };
 }
 
-function boxWrap(dims, what, node) {
+function boxWrap(dims: any, what: string, node: HTMLElement) {
   assign(node.style, {
     borderTopWidth: dims[what + 'Top'] + 'px',
     borderLeftWidth: dims[what + 'Left'] + 'px',

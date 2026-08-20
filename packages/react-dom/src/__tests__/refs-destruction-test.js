@@ -11,9 +11,11 @@
 
 let React;
 let ReactDOM;
-let ReactTestUtils;
-
+let ReactDOMClient;
 let TestComponent;
+let act;
+let theInnerDivRef;
+let theInnerClassComponentRef;
 
 describe('refs-destruction', () => {
   beforeEach(() => {
@@ -21,7 +23,8 @@ describe('refs-destruction', () => {
 
     React = require('react');
     ReactDOM = require('react-dom');
-    ReactTestUtils = require('react-dom/test-utils');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
 
     class ClassComponent extends React.Component {
       render() {
@@ -30,6 +33,12 @@ describe('refs-destruction', () => {
     }
 
     TestComponent = class extends React.Component {
+      constructor(props) {
+        super(props);
+        theInnerDivRef = React.createRef();
+        theInnerClassComponentRef = React.createRef();
+      }
+
       render() {
         if (this.props.destroy) {
           return <div />;
@@ -43,8 +52,8 @@ describe('refs-destruction', () => {
         } else {
           return (
             <div>
-              <div ref="theInnerDiv" />
-              <ClassComponent ref="theInnerClassComponent" />
+              <div ref={theInnerDivRef} />
+              <ClassComponent ref={theInnerClassComponentRef} />
             </div>
           );
         }
@@ -52,75 +61,87 @@ describe('refs-destruction', () => {
     };
   });
 
-  it('should remove refs when destroying the parent', () => {
-    const container = document.createElement('div');
-    const testInstance = ReactDOM.render(<TestComponent />, container);
-    expect(ReactTestUtils.isDOMComponent(testInstance.refs.theInnerDiv)).toBe(
-      true,
-    );
-    expect(
-      Object.keys(testInstance.refs || {}).filter(key => testInstance.refs[key])
-        .length,
-    ).toEqual(2);
-    ReactDOM.unmountComponentAtNode(container);
-    expect(
-      Object.keys(testInstance.refs || {}).filter(key => testInstance.refs[key])
-        .length,
-    ).toEqual(0);
+  afterEach(() => {
+    theInnerClassComponentRef = null;
+    theInnerDivRef = null;
   });
 
-  it('should remove refs when destroying the child', () => {
+  it('should remove refs when destroying the parent', async () => {
     const container = document.createElement('div');
-    const testInstance = ReactDOM.render(<TestComponent />, container);
-    expect(ReactTestUtils.isDOMComponent(testInstance.refs.theInnerDiv)).toBe(
-      true,
-    );
-    expect(
-      Object.keys(testInstance.refs || {}).filter(key => testInstance.refs[key])
-        .length,
-    ).toEqual(2);
-    ReactDOM.render(<TestComponent destroy={true} />, container);
-    expect(
-      Object.keys(testInstance.refs || {}).filter(key => testInstance.refs[key])
-        .length,
-    ).toEqual(0);
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(<TestComponent />);
+    });
+
+    expect(theInnerDivRef.current).toBeInstanceOf(Element);
+    expect(theInnerClassComponentRef.current).toBeTruthy();
+
+    root.unmount();
+
+    expect(theInnerDivRef.current).toBe(null);
+    expect(theInnerClassComponentRef.current).toBe(null);
   });
 
-  it('should remove refs when removing the child ref attribute', () => {
+  it('should remove refs when destroying the child', async () => {
     const container = document.createElement('div');
-    const testInstance = ReactDOM.render(<TestComponent />, container);
-    expect(ReactTestUtils.isDOMComponent(testInstance.refs.theInnerDiv)).toBe(
-      true,
-    );
-    expect(
-      Object.keys(testInstance.refs || {}).filter(key => testInstance.refs[key])
-        .length,
-    ).toEqual(2);
-    ReactDOM.render(<TestComponent removeRef={true} />, container);
-    expect(
-      Object.keys(testInstance.refs || {}).filter(key => testInstance.refs[key])
-        .length,
-    ).toEqual(0);
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(<TestComponent />);
+    });
+
+    expect(theInnerDivRef.current).toBeInstanceOf(Element);
+    expect(theInnerClassComponentRef.current).toBeTruthy();
+
+    await act(async () => {
+      root.render(<TestComponent destroy={true} />);
+    });
+
+    expect(theInnerDivRef.current).toBe(null);
+    expect(theInnerClassComponentRef.current).toBe(null);
   });
 
-  it('should not error when destroying child with ref asynchronously', () => {
+  it('should remove refs when removing the child ref attribute', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(<TestComponent />);
+    });
+
+    expect(theInnerDivRef.current).toBeInstanceOf(Element);
+    expect(theInnerClassComponentRef.current).toBeTruthy();
+
+    await act(async () => {
+      root.render(<TestComponent removeRef={true} />);
+    });
+
+    expect(theInnerDivRef.current).toBe(null);
+    expect(theInnerClassComponentRef.current).toBe(null);
+  });
+
+  it('should not error when destroying child with ref asynchronously', async () => {
+    let nestedRoot;
     class Modal extends React.Component {
       componentDidMount() {
         this.div = document.createElement('div');
+        nestedRoot = ReactDOMClient.createRoot(this.div);
         document.body.appendChild(this.div);
         this.componentDidUpdate();
       }
 
       componentDidUpdate() {
-        ReactDOM.render(<div>{this.props.children}</div>, this.div);
+        setTimeout(() => {
+          ReactDOM.flushSync(() => {
+            nestedRoot.render(<div>{this.props.children}</div>);
+          });
+        }, 0);
       }
 
       componentWillUnmount() {
         const self = this;
         // some async animation
-        setTimeout(function() {
-          expect(function() {
-            ReactDOM.unmountComponentAtNode(self.div);
+        setTimeout(function () {
+          expect(function () {
+            nestedRoot.unmount();
           }).not.toThrow();
           document.body.removeChild(self.div);
         }, 0);
@@ -135,7 +156,7 @@ describe('refs-destruction', () => {
       render() {
         return (
           <Modal>
-            <a ref="ref" />
+            <a ref={React.createRef()} />
           </Modal>
         );
       }
@@ -148,8 +169,12 @@ describe('refs-destruction', () => {
     }
 
     const container = document.createElement('div');
-    ReactDOM.render(<App />, container);
-    ReactDOM.render(<App hidden={true} />, container);
-    jest.runAllTimers();
+    const root = ReactDOMClient.createRoot(container);
+    await act(async () => {
+      root.render(<App />);
+    });
+    await act(async () => {
+      root.render(<App hidden={true} />);
+    });
   });
 });

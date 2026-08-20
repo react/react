@@ -1,0 +1,63 @@
+{
+  "name": "react-forgive",
+  "displayName": "React Analyzer",
+  "description": "React LSP",
+  "license": "MIT",
+  "version": "0.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/react-forgive"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "react",
+    "react analyzer",
+    "react compiler"
+  ],
+  "publisher": "Meta",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "activationEvents": [
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "react-forgive.toggleAll",
+        "title": "React Analyzer: Toggle on/off"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "yarn run compile",
+    "build:compiler": "yarn workspace babel-plugin-react-compiler build --dts",
+    "compile": "rimraf dist && concurrently -n server,client \"scripts/build.mjs -t server\" \"scripts/build.mjs -t client\"",
+    "dev": "yarn run package && yarn run install-ext",
+    "install-ext": "code --install-extension react-forgive-0.0.0.vsix",
+    "lint": "echo 'no tests'",
+    "package": "rm -f react-forgive-0.0.0.vsix && vsce package --yarn",
+    "postinstall": "cd client && yarn install && cd ../server && yarn install && cd ..",
+    "pretest": "yarn run build:compiler && yarn run compile && yarn run lint",
+    "test": "vscode-test",
+    "vscode:prepublish": "yarn run compile",
+    "watch": "scripts/build.mjs --watch"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20",
+    "@types/vscode": "^1.96.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.13.0",
+    "mocha": "^11.0.1",
+    "typescript-eslint": "^8.16.0",
+    "yargs": "^17.7.2"
+  }
+}

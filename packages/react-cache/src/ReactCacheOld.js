@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {Thenable} from 'shared/ReactTypes';
+import type {ReactContext, Thenable} from 'shared/ReactTypes';
 
 import * as React from 'react';
 
@@ -44,12 +44,11 @@ const Pending = 0;
 const Resolved = 1;
 const Rejected = 2;
 
-const ReactCurrentDispatcher =
-  React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
-    .ReactCurrentDispatcher;
+const SharedInternals =
+  React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
-function readContext(Context) {
-  const dispatcher = ReactCurrentDispatcher.current;
+function readContext(Context: ReactContext<mixed>) {
+  const dispatcher = SharedInternals.H;
   if (dispatcher === null) {
     // This wasn't being minified but we're going to retire this package anyway.
     // eslint-disable-next-line react-internal/prod-error-codes
@@ -62,6 +61,7 @@ function readContext(Context) {
   return dispatcher.readContext(Context);
 }
 
+// $FlowFixMe[missing-local-annot]
 function identityHashFn(input) {
   if (__DEV__) {
     if (
@@ -84,11 +84,11 @@ function identityHashFn(input) {
 }
 
 const CACHE_LIMIT = 500;
-const lru = createLRU(CACHE_LIMIT);
+const lru = createLRU<$FlowFixMe>(CACHE_LIMIT);
 
 const entries: Map<Resource<any, any>, Map<any, any>> = new Map();
 
-const CacheContext = React.createContext(null);
+const CacheContext = React.createContext<mixed>(null);
 
 function accessResult<I, K, V>(
   resource: any,
@@ -107,14 +107,14 @@ function accessResult<I, K, V>(
     thenable.then(
       value => {
         if (newResult.status === Pending) {
-          const resolvedResult: ResolvedResult<V> = (newResult: any);
+          const resolvedResult: ResolvedResult<V> = newResult as any;
           resolvedResult.status = Resolved;
           resolvedResult.value = value;
         }
       },
       error => {
         if (newResult.status === Pending) {
-          const rejectedResult: RejectedResult = (newResult: any);
+          const rejectedResult: RejectedResult = newResult as any;
           rejectedResult.status = Rejected;
           rejectedResult.value = error;
         }
@@ -124,16 +124,15 @@ function accessResult<I, K, V>(
       status: Pending,
       value: thenable,
     };
-    // $FlowFixMe[escaped-generic] discovered when updating Flow
     const newEntry = lru.add(newResult, deleteEntry.bind(null, resource, key));
     entriesForResource.set(key, newEntry);
     return newResult;
   } else {
-    return (lru.access(entry): any);
+    return lru.access(entry) as any;
   }
 }
 
-function deleteEntry(resource, key) {
+function deleteEntry(resource: any, key: mixed) {
   const entriesForResource = entries.get(resource);
   if (entriesForResource !== undefined) {
     entriesForResource.delete(key);
@@ -148,7 +147,7 @@ export function unstable_createResource<I, K: string | number, V>(
   maybeHashInput?: I => K,
 ): Resource<I, V> {
   const hashInput: I => K =
-    maybeHashInput !== undefined ? maybeHashInput : (identityHashFn: any);
+    maybeHashInput !== undefined ? maybeHashInput : (identityHashFn as any);
 
   const resource = {
     read(input: I): V {
@@ -172,7 +171,7 @@ export function unstable_createResource<I, K: string | number, V>(
         }
         default:
           // Should be unreachable
-          return (undefined: any);
+          return undefined as any;
       }
     },
 

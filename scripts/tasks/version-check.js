@@ -16,15 +16,15 @@ const reactVersion = /export default '([^']+)';/.exec(ReactVersionSrc)[1];
 const versions = {
   'packages/react/package.json': require('../../packages/react/package.json')
     .version,
-  'packages/react-dom/package.json': require('../../packages/react-dom/package.json')
-    .version,
-  'packages/react-test-renderer/package.json': require('../../packages/react-test-renderer/package.json')
-    .version,
+  'packages/react-dom/package.json':
+    require('../../packages/react-dom/package.json').version,
+  'packages/react-test-renderer/package.json':
+    require('../../packages/react-test-renderer/package.json').version,
   'packages/shared/ReactVersion.js': reactVersion,
 };
 
 let allVersionsMatch = true;
-Object.keys(versions).forEach(function(name) {
+Object.keys(versions).forEach(function (name) {
   const version = versions[name];
   if (version !== reactVersion) {
     allVersionsMatch = false;

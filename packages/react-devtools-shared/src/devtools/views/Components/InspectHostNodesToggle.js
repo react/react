@@ -14,7 +14,11 @@ import Toggle from '../Toggle';
 import ButtonIcon from '../ButtonIcon';
 import {logEvent} from 'react-devtools-shared/src/Logger';
 
-export default function InspectHostNodesToggle(): React.Node {
+export default function InspectHostNodesToggle({
+  onlySuspenseNodes,
+}: {
+  onlySuspenseNodes?: boolean,
+}): React.Node {
   const [isInspecting, setIsInspecting] = useState(false);
   const bridge = useContext(BridgeContext);
 
@@ -24,19 +28,19 @@ export default function InspectHostNodesToggle(): React.Node {
 
       if (isChecked) {
         logEvent({event_name: 'inspect-element-button-clicked'});
-        bridge.send('startInspectingNative');
+        bridge.send('startInspectingHost', !!onlySuspenseNodes);
       } else {
-        bridge.send('stopInspectingNative', false);
+        bridge.send('stopInspectingHost');
       }
     },
     [bridge],
   );
 
   useEffect(() => {
-    const onStopInspectingNative = () => setIsInspecting(false);
-    bridge.addListener('stopInspectingNative', onStopInspectingNative);
+    const onStopInspectingHost = () => setIsInspecting(false);
+    bridge.addListener('stopInspectingHost', onStopInspectingHost);
     return () =>
-      bridge.removeListener('stopInspectingNative', onStopInspectingNative);
+      bridge.removeListener('stopInspectingHost', onStopInspectingHost);
   }, [bridge]);
 
   return (

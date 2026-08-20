@@ -24,8 +24,6 @@ export {
   StrictMode,
   Suspense,
   SuspenseList,
-  isAsyncMode,
-  isConcurrentMode,
   isContextConsumer,
   isContextProvider,
   isElement,

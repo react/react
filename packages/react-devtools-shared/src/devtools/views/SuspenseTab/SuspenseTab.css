@@ -1,0 +1,137 @@
+.SuspenseTab {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-family-sans);
+}
+
+.SuspenseTab, .SuspenseTab * {
+  box-sizing: border-box;
+  -webkit-font-smoothing: var(--font-smoothing);
+}
+
+.VRule {
+  height: 20px;
+  width: 1px;
+  flex: 0 0 1px;
+  margin: 0 0.5rem;
+  background-color: var(--color-border);
+}
+
+.TreeWrapper {
+  border-top: 1px solid var(--color-border);
+  flex: 1 1 65%;
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  overflow: auto;
+}
+
+.InspectedElementWrapper {
+  flex: 0 0 calc(100% - var(--horizontal-resize-tree-percentage));
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-left: 1px solid var(--color-border);
+}
+
+.ResizeBarWrapper {
+  flex: 0 0 0px;
+  position: relative;
+}
+
+.ResizeBar {
+  position: absolute;
+  /*
+   * moving the bar out of its bounding box might cause its hitbox to overlap
+   * with another scrollbar creating disorienting UX where you both resize and scroll
+   * at the same time.
+   * If you adjust this value, double check that starting resize right on this edge
+   * doesn't also cause scroll
+   */
+  left: 1px;
+  width: 5px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+@container devtools (width < 600px) {
+  .SuspenseTab {
+    flex-direction: column;
+  }
+
+  .TreeWrapper {
+    border-top: 1px solid var(--color-border);
+    flex: 1 1 50%;
+    overflow: hidden;
+  }
+
+  .InspectedElementWrapper {
+    flex: 0 0 calc(100% - var(--vertical-resize-tree-percentage));
+    border-left: none;
+  }
+
+  .TreeWrapper + .ResizeBarWrapper .ResizeBar {
+    top: 1px;
+    left: 0;
+    width: 100%;
+    height: 5px;
+    cursor: ns-resize;
+  }
+
+  .ToggleInspectedElement[data-orientation="horizontal"] {
+    display: none;
+  }
+}
+
+@container devtools (width >= 600px) {
+  .ToggleInspectedElement[data-orientation="vertical"] {
+    display: none;
+  }
+}
+
+.ActivityList {
+  flex: 0 0 var(--horizontal-resize-activity-list-percentage);;
+  border-right: 1px solid var(--color-border);
+  overflow: auto;
+}
+
+.TreeView {
+  flex: 1 1 35%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+
+.Rects {
+  padding: 0.25rem;
+  flex-grow: 1;
+  overflow: auto;
+}
+
+.SuspenseTreeViewHeader {
+  flex: 0 0 42px;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.SuspenseTreeViewFooter {
+  flex: 0 0 42px;
+  display: flex;
+  justify-content: end;
+  border-top: 1px solid var(--color-border);
+  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.SuspenseTreeViewFooterButtons {
+  padding: 0.25rem;
+}

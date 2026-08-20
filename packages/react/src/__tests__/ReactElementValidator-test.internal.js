@@ -10,14 +10,15 @@
 'use strict';
 
 // NOTE: We're explicitly not using JSX in this file. This is intended to test
-// classic JS without JSX.
+// classic React.createElement without JSX.
+// TODO: ^ the above note is a bit stale because there are tests in this file
+// that do use JSX syntax. We should port them to React.createElement, and also
+// confirm there's a corresponding test that uses JSX syntax.
 
-let PropTypes;
 let React;
-let ReactDOM;
-let ReactTestUtils;
-
-let ReactFeatureFlags = require('shared/ReactFeatureFlags');
+let ReactDOMClient;
+let act;
+let assertConsoleErrorDev;
 
 describe('ReactElementValidator', () => {
   let ComponentClass;
@@ -25,29 +26,34 @@ describe('ReactElementValidator', () => {
   beforeEach(() => {
     jest.resetModules();
 
-    PropTypes = require('prop-types');
-    ReactFeatureFlags = require('shared/ReactFeatureFlags');
-    ReactFeatureFlags.replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
     React = require('react');
-    ReactDOM = require('react-dom');
-    ReactTestUtils = require('react-dom/test-utils');
+    ReactDOMClient = require('react-dom/client');
+    ({act, assertConsoleErrorDev} = require('internal-test-utils'));
     ComponentClass = class extends React.Component {
       render() {
-        return React.createElement('div');
+        return React.createElement('div', null, this.props.children);
       }
     };
   });
 
-  it('warns for keys for arrays of elements in rest args', () => {
-    expect(() => {
-      React.createElement(ComponentClass, null, [
-        React.createElement(ComponentClass),
-        React.createElement(ComponentClass),
-      ]);
-    }).toErrorDev('Each child in a list should have a unique "key" prop.');
+  it('warns for keys for arrays of elements in rest args', async () => {
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() =>
+      root.render(
+        React.createElement(ComponentClass, null, [
+          React.createElement(ComponentClass),
+          React.createElement(ComponentClass),
+        ]),
+      ),
+    );
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `ComponentClass`. See https://react.dev/link/warning-keys for more information.\n' +
+        '    in ComponentClass (at **)',
+    ]);
   });
 
-  it('warns for keys for arrays of elements with owner info', () => {
+  it('warns for keys for arrays of elements with owner info', async () => {
     class InnerClass extends React.Component {
       render() {
         return React.createElement(ComponentClass, null, this.props.childSet);
@@ -65,46 +71,53 @@ describe('ReactElementValidator', () => {
       }
     }
 
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(React.createElement(ComponentWrapper));
-    }).toErrorDev(
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => root.render(React.createElement(ComponentWrapper)));
+    assertConsoleErrorDev([
       'Each child in a list should have a unique "key" prop.' +
-        '\n\nCheck the render method of `InnerClass`. ' +
-        'It was passed a child from ComponentWrapper. ',
-    );
+        '\n\nCheck the render method of `ComponentClass`. ' +
+        'It was passed a child from ComponentWrapper. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in ComponentWrapper (at **)',
+    ]);
   });
 
-  it('warns for keys for arrays with no owner or parent info', () => {
-    function Anonymous() {
-      return <div />;
+  it('warns for keys for arrays with no owner or parent info', async () => {
+    function Anonymous({children}) {
+      return <div>{children}</div>;
     }
     Object.defineProperty(Anonymous, 'name', {value: undefined});
 
     const divs = [<div />, <div />];
 
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(<Anonymous>{divs}</Anonymous>);
-    }).toErrorDev(
-      'Warning: Each child in a list should have a unique ' +
-        '"key" prop. See https://reactjs.org/link/warning-keys for more information.\n' +
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => root.render(<Anonymous>{divs}</Anonymous>));
+    assertConsoleErrorDev([
+      // For owner stacks the parent being validated is the div.
+      'Each child in a list should have a unique ' +
+        '"key" prop.' +
+        '\n\nCheck the top-level render call using <div>. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
         '    in div (at **)',
-    );
+    ]);
   });
 
-  it('warns for keys for arrays of elements with no owner info', () => {
+  it('warns for keys for arrays of elements with no owner info', async () => {
     const divs = [<div />, <div />];
 
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(<div>{divs}</div>);
-    }).toErrorDev(
-      'Warning: Each child in a list should have a unique ' +
-        '"key" prop.\n\nCheck the top-level render call using <div>. See ' +
-        'https://reactjs.org/link/warning-keys for more information.\n' +
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+
+    await act(() => root.render(<div>{divs}</div>));
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique ' +
+        '"key" prop.' +
+        '\n\nCheck the top-level render call using <div>. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
         '    in div (at **)',
-    );
+    ]);
   });
 
-  it('warns for keys with component stack info', () => {
+  it('warns for keys with component stack info', async () => {
     function Component() {
       return <div>{[<div />, <div />]}</div>;
     }
@@ -117,18 +130,19 @@ describe('ReactElementValidator', () => {
       return <Parent child={<Component />} />;
     }
 
-    expect(() => ReactTestUtils.renderIntoDocument(<GrandParent />)).toErrorDev(
-      'Warning: Each child in a list should have a unique ' +
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => root.render(<GrandParent />));
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique ' +
         '"key" prop.\n\nCheck the render method of `Component`. See ' +
-        'https://reactjs.org/link/warning-keys for more information.\n' +
+        'https://react.dev/link/warning-keys for more information.\n' +
         '    in div (at **)\n' +
         '    in Component (at **)\n' +
-        '    in Parent (at **)\n' +
         '    in GrandParent (at **)',
-    );
+    ]);
   });
 
-  it('does not warn for keys when passing children down', () => {
+  it('does not warn for keys when passing children down', async () => {
     function Wrapper(props) {
       return (
         <div>
@@ -138,20 +152,23 @@ describe('ReactElementValidator', () => {
       );
     }
 
-    ReactTestUtils.renderIntoDocument(
-      <Wrapper>
-        <span />
-        <span />
-      </Wrapper>,
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() =>
+      root.render(
+        <Wrapper>
+          <span />
+          <span />
+        </Wrapper>,
+      ),
     );
   });
 
-  it('warns for keys for iterables of elements in rest args', () => {
+  it('warns for keys for iterables of elements in rest args', async () => {
     const iterable = {
-      '@@iterator': function() {
+      '@@iterator': function () {
         let i = 0;
         return {
-          next: function() {
+          next: function () {
             const done = ++i > 2;
             return {
               value: done ? undefined : React.createElement(ComponentClass),
@@ -162,9 +179,16 @@ describe('ReactElementValidator', () => {
       },
     };
 
-    expect(() =>
-      React.createElement(ComponentClass, null, iterable),
-    ).toErrorDev('Each child in a list should have a unique "key" prop.');
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() =>
+      root.render(React.createElement(ComponentClass, null, iterable)),
+    );
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `ComponentClass`. It was passed a child from div. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in ComponentClass (at **)',
+    ]);
   });
 
   it('does not warns for arrays of elements with keys', () => {
@@ -176,10 +200,10 @@ describe('ReactElementValidator', () => {
 
   it('does not warns for iterable elements with keys', () => {
     const iterable = {
-      '@@iterator': function() {
+      '@@iterator': function () {
         let i = 0;
         return {
-          next: function() {
+          next: function () {
             const done = ++i > 2;
             return {
               value: done
@@ -208,284 +232,233 @@ describe('ReactElementValidator', () => {
     React.createElement(ComponentClass, null, [{}, {}]);
   });
 
-  it('should give context for PropType errors in nested components.', () => {
-    // In this test, we're making sure that if a proptype error is found in a
-    // component, we give a small hint as to which parent instantiated that
-    // component as per warnings about key usage in ReactElementValidator.
-    function MyComp(props) {
-      return React.createElement('div', null, 'My color is ' + props.color);
+  it('should give context for errors in nested components.', async () => {
+    function MyComp() {
+      return [React.createElement('div')];
     }
-    MyComp.propTypes = {
-      color: PropTypes.string,
-    };
     function ParentComp() {
-      return React.createElement(MyComp, {color: 123});
+      return React.createElement(MyComp);
     }
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(React.createElement(ParentComp));
-    }).toErrorDev(
-      'Warning: Failed prop type: ' +
-        'Invalid prop `color` of type `number` supplied to `MyComp`, ' +
-        'expected `string`.\n' +
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => root.render(React.createElement(ParentComp)));
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.' +
+        '\n\nCheck the render method of `ParentComp`. It was passed a child from MyComp. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in div (at **)\n' +
         '    in MyComp (at **)\n' +
         '    in ParentComp (at **)',
-    );
+    ]);
   });
 
-  it('gives a helpful error when passing invalid types', () => {
+  it('gives a helpful error when passing invalid types', async () => {
     function Foo() {}
-    expect(() => {
-      React.createElement(undefined);
-      React.createElement(null);
-      React.createElement(true);
-      React.createElement({x: 17});
-      React.createElement({});
-      React.createElement(React.createElement('div'));
-      React.createElement(React.createElement(Foo));
-      React.createElement(React.createElement(React.createContext().Consumer));
-      React.createElement({$$typeof: 'non-react-thing'});
-    }).toErrorDev(
+    const errors = [];
+    const root = ReactDOMClient.createRoot(document.createElement('div'), {
+      onUncaughtError(error) {
+        errors.push(error.message);
+      },
+    });
+    const cases = [
       [
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+        () => React.createElement(undefined),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: undefined. You likely forgot to export your ' +
           "component from the file it's defined in, or you might have mixed up " +
           'default and named imports.',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement(null),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: null.',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement(true),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: boolean.',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement({x: 17}),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: object.',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement({}),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: object. You likely forgot to export your ' +
           "component from the file it's defined in, or you might have mixed up " +
           'default and named imports.',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement(React.createElement('div')),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: <div />. Did you accidentally export a JSX literal ' +
           'instead of a component?',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement(React.createElement(Foo)),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: <Foo />. Did you accidentally export a JSX literal ' +
           'instead of a component?',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () =>
+          React.createElement(
+            React.createElement(React.createContext().Consumer),
+          ),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: <Context.Consumer />. Did you accidentally ' +
           'export a JSX literal instead of a component?',
-        'Warning: React.createElement: type is invalid -- expected a string ' +
+      ],
+      [
+        () => React.createElement({$$typeof: 'non-react-thing'}),
+        'React.createElement: type is invalid -- expected a string ' +
           '(for built-in components) or a class/function (for composite ' +
           'components) but got: object.',
       ],
-      {withoutStack: true},
+    ];
+    for (let i = 0; i < cases.length; i++) {
+      await act(async () => root.render(cases[i][0]()));
+    }
+
+    expect(errors).toEqual(
+      __DEV__
+        ? [
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: undefined. You likely forgot to export your ' +
+              "component from the file it's defined in, or you might have mixed up " +
+              'default and named imports.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: null.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: boolean.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object. You likely forgot to export your ' +
+              "component from the file it's defined in, or you might have mixed up " +
+              'default and named imports.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: <div />. Did you accidentally export a JSX literal ' +
+              'instead of a component?',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: <Foo />. Did you accidentally export a JSX literal ' +
+              'instead of a component?',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: <Context.Consumer />. Did you accidentally ' +
+              'export a JSX literal instead of a component?',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+          ]
+        : [
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: undefined.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: null.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: boolean.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+            'Element type is invalid: expected a string ' +
+              '(for built-in components) or a class/function (for composite ' +
+              'components) but got: object.',
+          ],
     );
 
     // Should not log any additional warnings
     React.createElement('div');
   });
 
-  it('includes the owner name when passing null, undefined, boolean, or number', () => {
+  it('includes the owner name when passing null, undefined, boolean, or number', async () => {
     function ParentComp() {
       return React.createElement(null);
     }
 
-    expect(() => {
-      expect(() => {
-        ReactTestUtils.renderIntoDocument(React.createElement(ParentComp));
-      }).toThrowError(
-        'Element type is invalid: expected a string (for built-in components) ' +
-          'or a class/function (for composite components) but got: null.' +
-          (__DEV__ ? '\n\nCheck the render method of `ParentComp`.' : ''),
-      );
-    }).toErrorDev(
-      'Warning: React.createElement: type is invalid -- expected a string ' +
-        '(for built-in components) or a class/function (for composite ' +
-        'components) but got: null.' +
-        '\n\nCheck the render method of `ParentComp`.\n    in ParentComp',
+    await expect(async () => {
+      const root = ReactDOMClient.createRoot(document.createElement('div'));
+      await act(() => root.render(React.createElement(ParentComp)));
+    }).rejects.toThrowError(
+      'Element type is invalid: expected a string (for built-in components) ' +
+        'or a class/function (for composite components) but got: null.' +
+        (__DEV__ ? '\n\nCheck the render method of `ParentComp`.' : ''),
     );
   });
 
-  it('should check default prop values', () => {
-    class Component extends React.Component {
-      static propTypes = {prop: PropTypes.string.isRequired};
-      static defaultProps = {prop: null};
-      render() {
-        return React.createElement('span', null, this.props.prop);
-      }
-    }
-
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(React.createElement(Component)),
-    ).toErrorDev(
-      'Warning: Failed prop type: The prop `prop` is marked as required in ' +
-        '`Component`, but its value is `null`.\n' +
-        '    in Component',
-    );
-  });
-
-  it('should not check the default for explicit null', () => {
-    class Component extends React.Component {
-      static propTypes = {prop: PropTypes.string.isRequired};
-      static defaultProps = {prop: 'text'};
-      render() {
-        return React.createElement('span', null, this.props.prop);
-      }
-    }
-
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(
-        React.createElement(Component, {prop: null}),
-      );
-    }).toErrorDev(
-      'Warning: Failed prop type: The prop `prop` is marked as required in ' +
-        '`Component`, but its value is `null`.\n' +
-        '    in Component',
-    );
-  });
-
-  it('should check declared prop types', () => {
-    class Component extends React.Component {
-      static propTypes = {
-        prop: PropTypes.string.isRequired,
-      };
-      render() {
-        return React.createElement('span', null, this.props.prop);
-      }
-    }
-
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(React.createElement(Component));
-      ReactTestUtils.renderIntoDocument(
-        React.createElement(Component, {prop: 42}),
-      );
-    }).toErrorDev([
-      'Warning: Failed prop type: ' +
-        'The prop `prop` is marked as required in `Component`, but its value ' +
-        'is `undefined`.\n' +
-        '    in Component',
-      'Warning: Failed prop type: ' +
-        'Invalid prop `prop` of type `number` supplied to ' +
-        '`Component`, expected `string`.\n' +
-        '    in Component',
-    ]);
-
-    // Should not error for strings
-    ReactTestUtils.renderIntoDocument(
-      React.createElement(Component, {prop: 'string'}),
-    );
-  });
-
-  it('should warn if a PropType creator is used as a PropType', () => {
-    class Component extends React.Component {
-      static propTypes = {
-        myProp: PropTypes.shape,
-      };
-      render() {
-        return React.createElement('span', null, this.props.myProp.value);
-      }
-    }
-
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(
-        React.createElement(Component, {myProp: {value: 'hi'}}),
-      );
-    }).toErrorDev(
-      'Warning: Component: type specification of prop `myProp` is invalid; ' +
-        'the type checker function must return `null` or an `Error` but ' +
-        'returned a function. You may have forgotten to pass an argument to ' +
-        'the type checker creator (arrayOf, instanceOf, objectOf, oneOf, ' +
-        'oneOfType, and shape all require an argument).',
-    );
-  });
-
-  it('should warn if component declares PropTypes instead of propTypes', () => {
-    class MisspelledPropTypesComponent extends React.Component {
-      static PropTypes = {
-        prop: PropTypes.string,
-      };
-      render() {
-        return React.createElement('span', null, this.props.prop);
-      }
-    }
-
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(
-        React.createElement(MisspelledPropTypesComponent, {prop: 'Hi'}),
-      );
-    }).toErrorDev(
-      'Warning: Component MisspelledPropTypesComponent declared `PropTypes` ' +
-        'instead of `propTypes`. Did you misspell the property assignment?',
-      {withoutStack: true},
-    );
-  });
-
-  it('warns for fragments with illegal attributes', () => {
+  it('warns for fragments with illegal attributes', async () => {
     class Foo extends React.Component {
       render() {
         return React.createElement(React.Fragment, {a: 1}, '123');
       }
     }
 
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(React.createElement(Foo));
-    }).toErrorDev(
-      'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
-        'can only have `key` and `children` props.',
-    );
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => root.render(React.createElement(Foo)));
+    assertConsoleErrorDev([
+      gate('enableFragmentRefs')
+        ? 'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
+          'can only have `key`, `ref`, and `children` props.\n' +
+          '    in Foo (at **)'
+        : 'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
+          'can only have `key` and `children` props.\n' +
+          '    in Foo (at **)',
+    ]);
   });
 
-  if (!__EXPERIMENTAL__) {
-    it('should warn when accessing .type on an element factory', () => {
-      function TestComponent() {
-        return <div />;
-      }
-
-      let TestFactory;
-
-      expect(() => {
-        TestFactory = React.createFactory(TestComponent);
-      }).toWarnDev(
-        'Warning: React.createFactory() is deprecated and will be removed in a ' +
-          'future major release. Consider using JSX or use React.createElement() ' +
-          'directly instead.',
-        {withoutStack: true},
-      );
-
-      expect(
-        () => TestFactory.type,
-      ).toWarnDev(
-        'Warning: Factory.type is deprecated. Access the class directly before ' +
-          'passing it to createFactory.',
-        {withoutStack: true},
-      );
-
-      // Warn once, not again
-      expect(TestFactory.type).toBe(TestComponent);
-    });
-  }
-
-  it('does not warn when using DOM node as children', () => {
+  it('does not warn when using DOM node as children', async () => {
     class DOMContainer extends React.Component {
+      ref;
       render() {
-        return <div />;
+        return <div ref={n => (this.ref = n)} />;
       }
       componentDidMount() {
-        ReactDOM.findDOMNode(this).appendChild(this.props.children);
+        this.ref.appendChild(this.props.children);
       }
     }
 
     const node = document.createElement('div');
-    // This shouldn't cause a stack overflow or any other problems (#3883)
-    ReactTestUtils.renderIntoDocument(<DOMContainer>{node}</DOMContainer>);
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      // This shouldn't cause a stack overflow or any other problems (#3883)
+      root.render(<DOMContainer>{node}</DOMContainer>);
+    });
   });
 
   it('should not enumerate enumerable numbers (#4776)', () => {
     /*eslint-disable no-extend-native */
-    Number.prototype['@@iterator'] = function() {
+    Number.prototype['@@iterator'] = function () {
       throw new Error('number iterator called');
     };
     /*eslint-enable no-extend-native */
@@ -521,16 +494,7 @@ describe('ReactElementValidator', () => {
 
   it('does not blow up on key warning with undefined type', () => {
     const Foo = undefined;
-    expect(() => {
-      void (<Foo>{[<div />]}</Foo>);
-    }).toErrorDev(
-      'Warning: React.createElement: type is invalid -- expected a string ' +
-        '(for built-in components) or a class/function (for composite ' +
-        'components) but got: undefined. You likely forgot to export your ' +
-        "component from the file it's defined in, or you might have mixed up " +
-        'default and named imports.\n\nCheck your code at **.',
-      {withoutStack: true},
-    );
+    void (<Foo>{[<div />]}</Foo>);
   });
 
   it('does not call lazy initializers eagerly', () => {
@@ -541,5 +505,27 @@ describe('ReactElementValidator', () => {
     });
     React.createElement(Lazy);
     expect(didCall).toBe(false);
+  });
+
+  it('__self and __source are treated as normal props', async () => {
+    // These used to be reserved props because the classic React.createElement
+    // runtime passed this data as props, whereas the jsxDEV() runtime passes
+    // them as separate arguments.
+    function Child({__self, __source}) {
+      return __self + __source;
+    }
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    // NOTE: The Babel transform treats the presence of these props as a syntax
+    // error but theoretically it doesn't have to. Using spread here to
+    // circumvent the syntax error and demonstrate that the runtime
+    // doesn't care.
+    const props = {
+      __self: 'Hello ',
+      __source: 'world!',
+    };
+    await act(() => root.render(<Child {...props} />));
+    expect(container.textContent).toBe('Hello world!');
   });
 });

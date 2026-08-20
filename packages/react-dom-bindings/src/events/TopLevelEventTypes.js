@@ -73,6 +73,7 @@ export type TopLevelType =
   | 'reset'
   | 'resize'
   | 'scroll'
+  | 'scrollend'
   | 'seeked'
   | 'seeking'
   | 'selectionchange'

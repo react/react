@@ -2,18 +2,20 @@
   "dependencies": {
     "@babel/plugin-transform-modules-commonjs": "^7.10.4",
     "@babel/preset-react": "^7.10.4",
-    "jest": "^26.5.3"
+    "jest": "^29.4.1"
   },
   "jest": {
-    "setupFilesAfterEnv": ["./setupTests.js"]
+    "setupFilesAfterEnv": [
+      "./setupTests.js"
+    ]
   },
   "scripts": {
     "install-all": "cd react-14 && yarn && cd ../react-15 && yarn && cd ../react-16 && yarn && cd ../react-17 && yarn && cd ..",
     "lint": "node lint-runtimes.js",
     "pretest": "yarn install-all && yarn lint",
-    "test-jsxdev-dev": "BABEL_ENV=development NODE_ENV=development jest",
-    "test-jsx-dev": "BABEL_ENV=production NODE_ENV=development jest",
-    "test-jsx-prod": "BABEL_ENV=production NODE_ENV=production jest",
+    "test-jsxdev-dev": "BABEL_ENV=development NODE_ENV=development jest --env=jsdom",
+    "test-jsx-dev": "BABEL_ENV=production NODE_ENV=development jest --env=jsdom",
+    "test-jsx-prod": "BABEL_ENV=production NODE_ENV=production jest --env=jsdom",
     "test": "yarn test-jsxdev-dev && yarn test-jsx-dev && yarn test-jsx-prod"
   }
 }

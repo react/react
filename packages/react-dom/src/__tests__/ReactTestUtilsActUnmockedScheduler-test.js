@@ -10,12 +10,13 @@
 // sanity tests to make sure act() works without a mocked scheduler
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let act;
 let container;
 let yields;
+let prevActGlobal;
 
-function clearYields() {
+function clearLog() {
   try {
     return yields;
   } finally {
@@ -23,32 +24,26 @@ function clearYields() {
   }
 }
 
-function render(el, dom) {
-  ReactDOM.render(el, dom);
-}
-
-function unmount(dom) {
-  ReactDOM.unmountComponentAtNode(dom);
-}
-
 beforeEach(() => {
+  prevActGlobal = global.IS_REACT_ACT_ENVIRONMENT;
+  global.IS_REACT_ACT_ENVIRONMENT = true;
   jest.resetModules();
   jest.unmock('scheduler');
   yields = [];
   React = require('react');
-  ReactDOM = require('react-dom');
-  act = require('react-dom/test-utils').act;
+  ReactDOMClient = require('react-dom/client');
+  act = React.act;
   container = document.createElement('div');
   document.body.appendChild(container);
 });
 
 afterEach(() => {
-  unmount(container);
+  global.IS_REACT_ACT_ENVIRONMENT = prevActGlobal;
   document.body.removeChild(container);
 });
 
 // @gate __DEV__
-it('can use act to flush effects', () => {
+test('can use act to flush effects', async () => {
   function App() {
     React.useEffect(() => {
       yields.push(100);
@@ -56,15 +51,16 @@ it('can use act to flush effects', () => {
     return null;
   }
 
-  act(() => {
-    render(<App />, container);
+  const root = ReactDOMClient.createRoot(container);
+  await act(() => {
+    root.render(<App />);
   });
 
-  expect(clearYields()).toEqual([100]);
+  expect(clearLog()).toEqual([100]);
 });
 
 // @gate __DEV__
-it('flushes effects on every call', () => {
+test('flushes effects on every call', async () => {
   function App() {
     const [ctr, setCtr] = React.useState(0);
     React.useEffect(() => {
@@ -77,11 +73,12 @@ it('flushes effects on every call', () => {
     );
   }
 
-  act(() => {
-    render(<App />, container);
+  const root = ReactDOMClient.createRoot(container);
+  await act(() => {
+    root.render(<App />);
   });
 
-  expect(clearYields()).toEqual([0]);
+  expect(clearLog()).toEqual([0]);
 
   const button = container.querySelector('#button');
   function click() {
@@ -94,16 +91,16 @@ it('flushes effects on every call', () => {
     click();
   });
   // it consolidates the 3 updates, then fires the effect
-  expect(clearYields()).toEqual([3]);
+  expect(clearLog()).toEqual([3]);
   act(click);
-  expect(clearYields()).toEqual([4]);
+  expect(clearLog()).toEqual([4]);
   act(click);
-  expect(clearYields()).toEqual([5]);
+  expect(clearLog()).toEqual([5]);
   expect(button.innerHTML).toEqual('5');
 });
 
 // @gate __DEV__
-it("should keep flushing effects until they're done", () => {
+test("should keep flushing effects until they're done", async () => {
   function App() {
     const [ctr, setCtr] = React.useState(0);
     React.useEffect(() => {
@@ -114,43 +111,47 @@ it("should keep flushing effects until they're done", () => {
     return ctr;
   }
 
-  act(() => {
-    render(<App />, container);
+  const root = ReactDOMClient.createRoot(container);
+  await act(() => {
+    root.render(<App />);
   });
 
   expect(container.innerHTML).toEqual('5');
 });
 
 // @gate __DEV__
-it('should flush effects only on exiting the outermost act', () => {
+test('should flush effects only on exiting the outermost act', async () => {
   function App() {
     React.useEffect(() => {
       yields.push(0);
     });
     return null;
   }
+  const root = ReactDOMClient.createRoot(container);
   // let's nest a couple of act() calls
-  act(() => {
-    act(() => {
-      render(<App />, container);
+  await act(async () => {
+    await act(() => {
+      root.render(<App />);
     });
     // the effect wouldn't have yielded yet because
     // we're still inside an act() scope
-    expect(clearYields()).toEqual([]);
+    expect(clearLog()).toEqual([]);
   });
   // but after exiting the last one, effects get flushed
-  expect(clearYields()).toEqual([0]);
+  expect(clearLog()).toEqual([0]);
 });
 
 // @gate __DEV__
-it('can handle cascading promises', async () => {
+test('can handle cascading promises', async () => {
   // this component triggers an effect, that waits a tick,
   // then sets state. repeats this 5 times.
   function App() {
     const [state, setState] = React.useState(0);
     async function ticker() {
       await null;
-      setState(x => x + 1);
+      await act(() => {
+        setState(x => x + 1);
+      });
     }
     React.useEffect(() => {
       yields.push(state);
@@ -159,10 +160,11 @@ it('can handle cascading promises', async () => {
     return state;
   }
 
-  await act(async () => {
-    render(<App />, container);
+  const root = ReactDOMClient.createRoot(container);
+  await act(() => {
+    root.render(<App />);
   });
   // all 5 ticks present and accounted for
-  expect(clearYields()).toEqual([0, 1, 2, 3, 4]);
+  expect(clearLog()).toEqual([0, 1, 2, 3, 4]);
   expect(container.innerHTML).toBe('5');
 });

@@ -13,14 +13,21 @@ scripts/bench/benchmarks/**/*.js
 # React repository clone
 scripts/bench/remote-repo/
 
+# Compiler uses its own lint setup
+compiler/
+
 packages/react-devtools-core/dist
 packages/react-devtools-extensions/chrome/build
 packages/react-devtools-extensions/firefox/build
 packages/react-devtools-extensions/shared/build
 packages/react-devtools-extensions/src/ErrorTesterCompiled.js
+packages/react-devtools-fusebox/dist
 packages/react-devtools-inline/dist
 packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__/
 packages/react-devtools-shared/src/hooks/__tests__/__source__/__untransformed__/
 packages/react-devtools-shell/dist
-packages/react-devtools-timeline/dist
-packages/react-devtools-timeline/static
+packages/react-devtools-cdt-mcp/dist
+packages/react-devtools-cdt-mcp/fixtures
+
+# Imported third-party Flow types
+flow-typed/

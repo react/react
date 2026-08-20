@@ -17,9 +17,9 @@
 
 let PropTypes;
 let React;
-let ReactDOM;
-let ReactDOMServer;
-let ReactTestUtils;
+let ReactDOMClient;
+let act;
+let assertConsoleErrorDev;
 
 describe('ReactContextValidator', () => {
   beforeEach(() => {
@@ -27,15 +27,15 @@ describe('ReactContextValidator', () => {
 
     PropTypes = require('prop-types');
     React = require('react');
-    ReactDOM = require('react-dom');
-    ReactDOMServer = require('react-dom/server');
-    ReactTestUtils = require('react-dom/test-utils');
+    ReactDOMClient = require('react-dom/client');
+    ({act, assertConsoleErrorDev} = require('internal-test-utils'));
   });
 
   // TODO: This behavior creates a runtime dependency on propTypes. We should
   // ensure that this is not required for ES6 classes with Flow.
 
-  it('should filter out context not in contextTypes', () => {
+  // @gate !disableLegacyContext
+  it('should filter out context not in contextTypes', async () => {
     class Component extends React.Component {
       render() {
         return <div />;
@@ -46,6 +46,8 @@ describe('ReactContextValidator', () => {
     };
 
     class ComponentInFooBarContext extends React.Component {
+      childRef = React.createRef();
+
       getChildContext() {
         return {
           foo: 'abc',
@@ -54,7 +56,7 @@ describe('ReactContextValidator', () => {
       }
 
       render() {
-        return <Component ref="child" />;
+        return <Component ref={this.childRef} />;
       }
     }
     ComponentInFooBarContext.childContextTypes = {
@@ -62,13 +64,27 @@ describe('ReactContextValidator', () => {
       bar: PropTypes.number,
     };
 
-    const instance = ReactTestUtils.renderIntoDocument(
-      <ComponentInFooBarContext />,
-    );
-    expect(instance.refs.child.context).toEqual({foo: 'abc'});
+    let instance;
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <ComponentInFooBarContext ref={current => (instance = current)} />,
+      );
+    });
+    assertConsoleErrorDev([
+      'ComponentInFooBarContext uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ComponentInFooBarContext (at **)',
+      'Component uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ComponentInFooBarContext (at **)',
+    ]);
+    expect(instance.childRef.current.context).toEqual({foo: 'abc'});
   });
 
-  it('should pass next context to lifecycles', () => {
+  // @gate !disableLegacyContext
+  it('should pass next context to lifecycles', async () => {
     let componentDidMountContext;
     let componentDidUpdateContext;
     let componentWillReceivePropsContext;
@@ -131,11 +147,26 @@ describe('ReactContextValidator', () => {
     };
 
     const container = document.createElement('div');
-    ReactDOM.render(<Parent foo="abc" />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<Parent foo="abc" />);
+    });
+    assertConsoleErrorDev([
+      'Parent uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Parent (at **)',
+      'Component uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Parent (at **)',
+    ]);
+
     expect(constructorContext).toEqual({foo: 'abc'});
     expect(renderContext).toEqual({foo: 'abc'});
     expect(componentDidMountContext).toEqual({foo: 'abc'});
-    ReactDOM.render(<Parent foo="def" />, container);
+    await act(() => {
+      root.render(<Parent foo="def" />);
+    });
+
     expect(componentWillReceivePropsContext).toEqual({foo: 'abc'});
     expect(componentWillReceivePropsNextContext).toEqual({foo: 'def'});
     expect(shouldComponentUpdateContext).toEqual({foo: 'abc'});
@@ -146,137 +177,10 @@ describe('ReactContextValidator', () => {
     expect(componentDidUpdateContext).toEqual({foo: 'def'});
   });
 
-  it('should check context types', () => {
-    class Component extends React.Component {
-      render() {
-        return <div />;
-      }
-    }
-    Component.contextTypes = {
-      foo: PropTypes.string.isRequired,
-    };
-
-    expect(() => ReactTestUtils.renderIntoDocument(<Component />)).toErrorDev(
-      'Warning: Failed context type: ' +
-        'The context `foo` is marked as required in `Component`, but its value ' +
-        'is `undefined`.\n' +
-        '    in Component (at **)',
-    );
-
-    class ComponentInFooStringContext extends React.Component {
-      getChildContext() {
-        return {
-          foo: this.props.fooValue,
-        };
-      }
-
-      render() {
-        return <Component />;
-      }
-    }
-    ComponentInFooStringContext.childContextTypes = {
-      foo: PropTypes.string,
-    };
-
-    // No additional errors expected
-    ReactTestUtils.renderIntoDocument(
-      <ComponentInFooStringContext fooValue={'bar'} />,
-    );
-
-    class ComponentInFooNumberContext extends React.Component {
-      getChildContext() {
-        return {
-          foo: this.props.fooValue,
-        };
-      }
-
-      render() {
-        return <Component />;
-      }
-    }
-    ComponentInFooNumberContext.childContextTypes = {
-      foo: PropTypes.number,
-    };
-
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(
-        <ComponentInFooNumberContext fooValue={123} />,
-      ),
-    ).toErrorDev(
-      'Warning: Failed context type: ' +
-        'Invalid context `foo` of type `number` supplied ' +
-        'to `Component`, expected `string`.\n' +
-        '    in Component (at **)\n' +
-        '    in ComponentInFooNumberContext (at **)',
-    );
-  });
-
-  it('should check child context types', () => {
-    class Component extends React.Component {
-      getChildContext() {
-        return this.props.testContext;
-      }
-
-      render() {
-        return <div />;
-      }
-    }
-    Component.childContextTypes = {
-      foo: PropTypes.string.isRequired,
-      bar: PropTypes.number,
-    };
-
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(<Component testContext={{bar: 123}} />),
-    ).toErrorDev(
-      'Warning: Failed child context type: ' +
-        'The child context `foo` is marked as required in `Component`, but its ' +
-        'value is `undefined`.\n' +
-        '    in Component (at **)',
-    );
-
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(<Component testContext={{foo: 123}} />),
-    ).toErrorDev(
-      'Warning: Failed child context type: ' +
-        'Invalid child context `foo` of type `number` ' +
-        'supplied to `Component`, expected `string`.\n' +
-        '    in Component (at **)',
-    );
-
-    // No additional errors expected
-    ReactTestUtils.renderIntoDocument(
-      <Component testContext={{foo: 'foo', bar: 123}} />,
-    );
-
-    ReactTestUtils.renderIntoDocument(<Component testContext={{foo: 'foo'}} />);
-  });
-
-  it('warns of incorrect prop types on context provider', () => {
-    const TestContext = React.createContext();
-
-    TestContext.Provider.propTypes = {
-      value: PropTypes.string.isRequired,
-    };
-
-    ReactTestUtils.renderIntoDocument(<TestContext.Provider value="val" />);
-
-    class Component extends React.Component {
-      render() {
-        return <TestContext.Provider value={undefined} />;
-      }
-    }
-
-    expect(() => ReactTestUtils.renderIntoDocument(<Component />)).toErrorDev(
-      'Warning: Failed prop type: The prop `value` is marked as required in ' +
-        '`Context.Provider`, but its value is `undefined`.\n' +
-        '    in Component (at **)',
-    );
-  });
-
   // TODO (bvaughn) Remove this test and the associated behavior in the future.
   // It has only been added in Fiber to match the (unintentional) behavior in Stack.
-  it('should warn (but not error) if getChildContext method is missing', () => {
+  // @gate !disableLegacyContext || !__DEV__
+  it('should warn (but not error) if getChildContext method is missing', async () => {
     class ComponentA extends React.Component {
       static childContextTypes = {
         foo: PropTypes.string.isRequired,
@@ -294,25 +198,40 @@ describe('ReactContextValidator', () => {
       }
     }
 
-    expect(() => ReactTestUtils.renderIntoDocument(<ComponentA />)).toErrorDev(
-      'Warning: ComponentA.childContextTypes is specified but there is no ' +
-        'getChildContext() method on the instance. You can either define ' +
-        'getChildContext() on ComponentA or remove childContextTypes from it.',
-    );
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      root.render(<ComponentA />);
+    });
+    assertConsoleErrorDev([
+      'ComponentA uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ComponentA (at **)',
+      'ComponentA.childContextTypes is specified but there is no getChildContext() method on the instance. ' +
+        'You can either define getChildContext() on ComponentA or remove childContextTypes from it.\n' +
+        '    in ComponentA (at **)',
+    ]);
 
     // Warnings should be deduped by component type
-    ReactTestUtils.renderIntoDocument(<ComponentA />);
-
-    expect(() => ReactTestUtils.renderIntoDocument(<ComponentB />)).toErrorDev(
-      'Warning: ComponentB.childContextTypes is specified but there is no ' +
-        'getChildContext() method on the instance. You can either define ' +
-        'getChildContext() on ComponentB or remove childContextTypes from it.',
-    );
+    await act(() => {
+      root.render(<ComponentA />);
+    });
+    await act(() => {
+      root.render(<ComponentB />);
+    });
+    assertConsoleErrorDev([
+      'ComponentB uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ComponentB (at **)',
+      'ComponentB.childContextTypes is specified but there is no getChildContext() method on the instance. ' +
+        'You can either define getChildContext() on ComponentB or remove childContextTypes from it.\n' +
+        '    in ComponentB (at **)',
+    ]);
   });
 
   // TODO (bvaughn) Remove this test and the associated behavior in the future.
   // It has only been added in Fiber to match the (unintentional) behavior in Stack.
-  it('should pass parent context if getChildContext method is missing', () => {
+  // @gate !disableLegacyContext
+  it('should pass parent context if getChildContext method is missing', async () => {
     class ParentContextProvider extends React.Component {
       static childContextTypes = {
         foo: PropTypes.string,
@@ -348,20 +267,31 @@ describe('ReactContextValidator', () => {
       foo: PropTypes.string.isRequired,
     };
 
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(<ParentContextProvider />),
-    ).toErrorDev([
-      'Warning: MiddleMissingContext.childContextTypes is specified but there is no ' +
-        'getChildContext() method on the instance. You can either define getChildContext() ' +
-        'on MiddleMissingContext or remove childContextTypes from it.',
-      'Warning: Failed context type: The context `bar` is marked as required ' +
-        'in `ChildContextConsumer`, but its value is `undefined`.',
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<ParentContextProvider />);
+    });
+    assertConsoleErrorDev([
+      'ParentContextProvider uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ParentContextProvider (at **)',
+      'MiddleMissingContext uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ParentContextProvider (at **)',
+      'MiddleMissingContext.childContextTypes is specified but there is no getChildContext() method on the instance. ' +
+        'You can either define getChildContext() on MiddleMissingContext or remove childContextTypes from it.\n' +
+        '    in ParentContextProvider (at **)',
+      'ChildContextConsumer uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in MiddleMissingContext (at **)\n' +
+        '    in ParentContextProvider (at **)',
     ]);
     expect(childContext.bar).toBeUndefined();
     expect(childContext.foo).toBe('FOO');
   });
 
-  it('should pass next context to lifecycles', () => {
+  it('should pass next context to lifecycles on update', async () => {
     let componentDidMountContext;
     let componentDidUpdateContext;
     let componentWillReceivePropsContext;
@@ -409,37 +339,36 @@ describe('ReactContextValidator', () => {
     const secondContext = {bar: 456};
 
     const container = document.createElement('div');
-    ReactDOM.render(
-      <Context.Provider value={firstContext}>
-        <Component />
-      </Context.Provider>,
-      container,
-    );
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <Context.Provider value={firstContext}>
+          <Component />
+        </Context.Provider>,
+      );
+    });
+
     expect(constructorContext).toBe(firstContext);
     expect(renderContext).toBe(firstContext);
     expect(componentDidMountContext).toBe(firstContext);
-    ReactDOM.render(
-      <Context.Provider value={secondContext}>
-        <Component />
-      </Context.Provider>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <Context.Provider value={secondContext}>
+          <Component />
+        </Context.Provider>,
+      );
+    });
+
     expect(componentWillReceivePropsContext).toBe(firstContext);
     expect(componentWillReceivePropsNextContext).toBe(secondContext);
     expect(componentWillUpdateContext).toBe(firstContext);
     expect(componentWillUpdateNextContext).toBe(secondContext);
     expect(renderContext).toBe(secondContext);
     expect(componentDidUpdateContext).toBe(secondContext);
-
-    if (gate(flags => flags.enableLazyContextPropagation)) {
-      expect(shouldComponentUpdateWasCalled).toBe(true);
-    } else {
-      // sCU is not called in this case because React force updates when a provider re-renders
-      expect(shouldComponentUpdateWasCalled).toBe(false);
-    }
+    expect(shouldComponentUpdateWasCalled).toBe(true);
   });
 
-  it('should re-render PureComponents when context Provider updates', () => {
+  it('should re-render PureComponents when context Provider updates', async () => {
     let renderedContext;
 
     const Context = React.createContext();
@@ -456,23 +385,29 @@ describe('ReactContextValidator', () => {
     const secondContext = {bar: 456};
 
     const container = document.createElement('div');
-    ReactDOM.render(
-      <Context.Provider value={firstContext}>
-        <Component />
-      </Context.Provider>,
-      container,
-    );
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <Context.Provider value={firstContext}>
+          <Component />
+        </Context.Provider>,
+      );
+    });
+
     expect(renderedContext).toBe(firstContext);
-    ReactDOM.render(
-      <Context.Provider value={secondContext}>
-        <Component />
-      </Context.Provider>,
-      container,
-    );
+    await act(() => {
+      root.render(
+        <Context.Provider value={secondContext}>
+          <Component />
+        </Context.Provider>,
+      );
+    });
+
     expect(renderedContext).toBe(secondContext);
   });
 
-  it('should warn if both contextType and contextTypes are defined', () => {
+  // @gate !disableLegacyContext || !__DEV__
+  it('should warn if both contextType and contextTypes are defined', async () => {
     const Context = React.createContext();
 
     class ParentContextProvider extends React.Component {
@@ -508,86 +443,105 @@ describe('ReactContextValidator', () => {
       }
     }
 
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      root.render(
         <ParentContextProvider>
           <ComponentA />
         </ParentContextProvider>,
-      ),
-    ).toErrorDev(
-      'Warning: ComponentA declares both contextTypes and contextType static properties. ' +
-        'The legacy contextTypes property will be ignored.',
-    );
+      );
+    });
+
+    assertConsoleErrorDev([
+      'ParentContextProvider uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ParentContextProvider (at **)',
+      'ComponentA declares both contextTypes and contextType static properties. ' +
+        'The legacy contextTypes property will be ignored.\n' +
+        '    in ComponentA (at **)',
+      'ComponentA uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ComponentA (at **)',
+    ]);
 
     // Warnings should be deduped by component type
-    ReactTestUtils.renderIntoDocument(
-      <ParentContextProvider>
-        <ComponentA />
-      </ParentContextProvider>,
-    );
+    await act(() => {
+      root.render(
+        <ParentContextProvider>
+          <ComponentA />
+        </ParentContextProvider>,
+      );
+    });
 
-    expect(() =>
-      ReactTestUtils.renderIntoDocument(
+    await act(() => {
+      root.render(
         <ParentContextProvider>
           <ComponentB />
         </ParentContextProvider>,
-      ),
-    ).toErrorDev(
-      'Warning: ComponentB declares both contextTypes and contextType static properties. ' +
-        'The legacy contextTypes property will be ignored.',
-    );
+      );
+    });
+    assertConsoleErrorDev([
+      'ComponentB declares both contextTypes and contextType static properties. ' +
+        'The legacy contextTypes property will be ignored.\n' +
+        '    in ComponentB (at **)',
+      'ComponentB uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in ComponentB (at **)',
+    ]);
   });
 
-  it('should warn if an invalid contextType is defined', () => {
+  it('should warn if an invalid contextType is defined', async () => {
     const Context = React.createContext();
-    // This tests that both Context.Consumer and Context.Provider
-    // warn about invalid contextType.
     class ComponentA extends React.Component {
       static contextType = Context.Consumer;
       render() {
         return <div />;
       }
     }
+
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      root.render(<ComponentA />);
+    });
+    assertConsoleErrorDev([
+      'ComponentA defines an invalid contextType. ' +
+        'contextType should point to the Context object returned by React.createContext(). ' +
+        'Did you accidentally pass the Context.Consumer instead?\n' +
+        '    in ComponentA (at **)',
+    ]);
+
+    await act(() => {
+      root.render(<ComponentA />);
+    });
+
     class ComponentB extends React.Component {
       static contextType = Context.Provider;
       render() {
         return <div />;
       }
     }
-
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(<ComponentA />);
-    }).toErrorDev(
-      'Warning: ComponentA defines an invalid contextType. ' +
-        'contextType should point to the Context object returned by React.createContext(). ' +
-        'Did you accidentally pass the Context.Consumer instead?',
-    );
-
-    // Warnings should be deduped by component type
-    ReactTestUtils.renderIntoDocument(<ComponentA />);
-
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(<ComponentB />);
-    }).toErrorDev(
-      'Warning: ComponentB defines an invalid contextType. ' +
-        'contextType should point to the Context object returned by React.createContext(). ' +
-        'Did you accidentally pass the Context.Provider instead?',
-    );
+    await act(() => {
+      root.render(<ComponentB />);
+    });
   });
 
-  it('should not warn when class contextType is null', () => {
+  it('should not warn when class contextType is null', async () => {
     class Foo extends React.Component {
       static contextType = null; // Handy for conditional declaration
       render() {
         return this.context.hello.world;
       }
     }
-    expect(() => {
-      ReactTestUtils.renderIntoDocument(<Foo />);
-    }).toThrow("Cannot read property 'world' of undefined");
+    await expect(async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Foo />);
+      });
+    }).rejects.toThrow("Cannot read properties of undefined (reading 'world')");
   });
 
-  it('should warn when class contextType is undefined', () => {
+  it('should warn when class contextType is undefined', async () => {
     class Foo extends React.Component {
       // This commonly happens with circular deps
       // https://github.com/facebook/react/issues/13969
@@ -597,21 +551,26 @@ describe('ReactContextValidator', () => {
       }
     }
 
-    expect(() => {
-      expect(() => {
-        ReactTestUtils.renderIntoDocument(<Foo />);
-      }).toThrow("Cannot read property 'world' of undefined");
-    }).toErrorDev(
+    await expect(async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Foo />);
+      });
+    }).rejects.toThrow("Cannot read properties of undefined (reading 'world')");
+
+    assertConsoleErrorDev([
       'Foo defines an invalid contextType. ' +
         'contextType should point to the Context object returned by React.createContext(). ' +
         'However, it is set to undefined. ' +
         'This can be caused by a typo or by mixing up named and default imports. ' +
         'This can also happen due to a circular dependency, ' +
-        'so try moving the createContext() call to a separate file.',
-    );
+        'so try moving the createContext() call to a separate file.\n' +
+        '    in Foo (at **)',
+    ]);
   });
 
-  it('should warn when class contextType is an object', () => {
+  it('should warn when class contextType is an object', async () => {
     class Foo extends React.Component {
       // Can happen due to a typo
       static contextType = {
@@ -623,18 +582,23 @@ describe('ReactContextValidator', () => {
       }
     }
 
-    expect(() => {
-      expect(() => {
-        ReactTestUtils.renderIntoDocument(<Foo />);
-      }).toThrow("Cannot read property 'hello' of undefined");
-    }).toErrorDev(
+    await expect(async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Foo />);
+      });
+    }).rejects.toThrow("Cannot read properties of undefined (reading 'hello')");
+
+    assertConsoleErrorDev([
       'Foo defines an invalid contextType. ' +
         'contextType should point to the Context object returned by React.createContext(). ' +
-        'However, it is set to an object with keys {x, y}.',
-    );
+        'However, it is set to an object with keys {x, y}.\n' +
+        '    in Foo (at **)',
+    ]);
   });
 
-  it('should warn when class contextType is a primitive', () => {
+  it('should warn when class contextType is a primitive', async () => {
     class Foo extends React.Component {
       static contextType = 'foo';
       render() {
@@ -642,18 +606,23 @@ describe('ReactContextValidator', () => {
       }
     }
 
-    expect(() => {
-      expect(() => {
-        ReactTestUtils.renderIntoDocument(<Foo />);
-      }).toThrow("Cannot read property 'world' of undefined");
-    }).toErrorDev(
+    await expect(async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<Foo />);
+      });
+    }).rejects.toThrow("Cannot read properties of undefined (reading 'world')");
+
+    assertConsoleErrorDev([
       'Foo defines an invalid contextType. ' +
         'contextType should point to the Context object returned by React.createContext(). ' +
-        'However, it is set to a string.',
-    );
+        'However, it is set to a string.\n' +
+        '    in Foo (at **)',
+    ]);
   });
 
-  it('should warn if you define contextType on a function component', () => {
+  it('should warn if you define contextType on a function component', async () => {
     const Context = React.createContext();
 
     function ComponentA() {
@@ -666,50 +635,26 @@ describe('ReactContextValidator', () => {
     }
     ComponentB.contextType = Context;
 
-    expect(() => ReactTestUtils.renderIntoDocument(<ComponentA />)).toErrorDev(
-      'Warning: ComponentA: Function components do not support contextType.',
-    );
+    const root = ReactDOMClient.createRoot(document.createElement('div'));
+    await act(() => {
+      root.render(<ComponentA />);
+    });
+    assertConsoleErrorDev([
+      'ComponentA: Function components do not support contextType.\n' +
+        '    in ComponentA (at **)',
+    ]);
 
     // Warnings should be deduped by component type
-    ReactTestUtils.renderIntoDocument(<ComponentA />);
+    await act(() => {
+      root.render(<ComponentA />);
+    });
 
-    expect(() => ReactTestUtils.renderIntoDocument(<ComponentB />)).toErrorDev(
-      'Warning: ComponentB: Function components do not support contextType.',
-    );
-  });
-
-  it('should honor a displayName if set on the context type', () => {
-    const Context = React.createContext(null);
-    Context.displayName = 'MyContextType';
-    function Validator() {
-      return null;
-    }
-    Validator.propTypes = {dontPassToSeeErrorStack: PropTypes.bool.isRequired};
-
-    expect(() => {
-      ReactDOMServer.renderToStaticMarkup(
-        <Context.Provider>
-          <Context.Consumer>{() => <Validator />}</Context.Consumer>
-        </Context.Provider>,
-      );
-    }).toErrorDev(
-      'Warning: Failed prop type: The prop `dontPassToSeeErrorStack` is marked as required in `Validator`, but its value is `undefined`.\n' +
-        '    in Validator (at **)',
-    );
-  });
-
-  it('warns if displayName is set on the consumer type', () => {
-    const Context = React.createContext(null);
-
-    expect(() => {
-      Context.Consumer.displayName = 'IgnoredName';
-    }).toWarnDev(
-      'Warning: Setting `displayName` on Context.Consumer has no effect. ' +
-        "You should set it directly on the context with Context.displayName = 'IgnoredName'.",
-      {withoutStack: true},
-    );
-
-    // warning is deduped by Context so subsequent setting is fine
-    Context.Consumer.displayName = 'ADifferentName';
+    await act(() => {
+      root.render(<ComponentB />);
+    });
+    assertConsoleErrorDev([
+      'ComponentB: Function components do not support contextType.\n' +
+        '    in ComponentB (at **)',
+    ]);
   });
 });

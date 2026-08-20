@@ -8,10 +8,6 @@
   margin-bottom: 0.5rem;  
 } 
 
-.ReleaseNotesLink { 
-  color: var(--color-button-active);  
-}
-
 .Version {
   color: var(--color-bridge-version-number);
   font-weight: bold;

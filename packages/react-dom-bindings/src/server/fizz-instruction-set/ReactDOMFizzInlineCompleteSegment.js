@@ -1,4 +1,4 @@
-import {completeSegment} from './ReactDOMFizzInstructionSet';
+import {completeSegment} from './ReactDOMFizzInstructionSetShared';
 
 // This is a string so Closure's advanced compilation mode doesn't mangle it.
 // eslint-disable-next-line dot-notation

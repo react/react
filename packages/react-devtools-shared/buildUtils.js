@@ -13,6 +13,7 @@ function resolveFeatureFlags(target) {
   switch (target) {
     case 'inline':
     case 'shell':
+    case 'fusebox':
       flagsPath = 'DevToolsFeatureFlags.default';
       break;
     case 'core/backend-oss':

@@ -56,7 +56,7 @@ function timestampForTouch(touch: Touch): number {
   // The legacy internal implementation provides "timeStamp", which has been
   // renamed to "timestamp". Let both work for now while we iron it out
   // TODO (evv): rename timeStamp to timestamp in internal code
-  return (touch: any).timeStamp || touch.timestamp;
+  return (touch as any).timeStamp || touch.timestamp;
 }
 
 /**
@@ -207,6 +207,7 @@ const ResponderTouchHistoryStore = {
       touchHistory.numberActiveTouches = nativeEvent.touches.length;
       if (touchHistory.numberActiveTouches === 1) {
         touchHistory.indexOfSingleActiveTouch =
+          // $FlowFixMe[incompatible-type] might be null according to type
           nativeEvent.touches[0].identifier;
       }
     } else if (isEndish(topLevelType)) {

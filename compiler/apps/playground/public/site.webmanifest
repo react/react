@@ -1,0 +1,16 @@
+{
+  "name": "React Compiler Playground",
+  "short_name": "React REPL",
+  "display": "standalone",
+  "start_url": "/",
+  "theme_color": "#fff",
+  "background_color": "#000000",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-180x180.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    }
+  ]
+}

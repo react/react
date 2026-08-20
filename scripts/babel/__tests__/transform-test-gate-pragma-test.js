@@ -10,7 +10,8 @@ describe('transform-test-gate-pragma', () => {
   // Fake runtime
   // eslint-disable-next-line no-unused-vars
   const _test_gate = (gateFn, testName, cb) => {
-    test(testName, (...args) => {
+    // eslint-disable-next-line jest/no-done-callback, jest/valid-title
+    it(testName, (...args) => {
       shouldPass = gateFn(context);
       return cb(...args);
     });
@@ -21,7 +22,8 @@ describe('transform-test-gate-pragma', () => {
     // NOTE: Tests in this file are not actually focused because the calls to
     // `test.only` and `fit` are compiled to `_test_gate_focus`. So if you want
     // to focus something, swap the following `test` call for `test.only`.
-    test(testName, (...args) => {
+    // eslint-disable-next-line jest/no-done-callback, jest/valid-title
+    it(testName, (...args) => {
       shouldPass = gateFn(context);
       isFocused = true;
       return cb(...args);
@@ -43,34 +45,34 @@ describe('transform-test-gate-pragma', () => {
     isFocused = false;
   });
 
-  test('no pragma', () => {
+  it('no pragma', () => {
     expect(shouldPass).toBe(null);
   });
 
   // unrelated comment
-  test('no pragma, unrelated comment', () => {
+  it('no pragma, unrelated comment', () => {
     expect(shouldPass).toBe(null);
   });
 
   // @gate flagThatIsOn
-  test('basic positive test', () => {
+  it('basic positive test', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOff
-  test('basic negative test', () => {
+  it('basic negative test', () => {
     expect(shouldPass).toBe(false);
   });
 
   // @gate flagThatIsOn
-  it('it method', () => {
+  it('method', () => {
     expect(shouldPass).toBe(true);
   });
 
   /* eslint-disable jest/no-focused-tests */
 
   // @gate flagThatIsOn
-  test.only('test.only', () => {
+  it.only('test.only', () => {
     expect(isFocused).toBe(true);
     expect(shouldPass).toBe(true);
   });
@@ -82,7 +84,7 @@ describe('transform-test-gate-pragma', () => {
   });
 
   // @gate flagThatIsOn
-  fit('fit', () => {
+  it.only('fit', () => {
     expect(isFocused).toBe(true);
     expect(shouldPass).toBe(true);
   });
@@ -90,79 +92,79 @@ describe('transform-test-gate-pragma', () => {
   /* eslint-enable jest/no-focused-tests */
 
   // @gate !flagThatIsOff
-  test('flag negation', () => {
+  it('flag negation', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOn
   // @gate !flagThatIsOff
-  test('multiple gates', () => {
+  it('multiple gates', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOn
   // @gate flagThatIsOff
-  test('multiple gates 2', () => {
+  it('multiple gates 2', () => {
     expect(shouldPass).toBe(false);
   });
 
   // @gate !flagThatIsOff && flagThatIsOn
-  test('&&', () => {
+  it('&&', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOff || flagThatIsOn
-  test('||', () => {
+  it('||', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate (flagThatIsOn || flagThatIsOff) && flagThatIsOn
-  test('groups', () => {
+  it('groups', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOn == !flagThatIsOff
-  test('==', () => {
+  it('==', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOn === !flagThatIsOff
-  test('===', () => {
+  it('===', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOn != !flagThatIsOff
-  test('!=', () => {
+  it('!=', () => {
     expect(shouldPass).toBe(false);
   });
 
   // @gate flagThatIsOn != !flagThatIsOff
-  test('!==', () => {
+  it('!==', () => {
     expect(shouldPass).toBe(false);
   });
 
   // @gate flagThatIsOn === true
-  test('true', () => {
+  it('true', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOff === false
-  test('false', () => {
+  it('false', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate environment === "fake-environment"
-  test('double quoted strings', () => {
+  it('double quoted strings', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate environment === 'fake-environment'
-  test('single quoted strings', () => {
+  it('single quoted strings', () => {
     expect(shouldPass).toBe(true);
   });
 
   // @gate flagThatIsOn // This is a comment
-  test('line comment', () => {
+  it('line comment', () => {
     expect(shouldPass).toBe(true);
   });
 });
@@ -172,14 +174,14 @@ describe('transform test-gate-pragma: actual runtime', () => {
   // test suite.
 
   // @gate __DEV__
-  test('__DEV__', () => {
+  it('__DEV__', () => {
     if (!__DEV__) {
       throw Error("Doesn't work in production!");
     }
   });
 
   // @gate build === "development"
-  test('strings', () => {
+  it('strings', () => {
     if (!__DEV__) {
       throw Error("Doesn't work in production!");
     }
@@ -187,27 +189,40 @@ describe('transform test-gate-pragma: actual runtime', () => {
 
   // Always should fail because of the unguarded console.error
   // @gate false
-  test('works with console.error tracking', () => {
+  it('works with console.error tracking', () => {
     console.error('Should cause test to fail');
   });
 
   // Always should fail because of the unguarded console.warn
   // @gate false
-  test('works with console.warn tracking', () => {
+  it('works with console.warn tracking', () => {
     console.warn('Should cause test to fail');
   });
 
   // @gate false
-  test('works with console tracking if error is thrown before end of test', () => {
+  it('works with console tracking if error is thrown before end of test', () => {
     console.warn('Please stop that!');
     console.error('Stop that!');
     throw Error('I told you to stop!');
+  });
+
+  // @gate false
+  it('a global error event is treated as a test failure', () => {
+    dispatchEvent(
+      new ErrorEvent('error', {
+        error: new Error('Oops!'),
+      })
+    );
   });
 });
 
 describe('dynamic gate method', () => {
   // @gate experimental && __DEV__
-  test('returns same conditions as pragma', () => {
+  it('returns same conditions as pragma', () => {
     expect(gate(ctx => ctx.experimental && ctx.__DEV__)).toBe(true);
+  });
+
+  it('converts string conditions to accessor function', () => {
+    expect(gate('experimental')).toBe(gate(flags => flags.experimental));
   });
 });

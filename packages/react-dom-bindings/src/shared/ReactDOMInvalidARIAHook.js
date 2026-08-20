@@ -5,8 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {ATTRIBUTE_NAME_CHAR} from './DOMProperty';
-import isCustomComponent from './isCustomComponent';
+import {ATTRIBUTE_NAME_CHAR} from './isAttributeNameSafe';
 import validAriaProperties from './validAriaProperties';
 import hasOwnProperty from 'shared/hasOwnProperty';
 
@@ -76,7 +75,7 @@ function validateProperty(tagName, name) {
   return true;
 }
 
-function warnInvalidARIAProps(type, props) {
+export function validateProperties(type, props) {
   if (__DEV__) {
     const invalidProps = [];
 
@@ -94,24 +93,17 @@ function warnInvalidARIAProps(type, props) {
     if (invalidProps.length === 1) {
       console.error(
         'Invalid aria prop %s on <%s> tag. ' +
-          'For details, see https://reactjs.org/link/invalid-aria-props',
+          'For details, see https://react.dev/link/invalid-aria-props',
         unknownPropString,
         type,
       );
     } else if (invalidProps.length > 1) {
       console.error(
         'Invalid aria props %s on <%s> tag. ' +
-          'For details, see https://reactjs.org/link/invalid-aria-props',
+          'For details, see https://react.dev/link/invalid-aria-props',
         unknownPropString,
         type,
       );
     }
   }
-}
-
-export function validateProperties(type, props) {
-  if (isCustomComponent(type, props)) {
-    return;
-  }
-  warnInvalidARIAProps(type, props);
 }

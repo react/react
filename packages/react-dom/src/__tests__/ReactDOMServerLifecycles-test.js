@@ -13,12 +13,16 @@ const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegratio
 
 let React;
 let ReactDOMServer;
+let assertConsoleErrorDev;
+let assertConsoleWarnDev;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
   ReactDOMServer = require('react-dom/server');
+  assertConsoleErrorDev = require('internal-test-utils').assertConsoleErrorDev;
+  assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
 
   // Make them available to the helpers.
   return {
@@ -115,9 +119,17 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toErrorDev(
-      'Unsafe legacy lifecycles will not be called for components using new component APIs.',
-    );
+    ReactDOMServer.renderToString(<Component />);
+    assertConsoleErrorDev([
+      'Unsafe legacy lifecycles will not be called for components using new component APIs.\n' +
+        '\n' +
+        'Component uses getDerivedStateFromProps() but also contains the following legacy lifecycles:\n' +
+        '  UNSAFE_componentWillMount\n' +
+        '\n' +
+        'The above lifecycles should be removed. Learn more about this warning here:\n' +
+        'https://react.dev/link/unsafe-component-lifecycles\n' +
+        '    in Component (at **)',
+    ]);
   });
 
   it('should update instance.state with value returned from getDerivedStateFromProps', () => {
@@ -182,10 +194,12 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toErrorDev(
+    ReactDOMServer.renderToString(<Component />);
+    assertConsoleErrorDev([
       'Component.getDerivedStateFromProps(): A valid state object (or null) must ' +
-        'be returned. You have returned undefined.',
-    );
+        'be returned. You have returned undefined.\n' +
+        '    in Component (at **)',
+    ]);
 
     // De-duped
     ReactDOMServer.renderToString(<Component />);
@@ -201,12 +215,14 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toErrorDev(
+    ReactDOMServer.renderToString(<Component />);
+    assertConsoleErrorDev([
       '`Component` uses `getDerivedStateFromProps` but its initial state is ' +
         'undefined. This is not recommended. Instead, define the initial state by ' +
         'assigning an object to `this.state` in the constructor of `Component`. ' +
-        'This ensures that `getDerivedStateFromProps` arguments have a consistent shape.',
-    );
+        'This ensures that `getDerivedStateFromProps` arguments have a consistent shape.\n' +
+        '    in Component (at **)',
+    ]);
 
     // De-duped
     ReactDOMServer.renderToString(<Component />);
@@ -227,9 +243,16 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toWarnDev(
-      'componentWillMount has been renamed',
-    );
+    ReactDOMServer.renderToString(<Component />);
+    assertConsoleWarnDev([
+      'componentWillMount has been renamed, and is not recommended for use. ' +
+        'See https://react.dev/link/unsafe-component-lifecycles for details.\n' +
+        '\n' +
+        '* Move code from componentWillMount to componentDidMount (preferred in most cases) or the constructor.\n' +
+        '\n' +
+        'Please update the following components: Component\n' +
+        '    in Component (at **)',
+    ]);
     expect(log).toEqual(['componentWillMount', 'UNSAFE_componentWillMount']);
   });
 
@@ -254,17 +277,17 @@ describe('ReactDOMServerLifecycles', () => {
         return <div>{this.props.children + '-' + this.state.x}</div>;
       }
     }
-    expect(() => {
-      // Shouldn't be 1-3.
-      expect(ReactDOMServer.renderToStaticMarkup(<Outer />)).toBe(
-        '<div>1-2</div>',
-      );
-    }).toErrorDev(
-      'Warning: setState(...): Can only update a mounting component. This ' +
+    // Shouldn't be 1-3.
+    expect(ReactDOMServer.renderToStaticMarkup(<Outer />)).toBe(
+      '<div>1-2</div>',
+    );
+    assertConsoleErrorDev([
+      'Can only update a mounting component. This ' +
         'usually means you called setState() outside componentWillMount() on ' +
         'the server. This is a no-op.\n\n' +
-        'Please check the code for the Outer component.',
-    );
+        'Please check the code for the Outer component.\n' +
+        '    in Outer (at **)',
+    ]);
   });
 
   it('should not invoke cWM if static gDSFP is present', () => {
@@ -281,9 +304,17 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<Component />)).toErrorDev(
-      'Unsafe legacy lifecycles will not be called for components using new component APIs.',
-    );
+    ReactDOMServer.renderToString(<Component />);
+    assertConsoleErrorDev([
+      'Unsafe legacy lifecycles will not be called for components using new component APIs.\n' +
+        '\n' +
+        'Component uses getDerivedStateFromProps() but also contains the following legacy lifecycles:\n' +
+        '  componentWillMount\n' +
+        '\n' +
+        'The above lifecycles should be removed. Learn more about this warning here:\n' +
+        'https://react.dev/link/unsafe-component-lifecycles\n' +
+        '    in Component (at **)',
+    ]);
   });
 
   it('should warn about deprecated lifecycle hooks', () => {
@@ -294,11 +325,16 @@ describe('ReactDOMServerLifecycles', () => {
       }
     }
 
-    expect(() => ReactDOMServer.renderToString(<MyComponent />)).toWarnDev(
-      'componentWillMount has been renamed, and is not recommended for use. See https://reactjs.org/link/unsafe-component-lifecycles for details.\n\n' +
-        '* Move code from componentWillMount to componentDidMount (preferred in most cases) or the constructor.\n\n' +
-        'Please update the following components: MyComponent',
-    );
+    ReactDOMServer.renderToString(<MyComponent />);
+    assertConsoleWarnDev([
+      'componentWillMount has been renamed, and is not recommended for use. ' +
+        'See https://react.dev/link/unsafe-component-lifecycles for details.\n' +
+        '\n' +
+        '* Move code from componentWillMount to componentDidMount (preferred in most cases) or the constructor.\n' +
+        '\n' +
+        'Please update the following components: MyComponent\n' +
+        '    in MyComponent (at **)',
+    ]);
 
     // De-duped
     ReactDOMServer.renderToString(<MyComponent />);

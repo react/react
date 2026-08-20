@@ -9,18 +9,17 @@
 
 import type Store from 'react-devtools-shared/src/devtools/store';
 
+import {getVersionedRenderImplementation} from './utils';
+
 describe('profiling charts', () => {
   let React;
   let Scheduler;
-  let legacyRender;
   let store: Store;
   let utils;
 
   beforeEach(() => {
     utils = require('./utils');
     utils.beforeEachProfiling();
-
-    legacyRender = utils.legacyRender;
 
     store = global.store;
     store.collapseNodesByDefault = false;
@@ -29,6 +28,8 @@ describe('profiling charts', () => {
     React = require('react');
     Scheduler = require('scheduler');
   });
+
+  const {render} = getVersionedRenderImplementation();
 
   function getFlamegraphChartData(rootID, commitIndex) {
     const commitTree = store.profilerStore.profilingCache.getCommitTree({
@@ -78,11 +79,9 @@ describe('profiling charts', () => {
         return null;
       });
 
-      const container = document.createElement('div');
-
       utils.act(() => store.profilerStore.startProfiling());
 
-      utils.act(() => legacyRender(<Parent />, container));
+      utils.act(() => render(<Parent />));
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <Parent>
@@ -91,7 +90,7 @@ describe('profiling charts', () => {
               <Child key="third"> [Memo]
       `);
 
-      utils.act(() => legacyRender(<Parent />, container));
+      utils.act(() => render(<Parent />));
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <Parent>
@@ -107,9 +106,9 @@ describe('profiling charts', () => {
       const firstCommitData = getFlamegraphChartData(rootID, 0);
       expect(firstCommitData.commitTree.nodes.size).toBe(5);
       expect(firstCommitData.chartData.rows).toMatchInlineSnapshot(`
-        Array [
-          Array [
-            Object {
+        [
+          [
+            {
               "actualDuration": 15,
               "didRender": true,
               "id": 2,
@@ -120,33 +119,33 @@ describe('profiling charts', () => {
               "treeBaseDuration": 15,
             },
           ],
-          Array [
-            Object {
+          [
+            {
               "actualDuration": 0,
               "didRender": true,
               "id": 5,
-              "label": "Memo(Child) key=\\"third\\" (<0.1ms of <0.1ms)",
-              "name": "Memo(Child)",
+              "label": "Child (Memo) key="third" (<0.1ms of <0.1ms)",
+              "name": "Child",
               "offset": 15,
               "selfDuration": 0,
               "treeBaseDuration": 0,
             },
-            Object {
+            {
               "actualDuration": 2,
               "didRender": true,
               "id": 4,
-              "label": "Memo(Child) key=\\"second\\" (2ms of 2ms)",
-              "name": "Memo(Child)",
+              "label": "Child (Memo) key="second" (2ms of 2ms)",
+              "name": "Child",
               "offset": 13,
               "selfDuration": 2,
               "treeBaseDuration": 2,
             },
-            Object {
+            {
               "actualDuration": 3,
               "didRender": true,
               "id": 3,
-              "label": "Memo(Child) key=\\"first\\" (3ms of 3ms)",
-              "name": "Memo(Child)",
+              "label": "Child (Memo) key="first" (3ms of 3ms)",
+              "name": "Child",
               "offset": 10,
               "selfDuration": 3,
               "treeBaseDuration": 3,
@@ -158,9 +157,9 @@ describe('profiling charts', () => {
       const secondCommitData = getFlamegraphChartData(rootID, 1);
       expect(secondCommitData.commitTree.nodes.size).toBe(5);
       expect(secondCommitData.chartData.rows).toMatchInlineSnapshot(`
-        Array [
-          Array [
-            Object {
+        [
+          [
+            {
               "actualDuration": 10,
               "didRender": true,
               "id": 2,
@@ -171,33 +170,33 @@ describe('profiling charts', () => {
               "treeBaseDuration": 15,
             },
           ],
-          Array [
-            Object {
+          [
+            {
               "actualDuration": 0,
               "didRender": false,
               "id": 5,
-              "label": "Memo(Child) key=\\"third\\"",
-              "name": "Memo(Child)",
+              "label": "Child (Memo) key="third"",
+              "name": "Child",
               "offset": 15,
               "selfDuration": 0,
               "treeBaseDuration": 0,
             },
-            Object {
+            {
               "actualDuration": 0,
               "didRender": false,
               "id": 4,
-              "label": "Memo(Child) key=\\"second\\"",
-              "name": "Memo(Child)",
+              "label": "Child (Memo) key="second"",
+              "name": "Child",
               "offset": 13,
               "selfDuration": 0,
               "treeBaseDuration": 2,
             },
-            Object {
+            {
               "actualDuration": 0,
               "didRender": false,
               "id": 3,
-              "label": "Memo(Child) key=\\"first\\"",
-              "name": "Memo(Child)",
+              "label": "Child (Memo) key="first"",
+              "name": "Child",
               "offset": 10,
               "selfDuration": 0,
               "treeBaseDuration": 3,
@@ -228,11 +227,9 @@ describe('profiling charts', () => {
         return null;
       });
 
-      const container = document.createElement('div');
-
       utils.act(() => store.profilerStore.startProfiling());
 
-      utils.act(() => legacyRender(<Parent />, container));
+      utils.act(() => render(<Parent />));
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <Parent>
@@ -241,7 +238,7 @@ describe('profiling charts', () => {
               <Child key="third"> [Memo]
       `);
 
-      utils.act(() => legacyRender(<Parent />, container));
+      utils.act(() => render(<Parent />));
       expect(store).toMatchInlineSnapshot(`
         [root]
           ▾ <Parent>
@@ -258,29 +255,29 @@ describe('profiling charts', () => {
       const firstCommitData = getRankedChartData(rootID, 0);
       expect(firstCommitData.commitTree.nodes.size).toBe(5);
       expect(firstCommitData.chartData.nodes).toMatchInlineSnapshot(`
-        Array [
-          Object {
+        [
+          {
             "id": 2,
             "label": "Parent (10ms)",
             "name": "Parent",
             "value": 10,
           },
-          Object {
+          {
             "id": 3,
-            "label": "Memo(Child) (Memo) key=\\"first\\" (3ms)",
-            "name": "Memo(Child)",
+            "label": "Child (Memo) key="first" (3ms)",
+            "name": "Child",
             "value": 3,
           },
-          Object {
+          {
             "id": 4,
-            "label": "Memo(Child) (Memo) key=\\"second\\" (2ms)",
-            "name": "Memo(Child)",
+            "label": "Child (Memo) key="second" (2ms)",
+            "name": "Child",
             "value": 2,
           },
-          Object {
+          {
             "id": 5,
-            "label": "Memo(Child) (Memo) key=\\"third\\" (<0.1ms)",
-            "name": "Memo(Child)",
+            "label": "Child (Memo) key="third" (<0.1ms)",
+            "name": "Child",
             "value": 0,
           },
         ]
@@ -290,8 +287,8 @@ describe('profiling charts', () => {
       const secondCommitData = getRankedChartData(rootID, 1);
       expect(secondCommitData.commitTree.nodes.size).toBe(5);
       expect(secondCommitData.chartData.nodes).toMatchInlineSnapshot(`
-        Array [
-          Object {
+        [
+          {
             "id": 2,
             "label": "Parent (10ms)",
             "name": "Parent",
@@ -299,6 +296,166 @@ describe('profiling charts', () => {
           },
         ]
       `);
+    });
+  });
+
+  describe('components behind filtered fibers should not report false re-renders', () => {
+    it('should not report a component as re-rendered when its filtered parent bailed out', () => {
+      let triggerUpdate;
+
+      function Count() {
+        const [count, setCount] = React.useState(0);
+        triggerUpdate = () => setCount(c => c + 1);
+        Scheduler.unstable_advanceTime(5);
+        return count;
+      }
+
+      function Greeting() {
+        Scheduler.unstable_advanceTime(3);
+        return 'Hello';
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Fragment>
+            <Count />
+            <div>
+              <Greeting />
+            </div>
+          </React.Fragment>
+        );
+      }
+
+      utils.act(() => store.profilerStore.startProfiling());
+      utils.act(() => render(<App />));
+
+      // Verify tree structure: div is filtered, so Greeting appears as child of App
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+              <Count>
+              <Greeting>
+      `);
+
+      // Trigger a state update in Count. Should not cause Greeting to re-render.
+      utils.act(() => triggerUpdate());
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const {chartData} = getFlamegraphChartData(rootID, 1);
+      const allNodes = chartData.rows.flat();
+
+      expect(allNodes).toEqual([
+        expect.objectContaining({name: 'App', didRender: false}),
+        expect.objectContaining({name: 'Greeting', didRender: false}),
+        expect.objectContaining({name: 'Count', didRender: true}),
+      ]);
+    });
+
+    it('should not report a component as re-rendered when behind a filtered fragment', () => {
+      let triggerUpdate;
+
+      function Count() {
+        const [count, setCount] = React.useState(0);
+        triggerUpdate = () => setCount(c => c + 1);
+        Scheduler.unstable_advanceTime(5);
+        return count;
+      }
+
+      function Greeting() {
+        Scheduler.unstable_advanceTime(3);
+        return 'Hello';
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Fragment>
+            <Count />
+            <React.Fragment>
+              <Greeting />
+            </React.Fragment>
+          </React.Fragment>
+        );
+      }
+
+      utils.act(() => store.profilerStore.startProfiling());
+      utils.act(() => render(<App />));
+
+      // Fragment with null key is filtered, so Greeting appears as child of App
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+              <Count>
+              <Greeting>
+      `);
+
+      // Trigger a state update in Count
+      utils.act(() => triggerUpdate());
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const {chartData} = getFlamegraphChartData(rootID, 1);
+      const allNodes = chartData.rows.flat();
+
+      expect(allNodes).toEqual([
+        expect.objectContaining({name: 'App', didRender: false}),
+        expect.objectContaining({name: 'Greeting', didRender: false}),
+        expect.objectContaining({name: 'Count', didRender: true}),
+      ]);
+    });
+
+    it('should correctly report sibling components that did not re-render', () => {
+      let triggerUpdate;
+
+      function Count() {
+        const [count, setCount] = React.useState(0);
+        triggerUpdate = () => setCount(c => c + 1);
+        Scheduler.unstable_advanceTime(5);
+        return count;
+      }
+
+      function Greeting() {
+        Scheduler.unstable_advanceTime(3);
+        return 'Hello';
+      }
+
+      function App() {
+        Scheduler.unstable_advanceTime(1);
+        return (
+          <React.Fragment>
+            <Count />
+            <Greeting />
+          </React.Fragment>
+        );
+      }
+
+      utils.act(() => store.profilerStore.startProfiling());
+      utils.act(() => render(<App />));
+
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+              <Count>
+              <Greeting>
+      `);
+
+      utils.act(() => triggerUpdate());
+
+      utils.act(() => store.profilerStore.stopProfiling());
+
+      const rootID = store.roots[0];
+      const {chartData} = getFlamegraphChartData(rootID, 1);
+      const allNodes = chartData.rows.flat();
+
+      expect(allNodes).toEqual([
+        expect.objectContaining({name: 'App', didRender: false}),
+        expect.objectContaining({name: 'Greeting', didRender: false}),
+        expect.objectContaining({name: 'Count', didRender: true}),
+      ]);
     });
   });
 });

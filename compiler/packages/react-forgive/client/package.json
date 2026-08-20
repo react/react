@@ -1,0 +1,22 @@
+{
+  "private": "true",
+  "name": "react-forgive-client",
+  "version": "0.0.0",
+  "description": "Experimental LSP client",
+  "license": "MIT",
+  "scripts": {
+    "build": "echo 'no build'",
+    "test": "echo 'no tests'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/react-forgive"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.95.0"
+  }
+}

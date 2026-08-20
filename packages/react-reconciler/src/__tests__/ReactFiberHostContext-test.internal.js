@@ -15,17 +15,20 @@ let act;
 let ReactFiberReconciler;
 let ConcurrentRoot;
 let DefaultEventPriority;
+let NoEventPriority;
 
 describe('ReactFiberHostContext', () => {
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
-    act = React.unstable_act;
+    act = React.act;
     ReactFiberReconciler = require('react-reconciler');
-    ConcurrentRoot = require('react-reconciler/src/ReactRootTags')
-      .ConcurrentRoot;
-    DefaultEventPriority = require('react-reconciler/src/ReactEventPriorities')
-      .DefaultEventPriority;
+    ConcurrentRoot =
+      require('react-reconciler/src/ReactRootTags').ConcurrentRoot;
+    DefaultEventPriority =
+      require('react-reconciler/src/ReactEventPriorities').DefaultEventPriority;
+    NoEventPriority =
+      require('react-reconciler/src/ReactEventPriorities').NoEventPriority;
   });
 
   global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -34,45 +37,86 @@ describe('ReactFiberHostContext', () => {
   it('should send the context to prepareForCommit and resetAfterCommit', () => {
     const rootContext = {};
     const childContext = {};
+    let updatePriority: typeof DefaultEventPriority = NoEventPriority;
     const Renderer = ReactFiberReconciler({
-      prepareForCommit: function(hostContext) {
+      prepareForCommit: function (hostContext) {
         expect(hostContext).toBe(rootContext);
         return null;
       },
-      resetAfterCommit: function(hostContext) {
+      resetAfterCommit: function (hostContext) {
         expect(hostContext).toBe(rootContext);
       },
-      getRootHostContext: function() {
+      getRootHostContext: function () {
         return rootContext;
       },
-      getChildHostContext: function() {
+      getChildHostContext: function () {
         return childContext;
       },
-      shouldSetTextContent: function() {
+      shouldSetTextContent: function () {
         return false;
       },
-      createInstance: function() {
+      createInstance: function () {
         return null;
       },
-      finalizeInitialChildren: function() {
+      finalizeInitialChildren: function () {
         return null;
       },
-      appendInitialChild: function() {
+      appendInitialChild: function () {
         return null;
       },
-      now: function() {
+      now: function () {
         return 0;
       },
-      appendChildToContainer: function() {
+      appendChildToContainer: function () {
         return null;
       },
-      clearContainer: function() {},
-      getCurrentEventPriority: function() {
+      clearContainer: function () {},
+      setCurrentUpdatePriority: function (newPriority: any) {
+        updatePriority = newPriority;
+      },
+      getCurrentUpdatePriority: function () {
+        return updatePriority;
+      },
+      resolveUpdatePriority: function () {
+        if (updatePriority !== NoEventPriority) {
+          return updatePriority;
+        }
         return DefaultEventPriority;
       },
-      requestPostPaintCallback: function() {},
-      prepareRendererToRender: function() {},
-      resetRendererAfterRender: function() {},
+      trackSchedulerEvent: function () {},
+      resolveEventType: function () {
+        return null;
+      },
+      resolveEventTimeStamp: function () {
+        return -1.1;
+      },
+      shouldAttemptEagerTransition() {
+        return false;
+      },
+      requestPostPaintCallback: function () {},
+      maySuspendCommit(type, props) {
+        return false;
+      },
+      maySuspendCommitOnUpdate(type, oldProps, newProps) {
+        return false;
+      },
+      maySuspendCommitInSyncRender(type, props) {
+        return false;
+      },
+      preloadInstance(instance, type, props) {
+        return true;
+      },
+      startSuspendingCommit() {
+        return null;
+      },
+      suspendInstance(state, instance, type, props) {},
+      suspendOnActiveViewTransition(state, container) {},
+      waitForCommitToBeReady(state, timeoutOffset) {
+        return null;
+      },
+      getSuspendedCommitReason(state, rootContainer) {
+        return null;
+      },
       supportsMutation: true,
     });
 
@@ -81,7 +125,11 @@ describe('ReactFiberHostContext', () => {
       ConcurrentRoot,
       null,
       false,
+      null,
       '',
+      () => {},
+      () => {},
+      () => {},
       null,
     );
     act(() => {

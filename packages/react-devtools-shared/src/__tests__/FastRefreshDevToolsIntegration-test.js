@@ -7,25 +7,22 @@
  * @flow
  */
 
+import {getVersionedRenderImplementation} from './utils';
+
 describe('Fast Refresh', () => {
   let React;
   let ReactFreshRuntime;
   let act;
   let babel;
-  let container;
   let exportsObj;
   let freshPlugin;
-  let legacyRender;
   let store;
   let withErrorsOrWarningsIgnored;
 
-  afterEach(() => {
-    jest.resetModules();
-  });
-
   beforeEach(() => {
+    global.IS_REACT_ACT_ENVIRONMENT = true;
+
     exportsObj = undefined;
-    container = document.createElement('div');
 
     babel = require('@babel/core');
     freshPlugin = require('react-refresh/babel');
@@ -39,9 +36,11 @@ describe('Fast Refresh', () => {
 
     const utils = require('./utils');
     act = utils.act;
-    legacyRender = utils.legacyRender;
     withErrorsOrWarningsIgnored = utils.withErrorsOrWarningsIgnored;
   });
+
+  const {render: renderImplementation, getContainer} =
+    getVersionedRenderImplementation();
 
   function execute(source) {
     const compiled = babel.transform(source, {
@@ -73,7 +72,7 @@ describe('Fast Refresh', () => {
   function render(source) {
     const Component = execute(source);
     act(() => {
-      legacyRender(<Component />, container);
+      renderImplementation(<Component />);
     });
     // Module initialization shouldn't be counted as a hot update.
     expect(ReactFreshRuntime.performReactRefresh()).toBe(null);
@@ -98,7 +97,7 @@ describe('Fast Refresh', () => {
       // Here, we'll just force a re-render using the newer type to emulate this.
       const NextComponent = nextExports.default;
       act(() => {
-        legacyRender(<NextComponent />, container);
+        renderImplementation(<NextComponent />);
       });
     }
     act(() => {
@@ -142,8 +141,8 @@ describe('Fast Refresh', () => {
             <Child key="A">
     `);
 
-    let element = container.firstChild;
-    expect(container.firstChild).not.toBe(null);
+    let element = getContainer().firstChild;
+    expect(getContainer().firstChild).not.toBe(null);
 
     patch(`
       function Parent() {
@@ -163,8 +162,8 @@ describe('Fast Refresh', () => {
     `);
 
     // State is preserved; this verifies that Fast Refresh is wired up.
-    expect(container.firstChild).toBe(element);
-    element = container.firstChild;
+    expect(getContainer().firstChild).toBe(element);
+    element = getContainer().firstChild;
 
     patch(`
       function Parent() {
@@ -184,11 +183,86 @@ describe('Fast Refresh', () => {
     `);
 
     // State is reset because hooks changed.
-    expect(container.firstChild).not.toBe(element);
+    expect(getContainer().firstChild).not.toBe(element);
   });
 
+  // @reactVersion < 18.0
   // @reactVersion >= 16.9
-  it('should not break when there are warnings in between patching', () => {
+  it('should not break when there are warnings in between patching (before post commit hook)', () => {
+    withErrorsOrWarningsIgnored(['Expected:'], () => {
+      render(`
+      const {useState} = React;
+
+      export default function Component() {
+        const [state, setState] = useState(1);
+        console.warn("Expected: warning during render");
+        return null;
+      }
+    `);
+    });
+    expect(store).toMatchInlineSnapshot(`
+      ✕ 0, ⚠ 1
+      [root]
+          <Component> ⚠
+    `);
+
+    withErrorsOrWarningsIgnored(['Expected:'], () => {
+      patch(`
+      const {useEffect, useState} = React;
+
+      export default function Component() {
+        const [state, setState] = useState(1);
+        console.warn("Expected: warning during render");
+        return null;
+      }
+    `);
+    });
+    expect(store).toMatchInlineSnapshot(`
+      ✕ 0, ⚠ 2
+      [root]
+          <Component> ⚠
+    `);
+
+    withErrorsOrWarningsIgnored(['Expected:'], () => {
+      patch(`
+      const {useEffect, useState} = React;
+
+      export default function Component() {
+        const [state, setState] = useState(1);
+        useEffect(() => {
+          console.error("Expected: error during effect");
+        });
+        console.warn("Expected: warning during render");
+        return null;
+      }
+    `);
+    });
+    expect(store).toMatchInlineSnapshot(`
+      ✕ 0, ⚠ 1
+      [root]
+          <Component> ⚠
+    `);
+
+    withErrorsOrWarningsIgnored(['Expected:'], () => {
+      patch(`
+      const {useEffect, useState} = React;
+
+      export default function Component() {
+        const [state, setState] = useState(1);
+        console.warn("Expected: warning during render");
+        return null;
+      }
+    `);
+    });
+    expect(store).toMatchInlineSnapshot(`
+      ✕ 0, ⚠ 1
+      [root]
+          <Component> ⚠
+    `);
+  });
+
+  // @reactVersion >= 18.0
+  it('should not break when there are warnings in between patching (with post commit hook)', () => {
     withErrorsOrWarningsIgnored(['Expected:'], () => {
       render(`
       const {useState} = React;

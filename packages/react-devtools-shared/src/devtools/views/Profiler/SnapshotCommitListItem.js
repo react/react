@@ -96,7 +96,6 @@ function SnapshotCommitListItem({data: itemData, index, style}: Props) {
   );
 }
 
-export default (memo(
-  SnapshotCommitListItem,
-  areEqual,
-): React.ComponentType<Props>);
+export default memo(SnapshotCommitListItem, areEqual) as component(
+  ...props: Props
+);

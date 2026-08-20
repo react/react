@@ -9,7 +9,7 @@
 
 import * as React from 'react';
 import {isInternalFacebookBuild} from 'react-devtools-feature-flags';
-import {REACT_DEVTOOLS_WORKPLACE_URL} from 'react-devtools-shared/src/constants';
+import {REACT_DEVTOOLS_WORKPLACE_URL} from 'react-devtools-shared/src/devtools/constants';
 import Icon from '../Icon';
 import styles from './shared.css';
 
@@ -25,8 +25,7 @@ export default function WorkplaceGroup(): React.Node {
         className={styles.ReportLink}
         href={REACT_DEVTOOLS_WORKPLACE_URL}
         rel="noopener noreferrer"
-        target="_blank"
-        title="Report bug">
+        target="_blank">
         Report this on Workplace
       </a>
       <div className={styles.FacebookOnly}>(Facebook employees only.)</div>

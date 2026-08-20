@@ -11,16 +11,16 @@
     "classnames": "^2.2.5",
     "codemirror": "^5.40.0",
     "core-js": "^2.4.1",
-    "jest-diff": "^25.1.0",
+    "jest-diff": "^29.4.1",
     "prop-types": "^15.6.0",
     "query-string": "^4.2.3",
-    "react": "^15.4.1",
-    "react-dom": "^15.4.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "semver": "^5.5.0"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "prestart": "cp ../../build/oss-stable/scheduler/umd/scheduler-unstable_mock.development.js ../../build/oss-stable/scheduler/umd/scheduler-unstable_mock.production.min.js ../../build/oss-stable/react/umd/react.development.js ../../build/oss-stable/react-dom/umd/react-dom.development.js ../../build/oss-stable/react/umd/react.production.min.js ../../build/oss-stable/react-dom/umd/react-dom.production.min.js ../../build/oss-stable/react-dom/umd/react-dom-server.browser.development.js ../../build/oss-stable/react-dom/umd/react-dom-server.browser.production.min.js ../../build/oss-stable/react-dom/umd/react-dom-test-utils.development.js ../../build/oss-stable/react-dom/umd/react-dom-test-utils.production.min.js public/ && cp -a ../../build/oss-stable/. node_modules",
+    "dev": "react-scripts start",
+    "predev": "cp -a ../../build/oss-experimental/. node_modules",
     "build": "react-scripts build && cp build/index.html build/200.html",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject"

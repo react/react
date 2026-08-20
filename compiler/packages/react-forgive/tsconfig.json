@@ -1,0 +1,16 @@
+{
+  "extends": "@tsconfig/strictest/tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "rootDir": "../",
+    "noEmit": true,
+    "jsx": "react-jsxdev",
+    "lib": ["ES2022"],
+
+    "target": "ES2022",
+    "importsNotUsedAsValues": "remove",
+  },
+  "exclude": ["node_modules"],
+  "include": ["server/src/**/*.ts", "client/src/**/*.ts"],
+}

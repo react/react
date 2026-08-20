@@ -14,7 +14,7 @@ const app = express();
 
 // Application
 if (process.env.NODE_ENV === 'development') {
-  app.get('/', function(req, res) {
+  app.get('/', function (req, res) {
     // In development mode we clear the module cache between each request to
     // get automatic hot reloading.
     for (var key in require.cache) {
@@ -25,7 +25,7 @@ if (process.env.NODE_ENV === 'development') {
   });
 } else {
   const render = require('./render').default;
-  app.get('/', function(req, res) {
+  app.get('/', function (req, res) {
     render(req.url, res);
   });
 }
@@ -48,7 +48,7 @@ app.listen(3000, () => {
   console.log('Listening on port 3000...');
 });
 
-app.on('error', function(error) {
+app.on('error', function (error) {
   if (error.syscall !== 'listen') {
     throw error;
   }

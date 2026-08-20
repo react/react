@@ -51,15 +51,15 @@ const HostConfig = {
 * **[Building a simple custom renderer to DOM](https://medium.com/@agent_hunt/hello-world-custom-react-renderer-9a95b7cd04bc)**
 * **[Building a simple custom renderer to native](https://medium.com/@agent_hunt/introduction-to-react-native-renderers-aka-react-native-is-the-java-and-react-native-renderers-are-828a0022f433)**
 
-The full list of supported methods [can be found here](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberHostConfig.custom.js). For their signatures, we recommend looking at specific examples below.
+The full list of supported methods [can be found here](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). For their signatures, we recommend looking at specific examples below.
 
 The React repository includes several renderers. Each of them has its own host config.
 
 The examples in the React repository are declared a bit differently than a third-party renderer would be. In particular, the `HostConfig` object mentioned above is never explicitly declared, and instead is a *module* in our code. However, its exports correspond directly to properties on a `HostConfig` object you'd need to declare in your code:
 
-* [React ART](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactART.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactARTHostConfig.js)
-* [React DOM](https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOM.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOMHostConfig.js)
-* [React Native](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactNativeRenderer.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactNativeHostConfig.js)
+* [React ART](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactART.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-art/src/ReactFiberConfigART.js)
+* [React DOM](https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOM.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js)
+* [React Native](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFabric.js) and its [host config](https://github.com/facebook/react/blob/main/packages/react-native-renderer/src/ReactFiberConfigFabric.js)
 
 If these links break please file an issue and we’ll fix them. They intentionally link to the latest versions since the API is still evolving. If you have more questions please file an issue and we’ll try to help!
 
@@ -81,7 +81,7 @@ const HostConfig = {
 }
 ```
 
-If your target platform has immutable trees, you'll want the **persistent mode** instead. In that mode, existing nodes are never mutated, and instead every change clones the parent tree and then replaces the whole parent tree at the root. This is the node used by the new React Native renderer, codenamed "Fabric".
+If your target platform has immutable trees, you'll want the **persistent mode** instead. In that mode, existing nodes are never mutated, and instead every change clones the parent tree and then replaces the whole parent tree at the root. This is the mode used by the new React Native renderer, codenamed "Fabric".
 
 ```js
 const HostConfig = {
@@ -128,14 +128,6 @@ This method happens **in the render phase**. It can mutate `instance`, but it mu
 There is a second purpose to this method. It lets you specify whether there is some work that needs to happen when the node is connected to the tree on the screen. If you return `true`, the instance will receive a `commitMount` call later. See its documentation below.
 
 If you don't want to do anything here, you should return `false`.
-
-#### `prepareUpdate(instance, type, oldProps, newProps, rootContainer, hostContext)`
-
-React calls this method so that you can compare the previous and the next props, and decide whether you need to update the underlying instance or not. If you don't need to update it, return `null`. If you need to update it, you can return an arbitrary object representing the changes that need to happen. Then in `commitUpdate` you would need to apply those changes to the instance.
-
-This method happens **in the render phase**. It should only *calculate* the update — but not apply it! For example, the DOM renderer returns an array that looks like `[prop1, value1, prop2, value2, ...]` for all props that have actually changed. And only in `commitUpdate` it applies those changes. You should calculate as much as you can in `prepareUpdate` so that `commitUpdate` can be very fast and straightforward.
-
-See the meaning of `rootContainer` and `hostContext` in the `createInstance` documentation.
 
 #### `shouldSetTextContent(type, props)`
 
@@ -240,7 +232,7 @@ The constant you return depends on which event, if any, is being handled right n
 
 * **Other events / No active event:** In all other cases, return `DefaultEventPriority`. This tells React that this event is considered background work, and interactive events will be prioritized over it.
 
-You can consult the `getCurrentEventPriority()` implementation in `ReactDOMHostConfig.js` for a reference implementation.
+You can consult the `getCurrentEventPriority()` implementation in `ReactFiberConfigDOM.js` for a reference implementation.
 
 ### Mutation Methods
 
@@ -300,9 +292,9 @@ The `internalHandle` data structure is meant to be opaque. If you bend the rules
 
 If you never return `true` from `finalizeInitialChildren`, you can leave it empty.
 
-#### `commitUpdate(instance, updatePayload, type, prevProps, nextProps, internalHandle)`
+#### `commitUpdate(instance, type, prevProps, nextProps, internalHandle)`
 
-This method should mutate the `instance` according to the set of changes in `updatePayload`. Here, `updatePayload` is the object that you've returned from `prepareUpdate` and has an arbitrary structure that makes sense for your renderer. For example, the DOM renderer returns an update payload like `[prop1, value1, prop2, value2, ...]` from `prepareUpdate`, and that structure gets passed into `commitUpdate`. Ideally, all the diffing and calculation should happen inside `prepareUpdate` so that `commitUpdate` can be fast and straightforward.
+This method should mutate the `instance` to match `nextProps`.
 
 The `internalHandle` data structure is meant to be opaque. If you bend the rules and rely on its internal fields, be aware that it may change significantly between versions. You're taking on additional maintenance risk by reading from it, and giving up all guarantees if you write something to it.
 
@@ -326,12 +318,36 @@ Same as `unhideInstance`, but for nodes created by `createTextInstance`.
 
 This method should mutate the `container` root node and remove all children from it.
 
+#### `maySuspendCommit(type, props)`
+
+This method is called during render to determine if the Host Component type and props require some kind of loading process to complete before committing an update.
+
+#### `preloadInstance(type, props)`
+
+This method may be called during render if the Host Component type and props might suspend a commit. It can be used to initiate any work that might shorten the duration of a suspended commit.
+
+#### `startSuspendingCommit()`
+
+This method is called just before the commit phase. Use it to set up any necessary state while any Host Components that might suspend this commit are evaluated to determine if the commit must be suspended.
+
+#### `suspendInstance(type, props)`
+
+This method is called after `startSuspendingCommit` for each Host Component that indicated it might suspend a commit.
+
+#### `waitForCommitToBeReady()`
+
+This method is called after all `suspendInstance` calls are complete.
+
+Return `null` if the commit can happen immediately.
+
+Return `(initiateCommit: Function) => Function` if the commit must be suspended. The argument to this callback will initiate the commit when called. The return value is a cancellation function that the Reconciler can use to abort the commit.
+
 ### Persistence Methods
 
-If you use the persistent mode instead of the mutation mode, you would still need the "Core Methods". However, instead of the Mutation Methods above you will implement a different set of methods that performs cloning nodes and replacing them at the root level. You can find a list of them in the "Persistence" section [listed in this file](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberHostConfig.custom.js). File an issue if you need help.
+If you use the persistent mode instead of the mutation mode, you would still need the "Core Methods". However, instead of the Mutation Methods above you will implement a different set of methods that performs cloning nodes and replacing them at the root level. You can find a list of them in the "Persistence" section [listed in this file](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). File an issue if you need help.
 
 ### Hydration Methods
 
 You can optionally implement hydration to "attach" to the existing tree during the initial render instead of creating it from scratch. For example, the DOM renderer uses this to attach to an HTML markup.
 
-To support hydration, you need to declare `supportsHydration: true` and then implement the methods in the "Hydration" section [listed in this file](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberHostConfig.custom.js). File an issue if you need help.
+To support hydration, you need to declare `supportsHydration: true` and then implement the methods in the "Hydration" section [listed in this file](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js). File an issue if you need help.

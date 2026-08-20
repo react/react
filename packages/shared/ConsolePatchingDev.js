@@ -42,7 +42,7 @@ export function disableLogs(): void {
         value: disabledLog,
         writable: true,
       };
-      // $FlowFixMe Flow thinks console is immutable.
+      // $FlowFixMe[cannot-write] Flow thinks console is immutable.
       Object.defineProperties(console, {
         info: props,
         log: props,
@@ -52,7 +52,6 @@ export function disableLogs(): void {
         groupCollapsed: props,
         groupEnd: props,
       });
-      /* eslint-enable react-internal/no-production-logging */
     }
     disabledDepth++;
   }
@@ -62,13 +61,12 @@ export function reenableLogs(): void {
   if (__DEV__) {
     disabledDepth--;
     if (disabledDepth === 0) {
-      /* eslint-disable react-internal/no-production-logging */
       const props = {
         configurable: true,
         enumerable: true,
         writable: true,
       };
-      // $FlowFixMe Flow thinks console is immutable.
+      // $FlowFixMe[cannot-write] Flow thinks console is immutable.
       Object.defineProperties(console, {
         log: {...props, value: prevLog},
         info: {...props, value: prevInfo},
@@ -78,7 +76,6 @@ export function reenableLogs(): void {
         groupCollapsed: {...props, value: prevGroupCollapsed},
         groupEnd: {...props, value: prevGroupEnd},
       });
-      /* eslint-enable react-internal/no-production-logging */
     }
     if (disabledDepth < 0) {
       console.error(

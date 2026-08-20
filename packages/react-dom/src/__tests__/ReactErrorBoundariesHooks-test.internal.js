@@ -10,16 +10,18 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
 
 describe('ReactErrorBoundariesHooks', () => {
   beforeEach(() => {
     jest.resetModules();
-    ReactDOM = require('react-dom');
     React = require('react');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
   });
 
-  it('should preserve hook order if errors are caught', () => {
+  it('should preserve hook order if errors are caught', async () => {
     function ErrorThrower() {
       React.useMemo(() => undefined, []);
       throw new Error('expected');
@@ -57,10 +59,15 @@ describe('ReactErrorBoundariesHooks', () => {
     }
 
     const container = document.createElement('div');
-    ReactDOM.render(<App />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<App />);
+    });
 
-    expect(() => {
-      ReactDOM.render(<App />, container);
-    }).not.toThrow();
+    await expect(
+      act(() => {
+        root.render(<App />);
+      }),
+    ).resolves.not.toThrow();
   });
 });

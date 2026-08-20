@@ -7,37 +7,48 @@
  * @flow
  */
 
+import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
+
 import * as React from 'react';
 import {useCallback, useContext, useSyncExternalStore} from 'react';
-import {TreeDispatcherContext, TreeStateContext} from './TreeContext';
+import {TreeStateContext} from './TreeContext';
 import {BridgeContext, StoreContext, OptionsContext} from '../context';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import Icon from '../Icon';
-import {ModalDialogContext} from '../ModalDialog';
-import ViewElementSourceContext from './ViewElementSourceContext';
 import Toggle from '../Toggle';
-import {ElementTypeSuspense} from 'react-devtools-shared/src/types';
-import CannotSuspendWarningMessage from './CannotSuspendWarningMessage';
+import {
+  ElementTypeSuspense,
+  ElementTypeRoot,
+} from 'react-devtools-shared/src/frontend/types';
 import InspectedElementView from './InspectedElementView';
 import {InspectedElementContext} from './InspectedElementContext';
-import {getOpenInEditorURL} from '../../../utils';
-import {LOCAL_STORAGE_OPEN_IN_EDITOR_URL} from '../../../constants';
+import {getAlwaysOpenInEditor} from '../../../utils';
+import {LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR} from '../../../constants';
+import FetchFileWithCachingContext from './FetchFileWithCachingContext';
+import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
+import OpenInEditorButton from './OpenInEditorButton';
+import InspectedElementViewSourceButton from './InspectedElementViewSourceButton';
+import useEditorURL from '../useEditorURL';
 
 import styles from './InspectedElement.css';
+import Tooltip from './reach-ui/tooltip';
 
-import type {InspectedElement} from './types';
-
-export type Props = {};
+export type Props = {
+  actionButtons?: React.Node,
+  /** fallback to show when no element is inspected */
+  fallbackEmpty: React.Node,
+};
 
 // TODO Make edits and deletes also use transition API!
 
-export default function InspectedElementWrapper(_: Props): React.Node {
+const noSourcePromise = Promise.resolve(null);
+
+export default function InspectedElementWrapper({
+  actionButtons,
+  fallbackEmpty,
+}: Props): React.Node {
   const {inspectedElementID} = useContext(TreeStateContext);
-  const dispatch = useContext(TreeDispatcherContext);
-  const {canViewElementSourceFunction, viewElementSourceFunction} = useContext(
-    ViewElementSourceContext,
-  );
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
   const {
@@ -46,14 +57,35 @@ export default function InspectedElementWrapper(_: Props): React.Node {
     hideLogAction,
     hideViewSourceAction,
   } = useContext(OptionsContext);
-  const {dispatch: modalDialogDispatch} = useContext(ModalDialogContext);
 
-  const {
-    hookNames,
-    inspectedElement,
-    parseHookNames,
-    toggleParseHookNames,
-  } = useContext(InspectedElementContext);
+  const {hookNames, inspectedElement, parseHookNames, toggleParseHookNames} =
+    useContext(InspectedElementContext);
+
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const source =
+    inspectedElement == null
+      ? null
+      : inspectedElement.source != null
+        ? inspectedElement.source
+        : inspectedElement.stack != null && inspectedElement.stack.length > 0
+          ? inspectedElement.stack[0]
+          : null;
+
+  const symbolicatedSourcePromise: Promise<SourceMappedLocation | null> =
+    React.useMemo(() => {
+      if (fetchFileWithCaching == null) return noSourcePromise;
+
+      if (source == null) return noSourcePromise;
+
+      const [, sourceURL, line, column] = source;
+      return symbolicateSourceWithCache(
+        fetchFileWithCaching,
+        sourceURL,
+        line,
+        column,
+      );
+    }, [source]);
 
   const element =
     inspectedElementID !== null
@@ -64,11 +96,11 @@ export default function InspectedElementWrapper(_: Props): React.Node {
     if (element !== null && inspectedElementID !== null) {
       const rendererID = store.getRendererIDForElement(inspectedElementID);
       if (rendererID !== null) {
-        bridge.send('highlightNativeElement', {
+        bridge.send('highlightHostInstance', {
           displayName: element.displayName,
           hideAfterTimeout: true,
           id: inspectedElementID,
-          openNativeElementsPanel: true,
+          openBuiltinElementsPanel: true,
           rendererID,
           scrollIntoView: true,
         });
@@ -88,33 +120,13 @@ export default function InspectedElementWrapper(_: Props): React.Node {
     }
   }, [bridge, inspectedElementID, store]);
 
-  const viewSource = useCallback(() => {
-    if (viewElementSourceFunction != null && inspectedElement !== null) {
-      viewElementSourceFunction(
-        inspectedElement.id,
-        ((inspectedElement: any): InspectedElement),
-      );
-    }
-  }, [inspectedElement, viewElementSourceFunction]);
-
-  // In some cases (e.g. FB internal usage) the standalone shell might not be able to view the source.
-  // To detect this case, we defer to an injected helper function (if present).
-  const canViewSource =
-    inspectedElement !== null &&
-    inspectedElement.canViewSource &&
-    viewElementSourceFunction !== null &&
-    (canViewElementSourceFunction === null ||
-      canViewElementSourceFunction(inspectedElement));
-
   const isErrored = inspectedElement != null && inspectedElement.isErrored;
-  const targetErrorBoundaryID =
-    inspectedElement != null ? inspectedElement.targetErrorBoundaryID : null;
 
   const isSuspended =
     element !== null &&
     element.type === ElementTypeSuspense &&
     inspectedElement != null &&
-    inspectedElement.state != null;
+    inspectedElement.isSuspended;
 
   const canToggleError =
     !hideToggleErrorAction &&
@@ -126,132 +138,98 @@ export default function InspectedElementWrapper(_: Props): React.Node {
     inspectedElement != null &&
     inspectedElement.canToggleSuspense;
 
-  const editorURL = useSyncExternalStore(
-    function subscribe(callback) {
-      window.addEventListener(LOCAL_STORAGE_OPEN_IN_EDITOR_URL, callback);
+  const alwaysOpenInEditor = useSyncExternalStore(
+    useCallback(function subscribe(callback) {
+      window.addEventListener(LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR, callback);
       return function unsubscribe() {
-        window.removeEventListener(LOCAL_STORAGE_OPEN_IN_EDITOR_URL, callback);
+        window.removeEventListener(
+          LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR,
+          callback,
+        );
       };
-    },
-    function getState() {
-      return getOpenInEditorURL();
-    },
+    }, []),
+    getAlwaysOpenInEditor,
   );
 
-  const canOpenInEditor =
-    editorURL && inspectedElement != null && inspectedElement.source != null;
+  const editorURL = useEditorURL();
 
   const toggleErrored = useCallback(() => {
-    if (inspectedElement == null || targetErrorBoundaryID == null) {
+    if (inspectedElement == null) {
       return;
     }
 
-    const rendererID = store.getRendererIDForElement(targetErrorBoundaryID);
+    const rendererID = store.getRendererIDForElement(inspectedElement.id);
     if (rendererID !== null) {
-      if (targetErrorBoundaryID !== inspectedElement.id) {
-        // Update tree selection so that if we cause a component to error,
-        // the nearest error boundary will become the newly selected thing.
-        dispatch({
-          type: 'SELECT_ELEMENT_BY_ID',
-          payload: targetErrorBoundaryID,
-        });
-      }
-
       // Toggle error.
+      // Because triggering an error will always delete the children, we'll
+      // automatically select the nearest still mounted instance which will be
+      // the error boundary.
       bridge.send('overrideError', {
-        id: targetErrorBoundaryID,
+        id: inspectedElement.id,
         rendererID,
         forceError: !isErrored,
       });
     }
-  }, [bridge, dispatch, isErrored, targetErrorBoundaryID]);
+  }, [bridge, store, isErrored, inspectedElement]);
 
   // TODO (suspense toggle) Would be nice to eventually use a two setState pattern here as well.
   const toggleSuspended = useCallback(() => {
-    let nearestSuspenseElement = null;
-    let currentElement = element;
-    while (currentElement !== null) {
-      if (currentElement.type === ElementTypeSuspense) {
-        nearestSuspenseElement = currentElement;
-        break;
-      } else if (currentElement.parentID > 0) {
-        currentElement = store.getElementByID(currentElement.parentID);
-      } else {
-        currentElement = null;
-      }
-    }
-
-    // If we didn't find a Suspense ancestor, we can't suspend.
-    // Instead we can show a warning to the user.
-    if (nearestSuspenseElement === null) {
-      modalDialogDispatch({
-        id: 'InspectedElement',
-        type: 'SHOW',
-        content: <CannotSuspendWarningMessage />,
-      });
-    } else {
-      const nearestSuspenseElementID = nearestSuspenseElement.id;
-
-      // If we're suspending from an arbitrary (non-Suspense) component, select the nearest Suspense element in the Tree.
-      // This way when the fallback UI is shown and the current element is hidden, something meaningful is selected.
-      if (nearestSuspenseElement !== element) {
-        dispatch({
-          type: 'SELECT_ELEMENT_BY_ID',
-          payload: nearestSuspenseElementID,
-        });
-      }
-
-      const rendererID = store.getRendererIDForElement(
-        nearestSuspenseElementID,
-      );
-
-      // Toggle suspended
-      if (rendererID !== null) {
-        bridge.send('overrideSuspense', {
-          id: nearestSuspenseElementID,
-          rendererID,
-          forceFallback: !isSuspended,
-        });
-      }
-    }
-  }, [bridge, dispatch, element, isSuspended, modalDialogDispatch, store]);
-
-  const onOpenInEditor = useCallback(() => {
-    const source = inspectedElement?.source;
-    if (source == null || editorURL == null) {
+    if (inspectedElement == null) {
       return;
     }
 
-    const url = new URL(editorURL);
-    url.href = url.href.replace('{path}', source.fileName);
-    url.href = url.href.replace('{line}', String(source.lineNumber));
-    window.open(url);
-  }, [inspectedElement, editorURL]);
+    const rendererID = store.getRendererIDForElement(inspectedElement.id);
+    if (rendererID !== null) {
+      // Toggle suspended
+      // Because suspending or unsuspending always delete the children or fallback,
+      // we'll automatically select the nearest still mounted instance which will be
+      // the Suspense boundary.
+      bridge.send('overrideSuspense', {
+        id: inspectedElement.id,
+        rendererID,
+        forceFallback: !isSuspended,
+      });
+    }
+  }, [bridge, store, isSuspended, inspectedElement]);
 
   if (element === null) {
     return (
       <div className={styles.InspectedElement}>
         <div className={styles.TitleRow} />
+        <div className={styles.NoInspectionFallback}>{fallbackEmpty}</div>
       </div>
     );
   }
 
   let strictModeBadge = null;
-  if (element.isStrictModeNonCompliant) {
+  if (element.isStrictModeNonCompliant && element.parentID !== 0) {
     strictModeBadge = (
-      <a
-        className={styles.StrictModeNonCompliant}
-        href="https://fb.me/devtools-strict-mode"
-        rel="noopener noreferrer"
-        target="_blank"
-        title="This component is not running in StrictMode. Click to learn more.">
-        <Icon type="strict-mode-non-compliant" />
-      </a>
+      <Tooltip label="This component is not running in StrictMode. Click to learn more.">
+        <a
+          className={styles.StrictModeNonCompliant}
+          href="https://react.dev/reference/react/StrictMode"
+          rel="noopener noreferrer"
+          target="_blank">
+          <Icon type="strict-mode-non-compliant" />
+        </a>
+      </Tooltip>
     );
   }
 
+  let fullName = element.displayName || '';
+  if (element.nameProp !== null) {
+    fullName += ' "' + element.nameProp + '"';
+  }
+  if (element.type === ElementTypeRoot) {
+    // The root only has "suspended by" and it represents the things that block
+    // Initial Paint.
+    fullName = 'Initial Paint';
+  }
+
   return (
-    <div className={styles.InspectedElement}>
+    <div
+      className={styles.InspectedElement}
+      key={inspectedElementID /* Force reset when selected Element changes */}>
       <div className={styles.TitleRow} data-testname="InspectedElement-Title">
         {strictModeBadge}
 
@@ -267,25 +245,28 @@ export default function InspectedElementWrapper(_: Props): React.Node {
         <div className={styles.SelectedComponentName}>
           <div
             className={
-              element.isStrictModeNonCompliant
-                ? styles.StrictModeNonCompliantComponent
-                : styles.Component
+              element.isStrictModeNonCompliant && element.parentID !== 0
+                ? `${styles.ComponentName} ${styles.StrictModeNonCompliantComponentName}`
+                : styles.ComponentName
             }
-            title={element.displayName}>
-            {element.displayName}
+            title={fullName}>
+            {fullName}
           </div>
         </div>
-        {canOpenInEditor && (
-          <Button
-            className={styles.IconButton}
-            onClick={onOpenInEditor}
-            title="Open in editor">
-            <ButtonIcon type="editor" />
-          </Button>
-        )}
+
+        {!alwaysOpenInEditor &&
+          !!editorURL &&
+          source != null &&
+          symbolicatedSourcePromise != null && (
+            <OpenInEditorButton
+              editorURL={editorURL}
+              source={source}
+              symbolicatedSourcePromise={symbolicatedSourcePromise}
+            />
+          )}
+
         {canToggleError && (
           <Toggle
-            className={styles.IconButton}
             isChecked={isErrored}
             onChange={toggleErrored}
             title={
@@ -296,22 +277,23 @@ export default function InspectedElementWrapper(_: Props): React.Node {
             <ButtonIcon type="error" />
           </Toggle>
         )}
-        {canToggleSuspense && (
+        {canToggleSuspense || isSuspended ? (
           <Toggle
-            className={styles.IconButton}
             isChecked={isSuspended}
+            isDisabled={!canToggleSuspense}
             onChange={toggleSuspended}
             title={
               isSuspended
-                ? 'Unsuspend the selected component'
+                ? canToggleSuspense
+                  ? 'Unsuspend the selected component'
+                  : 'This boundary is still suspended'
                 : 'Suspend the selected component'
             }>
             <ButtonIcon type="suspend" />
           </Toggle>
-        )}
-        {store.supportsNativeInspection && (
+        ) : null}
+        {store.supportsInspectMatchingDOMElement && (
           <Button
-            className={styles.IconButton}
             onClick={highlightElement}
             title="Inspect the matching DOM element">
             <ButtonIcon type="view-dom" />
@@ -319,20 +301,24 @@ export default function InspectedElementWrapper(_: Props): React.Node {
         )}
         {!hideLogAction && (
           <Button
-            className={styles.IconButton}
             onClick={logElement}
             title="Log this component data to the console">
             <ButtonIcon type="log-data" />
           </Button>
         )}
+
         {!hideViewSourceAction && (
-          <Button
-            className={styles.IconButton}
-            disabled={!canViewSource}
-            onClick={viewSource}
-            title="View source for this element">
-            <ButtonIcon type="view-source" />
-          </Button>
+          <InspectedElementViewSourceButton
+            source={source}
+            symbolicatedSourcePromise={symbolicatedSourcePromise}
+          />
+        )}
+
+        {actionButtons && (
+          <>
+            <div className={styles.VRule} />
+            {actionButtons}
+          </>
         )}
       </div>
 
@@ -342,14 +328,12 @@ export default function InspectedElementWrapper(_: Props): React.Node {
 
       {inspectedElement !== null && (
         <InspectedElementView
-          key={
-            inspectedElementID /* Force reset when selected Element changes */
-          }
           element={element}
           hookNames={hookNames}
           inspectedElement={inspectedElement}
           parseHookNames={parseHookNames}
           toggleParseHookNames={toggleParseHookNames}
+          symbolicatedSourcePromise={symbolicatedSourcePromise}
         />
       )}
     </div>

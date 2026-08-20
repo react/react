@@ -9,10 +9,9 @@
 
 import * as React from 'react';
 import {Fragment, useContext, useEffect, useState} from 'react';
-import {unstable_batchedUpdates as batchedUpdates} from 'react-dom';
 import {ModalDialogContext} from './ModalDialog';
 import {StoreContext} from './context';
-import {UNSUPPORTED_VERSION_URL} from 'react-devtools-shared/src/constants';
+import {UNSUPPORTED_VERSION_URL} from '../constants';
 
 import styles from './UnsupportedVersionDialog.css';
 
@@ -26,14 +25,12 @@ export default function UnsupportedVersionDialog(_: {}): null {
   useEffect(() => {
     if (state === 'dialog-not-shown') {
       const showDialog = () => {
-        batchedUpdates(() => {
-          setState('show-dialog');
-          dispatch({
-            canBeDismissed: true,
-            id: 'UnsupportedVersionDialog',
-            type: 'SHOW',
-            content: <DialogContent />,
-          });
+        setState('show-dialog');
+        dispatch({
+          canBeDismissed: true,
+          id: 'UnsupportedVersionDialog',
+          type: 'SHOW',
+          content: <DialogContent />,
         });
       };
 

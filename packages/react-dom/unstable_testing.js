@@ -7,16 +7,4 @@
  * @flow
  */
 
-export * from './index.js';
-export {
-  createComponentSelector,
-  createHasPseudoClassSelector,
-  createRoleSelector,
-  createTestNameSelector,
-  createTextSelector,
-  getFindAllNodesFailureDescription,
-  findAllNodes,
-  findBoundingRects,
-  focusWithin,
-  observeVisibleRects,
-} from 'react-reconciler/src/ReactFiberReconciler';
+export * from './client.js';

@@ -1,12 +1,6 @@
 const {resolve} = require('path');
-const {DefinePlugin} = require('webpack');
+const Webpack = require('webpack');
 const {
-  DARK_MODE_DIMMED_WARNING_COLOR,
-  DARK_MODE_DIMMED_ERROR_COLOR,
-  DARK_MODE_DIMMED_LOG_COLOR,
-  LIGHT_MODE_DIMMED_WARNING_COLOR,
-  LIGHT_MODE_DIMMED_ERROR_COLOR,
-  LIGHT_MODE_DIMMED_LOG_COLOR,
   GITHUB_URL,
   getVersionString,
 } = require('react-devtools-extensions/utils');
@@ -39,7 +33,7 @@ process.env.BABEL_CONFIG_ADDITIONAL_TARGETS = JSON.stringify({
 
 module.exports = {
   mode: __DEV__ ? 'development' : 'production',
-  devtool: __DEV__ ? 'cheap-module-eval-source-map' : 'source-map',
+  devtool: __DEV__ ? 'eval-cheap-module-source-map' : 'source-map',
   entry: {
     backend: './src/backend.js',
   },
@@ -50,6 +44,7 @@ module.exports = {
     // This name is important; standalone references it in order to connect.
     library: 'ReactDevToolsBackend',
     libraryTarget: 'umd',
+    umdNamedDefine: true,
   },
   resolve: {
     alias: {
@@ -62,24 +57,25 @@ module.exports = {
     },
   },
   node: {
-    fs: 'empty',
+    global: false,
   },
   plugins: [
-    new DefinePlugin({
+    new Webpack.ProvidePlugin({
+      process: 'process/browser',
+    }),
+    new Webpack.DefinePlugin({
       __DEV__,
       __EXPERIMENTAL__: true,
       __EXTENSION__: false,
       __PROFILE__: false,
       __TEST__: NODE_ENV === 'test',
+      __IS_FIREFOX__: false,
+      __IS_CHROME__: false,
+      __IS_EDGE__: false,
+      __IS_NATIVE__: true,
       'process.env.DEVTOOLS_PACKAGE': `"react-devtools-core"`,
       'process.env.DEVTOOLS_VERSION': `"${DEVTOOLS_VERSION}"`,
       'process.env.GITHUB_URL': `"${GITHUB_URL}"`,
-      'process.env.DARK_MODE_DIMMED_WARNING_COLOR': `"${DARK_MODE_DIMMED_WARNING_COLOR}"`,
-      'process.env.DARK_MODE_DIMMED_ERROR_COLOR': `"${DARK_MODE_DIMMED_ERROR_COLOR}"`,
-      'process.env.DARK_MODE_DIMMED_LOG_COLOR': `"${DARK_MODE_DIMMED_LOG_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_WARNING_COLOR': `"${LIGHT_MODE_DIMMED_WARNING_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_ERROR_COLOR': `"${LIGHT_MODE_DIMMED_ERROR_COLOR}"`,
-      'process.env.LIGHT_MODE_DIMMED_LOG_COLOR': `"${LIGHT_MODE_DIMMED_LOG_COLOR}"`,
     }),
   ],
   optimization: {

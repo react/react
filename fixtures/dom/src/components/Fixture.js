@@ -16,3 +16,7 @@ class Fixture extends React.Component {
 Fixture.propTypes = propTypes;
 
 export default Fixture;
+
+Fixture.Controls = function FixtureControls({children}) {
+  return <div className="test-fixture__controls">{children}</div>;
+};

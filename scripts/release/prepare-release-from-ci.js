@@ -5,7 +5,9 @@
 const {join} = require('path');
 const {addDefaultParamValue, handleError} = require('./utils');
 
-const downloadBuildArtifacts = require('./shared-commands/download-build-artifacts');
+const {
+  downloadBuildArtifacts,
+} = require('./shared-commands/download-build-artifacts');
 const parseParams = require('./shared-commands/parse-params');
 const printPrereleaseSummary = require('./shared-commands/print-prerelease-summary');
 const testPackagingFixture = require('./shared-commands/test-packaging-fixture');
@@ -17,7 +19,10 @@ const run = async () => {
     const params = await parseParams();
     params.cwd = join(__dirname, '..', '..');
 
-    await downloadBuildArtifacts(params);
+    await downloadBuildArtifacts({
+      commit: params.commit,
+      releaseChannel: params.releaseChannel ?? process.env.RELEASE_CHANNEL,
+    });
 
     if (!params.skipTests) {
       await testPackagingFixture(params);

@@ -10,17 +10,21 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
+let act;
 
 describe('BeforeInputEventPlugin', () => {
   let container;
 
-  function loadReactDOM(envSimulator) {
+  function loadReactDOMClientAndAct(envSimulator) {
     jest.resetModules();
     if (envSimulator) {
       envSimulator();
     }
-    return require('react-dom');
+    return {
+      ReactDOMClient: require('react-dom/client'),
+      act: require('internal-test-utils').act,
+    };
   }
 
   function simulateIE11() {
@@ -724,32 +728,36 @@ describe('BeforeInputEventPlugin', () => {
     },
   ];
 
-  const testInputComponent = (env, scenes) => {
+  const testInputComponent = async (env, scenes) => {
     let beforeInputEvent;
     let compositionStartEvent;
     let compositionUpdateEvent;
     let spyOnBeforeInput;
     let spyOnCompositionStart;
     let spyOnCompositionUpdate;
-    ReactDOM = loadReactDOM(env.emulator);
-    const node = ReactDOM.render(
-      <input
-        type="text"
-        onBeforeInput={e => {
-          spyOnBeforeInput();
-          beforeInputEvent = e;
-        }}
-        onCompositionStart={e => {
-          spyOnCompositionStart();
-          compositionStartEvent = e;
-        }}
-        onCompositionUpdate={e => {
-          spyOnCompositionUpdate();
-          compositionUpdateEvent = e;
-        }}
-      />,
-      container,
-    );
+    ({ReactDOMClient, act} = loadReactDOMClientAndAct(env.emulator));
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <input
+          type="text"
+          onBeforeInput={e => {
+            spyOnBeforeInput();
+            beforeInputEvent = e;
+          }}
+          onCompositionStart={e => {
+            spyOnCompositionStart();
+            compositionStartEvent = e;
+          }}
+          onCompositionUpdate={e => {
+            spyOnCompositionUpdate();
+            compositionUpdateEvent = e;
+          }}
+        />,
+      );
+    });
+
+    const node = container.firstChild;
 
     scenes.forEach((s, id) => {
       beforeInputEvent = null;
@@ -770,32 +778,37 @@ describe('BeforeInputEventPlugin', () => {
     });
   };
 
-  const testContentEditableComponent = (env, scenes) => {
+  const testContentEditableComponent = async (env, scenes) => {
     let beforeInputEvent;
     let compositionStartEvent;
     let compositionUpdateEvent;
     let spyOnBeforeInput;
     let spyOnCompositionStart;
     let spyOnCompositionUpdate;
-    ReactDOM = loadReactDOM(env.emulator);
-    const node = ReactDOM.render(
-      <div
-        contentEditable={true}
-        onBeforeInput={e => {
-          spyOnBeforeInput();
-          beforeInputEvent = e;
-        }}
-        onCompositionStart={e => {
-          spyOnCompositionStart();
-          compositionStartEvent = e;
-        }}
-        onCompositionUpdate={e => {
-          spyOnCompositionUpdate();
-          compositionUpdateEvent = e;
-        }}
-      />,
-      container,
-    );
+    ({ReactDOMClient, act} = loadReactDOMClientAndAct(env.emulator));
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(
+        <div
+          contentEditable={true}
+          onBeforeInput={e => {
+            spyOnBeforeInput();
+            beforeInputEvent = e;
+          }}
+          onCompositionStart={e => {
+            spyOnCompositionStart();
+            compositionStartEvent = e;
+          }}
+          onCompositionUpdate={e => {
+            spyOnCompositionUpdate();
+            compositionUpdateEvent = e;
+          }}
+        />,
+      );
+    });
+
+    const node = container.firstChild;
 
     scenes.forEach((s, id) => {
       beforeInputEvent = null;
@@ -816,33 +829,33 @@ describe('BeforeInputEventPlugin', () => {
     });
   };
 
-  it('should extract onBeforeInput when simulating in Webkit on input[type=text]', () => {
-    testInputComponent(environments[0], scenarios);
+  it('should extract onBeforeInput when simulating in Webkit on input[type=text]', async () => {
+    await testInputComponent(environments[0], scenarios);
   });
-  it('should extract onBeforeInput when simulating in Webkit on contenteditable', () => {
-    testContentEditableComponent(environments[0], scenarios);
-  });
-
-  it('should extract onBeforeInput when simulating in IE11 on input[type=text]', () => {
-    testInputComponent(environments[1], scenarios);
-  });
-  it('should extract onBeforeInput when simulating in IE11 on contenteditable', () => {
-    testContentEditableComponent(environments[1], scenarios);
+  it('should extract onBeforeInput when simulating in Webkit on contenteditable', async () => {
+    await testContentEditableComponent(environments[0], scenarios);
   });
 
-  it('should extract onBeforeInput when simulating in env with no CompositionEvent on input[type=text]', () => {
-    testInputComponent(environments[2], scenarios);
+  it('should extract onBeforeInput when simulating in IE11 on input[type=text]', async () => {
+    await testInputComponent(environments[1], scenarios);
+  });
+  it('should extract onBeforeInput when simulating in IE11 on contenteditable', async () => {
+    await testContentEditableComponent(environments[1], scenarios);
+  });
+
+  it('should extract onBeforeInput when simulating in env with no CompositionEvent on input[type=text]', async () => {
+    await testInputComponent(environments[2], scenarios);
   });
 
   // in an environment using composition fallback onBeforeInput will not work
   // as expected on a contenteditable as keydown and keyup events are translated
   // to keypress events
 
-  it('should extract onBeforeInput when simulating in env with only CompositionEvent on input[type=text]', () => {
-    testInputComponent(environments[3], scenarios);
+  it('should extract onBeforeInput when simulating in env with only CompositionEvent on input[type=text]', async () => {
+    await testInputComponent(environments[3], scenarios);
   });
 
-  it('should extract onBeforeInput when simulating in env with only CompositionEvent on contenteditable', () => {
-    testContentEditableComponent(environments[3], scenarios);
+  it('should extract onBeforeInput when simulating in env with only CompositionEvent on contenteditable', async () => {
+    await testContentEditableComponent(environments[3], scenarios);
   });
 });

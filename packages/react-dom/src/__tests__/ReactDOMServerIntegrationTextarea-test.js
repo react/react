@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
@@ -12,23 +13,20 @@
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
-let ReactTestUtils;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
-  ReactDOM = require('react-dom');
+  ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
-  ReactTestUtils = require('react-dom/test-utils');
 
   // Make them available to the helpers.
   return {
-    ReactDOM,
+    ReactDOMClient,
     ReactDOMServer,
-    ReactTestUtils,
   };
 }
 
@@ -49,12 +47,17 @@ describe('ReactDOMServerIntegrationTextarea', () => {
     expect(e.value).toBe('foo');
   });
 
+  itRenders('a textarea with a bigint value and an onChange', async render => {
+    const e = await render(<textarea value={5n} onChange={() => {}} />);
+    expect(e.getAttribute('value')).toBe(null);
+    expect(e.value).toBe('5');
+  });
+
   itRenders('a textarea with a value of undefined', async render => {
     const e = await render(<textarea value={undefined} />);
     expect(e.getAttribute('value')).toBe(null);
     expect(e.value).toBe('');
   });
-
   itRenders('a textarea with a value and readOnly', async render => {
     const e = await render(<textarea value="foo" readOnly={true} />);
     // textarea DOM elements don't have a value **attribute**, the text is

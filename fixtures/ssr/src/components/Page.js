@@ -11,10 +11,17 @@ const autofocusedInputs = [
 ];
 
 export default class Page extends Component {
-  state = {active: false};
+  state = {active: false, value: ''};
   handleClick = e => {
     this.setState({active: true});
   };
+  handleChange = e => {
+    this.setState({value: e.target.value});
+  };
+  componentDidMount() {
+    // Rerender on mount
+    this.setState({mounted: true});
+  }
   render() {
     const link = (
       <a className="link" onClick={this.handleClick}>
@@ -30,6 +37,10 @@ export default class Page extends Component {
           <p>Autofocus on page load: {autofocusedInputs}</p>
           <p>{!this.state.active ? link : 'Thanks!'}</p>
           {this.state.active && <p>Autofocus on update: {autofocusedInputs}</p>}
+          <p>
+            Controlled input:{' '}
+            <input value={this.state.value} onChange={this.handleChange} />
+          </p>
         </Suspend>
       </div>
     );

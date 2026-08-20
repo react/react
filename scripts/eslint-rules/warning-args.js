@@ -44,7 +44,7 @@ module.exports = {
     }
 
     return {
-      CallExpression: function(node) {
+      CallExpression: function (node) {
         // This could be a little smarter by checking context.getScope() to see
         // how warning/invariant was defined.
         const isWarning =
@@ -73,7 +73,10 @@ module.exports = {
           );
           return;
         }
-        if (format.length < 10 || /^[s\W]*$/.test(format)) {
+        if (
+          (format.length < 10 || /^[s\W]*$/.test(format)) &&
+          format !== '%s\n\n%s\n'
+        ) {
           context.report(
             node,
             'The {{name}} format should be able to uniquely identify this ' +
@@ -83,7 +86,7 @@ module.exports = {
           return;
         }
         // count the number of formatting substitutions, plus the first two args
-        const expectedNArgs = (format.match(/%s/g) || []).length + 1;
+        const expectedNArgs = (format.match(/%[so]/g) || []).length + 1;
         if (node.arguments.length !== expectedNArgs) {
           context.report(
             node,

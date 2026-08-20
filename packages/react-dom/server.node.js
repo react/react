@@ -23,21 +23,30 @@ export function renderToStaticMarkup() {
     arguments,
   );
 }
-export function renderToNodeStream() {
-  return require('./src/server/ReactDOMLegacyServerNode').renderToNodeStream.apply(
-    this,
-    arguments,
-  );
-}
-export function renderToStaticNodeStream() {
-  return require('./src/server/ReactDOMLegacyServerNode').renderToStaticNodeStream.apply(
+
+export function renderToPipeableStream() {
+  return require('./src/server/react-dom-server.node').renderToPipeableStream.apply(
     this,
     arguments,
   );
 }
 
-export function renderToPipeableStream() {
-  return require('./src/server/ReactDOMFizzServerNode').renderToPipeableStream.apply(
+export function resumeToPipeableStream() {
+  return require('./src/server/react-dom-server.node').resumeToPipeableStream.apply(
+    this,
+    arguments,
+  );
+}
+
+export function renderToReadableStream() {
+  return require('./src/server/react-dom-server.node').renderToReadableStream.apply(
+    this,
+    arguments,
+  );
+}
+
+export function resume() {
+  return require('./src/server/react-dom-server.node').resume.apply(
     this,
     arguments,
   );

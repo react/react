@@ -3,7 +3,7 @@ const firefoxManifest = require('../react-devtools-extensions/firefox/manifest.j
 
 const minChromeVersion = parseInt(chromeManifest.minimum_chrome_version, 10);
 const minFirefoxVersion = parseInt(
-  firefoxManifest.applications.gecko.strict_min_version,
+  firefoxManifest.browser_specific_settings.gecko.strict_min_version,
   10,
 );
 validateVersion(minChromeVersion);
@@ -34,6 +34,7 @@ module.exports = api => {
     }
   }
   const plugins = [
+    ['babel-plugin-syntax-hermes-parser'],
     ['@babel/plugin-transform-flow-strip-types'],
     ['@babel/plugin-proposal-class-properties', {loose: false}],
   ];

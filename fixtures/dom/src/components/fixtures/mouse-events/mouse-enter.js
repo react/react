@@ -6,7 +6,7 @@ const ReactDOM = window.ReactDOM;
 const MouseEnter = () => {
   const containerRef = React.useRef();
 
-  React.useEffect(function() {
+  React.useEffect(function () {
     const hostEl = containerRef.current;
     ReactDOM.render(<MouseEnterDetect />, hostEl, () => {
       ReactDOM.render(<MouseEnterDetect />, hostEl.childNodes[1]);

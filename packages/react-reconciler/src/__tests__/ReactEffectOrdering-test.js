@@ -8,8 +8,6 @@
  * @jest-environment node
  */
 
-/* eslint-disable no-func-assign */
-
 'use strict';
 
 let React;
@@ -18,8 +16,9 @@ let Scheduler;
 let act;
 let useEffect;
 let useLayoutEffect;
+let assertLog;
 
-describe('ReactHooksWithNoopRenderer', () => {
+describe('ReactEffectOrdering', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.useFakeTimers();
@@ -27,62 +26,65 @@ describe('ReactHooksWithNoopRenderer', () => {
     React = require('react');
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
     useEffect = React.useEffect;
     useLayoutEffect = React.useLayoutEffect;
+
+    const InternalTestUtils = require('internal-test-utils');
+    assertLog = InternalTestUtils.assertLog;
   });
 
-  test('layout unmounts on deletion are fired in parent -> child order', async () => {
+  it('layout unmounts on deletion are fired in parent -> child order', async () => {
     const root = ReactNoop.createRoot();
 
     function Parent() {
       useLayoutEffect(() => {
-        return () => Scheduler.unstable_yieldValue('Unmount parent');
+        return () => Scheduler.log('Unmount parent');
       });
       return <Child />;
     }
 
     function Child() {
       useLayoutEffect(() => {
-        return () => Scheduler.unstable_yieldValue('Unmount child');
+        return () => Scheduler.log('Unmount child');
       });
       return 'Child';
     }
 
-    await act(async () => {
+    await act(() => {
       root.render(<Parent />);
     });
     expect(root).toMatchRenderedOutput('Child');
-    await act(async () => {
+    await act(() => {
       root.render(null);
     });
-    expect(Scheduler).toHaveYielded(['Unmount parent', 'Unmount child']);
+    assertLog(['Unmount parent', 'Unmount child']);
   });
 
-  test('passive unmounts on deletion are fired in parent -> child order', async () => {
+  it('passive unmounts on deletion are fired in parent -> child order', async () => {
     const root = ReactNoop.createRoot();
 
     function Parent() {
       useEffect(() => {
-        return () => Scheduler.unstable_yieldValue('Unmount parent');
+        return () => Scheduler.log('Unmount parent');
       });
       return <Child />;
     }
 
     function Child() {
       useEffect(() => {
-        return () => Scheduler.unstable_yieldValue('Unmount child');
+        return () => Scheduler.log('Unmount child');
       });
       return 'Child';
     }
 
-    await act(async () => {
+    await act(() => {
       root.render(<Parent />);
     });
     expect(root).toMatchRenderedOutput('Child');
-    await act(async () => {
+    await act(() => {
       root.render(null);
     });
-    expect(Scheduler).toHaveYielded(['Unmount parent', 'Unmount child']);
+    assertLog(['Unmount parent', 'Unmount child']);
   });
 });

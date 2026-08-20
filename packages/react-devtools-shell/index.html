@@ -1,71 +1,215 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf8">
-    <title>React DevTools</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      #target {
-        flex: 1;
-        border: none;
-      }
-      #devtools {
-        height: 400px;
-        max-height: 50%;
-        overflow: hidden;
-        z-index: 10000001;
-      }
-      body {
-        display: flex;
-        flex-direction: column;
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        margin: 0;
-        padding: 0;
-        font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial,
-          sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol;
-        font-size: 12px;
-        line-height: 1.5;
-      }
-      .optionsRow {
-        width: 100%;
-        display: flex;
-        padding: 0.25rem;
-        background: aliceblue;
-        border-bottom: 1px solid lightblue;
-        box-sizing: border-box;
-      }
-      .optionsRowSpacer {
-        flex: 1;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="optionsRow">
-      <button id="mountButton">Unmount test app</button>
-      <div class="optionsRowSpacer">&nbsp;</div>
-      <span>
-        <a href="/multi.html">multi DevTools</a>
-        |
-        <a href="/e2e.html">e2e tests</a>
-        <a href="/e2e-regression.html">e2e regression tests</a>
-      </span>
-    </div>
 
+<head>
+  <meta charset="utf8">
+  <title>React DevTools</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    #panes {
+      display: grid;
+      gap: 5px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #divider {
+      position: absolute;
+      z-index: 10000002;
+      background-color: #ccc;
+      transition: background-color 0.2s;
+    }
+
+    #divider:hover,
+    #divider.dragging {
+      background-color: #aaa;
+    }
+
+    #divider.horizontal-divider {
+      width: 100%;
+      height: 5px;
+      cursor: row-resize;
+    }
+
+    #divider.vertical-divider {
+      width: 5px;
+      height: 100%;
+      cursor: col-resize;
+    }
+
+    #target {
+      height: 100%;
+      width: 100%;
+      border: none;
+      overflow-y: auto;
+    }
+
+    #devtools {
+      height: 100%;
+      width: 100%;
+      overflow-y: auto;
+      z-index: 10000001;
+    }
+
+    body {
+      height: 100vh;
+      width: 100vw;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial,
+        sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .optionsRow {
+      width: 100%;
+      display: flex;
+      padding: 0.25rem;
+      background: aliceblue;
+      border-bottom: 1px solid lightblue;
+      box-sizing: border-box;
+    }
+
+    .optionsRowSpacer {
+      flex: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="optionsRow">
+    <button id="mountButton">Unmount test app</button>
+    <div class="optionsRowSpacer">&nbsp;</div>
+    <span>
+      <a href="/multi.html">multi DevTools</a>
+      |
+      <a href="/e2e.html">e2e tests</a>
+      |
+      <a href="/e2e-regression.html">e2e regression tests</a>
+      |
+      <a href="/perf-regression.html">perf regression tests</a>
+    </span>
+
+    <label style="margin-left: 4px">
+      Layout:
+      <select id="layout">
+        <option value="leftright">Left/Right Split</option>
+        <option value="topbottom">Top/Bottom Split</option>
+      </select></label>
+  </div>
+
+  <div id="panes">
     <!-- React test app (shells/dev/app) is injected here -->
     <!-- DevTools backend (shells/dev/src) is injected here -->
     <!-- global "hook" is defined on the iframe's contentWindow -->
     <iframe id="target"></iframe>
 
+    <!-- Draggable divider between panes -->
+    <div id="divider"></div>
+
     <!-- DevTools frontend UI (shells/dev/src) renders here -->
     <div id="devtools"></div>
+  </div>
 
-    <!-- This script installs the hook, injects the backend, and renders the DevTools UI -->
-    <!-- In DEV mode, this file is served by the Webpack dev server -->
-    <!-- For production builds, it's built by Webpack and uploaded from the local file system -->
-    <script src="dist/app-devtools.js"></script>
-  </body>
+  <!-- This script installs the hook, injects the backend, and renders the DevTools UI -->
+  <!-- In DEV mode, this file is served by the Webpack dev server -->
+  <!-- For production builds, it's built by Webpack and uploaded from the local file system -->
+  <script src="dist/app-devtools.js"></script>
+  <script type="module">
+    let layoutType = 'leftright';
+    let splitRatio = 0.5;
+    let isDragging = false;
+
+    // handle layout changes
+    const layout = document.getElementById('layout');
+    function setLayout(layoutType, splitRatio) {
+      const panes = document.getElementById('panes');
+      if (layoutType === 'topbottom') {
+        panes.style.setProperty('--top-row-height', `${splitRatio * 100}%`);
+        panes.style.gridTemplateRows = "var(--top-row-height) 1fr";
+        panes.style.gridTemplateColumns = null;
+      } else if (layoutType === 'leftright') {
+        panes.style.setProperty('--left-column-width', `${splitRatio * 100}%`);
+        panes.style.gridTemplateRows = null;
+        panes.style.gridTemplateColumns = "var(--left-column-width) 1fr";
+      }
+    }
+    layout.addEventListener('change', () => {
+      layoutType = layout.value;
+      setLayout(layoutType, splitRatio);
+      updateDividerPosition(); // Ensure divider updates when layout changes
+    });
+
+    // handle changing the split ratio
+    const divider = document.getElementById('divider');
+    function updateDividerPosition() {
+      if (layoutType === 'topbottom') {
+        // For top/bottom layout, divider should be horizontal (spanning across)
+        divider.className = 'horizontal-divider';
+        divider.style.top = `calc(${splitRatio * 100}%)`;
+        divider.style.left = '0';
+      } else {
+        // For left/right layout, divider should be vertical (spanning down)
+        divider.className = 'vertical-divider';
+        divider.style.left = `calc(${splitRatio * 100}%)`;
+        divider.style.top = '0';
+      }
+    }
+
+    // Add event listeners for dragging
+    divider.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      divider.classList.add('dragging');
+
+      // Disable pointer events on the iframe to prevent it from capturing mouse events
+      const iframe = document.getElementById('target');
+      iframe.style.pointerEvents = 'none';
+
+      e.preventDefault(); // Prevent text selection during drag
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+
+      const panes = document.getElementById('panes');
+      const rect = panes.getBoundingClientRect();
+
+      if (layoutType === 'topbottom') {
+        // Calculate new split ratio based on vertical position
+        const newRatio = Math.max(0.1, Math.min(0.9, (e.clientY - rect.top) / rect.height));
+        splitRatio = newRatio;
+      } else {
+        // Calculate new split ratio based on horizontal position
+        const newRatio = Math.max(0.1, Math.min(0.9, (e.clientX - rect.left) / rect.width));
+        splitRatio = newRatio;
+      }
+
+      // Update layout and divider position
+      setLayout(layoutType, splitRatio);
+      updateDividerPosition();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        divider.classList.remove('dragging');
+
+        // Re-enable pointer events on the iframe
+        const iframe = document.getElementById('target');
+        iframe.style.pointerEvents = 'auto';
+      }
+    });
+
+    // Initialize
+    setLayout(
+      layoutType,
+      splitRatio,
+    );
+    updateDividerPosition();
+  </script>
+</body>
+
 </html>

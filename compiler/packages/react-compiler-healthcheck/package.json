@@ -1,0 +1,33 @@
+{
+  "name": "react-compiler-healthcheck",
+  "version": "0.0.0-experimental-ab3118d-20240725",
+  "description": "Health check script to test violations of the rules of react.",
+  "bin": {
+    "react-compiler-healthcheck": "dist/index.js"
+  },
+  "scripts": {
+    "build": "rimraf dist && tsup",
+    "test": "echo 'no tests'",
+    "watch": "yarn build --watch"
+  },
+  "dependencies": {
+    "@babel/core": "^7.24.4",
+    "@babel/parser": "^7.24.4",
+    "chalk": "4",
+    "fast-glob": "^3.3.2",
+    "ora": "5.4.1",
+    "yargs": "^17.7.2",
+    "zod": "^3.25.0 || ^4.0.0",
+    "zod-validation-error": "^3.5.0 || ^4.0.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": "^14.17.0 || ^16.0.0 || >= 18.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/react/react.git",
+    "directory": "compiler/packages/react-compiler-healthcheck"
+  }
+}

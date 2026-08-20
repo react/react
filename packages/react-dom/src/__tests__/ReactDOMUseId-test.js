@@ -5,12 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
-
 let JSDOM;
 let React;
 let ReactDOMClient;
-let Scheduler;
 let clientAct;
 let ReactDOMFizzServer;
 let Stream;
@@ -23,6 +22,8 @@ let container;
 let buffer = '';
 let hasErrored = false;
 let fatalError = undefined;
+let waitForPaint;
+let SuspenseList;
 
 describe('useId', () => {
   beforeEach(() => {
@@ -30,13 +31,18 @@ describe('useId', () => {
     JSDOM = require('jsdom').JSDOM;
     React = require('react');
     ReactDOMClient = require('react-dom/client');
-    Scheduler = require('scheduler');
-    clientAct = require('jest-react').act;
+    clientAct = require('internal-test-utils').act;
     ReactDOMFizzServer = require('react-dom/server');
     Stream = require('stream');
     Suspense = React.Suspense;
     useId = React.useId;
     useState = React.useState;
+    if (gate(flags => flags.enableSuspenseList)) {
+      SuspenseList = React.unstable_SuspenseList;
+    }
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForPaint = InternalTestUtils.waitForPaint;
 
     // Test Environment
     const jsdom = new JSDOM(
@@ -93,7 +99,7 @@ describe('useId', () => {
   }
 
   function normalizeTreeIdForTesting(id) {
-    const result = id.match(/:(R|r)([a-z0-9]*)(H([0-9]*))?:/);
+    const result = id.match(/_(R|r)_([a-z0-9]*)(H([0-9]*))?_/);
     if (result === undefined) {
       throw new Error('Invalid id format');
     }
@@ -118,7 +124,7 @@ describe('useId', () => {
     return <div id={id}>{children}</div>;
   }
 
-  test('basic example', async () => {
+  it('basic example', async () => {
     function App() {
       return (
         <div>
@@ -159,7 +165,7 @@ describe('useId', () => {
     `);
   });
 
-  test('indirections', async () => {
+  it('indirections', async () => {
     function App() {
       // There are no forks in this tree, but the parent and the child should
       // have different ids.
@@ -204,7 +210,7 @@ describe('useId', () => {
     `);
   });
 
-  test('StrictMode double rendering', async () => {
+  it('StrictMode double rendering', async () => {
     const {StrictMode} = React;
 
     function App() {
@@ -233,7 +239,7 @@ describe('useId', () => {
     `);
   });
 
-  test('empty (null) children', async () => {
+  it('empty (null) children', async () => {
     // We don't treat empty children different from non-empty ones, which means
     // they get allocated a slot when generating ids. There's no inherent reason
     // to do this; Fiber happens to allocate a fiber for null children that
@@ -272,7 +278,7 @@ describe('useId', () => {
     `);
   });
 
-  test('large ids', async () => {
+  it('large ids', async () => {
     // The component in this test outputs a recursive tree of nodes with ids,
     // where the underlying binary representation is an alternating series of 1s
     // and 0s. In other words, they are all of the form 101010101.
@@ -282,7 +288,7 @@ describe('useId', () => {
     // 'R:' prefix, and the first character after that, which may not correspond
     // to a complete set of 5 bits.
     //
-    // Example: :Rclalalalalalalala...:
+    // Example: _Rclalalalalalalala...:
     //
     // We can use this pattern to test large ids that exceed the bitwise
     // safe range (32 bits). The algorithm should theoretically support ids
@@ -317,12 +323,12 @@ describe('useId', () => {
 
     // Confirm that every id matches the expected pattern
     for (let i = 0; i < divs.length; i++) {
-      // Example: :Rclalalalalalalala...:
-      expect(divs[i].id).toMatch(/^:R.(((al)*a?)((la)*l?))*:$/);
+      // Example: _Rclalalalalalalala...:
+      expect(divs[i].id).toMatch(/^_R_.(((al)*a?)((la)*l?))*_$/);
     }
   });
 
-  test('multiple ids in a single component', async () => {
+  it('multiple ids in a single component', async () => {
     function App() {
       const id1 = useId();
       const id2 = useId();
@@ -342,12 +348,12 @@ describe('useId', () => {
       <div
         id="container"
       >
-        :R0:, :R0H1:, :R0H2:
+        _R_0_, _R_0H1_, _R_0H2_
       </div>
     `);
   });
 
-  test('local render phase updates', async () => {
+  it('local render phase updates', async () => {
     function App({swap}) {
       const [count, setCount] = useState(0);
       if (count < 3) {
@@ -367,12 +373,325 @@ describe('useId', () => {
       <div
         id="container"
       >
-        :R0:
+        _R_0_
       </div>
     `);
   });
 
-  test('basic incremental hydration', async () => {
+  // @gate enableSuspenseList
+  it('Supports SuspenseList (reveal order independent)', async () => {
+    function Baz({id, children}) {
+      return <span id={id}>{children}</span>;
+    }
+
+    function Bar({children}) {
+      const id = useId();
+      return <Baz id={id}>{children}</Baz>;
+    }
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="independent">
+          <Bar>A</Bar>
+          <Bar>B</Bar>
+        </SuspenseList>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<Foo />);
+      pipe(writable);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <Foo />);
+    });
+
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+  });
+
+  // @gate enableSuspenseList
+  it('Supports SuspenseList (reveal order "together")', async () => {
+    function Baz({id, children}) {
+      return <span id={id}>{children}</span>;
+    }
+
+    function Bar({children}) {
+      const id = useId();
+      return <Baz id={id}>{children}</Baz>;
+    }
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="together">
+          <Bar>A</Bar>
+          <Bar>B</Bar>
+        </SuspenseList>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<Foo />);
+      pipe(writable);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <Foo />);
+    });
+
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+  });
+
+  // @gate enableSuspenseList
+  it('Supports SuspenseList (reveal order "forwards")', async () => {
+    function Baz({id, children}) {
+      return <span id={id}>{children}</span>;
+    }
+
+    function Bar({children}) {
+      const id = useId();
+      return <Baz id={id}>{children}</Baz>;
+    }
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="forwards" tail="visible">
+          <Bar>A</Bar>
+          <Bar>B</Bar>
+        </SuspenseList>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<Foo />);
+      pipe(writable);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <Foo />);
+    });
+
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+  });
+
+  // @gate enableSuspenseList
+  it('Supports SuspenseList (reveal order "backwards") with a single child in a list of many', async () => {
+    function Baz({id, children}) {
+      return <span id={id}>{children}</span>;
+    }
+
+    function Bar({children}) {
+      const id = useId();
+      return <Baz id={id}>{children}</Baz>;
+    }
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
+          {null}
+          <Bar>A</Bar>
+          {null}
+        </SuspenseList>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<Foo />);
+      pipe(writable);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_2_"
+        >
+          A
+        </span>
+        <!-- -->
+      </div>
+    `);
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <Foo />);
+    });
+
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_2_"
+        >
+          A
+        </span>
+        <!-- -->
+      </div>
+    `);
+  });
+
+  // @gate enableSuspenseList
+  it('Supports SuspenseList (reveal order "backwards")', async () => {
+    function Baz({id, children}) {
+      return <span id={id}>{children}</span>;
+    }
+
+    function Bar({children}) {
+      const id = useId();
+      return <Baz id={id}>{children}</Baz>;
+    }
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
+          <Bar>A</Bar>
+          <Bar>B</Bar>
+        </SuspenseList>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<Foo />);
+      pipe(writable);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_R_1_"
+        >
+          A
+        </span>
+        <span
+          id="_R_2_"
+        >
+          B
+        </span>
+      </div>
+    `);
+
+    // TODO: This is a bug with revealOrder="backwards" in that it hydrates in reverse.
+    await expect(async () => {
+      await clientAct(async () => {
+        ReactDOMClient.hydrateRoot(container, <Foo />);
+      });
+    }).rejects.toThrowError(
+      `Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client.`,
+    );
+
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <span
+          id="_r_1_"
+        >
+          A
+        </span>
+        <span
+          id="_r_0_"
+        >
+          B
+        </span>
+      </div>
+    `);
+  });
+
+  it('basic incremental hydration', async () => {
     function App() {
       return (
         <div>
@@ -413,7 +732,7 @@ describe('useId', () => {
     `);
   });
 
-  test('inserting/deleting siblings outside a dehydrated Suspense boundary', async () => {
+  it('inserting/deleting siblings outside a dehydrated Suspense boundary', async () => {
     const span = React.createRef(null);
     function App({swap}) {
       // Note: Using a dynamic array so these are treated as insertions and
@@ -442,7 +761,7 @@ describe('useId', () => {
     const dehydratedSpan = container.getElementsByTagName('span')[0];
     await clientAct(async () => {
       const root = ReactDOMClient.hydrateRoot(container, <App />);
-      expect(Scheduler).toFlushUntilNextPaint([]);
+      await waitForPaint([]);
       expect(container).toMatchInlineSnapshot(`
         <div
           id="container"
@@ -497,7 +816,7 @@ describe('useId', () => {
     expect(span.current).toBe(dehydratedSpan);
   });
 
-  test('inserting/deleting siblings inside a dehydrated Suspense boundary', async () => {
+  it('inserting/deleting siblings inside a dehydrated Suspense boundary', async () => {
     const span = React.createRef(null);
     function App({swap}) {
       // Note: Using a dynamic array so these are treated as insertions and
@@ -523,7 +842,7 @@ describe('useId', () => {
     const dehydratedSpan = container.getElementsByTagName('span')[0];
     await clientAct(async () => {
       const root = ReactDOMClient.hydrateRoot(container, <App />);
-      expect(Scheduler).toFlushUntilNextPaint([]);
+      await waitForPaint([]);
       expect(container).toMatchInlineSnapshot(`
         <div
           id="container"
@@ -572,7 +891,7 @@ describe('useId', () => {
     expect(span.current).toBe(dehydratedSpan);
   });
 
-  test('identifierPrefix option', async () => {
+  it('identifierPrefix option', async () => {
     function Child() {
       const id = useId();
       return <div>{id}</div>;
@@ -605,10 +924,10 @@ describe('useId', () => {
         id="container"
       >
         <div>
-          :custom-prefix-R1:
+          _custom-prefix-R_1_
         </div>
         <div>
-          :custom-prefix-R2:
+          _custom-prefix-R_2_
         </div>
       </div>
     `);
@@ -622,13 +941,77 @@ describe('useId', () => {
         id="container"
       >
         <div>
-          :custom-prefix-R1:
+          _custom-prefix-R_1_
         </div>
         <div>
-          :custom-prefix-R2:
+          _custom-prefix-R_2_
         </div>
         <div>
-          :custom-prefix-r0:
+          _custom-prefix-r_0_
+        </div>
+      </div>
+    `);
+  });
+
+  // https://github.com/vercel/next.js/issues/43033
+  // re-rendering in strict mode caused the localIdCounter to be reset but it the rerender hook does not
+  // increment it again. This only shows up as a problem for subsequent useId's because it affects child
+  // and sibling counters not the initial one
+  it('does not forget it mounted an id when re-rendering in dev', async () => {
+    function Parent() {
+      const id = useId();
+      return (
+        <div>
+          {id} <Child />
+        </div>
+      );
+    }
+    function Child() {
+      const id = useId();
+      return <div>{id}</div>;
+    }
+
+    function App({showMore}) {
+      return (
+        <React.StrictMode>
+          <Parent />
+        </React.StrictMode>
+      );
+    }
+
+    await serverAct(async () => {
+      const {pipe} = ReactDOMFizzServer.renderToPipeableStream(<App />);
+      pipe(writable);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <div>
+          _R_0_
+          <!-- -->
+           
+          <div>
+            _R_7_
+          </div>
+        </div>
+      </div>
+    `);
+
+    await clientAct(async () => {
+      ReactDOMClient.hydrateRoot(container, <App />);
+    });
+    expect(container).toMatchInlineSnapshot(`
+      <div
+        id="container"
+      >
+        <div>
+          _R_0_
+          <!-- -->
+           
+          <div>
+            _R_7_
+          </div>
         </div>
       </div>
     `);

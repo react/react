@@ -13,7 +13,7 @@
  * Change environment support for PointerEvent.
  */
 
-const emptyFunction = function() {};
+function emptyFunction() {}
 
 export function hasPointerEvent() {
   return global != null && global.PointerEvent != null;

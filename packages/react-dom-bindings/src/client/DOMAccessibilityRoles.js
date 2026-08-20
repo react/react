@@ -60,6 +60,7 @@ const tagToRoleMappings = {
 };
 
 function getImplicitRole(element: Element): string | null {
+  // $FlowFixMe[invalid-computed-prop]
   const mappedByTag = tagToRoleMappings[element.tagName];
   if (mappedByTag !== undefined) {
     return mappedByTag;
@@ -79,7 +80,7 @@ function getImplicitRole(element: Element): string | null {
       }
       break;
     case 'INPUT': {
-      const type = (element: any).type;
+      const type = (element as any).type;
       switch (type) {
         case 'button':
         case 'image':
@@ -110,7 +111,7 @@ function getImplicitRole(element: Element): string | null {
     }
 
     case 'SELECT':
-      if (element.hasAttribute('multiple') || (element: any).size > 1) {
+      if (element.hasAttribute('multiple') || (element as any).size > 1) {
         return 'listbox';
       }
       return 'combobox';

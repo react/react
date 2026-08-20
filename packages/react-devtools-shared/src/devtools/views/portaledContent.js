@@ -17,8 +17,8 @@ import ThemeProvider from './ThemeProvider';
 export type Props = {portalContainer?: Element, ...};
 
 export default function portaledContent(
-  Component: React$StatelessFunctionalComponent<any>,
-): React$StatelessFunctionalComponent<any> {
+  Component: component(...props: any),
+): component(...props: any) {
   return function PortaledContent({portalContainer, ...rest}: Props) {
     const store = useContext(StoreContext);
 
@@ -36,7 +36,12 @@ export default function portaledContent(
         <ThemeProvider>
           <div
             data-react-devtools-portal-root={true}
-            style={{width: '100vw', height: '100vh'}}>
+            style={{
+              width: '100vw',
+              height: '100vh',
+              containerName: 'devtools',
+              containerType: 'inline-size',
+            }}>
             {children}
           </div>
         </ThemeProvider>

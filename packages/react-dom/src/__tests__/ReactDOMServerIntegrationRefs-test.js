@@ -12,39 +12,32 @@
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
-let ReactTestUtils;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
-  ReactDOM = require('react-dom');
+  ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
-  ReactTestUtils = require('react-dom/test-utils');
 
   // Make them available to the helpers.
   return {
-    ReactDOM,
+    ReactDOMClient,
     ReactDOMServer,
-    ReactTestUtils,
   };
 }
 
-const {
-  resetModules,
-  asyncReactDOMRender,
-  clientRenderOnServerString,
-  expectMarkupMatch,
-} = ReactDOMServerIntegrationUtils(initModules);
+const {resetModules, clientRenderOnServerString, expectMarkupMatch} =
+  ReactDOMServerIntegrationUtils(initModules);
 
 describe('ReactDOMServerIntegration', () => {
   beforeEach(() => {
     resetModules();
   });
 
-  describe('refs', function() {
+  describe('refs', function () {
     it('should not run ref code on server', async () => {
       let refCount = 0;
       class RefsComponent extends React.Component {
@@ -77,26 +70,6 @@ describe('ReactDOMServerIntegration', () => {
       const e = await clientRenderOnServerString(<RefsComponent />);
       expect(refElement).not.toBe(null);
       expect(refElement).toBe(e);
-    });
-
-    it('should have string refs on client when rendered over server markup', async () => {
-      class RefsComponent extends React.Component {
-        render() {
-          return <div ref="myDiv" />;
-        }
-      }
-
-      const markup = ReactDOMServer.renderToString(<RefsComponent />);
-      const root = document.createElement('div');
-      root.innerHTML = markup;
-      let component = null;
-      resetModules();
-      await asyncReactDOMRender(
-        <RefsComponent ref={e => (component = e)} />,
-        root,
-        true,
-      );
-      expect(component.refs.myDiv).toBe(root.firstChild);
     });
   });
 

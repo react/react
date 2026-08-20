@@ -1,12 +1,12 @@
 {
   "name": "react-devtools-core",
-  "version": "4.26.1",
+  "version": "7.0.1",
   "description": "Use react-devtools outside of the browser",
   "license": "MIT",
   "main": "./dist/backend.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-devtools-core"
   },
   "files": [
@@ -29,6 +29,10 @@
     "ws": "^7"
   },
   "devDependencies": {
-    "cross-env": "^3.1.4"
+    "cross-env": "^3.1.4",
+    "process": "0.11.10",
+    "webpack": "^5.82.1",
+    "webpack-cli": "^5.1.1",
+    "workerize-loader": "^2.0.2"
   }
 }

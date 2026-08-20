@@ -1,10 +1,26 @@
 {
   "name": "use-sync-external-store",
   "description": "Backwards compatible shim for React's useSyncExternalStore. Works with any React that supports hooks.",
-  "version": "1.2.0",
+  "version": "1.7.0",
+  "exports": {
+    ".": "./index.js",
+    "./with-selector": "./with-selector.js",
+    "./with-selector.js": "./with-selector.js",
+    "./shim": {
+      "react-native": "./shim/index.native.js",
+      "default": "./shim/index.js"
+    },
+    "./shim/index.js": "./shim/index.js",
+    "./shim/index.native": "./shim/index.native.js",
+    "./shim/index.native.js": "./shim/index.native.js",
+    "./shim/with-selector": "./shim/with-selector.js",
+    "./shim/with-selector.js": "./shim/with-selector.js",
+    "./package.json": "./package.json",
+    "./src/*": "./src/*.js"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/use-sync-external-store"
   },
   "files": [
@@ -19,6 +35,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "react-17": "npm:react@^17",
+    "react-dom-17": "npm:react-dom@^17"
   }
 }

@@ -186,9 +186,9 @@ export function launchEditor(
   } else {
     childProcess = spawn(editor, args, {stdio: 'inherit'});
   }
-  childProcess.on('error', function() {});
+  childProcess.on('error', function () {});
   // $FlowFixMe[incompatible-use] found when upgrading Flow
-  childProcess.on('exit', function(errorCode) {
+  childProcess.on('exit', function () {
     childProcess = null;
   });
 }

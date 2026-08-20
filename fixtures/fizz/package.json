@@ -15,8 +15,8 @@
     "concurrently": "^5.3.0",
     "express": "^4.17.1",
     "nodemon": "^2.0.6",
-    "react": "link:../../build/node_modules/react",
-    "react-dom": "link:../../build/node_modules/react-dom",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "react-error-boundary": "^3.1.3",
     "resolve": "1.12.0",
     "rimraf": "^3.0.2",
@@ -28,12 +28,14 @@
     "prettier": "1.19.1"
   },
   "scripts": {
-    "start": "concurrently \"npm run server:dev\" \"npm run bundler:dev\"",
-    "start:prod": "concurrently \"npm run server:prod\" \"npm run bundler:prod\"",
-    "server:dev": "cross-env NODE_ENV=development nodemon -- --inspect server/server.js",
-    "server:prod": "cross-env NODE_ENV=production nodemon -- server/server.js",
-    "bundler:dev": "cross-env NODE_ENV=development nodemon -- scripts/build.js",
-    "bundler:prod": "cross-env NODE_ENV=production nodemon -- scripts/build.js"
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:bundler\"",
+    "start": "concurrently \"npm run start:server\" \"npm run start:bundler\"",
+    "dev:server": "cross-env NODE_ENV=development nodemon -- --inspect server/server.js",
+    "start:server": "cross-env NODE_ENV=production nodemon -- server/server.js",
+    "dev:bundler": "cross-env NODE_ENV=development nodemon -- scripts/build.js",
+    "start:bundler": "cross-env NODE_ENV=production nodemon -- scripts/build.js"
   },
   "babel": {
     "presets": [

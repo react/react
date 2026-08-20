@@ -7,7 +7,7 @@ const {resolve} = require('path');
 const {argv} = require('yargs');
 
 const EXTENSION_PATH = resolve('./chrome/build/unpacked');
-const START_URL = argv.url || 'https://reactjs.org/';
+const START_URL = argv.url || 'https://react.dev/';
 
 chromeLaunch(START_URL, {
   args: [

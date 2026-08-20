@@ -1,0 +1,63 @@
+body {
+  font-family: system-ui;
+  color-scheme: light dark;
+}
+
+form {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  flex-direction: column;
+  max-width: 400px;
+  gap: 8px;
+}
+
+label {
+  display: contents;
+}
+
+main {
+  display: flex;
+  gap: 32px;
+}
+
+.todo-column {
+  width: 250px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 250px;
+  padding: 8px;
+  padding-right: 40px;
+  box-sizing: border-box;
+}
+
+.todo-list {
+  max-width: 250px;
+  padding: 0;
+  list-style: none;
+  padding-right: 32px;
+  border-right: 1px solid gray;
+
+  li {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    accent-color: light-dark(black, white);
+
+    a {
+      color: inherit;
+      text-decoration: none;
+      width: 100%;
+    }
+
+    &[data-selected] {
+      background-color: light-dark(#222, #ddd);
+      color: light-dark(#ddd, #222);
+      accent-color: light-dark(white, black);
+    }
+  }
+}

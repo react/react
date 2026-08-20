@@ -33,7 +33,7 @@ export type ItemData = {
 };
 
 type Props = {
-  commitData: CommitDataFrontend,
+  commitData: $ReadOnlyArray<CommitDataFrontend>,
   commitTimes: Array<number>,
   filteredCommitIndices: Array<number>,
   selectedCommitIndex: number | null,
@@ -71,7 +71,7 @@ export default function SnapshotCommitList({
 }
 
 type ListProps = {
-  commitData: CommitDataFrontend,
+  commitData: $ReadOnlyArray<CommitDataFrontend>,
   commitTimes: Array<number>,
   height: number,
   filteredCommitIndices: Array<number>,
@@ -292,7 +292,11 @@ function List({
           itemCount={filteredCommitIndices.length}
           itemData={itemData}
           itemSize={itemSize}
-          ref={(listRef: any) /* Flow bug? */}
+          ref={
+            listRef as any
+
+            /* Flow bug? */
+          }
           width={width}>
           {SnapshotCommitListItem}
         </FixedSizeList>

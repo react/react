@@ -36,6 +36,7 @@ export default function EditableValue({
       externalValue: value,
     });
 
+  // $FlowFixMe[missing-local-annot]
   const handleChange = ({target}) =>
     dispatch({
       type: 'UPDATE',
@@ -43,6 +44,7 @@ export default function EditableValue({
       externalValue: value,
     });
 
+  // $FlowFixMe[missing-local-annot]
   const handleCheckBoxToggle = ({target}) => {
     dispatch({
       type: 'UPDATE',
@@ -58,6 +60,7 @@ export default function EditableValue({
     overrideValue(path, target.checked);
   };
 
+  // $FlowFixMe[missing-local-annot]
   const handleKeyDown = event => {
     // Prevent keydown events from e.g. change selected element in the tree
     event.stopPropagation();

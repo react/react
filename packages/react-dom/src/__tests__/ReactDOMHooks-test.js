@@ -12,8 +12,8 @@
 let React;
 let ReactDOM;
 let ReactDOMClient;
-let Scheduler;
 let act;
+let waitForAll;
 
 describe('ReactDOMHooks', () => {
   let container;
@@ -24,8 +24,8 @@ describe('ReactDOMHooks', () => {
     React = require('react');
     ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
-    Scheduler = require('scheduler');
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
+    waitForAll = require('internal-test-utils').waitForAll;
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -35,7 +35,8 @@ describe('ReactDOMHooks', () => {
     document.body.removeChild(container);
   });
 
-  it('can ReactDOM.render() from useEffect', () => {
+  // @gate !disableLegacyMode
+  it('can ReactDOM.render() from useEffect', async () => {
     const container2 = document.createElement('div');
     const container3 = document.createElement('div');
 
@@ -61,7 +62,7 @@ describe('ReactDOMHooks', () => {
     expect(container.textContent).toBe('1');
     expect(container2.textContent).toBe('');
     expect(container3.textContent).toBe('');
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
     expect(container.textContent).toBe('1');
     expect(container2.textContent).toBe('2');
     expect(container3.textContent).toBe('3');
@@ -70,12 +71,56 @@ describe('ReactDOMHooks', () => {
     expect(container.textContent).toBe('2');
     expect(container2.textContent).toBe('2'); // Not flushed yet
     expect(container3.textContent).toBe('3'); // Not flushed yet
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
     expect(container.textContent).toBe('2');
     expect(container2.textContent).toBe('4');
     expect(container3.textContent).toBe('6');
   });
 
+  it('can render() from useEffect', async () => {
+    const container2 = document.createElement('div');
+    const container3 = document.createElement('div');
+
+    const root1 = ReactDOMClient.createRoot(container);
+    const root2 = ReactDOMClient.createRoot(container2);
+    const root3 = ReactDOMClient.createRoot(container3);
+
+    function Example1({n}) {
+      React.useEffect(() => {
+        root2.render(<Example2 n={n} />);
+      });
+      return 1 * n;
+    }
+
+    function Example2({n}) {
+      React.useEffect(() => {
+        root3.render(<Example3 n={n} />);
+      });
+      return 2 * n;
+    }
+
+    function Example3({n}) {
+      return 3 * n;
+    }
+
+    await act(() => {
+      root1.render(<Example1 n={1} />);
+    });
+    await waitForAll([]);
+    expect(container.textContent).toBe('1');
+    expect(container2.textContent).toBe('2');
+    expect(container3.textContent).toBe('3');
+
+    await act(() => {
+      root1.render(<Example1 n={2} />);
+    });
+    await waitForAll([]);
+    expect(container.textContent).toBe('2');
+    expect(container2.textContent).toBe('4');
+    expect(container3.textContent).toBe('6');
+  });
+
+  // @gate !disableLegacyMode
   it('should not bail out when an update is scheduled from within an event handler', () => {
     const {createRef, useCallback, useState} = React;
 
@@ -132,10 +177,10 @@ describe('ReactDOMHooks', () => {
     const root = ReactDOMClient.createRoot(container);
     root.render(<Example inputRef={inputRef} labelRef={labelRef} />);
 
-    Scheduler.unstable_flushAll();
+    await waitForAll([]);
 
     inputRef.current.value = 'abc';
-    await act(async () => {
+    await act(() => {
       inputRef.current.dispatchEvent(
         new Event('input', {
           bubbles: true,

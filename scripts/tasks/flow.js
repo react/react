@@ -34,7 +34,9 @@ if (!primaryRenderer) {
     }
   });
   console.log();
-  console.log('If you are not sure, run ' + chalk.green('yarn flow dom') + '.');
+  console.log(
+    'If you are not sure, run ' + chalk.green('yarn flow dom-node') + '.'
+  );
   console.log(
     'This will still typecheck non-DOM packages, although less precisely.'
   );

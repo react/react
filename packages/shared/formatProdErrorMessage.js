@@ -11,10 +11,14 @@
 // during build.
 
 function formatProdErrorMessage(code) {
-  let url = 'https://reactjs.org/docs/error-decoder.html?invariant=' + code;
-  for (let i = 1; i < arguments.length; i++) {
-    url += '&args[]=' + encodeURIComponent(arguments[i]);
+  let url = 'https://react.dev/errors/' + code;
+  if (arguments.length > 1) {
+    url += '?args[]=' + encodeURIComponent(arguments[1]);
+    for (let i = 2; i < arguments.length; i++) {
+      url += '&args[]=' + encodeURIComponent(arguments[i]);
+    }
   }
+
   return (
     `Minified React error #${code}; visit ${url} for the full message or ` +
     'use the non-minified dev environment for full errors and additional ' +

@@ -7,14 +7,19 @@
  * @flow
  */
 
-import type {ReactNodeList, OffscreenMode, Wakeable} from 'shared/ReactTypes';
-import type {Lanes} from './ReactFiberLane.old';
-import type {SpawnedCachePool} from './ReactFiberCacheComponent.new';
-import type {Fiber} from './ReactInternalTypes';
-import type {
-  Transition,
-  TracingMarkerInstance,
-} from './ReactFiberTracingMarkerComponent.new';
+import type {ReactNodeList, Wakeable} from 'shared/ReactTypes';
+import type {Lanes} from './ReactFiberLane';
+import type {SpawnedCachePool} from './ReactFiberCacheComponent';
+import type {Transition} from 'react/src/ReactStartTransition';
+import type {TracingMarkerInstance} from './ReactFiberTracingMarkerComponent';
+import type {RetryQueue} from './ReactFiberSuspenseComponent';
+
+type OffscreenMode = 'hidden' | 'unstable-defer-without-hiding' | 'visible';
+
+export type LegacyHiddenProps = {
+  mode?: OffscreenMode | null | void,
+  children?: ReactNodeList,
+};
 
 export type OffscreenProps = {
   // TODO: Pick an API before exposing the Offscreen type. I've chosen an enum
@@ -40,32 +45,17 @@ export type OffscreenState = {
 export type OffscreenQueue = {
   transitions: Array<Transition> | null,
   markerInstances: Array<TracingMarkerInstance> | null,
-  wakeables: Set<Wakeable> | null,
+  retryQueue: RetryQueue | null,
 };
 
 type OffscreenVisibility = number;
 
 export const OffscreenVisible = /*                     */ 0b001;
-export const OffscreenDetached = /*                    */ 0b010;
-export const OffscreenPassiveEffectsConnected = /*     */ 0b100;
+export const OffscreenPassiveEffectsConnected = /*     */ 0b010;
 
 export type OffscreenInstance = {
   _visibility: OffscreenVisibility,
   _pendingMarkers: Set<TracingMarkerInstance> | null,
   _transitions: Set<Transition> | null,
-  // $FlowFixMe[incompatible-type-arg] found when upgrading Flow
   _retryCache: WeakSet<Wakeable> | Set<Wakeable> | null,
-
-  // Represents the current Offscreen fiber
-  _current: Fiber | null,
-  detach: () => void,
-
-  // TODO: attach
 };
-
-export function isOffscreenManual(offscreenFiber: Fiber): boolean {
-  return (
-    offscreenFiber.memoizedProps !== null &&
-    offscreenFiber.memoizedProps.mode === 'manual'
-  );
-}

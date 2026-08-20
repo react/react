@@ -40,7 +40,7 @@ const ReactNoopUpdateQueue = {
    * @protected
    * @final
    */
-  isMounted: function(publicInstance) {
+  isMounted: function (publicInstance) {
     return false;
   },
 
@@ -59,7 +59,7 @@ const ReactNoopUpdateQueue = {
    * @param {?string} callerName name of the calling function in the public API.
    * @internal
    */
-  enqueueForceUpdate: function(publicInstance, callback, callerName) {
+  enqueueForceUpdate: function (publicInstance, callback, callerName) {
     warnNoop(publicInstance, 'forceUpdate');
   },
 
@@ -76,7 +76,7 @@ const ReactNoopUpdateQueue = {
    * @param {?string} callerName name of the calling function in the public API.
    * @internal
    */
-  enqueueReplaceState: function(
+  enqueueReplaceState: function (
     publicInstance,
     completeState,
     callback,
@@ -97,7 +97,7 @@ const ReactNoopUpdateQueue = {
    * @param {?string} Name of the calling function in the public API.
    * @internal
    */
-  enqueueSetState: function(
+  enqueueSetState: function (
     publicInstance,
     partialState,
     callback,

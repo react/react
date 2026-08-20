@@ -12,7 +12,7 @@
 
 let React;
 let ReactNoop;
-let Scheduler;
+let waitForAll;
 
 // This is a new feature in Fiber so I put it in its own test file. It could
 // probably move to one of the other test files once it is official.
@@ -21,20 +21,29 @@ describe('ReactTopLevelText', () => {
     jest.resetModules();
     React = require('react');
     ReactNoop = require('react-noop-renderer');
-    Scheduler = require('scheduler');
+
+    const InternalTestUtils = require('internal-test-utils');
+    waitForAll = InternalTestUtils.waitForAll;
   });
 
-  it('should render a component returning strings directly from render', () => {
+  it('should render a component returning strings directly from render', async () => {
     const Text = ({value}) => value;
     ReactNoop.render(<Text value="foo" />);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
     expect(ReactNoop).toMatchRenderedOutput('foo');
   });
 
-  it('should render a component returning numbers directly from render', () => {
+  it('should render a component returning numbers directly from render', async () => {
     const Text = ({value}) => value;
     ReactNoop.render(<Text value={10} />);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput('10');
+  });
+
+  it('should render a component returning bigints directly from render', async () => {
+    const Text = ({value}) => value;
+    ReactNoop.render(<Text value={10n} />);
+    await waitForAll([]);
     expect(ReactNoop).toMatchRenderedOutput('10');
   });
 });

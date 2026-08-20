@@ -1,0 +1,37 @@
+{
+  "extends": "@tsconfig/strictest/tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2015",
+    "moduleResolution": "Bundler",
+    "rootDir": "src",
+    "noEmit": true,
+    "jsx": "react-jsxdev",
+    // weaken strictness from preset
+    "importsNotUsedAsValues": "remove",
+    "noUncheckedIndexedAccess": false,
+    "noUnusedParameters": false,
+    "stripInternal": true,
+    "useUnknownInCatchVariables": true,
+    "target": "ES2015",
+    // ideally turn off only during dev, or on a per-file basis
+    "noUnusedLocals": false,
+    "removeComments": true,
+    "declaration": true,
+  },
+  "exclude": [
+    "node_modules",
+    "src/__tests__/fixtures"
+  ],
+  "include": [
+    "src/**/*.ts"
+  ],
+  "ts-node": {
+    "transpileOnly": true,
+    // these options are overrides used only by ts-node
+    // same as the --compilerOptions flag and the TS_NODE_COMPILER_OPTIONS environment variable
+    "compilerOptions": {
+      "module": "NodeNext",
+      "moduleResolution": "NodeNext",
+    }
+  }
+}

@@ -52,7 +52,7 @@ export function getChartData({
 
   const chartDataKey = `${rootID}-${commitIndex}`;
   if (cachedChartData.has(chartDataKey)) {
-    return ((cachedChartData.get(chartDataKey): any): ChartData);
+    return cachedChartData.get(chartDataKey) as any as ChartData;
   }
 
   const idToDepthMap: Map<number, number> = new Map();
@@ -63,7 +63,11 @@ export function getChartData({
   let maxSelfDuration = 0;
 
   // Generate flame graph structure using tree base durations.
-  const walkTree = (id: number, rightOffset: number, currentDepth: number) => {
+  const walkTree = (
+    id: number,
+    rightOffset: number,
+    currentDepth: number,
+  ): ChartNode => {
     idToDepthMap.set(id, currentDepth);
 
     const node = nodes.get(id);
@@ -77,6 +81,7 @@ export function getChartData({
       hocDisplayNames,
       key,
       treeBaseDuration,
+      compiledWithForget,
     } = node;
 
     const actualDuration = fiberActualDurations.get(id) || 0;
@@ -87,11 +92,13 @@ export function getChartData({
     const maybeKey = key !== null ? ` key="${key}"` : '';
 
     let maybeBadge = '';
+    const maybeForgetBadge = compiledWithForget ? '✨ ' : '';
+
     if (hocDisplayNames !== null && hocDisplayNames.length > 0) {
       maybeBadge = ` (${hocDisplayNames[0]})`;
     }
 
-    let label = `${name}${maybeBadge}${maybeKey}`;
+    let label = `${maybeForgetBadge}${name}${maybeBadge}${maybeKey}`;
     if (didRender) {
       label += ` (${formatDuration(selfDuration)}ms of ${formatDuration(
         actualDuration,
@@ -120,7 +127,11 @@ export function getChartData({
 
     for (let i = children.length - 1; i >= 0; i--) {
       const childID = children[i];
-      const childChartNode = walkTree(childID, rightOffset, currentDepth + 1);
+      const childChartNode: $FlowFixMe = walkTree(
+        childID,
+        rightOffset,
+        currentDepth + 1,
+      );
       rightOffset -= childChartNode.treeBaseDuration;
     }
 

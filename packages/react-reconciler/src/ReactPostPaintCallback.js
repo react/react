@@ -6,7 +6,7 @@
  *
  * @flow
  */
-import {requestPostPaintCallback} from './ReactFiberHostConfig';
+import {requestPostPaintCallback} from './ReactFiberConfig';
 
 let postPaintCallbackScheduled = false;
 let callbacks: Array<any | ((endTime: number) => void)> = [];

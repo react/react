@@ -7,7 +7,7 @@
  * @flow
  */
 
-import {TEXT_NODE} from '../shared/HTMLNodeType';
+import {TEXT_NODE} from './HTMLNodeType';
 
 /**
  * Set the textContent property of a node. For text updates, it's faster
@@ -18,7 +18,7 @@ import {TEXT_NODE} from '../shared/HTMLNodeType';
  * @param {string} text
  * @internal
  */
-const setTextContent = function(node: Element, text: string): void {
+function setTextContent(node: Element, text: string): void {
   if (text) {
     const firstChild = node.firstChild;
 
@@ -32,6 +32,6 @@ const setTextContent = function(node: Element, text: string): void {
     }
   }
   node.textContent = text;
-};
+}
 
 export default setTextContent;

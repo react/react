@@ -13,7 +13,6 @@
   color: var(--color-text-invalid) !important;
 }
 
-.Input:focus,
 .Invalid:focus {
   background-color: var(--color-button-background-focus);
 }

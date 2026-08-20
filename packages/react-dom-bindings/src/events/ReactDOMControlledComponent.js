@@ -12,9 +12,10 @@ import {
   getFiberCurrentPropsFromNode,
 } from '../client/ReactDOMComponentTree';
 
+import {restoreControlledState} from 'react-dom-bindings/src/client/ReactDOMComponent';
+
 // Use to restore controlled state after a change event has fired.
 
-let restoreImpl = null;
 let restoreTarget = null;
 let restoreQueue = null;
 
@@ -27,25 +28,16 @@ function restoreStateOfTarget(target: Node) {
     return;
   }
 
-  if (typeof restoreImpl !== 'function') {
-    throw new Error(
-      'setRestoreImplementation() needs to be called to handle a target for controlled ' +
-        'events. This error is likely caused by a bug in React. Please file an issue.',
-    );
-  }
-
   const stateNode = internalInstance.stateNode;
   // Guard against Fiber being unmounted.
   if (stateNode) {
     const props = getFiberCurrentPropsFromNode(stateNode);
-    restoreImpl(internalInstance.stateNode, internalInstance.type, props);
+    restoreControlledState(
+      internalInstance.stateNode,
+      internalInstance.type,
+      props,
+    );
   }
-}
-
-export function setRestoreImplementation(
-  impl: (domElement: Element, tag: string, props: Object) => void,
-): void {
-  restoreImpl = impl;
 }
 
 export function enqueueStateRestore(target: Node): void {

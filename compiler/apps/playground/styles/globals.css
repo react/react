@@ -1,0 +1,143 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  @font-face {
+    font-family: "Source Code Pro";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/fonts/Source-Code-Pro-Regular.woff2") format("woff2");
+  }
+
+  @font-face {
+    font-family: "Optimistic Display";
+    src: url("/fonts/Optimistic_Display_W_Lt.woff2") format("woff2");
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: "Optimistic Display";
+    src: url("/fonts/Optimistic_Display_W_Md.woff2") format("woff2");
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: "Optimistic Display";
+    src: url("/fonts/Optimistic_Display_W_Bd.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  html,
+  body {
+    padding: 0;
+    margin: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer utilities {
+  /* Chrome, Safari, Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE, Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+}
+
+::view-transition-old(.slide-in) {
+  animation-name: slideOutLeft;
+}
+::view-transition-new(.slide-in) {
+  animation-name: slideInLeft;
+}
+::view-transition-group(.slide-in) {
+  z-index: 1;
+}
+::view-transition-old(.slide-out) {
+  animation-name: slideOutLeft;
+}
+::view-transition-new(.slide-out) {
+  animation-name: slideInLeft;
+}
+::view-transition-group(.slide-out) {
+  z-index: 1;
+}
+
+@keyframes slideOutLeft {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+::view-transition-old(.container),
+::view-transition-new(.container) {
+  height: 100%;
+}
+
+::view-transition-old(.accordion-container),
+::view-transition-new(.accordion-container) {
+  height: 100%;
+  object-fit: none;
+  object-position: left;
+}
+
+::view-transition-old(.tab-highlight),
+::view-transition-new(.tab-highlight) {
+  height: 100%;
+}
+::view-transition-group(.tab-text) {
+	z-index: 1;
+}
+
+::view-transition-old(.expand-accordion),
+::view-transition-new(.expand-accordion) {
+  width: auto;
+}
+::view-transition-group(.expand-accordion) {
+  overflow: clip;
+}
+
+/**
+ * For some reason, the original Monaco editor is still visible to the
+ * left of the DiffEditor. This is a workaround for better visual clarity.
+ */
+.monaco-diff-editor .editor.original{
+  visibility: hidden !important;
+}

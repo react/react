@@ -7,12 +7,10 @@
  * @flow
  */
 
-import type {ElementType} from 'react-devtools-shared/src/types';
-import type {SerializedElement} from '../Components/types';
 import type {
-  TimelineData,
-  TimelineDataExport,
-} from 'react-devtools-timeline/src/types';
+  ElementType,
+  SerializedElement,
+} from 'react-devtools-shared/src/frontend/types';
 
 export type CommitTreeNode = {
   id: number,
@@ -23,6 +21,9 @@ export type CommitTreeNode = {
   parentID: number,
   treeBaseDuration: number,
   type: ElementType,
+  // If component is compiled with Forget, the backend will send its name as Forget(...)
+  // Later, on the frontend side, we will strip HOC names and Forget prefix.
+  compiledWithForget: boolean,
 };
 
 export type CommitTree = {
@@ -37,6 +38,9 @@ export type SnapshotNode = {
   hocDisplayNames: Array<string> | null,
   key: number | string | null,
   type: ElementType,
+  // If component is compiled with Forget, the backend will send its name as Forget(...)
+  // Later, on the frontend side, we will strip HOC names and Forget prefix.
+  compiledWithForget: boolean,
 };
 
 export type ChangeDescription = {
@@ -110,9 +114,6 @@ export type ProfilingDataFrontend = {
   // Legacy profiling data is per renderer + root.
   dataForRoots: Map<number, ProfilingDataForRootFrontend>,
 
-  // Timeline data is per rederer.
-  timelineData: Array<TimelineData>,
-
   // Some functionality should be disabled for imported data.
   // e.g. DevTools should not try to sync selection between Components and Profiler tabs,
   // even if there are Fibers with the same IDs.
@@ -149,8 +150,4 @@ export type ProfilingDataExport = {
 
   // Legacy profiling data is per renderer + root.
   dataForRoots: Array<ProfilingDataForRootExport>,
-
-  // Timeline data is per rederer.
-  // Note that old exported profiles won't contain this key.
-  timelineData?: Array<TimelineDataExport>,
 };

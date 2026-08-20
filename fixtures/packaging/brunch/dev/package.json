@@ -7,6 +7,6 @@
   },
   "scripts": {
     "build": "rm -rf public && brunch build",
-    "prebuild": "cp -r ../../../../build/node_modules/* ./node_modules/"
+    "prebuild": "cp -r ../../../../build/oss-experimental/* ./node_modules/"
   }
 }

@@ -1,3 +1,0 @@
-// @flow
-
-export * from '../src';

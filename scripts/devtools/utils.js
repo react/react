@@ -101,19 +101,19 @@ function readSavedBuildMetadata() {
     process.exit(1);
   }
 
-  const {archivePath, buildID} = readJsonSync(path);
+  const {archivePath, currentCommitHash} = readJsonSync(path);
 
-  return {archivePath, buildID};
+  return {archivePath, currentCommitHash};
 }
 
-function saveBuildMetadata({archivePath, buildID}) {
+function saveBuildMetadata({archivePath, currentCommitHash}) {
   const path = join(BUILD_METADATA_TEMP_DIRECTORY, 'metadata');
 
   if (!existsSync(BUILD_METADATA_TEMP_DIRECTORY)) {
     mkdirSync(BUILD_METADATA_TEMP_DIRECTORY);
   }
 
-  writeJsonSync(path, {archivePath, buildID}, {spaces: 2});
+  writeJsonSync(path, {archivePath, currentCommitHash}, {spaces: 2});
 }
 
 module.exports = {

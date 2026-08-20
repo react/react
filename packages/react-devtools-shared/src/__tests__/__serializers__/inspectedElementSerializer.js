@@ -1,4 +1,4 @@
-// test() is part of Jest's serializer API
+// `test` is part of Jest's serializer API
 export function test(maybeInspectedElement) {
   if (
     maybeInspectedElement === null ||
@@ -15,8 +15,7 @@ export function test(maybeInspectedElement) {
     hasOwnProperty('canEditFunctionProps') &&
     hasOwnProperty('canEditHooks') &&
     hasOwnProperty('canToggleSuspense') &&
-    hasOwnProperty('canToggleError') &&
-    hasOwnProperty('canViewSource')
+    hasOwnProperty('canToggleError')
   );
 }
 

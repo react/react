@@ -1,0 +1,62 @@
+.App-header {
+  background-color: #282c34;
+  min-height: 10vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.page {
+  display: flex;
+  height: 90vh;
+}
+
+.content {
+  flex: 4;
+  background-color: #f0f0f0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.content.highlight {
+  background-color: yellow;
+}
+
+.sidebar {
+  flex: 1;
+  background-color: #d0d0d0;
+  padding: 20px;
+}
+
+.line-number {
+  display: inline-block;
+  width: 30px;
+  text-align: right;
+  margin-right: 10px;
+  color: #888;
+}
+
+.text-symbol {
+  position: relative;
+  display: inline-block;
+}
+
+.hovercard {
+  display: none;
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background-color: white;
+  border: 1px solid #ccc;
+  padding: 5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.text-symbol:hover .hovercard {
+  display: block;
+}

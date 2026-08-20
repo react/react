@@ -19,18 +19,46 @@ const exec = (command, args) => {
   return execFileSync(command, args, options);
 };
 
-const execGitCmd = args =>
-  exec('git', args)
-    .trim()
-    .toString()
-    .split('\n');
+const isGit = () => {
+  try {
+    const wt = execGitCmd(['rev-parse', '--is-inside-work-tree']);
+    return wt.length > 0 && wt[0] === 'true';
+  } catch (_e) {
+    return false;
+  }
+};
+
+const isSl = () => {
+  try {
+    execSlCmd(['whereami']);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+};
+
+const execGitCmd = args => exec('git', args).trim().toString().split('\n');
+const execSlCmd = args => exec('sl', args).trim().toString().split('\n');
 
 const listChangedFiles = () => {
-  const mergeBase = execGitCmd(['merge-base', 'HEAD', 'main']);
-  return new Set([
-    ...execGitCmd(['diff', '--name-only', '--diff-filter=ACMRTUB', mergeBase]),
-    ...execGitCmd(['ls-files', '--others', '--exclude-standard']),
-  ]);
+  if (isGit()) {
+    const mergeBase = execGitCmd(['merge-base', 'HEAD', 'main']);
+    return new Set([
+      ...execGitCmd([
+        'diff',
+        '--name-only',
+        '--diff-filter=ACMRTUB',
+        mergeBase,
+      ]),
+      ...execGitCmd(['ls-files', '--others', '--exclude-standard']),
+    ]);
+  } else if (isSl()) {
+    const mergeBase = execSlCmd(['log', '-r', 'last(public() & ::.)'])[0]
+      .trim()
+      .split(/\s+/)[1];
+    return new Set(execSlCmd(['status', '--no-status', '--rev', mergeBase]));
+  }
+  throw new Error('Not a git or sl repo');
 };
 
 module.exports = listChangedFiles;

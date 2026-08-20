@@ -11,7 +11,7 @@ import semver from 'semver';
 
 function parseQuery(qstr) {
   var query = {};
-  var a = qstr.substr(1).split('&');
+  var a = qstr.slice(1).split('&');
 
   for (var i = 0; i < a.length; i++) {
     var b = a[i].split('=');
@@ -36,9 +36,40 @@ function loadScript(src) {
   });
 }
 
+function loadModules(SymbolSrcPairs) {
+  let firstScript = document.getElementsByTagName('script')[0];
+
+  let imports = '';
+  SymbolSrcPairs.map(([symbol, src]) => {
+    imports += `import ${symbol} from "${src}";\n`;
+    imports += `window.${symbol} = ${symbol};\n`;
+  });
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error('Timed out loading react modules over esm')),
+      5000
+    );
+    window.__loaded = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+
+    const moduleScript = document.createElement('script');
+    moduleScript.type = 'module';
+    moduleScript.textContent = imports + 'window.__loaded();';
+
+    firstScript.parentNode.insertBefore(moduleScript, firstScript);
+  });
+}
+
 function getVersion() {
   let query = parseQuery(window.location.search);
   return query.version || 'local';
+}
+
+export function isLocal() {
+  return getVersion() === 'local';
 }
 
 export function reactPaths(version = getVersion()) {
@@ -47,12 +78,15 @@ export function reactPaths(version = getVersion()) {
   let environment = isProduction ? 'production.min' : 'development';
   let reactPath = `react.${environment}.js`;
   let reactDOMPath = `react-dom.${environment}.js`;
+  let reactDOMClientPath = `react-dom.${environment}.js`;
   let reactDOMServerPath = `react-dom-server.browser.${environment}.js`;
   let needsCreateElement = true;
   let needsReactDOM = true;
+  let usingModules = false;
 
   if (version !== 'local') {
     const {major, minor, prerelease} = semver(version);
+    console.log('semver', semver(version));
 
     if (major === 0) {
       needsCreateElement = minor >= 12;
@@ -62,7 +96,16 @@ export function reactPaths(version = getVersion()) {
     const [preReleaseStage] = prerelease;
     // The file structure was updated in 16. This wasn't the case for alphas.
     // Load the old module location for anything less than 16 RC
-    if (major >= 16 && !(minor === 0 && preReleaseStage === 'alpha')) {
+    if (major >= 19) {
+      usingModules = true;
+      const devQuery = environment === 'development' ? '?dev' : '';
+      reactPath = 'https://esm.sh/react@' + version + '/' + devQuery;
+      reactDOMPath = 'https://esm.sh/react-dom@' + version + '/' + devQuery;
+      reactDOMClientPath =
+        'https://esm.sh/react-dom@' + version + '/client' + devQuery;
+      reactDOMServerPath =
+        'https://esm.sh/react-dom@' + version + '/server.browser' + devQuery;
+    } else if (major >= 16 && !(minor === 0 && preReleaseStage === 'alpha')) {
       reactPath =
         'https://unpkg.com/react@' +
         version +
@@ -90,30 +133,50 @@ export function reactPaths(version = getVersion()) {
       reactPath =
         'https://cdnjs.cloudflare.com/ajax/libs/react/' + version + '/react.js';
     }
+  } else {
+    throw new Error(
+      'This fixture no longer works with local versions. Provide a version query parameter that matches a version published to npm to use the fixture.'
+    );
   }
 
   return {
     reactPath,
     reactDOMPath,
+    reactDOMClientPath,
     reactDOMServerPath,
     needsCreateElement,
     needsReactDOM,
+    usingModules,
   };
 }
 
 export default function loadReact() {
-  const {reactPath, reactDOMPath, needsReactDOM} = reactPaths();
+  console.log('reactPaths', reactPaths());
+  const {
+    reactPath,
+    reactDOMPath,
+    reactDOMClientPath,
+    needsReactDOM,
+    usingModules,
+  } = reactPaths();
 
-  let request = loadScript(reactPath);
-
-  if (needsReactDOM) {
-    request = request.then(() => loadScript(reactDOMPath));
+  if (usingModules) {
+    return loadModules([
+      ['React', reactPath],
+      ['ReactDOM', reactDOMPath],
+      ['ReactDOMClient', reactDOMClientPath],
+    ]);
   } else {
-    // Aliasing React to ReactDOM for compatibility.
-    request = request.then(() => {
-      window.ReactDOM = window.React;
-    });
-  }
+    let request = loadScript(reactPath, usingModules);
 
-  return request;
+    if (needsReactDOM) {
+      request = request.then(() => loadScript(reactDOMPath, usingModules));
+    } else {
+      // Aliasing React to ReactDOM for compatibility.
+      request = request.then(() => {
+        window.ReactDOM = window.React;
+      });
+    }
+    return request;
+  }
 }

@@ -13,6 +13,7 @@
 const React = require('react');
 let ReactTestRenderer;
 let Context;
+let act;
 
 const RCTView = 'RCTView';
 const View = props => <RCTView {...props} />;
@@ -21,6 +22,7 @@ describe('ReactTestRendererTraversal', () => {
   beforeEach(() => {
     jest.resetModules();
     ReactTestRenderer = require('react-test-renderer');
+    act = require('internal-test-utils').act;
     Context = React.createContext(null);
   });
 
@@ -68,8 +70,11 @@ describe('ReactTestRendererTraversal', () => {
     <View {...props} ref={ref} />
   ));
 
-  it('initializes', () => {
-    const render = ReactTestRenderer.create(<Example />);
+  it('initializes', async () => {
+    let render;
+    await act(() => {
+      render = ReactTestRenderer.create(<Example />);
+    });
     const hasFooProp = node => node.props.hasOwnProperty('foo');
 
     // assert .props, .type and .parent attributes
@@ -80,8 +85,12 @@ describe('ReactTestRendererTraversal', () => {
     expect(foo.children[0].parent).toBe(foo);
   });
 
-  it('searches via .find() / .findAll()', () => {
-    const render = ReactTestRenderer.create(<Example />);
+  it('searches via .find() / .findAll()', async () => {
+    let render;
+    await act(() => {
+      render = ReactTestRenderer.create(<Example />);
+    });
+
     const hasFooProp = node => node.props.hasOwnProperty('foo');
     const hasBarProp = node => node.props.hasOwnProperty('bar');
     const hasBazProp = node => node.props.hasOwnProperty('baz');
@@ -135,8 +144,11 @@ describe('ReactTestRendererTraversal', () => {
     expect(itself.findAll(hasBazProp)).toHaveLength(2);
   });
 
-  it('searches via .findByType() / .findAllByType()', () => {
-    const render = ReactTestRenderer.create(<Example />);
+  it('searches via .findByType() / .findAllByType()', async () => {
+    let render;
+    await act(() => {
+      render = ReactTestRenderer.create(<Example />);
+    });
 
     expect(() => render.root.findByType(ExampleFn)).not.toThrow(); // 1 match
     expect(() => render.root.findByType(View)).not.toThrow(); // 1 match
@@ -159,8 +171,11 @@ describe('ReactTestRendererTraversal', () => {
     expect(fn[0].findAllByType(View)).toHaveLength(1);
   });
 
-  it('searches via .findByProps() / .findAllByProps()', () => {
-    const render = ReactTestRenderer.create(<Example />);
+  it('searches via .findByProps() / .findAllByProps()', async () => {
+    let render;
+    await act(() => {
+      render = ReactTestRenderer.create(<Example />);
+    });
     const foo = 'foo';
     const bar = 'bar';
     const baz = 'baz';
@@ -182,8 +197,11 @@ describe('ReactTestRendererTraversal', () => {
     expect(render.root.findAllByProps({qux})).toHaveLength(3);
   });
 
-  it('skips special nodes', () => {
-    const render = ReactTestRenderer.create(<Example />);
+  it('skips special nodes', async () => {
+    let render;
+    await act(() => {
+      render = ReactTestRenderer.create(<Example />);
+    });
     expect(render.root.findAllByType(React.Fragment)).toHaveLength(0);
     expect(render.root.findAllByType(Context.Consumer)).toHaveLength(0);
     expect(render.root.findAllByType(Context.Provider)).toHaveLength(0);
@@ -200,47 +218,62 @@ describe('ReactTestRendererTraversal', () => {
     expect(nestedViews[2].parent).toBe(expectedParent);
   });
 
-  it('can have special nodes as roots', () => {
+  it('can have special nodes as roots', async () => {
     const FR = React.forwardRef((props, ref) => <section {...props} />);
-    expect(
-      ReactTestRenderer.create(
+
+    let render1;
+    await act(() => {
+      render1 = ReactTestRenderer.create(
         <FR>
           <div />
           <div />
         </FR>,
-      ).root.findAllByType('div').length,
-    ).toBe(2);
-    expect(
-      ReactTestRenderer.create(
+      );
+    });
+    expect(render1.root.findAllByType('div').length).toBe(2);
+
+    let render2;
+    await act(() => {
+      render2 = ReactTestRenderer.create(
         <>
           <div />
           <div />
         </>,
-      ).root.findAllByType('div').length,
-    ).toBe(2);
-    expect(
-      ReactTestRenderer.create(
+      );
+    });
+    expect(render2.root.findAllByType('div').length).toBe(2);
+
+    let render3;
+    await act(() => {
+      render3 = ReactTestRenderer.create(
         <React.Fragment key="foo">
           <div />
           <div />
         </React.Fragment>,
-      ).root.findAllByType('div').length,
-    ).toBe(2);
-    expect(
-      ReactTestRenderer.create(
+      );
+    });
+    expect(render3.root.findAllByType('div').length).toBe(2);
+
+    let render4;
+    await act(() => {
+      render4 = ReactTestRenderer.create(
         <React.StrictMode>
           <div />
           <div />
         </React.StrictMode>,
-      ).root.findAllByType('div').length,
-    ).toBe(2);
-    expect(
-      ReactTestRenderer.create(
+      );
+    });
+    expect(render4.root.findAllByType('div').length).toBe(2);
+
+    let render5;
+    await act(() => {
+      render5 = ReactTestRenderer.create(
         <Context.Provider value={null}>
           <div />
           <div />
         </Context.Provider>,
-      ).root.findAllByType('div').length,
-    ).toBe(2);
+      );
+    });
+    expect(render5.root.findAllByType('div').length).toBe(2);
   });
 });

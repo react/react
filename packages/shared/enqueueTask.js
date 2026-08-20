@@ -16,6 +16,7 @@ export default function enqueueTask(task: () => void): void {
       // read require off the module object to get around the bundlers.
       // we don't want them to detect a require and bundle a Node polyfill.
       const requireString = ('require' + Math.random()).slice(0, 7);
+      // $FlowFixMe[invalid-computed-prop]
       const nodeRequire = module && module[requireString];
       // assuming we're in node, let's try to get node's
       // version of setImmediate, bypassing fake timers if any.
@@ -24,7 +25,7 @@ export default function enqueueTask(task: () => void): void {
       // we're in a browser
       // we can't use regular timers because they may still be faked
       // so we try MessageChannel+postMessage instead
-      enqueueTaskImpl = function(callback: () => void) {
+      enqueueTaskImpl = function (callback: () => void) {
         if (__DEV__) {
           if (didWarnAboutMessageChannel === false) {
             didWarnAboutMessageChannel = true;

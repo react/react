@@ -16,9 +16,15 @@
         If you checked out the source from GitHub make sure to run <code>npm run build</code>.
       </p>
     </div>
-    <script src="../../build/node_modules/react/umd/react.development.js"></script>
-    <script src="../../build/node_modules/react-dom/umd/react-dom.development.js"></script>
-    <script src="../../build/node_modules/react-dom/umd/react-dom-server.browser.development.js"></script>
+    <script type="module">
+      import React from "https://esm.sh/react@canary?dev";
+      import ReactDOM from "https://esm.sh/react-dom@canary?dev";
+      import ReactDOMServer from "https://esm.sh/react-dom@canary/server.browser?dev";
+
+      window.React = React;
+      window.ReactDOM = ReactDOM;
+      window.ReactDOMServer = ReactDOMServer;
+    </script>
     <script src="https://unpkg.com/babel-standalone@6/babel.js"></script>
     <script type="text/babel">
       async function render() {

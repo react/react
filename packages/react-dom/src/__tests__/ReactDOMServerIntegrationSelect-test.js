@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @emails react-core
+ * @jest-environment ./scripts/jest/ReactDOMServerIntegrationEnvironment
  */
 
 'use strict';
@@ -12,31 +13,25 @@
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
-let ReactTestUtils;
 
 function initModules() {
   // Reset warning cache.
-  jest.resetModuleRegistry();
+  jest.resetModules();
   React = require('react');
-  ReactDOM = require('react-dom');
+  ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
-  ReactTestUtils = require('react-dom/test-utils');
 
   // Make them available to the helpers.
   return {
-    ReactDOM,
+    ReactDOMClient,
     ReactDOMServer,
-    ReactTestUtils,
   };
 }
 
-const {
-  resetModules,
-  itRenders,
-  itThrowsWhenRendering,
-} = ReactDOMServerIntegrationUtils(initModules);
+const {resetModules, itRenders, itThrowsWhenRendering} =
+  ReactDOMServerIntegrationUtils(initModules);
 
 describe('ReactDOMServerIntegrationSelect', () => {
   let options;
@@ -223,11 +218,13 @@ describe('ReactDOMServerIntegrationSelect', () => {
   itRenders('a select option with flattened children', async render => {
     const e = await render(
       <select value="bar" readOnly={true}>
-        <option value="bar">A {'B'}</option>
+        <option value="bar">
+          A {'B'} {5n}
+        </option>
       </select>,
     );
     const option = e.options[0];
-    expect(option.textContent).toBe('A B');
+    expect(option.textContent).toBe('A B 5');
     expect(option.value).toBe('bar');
     expect(option.selected).toBe(true);
   });
@@ -255,7 +252,6 @@ describe('ReactDOMServerIntegrationSelect', () => {
           <option value="first">First</option>
           <option value="true">True</option>
         </select>,
-        1,
       );
       expect(e.firstChild.selected).toBe(false);
       expect(e.lastChild.selected).toBe(true);
@@ -270,7 +266,6 @@ describe('ReactDOMServerIntegrationSelect', () => {
           <option value="first">First</option>
           <option value="undefined">Undefined</option>
         </select>,
-        1,
       );
       expect(e.firstChild.selected).toBe(true);
       expect(e.lastChild.selected).toBe(false);

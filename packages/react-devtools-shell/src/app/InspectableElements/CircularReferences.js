@@ -9,13 +9,20 @@
 
 import * as React from 'react';
 
-const arrayOne = [];
-const arrayTwo = [];
+const arrayOne: $FlowFixMe = [];
+const arrayTwo: $FlowFixMe = [];
 arrayTwo.push(arrayOne);
 arrayOne.push(arrayTwo);
 
-const objectOne = {};
-const objectTwo = {objectOne};
+type ObjectOne = {
+  objectTwo?: ObjectTwo,
+};
+type ObjectTwo = {
+  objectOne: ObjectOne,
+};
+
+const objectOne: ObjectOne = {};
+const objectTwo: ObjectTwo = {objectOne};
 objectOne.objectTwo = objectTwo;
 
 export default function CircularReferences(): React.Node {

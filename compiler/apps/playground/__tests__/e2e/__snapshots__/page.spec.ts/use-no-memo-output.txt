@@ -1,0 +1,8 @@
+const TestComponent = function () {
+  "use no memo";
+  return <Button>{x}</Button>;
+};
+const TestComponent2 = ({ x }) => {
+  "use no memo";
+  return <Button>{x}</Button>;
+};

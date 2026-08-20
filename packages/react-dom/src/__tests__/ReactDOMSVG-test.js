@@ -6,18 +6,19 @@
  *
  * @emails react-core
  */
-
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
+let act;
 
 describe('ReactDOMSVG', () => {
   beforeEach(() => {
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
+    act = require('internal-test-utils').act;
   });
 
   it('creates initial namespaced markup', () => {
@@ -29,7 +30,7 @@ describe('ReactDOMSVG', () => {
     expect(markup).toContain('xlink:href="http://i.imgur.com/w7GCRPb.png"');
   });
 
-  it('creates elements with SVG namespace inside SVG tag during mount', () => {
+  it('creates elements with SVG namespace inside SVG tag during mount', async () => {
     const node = document.createElement('div');
     let div,
       div2,
@@ -45,43 +46,45 @@ describe('ReactDOMSVG', () => {
       svg2,
       svg3,
       svg4;
-    ReactDOM.render(
-      <div>
-        <svg ref={el => (svg = el)}>
-          <g ref={el => (g = el)} strokeWidth="5">
-            <svg ref={el => (svg2 = el)}>
-              <foreignObject ref={el => (foreignObject = el)}>
-                <svg ref={el => (svg3 = el)}>
-                  <svg ref={el => (svg4 = el)} />
-                  <image
-                    ref={el => (image = el)}
-                    xlinkHref="http://i.imgur.com/w7GCRPb.png"
-                  />
-                </svg>
-                <div ref={el => (div = el)} />
+    const root = ReactDOMClient.createRoot(node);
+    await act(() => {
+      root.render(
+        <div>
+          <svg ref={el => (svg = el)}>
+            <g ref={el => (g = el)} strokeWidth="5">
+              <svg ref={el => (svg2 = el)}>
+                <foreignObject ref={el => (foreignObject = el)}>
+                  <svg ref={el => (svg3 = el)}>
+                    <svg ref={el => (svg4 = el)} />
+                    <image
+                      ref={el => (image = el)}
+                      xlinkHref="http://i.imgur.com/w7GCRPb.png"
+                    />
+                  </svg>
+                  <div ref={el => (div = el)} />
+                </foreignObject>
+              </svg>
+              <image
+                ref={el => (image2 = el)}
+                xlinkHref="http://i.imgur.com/w7GCRPb.png"
+              />
+              <foreignObject ref={el => (foreignObject2 = el)}>
+                <div ref={el => (div2 = el)} />
               </foreignObject>
-            </svg>
-            <image
-              ref={el => (image2 = el)}
-              xlinkHref="http://i.imgur.com/w7GCRPb.png"
-            />
-            <foreignObject ref={el => (foreignObject2 = el)}>
-              <div ref={el => (div2 = el)} />
-            </foreignObject>
-          </g>
-        </svg>
-        <p ref={el => (p = el)}>
-          <svg>
-            <image
-              ref={el => (image3 = el)}
-              xlinkHref="http://i.imgur.com/w7GCRPb.png"
-            />
+            </g>
           </svg>
-        </p>
-        <div ref={el => (div3 = el)} />
-      </div>,
-      node,
-    );
+          <p ref={el => (p = el)}>
+            <svg>
+              <image
+                ref={el => (image3 = el)}
+                xlinkHref="http://i.imgur.com/w7GCRPb.png"
+              />
+            </svg>
+          </p>
+          <div ref={el => (div3 = el)} />
+        </div>,
+      );
+    });
     [svg, svg2, svg3, svg4].forEach(el => {
       expect(el.namespaceURI).toBe('http://www.w3.org/2000/svg');
       // SVG tagName is case sensitive.
@@ -110,7 +113,7 @@ describe('ReactDOMSVG', () => {
     });
   });
 
-  it('creates elements with SVG namespace inside SVG tag during update', () => {
+  it('creates elements with SVG namespace inside SVG tag during update', async () => {
     let inst,
       div,
       div2,
@@ -126,6 +129,7 @@ describe('ReactDOMSVG', () => {
 
     class App extends React.Component {
       state = {step: 0};
+
       render() {
         inst = this;
         const {step} = this.state;
@@ -159,13 +163,17 @@ describe('ReactDOMSVG', () => {
     }
 
     const node = document.createElement('div');
-    ReactDOM.render(
-      <svg ref={el => (svg = el)}>
-        <App />
-      </svg>,
-      node,
-    );
-    inst.setState({step: 1});
+    const root = ReactDOMClient.createRoot(node);
+    await act(() => {
+      root.render(
+        <svg ref={el => (svg = el)}>
+          <App />
+        </svg>,
+      );
+    });
+    await act(() => {
+      inst.setState({step: 1});
+    });
 
     [svg, svg2, svg3, svg4].forEach(el => {
       expect(el.namespaceURI).toBe('http://www.w3.org/2000/svg');
@@ -193,7 +201,7 @@ describe('ReactDOMSVG', () => {
     });
   });
 
-  it('can render SVG into a non-React SVG tree', () => {
+  it('can render SVG into a non-React SVG tree', async () => {
     const outerSVGRoot = document.createElementNS(
       'http://www.w3.org/2000/svg',
       'svg',
@@ -204,12 +212,15 @@ describe('ReactDOMSVG', () => {
     );
     outerSVGRoot.appendChild(container);
     let image;
-    ReactDOM.render(<image ref={el => (image = el)} />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<image ref={el => (image = el)} />);
+    });
     expect(image.namespaceURI).toBe('http://www.w3.org/2000/svg');
     expect(image.tagName).toBe('image');
   });
 
-  it('can render HTML into a foreignObject in non-React SVG tree', () => {
+  it('can render HTML into a foreignObject in non-React SVG tree', async () => {
     const outerSVGRoot = document.createElementNS(
       'http://www.w3.org/2000/svg',
       'svg',
@@ -220,7 +231,10 @@ describe('ReactDOMSVG', () => {
     );
     outerSVGRoot.appendChild(container);
     let div;
-    ReactDOM.render(<div ref={el => (div = el)} />, container);
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div ref={el => (div = el)} />);
+    });
     expect(div.namespaceURI).toBe('http://www.w3.org/1999/xhtml');
     expect(div.tagName).toBe('DIV');
   });

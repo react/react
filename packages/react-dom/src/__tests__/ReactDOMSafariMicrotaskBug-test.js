@@ -13,25 +13,33 @@ let React;
 
 let ReactDOMClient;
 let act;
+let assertLog;
+let Scheduler;
 
 describe('ReactDOMSafariMicrotaskBug-test', () => {
   let container;
-  let flushMicrotasksPrematurely;
+  let overrideQueueMicrotask;
+  let flushFakeMicrotasks;
 
   beforeEach(() => {
     // In Safari, microtasks don't always run on clean stack.
     // This setup crudely approximates it.
     // In reality, the sync flush happens when an iframe is added to the page.
     // https://github.com/facebook/react/issues/22459
-    let queue = [];
-    window.queueMicrotask = function(cb) {
-      queue.push(cb);
+    const originalQueueMicrotask = queueMicrotask;
+    overrideQueueMicrotask = false;
+    const fakeMicrotaskQueue = [];
+    global.queueMicrotask = cb => {
+      if (overrideQueueMicrotask) {
+        fakeMicrotaskQueue.push(cb);
+      } else {
+        originalQueueMicrotask(cb);
+      }
     };
-    flushMicrotasksPrematurely = function() {
-      while (queue.length > 0) {
-        const prevQueue = queue;
-        queue = [];
-        prevQueue.forEach(cb => cb());
+    flushFakeMicrotasks = () => {
+      while (fakeMicrotaskQueue.length > 0) {
+        const cb = fakeMicrotaskQueue.shift();
+        cb();
       }
     };
 
@@ -39,7 +47,9 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
     container = document.createElement('div');
     React = require('react');
     ReactDOMClient = require('react-dom/client');
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
+    assertLog = require('internal-test-utils').assertLog;
+    Scheduler = require('scheduler');
 
     document.body.appendChild(container);
   });
@@ -55,10 +65,14 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
       return (
         <div
           ref={() => {
+            overrideQueueMicrotask = true;
             if (!ran) {
               ran = true;
               setState(1);
-              flushMicrotasksPrematurely();
+              flushFakeMicrotasks();
+              Scheduler.log(
+                'Content at end of ref callback: ' + container.textContent,
+              );
             }
           }}>
           {state}
@@ -66,9 +80,10 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
       );
     }
     const root = ReactDOMClient.createRoot(container);
-    await act(async () => {
+    await act(() => {
       root.render(<Foo />);
     });
+    assertLog(['Content at end of ref callback: 0']);
     expect(container.textContent).toBe('1');
   });
 
@@ -78,23 +93,32 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
       return (
         <button
           onClick={() => {
+            overrideQueueMicrotask = true;
             setState(1);
-            flushMicrotasksPrematurely();
+            flushFakeMicrotasks();
+            Scheduler.log(
+              'Content at end of click handler: ' + container.textContent,
+            );
           }}>
           {state}
         </button>
       );
     }
     const root = ReactDOMClient.createRoot(container);
-    await act(async () => {
+    await act(() => {
       root.render(<Foo />);
     });
     expect(container.textContent).toBe('0');
-    await act(async () => {
+    await act(() => {
       container.firstChild.dispatchEvent(
         new MouseEvent('click', {bubbles: true}),
       );
     });
+    // This causes the update to flush earlier than usual. This isn't the ideal
+    // behavior but we use this test to document it. The bug is Safari's, not
+    // ours, so we just do our best to not crash even though the behavior isn't
+    // completely correct.
+    assertLog(['Content at end of click handler: 1']);
     expect(container.textContent).toBe('1');
   });
 });

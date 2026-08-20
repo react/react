@@ -4,7 +4,7 @@
 
 'use strict';
 
-(function() {
+(function () {
   var Fixture = null;
   var output = document.getElementById('output');
   var status = document.getElementById('status');
@@ -60,7 +60,7 @@
     setStatus('Generating markup');
 
     return Promise.resolve()
-      .then(function() {
+      .then(function () {
         const element = createElement(Fixture);
 
         // Server rendering moved to a separate package along with ReactDOM
@@ -80,11 +80,11 @@
         }
 
         // Finally, React 0.4 and lower emits markup in a callback
-        return new Promise(function(resolve) {
+        return new Promise(function (resolve) {
           React.renderComponentToString(element, resolve);
         });
       })
-      .then(function(string) {
+      .then(function (string) {
         output.innerHTML = string;
         setStatus('Markup only (No React)');
       })
@@ -124,13 +124,13 @@
   }
 
   function loadScript(src) {
-    return new Promise(function(resolve, reject) {
+    return new Promise(function (resolve, reject) {
       var script = document.createElement('script');
       script.async = true;
       script.src = src;
 
       script.onload = resolve;
-      script.onerror = function(error) {
+      script.onerror = function (error) {
         reject(new Error('Unable to load ' + src));
       };
 
@@ -145,7 +145,7 @@
       setStatus('Failed');
       output.innerHTML = 'Please name your root component "Fixture"';
     } else {
-      prerender().then(function() {
+      prerender().then(function () {
         if (getBooleanQueryParam('hydrate')) {
           render();
         }
@@ -161,14 +161,14 @@
 
   window.onerror = handleError;
 
-  reload.onclick = function() {
+  reload.onclick = function () {
     window.location.reload();
   };
 
   hydrate.onclick = render;
 
   loadScript(getQueryParam('reactPath'))
-    .then(function() {
+    .then(function () {
       if (needsReactDOM) {
         return Promise.all([
           loadScript(getQueryParam('reactDOMPath')),
@@ -176,12 +176,12 @@
         ]);
       }
     })
-    .then(function() {
+    .then(function () {
       if (failed) {
         return;
       }
 
-      window.addEventListener('message', function(event) {
+      window.addEventListener('message', function (event) {
         var data = JSON.parse(event.data);
 
         switch (data.type) {

@@ -12,7 +12,7 @@ import type {ReactScopeInstance} from 'shared/ReactTypes';
 import type {
   ReactDOMEventHandle,
   ReactDOMEventHandleListener,
-} from '../shared/ReactDOMTypes';
+} from './ReactDOMEventHandleTypes';
 
 import {allNativeEvents} from '../events/EventRegistry';
 import {
@@ -21,30 +21,31 @@ import {
   doesTargetHaveEventHandle,
   addEventHandleToTarget,
 } from './ReactDOMComponentTree';
-import {ELEMENT_NODE} from '../shared/HTMLNodeType';
+import {ELEMENT_NODE} from './HTMLNodeType';
 import {listenToNativeEventForNonManagedEventTarget} from '../events/DOMPluginEventSystem';
 
 import {
   enableScopeAPI,
   enableCreateEventHandleAPI,
 } from 'shared/ReactFeatureFlags';
+import typeof {SyntheticEvent} from '../events/SyntheticEvent';
 
 type EventHandleOptions = {
   capture?: boolean,
 };
 
 function isValidEventTarget(target: EventTarget | ReactScopeInstance): boolean {
-  return typeof (target: Object).addEventListener === 'function';
+  return typeof (target as Object).addEventListener === 'function';
 }
 
 function isReactScope(target: EventTarget | ReactScopeInstance): boolean {
-  return typeof (target: Object).getChildContextValues === 'function';
+  return typeof (target as Object).getChildContextValues === 'function';
 }
 
 function createEventHandleListener(
   type: DOMEventName,
   isCapturePhaseListener: boolean,
-  callback: (SyntheticEvent<EventTarget>) => void,
+  callback: SyntheticEvent => void,
 ): ReactDOMEventHandleListener {
   return {
     callback,
@@ -58,12 +59,12 @@ function registerReactDOMEvent(
   domEventName: DOMEventName,
   isCapturePhaseListener: boolean,
 ): void {
-  if ((target: any).nodeType === ELEMENT_NODE) {
+  if ((target as any).nodeType === ELEMENT_NODE) {
     // Do nothing. We already attached all root listeners.
   } else if (enableScopeAPI && isReactScope(target)) {
     // Do nothing. We already attached all root listeners.
   } else if (isValidEventTarget(target)) {
-    const eventTarget = ((target: any): EventTarget);
+    const eventTarget = target as any as EventTarget;
     // These are valid event targets, but they are also
     // non-managed React nodes.
     listenToNativeEventForNonManagedEventTarget(
@@ -84,7 +85,7 @@ export function createEventHandle(
   options?: EventHandleOptions,
 ): ReactDOMEventHandle {
   if (enableCreateEventHandleAPI) {
-    const domEventName = ((type: any): DOMEventName);
+    const domEventName = type as any as DOMEventName;
 
     // We cannot support arbitrary native events with eager root listeners
     // because the eager strategy relies on knowing the whole list ahead of time.
@@ -109,9 +110,9 @@ export function createEventHandle(
       }
     }
 
-    const eventHandle = (
+    const eventHandle: ReactDOMEventHandle = (
       target: EventTarget | ReactScopeInstance,
-      callback: (SyntheticEvent<EventTarget>) => void,
+      callback: SyntheticEvent => void,
     ) => {
       if (typeof callback !== 'function') {
         throw new Error(
@@ -136,7 +137,7 @@ export function createEventHandle(
       }
       targetListeners.add(listener);
       return () => {
-        ((targetListeners: any): Set<ReactDOMEventHandleListener>).delete(
+        (targetListeners as any as Set<ReactDOMEventHandleListener>).delete(
           listener,
         );
       };
@@ -144,5 +145,5 @@ export function createEventHandle(
 
     return eventHandle;
   }
-  return (null: any);
+  return null as any;
 }

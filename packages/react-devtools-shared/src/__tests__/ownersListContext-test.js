@@ -8,15 +8,16 @@
  */
 
 import typeof ReactTestRenderer from 'react-test-renderer';
-import type {Element} from 'react-devtools-shared/src/devtools/views/Components/types';
+import type {Element} from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
 import type Store from 'react-devtools-shared/src/devtools/store';
+
+import {getVersionedRenderImplementation} from './utils';
 
 describe('OwnersListContext', () => {
   let React;
   let TestRenderer: ReactTestRenderer;
   let bridge: FrontendBridge;
-  let legacyRender;
   let store: Store;
   let utils;
 
@@ -30,8 +31,6 @@ describe('OwnersListContext', () => {
     utils = require('./utils');
     utils.beforeEachProfiling();
 
-    legacyRender = utils.legacyRender;
-
     bridge = global.bridge;
     store = global.store;
     store.collapseNodesByDefault = false;
@@ -39,17 +38,19 @@ describe('OwnersListContext', () => {
     React = require('react');
     TestRenderer = utils.requireTestRenderer();
 
-    BridgeContext = require('react-devtools-shared/src/devtools/views/context')
-      .BridgeContext;
-    OwnersListContext = require('react-devtools-shared/src/devtools/views/Components/OwnersListContext')
-      .OwnersListContext;
-    OwnersListContextController = require('react-devtools-shared/src/devtools/views/Components/OwnersListContext')
-      .OwnersListContextController;
-    StoreContext = require('react-devtools-shared/src/devtools/views/context')
-      .StoreContext;
-    TreeContextController = require('react-devtools-shared/src/devtools/views/Components/TreeContext')
-      .TreeContextController;
+    BridgeContext =
+      require('react-devtools-shared/src/devtools/views/context').BridgeContext;
+    OwnersListContext =
+      require('react-devtools-shared/src/devtools/views/Components/OwnersListContext').OwnersListContext;
+    OwnersListContextController =
+      require('react-devtools-shared/src/devtools/views/Components/OwnersListContext').OwnersListContextController;
+    StoreContext =
+      require('react-devtools-shared/src/devtools/views/context').StoreContext;
+    TreeContextController =
+      require('react-devtools-shared/src/devtools/views/Components/TreeContext').TreeContextController;
   });
+
+  const {render} = getVersionedRenderImplementation();
 
   const Contexts = ({children, defaultOwnerID = null}) => (
     <BridgeContext.Provider value={bridge}>
@@ -98,9 +99,7 @@ describe('OwnersListContext', () => {
     };
     const Child = () => null;
 
-    utils.act(() =>
-      legacyRender(<Grandparent />, document.createElement('div')),
-    );
+    utils.act(() => render(<Grandparent />));
 
     expect(store).toMatchInlineSnapshot(`
       [root]
@@ -114,14 +113,14 @@ describe('OwnersListContext', () => {
     const firstChild = ((store.getElementAtIndex(2): any): Element);
 
     expect(await getOwnersListForOwner(parent)).toMatchInlineSnapshot(`
-      Array [
+      [
         "Grandparent",
         "Parent",
       ]
     `);
 
     expect(await getOwnersListForOwner(firstChild)).toMatchInlineSnapshot(`
-      Array [
+      [
         "Grandparent",
         "Parent",
         "Child",
@@ -143,9 +142,7 @@ describe('OwnersListContext', () => {
     };
     const Child = () => null;
 
-    utils.act(() =>
-      legacyRender(<Grandparent />, document.createElement('div')),
-    );
+    utils.act(() => render(<Grandparent />));
 
     expect(store).toMatchInlineSnapshot(`
       [root]
@@ -157,9 +154,8 @@ describe('OwnersListContext', () => {
     const firstChild = ((store.getElementAtIndex(1): any): Element);
 
     expect(await getOwnersListForOwner(firstChild)).toMatchInlineSnapshot(`
-      Array [
+      [
         "Grandparent",
-        "Parent",
         "Child",
       ]
     `);
@@ -171,9 +167,7 @@ describe('OwnersListContext', () => {
     const Grandparent = () => <Parent />;
     const Parent = () => null;
 
-    utils.act(() =>
-      legacyRender(<Grandparent />, document.createElement('div')),
-    );
+    utils.act(() => render(<Grandparent />));
 
     expect(store).toMatchInlineSnapshot(`
       [root]
@@ -183,7 +177,7 @@ describe('OwnersListContext', () => {
     const grandparent = ((store.getElementAtIndex(0): any): Element);
 
     expect(await getOwnersListForOwner(grandparent)).toMatchInlineSnapshot(`
-      Array [
+      [
         "Grandparent",
       ]
     `);
@@ -198,9 +192,7 @@ describe('OwnersListContext', () => {
       return <Memo ref={ref} />;
     };
 
-    utils.act(() =>
-      legacyRender(<Grandparent />, document.createElement('div')),
-    );
+    utils.act(() => render(<Grandparent />));
 
     expect(store).toMatchInlineSnapshot(`
       [root]
@@ -212,7 +204,7 @@ describe('OwnersListContext', () => {
     const wrapped = ((store.getElementAtIndex(2): any): Element);
 
     expect(await getOwnersListForOwner(wrapped)).toMatchInlineSnapshot(`
-      Array [
+      [
         "Grandparent",
         "InnerComponent",
         "InnerComponent",

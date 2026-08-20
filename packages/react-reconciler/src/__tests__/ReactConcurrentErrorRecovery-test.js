@@ -5,6 +5,7 @@ let act;
 let Suspense;
 let getCacheForType;
 let startTransition;
+let assertLog;
 
 let caches;
 let seededCache;
@@ -16,9 +17,12 @@ describe('ReactConcurrentErrorRecovery', () => {
     React = require('react');
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
     Suspense = React.Suspense;
     startTransition = React.startTransition;
+
+    const InternalTestUtils = require('internal-test-utils');
+    assertLog = InternalTestUtils.assertLog;
 
     getCacheForType = React.unstable_getCacheForType;
 
@@ -82,16 +86,16 @@ describe('ReactConcurrentErrorRecovery', () => {
     if (record !== undefined) {
       switch (record.status) {
         case 'pending':
-          Scheduler.unstable_yieldValue(`Suspend! [${text}]`);
+          Scheduler.log(`Suspend! [${text}]`);
           throw record.value;
         case 'rejected':
-          Scheduler.unstable_yieldValue(`Error! [${text}]`);
+          Scheduler.log(`Error! [${text}]`);
           throw record.value;
         case 'resolved':
           return textCache.version;
       }
     } else {
-      Scheduler.unstable_yieldValue(`Suspend! [${text}]`);
+      Scheduler.log(`Suspend! [${text}]`);
 
       const thenable = {
         pings: [],
@@ -115,14 +119,14 @@ describe('ReactConcurrentErrorRecovery', () => {
   }
 
   function Text({text}) {
-    Scheduler.unstable_yieldValue(text);
+    Scheduler.log(text);
     return text;
   }
 
   function AsyncText({text, showVersion}) {
     const version = readText(text);
     const fullText = showVersion ? `${text} [v${version}]` : text;
-    Scheduler.unstable_yieldValue(fullText);
+    Scheduler.log(fullText);
     return fullText;
   }
 
@@ -158,7 +162,7 @@ describe('ReactConcurrentErrorRecovery', () => {
   const rejectText = rejectMostRecentTextCache;
 
   // @gate enableLegacyCache
-  test('errors during a refresh transition should not force fallbacks to display (suspend then error)', async () => {
+  it('errors during a refresh transition should not force fallbacks to display (suspend then error)', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       static getDerivedStateFromError(error) {
@@ -193,93 +197,44 @@ describe('ReactConcurrentErrorRecovery', () => {
     const root = ReactNoop.createRoot();
     seedNextTextCache('A1');
     seedNextTextCache('B1');
-    await act(async () => {
+    await act(() => {
       root.render(<App step={1} />);
     });
-    expect(Scheduler).toHaveYielded(['A1', 'B1']);
+    assertLog(['A1', 'B1']);
     expect(root).toMatchRenderedOutput('A1B1');
 
     // Start a refresh transition
-    await act(async () => {
+    await act(() => {
       startTransition(() => {
         root.render(<App step={2} />);
       });
     });
-    expect(Scheduler).toHaveYielded([
-      'Suspend! [A2]',
-      'Loading...',
-      'Suspend! [B2]',
-      'Loading...',
-    ]);
+    assertLog(['Suspend! [A2]', 'Loading...', 'Suspend! [B2]', 'Loading...']);
     // Because this is a refresh, we don't switch to a fallback
     expect(root).toMatchRenderedOutput('A1B1');
 
     // B fails to load.
-    await act(async () => {
+    await act(() => {
       rejectText('B2', new Error('Oops!'));
     });
 
     // Because we're still suspended on A, we can't show an error boundary. We
     // should wait for A to resolve.
-    if (gate(flags => flags.replayFailedUnitOfWorkWithInvokeGuardedCallback)) {
-      expect(Scheduler).toHaveYielded([
-        'Suspend! [A2]',
-        'Loading...',
-
-        'Error! [B2]',
-        // This extra log happens when we replay the error
-        // in invokeGuardedCallback
-        'Error! [B2]',
-        'Oops!',
-      ]);
-    } else {
-      expect(Scheduler).toHaveYielded([
-        'Suspend! [A2]',
-        'Loading...',
-        'Error! [B2]',
-        'Oops!',
-      ]);
-    }
+    assertLog(['Suspend! [A2]', 'Loading...', 'Error! [B2]', 'Oops!']);
     // Remain on previous screen.
     expect(root).toMatchRenderedOutput('A1B1');
 
     // A finishes loading.
-    await act(async () => {
+    await act(() => {
       resolveText('A2');
     });
-    if (gate(flags => flags.replayFailedUnitOfWorkWithInvokeGuardedCallback)) {
-      expect(Scheduler).toHaveYielded([
-        'A2',
-        'Error! [B2]',
-        // This extra log happens when we replay the error
-        // in invokeGuardedCallback
-        'Error! [B2]',
-        'Oops!',
-
-        'A2',
-        'Error! [B2]',
-        // This extra log happens when we replay the error
-        // in invokeGuardedCallback
-        'Error! [B2]',
-        'Oops!',
-      ]);
-    } else {
-      expect(Scheduler).toHaveYielded([
-        'A2',
-        'Error! [B2]',
-        'Oops!',
-
-        'A2',
-        'Error! [B2]',
-        'Oops!',
-      ]);
-    }
+    assertLog(['A2', 'Error! [B2]', 'Oops!', 'A2', 'Error! [B2]', 'Oops!']);
     // Now we can show the error boundary that's wrapped around B.
     expect(root).toMatchRenderedOutput('A2Oops!');
   });
 
   // @gate enableLegacyCache
-  test('errors during a refresh transition should not force fallbacks to display (error then suspend)', async () => {
+  it('errors during a refresh transition should not force fallbacks to display (error then suspend)', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       static getDerivedStateFromError(error) {
@@ -314,93 +269,44 @@ describe('ReactConcurrentErrorRecovery', () => {
     const root = ReactNoop.createRoot();
     seedNextTextCache('A1');
     seedNextTextCache('B1');
-    await act(async () => {
+    await act(() => {
       root.render(<App step={1} />);
     });
-    expect(Scheduler).toHaveYielded(['A1', 'B1']);
+    assertLog(['A1', 'B1']);
     expect(root).toMatchRenderedOutput('A1B1');
 
     // Start a refresh transition
-    await act(async () => {
+    await act(() => {
       startTransition(() => {
         root.render(<App step={2} />);
       });
     });
-    expect(Scheduler).toHaveYielded([
-      'Suspend! [A2]',
-      'Loading...',
-      'Suspend! [B2]',
-      'Loading...',
-    ]);
+    assertLog(['Suspend! [A2]', 'Loading...', 'Suspend! [B2]', 'Loading...']);
     // Because this is a refresh, we don't switch to a fallback
     expect(root).toMatchRenderedOutput('A1B1');
 
     // A fails to load.
-    await act(async () => {
+    await act(() => {
       rejectText('A2', new Error('Oops!'));
     });
 
     // Because we're still suspended on B, we can't show an error boundary. We
     // should wait for B to resolve.
-    if (gate(flags => flags.replayFailedUnitOfWorkWithInvokeGuardedCallback)) {
-      expect(Scheduler).toHaveYielded([
-        'Error! [A2]',
-        // This extra log happens when we replay the error
-        // in invokeGuardedCallback
-        'Error! [A2]',
-        'Oops!',
-
-        'Suspend! [B2]',
-        'Loading...',
-      ]);
-    } else {
-      expect(Scheduler).toHaveYielded([
-        'Error! [A2]',
-        'Oops!',
-        'Suspend! [B2]',
-        'Loading...',
-      ]);
-    }
+    assertLog(['Error! [A2]', 'Oops!', 'Suspend! [B2]', 'Loading...']);
     // Remain on previous screen.
     expect(root).toMatchRenderedOutput('A1B1');
 
     // B finishes loading.
-    await act(async () => {
+    await act(() => {
       resolveText('B2');
     });
-    if (gate(flags => flags.replayFailedUnitOfWorkWithInvokeGuardedCallback)) {
-      expect(Scheduler).toHaveYielded([
-        'Error! [A2]',
-        // This extra log happens when we replay the error
-        // in invokeGuardedCallback
-        'Error! [A2]',
-        'Oops!',
-        'B2',
-
-        'Error! [A2]',
-        // This extra log happens when we replay the error
-        // in invokeGuardedCallback
-        'Error! [A2]',
-        'Oops!',
-        'B2',
-      ]);
-    } else {
-      expect(Scheduler).toHaveYielded([
-        'Error! [A2]',
-        'Oops!',
-        'B2',
-
-        'Error! [A2]',
-        'Oops!',
-        'B2',
-      ]);
-    }
+    assertLog(['Error! [A2]', 'Oops!', 'B2', 'Error! [A2]', 'Oops!', 'B2']);
     // Now we can show the error boundary that's wrapped around B.
     expect(root).toMatchRenderedOutput('Oops!B2');
   });
 
   // @gate enableLegacyCache
-  test('suspending in the shell (outside a Suspense boundary) should not throw, warn, or log during a transition', async () => {
+  it('suspending in the shell (outside a Suspense boundary) should not throw, warn, or log during a transition', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       static getDerivedStateFromError(error) {
@@ -417,19 +323,19 @@ describe('ReactConcurrentErrorRecovery', () => {
     // The initial render suspends without a Suspense boundary. Since it's
     // wrapped in startTransition, it suspends instead of erroring.
     const root = ReactNoop.createRoot();
-    await act(async () => {
+    await act(() => {
       startTransition(() => {
         root.render(<AsyncText text="Async" />);
       });
     });
-    expect(Scheduler).toHaveYielded(['Suspend! [Async]']);
+    assertLog(['Suspend! [Async]']);
     expect(root).toMatchRenderedOutput(null);
 
     // This also works if the suspended component is wrapped with an error
     // boundary. (This is only interesting because when a component suspends
     // outside of a transition, we throw an error, which can be captured by
     // an error boundary.
-    await act(async () => {
+    await act(() => {
       startTransition(() => {
         root.render(
           <ErrorBoundary>
@@ -438,19 +344,19 @@ describe('ReactConcurrentErrorRecovery', () => {
         );
       });
     });
-    expect(Scheduler).toHaveYielded(['Suspend! [Async]']);
+    assertLog(['Suspend! [Async]']);
     expect(root).toMatchRenderedOutput(null);
 
     // Continues rendering once data resolves
-    await act(async () => {
+    await act(() => {
       resolveText('Async');
     });
-    expect(Scheduler).toHaveYielded(['Async']);
+    assertLog(['Async']);
     expect(root).toMatchRenderedOutput('Async');
   });
 
   // @gate enableLegacyCache
-  test(
+  it(
     'errors during a suspended transition at the shell should not force ' +
       'fallbacks to display (error then suspend)',
     async () => {
@@ -479,48 +385,47 @@ describe('ReactConcurrentErrorRecovery', () => {
 
       // Suspend and throw in the same transition
       const root = ReactNoop.createRoot();
-      await act(async () => {
+      await act(() => {
         startTransition(() => {
           root.render(
-            <ErrorBoundary>
+            <>
               <AsyncText text="Async" />
-              <Throws />
-            </ErrorBoundary>,
+              <ErrorBoundary>
+                <Throws />
+              </ErrorBoundary>
+            </>,
           );
         });
       });
-      expect(Scheduler).toHaveYielded([
+      assertLog([
         'Suspend! [Async]',
-        // TODO: Ideally we would skip this second render pass to render the
-        // error UI, since it's not going to commit anyway. The same goes for
-        // Suspense fallbacks during a refresh transition.
+        // pre-warming
         'Caught an error: Oops!',
       ]);
-      // The render suspended without committing or surfacing the error.
+      // The render suspended without committing the error.
       expect(root).toMatchRenderedOutput(null);
 
       // Try the reverse order, too: throw then suspend
-      await act(async () => {
+      await act(() => {
         startTransition(() => {
           root.render(
-            <ErrorBoundary>
-              <Throws />
+            <>
               <AsyncText text="Async" />
-            </ErrorBoundary>,
+              <ErrorBoundary>
+                <Throws />
+              </ErrorBoundary>
+            </>,
           );
         });
       });
-      expect(Scheduler).toHaveYielded([
-        'Suspend! [Async]',
-        'Caught an error: Oops!',
-      ]);
+      assertLog(['Suspend! [Async]', 'Caught an error: Oops!']);
       expect(root).toMatchRenderedOutput(null);
 
       await act(async () => {
         await resolveText('Async');
       });
 
-      expect(Scheduler).toHaveYielded([
+      assertLog([
         'Async',
         'Caught an error: Oops!',
 
@@ -529,7 +434,7 @@ describe('ReactConcurrentErrorRecovery', () => {
         'Caught an error: Oops!',
       ]);
 
-      expect(root).toMatchRenderedOutput('Caught an error: Oops!');
+      expect(root).toMatchRenderedOutput('AsyncCaught an error: Oops!');
     },
   );
 });

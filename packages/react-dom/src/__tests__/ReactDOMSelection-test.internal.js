@@ -10,16 +10,18 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMSelection;
+let act;
 
 let getModernOffsetsFromPoints;
 
 describe('ReactDOMSelection', () => {
   beforeEach(() => {
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     ReactDOMSelection = require('react-dom-bindings/src/client/ReactDOMSelection');
+    act = require('internal-test-utils').act;
 
     ({getModernOffsetsFromPoints} = ReactDOMSelection);
   });
@@ -74,53 +76,57 @@ describe('ReactDOMSelection', () => {
 
   // Complicated example derived from a real-world DOM tree. Has a bit of
   // everything.
-  function getFixture() {
-    return ReactDOM.render(
-      <div>
+  async function getFixture() {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
         <div>
           <div>
-            <div>xxxxxxxxxxxxxxxxxxxx</div>
+            <div>
+              <div>xxxxxxxxxxxxxxxxxxxx</div>
+            </div>
+            x
+            <div>
+              <div>
+                x
+                <div>
+                  <div>
+                    <div>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</div>
+                    <div />
+                    <div />
+                    <div>xxxxxxxxxxxxxxxxxx</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div />
           </div>
-          x
           <div>
             <div>
-              x
+              <div>
+                <div>xxxx</div>
+                <div>xxxxxxxxxxxxxxxxxxx</div>
+              </div>
+            </div>
+            <div>xxx</div>
+            <div>xxxxx</div>
+            <div>xxx</div>
+            <div>
               <div>
                 <div>
-                  <div>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</div>
-                  <div />
-                  <div />
-                  <div>xxxxxxxxxxxxxxxxxx</div>
+                  <div>{['x', 'x', 'xxx']}</div>
                 </div>
               </div>
             </div>
           </div>
-          <div />
-        </div>
-        <div>
           <div>
-            <div>
-              <div>xxxx</div>
-              <div>xxxxxxxxxxxxxxxxxxx</div>
-            </div>
+            <div>xxxxxx</div>
           </div>
-          <div>xxx</div>
-          <div>xxxxx</div>
-          <div>xxx</div>
-          <div>
-            <div>
-              <div>
-                <div>{['x', 'x', 'xxx']}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div>
-          <div>xxxxxx</div>
-        </div>
-      </div>,
-      document.createElement('div'),
-    );
+        </div>,
+      );
+    });
+    return container.firstChild;
   }
 
   it('returns correctly for base case', () => {
@@ -135,8 +141,8 @@ describe('ReactDOMSelection', () => {
     });
   });
 
-  it('returns correctly for fuzz test', () => {
-    const fixtureRoot = getFixture();
+  it('returns correctly for fuzz test', async () => {
+    const fixtureRoot = await getFixture();
     const allNodes = [fixtureRoot].concat(
       Array.from(fixtureRoot.querySelectorAll('*')),
     );

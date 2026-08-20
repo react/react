@@ -31,11 +31,12 @@ import {
   HostRoot,
   HostPortal,
   HostComponent,
-  HostResource,
+  HostHoistable,
   HostSingleton,
   HostText,
   ScopeComponent,
 } from 'react-reconciler/src/ReactWorkTags';
+import {getLowestCommonAncestor} from 'react-reconciler/src/ReactFiberTreeReflection';
 
 import getEventTarget from './getEventTarget';
 import {
@@ -43,7 +44,7 @@ import {
   getEventListenerSet,
   getEventHandlerListeners,
 } from '../client/ReactDOMComponentTree';
-import {COMMENT_NODE, DOCUMENT_NODE} from '../shared/HTMLNodeType';
+import {COMMENT_NODE, DOCUMENT_NODE} from '../client/HTMLNodeType';
 import {batchedUpdates} from './ReactDOMUpdateBatching';
 import getListener from './getListener';
 import {passiveBrowserEventsSupported} from './checkPassiveEvents';
@@ -52,13 +53,9 @@ import {
   enableLegacyFBSupport,
   enableCreateEventHandleAPI,
   enableScopeAPI,
-  enableFloat,
-  enableHostSingletons,
+  disableCommentsAsDOMContainers,
+  enableScrollEndPolyfill,
 } from 'shared/ReactFeatureFlags';
-import {
-  invokeGuardedCallbackAndCatchFirstError,
-  rethrowCaughtError,
-} from 'shared/ReactErrorUtils';
 import {createEventListenerWrapperWithPriority} from './ReactDOMEventListener';
 import {
   removeEventListener,
@@ -72,6 +69,12 @@ import * as ChangeEventPlugin from './plugins/ChangeEventPlugin';
 import * as EnterLeaveEventPlugin from './plugins/EnterLeaveEventPlugin';
 import * as SelectEventPlugin from './plugins/SelectEventPlugin';
 import * as SimpleEventPlugin from './plugins/SimpleEventPlugin';
+import * as FormActionEventPlugin from './plugins/FormActionEventPlugin';
+import * as ScrollEndEventPlugin from './plugins/ScrollEndEventPlugin';
+
+import reportGlobalError from 'shared/reportGlobalError';
+
+import {runWithFiberInDEV} from 'react-reconciler/src/ReactCurrentFiber';
 
 type DispatchListener = {
   instance: null | Fiber,
@@ -92,6 +95,9 @@ EnterLeaveEventPlugin.registerEvents();
 ChangeEventPlugin.registerEvents();
 SelectEventPlugin.registerEvents();
 BeforeInputEventPlugin.registerEvents();
+if (enableScrollEndPolyfill) {
+  ScrollEndEventPlugin.registerEvents();
+}
 
 function extractEvents(
   dispatchQueue: DispatchQueue,
@@ -173,6 +179,26 @@ function extractEvents(
       eventSystemFlags,
       targetContainer,
     );
+    FormActionEventPlugin.extractEvents(
+      dispatchQueue,
+      domEventName,
+      targetInst,
+      nativeEvent,
+      nativeEventTarget,
+      eventSystemFlags,
+      targetContainer,
+    );
+  }
+  if (enableScrollEndPolyfill) {
+    ScrollEndEventPlugin.extractEvents(
+      dispatchQueue,
+      domEventName,
+      targetInst,
+      nativeEvent,
+      nativeEventTarget,
+      eventSystemFlags,
+      targetContainer,
+    );
   }
 }
 
@@ -208,11 +234,13 @@ export const mediaEventTypes: Array<DOMEventName> = [
 // set them on the actual target element itself. This is primarily
 // because these events do not consistently bubble in the DOM.
 export const nonDelegatedEvents: Set<DOMEventName> = new Set([
+  'beforetoggle',
   'cancel',
   'close',
   'invalid',
   'load',
   'scroll',
+  'scrollend',
   'toggle',
   // In order to reduce bytes, we insert the above array of media events
   // into this Set. Note: the "error" event isn't an exclusive media event,
@@ -226,9 +254,12 @@ function executeDispatch(
   listener: Function,
   currentTarget: EventTarget,
 ): void {
-  const type = event.type || 'unknown-event';
   event.currentTarget = currentTarget;
-  invokeGuardedCallbackAndCatchFirstError(type, listener, undefined, event);
+  try {
+    listener(event);
+  } catch (error) {
+    reportGlobalError(error);
+  }
   event.currentTarget = null;
 }
 
@@ -244,7 +275,17 @@ function processDispatchQueueItemsInOrder(
       if (instance !== previousInstance && event.isPropagationStopped()) {
         return;
       }
-      executeDispatch(event, listener, currentTarget);
+      if (__DEV__ && instance !== null) {
+        runWithFiberInDEV(
+          instance,
+          executeDispatch,
+          event,
+          listener,
+          currentTarget,
+        );
+      } else {
+        executeDispatch(event, listener, currentTarget);
+      }
       previousInstance = instance;
     }
   } else {
@@ -253,7 +294,17 @@ function processDispatchQueueItemsInOrder(
       if (instance !== previousInstance && event.isPropagationStopped()) {
         return;
       }
-      executeDispatch(event, listener, currentTarget);
+      if (__DEV__ && instance !== null) {
+        runWithFiberInDEV(
+          instance,
+          executeDispatch,
+          event,
+          listener,
+          currentTarget,
+        );
+      } else {
+        executeDispatch(event, listener, currentTarget);
+      }
       previousInstance = instance;
     }
   }
@@ -269,8 +320,6 @@ export function processDispatchQueue(
     processDispatchQueueItemsInOrder(event, listeners, inCapturePhase);
     //  event system doesn't use pooling.
   }
-  // This would be a good time to rethrow if any of the event handlers threw.
-  rethrowCaughtError();
 }
 
 function dispatchEventsForPlugins(
@@ -358,7 +407,7 @@ export function listenToNativeEventForNonManagedEventTarget(
   isCapturePhaseListener: boolean,
   target: EventTarget,
 ): void {
-  let eventSystemFlags = IS_EVENT_HANDLE_NON_MANAGED_NODE;
+  let eventSystemFlags: number = IS_EVENT_HANDLE_NON_MANAGED_NODE;
   const listenerSet = getEventListenerSet(target);
   const listenerSetKey = getListenerSetKey(
     domEventName,
@@ -378,15 +427,11 @@ export function listenToNativeEventForNonManagedEventTarget(
   }
 }
 
-const listeningMarker =
-  '_reactListening' +
-  Math.random()
-    .toString(36)
-    .slice(2);
+const listeningMarker = '_reactListening' + Math.random().toString(36).slice(2);
 
 export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
-  if (!(rootContainerElement: any)[listeningMarker]) {
-    (rootContainerElement: any)[listeningMarker] = true;
+  if (!(rootContainerElement as any)[listeningMarker]) {
+    (rootContainerElement as any)[listeningMarker] = true;
     allNativeEvents.forEach(domEventName => {
       // We handle selectionchange separately because it
       // doesn't bubble and needs to be on the document.
@@ -398,14 +443,15 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
       }
     });
     const ownerDocument =
-      (rootContainerElement: any).nodeType === DOCUMENT_NODE
+      (rootContainerElement as any).nodeType === DOCUMENT_NODE
         ? rootContainerElement
-        : (rootContainerElement: any).ownerDocument;
+        : (rootContainerElement as any).ownerDocument;
+    // $FlowFixMe[invalid-compare]
     if (ownerDocument !== null) {
       // The selectionchange event also needs deduplication
       // but it is attached to the document.
-      if (!(ownerDocument: any)[listeningMarker]) {
-        (ownerDocument: any)[listeningMarker] = true;
+      if (!(ownerDocument as any)[listeningMarker]) {
+        (ownerDocument as any)[listeningMarker] = true;
         listenToNativeEvent('selectionchange', false, ownerDocument);
       }
     }
@@ -445,7 +491,11 @@ function addTrappedEventListener(
 
   targetContainer =
     enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport
-      ? (targetContainer: any).ownerDocument
+      ? // A Document container's ownerDocument is null, so it must be used
+        // as the deferral target itself.
+        (targetContainer as any).nodeType === DOCUMENT_NODE
+        ? targetContainer
+        : (targetContainer as any).ownerDocument
       : targetContainer;
 
   let unsubscribeListener;
@@ -462,7 +512,8 @@ function addTrappedEventListener(
   // need support for such browsers.
   if (enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport) {
     const originalListener = listener;
-    listener = function(...p) {
+    // $FlowFixMe[missing-this-annot]
+    listener = function (...p) {
       removeEventListener(
         targetContainer,
         domEventName,
@@ -529,7 +580,8 @@ function isMatchingRootContainer(
 ): boolean {
   return (
     grandContainer === targetContainer ||
-    (grandContainer.nodeType === COMMENT_NODE &&
+    (!disableCommentsAsDOMContainers &&
+      grandContainer.nodeType === COMMENT_NODE &&
       grandContainer.parentNode === targetContainer)
   );
 }
@@ -546,7 +598,7 @@ export function dispatchEventForPluginEventSystem(
     (eventSystemFlags & IS_EVENT_HANDLE_NON_MANAGED_NODE) === 0 &&
     (eventSystemFlags & IS_NON_DELEGATED) === 0
   ) {
-    const targetContainerNode = ((targetContainer: any): Node);
+    const targetContainerNode = targetContainer as any as Node;
 
     // If we are using the legacy FB support flag, we
     // defer the event to the null with a one
@@ -625,8 +677,8 @@ export function dispatchEventForPluginEventSystem(
             if (
               parentTag === HostComponent ||
               parentTag === HostText ||
-              (enableFloat ? parentTag === HostResource : false) ||
-              (enableHostSingletons ? parentTag === HostSingleton : false)
+              parentTag === HostHoistable ||
+              parentTag === HostSingleton
             ) {
               node = ancestorInst = parentNode;
               continue mainLoop;
@@ -683,17 +735,16 @@ export function accumulateSinglePhaseListeners(
     // Handle listeners that are on HostComponents (i.e. <div>)
     if (
       (tag === HostComponent ||
-        (enableFloat ? tag === HostResource : false) ||
-        (enableHostSingletons ? tag === HostSingleton : false)) &&
+        tag === HostHoistable ||
+        tag === HostSingleton) &&
       stateNode !== null
     ) {
       lastHostComponent = stateNode;
 
       // createEventHandle listeners
       if (enableCreateEventHandleAPI) {
-        const eventHandlerListeners = getEventHandlerListeners(
-          lastHostComponent,
-        );
+        const eventHandlerListeners =
+          getEventHandlerListeners(lastHostComponent);
         if (eventHandlerListeners !== null) {
           eventHandlerListeners.forEach(entry => {
             if (
@@ -704,7 +755,7 @@ export function accumulateSinglePhaseListeners(
                 createDispatchListener(
                   instance,
                   entry.callback,
-                  (lastHostComponent: any),
+                  lastHostComponent as any,
                 ),
               );
             }
@@ -730,9 +781,8 @@ export function accumulateSinglePhaseListeners(
     ) {
       // Scopes
       const reactScopeInstance = stateNode;
-      const eventHandlerListeners = getEventHandlerListeners(
-        reactScopeInstance,
-      );
+      const eventHandlerListeners =
+        getEventHandlerListeners(reactScopeInstance);
       if (eventHandlerListeners !== null) {
         eventHandlerListeners.forEach(entry => {
           if (
@@ -743,7 +793,7 @@ export function accumulateSinglePhaseListeners(
               createDispatchListener(
                 instance,
                 entry.callback,
-                (lastHostComponent: any),
+                lastHostComponent as any,
               ),
             );
           }
@@ -782,6 +832,7 @@ export function accumulateSinglePhaseListeners(
 // - BeforeInputEventPlugin
 // - ChangeEventPlugin
 // - SelectEventPlugin
+// - ScrollEndEventPlugin
 // This is because we only process these plugins
 // in the bubble phase, so we need to accumulate two
 // phase event listeners (via emulation).
@@ -799,8 +850,8 @@ export function accumulateTwoPhaseListeners(
     // Handle listeners that are on HostComponents (i.e. <div>)
     if (
       (tag === HostComponent ||
-        (enableFloat ? tag === HostResource : false) ||
-        (enableHostSingletons ? tag === HostSingleton : false)) &&
+        tag === HostHoistable ||
+        tag === HostSingleton) &&
       stateNode !== null
     ) {
       const currentTarget = stateNode;
@@ -817,9 +868,14 @@ export function accumulateTwoPhaseListeners(
         );
       }
     }
+    if (instance.tag === HostRoot) {
+      return listeners;
+    }
     instance = instance.return;
   }
-  return listeners;
+  // If we didn't reach the root it means we're unmounted and shouldn't
+  // dispatch any events on the target.
+  return [];
 }
 
 function getParent(inst: Fiber | null): Fiber | null {
@@ -834,53 +890,9 @@ function getParent(inst: Fiber | null): Fiber | null {
     // events to their parent. We could also go through parentNode on the
     // host node but that wouldn't work for React Native and doesn't let us
     // do the portal feature.
-  } while (
-    inst &&
-    inst.tag !== HostComponent &&
-    (!enableHostSingletons ? true : inst.tag !== HostSingleton)
-  );
+  } while (inst && inst.tag !== HostComponent && inst.tag !== HostSingleton);
   if (inst) {
     return inst;
-  }
-  return null;
-}
-
-/**
- * Return the lowest common ancestor of A and B, or null if they are in
- * different trees.
- */
-function getLowestCommonAncestor(instA: Fiber, instB: Fiber): Fiber | null {
-  let nodeA: null | Fiber = instA;
-  let nodeB: null | Fiber = instB;
-  let depthA = 0;
-  for (let tempA: null | Fiber = nodeA; tempA; tempA = getParent(tempA)) {
-    depthA++;
-  }
-  let depthB = 0;
-  for (let tempB: null | Fiber = nodeB; tempB; tempB = getParent(tempB)) {
-    depthB++;
-  }
-
-  // If A is deeper, crawl up.
-  while (depthA - depthB > 0) {
-    nodeA = getParent(nodeA);
-    depthA--;
-  }
-
-  // If B is deeper, crawl up.
-  while (depthB - depthA > 0) {
-    nodeB = getParent(nodeB);
-    depthB--;
-  }
-
-  // Walk in lockstep until we find a match.
-  let depth = depthA;
-  while (depth--) {
-    if (nodeA === nodeB || (nodeB !== null && nodeA === nodeB.alternate)) {
-      return nodeA;
-    }
-    nodeA = getParent(nodeA);
-    nodeB = getParent(nodeB);
   }
   return null;
 }
@@ -906,8 +918,8 @@ function accumulateEnterLeaveListenersForEvent(
     }
     if (
       (tag === HostComponent ||
-        (enableFloat ? tag === HostResource : false) ||
-        (enableHostSingletons ? tag === HostSingleton : false)) &&
+        tag === HostHoistable ||
+        tag === HostSingleton) &&
       stateNode !== null
     ) {
       const currentTarget = stateNode;
@@ -918,6 +930,7 @@ function accumulateEnterLeaveListenersForEvent(
             createDispatchListener(instance, captureListener, currentTarget),
           );
         }
+        // $FlowFixMe[constant-condition]
       } else if (!inCapturePhase) {
         const bubbleListener = getListener(instance, registrationName);
         if (bubbleListener != null) {
@@ -946,7 +959,8 @@ export function accumulateEnterLeaveTwoPhaseListeners(
   from: Fiber | null,
   to: Fiber | null,
 ): void {
-  const common = from && to ? getLowestCommonAncestor(from, to) : null;
+  const common =
+    from && to ? getLowestCommonAncestor(from, to, getParent) : null;
 
   if (from !== null) {
     accumulateEnterLeaveListenersForEvent(

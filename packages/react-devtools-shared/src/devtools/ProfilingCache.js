@@ -33,20 +33,20 @@ export default class ProfilingCache {
     this._profilerStore = profilerStore;
   }
 
-  getCommitTree: ({
-    commitIndex: number,
-    rootID: number,
-  }) => CommitTree = ({commitIndex, rootID}) =>
+  getCommitTree: ({commitIndex: number, rootID: number}) => CommitTree = ({
+    commitIndex,
+    rootID,
+  }) =>
     getCommitTree({
       commitIndex,
       profilerStore: this._profilerStore,
       rootID,
     });
 
-  getFiberCommits: ({
-    fiberID: number,
-    rootID: number,
-  }) => Array<number> = ({fiberID, rootID}) => {
+  getFiberCommits: ({fiberID: number, rootID: number}) => Array<number> = ({
+    fiberID,
+    rootID,
+  }) => {
     const cachedFiberCommits = this._fiberCommits.get(fiberID);
     if (cachedFiberCommits != null) {
       return cachedFiberCommits;

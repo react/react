@@ -3,10 +3,14 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
+  "devEngines": {
+    "node": "20.x || 22.x"
+  },
   "dependencies": {
     "@babel/core": "^7.16.0",
     "@babel/plugin-proposal-private-property-in-object": "^7.18.6",
-    "@pmmmwh/react-refresh-webpack-plugin": "^0.5.3",
+    "@babel/preset-react": "^7.22.5",
+    "@pmmmwh/react-refresh-webpack-plugin": "0.5.15",
     "@svgr/webpack": "^5.5.0",
     "@testing-library/jest-dom": "^5.14.1",
     "@testing-library/react": "^13.0.0",
@@ -15,18 +19,19 @@
     "babel-loader": "^8.2.3",
     "babel-plugin-named-asset-import": "^0.3.8",
     "babel-preset-react-app": "^10.0.1",
-    "bfj": "^7.0.2",
+    "body-parser": "^1.20.1",
     "browserslist": "^4.18.1",
+    "busboy": "^1.6.0",
     "camelcase": "^6.2.1",
+    "canvas": "^3.1.0",
     "case-sensitive-paths-webpack-plugin": "^2.4.0",
+    "compression": "^1.7.4",
     "concurrently": "^7.3.0",
     "css-loader": "^6.5.1",
     "css-minimizer-webpack-plugin": "^3.2.0",
+    "devtools-ignore-webpack-plugin": "^0.2.0",
     "dotenv": "^10.0.0",
     "dotenv-expand": "^5.1.0",
-    "eslint": "^8.3.0",
-    "eslint-config-react-app": "^7.0.1",
-    "eslint-webpack-plugin": "^3.1.1",
     "file-loader": "^6.2.0",
     "fs-extra": "^10.0.0",
     "html-webpack-plugin": "^5.5.0",
@@ -42,11 +47,11 @@
     "postcss-normalize": "^10.0.1",
     "postcss-preset-env": "^7.0.1",
     "prompts": "^2.4.2",
-    "react": "^18.2.0",
-    "react-app-polyfill": "^3.0.0",
+    "react": "experimental",
     "react-dev-utils": "^12.0.1",
-    "react-dom": "^18.2.0",
+    "react-dom": "experimental",
     "react-refresh": "^0.11.0",
+    "react-server-dom-webpack": "experimental",
     "resolve": "^1.20.0",
     "resolve-url-loader": "^4.0.0",
     "sass-loader": "^12.3.0",
@@ -55,29 +60,26 @@
     "style-loader": "^3.3.1",
     "tailwindcss": "^3.0.2",
     "terser-webpack-plugin": "^5.2.5",
-    "web-vitals": "^2.1.0",
+    "undici": "^5.20.0",
     "webpack": "^5.64.4",
-    "webpack-dev-server": "^4.6.0",
-    "webpack-manifest-plugin": "^4.0.2",
-    "workbox-webpack-plugin": "^6.4.1"
+    "webpack-dev-middleware": "^5.3.4",
+    "webpack-hot-middleware": "^2.25.3",
+    "webpack-manifest-plugin": "^4.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.1"
   },
   "scripts": {
-    "prestart": "cp -r ../../build/node_modules/* ./node_modules/",
-    "prebuild": "cp -r ../../build/node_modules/* ./node_modules/",
-    "start": "concurrently \"npm run start:server\" \"npm run start:client\"",
-    "start:client": "NODE_ENV=development BUILD_PATH=dist node scripts/start.js",
-    "start:server": "NODE_ENV=development BUILD_PATH=dist nodemon -- --experimental-loader ./loader/index.js --conditions=react-server server",
-    "start:prod": "node scripts/build.js && concurrently \"npm run start:prod-server\" \"npm run start:prod-client\"",
-    "start:prod-client": "cd ./build && python -m SimpleHTTPServer 3000",
-    "start:prod-server": "NODE_ENV=production node --experimental-loader ./loader/index.js --conditions=react-server server",
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "prebuild": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "dev": "concurrently \"yarn run dev:region\" \"yarn run dev:global\"",
+    "dev:global": "NODE_ENV=development BUILD_PATH=dist node --experimental-loader ./loader/global.js --inspect=127.0.0.1:9230 server/global",
+    "dev:region": "NODE_ENV=development BUILD_PATH=dist nodemon --watch src --watch dist -- --enable-source-maps --experimental-loader ./loader/region.js --conditions=react-server --inspect=127.0.0.1:9229 server/region",
+    "start": "node scripts/build.js && concurrently \"yarn run start:region\" \"yarn run start:global\"",
+    "start:global": "NODE_ENV=production node --experimental-loader ./loader/global.js server/global",
+    "start:region": "NODE_ENV=production node --experimental-loader ./loader/region.js --conditions=react-server server/region",
     "build": "node scripts/build.js",
-    "test": "node scripts/test.js --env=jsdom"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
+    "test": "playwright test"
   },
   "browserslist": {
     "production": [

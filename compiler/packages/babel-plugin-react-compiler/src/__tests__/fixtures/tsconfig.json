@@ -1,0 +1,36 @@
+// Custom tsconfig for IDE integration of fixture files.
+// Note that noEmit is set, as we actually rely on snap and sprout
+// to transform these files.
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false,
+    "noUnusedParameters": false,
+    "useUnknownInCatchVariables": false,
+    "noUnusedLocals": false,
+    "baseUrl": ".",
+    "jsx": "preserve",
+    "paths": {
+      // Editor integration for sprout shared runtime files
+      "shared-runtime": ["../../../../snap/src/sprout/shared-runtime.ts"]
+    },
+    "verbatimModuleSyntax": true,
+    "module": "ESNext",
+    "allowSyntheticDefaultImports": true,
+    "moduleDetection": "force"
+
+  },
+  "include": [
+    "./compiler/**/*.js",
+    "./compiler/**/*.mjs",
+    "./compiler/**/*.cjs",
+    "./compiler/**/*.ts",
+    "./compiler/**/*.mts",
+    "./compiler/**/*.cts",
+    "./compiler/**/*.jsx",
+    "./compiler/**/*.tsx"
+  ]
+}

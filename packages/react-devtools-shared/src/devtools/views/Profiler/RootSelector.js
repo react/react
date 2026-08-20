@@ -28,7 +28,7 @@ export default function RootSelector(_: {}): React.Node {
   }
 
   const handleChange = useCallback(
-    ({currentTarget}) => {
+    ({currentTarget}: $FlowFixMe) => {
       setRootID(parseInt(currentTarget.value, 10));
     },
     [setRootID],

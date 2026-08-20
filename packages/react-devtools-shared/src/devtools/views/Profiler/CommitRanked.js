@@ -8,7 +8,14 @@
  */
 
 import * as React from 'react';
-import {useCallback, useContext, useMemo, useState} from 'react';
+import {
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {FixedSizeList} from 'react-window';
 import {ProfilerContext} from './ProfilerContext';
@@ -16,9 +23,10 @@ import NoCommitData from './NoCommitData';
 import CommitRankedListItem from './CommitRankedListItem';
 import HoveredFiberInfo from './HoveredFiberInfo';
 import {scale} from './utils';
+import {createRegExp} from '../utils';
 import {StoreContext} from '../context';
 import {SettingsContext} from '../Settings/SettingsContext';
-import {useHighlightNativeElement} from '../hooks';
+import {useHighlightHostInstance} from '../hooks';
 import Tooltip from './Tooltip';
 
 import styles from './CommitRanked.css';
@@ -29,9 +37,12 @@ import type {CommitTree} from './types';
 
 export type ItemData = {
   chartData: ChartData,
+  currentSearchMatchID: number | null,
+  matchedFiberIDs: Set<number>,
   onElementMouseEnter: (fiberData: TooltipFiberData) => void,
   onElementMouseLeave: () => void,
   scaleX: (value: number, fallbackValue: number) => number,
+  searchRegExp: RegExp | null,
   selectedFiberID: number | null,
   selectedFiberIndex: number,
   selectFiber: (id: number | null, name: string | null) => void,
@@ -40,13 +51,12 @@ export type ItemData = {
 
 export default function CommitRankedAutoSizer(_: {}): React.Node {
   const {profilerStore} = useContext(StoreContext);
-  const {rootID, selectedCommitIndex, selectFiber} = useContext(
-    ProfilerContext,
-  );
+  const {rootID, selectedCommitIndex, selectFiber} =
+    useContext(ProfilerContext);
   const {profilingCache} = profilerStore;
 
   const deselectCurrentFiber = useCallback(
-    event => {
+    (event: $FlowFixMe) => {
       event.stopPropagation();
       selectFiber(null, null);
     },
@@ -58,13 +68,13 @@ export default function CommitRankedAutoSizer(_: {}): React.Node {
   if (selectedCommitIndex !== null) {
     commitTree = profilingCache.getCommitTree({
       commitIndex: selectedCommitIndex,
-      rootID: ((rootID: any): number),
+      rootID: rootID as any as number,
     });
 
     chartData = profilingCache.getRankedChartData({
       commitIndex: selectedCommitIndex,
       commitTree,
-      rootID: ((rootID: any): number),
+      rootID: rootID as any as number,
     });
   }
 
@@ -74,8 +84,8 @@ export default function CommitRankedAutoSizer(_: {}): React.Node {
         <AutoSizer>
           {({height, width}) => (
             <CommitRanked
-              chartData={((chartData: any): ChartData)}
-              commitTree={((commitTree: any): CommitTree)}
+              chartData={chartData as any as ChartData}
+              commitTree={commitTree as any as CommitTree}
               height={height}
               width={width}
             />
@@ -96,41 +106,55 @@ type Props = {
 };
 
 function CommitRanked({chartData, commitTree, height, width}: Props) {
-  const [
-    hoveredFiberData,
-    setHoveredFiberData,
-  ] = useState<TooltipFiberData | null>(null);
+  const [hoveredFiberData, setHoveredFiberData] =
+    useState<TooltipFiberData | null>(null);
   const {lineHeight} = useContext(SettingsContext);
-  const {selectedFiberID, selectFiber} = useContext(ProfilerContext);
-  const {
-    highlightNativeElement,
-    clearHighlightNativeElement,
-  } = useHighlightNativeElement();
+  const {selectedFiberID, selectFiber, searchText, searchResults, searchIndex} =
+    useContext(ProfilerContext);
+  const {highlightHostInstance, clearHighlightHostInstance} =
+    useHighlightHostInstance();
 
   const selectedFiberIndex = useMemo(
     () => getNodeIndex(chartData, selectedFiberID),
     [chartData, selectedFiberID],
   );
 
+  // Search highlighting (see CommitFlamegraph for details).
+  const searchRegExp = useMemo(
+    () => (searchText === '' ? null : createRegExp(searchText)),
+    [searchText],
+  );
+  const matchedFiberIDs = useMemo(
+    () => new Set(searchResults.map(result => result.id)),
+    [searchResults],
+  );
+  const currentSearchMatchID =
+    searchIndex >= 0 && searchIndex < searchResults.length
+      ? searchResults[searchIndex].id
+      : null;
+
   const handleElementMouseEnter = useCallback(
-    ({id, name}) => {
-      highlightNativeElement(id); // Highlight last hovered element.
+    ({id, name}: $FlowFixMe) => {
+      highlightHostInstance(id); // Highlight last hovered element.
       setHoveredFiberData({id, name}); // Set hovered fiber data for tooltip
     },
-    [highlightNativeElement],
+    [highlightHostInstance],
   );
 
   const handleElementMouseLeave = useCallback(() => {
-    clearHighlightNativeElement(); // clear highlighting of element on mouse leave
+    clearHighlightHostInstance(); // clear highlighting of element on mouse leave
     setHoveredFiberData(null); // clear hovered fiber data for tooltip
-  }, [clearHighlightNativeElement]);
+  }, [clearHighlightHostInstance]);
 
   const itemData = useMemo<ItemData>(
     () => ({
       chartData,
+      currentSearchMatchID,
+      matchedFiberIDs,
       onElementMouseEnter: handleElementMouseEnter,
       onElementMouseLeave: handleElementMouseLeave,
       scaleX: scale(0, chartData.nodes[selectedFiberIndex].value, 0, width),
+      searchRegExp,
       selectedFiberID,
       selectedFiberIndex,
       selectFiber,
@@ -138,8 +162,11 @@ function CommitRanked({chartData, commitTree, height, width}: Props) {
     }),
     [
       chartData,
+      currentSearchMatchID,
+      matchedFiberIDs,
       handleElementMouseEnter,
       handleElementMouseLeave,
+      searchRegExp,
       selectedFiberID,
       selectedFiberIndex,
       selectFiber,
@@ -156,6 +183,22 @@ function CommitRanked({chartData, commitTree, height, width}: Props) {
     [hoveredFiberData],
   );
 
+  // Scroll the selected fiber's row into view when the selection changes (e.g.
+  // when navigating between search results). Selection is driven externally
+  // (search nav in ProfilerContext, or a node click) and selectedFiberIndex is
+  // derived here — no local event handler sets it — so we sync the imperative
+  // scroll in a layout effect, which runs before paint to avoid a frame where
+  // the scroll position lags the selection.
+  const listRef = useRef<FixedSizeList | null>(null);
+  const itemIsSelected = selectedFiberID !== null;
+  useLayoutEffect(() => {
+    // selectedFiberIndex falls back to 0 when nothing is selected, so only
+    // scroll when a fiber is actually selected.
+    if (itemIsSelected && listRef.current !== null) {
+      listRef.current.scrollToItem(selectedFiberIndex, 'smart');
+    }
+  }, [itemIsSelected, selectedFiberIndex]);
+
   return (
     <Tooltip label={tooltipLabel}>
       <FixedSizeList
@@ -164,6 +207,7 @@ function CommitRanked({chartData, commitTree, height, width}: Props) {
         itemCount={chartData.nodes.length}
         itemData={itemData}
         itemSize={lineHeight}
+        ref={listRef}
         width={width}>
         {CommitRankedListItem}
       </FixedSizeList>

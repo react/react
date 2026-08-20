@@ -50,7 +50,7 @@ const matchHtmlRegExp = /["'&<>]/;
  * @public
  */
 
-function escapeHtml(string) {
+function escapeHtml(string: string) {
   if (__DEV__) {
     checkHtmlStringCoercion(string);
   }
@@ -88,14 +88,14 @@ function escapeHtml(string) {
     }
 
     if (lastIndex !== index) {
-      html += str.substring(lastIndex, index);
+      html += str.slice(lastIndex, index);
     }
 
     lastIndex = index + 1;
     html += escape;
   }
 
-  return lastIndex !== index ? html + str.substring(lastIndex, index) : html;
+  return lastIndex !== index ? html + str.slice(lastIndex, index) : html;
 }
 // end code copied and modified from escape-html
 
@@ -106,11 +106,15 @@ function escapeHtml(string) {
  * @return {string} An escaped string.
  */
 function escapeTextForBrowser(text: string | number | boolean): string {
-  if (typeof text === 'boolean' || typeof text === 'number') {
+  if (
+    typeof text === 'boolean' ||
+    typeof text === 'number' ||
+    typeof text === 'bigint'
+  ) {
     // this shortcircuit helps perf for types that we know will never have
     // special characters, especially given that this function is used often
     // for numeric dom ids.
-    return '' + (text: any);
+    return '' + (text as any);
   }
   return escapeHtml(text);
 }

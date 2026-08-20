@@ -1,4 +1,4 @@
-.Settings {
+.SettingList {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -7,15 +7,28 @@
   font-size: var(--font-size-sans-normal);
 }
 
-.Setting {
+.SettingWrapper {
   margin-bottom: 0.5rem;
 }
-.Setting:last-of-type {
+.SettingWrapper:last-of-type {
   margin-bottom: 0;
 }
 
-.OpenInURLSetting {
-  margin: 0.5rem 0;
+.SettingRow {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.SettingRowCheckbox {
+  margin: 0.125rem 0.25rem 0.125rem 0;
+}
+
+.SettingDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .OptionGroup {
@@ -36,9 +49,6 @@
 
 .Spacer {
   height: 0.5rem;
-}
-
-.Select {
 }
 
 .CheckboxOption {
@@ -91,6 +101,7 @@
   border: 1px solid var(--color-border);
   border-radius: 0.125rem;
   padding: 0.125rem;
+  margin-left: .5rem;
 }
 
 .InvalidRegExp,
@@ -143,7 +154,7 @@
   border-radius: 0.25rem;
 }
 
-.ReleaseNotesLink {
+.ReleaseNotesLink, .StrictModeLink {
   color: var(--color-button-active);
 }
 

@@ -3,10 +3,10 @@
 exports[`ReactARTComponents should generate a <Shape> where top radius is 0 if the sum of the top radius is greater than width 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -28,10 +28,10 @@ exports[`ReactARTComponents should generate a <Shape> where top radius is 0 if t
 exports[`ReactARTComponents should generate a <Shape> with a radius property of 0 when bottom left radius prop is negative 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -52,10 +52,10 @@ exports[`ReactARTComponents should generate a <Shape> with a radius property of 
 exports[`ReactARTComponents should generate a <Shape> with a radius property of 0 when bottom right radius prop is negative 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -76,10 +76,10 @@ exports[`ReactARTComponents should generate a <Shape> with a radius property of 
 exports[`ReactARTComponents should generate a <Shape> with a radius property of 0 when top left radius prop is negative 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -100,10 +100,10 @@ exports[`ReactARTComponents should generate a <Shape> with a radius property of 
 exports[`ReactARTComponents should generate a <Shape> with a radius property of 0 when top right radius prop is negative 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -124,10 +124,10 @@ exports[`ReactARTComponents should generate a <Shape> with a radius property of 
 exports[`ReactARTComponents should generate a <Shape> with positive height when height prop is negative 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": -50,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -148,10 +148,10 @@ exports[`ReactARTComponents should generate a <Shape> with positive height when 
 exports[`ReactARTComponents should generate a <Shape> with positive width when width prop is negative 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": -50,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -172,10 +172,10 @@ exports[`ReactARTComponents should generate a <Shape> with positive width when w
 exports[`ReactARTComponents should generate a <Shape> with props for drawing the Circle 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": -10,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -197,10 +197,10 @@ exports[`ReactARTComponents should generate a <Shape> with props for drawing the
 exports[`ReactARTComponents should generate a <Shape> with props for drawing the Rectangle 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 0,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],
@@ -223,10 +223,10 @@ exports[`ReactARTComponents should generate a <Shape> with props for drawing the
 exports[`ReactARTComponents should generate a <Shape> with props for drawing the Wedge 1`] = `
 <Shape
   d={
-    Object {
+    {
       "_pivotX": 0,
       "_pivotY": 50,
-      "path": Array [
+      "path": [
         [Function],
         [Function],
         [Function],

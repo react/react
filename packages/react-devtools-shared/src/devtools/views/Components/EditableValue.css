@@ -33,8 +33,3 @@
   background-color: var(--color-button-background-focus);
   outline: none;
 }
-
-.ResetButton {
-  flex: 0 0 auto;
-  padding: 0 0.5rem;
-}

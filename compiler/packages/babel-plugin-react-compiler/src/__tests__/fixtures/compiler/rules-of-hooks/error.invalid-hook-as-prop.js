@@ -1,0 +1,3 @@
+function Component({useFoo}) {
+  useFoo();
+}

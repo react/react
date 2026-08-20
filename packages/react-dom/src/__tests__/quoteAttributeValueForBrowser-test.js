@@ -51,7 +51,7 @@ describe('quoteAttributeValueForBrowser', () => {
 
   it('object is passed to a string inside attributes', () => {
     const sampleObject = {
-      toString: function() {
+      toString: function () {
         return 'ponys';
       },
     };

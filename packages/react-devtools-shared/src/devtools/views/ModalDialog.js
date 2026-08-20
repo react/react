@@ -56,12 +56,11 @@ type ModalDialogContextType = {
   dispatch: Dispatch,
 };
 
-const ModalDialogContext: ReactContext<ModalDialogContextType> = createContext<ModalDialogContextType>(
-  ((null: any): ModalDialogContextType),
-);
+const ModalDialogContext: ReactContext<ModalDialogContextType> =
+  createContext<ModalDialogContextType>(null as any as ModalDialogContextType);
 ModalDialogContext.displayName = 'ModalDialogContext';
 
-function dialogReducer(state, action) {
+function dialogReducer(state: State, action: Action) {
   switch (action.type) {
     case 'HIDE':
       return {
@@ -76,7 +75,7 @@ function dialogReducer(state, action) {
             content: action.content,
             id: action.id,
             title: action.title || null,
-          },
+          } as Dialog,
         ],
       };
     default:

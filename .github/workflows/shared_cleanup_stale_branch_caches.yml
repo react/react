@@ -1,0 +1,36 @@
+# https://github.com/actions/cache/blob/main/tips-and-workarounds.md#force-deletion-of-caches-overriding-default-cache-eviction-policy
+
+name: (Shared) Cleanup Stale Branch Caches
+on:
+  schedule:
+    # Every 6 hours
+    - cron: 0 */6 * * *
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      # `actions:write` permission is required to delete caches
+      #   See also: https://docs.github.com/en/rest/actions/cache?apiVersion=2022-11-28#delete-a-github-actions-cache-for-a-repository-using-a-cache-id
+      actions: write
+      contents: read
+    steps:
+      - name: Cleanup
+        run: |
+          echo "Fetching list of cache keys"
+          cacheKeysForPR=$(gh cache list --limit 100 --json id,ref --jq '.[] | select(.ref != "refs/heads/main") | .id')
+
+          ## Setting this to not fail the workflow while deleting cache keys.
+          set +e
+          for cacheKey in $cacheKeysForPR
+          do
+              gh cache delete $cacheKey
+              echo "Deleting $cacheKey"
+          done
+          echo "Done"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

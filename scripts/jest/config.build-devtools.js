@@ -17,6 +17,12 @@ const packages = readdirSync(packagesRoot).filter(dir => {
   if (dir.includes('react-devtools')) {
     return false;
   }
+  if (dir === 'internal-test-utils') {
+    // This is an internal package used only for testing. It's OK to read
+    // from source.
+    // TODO: Maybe let's have some convention for this?
+    return false;
+  }
   const packagePath = join(packagesRoot, dir, 'package.json');
   let stat;
   try {
@@ -38,9 +44,8 @@ packages.forEach(name => {
   // Root entry point
   moduleNameMapper[`^${name}$`] = `<rootDir>/build/${NODE_MODULES_DIR}/${name}`;
   // Named entry points
-  moduleNameMapper[
-    `^${name}\/([^\/]+)$`
-  ] = `<rootDir>/build/${NODE_MODULES_DIR}/${name}/$1`;
+  moduleNameMapper[`^${name}\/([^\/]+)$`] =
+    `<rootDir>/build/${NODE_MODULES_DIR}/${name}/$1`;
 });
 
 // Allow tests to import shared code (e.g. feature flags, getStackByFiberInDevAndProd)
@@ -58,12 +63,12 @@ module.exports = Object.assign({}, baseConfig, {
   testPathIgnorePatterns: ['/node_modules/', '-test.internal.js$'],
   // Exclude the build output from transforms
   transformIgnorePatterns: [
-    '/node_modules/',
+    '/node_modules/(?!(rbush|quickselect)/)',
     '<rootDir>/build/',
     '/__compiled__/',
     '/__untransformed__/',
   ],
-  testRegex: 'packages/react-devtools-shared/.+/__tests__/[^]+.test.js$',
+  testRegex: 'packages/react-devtools(-(.+))?/.+/__tests__/[^]+.test.js$',
   snapshotSerializers: [
     require.resolve(
       '../../packages/react-devtools-shared/src/__tests__/__serializers__/dehydratedValueSerializer.js'
@@ -79,9 +84,6 @@ module.exports = Object.assign({}, baseConfig, {
     ),
     require.resolve(
       '../../packages/react-devtools-shared/src/__tests__/__serializers__/storeSerializer.js'
-    ),
-    require.resolve(
-      '../../packages/react-devtools-shared/src/__tests__/__serializers__/timelineDataSerializer.js'
     ),
     require.resolve(
       '../../packages/react-devtools-shared/src/__tests__/__serializers__/treeContextStateSerializer.js'

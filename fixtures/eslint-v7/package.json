@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "name": "eslint-v7",
+  "dependencies": {
+    "eslint": "^7",
+    "eslint-plugin-react-hooks": "link:../../build/oss-stable/eslint-plugin-react-hooks"
+  },
+  "scripts": {
+    "build": "node build.mjs && yarn",
+    "lint": "eslint index.js --report-unused-disable-directives"
+  }
+}

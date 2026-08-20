@@ -25,7 +25,6 @@
 'use strict';
 
 var assign = Object.assign;
-var PropTypes = require('prop-types');
 var React = require('react');
 var ReactART = require('react-art');
 
@@ -40,16 +39,6 @@ var Path = ReactART.Path;
  */
 var Rectangle = createReactClass({
   displayName: 'Rectangle',
-
-  propTypes: {
-    width: PropTypes.number.isRequired,
-    height: PropTypes.number.isRequired,
-    radius: PropTypes.number,
-    radiusTopLeft: PropTypes.number,
-    radiusTopRight: PropTypes.number,
-    radiusBottomRight: PropTypes.number,
-    radiusBottomLeft: PropTypes.number,
-  },
 
   render: function render() {
     var width = this.props.width;

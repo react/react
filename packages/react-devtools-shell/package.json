@@ -3,7 +3,7 @@
   "name": "react-devtools-shell",
   "version": "0.0.0",
   "scripts": {
-    "start": "cross-env NODE_ENV=development cross-env TARGET=local webpack-dev-server"
+    "start": "cross-env NODE_ENV=development node ./webpack-server.js"
   },
   "dependencies": {
     "immutable": "^4.0.0-rc.12",
@@ -25,8 +25,8 @@
     "css-loader": "^1.0.1",
     "raw-loader": "^3.1.0",
     "style-loader": "^0.23.1",
-    "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.11",
-    "webpack-dev-server": "^3.10.3"
+    "webpack": "^5.82.1",
+    "webpack-cli": "^5.1.1",
+    "webpack-dev-server": "^4.15.0"
   }
 }

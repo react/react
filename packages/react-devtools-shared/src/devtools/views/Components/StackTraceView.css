@@ -1,0 +1,54 @@
+.StackTraceView {
+  padding: 0.25rem;
+}
+
+.CallSite, .BuiltInCallSite {
+  display: flex;
+  padding-left: 1rem;
+  white-space-collapse: preserve;
+}
+
+.IgnoredCallSite {
+  opacity: 0.5;
+}
+
+.IgnoredCallSite, .BuiltInCallSite {
+  display: none;
+}
+
+.IgnoredCallSite.CallSite {
+  display: flex;
+}
+
+.CallSite + .BuiltInCallSite {
+  display: block;
+}
+
+.Link {
+  color: var(--color-link);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border-radius: 0.125rem;
+}
+
+.Link:hover {
+  background-color: var(--color-background-hover);
+}
+
+.ElementBadges {
+  margin-left: 0.25rem;
+}
+
+.IgnoreListToggleContainer {
+  padding-left: 1rem;
+}
+
+.IgnoreListToggleButton {
+  background: none;
+  color: var(--color-link);
+  font: inherit;
+  font-style: italic;
+  text-decoration: underline;
+}

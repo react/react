@@ -10,38 +10,43 @@
 
 'use strict';
 
-let ReactFeatureFlags = require('shared/ReactFeatureFlags');
 let PropTypes;
 let React;
 let ReactNoop;
 let Scheduler;
 let act;
+let assertLog;
+let waitForAll;
+let waitFor;
+let waitForThrow;
+let assertConsoleErrorDev;
 
 describe('ReactIncrementalErrorHandling', () => {
   beforeEach(() => {
     jest.resetModules();
-    ReactFeatureFlags = require('shared/ReactFeatureFlags');
-    ReactFeatureFlags.replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
     PropTypes = require('prop-types');
     React = require('react');
     ReactNoop = require('react-noop-renderer');
     Scheduler = require('scheduler');
-    act = require('jest-react').act;
+    act = require('internal-test-utils').act;
+    assertConsoleErrorDev =
+      require('internal-test-utils').assertConsoleErrorDev;
+
+    const InternalTestUtils = require('internal-test-utils');
+    assertLog = InternalTestUtils.assertLog;
+    waitForAll = InternalTestUtils.waitForAll;
+    waitFor = InternalTestUtils.waitFor;
+    waitForThrow = InternalTestUtils.waitForThrow;
   });
 
-  function div(...children) {
-    children = children.map(c => (typeof c === 'string' ? {text: c} : c));
-    return {type: 'div', children, prop: undefined, hidden: false};
-  }
-
-  function span(prop) {
-    return {type: 'span', children: [], prop, hidden: false};
-  }
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   function normalizeCodeLocInfo(str) {
     return (
       str &&
-      str.replace(/\n +(?:at|in) ([\S]+)[^\n]*/g, function(m, name) {
+      str.replace(/\n +(?:at|in) ([\S]+)[^\n]*/g, function (m, name) {
         return '\n    in ' + name + ' (at **)';
       })
     );
@@ -60,85 +65,64 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   }
 
-  it('recovers from errors asynchronously', () => {
+  it('recovers from errors asynchronously', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       static getDerivedStateFromError(error) {
-        Scheduler.unstable_yieldValue('getDerivedStateFromError');
+        Scheduler.log('getDerivedStateFromError');
         return {error};
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary (catch)');
+          Scheduler.log('ErrorBoundary (catch)');
           return <ErrorMessage error={this.state.error} />;
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary (try)');
+        Scheduler.log('ErrorBoundary (try)');
         return this.props.children;
       }
     }
 
     function ErrorMessage({error}) {
-      Scheduler.unstable_yieldValue('ErrorMessage');
+      Scheduler.log('ErrorMessage');
       return <span prop={`Caught an error: ${error.message}`} />;
     }
 
     function Indirection({children}) {
-      Scheduler.unstable_yieldValue('Indirection');
+      Scheduler.log('Indirection');
       return children || null;
     }
 
     function BadRender({unused}) {
-      Scheduler.unstable_yieldValue('throw');
+      Scheduler.log('throw');
       throw new Error('oops!');
     }
 
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        ReactNoop.render(
+    React.startTransition(() => {
+      ReactNoop.render(
+        <>
           <ErrorBoundary>
             <Indirection>
               <Indirection>
                 <Indirection>
                   <BadRender />
-                  <Indirection />
-                  <Indirection />
                 </Indirection>
               </Indirection>
             </Indirection>
-          </ErrorBoundary>,
-        );
-      });
-    } else {
-      ReactNoop.render(
-        <ErrorBoundary>
-          <Indirection>
-            <Indirection>
-              <Indirection>
-                <BadRender />
-                <Indirection />
-                <Indirection />
-              </Indirection>
-            </Indirection>
-          </Indirection>
-        </ErrorBoundary>,
+          </ErrorBoundary>
+          <Indirection />
+          <Indirection />
+        </>,
       );
-    }
+    });
 
     // Start rendering asynchronously
-    expect(Scheduler).toFlushAndYieldThrough([
+    await waitFor([
       'ErrorBoundary (try)',
       'Indirection',
       'Indirection',
       'Indirection',
       // An error is thrown. React keeps rendering asynchronously.
       'throw',
-    ]);
-
-    // Still rendering async...
-    expect(Scheduler).toFlushAndYieldThrough(['Indirection']);
-
-    expect(Scheduler).toFlushAndYieldThrough([
-      'Indirection',
 
       // Call getDerivedStateFromError and re-render the error boundary, this
       // time rendering an error message.
@@ -146,14 +130,20 @@ describe('ReactIncrementalErrorHandling', () => {
       'ErrorBoundary (catch)',
       'ErrorMessage',
     ]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
 
-    // Since the error was thrown during an async render, React won't commit
-    // the result yet.
-    expect(ReactNoop.getChildren()).toEqual([]);
+    // The work loop unwound to the nearest error boundary. Continue rendering
+    // asynchronously.
+    await waitFor(['Indirection']);
 
-    // Instead, it will try rendering one more time, synchronously, in case that
-    // happens to fix the error.
+    // Since the error was thrown during an async render, React won't commit the
+    // result yet. After render we render the last child, React will attempt to
+    // render again, synchronously, just in case that happens to fix the error
+    // (i.e. as in the case of a data race). Flush just one more unit of work to
+    // demonstrate that this render is synchronous.
     expect(ReactNoop.flushNextYield()).toEqual([
+      'Indirection',
+
       'ErrorBoundary (try)',
       'Indirection',
       'Indirection',
@@ -162,82 +152,70 @@ describe('ReactIncrementalErrorHandling', () => {
       // The error was thrown again. This time, React will actually commit
       // the result.
       'throw',
-      'Indirection',
-      'Indirection',
       'getDerivedStateFromError',
       'ErrorBoundary (catch)',
       'ErrorMessage',
+      'Indirection',
+      'Indirection',
     ]);
 
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: oops!')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: oops!" />,
+    );
   });
 
-  it('recovers from errors asynchronously (legacy, no getDerivedStateFromError)', () => {
+  it('recovers from errors asynchronously (legacy, no getDerivedStateFromError)', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('componentDidCatch');
+        Scheduler.log('componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary (catch)');
+          Scheduler.log('ErrorBoundary (catch)');
           return <ErrorMessage error={this.state.error} />;
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary (try)');
+        Scheduler.log('ErrorBoundary (try)');
         return this.props.children;
       }
     }
 
     function ErrorMessage({error}) {
-      Scheduler.unstable_yieldValue('ErrorMessage');
+      Scheduler.log('ErrorMessage');
       return <span prop={`Caught an error: ${error.message}`} />;
     }
 
     function Indirection({children}) {
-      Scheduler.unstable_yieldValue('Indirection');
+      Scheduler.log('Indirection');
       return children || null;
     }
 
     function BadRender({unused}) {
-      Scheduler.unstable_yieldValue('throw');
+      Scheduler.log('throw');
       throw new Error('oops!');
     }
 
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        ReactNoop.render(
+    React.startTransition(() => {
+      ReactNoop.render(
+        <>
           <ErrorBoundary>
             <Indirection>
               <Indirection>
                 <Indirection>
                   <BadRender />
-                  <Indirection />
-                  <Indirection />
                 </Indirection>
               </Indirection>
             </Indirection>
-          </ErrorBoundary>,
-        );
-      });
-    } else {
-      ReactNoop.render(
-        <ErrorBoundary>
-          <Indirection>
-            <Indirection>
-              <Indirection>
-                <BadRender />
-                <Indirection />
-                <Indirection />
-              </Indirection>
-            </Indirection>
-          </Indirection>
-        </ErrorBoundary>,
+          </ErrorBoundary>
+          <Indirection />
+          <Indirection />
+        </>,
       );
-    }
+    });
 
     // Start rendering asynchronously
-    expect(Scheduler).toFlushAndYieldThrough([
+    await waitFor([
       'ErrorBoundary (try)',
       'Indirection',
       'Indirection',
@@ -247,9 +225,9 @@ describe('ReactIncrementalErrorHandling', () => {
     ]);
 
     // Still rendering async...
-    expect(Scheduler).toFlushAndYieldThrough(['Indirection']);
+    await waitFor(['Indirection']);
 
-    expect(Scheduler).toFlushAndYieldThrough([
+    await waitFor([
       'Indirection',
       // Now that the tree is complete, and there's no remaining work, React
       // reverts to legacy mode to retry one more time before handling the error.
@@ -267,27 +245,29 @@ describe('ReactIncrementalErrorHandling', () => {
       'ErrorBoundary (catch)',
       'ErrorMessage',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: oops!')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: oops!" />,
+    );
   });
 
   it("retries at a lower priority if there's additional pending work", async () => {
     function App(props) {
       if (props.isBroken) {
-        Scheduler.unstable_yieldValue('error');
+        Scheduler.log('error');
         throw new Error('Oops!');
       }
-      Scheduler.unstable_yieldValue('success');
+      Scheduler.log('success');
       return <span prop="Everything is fine." />;
     }
 
     function onCommit() {
-      Scheduler.unstable_yieldValue('commit');
+      Scheduler.log('commit');
     }
 
     React.startTransition(() => {
       ReactNoop.render(<App isBroken={true} />, onCommit);
     });
-    expect(Scheduler).toFlushAndYieldThrough(['error']);
+    await waitFor(['error']);
 
     React.startTransition(() => {
       // This update is in a separate batch
@@ -301,23 +281,29 @@ describe('ReactIncrementalErrorHandling', () => {
     // to recover from the error is synchronous, this should be enough to
     // finish the rest of the work.
     Scheduler.unstable_flushNumberOfYields(1);
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       'success',
       // Nothing commits until the second update completes.
       'commit',
       'commit',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Everything is fine.')]);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Everything is fine." />,
+    );
   });
 
-  // @gate www
-  it('does not include offscreen work when retrying after an error', () => {
+  // @gate enableLegacyHidden
+  it('does not include offscreen work when retrying after an error', async () => {
     function App(props) {
       if (props.isBroken) {
-        Scheduler.unstable_yieldValue('error');
+        Scheduler.log('error');
         throw new Error('Oops!');
       }
-      Scheduler.unstable_yieldValue('success');
+      Scheduler.log('success');
       return (
         <>
           Everything is fine
@@ -329,13 +315,13 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     function onCommit() {
-      Scheduler.unstable_yieldValue('commit');
+      Scheduler.log('commit');
     }
 
     React.startTransition(() => {
       ReactNoop.render(<App isBroken={true} />, onCommit);
     });
-    expect(Scheduler).toFlushAndYieldThrough(['error']);
+    await waitFor(['error']);
 
     expect(ReactNoop).toMatchRenderedOutput(null);
 
@@ -351,11 +337,15 @@ describe('ReactIncrementalErrorHandling', () => {
     // to recover from the error is synchronous, this should be enough to
     // finish the rest of the work.
     Scheduler.unstable_flushNumberOfYields(1);
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       'success',
       // Nothing commits until the second update completes.
       'commit',
       'commit',
+    ]);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
     ]);
     // This should not include the offscreen content
     expect(ReactNoop).toMatchRenderedOutput(
@@ -366,7 +356,7 @@ describe('ReactIncrementalErrorHandling', () => {
     );
 
     // The offscreen content finishes in a subsequent render
-    expect(Scheduler).toFlushAndYield([]);
+    await waitForAll([]);
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         Everything is fine
@@ -377,19 +367,19 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  it('retries one more time before handling error', () => {
+  it('retries one more time before handling error', async () => {
     function BadRender({unused}) {
-      Scheduler.unstable_yieldValue('BadRender');
+      Scheduler.log('BadRender');
       throw new Error('oops');
     }
 
     function Sibling({unused}) {
-      Scheduler.unstable_yieldValue('Sibling');
+      Scheduler.log('Sibling');
       return <span prop="Sibling" />;
     }
 
     function Parent({unused}) {
-      Scheduler.unstable_yieldValue('Parent');
+      Scheduler.log('Parent');
       return (
         <>
           <BadRender />
@@ -398,43 +388,29 @@ describe('ReactIncrementalErrorHandling', () => {
       );
     }
 
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        ReactNoop.render(<Parent />, () =>
-          Scheduler.unstable_yieldValue('commit'),
-        );
-      });
-    } else {
-      ReactNoop.render(<Parent />, () =>
-        Scheduler.unstable_yieldValue('commit'),
-      );
-    }
+    React.startTransition(() => {
+      ReactNoop.render(<Parent />, () => Scheduler.log('commit'));
+    });
 
     // Render the bad component asynchronously
-    expect(Scheduler).toFlushAndYieldThrough(['Parent', 'BadRender']);
+    await waitFor(['Parent', 'BadRender']);
 
-    // Finish the rest of the async work
-    expect(Scheduler).toFlushAndYieldThrough(['Sibling']);
-
-    // Old scheduler renders, commits, and throws synchronously
-    expect(() => Scheduler.unstable_flushNumberOfYields(1)).toThrow('oops');
-    expect(Scheduler).toHaveYielded([
-      'Parent',
-      'BadRender',
-      'Sibling',
-      'commit',
-    ]);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    // The work loop unwound to the nearest error boundary. React will try
+    // to render one more time, synchronously. Flush just one unit of work to
+    // demonstrate that this render is synchronous.
+    Scheduler.unstable_flushNumberOfYields(1);
+    assertLog(['Parent', 'BadRender', 'commit']);
+    expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
   it('retries one more time if an error occurs during a render that expires midway through the tree', async () => {
     function Oops({unused}) {
-      Scheduler.unstable_yieldValue('Oops');
+      Scheduler.log('Oops');
       throw new Error('Oops');
     }
 
     function Text({text}) {
-      Scheduler.unstable_yieldValue(text);
+      Scheduler.log(text);
       return text;
     }
 
@@ -450,51 +426,41 @@ describe('ReactIncrementalErrorHandling', () => {
       );
     }
 
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        ReactNoop.render(<App />);
-      });
-    } else {
+    React.startTransition(() => {
       ReactNoop.render(<App />);
-    }
+    });
 
     // Render part of the tree
-    expect(Scheduler).toFlushAndYieldThrough(['A', 'B']);
+    await waitFor(['A', 'B']);
 
     // Expire the render midway through
     Scheduler.unstable_advanceTime(10000);
 
-    expect(() => {
-      Scheduler.unstable_flushExpired();
-      ReactNoop.flushSync();
-    }).toThrow('Oops');
+    Scheduler.unstable_flushExpired();
+    ReactNoop.flushSync();
 
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       // The render expired, but we shouldn't throw out the partial work.
       // Finish the current level.
       'Oops',
-      'C',
-      'D',
 
       // Since the error occurred during a partially concurrent render, we should
       // retry one more time, synchronously.
       'A',
       'B',
       'Oops',
-      'C',
-      'D',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  it('calls componentDidCatch multiple times for multiple errors', () => {
+  it('calls componentDidCatch multiple times for multiple errors', async () => {
     let id = 0;
     class BadMount extends React.Component {
       componentDidMount() {
         throw new Error(`Error ${++id}`);
       }
       render() {
-        Scheduler.unstable_yieldValue('BadMount');
+        Scheduler.log('BadMount');
         return null;
       }
     }
@@ -502,14 +468,14 @@ describe('ReactIncrementalErrorHandling', () => {
     class ErrorBoundary extends React.Component {
       state = {errorCount: 0};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue(`componentDidCatch: ${error.message}`);
+        Scheduler.log(`componentDidCatch: ${error.message}`);
         this.setState(state => ({errorCount: state.errorCount + 1}));
       }
       render() {
         if (this.state.errorCount > 0) {
           return <span prop={`Number of errors: ${this.state.errorCount}`} />;
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary');
+        Scheduler.log('ErrorBoundary');
         return this.props.children;
       }
     }
@@ -522,7 +488,7 @@ describe('ReactIncrementalErrorHandling', () => {
       </ErrorBoundary>,
     );
 
-    expect(Scheduler).toFlushAndYield([
+    await waitForAll([
       'ErrorBoundary',
       'BadMount',
       'BadMount',
@@ -531,10 +497,12 @@ describe('ReactIncrementalErrorHandling', () => {
       'componentDidCatch: Error 2',
       'componentDidCatch: Error 3',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Number of errors: 3')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Number of errors: 3" />,
+    );
   });
 
-  it('catches render error in a boundary during full deferred mounting', () => {
+  it('catches render error in a boundary during full deferred mounting', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
@@ -559,54 +527,48 @@ describe('ReactIncrementalErrorHandling', () => {
         <BrokenRender />
       </ErrorBoundary>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: Hello.')]);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: Hello." />,
+    );
   });
 
-  it('catches render error in a boundary during partial deferred mounting', () => {
+  it('catches render error in a boundary during partial deferred mounting', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('ErrorBoundary componentDidCatch');
+        Scheduler.log('ErrorBoundary componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary render error');
+          Scheduler.log('ErrorBoundary render error');
           return (
             <span prop={`Caught an error: ${this.state.error.message}.`} />
           );
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary render success');
+        Scheduler.log('ErrorBoundary render success');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        ReactNoop.render(
-          <ErrorBoundary>
-            <BrokenRender />
-          </ErrorBoundary>,
-        );
-      });
-    } else {
+    React.startTransition(() => {
       ReactNoop.render(
         <ErrorBoundary>
           <BrokenRender />
         </ErrorBoundary>,
       );
-    }
+    });
 
-    expect(Scheduler).toFlushAndYieldThrough(['ErrorBoundary render success']);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    await waitFor(['ErrorBoundary render success']);
+    expect(ReactNoop).toMatchRenderedOutput(null);
 
-    expect(Scheduler).toFlushAndYield([
+    await waitForAll([
       'BrokenRender',
       // React retries one more time
       'ErrorBoundary render success',
@@ -616,30 +578,32 @@ describe('ReactIncrementalErrorHandling', () => {
       'ErrorBoundary componentDidCatch',
       'ErrorBoundary render error',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: Hello.')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: Hello." />,
+    );
   });
 
   it('catches render error in a boundary during synchronous mounting', () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('ErrorBoundary componentDidCatch');
+        Scheduler.log('ErrorBoundary componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary render error');
+          Scheduler.log('ErrorBoundary render error');
           return (
             <span prop={`Caught an error: ${this.state.error.message}.`} />
           );
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary render success');
+        Scheduler.log('ErrorBoundary render success');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
@@ -651,7 +615,7 @@ describe('ReactIncrementalErrorHandling', () => {
       );
     });
 
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       'ErrorBoundary render success',
       'BrokenRender',
 
@@ -663,30 +627,32 @@ describe('ReactIncrementalErrorHandling', () => {
       'ErrorBoundary componentDidCatch',
       'ErrorBoundary render error',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: Hello.')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: Hello." />,
+    );
   });
 
   it('catches render error in a boundary during batched mounting', () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('ErrorBoundary componentDidCatch');
+        Scheduler.log('ErrorBoundary componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary render error');
+          Scheduler.log('ErrorBoundary render error');
           return (
             <span prop={`Caught an error: ${this.state.error.message}.`} />
           );
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary render success');
+        Scheduler.log('ErrorBoundary render success');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
@@ -699,7 +665,7 @@ describe('ReactIncrementalErrorHandling', () => {
       );
     });
 
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       'ErrorBoundary render success',
       'BrokenRender',
 
@@ -711,23 +677,25 @@ describe('ReactIncrementalErrorHandling', () => {
       'ErrorBoundary componentDidCatch',
       'ErrorBoundary render error',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: Hello.')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: Hello." />,
+    );
   });
 
-  it('propagates an error from a noop error boundary during full deferred mounting', () => {
+  it('propagates an error from a noop error boundary during full deferred mounting', async () => {
     class RethrowErrorBoundary extends React.Component {
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary componentDidCatch');
+        Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
       render() {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary render');
+        Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
@@ -737,61 +705,50 @@ describe('ReactIncrementalErrorHandling', () => {
       </RethrowErrorBoundary>,
     );
 
-    expect(() => {
-      expect(Scheduler).toFlushAndYield([
-        'RethrowErrorBoundary render',
-        'BrokenRender',
+    await waitForThrow('Hello');
+    assertLog([
+      'RethrowErrorBoundary render',
+      'BrokenRender',
 
-        // React retries one more time
-        'RethrowErrorBoundary render',
-        'BrokenRender',
+      // React retries one more time
+      'RethrowErrorBoundary render',
+      'BrokenRender',
 
-        // Errored again on retry. Now handle it.
-        'RethrowErrorBoundary componentDidCatch',
-      ]);
-    }).toThrow('Hello');
-    expect(ReactNoop.getChildren()).toEqual([]);
+      // Errored again on retry. Now handle it.
+      'RethrowErrorBoundary componentDidCatch',
+    ]);
+    expect(ReactNoop.getChildrenAsJSX()).toEqual(null);
   });
 
-  it('propagates an error from a noop error boundary during partial deferred mounting', () => {
+  it('propagates an error from a noop error boundary during partial deferred mounting', async () => {
     class RethrowErrorBoundary extends React.Component {
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary componentDidCatch');
+        Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
       render() {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary render');
+        Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
-    if (gate(flags => flags.enableSyncDefaultUpdates)) {
-      React.startTransition(() => {
-        ReactNoop.render(
-          <RethrowErrorBoundary>
-            <BrokenRender />
-          </RethrowErrorBoundary>,
-        );
-      });
-    } else {
+    React.startTransition(() => {
       ReactNoop.render(
         <RethrowErrorBoundary>
           <BrokenRender />
         </RethrowErrorBoundary>,
       );
-    }
+    });
 
-    expect(Scheduler).toFlushAndYieldThrough(['RethrowErrorBoundary render']);
+    await waitFor(['RethrowErrorBoundary render']);
 
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('Hello');
-    expect(Scheduler).toHaveYielded([
+    await waitForThrow('Hello');
+    assertLog([
       'BrokenRender',
 
       // React retries one more time
@@ -801,36 +758,35 @@ describe('ReactIncrementalErrorHandling', () => {
       // Errored again on retry. Now handle it.
       'RethrowErrorBoundary componentDidCatch',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
   it('propagates an error from a noop error boundary during synchronous mounting', () => {
     class RethrowErrorBoundary extends React.Component {
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary componentDidCatch');
+        Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
       render() {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary render');
+        Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
-    expect(() => {
-      ReactNoop.flushSync(() => {
-        ReactNoop.render(
-          <RethrowErrorBoundary>
-            <BrokenRender />
-          </RethrowErrorBoundary>,
-        );
-      });
-    }).toThrow('Hello');
-    expect(Scheduler).toHaveYielded([
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(
+        <RethrowErrorBoundary>
+          <BrokenRender />
+        </RethrowErrorBoundary>,
+      );
+    });
+
+    assertLog([
       'RethrowErrorBoundary render',
       'BrokenRender',
 
@@ -841,39 +797,38 @@ describe('ReactIncrementalErrorHandling', () => {
       // Errored again on retry. Now handle it.
       'RethrowErrorBoundary componentDidCatch',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
   it('propagates an error from a noop error boundary during batched mounting', () => {
     class RethrowErrorBoundary extends React.Component {
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary componentDidCatch');
+        Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
       render() {
-        Scheduler.unstable_yieldValue('RethrowErrorBoundary render');
+        Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
       }
     }
 
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
-    expect(() => {
-      ReactNoop.flushSync(() => {
-        ReactNoop.render(
-          <RethrowErrorBoundary>Before the storm.</RethrowErrorBoundary>,
-        );
-        ReactNoop.render(
-          <RethrowErrorBoundary>
-            <BrokenRender />
-          </RethrowErrorBoundary>,
-        );
-      });
-    }).toThrow('Hello');
-    expect(Scheduler).toHaveYielded([
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(
+        <RethrowErrorBoundary>Before the storm.</RethrowErrorBoundary>,
+      );
+      ReactNoop.render(
+        <RethrowErrorBoundary>
+          <BrokenRender />
+        </RethrowErrorBoundary>,
+      );
+    });
+
+    assertLog([
       'RethrowErrorBoundary render',
       'BrokenRender',
 
@@ -884,10 +839,10 @@ describe('ReactIncrementalErrorHandling', () => {
       // Errored again on retry. Now handle it.
       'RethrowErrorBoundary componentDidCatch',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  it('applies batched updates regardless despite errors in scheduling', () => {
+  it('applies batched updates regardless despite errors in scheduling', async () => {
     ReactNoop.render(<span prop="a:1" />);
     expect(() => {
       ReactNoop.batchedUpdates(() => {
@@ -896,11 +851,11 @@ describe('ReactIncrementalErrorHandling', () => {
         throw new Error('Hello');
       });
     }).toThrow('Hello');
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren()).toEqual([span('a:3')]);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="a:3" />);
   });
 
-  it('applies nested batched updates despite errors in scheduling', () => {
+  it('applies nested batched updates despite errors in scheduling', async () => {
     ReactNoop.render(<span prop="a:1" />);
     expect(() => {
       ReactNoop.batchedUpdates(() => {
@@ -913,12 +868,12 @@ describe('ReactIncrementalErrorHandling', () => {
         });
       });
     }).toThrow('Hello');
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren()).toEqual([span('a:5')]);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="a:5" />);
   });
 
   // TODO: Is this a breaking change?
-  it('defers additional sync work to a separate event after an error', () => {
+  it('defers additional sync work to a separate event after an error', async () => {
     ReactNoop.render(<span prop="a:1" />);
     expect(() => {
       ReactNoop.flushSync(() => {
@@ -929,38 +884,36 @@ describe('ReactIncrementalErrorHandling', () => {
         });
       });
     }).toThrow('Hello');
-    Scheduler.unstable_flushAll();
-    expect(ReactNoop.getChildren()).toEqual([span('a:3')]);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="a:3" />);
   });
 
-  it('can schedule updates after uncaught error in render on mount', () => {
+  it('can schedule updates after uncaught error in render on mount', async () => {
     function BrokenRender({unused}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       throw new Error('Hello');
     }
 
     function Foo({unused}) {
-      Scheduler.unstable_yieldValue('Foo');
+      Scheduler.log('Foo');
       return null;
     }
 
     ReactNoop.render(<BrokenRender />);
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('Hello');
+    await waitForThrow('Hello');
     ReactNoop.render(<Foo />);
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       'BrokenRender',
       // React retries one more time
       'BrokenRender',
       // Errored again on retry
     ]);
-    expect(Scheduler).toFlushAndYield(['Foo']);
+    await waitForAll(['Foo']);
   });
 
-  it('can schedule updates after uncaught error in render on update', () => {
+  it('can schedule updates after uncaught error in render on update', async () => {
     function BrokenRender({shouldThrow}) {
-      Scheduler.unstable_yieldValue('BrokenRender');
+      Scheduler.log('BrokenRender');
       if (shouldThrow) {
         throw new Error('Hello');
       }
@@ -968,18 +921,16 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     function Foo({unused}) {
-      Scheduler.unstable_yieldValue('Foo');
+      Scheduler.log('Foo');
       return null;
     }
 
     ReactNoop.render(<BrokenRender shouldThrow={false} />);
-    expect(Scheduler).toFlushAndYield(['BrokenRender']);
+    await waitForAll(['BrokenRender']);
 
-    expect(() => {
-      ReactNoop.render(<BrokenRender shouldThrow={true} />);
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('Hello');
-    expect(Scheduler).toHaveYielded([
+    ReactNoop.render(<BrokenRender shouldThrow={true} />);
+    await waitForThrow('Hello');
+    assertLog([
       'BrokenRender',
       // React retries one more time
       'BrokenRender',
@@ -987,10 +938,10 @@ describe('ReactIncrementalErrorHandling', () => {
     ]);
 
     ReactNoop.render(<Foo />);
-    expect(Scheduler).toFlushAndYield(['Foo']);
+    await waitForAll(['Foo']);
   });
 
-  it('can schedule updates after uncaught error during unmounting', () => {
+  it('can schedule updates after uncaught error during unmounting', async () => {
     class BrokenComponentWillUnmount extends React.Component {
       render() {
         return <div />;
@@ -1001,27 +952,24 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     function Foo() {
-      Scheduler.unstable_yieldValue('Foo');
+      Scheduler.log('Foo');
       return null;
     }
 
     ReactNoop.render(<BrokenComponentWillUnmount />);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
-    expect(() => {
-      ReactNoop.render(<div />);
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('Hello');
+    ReactNoop.render(<div />);
+    await waitForThrow('Hello');
 
     ReactNoop.render(<Foo />);
-    expect(Scheduler).toFlushAndYield(['Foo']);
+    await waitForAll(['Foo']);
   });
 
-  // @gate skipUnmountedBoundaries
-  it('should not attempt to recover an unmounting error boundary', () => {
+  it('should not attempt to recover an unmounting error boundary', async () => {
     class Parent extends React.Component {
       componentWillUnmount() {
-        Scheduler.unstable_yieldValue('Parent componentWillUnmount');
+        Scheduler.log('Parent componentWillUnmount');
       }
       render() {
         return <Boundary />;
@@ -1030,7 +978,7 @@ describe('ReactIncrementalErrorHandling', () => {
 
     class Boundary extends React.Component {
       componentDidCatch(e) {
-        Scheduler.unstable_yieldValue(`Caught error: ${e.message}`);
+        Scheduler.log(`Caught error: ${e.message}`);
       }
       render() {
         return <ThrowsOnUnmount />;
@@ -1039,7 +987,7 @@ describe('ReactIncrementalErrorHandling', () => {
 
     class ThrowsOnUnmount extends React.Component {
       componentWillUnmount() {
-        Scheduler.unstable_yieldValue('ThrowsOnUnmount componentWillUnmount');
+        Scheduler.log('ThrowsOnUnmount componentWillUnmount');
         throw new Error('unmount error');
       }
       render() {
@@ -1048,22 +996,21 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     ReactNoop.render(<Parent />);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
     // Because the error boundary is also unmounting,
     // an error in ThrowsOnUnmount should be rethrown.
-    expect(() => {
-      ReactNoop.render(null);
-      expect(Scheduler).toFlushAndYield([
-        'Parent componentWillUnmount',
-        'ThrowsOnUnmount componentWillUnmount',
-      ]);
-    }).toThrow('unmount error');
+    ReactNoop.render(null);
+    await waitForThrow('unmount error');
+    await assertLog([
+      'Parent componentWillUnmount',
+      'ThrowsOnUnmount componentWillUnmount',
+    ]);
 
     ReactNoop.render(<Parent />);
   });
 
-  it('can unmount an error boundary before it is handled', () => {
+  it('can unmount an error boundary before it is handled', async () => {
     let parent;
 
     class Parent extends React.Component {
@@ -1092,14 +1039,14 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     ReactNoop.render(<Parent />);
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
     ReactNoop.flushSync(() => {
       ReactNoop.render(<Parent />);
     });
   });
 
-  it('continues work on other roots despite caught errors', () => {
+  it('continues work on other roots despite caught errors', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
@@ -1126,93 +1073,78 @@ describe('ReactIncrementalErrorHandling', () => {
       'a',
     );
     ReactNoop.renderToRootWithID(<span prop="b:1" />, 'b');
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('a')).toEqual([
-      span('Caught an error: Hello.'),
-    ]);
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('b')).toEqual([span('b:1')]);
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(
+      <span prop="Caught an error: Hello." />,
+    );
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(<span prop="b:1" />);
   });
 
-  it('continues work on other roots despite uncaught errors', () => {
+  it('continues work on other roots despite uncaught errors', async () => {
     function BrokenRender(props) {
       throw new Error(props.label);
     }
 
     ReactNoop.renderToRootWithID(<BrokenRender label="a" />, 'a');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('a');
-    expect(ReactNoop.getChildren('a')).toEqual([]);
+    await waitForThrow('a');
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(null);
 
     ReactNoop.renderToRootWithID(<BrokenRender label="a" />, 'a');
     ReactNoop.renderToRootWithID(<span prop="b:2" />, 'b');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('a');
+    await waitForThrow('a');
 
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('a')).toEqual([]);
-    expect(ReactNoop.getChildren('b')).toEqual([span('b:2')]);
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(<span prop="b:2" />);
 
     ReactNoop.renderToRootWithID(<span prop="a:3" />, 'a');
     ReactNoop.renderToRootWithID(<BrokenRender label="b" />, 'b');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('b');
-    expect(ReactNoop.getChildren('a')).toEqual([span('a:3')]);
-    expect(ReactNoop.getChildren('b')).toEqual([]);
+    await waitForThrow('b');
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(<span prop="a:3" />);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(null);
 
     ReactNoop.renderToRootWithID(<span prop="a:4" />, 'a');
     ReactNoop.renderToRootWithID(<BrokenRender label="b" />, 'b');
     ReactNoop.renderToRootWithID(<span prop="c:4" />, 'c');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('b');
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('a')).toEqual([span('a:4')]);
-    expect(ReactNoop.getChildren('b')).toEqual([]);
-    expect(ReactNoop.getChildren('c')).toEqual([span('c:4')]);
+    await waitForThrow('b');
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(<span prop="a:4" />);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('c')).toEqual(<span prop="c:4" />);
 
     ReactNoop.renderToRootWithID(<span prop="a:5" />, 'a');
     ReactNoop.renderToRootWithID(<span prop="b:5" />, 'b');
     ReactNoop.renderToRootWithID(<span prop="c:5" />, 'c');
     ReactNoop.renderToRootWithID(<span prop="d:5" />, 'd');
     ReactNoop.renderToRootWithID(<BrokenRender label="e" />, 'e');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('e');
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('a')).toEqual([span('a:5')]);
-    expect(ReactNoop.getChildren('b')).toEqual([span('b:5')]);
-    expect(ReactNoop.getChildren('c')).toEqual([span('c:5')]);
-    expect(ReactNoop.getChildren('d')).toEqual([span('d:5')]);
-    expect(ReactNoop.getChildren('e')).toEqual([]);
+    await waitForThrow('e');
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(<span prop="a:5" />);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(<span prop="b:5" />);
+    expect(ReactNoop.getChildrenAsJSX('c')).toEqual(<span prop="c:5" />);
+    expect(ReactNoop.getChildrenAsJSX('d')).toEqual(<span prop="d:5" />);
+    expect(ReactNoop.getChildrenAsJSX('e')).toEqual(null);
 
     ReactNoop.renderToRootWithID(<BrokenRender label="a" />, 'a');
+    await waitForThrow('a');
+
     ReactNoop.renderToRootWithID(<span prop="b:6" />, 'b');
     ReactNoop.renderToRootWithID(<BrokenRender label="c" />, 'c');
+    await waitForThrow('c');
+
     ReactNoop.renderToRootWithID(<span prop="d:6" />, 'd');
     ReactNoop.renderToRootWithID(<BrokenRender label="e" />, 'e');
     ReactNoop.renderToRootWithID(<span prop="f:6" />, 'f');
+    await waitForThrow('e');
 
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('a');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('c');
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrow('e');
-
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('a')).toEqual([]);
-    expect(ReactNoop.getChildren('b')).toEqual([span('b:6')]);
-    expect(ReactNoop.getChildren('c')).toEqual([]);
-    expect(ReactNoop.getChildren('d')).toEqual([span('d:6')]);
-    expect(ReactNoop.getChildren('e')).toEqual([]);
-    expect(ReactNoop.getChildren('f')).toEqual([span('f:6')]);
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(<span prop="b:6" />);
+    expect(ReactNoop.getChildrenAsJSX('c')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('d')).toEqual(<span prop="d:6" />);
+    expect(ReactNoop.getChildrenAsJSX('e')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('f')).toEqual(<span prop="f:6" />);
 
     ReactNoop.unmountRootWithID('a');
     ReactNoop.unmountRootWithID('b');
@@ -1220,16 +1152,22 @@ describe('ReactIncrementalErrorHandling', () => {
     ReactNoop.unmountRootWithID('d');
     ReactNoop.unmountRootWithID('e');
     ReactNoop.unmountRootWithID('f');
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren('a')).toEqual(null);
-    expect(ReactNoop.getChildren('b')).toEqual(null);
-    expect(ReactNoop.getChildren('c')).toEqual(null);
-    expect(ReactNoop.getChildren('d')).toEqual(null);
-    expect(ReactNoop.getChildren('e')).toEqual(null);
-    expect(ReactNoop.getChildren('f')).toEqual(null);
+    await waitForAll([]);
+    expect(ReactNoop.getChildrenAsJSX('a')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('b')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('c')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('d')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('e')).toEqual(null);
+    expect(ReactNoop.getChildrenAsJSX('f')).toEqual(null);
   });
 
-  it('unwinds the context stack correctly on error', () => {
+  // NOTE: When legacy context is removed, it's probably fine to just delete
+  // this test. There's plenty of test coverage of stack unwinding in general
+  // because it's used for new context, suspense, and many other features.
+  // It has to be tested independently for each feature anyway. So although it
+  // doesn't look like it, this test is specific to legacy context.
+  // @gate !disableLegacyContext && !disableLegacyContextForFunctionComponents
+  it('unwinds the context stack correctly on error', async () => {
     class Provider extends React.Component {
       static childContextTypes = {message: PropTypes.string};
       static contextTypes = {message: PropTypes.string};
@@ -1281,13 +1219,25 @@ describe('ReactIncrementalErrorHandling', () => {
         <Connector />
       </Provider>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+
+    await waitForAll([]);
+    assertConsoleErrorDev([
+      'Provider uses the legacy childContextTypes API which will soon be removed. ' +
+        'Use React.createContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Provider (at **)',
+      'Provider uses the legacy contextTypes API which will soon be removed. ' +
+        'Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Provider (at **)',
+      'Connector uses the legacy contextTypes API which will be removed soon. ' +
+        'Use React.createContext() with React.useContext() instead. (https://react.dev/link/legacy-context)\n' +
+        '    in Connector (at **)',
+    ]);
 
     // If the context stack does not unwind, span will get 'abcde'
-    expect(ReactNoop.getChildren()).toEqual([span('a')]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="a" />);
   });
 
-  it('catches reconciler errors in a boundary during mounting', () => {
+  it('catches reconciler errors in a boundary during mounting', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
@@ -1310,25 +1260,24 @@ describe('ReactIncrementalErrorHandling', () => {
         <BrokenRender />
       </ErrorBoundary>,
     );
-    expect(() => expect(Scheduler).toFlushWithoutYielding()).toErrorDev([
-      'Warning: React.createElement: type is invalid -- expected a string',
-      // React retries once on error
-      'Warning: React.createElement: type is invalid -- expected a string',
-    ]);
-    expect(ReactNoop.getChildren()).toEqual([
-      span(
-        'Element type is invalid: expected a string (for built-in components) or ' +
+    await waitForAll([]);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span
+        prop={
+          'Element type is invalid: expected a string (for built-in components) or ' +
           'a class/function (for composite components) but got: undefined.' +
           (__DEV__
             ? " You likely forgot to export your component from the file it's " +
               'defined in, or you might have mixed up default and named imports.' +
               '\n\nCheck the render method of `BrokenRender`.'
-            : ''),
-      ),
-    ]);
+            : '')
+        }
+      />,
+    );
   });
 
-  it('catches reconciler errors in a boundary during update', () => {
+  it('catches reconciler errors in a boundary during update', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
@@ -1352,40 +1301,35 @@ describe('ReactIncrementalErrorHandling', () => {
         <BrokenRender fail={false} />
       </ErrorBoundary>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
     ReactNoop.render(
       <ErrorBoundary>
         <BrokenRender fail={true} />
       </ErrorBoundary>,
     );
-    expect(() => expect(Scheduler).toFlushWithoutYielding()).toErrorDev([
-      'Warning: React.createElement: type is invalid -- expected a string',
-      // React retries once on error
-      'Warning: React.createElement: type is invalid -- expected a string',
-    ]);
-    expect(ReactNoop.getChildren()).toEqual([
-      span(
-        'Element type is invalid: expected a string (for built-in components) or ' +
+    await waitForAll([]);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span
+        prop={
+          'Element type is invalid: expected a string (for built-in components) or ' +
           'a class/function (for composite components) but got: undefined.' +
           (__DEV__
             ? " You likely forgot to export your component from the file it's " +
               'defined in, or you might have mixed up default and named imports.' +
               '\n\nCheck the render method of `BrokenRender`.'
-            : ''),
-      ),
-    ]);
+            : '')
+        }
+      />,
+    );
   });
 
-  it('recovers from uncaught reconciler errors', () => {
+  it('recovers from uncaught reconciler errors', async () => {
     const InvalidType = undefined;
-    expect(() =>
-      ReactNoop.render(<InvalidType />),
-    ).toErrorDev(
-      'Warning: React.createElement: type is invalid -- expected a string',
-      {withoutStack: true},
-    );
-    expect(Scheduler).toFlushAndThrow(
+    ReactNoop.render(<InvalidType />);
+
+    await waitForThrow(
       'Element type is invalid: expected a string (for built-in components) or ' +
         'a class/function (for composite components) but got: undefined.' +
         (__DEV__
@@ -1395,19 +1339,17 @@ describe('ReactIncrementalErrorHandling', () => {
     );
 
     ReactNoop.render(<span prop="hi" />);
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren()).toEqual([span('hi')]);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(<span prop="hi" />);
   });
 
-  it('unmounts components with uncaught errors', () => {
+  it('unmounts components with uncaught errors', async () => {
     let inst;
 
     class BrokenRenderAndUnmount extends React.Component {
       state = {fail: false};
       componentWillUnmount() {
-        Scheduler.unstable_yieldValue(
-          'BrokenRenderAndUnmount componentWillUnmount',
-        );
+        Scheduler.log('BrokenRenderAndUnmount componentWillUnmount');
       }
       render() {
         inst = this;
@@ -1420,7 +1362,7 @@ describe('ReactIncrementalErrorHandling', () => {
 
     class Parent extends React.Component {
       componentWillUnmount() {
-        Scheduler.unstable_yieldValue('Parent componentWillUnmount [!]');
+        Scheduler.log('Parent componentWillUnmount [!]');
         throw new Error('One does not simply unmount me.');
       }
       render() {
@@ -1435,31 +1377,40 @@ describe('ReactIncrementalErrorHandling', () => {
         </Parent>
       </Parent>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
+    await waitForAll([]);
 
-    inst.setState({fail: true});
-    expect(() => {
-      expect(Scheduler).toFlushWithoutYielding();
-    }).toThrowError('Hello.');
+    let aggregateError;
+    try {
+      await act(() => {
+        ReactNoop.flushSync(() => {
+          inst.setState({fail: true});
+        });
+      });
+    } catch (e) {
+      aggregateError = e;
+    }
 
-    expect(Scheduler).toHaveYielded([
+    assertLog([
       // Attempt to clean up.
       // Errors in parents shouldn't stop children from unmounting.
       'Parent componentWillUnmount [!]',
       'Parent componentWillUnmount [!]',
       'BrokenRenderAndUnmount componentWillUnmount',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
 
-    expect(() => {
-      ReactNoop.flushSync();
-    }).toThrow('One does not simply unmount me.');
+    // React threw both errors as a single AggregateError
+    const errors = aggregateError.errors;
+    expect(errors.length).toBe(3);
+    expect(errors[0].message).toBe('Hello.');
+    expect(errors[1].message).toBe('One does not simply unmount me.');
+    expect(errors[2].message).toBe('One does not simply unmount me.');
   });
 
-  it('does not interrupt unmounting if detaching a ref throws', () => {
+  it('does not interrupt unmounting if detaching a ref throws', async () => {
     class Bar extends React.Component {
       componentWillUnmount() {
-        Scheduler.unstable_yieldValue('Bar unmount');
+        Scheduler.log('Bar unmount');
       }
       render() {
         return <span prop="Bar" />;
@@ -1468,10 +1419,10 @@ describe('ReactIncrementalErrorHandling', () => {
 
     function barRef(inst) {
       if (inst === null) {
-        Scheduler.unstable_yieldValue('barRef detach');
+        Scheduler.log('barRef detach');
         throw new Error('Detach error');
       }
-      Scheduler.unstable_yieldValue('barRef attach');
+      Scheduler.log('barRef attach');
     }
 
     function Foo(props) {
@@ -1479,66 +1430,70 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     ReactNoop.render(<Foo />);
-    expect(Scheduler).toFlushAndYield(['barRef attach']);
-    expect(ReactNoop.getChildren()).toEqual([div(span('Bar'))]);
+    await waitForAll(['barRef attach']);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <div>
+        <span prop="Bar" />
+      </div>,
+    );
 
     // Unmount
     ReactNoop.render(<Foo hide={true} />);
-    expect(Scheduler).toFlushAndThrow('Detach error');
-    expect(Scheduler).toHaveYielded([
+    await waitForThrow('Detach error');
+    assertLog([
       'barRef detach',
       // Bar should unmount even though its ref threw an error while detaching
       'Bar unmount',
     ]);
     // Because there was an error, entire tree should unmount
-    expect(ReactNoop.getChildren()).toEqual([]);
+    expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  it('handles error thrown by host config while working on failed root', () => {
+  it('handles error thrown by host config while working on failed root', async () => {
     ReactNoop.render(<errorInBeginPhase />);
-    expect(Scheduler).toFlushAndThrow('Error in host config.');
+    await waitForThrow('Error in host config.');
   });
 
-  it('handles error thrown by top-level callback', () => {
+  it('handles error thrown by top-level callback', async () => {
     ReactNoop.render(<div />, () => {
       throw new Error('Error!');
     });
-    expect(Scheduler).toFlushAndThrow('Error!');
+    await waitForThrow('Error!');
   });
 
-  it('error boundaries capture non-errors', () => {
-    spyOnProd(console, 'error');
-    spyOnDev(console, 'error');
+  it('error boundaries capture non-errors', async () => {
+    spyOnProd(console, 'error').mockImplementation(() => {});
+    spyOnDev(console, 'error').mockImplementation(() => {});
 
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
         // Should not be called
-        Scheduler.unstable_yieldValue('componentDidCatch');
+        Scheduler.log('componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary (catch)');
+          Scheduler.log('ErrorBoundary (catch)');
           return (
             <span
               prop={`Caught an error: ${this.state.error.nonStandardMessage}`}
             />
           );
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary (try)');
+        Scheduler.log('ErrorBoundary (try)');
         return this.props.children;
       }
     }
 
     function Indirection({children}) {
-      Scheduler.unstable_yieldValue('Indirection');
+      Scheduler.log('Indirection');
       return children;
     }
 
     const notAnError = {nonStandardMessage: 'oops'};
     function BadRender({unused}) {
-      Scheduler.unstable_yieldValue('BadRender');
+      Scheduler.log('BadRender');
       throw notAnError;
     }
 
@@ -1550,7 +1505,7 @@ describe('ReactIncrementalErrorHandling', () => {
       </ErrorBoundary>,
     );
 
-    expect(Scheduler).toFlushAndYield([
+    await waitForAll([
       'ErrorBoundary (try)',
       'Indirection',
       'BadRender',
@@ -1564,50 +1519,53 @@ describe('ReactIncrementalErrorHandling', () => {
       'componentDidCatch',
       'ErrorBoundary (catch)',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: oops')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: oops" />,
+    );
 
     if (__DEV__) {
       expect(console.error).toHaveBeenCalledTimes(1);
-      expect(console.error.calls.argsFor(0)[0]).toContain(
-        'The above error occurred in the <BadRender> component:',
+      expect(console.error.mock.calls[0][1]).toBe(notAnError);
+      expect(console.error.mock.calls[0][2]).toContain(
+        'The above error occurred in the <BadRender> component',
       );
     } else {
       expect(console.error).toHaveBeenCalledTimes(1);
-      expect(console.error.calls.argsFor(0)[0]).toBe(notAnError);
+      expect(console.error.mock.calls[0][0]).toBe(notAnError);
     }
   });
 
   // TODO: Error boundary does not catch promises
 
-  it('continues working on siblings of a component that throws', () => {
+  it('continues working on siblings of a component that throws', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('componentDidCatch');
+        Scheduler.log('componentDidCatch');
         this.setState({error});
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('ErrorBoundary (catch)');
+          Scheduler.log('ErrorBoundary (catch)');
           return <ErrorMessage error={this.state.error} />;
         }
-        Scheduler.unstable_yieldValue('ErrorBoundary (try)');
+        Scheduler.log('ErrorBoundary (try)');
         return this.props.children;
       }
     }
 
     function ErrorMessage({error}) {
-      Scheduler.unstable_yieldValue('ErrorMessage');
+      Scheduler.log('ErrorMessage');
       return <span prop={`Caught an error: ${error.message}`} />;
     }
 
     function BadRenderSibling({unused}) {
-      Scheduler.unstable_yieldValue('BadRenderSibling');
+      Scheduler.log('BadRenderSibling');
       return null;
     }
 
     function BadRender({unused}) {
-      Scheduler.unstable_yieldValue('throw');
+      Scheduler.log('throw');
       throw new Error('oops!');
     }
 
@@ -1619,57 +1577,55 @@ describe('ReactIncrementalErrorHandling', () => {
       </ErrorBoundary>,
     );
 
-    expect(Scheduler).toFlushAndYield([
+    await waitForAll([
       'ErrorBoundary (try)',
       'throw',
       // Continue rendering siblings after BadRender throws
-      'BadRenderSibling',
-      'BadRenderSibling',
 
       // React retries one more time
       'ErrorBoundary (try)',
       'throw',
-      'BadRenderSibling',
-      'BadRenderSibling',
 
       // Errored again on retry. Now handle it.
       'componentDidCatch',
       'ErrorBoundary (catch)',
       'ErrorMessage',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: oops!')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: oops!" />,
+    );
   });
 
-  it('calls the correct lifecycles on the error boundary after catching an error (mixed)', () => {
+  it('calls the correct lifecycles on the error boundary after catching an error (mixed)', async () => {
     // This test seems a bit contrived, but it's based on an actual regression
     // where we checked for the existence of didUpdate instead of didMount, and
     // didMount was not defined.
     function BadRender({unused}) {
-      Scheduler.unstable_yieldValue('throw');
+      Scheduler.log('throw');
       throw new Error('oops!');
     }
 
     class Parent extends React.Component {
       state = {error: null, other: false};
       componentDidCatch(error) {
-        Scheduler.unstable_yieldValue('did catch');
+        Scheduler.log('did catch');
         this.setState({error});
       }
       componentDidUpdate() {
-        Scheduler.unstable_yieldValue('did update');
+        Scheduler.log('did update');
       }
       render() {
         if (this.state.error) {
-          Scheduler.unstable_yieldValue('render error message');
+          Scheduler.log('render error message');
           return <span prop={`Caught an error: ${this.state.error.message}`} />;
         }
-        Scheduler.unstable_yieldValue('render');
+        Scheduler.log('render');
         return <BadRender />;
       }
     }
 
     ReactNoop.render(<Parent step={1} />);
-    expect(Scheduler).toFlushAndYieldThrough([
+    await waitFor([
       'render',
       'throw',
       'render',
@@ -1678,10 +1634,12 @@ describe('ReactIncrementalErrorHandling', () => {
       'render error message',
       'did update',
     ]);
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: oops!')]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: oops!" />,
+    );
   });
 
-  it('provides component stack to the error boundary with componentDidCatch', () => {
+  it('provides component stack to the error boundary with componentDidCatch', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null, errorInfo: null};
       componentDidCatch(error, errorInfo) {
@@ -1689,7 +1647,7 @@ describe('ReactIncrementalErrorHandling', () => {
       }
       render() {
         if (this.state.errorInfo) {
-          Scheduler.unstable_yieldValue('render error message');
+          Scheduler.log('render error message');
           return (
             <span
               prop={`Caught an error:${normalizeCodeLocInfo(
@@ -1711,17 +1669,19 @@ describe('ReactIncrementalErrorHandling', () => {
         <BrokenRender />
       </ErrorBoundary>,
     );
-    expect(Scheduler).toFlushAndYield(['render error message']);
-    expect(ReactNoop.getChildren()).toEqual([
-      span(
-        'Caught an error:\n' +
+    await waitForAll(['render error message']);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span
+        prop={
+          'Caught an error:\n' +
           '    in BrokenRender (at **)\n' +
-          '    in ErrorBoundary (at **).',
-      ),
-    ]);
+          '    in ErrorBoundary (at **).'
+        }
+      />,
+    );
   });
 
-  it('does not provide component stack to the error boundary with getDerivedStateFromError', () => {
+  it('does not provide component stack to the error boundary with getDerivedStateFromError', async () => {
     class ErrorBoundary extends React.Component {
       state = {error: null};
       static getDerivedStateFromError(error, errorInfo) {
@@ -1745,12 +1705,14 @@ describe('ReactIncrementalErrorHandling', () => {
         <BrokenRender />
       </ErrorBoundary>,
     );
-    expect(Scheduler).toFlushWithoutYielding();
-    expect(ReactNoop.getChildren()).toEqual([span('Caught an error: Hello')]);
+    await waitForAll([]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span prop="Caught an error: Hello" />,
+    );
   });
 
-  it('provides component stack even if overriding prepareStackTrace', () => {
-    Error.prepareStackTrace = function(error, callsites) {
+  it('provides component stack even if overriding prepareStackTrace', async () => {
+    Error.prepareStackTrace = function (error, callsites) {
       const stack = ['An error occurred:', error.message];
       for (let i = 0; i < callsites.length; i++) {
         const callsite = callsites[i];
@@ -1771,7 +1733,7 @@ describe('ReactIncrementalErrorHandling', () => {
       }
       render() {
         if (this.state.errorInfo) {
-          Scheduler.unstable_yieldValue('render error message');
+          Scheduler.log('render error message');
           return (
             <span
               prop={`Caught an error:${normalizeCodeLocInfo(
@@ -1793,69 +1755,35 @@ describe('ReactIncrementalErrorHandling', () => {
         <BrokenRender />
       </ErrorBoundary>,
     );
-    expect(Scheduler).toFlushAndYield(['render error message']);
+    await waitForAll(['render error message']);
     Error.prepareStackTrace = undefined;
 
-    expect(ReactNoop.getChildren()).toEqual([
-      span(
-        'Caught an error:\n' +
+    expect(ReactNoop).toMatchRenderedOutput(
+      <span
+        prop={
+          'Caught an error:\n' +
           '    in BrokenRender (at **)\n' +
-          '    in ErrorBoundary (at **).',
-      ),
-    ]);
+          '    in ErrorBoundary (at **).'
+        }
+      />,
+    );
   });
-
-  if (!ReactFeatureFlags.disableModulePatternComponents) {
-    it('handles error thrown inside getDerivedStateFromProps of a module-style context provider', () => {
-      function Provider() {
-        return {
-          getChildContext() {
-            return {foo: 'bar'};
-          },
-          render() {
-            return 'Hi';
-          },
-        };
-      }
-      Provider.childContextTypes = {
-        x: () => {},
-      };
-      Provider.getDerivedStateFromProps = () => {
-        throw new Error('Oops!');
-      };
-
-      ReactNoop.render(<Provider />);
-      expect(() => {
-        expect(Scheduler).toFlushAndThrow('Oops!');
-      }).toErrorDev([
-        'Warning: The <Provider /> component appears to be a function component that returns a class instance. ' +
-          'Change Provider to a class that extends React.Component instead. ' +
-          "If you can't use a class try assigning the prototype on the function as a workaround. " +
-          '`Provider.prototype = React.Component.prototype`. ' +
-          "Don't use an arrow function since it cannot be called with `new` by React.",
-      ]);
-    });
-  }
 
   it('uncaught errors should be discarded if the render is aborted', async () => {
     const root = ReactNoop.createRoot();
 
     function Oops({unused}) {
-      Scheduler.unstable_yieldValue('Oops');
+      Scheduler.log('Oops');
       throw Error('Oops');
     }
 
     await act(async () => {
-      if (gate(flags => flags.enableSyncDefaultUpdates)) {
-        React.startTransition(() => {
-          root.render(<Oops />);
-        });
-      } else {
+      React.startTransition(() => {
         root.render(<Oops />);
-      }
+      });
 
       // Render past the component that throws, then yield.
-      expect(Scheduler).toFlushAndYieldThrough(['Oops']);
+      await waitFor(['Oops']);
       expect(root).toMatchRenderedOutput(null);
       // Interleaved update. When the root completes, instead of throwing the
       // error, it should try rendering again. This update will cause it to
@@ -1866,6 +1794,10 @@ describe('ReactIncrementalErrorHandling', () => {
     });
 
     // Should finish without throwing.
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
     expect(root).toMatchRenderedOutput('Everything is fine.');
   });
 
@@ -1884,11 +1816,11 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     function AllGood() {
-      Scheduler.unstable_yieldValue('Everything is fine.');
+      Scheduler.log('Everything is fine.');
       return 'Everything is fine.';
     }
 
-    await act(async () => {
+    await act(() => {
       root.render(<Oops />);
     });
 
@@ -1901,7 +1833,7 @@ describe('ReactIncrementalErrorHandling', () => {
 
       // Render through just the default pri update. The low pri update remains on
       // the queue.
-      expect(Scheduler).toFlushAndYieldThrough(['Everything is fine.']);
+      await waitFor(['Everything is fine.']);
 
       // Schedule a discrete update on a child that triggers an error.
       // The root should capture this error. But since there's still a pending
@@ -1911,7 +1843,11 @@ describe('ReactIncrementalErrorHandling', () => {
       });
     });
     // Should render the final state without throwing the error.
-    expect(Scheduler).toHaveYielded(['Everything is fine.']);
+    assertLog(['Everything is fine.']);
+    assertConsoleErrorDev([
+      'Error: There was an error during concurrent rendering but React was able to recover by instead synchronously rendering the entire root.' +
+        '\n    in <stack>',
+    ]);
     expect(root).toMatchRenderedOutput('Everything is fine.');
   });
 
@@ -1925,7 +1861,8 @@ describe('ReactIncrementalErrorHandling', () => {
     // point to prevent an infinite loop in the case where there is (by
     // accident) a render phase triggered from userspace.
 
-    spyOnDev(console, 'error');
+    spyOnDev(console, 'error').mockImplementation(() => {});
+    spyOnDev(console, 'warn').mockImplementation(() => {});
 
     let numberOfThrows = 0;
 
@@ -1946,14 +1883,14 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     const root = ReactNoop.createRoot();
-    await act(async () => {
+    await act(() => {
       root.render(<App shouldThrow={false} />);
     });
     expect(root).toMatchRenderedOutput('All good');
 
     let error;
     try {
-      await act(async () => {
+      await act(() => {
         root.render(<App shouldThrow={true} />);
       });
     } catch (e) {
@@ -1964,21 +1901,22 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(numberOfThrows < 100).toBe(true);
 
     if (__DEV__) {
-      expect(console.error).toHaveBeenCalledTimes(2);
-      expect(console.error.calls.argsFor(0)[0]).toContain(
+      expect(console.error).toHaveBeenCalledTimes(1);
+      expect(console.error.mock.calls[0][0]).toContain(
         'Cannot update a component (`%s`) while rendering a different component',
       );
-      expect(console.error.calls.argsFor(1)[0]).toContain(
-        'The above error occurred in the <App> component',
+      expect(console.warn).toHaveBeenCalledTimes(1);
+      expect(console.warn.mock.calls[0][1]).toContain(
+        'An error occurred in the <App> component',
       );
     }
   });
 
   if (global.__PERSISTENT__) {
-    it('regression test: should fatal if error is thrown at the root', () => {
+    it('regression test: should fatal if error is thrown at the root', async () => {
       const root = ReactNoop.createRoot();
       root.render('Error when completing root');
-      expect(Scheduler).toFlushAndThrow('Error when completing root');
+      await waitForThrow('Error when completing root');
     });
   }
 });

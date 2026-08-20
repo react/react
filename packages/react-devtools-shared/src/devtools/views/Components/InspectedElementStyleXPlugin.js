@@ -14,9 +14,9 @@ import sharedStyles from './InspectedElementSharedStyles.css';
 import styles from './InspectedElementStyleXPlugin.css';
 import {enableStyleXFeatures} from 'react-devtools-feature-flags';
 
-import type {InspectedElement} from './types';
+import type {InspectedElement} from 'react-devtools-shared/src/frontend/types';
 import type {FrontendBridge} from 'react-devtools-shared/src/bridge';
-import type {Element} from 'react-devtools-shared/src/devtools/views/Components/types';
+import type {Element} from 'react-devtools-shared/src/frontend/types';
 
 type Props = {
   bridge: FrontendBridge,
@@ -43,7 +43,7 @@ export default function InspectedElementStyleXPlugin({
   const {resolvedStyles, sources} = styleXPlugin;
 
   return (
-    <div className={sharedStyles.InspectedElementTree}>
+    <div>
       <div className={sharedStyles.HeaderRow}>
         <div className={sharedStyles.Header}>stylex</div>
       </div>

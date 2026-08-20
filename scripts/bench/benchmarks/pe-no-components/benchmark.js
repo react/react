@@ -1,7 +1,7 @@
-(function() {
+(function () {
   'use strict';
 
-  var ReactImage0 = function(x) {
+  var ReactImage0 = function (x) {
     if (x === 0) {
       return React.createElement('i', {
         alt: '',
@@ -232,7 +232,7 @@
     }
   };
 
-  var AbstractLink1 = function(x) {
+  var AbstractLink1 = function (x) {
     if (x === 1) {
       return React.createElement(
         'a',
@@ -243,7 +243,7 @@
           label: null,
           href: '#',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         null,
         React.createElement(
@@ -276,7 +276,7 @@
           label: null,
           href: '#',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         undefined,
         'Remove',
@@ -290,7 +290,7 @@
           target: '_blank',
           href: '/ads/manage/billing.php?act=10149999073643408',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         XUIText29(48)
       );
@@ -305,7 +305,7 @@
           label: null,
           href: '#',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         null,
         React.createElement(
@@ -327,7 +327,7 @@
           label: null,
           href: '#',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         null,
         React.createElement(
@@ -350,7 +350,7 @@
           label: null,
           href: '#',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         undefined,
         'Lifetime',
@@ -360,21 +360,21 @@
     if (x === 207) {
       return React.createElement(
         'a',
-        {href: '#', rel: undefined, onClick: function() {}},
+        {href: '#', rel: undefined, onClick: function () {}},
         'Create Ad Set'
       );
     }
     if (x === 209) {
       return React.createElement(
         'a',
-        {href: '#', rel: undefined, onClick: function() {}},
+        {href: '#', rel: undefined, onClick: function () {}},
         'View Ad Set'
       );
     }
     if (x === 241) {
       return React.createElement(
         'a',
-        {href: '#', rel: undefined, onClick: function() {}},
+        {href: '#', rel: undefined, onClick: function () {}},
         'Set a Limit'
       );
     }
@@ -388,7 +388,7 @@
           label: null,
           href: '#',
           rel: undefined,
-          onClick: function() {},
+          onClick: function () {},
         },
         null,
         React.createElement(
@@ -402,7 +402,7 @@
     }
   };
 
-  var Link2 = function(x) {
+  var Link2 = function (x) {
     if (x === 2) {
       return AbstractLink1(1);
     }
@@ -435,7 +435,7 @@
     }
   };
 
-  var AbstractButton3 = function(x) {
+  var AbstractButton3 = function (x) {
     if (x === 3) {
       return Link2(2);
     }
@@ -444,7 +444,7 @@
         'button',
         {
           className: '_5n7z _4jy0 _4jy4 _517h _51sy _42ft',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -460,7 +460,7 @@
         {
           className: '_5n7z _2yak _4lj- _4jy0 _4jy4 _517h _51sy _42ft _42fr',
           disabled: true,
-          onClick: function() {},
+          onClick: function () {},
           'data-tooltip-content': 'You have no changes to publish',
           'data-hover': 'tooltip',
           label: null,
@@ -480,7 +480,7 @@
         'button',
         {
           className: '_u_k _4jy0 _4jy4 _517h _51sy _42ft',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -513,7 +513,7 @@
           'data-hover': 'tooltip',
           className: '_d2_ _u_k noMargin _4jy0 _4jy4 _517h _51sy _42ft',
           disabled: false,
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -547,7 +547,7 @@
           'data-hover': 'tooltip',
           'data-tooltip-content': 'Revert',
           disabled: true,
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -566,7 +566,7 @@
           'data-hover': 'tooltip',
           'data-tooltip-content': 'Delete',
           disabled: false,
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -585,7 +585,7 @@
           'data-hover': 'tooltip',
           'data-tooltip-content': 'Duplicate',
           disabled: false,
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -603,7 +603,7 @@
           className: '_u_k noMargin _p _4jy0 _4jy4 _517h _51sy _42ft',
           'data-hover': 'tooltip',
           'data-tooltip-content': 'Export & Import',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -623,7 +623,7 @@
           'data-tooltip-content': 'Create Report',
           disabled: false,
           style: {boxSizing: 'border-box', height: '28px', width: '48px'},
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -642,7 +642,7 @@
           'data-hover': 'tooltip',
           'data-tooltip-content': 'Campaign Tags',
           disabled: false,
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -664,7 +664,7 @@
         {
           className: '_3yz9 _1t-2 _50z- _50zy _50zz _50z- _5upp _42ft',
           size: 'small',
-          onClick: function() {},
+          onClick: function () {},
           type: 'button',
           title: 'Remove',
           'data-hover': undefined,
@@ -682,7 +682,7 @@
         'button',
         {
           className: '_5b5u _5b5v _4jy0 _4jy3 _517h _51sy _42ft',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -697,7 +697,7 @@
         'button',
         {
           className: '_1wdf _4jy0 _517i _517h _51sy _42ft',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -718,7 +718,7 @@
           className: '_u_k _3c5o _1-r0 _4jy0 _4jy4 _517h _51sy _42ft',
           'data-hover': 'tooltip',
           'data-tooltip-content': 'List Settings',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -739,7 +739,7 @@
           'data-tooltip-position': 'right',
           'data-tooltip-content': 'Campaigns',
           'data-hover': 'tooltip',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -763,7 +763,7 @@
           'data-tooltip-position': 'right',
           'data-tooltip-content': 'Ad Sets',
           'data-hover': 'tooltip',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -787,7 +787,7 @@
           'data-tooltip-position': 'right',
           'data-tooltip-content': 'Ads',
           'data-hover': 'tooltip',
-          onClick: function() {},
+          onClick: function () {},
           label: null,
           type: 'submit',
           value: '1',
@@ -805,7 +805,7 @@
     }
   };
 
-  var XUIButton4 = function(x) {
+  var XUIButton4 = function (x) {
     if (x === 4) {
       return AbstractButton3(3);
     }
@@ -874,7 +874,7 @@
     }
   };
 
-  var AbstractPopoverButton5 = function(x) {
+  var AbstractPopoverButton5 = function (x) {
     if (x === 5) {
       return XUIButton4(4);
     }
@@ -889,7 +889,7 @@
     }
   };
 
-  var ReactXUIPopoverButton6 = function(x) {
+  var ReactXUIPopoverButton6 = function (x) {
     if (x === 6) {
       return AbstractPopoverButton5(5);
     }
@@ -904,19 +904,19 @@
     }
   };
 
-  var BIGAdAccountSelector7 = function(x) {
+  var BIGAdAccountSelector7 = function (x) {
     if (x === 7) {
       return React.createElement('div', null, ReactXUIPopoverButton6(6), null);
     }
   };
 
-  var FluxContainer_AdsPEBIGAdAccountSelectorContainer_8 = function(x) {
+  var FluxContainer_AdsPEBIGAdAccountSelectorContainer_8 = function (x) {
     if (x === 8) {
       return BIGAdAccountSelector7(7);
     }
   };
 
-  var ErrorBoundary9 = function(x) {
+  var ErrorBoundary9 = function (x) {
     if (x === 9) {
       return FluxContainer_AdsPEBIGAdAccountSelectorContainer_8(8);
     }
@@ -967,7 +967,7 @@
     }
   };
 
-  var AdsErrorBoundary10 = function(x) {
+  var AdsErrorBoundary10 = function (x) {
     if (x === 10) {
       return ErrorBoundary9(9);
     }
@@ -1018,47 +1018,47 @@
     }
   };
 
-  var AdsPENavigationBar11 = function(x) {
+  var AdsPENavigationBar11 = function (x) {
     if (x === 11) {
       return React.createElement('div', {className: '_4t_9'});
     }
   };
 
-  var FluxContainer_AdsPENavigationBarContainer_12 = function(x) {
+  var FluxContainer_AdsPENavigationBarContainer_12 = function (x) {
     if (x === 12) {
       return AdsPENavigationBar11(11);
     }
   };
 
-  var AdsPEDraftSyncStatus13 = function(x) {
+  var AdsPEDraftSyncStatus13 = function (x) {
     if (x === 16) {
       return React.createElement(
         'div',
-        {className: '_3ut-', onClick: function() {}},
+        {className: '_3ut-', onClick: function () {}},
         React.createElement('span', {className: '_3uu0'}, ReactImage0(15))
       );
     }
   };
 
-  var FluxContainer_AdsPEDraftSyncStatusContainer_14 = function(x) {
+  var FluxContainer_AdsPEDraftSyncStatusContainer_14 = function (x) {
     if (x === 17) {
       return AdsPEDraftSyncStatus13(16);
     }
   };
 
-  var AdsPEDraftErrorsStatus15 = function(x) {
+  var AdsPEDraftErrorsStatus15 = function (x) {
     if (x === 18) {
       return null;
     }
   };
 
-  var FluxContainer_viewFn_16 = function(x) {
+  var FluxContainer_viewFn_16 = function (x) {
     if (x === 19) {
       return AdsPEDraftErrorsStatus15(18);
     }
   };
 
-  var AdsPEPublishButton17 = function(x) {
+  var AdsPEPublishButton17 = function (x) {
     if (x === 25) {
       return React.createElement(
         'div',
@@ -1072,13 +1072,13 @@
     }
   };
 
-  var FluxContainer_AdsPEPublishButtonContainer_18 = function(x) {
+  var FluxContainer_AdsPEPublishButtonContainer_18 = function (x) {
     if (x === 26) {
       return AdsPEPublishButton17(25);
     }
   };
 
-  var InlineBlock19 = function(x) {
+  var InlineBlock19 = function (x) {
     if (x === 30) {
       return React.createElement(
         'div',
@@ -1120,7 +1120,7 @@
     }
   };
 
-  var ReactPopoverMenu20 = function(x) {
+  var ReactPopoverMenu20 = function (x) {
     if (x === 31) {
       return InlineBlock19(30);
     }
@@ -1138,7 +1138,7 @@
     }
   };
 
-  var LeftRight21 = function(x) {
+  var LeftRight21 = function (x) {
     if (x === 34) {
       return React.createElement(
         'div',
@@ -1263,25 +1263,25 @@
     }
   };
 
-  var AdsUnifiedNavigationLocalNav22 = function(x) {
+  var AdsUnifiedNavigationLocalNav22 = function (x) {
     if (x === 35) {
       return React.createElement('div', {className: '_34_i'}, LeftRight21(34));
     }
   };
 
-  var XUIDialog23 = function(x) {
+  var XUIDialog23 = function (x) {
     if (x === 36) {
       return null;
     }
   };
 
-  var AdsPEResetDialog24 = function(x) {
+  var AdsPEResetDialog24 = function (x) {
     if (x === 37) {
       return React.createElement('span', null, XUIDialog23(36));
     }
   };
 
-  var AdsPETopNav25 = function(x) {
+  var AdsPETopNav25 = function (x) {
     if (x === 40) {
       return React.createElement(
         'div',
@@ -1292,13 +1292,13 @@
     }
   };
 
-  var FluxContainer_AdsPETopNavContainer_26 = function(x) {
+  var FluxContainer_AdsPETopNavContainer_26 = function (x) {
     if (x === 41) {
       return AdsPETopNav25(40);
     }
   };
 
-  var XUIAbstractGlyphButton27 = function(x) {
+  var XUIAbstractGlyphButton27 = function (x) {
     if (x === 46) {
       return AbstractButton3(45);
     }
@@ -1307,7 +1307,7 @@
     }
   };
 
-  var XUICloseButton28 = function(x) {
+  var XUICloseButton28 = function (x) {
     if (x === 47) {
       return XUIAbstractGlyphButton27(46);
     }
@@ -1316,7 +1316,7 @@
     }
   };
 
-  var XUIText29 = function(x) {
+  var XUIText29 = function (x) {
     if (x === 48) {
       return React.createElement(
         'span',
@@ -1340,7 +1340,7 @@
     }
   };
 
-  var XUINotice30 = function(x) {
+  var XUINotice30 = function (x) {
     if (x === 51) {
       return React.createElement(
         'div',
@@ -1358,13 +1358,13 @@
     }
   };
 
-  var ReactCSSTransitionGroupChild31 = function(x) {
+  var ReactCSSTransitionGroupChild31 = function (x) {
     if (x === 52) {
       return XUINotice30(51);
     }
   };
 
-  var ReactTransitionGroup32 = function(x) {
+  var ReactTransitionGroup32 = function (x) {
     if (x === 53) {
       return React.createElement(
         'span',
@@ -1374,13 +1374,13 @@
     }
   };
 
-  var ReactCSSTransitionGroup33 = function(x) {
+  var ReactCSSTransitionGroup33 = function (x) {
     if (x === 54) {
       return ReactTransitionGroup32(53);
     }
   };
 
-  var AdsPETopError34 = function(x) {
+  var AdsPETopError34 = function (x) {
     if (x === 55) {
       return React.createElement(
         'div',
@@ -1390,19 +1390,19 @@
     }
   };
 
-  var FluxContainer_AdsPETopErrorContainer_35 = function(x) {
+  var FluxContainer_AdsPETopErrorContainer_35 = function (x) {
     if (x === 56) {
       return AdsPETopError34(55);
     }
   };
 
-  var FluxContainer_AdsGuidanceChannel_36 = function(x) {
+  var FluxContainer_AdsGuidanceChannel_36 = function (x) {
     if (x === 59) {
       return null;
     }
   };
 
-  var ResponsiveBlock37 = function(x) {
+  var ResponsiveBlock37 = function (x) {
     if (x === 62) {
       return React.createElement(
         'div',
@@ -1437,13 +1437,13 @@
     }
   };
 
-  var FluxContainer_AdsBulkEditDialogContainer_38 = function(x) {
+  var FluxContainer_AdsBulkEditDialogContainer_38 = function (x) {
     if (x === 63) {
       return null;
     }
   };
 
-  var Column39 = function(x) {
+  var Column39 = function (x) {
     if (x === 66) {
       return React.createElement(
         'div',
@@ -1460,7 +1460,7 @@
     }
   };
 
-  var XUIButtonGroup40 = function(x) {
+  var XUIButtonGroup40 = function (x) {
     if (x === 75) {
       return React.createElement(
         'div',
@@ -1497,13 +1497,13 @@
     }
   };
 
-  var AdsPEEditToolbarButton41 = function(x) {
+  var AdsPEEditToolbarButton41 = function (x) {
     if (x === 85) {
       return XUIButtonGroup40(84);
     }
   };
 
-  var FluxContainer_AdsPEEditCampaignGroupToolbarButtonContainer_42 = function(
+  var FluxContainer_AdsPEEditCampaignGroupToolbarButtonContainer_42 = function (
     x
   ) {
     if (x === 86) {
@@ -1511,37 +1511,37 @@
     }
   };
 
-  var FluxContainer_AdsPEEditToolbarButtonContainer_43 = function(x) {
+  var FluxContainer_AdsPEEditToolbarButtonContainer_43 = function (x) {
     if (x === 87) {
       return FluxContainer_AdsPEEditCampaignGroupToolbarButtonContainer_42(86);
     }
   };
 
-  var AdsPEExportImportMenu44 = function(x) {
+  var AdsPEExportImportMenu44 = function (x) {
     if (x === 103) {
       return ReactPopoverMenu20(102);
     }
   };
 
-  var FluxContainer_AdsPECustomizeExportContainer_45 = function(x) {
+  var FluxContainer_AdsPECustomizeExportContainer_45 = function (x) {
     if (x === 104) {
       return null;
     }
   };
 
-  var AdsPEExportAsTextDialog46 = function(x) {
+  var AdsPEExportAsTextDialog46 = function (x) {
     if (x === 105) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPEExportAsTextDialogContainer_47 = function(x) {
+  var FluxContainer_AdsPEExportAsTextDialogContainer_47 = function (x) {
     if (x === 106) {
       return AdsPEExportAsTextDialog46(105);
     }
   };
 
-  var AdsPEExportImportMenuContainer48 = function(x) {
+  var AdsPEExportImportMenuContainer48 = function (x) {
     if (x === 107) {
       return React.createElement(
         'span',
@@ -1555,7 +1555,7 @@
     }
   };
 
-  var Constructor49 = function(x) {
+  var Constructor49 = function (x) {
     if (x === 114) {
       return null;
     }
@@ -1570,7 +1570,7 @@
     }
   };
 
-  var TagSelectorPopover50 = function(x) {
+  var TagSelectorPopover50 = function (x) {
     if (x === 115) {
       return React.createElement(
         'span',
@@ -1581,25 +1581,25 @@
     }
   };
 
-  var AdsPECampaignGroupTagContainer51 = function(x) {
+  var AdsPECampaignGroupTagContainer51 = function (x) {
     if (x === 116) {
       return TagSelectorPopover50(115);
     }
   };
 
-  var AdsRuleToolbarMenu52 = function(x) {
+  var AdsRuleToolbarMenu52 = function (x) {
     if (x === 118) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPERuleToolbarMenuContainer_53 = function(x) {
+  var FluxContainer_AdsPERuleToolbarMenuContainer_53 = function (x) {
     if (x === 119) {
       return AdsRuleToolbarMenu52(118);
     }
   };
 
-  var FillColumn54 = function(x) {
+  var FillColumn54 = function (x) {
     if (x === 120) {
       return React.createElement(
         'div',
@@ -1622,7 +1622,7 @@
     }
   };
 
-  var Layout55 = function(x) {
+  var Layout55 = function (x) {
     if (x === 121) {
       return React.createElement(
         'div',
@@ -1633,7 +1633,7 @@
     }
   };
 
-  var AdsPEMainPaneToolbar56 = function(x) {
+  var AdsPEMainPaneToolbar56 = function (x) {
     if (x === 122) {
       return React.createElement(
         'div',
@@ -1643,13 +1643,13 @@
     }
   };
 
-  var AdsPECampaignGroupToolbarContainer57 = function(x) {
+  var AdsPECampaignGroupToolbarContainer57 = function (x) {
     if (x === 123) {
       return AdsPEMainPaneToolbar56(122);
     }
   };
 
-  var AdsPEFiltersPopover58 = function(x) {
+  var AdsPEFiltersPopover58 = function (x) {
     if (x === 144) {
       return React.createElement(
         'span',
@@ -1661,7 +1661,7 @@
     }
   };
 
-  var AbstractCheckboxInput59 = function(x) {
+  var AbstractCheckboxInput59 = function (x) {
     if (x === 145) {
       return React.createElement(
         'label',
@@ -1671,7 +1671,7 @@
           disabled: true,
           name: 'filterUnpublished',
           value: 'on',
-          onClick: function() {},
+          onClick: function () {},
           className: null,
           id: 'js_input_label_21',
           type: 'checkbox',
@@ -1688,7 +1688,7 @@
         {className: '_4h2r _55sg _kv1'},
         React.createElement('input', {
           checked: undefined,
-          onChange: function() {},
+          onChange: function () {},
           className: null,
           type: 'checkbox',
         }),
@@ -1700,7 +1700,7 @@
     }
   };
 
-  var XUICheckboxInput60 = function(x) {
+  var XUICheckboxInput60 = function (x) {
     if (x === 146) {
       return AbstractCheckboxInput59(145);
     }
@@ -1709,7 +1709,7 @@
     }
   };
 
-  var InputLabel61 = function(x) {
+  var InputLabel61 = function (x) {
     if (x === 147) {
       return React.createElement(
         'div',
@@ -1724,7 +1724,7 @@
     }
   };
 
-  var AdsPopoverLink62 = function(x) {
+  var AdsPopoverLink62 = function (x) {
     if (x === 154) {
       return React.createElement(
         'span',
@@ -1732,8 +1732,8 @@
         React.createElement(
           'span',
           {
-            onMouseEnter: function() {},
-            onMouseLeave: function() {},
+            onMouseEnter: function () {},
+            onMouseLeave: function () {},
             onMouseUp: undefined,
           },
           React.createElement('span', {className: '_3o_j'}),
@@ -1749,8 +1749,8 @@
         React.createElement(
           'span',
           {
-            onMouseEnter: function() {},
-            onMouseLeave: function() {},
+            onMouseEnter: function () {},
+            onMouseLeave: function () {},
             onMouseUp: undefined,
           },
           React.createElement('span', {className: '_3o_j'}),
@@ -1761,7 +1761,7 @@
     }
   };
 
-  var AdsHelpLink63 = function(x) {
+  var AdsHelpLink63 = function (x) {
     if (x === 155) {
       return AdsPopoverLink62(154);
     }
@@ -1770,7 +1770,7 @@
     }
   };
 
-  var BUIFilterTokenInput64 = function(x) {
+  var BUIFilterTokenInput64 = function (x) {
     if (x === 158) {
       return React.createElement(
         'div',
@@ -1791,7 +1791,7 @@
     }
   };
 
-  var BUIFilterToken65 = function(x) {
+  var BUIFilterToken65 = function (x) {
     if (x === 159) {
       return React.createElement(
         'div',
@@ -1801,7 +1801,7 @@
           {className: '_3yz4', 'aria-hidden': false},
           React.createElement(
             'div',
-            {onClick: function() {}, className: '_3yz5'},
+            {onClick: function () {}, className: '_3yz5'},
             ReactImage0(148),
             React.createElement('div', {className: '_3yz7'}, 'Campaigns:'),
             React.createElement(
@@ -1822,13 +1822,13 @@
     }
   };
 
-  var BUIFilterTokenCreateButton66 = function(x) {
+  var BUIFilterTokenCreateButton66 = function (x) {
     if (x === 163) {
       return React.createElement('div', {className: '_1tc'}, XUIButton4(162));
     }
   };
 
-  var BUIFilterTokenizer67 = function(x) {
+  var BUIFilterTokenizer67 = function (x) {
     if (x === 164) {
       return React.createElement(
         'div',
@@ -1843,7 +1843,7 @@
     }
   };
 
-  var XUIAmbientNUX68 = function(x) {
+  var XUIAmbientNUX68 = function (x) {
     if (x === 165) {
       return null;
     }
@@ -1855,7 +1855,7 @@
     }
   };
 
-  var XUIAmbientNUX69 = function(x) {
+  var XUIAmbientNUX69 = function (x) {
     if (x === 166) {
       return XUIAmbientNUX68(165);
     }
@@ -1867,7 +1867,7 @@
     }
   };
 
-  var AdsPEAmbientNUXMegaphone70 = function(x) {
+  var AdsPEAmbientNUXMegaphone70 = function (x) {
     if (x === 167) {
       return React.createElement(
         'span',
@@ -1878,7 +1878,7 @@
     }
   };
 
-  var AdsPEFilters71 = function(x) {
+  var AdsPEFilters71 = function (x) {
     if (x === 168) {
       return React.createElement(
         'div',
@@ -1892,31 +1892,31 @@
     }
   };
 
-  var AdsPEFilterContainer72 = function(x) {
+  var AdsPEFilterContainer72 = function (x) {
     if (x === 169) {
       return AdsPEFilters71(168);
     }
   };
 
-  var AdsPETablePager73 = function(x) {
+  var AdsPETablePager73 = function (x) {
     if (x === 172) {
       return null;
     }
   };
 
-  var AdsPECampaignGroupTablePagerContainer74 = function(x) {
+  var AdsPECampaignGroupTablePagerContainer74 = function (x) {
     if (x === 173) {
       return AdsPETablePager73(172);
     }
   };
 
-  var AdsPETablePagerContainer75 = function(x) {
+  var AdsPETablePagerContainer75 = function (x) {
     if (x === 174) {
       return AdsPECampaignGroupTablePagerContainer74(173);
     }
   };
 
-  var ReactXUIError76 = function(x) {
+  var ReactXUIError76 = function (x) {
     if (x === 181) {
       return AbstractButton3(180);
     }
@@ -1943,10 +1943,10 @@
                 id: undefined,
                 maxLength: null,
                 value: 'Test Campaign',
-                onBlur: function() {},
-                onChange: function() {},
-                onFocus: function() {},
-                onKeyDown: function() {},
+                onBlur: function () {},
+                onChange: function () {},
+                onFocus: function () {},
+                onKeyDown: function () {},
               }),
               null
             ),
@@ -1970,13 +1970,13 @@
     }
   };
 
-  var BUIPopoverButton77 = function(x) {
+  var BUIPopoverButton77 = function (x) {
     if (x === 182) {
       return ReactXUIError76(181);
     }
   };
 
-  var BUIDateRangePicker78 = function(x) {
+  var BUIDateRangePicker78 = function (x) {
     if (x === 184) {
       return React.createElement('span', null, BUIPopoverButton77(182), [
         Constructor49(183),
@@ -1984,13 +1984,13 @@
     }
   };
 
-  var AdsPEStatsRangePicker79 = function(x) {
+  var AdsPEStatsRangePicker79 = function (x) {
     if (x === 185) {
       return BUIDateRangePicker78(184);
     }
   };
 
-  var AdsPEStatRange80 = function(x) {
+  var AdsPEStatRange80 = function (x) {
     if (x === 191) {
       return React.createElement(
         'div',
@@ -2007,17 +2007,17 @@
     }
   };
 
-  var AdsPEStatRangeContainer81 = function(x) {
+  var AdsPEStatRangeContainer81 = function (x) {
     if (x === 192) {
       return AdsPEStatRange80(191);
     }
   };
 
-  var AdsPESideTrayTabButton82 = function(x) {
+  var AdsPESideTrayTabButton82 = function (x) {
     if (x === 196) {
       return React.createElement(
         'div',
-        {className: '_1-ly _59j9 _d9a', onClick: function() {}},
+        {className: '_1-ly _59j9 _d9a', onClick: function () {}},
         ReactImage0(195),
         React.createElement('div', {className: '_vf7'}),
         React.createElement('div', {className: '_vf8'})
@@ -2026,7 +2026,7 @@
     if (x === 199) {
       return React.createElement(
         'div',
-        {className: ' _1-lz _d9a', onClick: function() {}},
+        {className: ' _1-lz _d9a', onClick: function () {}},
         ReactImage0(198),
         React.createElement('div', {className: '_vf7'}),
         React.createElement('div', {className: '_vf8'})
@@ -2037,13 +2037,13 @@
     }
   };
 
-  var AdsPEEditorTrayTabButton83 = function(x) {
+  var AdsPEEditorTrayTabButton83 = function (x) {
     if (x === 197) {
       return AdsPESideTrayTabButton82(196);
     }
   };
 
-  var AdsPEInsightsTrayTabButton84 = function(x) {
+  var AdsPEInsightsTrayTabButton84 = function (x) {
     if (x === 202) {
       return React.createElement(
         'span',
@@ -2054,13 +2054,13 @@
     }
   };
 
-  var AdsPENekoDebuggerTrayTabButton85 = function(x) {
+  var AdsPENekoDebuggerTrayTabButton85 = function (x) {
     if (x === 204) {
       return AdsPESideTrayTabButton82(203);
     }
   };
 
-  var AdsPEEditorChildLink86 = function(x) {
+  var AdsPEEditorChildLink86 = function (x) {
     if (x === 211) {
       return React.createElement(
         'div',
@@ -2072,13 +2072,13 @@
     }
   };
 
-  var AdsPEEditorChildLinkContainer87 = function(x) {
+  var AdsPEEditorChildLinkContainer87 = function (x) {
     if (x === 212) {
       return AdsPEEditorChildLink86(211);
     }
   };
 
-  var AdsPEHeaderSection88 = function(x) {
+  var AdsPEHeaderSection88 = function (x) {
     if (x === 213) {
       return React.createElement(
         'div',
@@ -2095,25 +2095,25 @@
     }
   };
 
-  var AdsPECampaignGroupHeaderSectionContainer89 = function(x) {
+  var AdsPECampaignGroupHeaderSectionContainer89 = function (x) {
     if (x === 214) {
       return AdsPEHeaderSection88(213);
     }
   };
 
-  var AdsEditorLoadingErrors90 = function(x) {
+  var AdsEditorLoadingErrors90 = function (x) {
     if (x === 215) {
       return null;
     }
   };
 
-  var AdsTextInput91 = function(x) {
+  var AdsTextInput91 = function (x) {
     if (x === 217) {
       return ReactXUIError76(216);
     }
   };
 
-  var BUIFormElement92 = function(x) {
+  var BUIFormElement92 = function (x) {
     if (x === 218) {
       return React.createElement(
         'div',
@@ -2151,7 +2151,7 @@
     }
   };
 
-  var BUIForm93 = function(x) {
+  var BUIForm93 = function (x) {
     if (x === 219) {
       return React.createElement(
         'div',
@@ -2161,7 +2161,7 @@
     }
   };
 
-  var XUICard94 = function(x) {
+  var XUICard94 = function (x) {
     if (x === 220) {
       return React.createElement(
         'div',
@@ -2186,7 +2186,7 @@
     }
   };
 
-  var AdsCard95 = function(x) {
+  var AdsCard95 = function (x) {
     if (x === 222) {
       return ReactXUIError76(221);
     }
@@ -2198,25 +2198,25 @@
     }
   };
 
-  var AdsEditorNameSection96 = function(x) {
+  var AdsEditorNameSection96 = function (x) {
     if (x === 223) {
       return AdsCard95(222);
     }
   };
 
-  var AdsCampaignGroupNameSectionContainer97 = function(x) {
+  var AdsCampaignGroupNameSectionContainer97 = function (x) {
     if (x === 224) {
       return AdsEditorNameSection96(223);
     }
   };
 
-  var _render98 = function(x) {
+  var _render98 = function (x) {
     if (x === 225) {
       return AdsCampaignGroupNameSectionContainer97(224);
     }
   };
 
-  var AdsPluginWrapper99 = function(x) {
+  var AdsPluginWrapper99 = function (x) {
     if (x === 226) {
       return _render98(225);
     }
@@ -2234,7 +2234,7 @@
     }
   };
 
-  var XUICardHeaderTitle100 = function(x) {
+  var XUICardHeaderTitle100 = function (x) {
     if (x === 227) {
       return React.createElement(
         'span',
@@ -2268,7 +2268,7 @@
     }
   };
 
-  var XUICardSection101 = function(x) {
+  var XUICardSection101 = function (x) {
     if (x === 228) {
       return React.createElement(
         'div',
@@ -2296,19 +2296,19 @@
     }
   };
 
-  var XUICardHeader102 = function(x) {
+  var XUICardHeader102 = function (x) {
     if (x === 229) {
       return XUICardSection101(228);
     }
   };
 
-  var AdsCardHeader103 = function(x) {
+  var AdsCardHeader103 = function (x) {
     if (x === 230) {
       return XUICardHeader102(229);
     }
   };
 
-  var AdsLabeledField104 = function(x) {
+  var AdsLabeledField104 = function (x) {
     if (x === 231) {
       return React.createElement(
         'div',
@@ -2350,7 +2350,7 @@
     }
   };
 
-  var FlexibleBlock105 = function(x) {
+  var FlexibleBlock105 = function (x) {
     if (x === 233) {
       return LeftRight21(232);
     }
@@ -2362,7 +2362,7 @@
     }
   };
 
-  var AdsBulkCampaignSpendCapField106 = function(x) {
+  var AdsBulkCampaignSpendCapField106 = function (x) {
     if (x === 243) {
       return React.createElement(
         'div',
@@ -2374,61 +2374,61 @@
     }
   };
 
-  var FluxContainer_AdsCampaignGroupSpendCapContainer_107 = function(x) {
+  var FluxContainer_AdsCampaignGroupSpendCapContainer_107 = function (x) {
     if (x === 244) {
       return AdsBulkCampaignSpendCapField106(243);
     }
   };
 
-  var AdsCardSection108 = function(x) {
+  var AdsCardSection108 = function (x) {
     if (x === 248) {
       return XUICardSection101(247);
     }
   };
 
-  var AdsEditorCampaignGroupDetailsSection109 = function(x) {
+  var AdsEditorCampaignGroupDetailsSection109 = function (x) {
     if (x === 252) {
       return AdsCard95(251);
     }
   };
 
-  var AdsEditorCampaignGroupDetailsSectionContainer110 = function(x) {
+  var AdsEditorCampaignGroupDetailsSectionContainer110 = function (x) {
     if (x === 253) {
       return AdsEditorCampaignGroupDetailsSection109(252);
     }
   };
 
-  var _render111 = function(x) {
+  var _render111 = function (x) {
     if (x === 254) {
       return AdsEditorCampaignGroupDetailsSectionContainer110(253);
     }
   };
 
-  var FluxContainer_AdsEditorToplineDetailsSectionContainer_112 = function(x) {
+  var FluxContainer_AdsEditorToplineDetailsSectionContainer_112 = function (x) {
     if (x === 256) {
       return null;
     }
   };
 
-  var _render113 = function(x) {
+  var _render113 = function (x) {
     if (x === 257) {
       return FluxContainer_AdsEditorToplineDetailsSectionContainer_112(256);
     }
   };
 
-  var AdsStickyArea114 = function(x) {
+  var AdsStickyArea114 = function (x) {
     if (x === 259) {
       return React.createElement(
         'div',
         {},
-        React.createElement('div', {onWheel: function() {}})
+        React.createElement('div', {onWheel: function () {}})
       );
     }
     if (x === 292) {
       return React.createElement(
         'div',
         {},
-        React.createElement('div', {onWheel: function() {}}, [
+        React.createElement('div', {onWheel: function () {}}, [
           React.createElement(
             'div',
             {key: 'campaign_group_errors_section98010048849317'},
@@ -2439,7 +2439,7 @@
     }
   };
 
-  var FluxContainer_AdsEditorColumnContainer_115 = function(x) {
+  var FluxContainer_AdsEditorColumnContainer_115 = function (x) {
     if (x === 260) {
       return React.createElement(
         'div',
@@ -2480,7 +2480,7 @@
     }
   };
 
-  var BUISwitch116 = function(x) {
+  var BUISwitch116 = function (x) {
     if (x === 261) {
       return React.createElement(
         'div',
@@ -2491,7 +2491,7 @@
           'data-tooltip-position': 'below',
           disabled: false,
           value: true,
-          onToggle: function() {},
+          onToggle: function () {},
           className: '_128j _128k _128n',
           role: 'checkbox',
           'aria-checked': 'true',
@@ -2500,9 +2500,9 @@
           'div',
           {
             className: '_128o',
-            onClick: function() {},
-            onKeyDown: function() {},
-            onMouseDown: function() {},
+            onClick: function () {},
+            onKeyDown: function () {},
+            onMouseDown: function () {},
             tabIndex: '0',
           },
           React.createElement('div', {className: '_128p'})
@@ -2512,91 +2512,91 @@
     }
   };
 
-  var AdsStatusSwitchInternal117 = function(x) {
+  var AdsStatusSwitchInternal117 = function (x) {
     if (x === 262) {
       return BUISwitch116(261);
     }
   };
 
-  var AdsStatusSwitch118 = function(x) {
+  var AdsStatusSwitch118 = function (x) {
     if (x === 263) {
       return AdsStatusSwitchInternal117(262);
     }
   };
 
-  var FluxContainer_AdsCampaignGroupStatusSwitchContainer_119 = function(x) {
+  var FluxContainer_AdsCampaignGroupStatusSwitchContainer_119 = function (x) {
     if (x === 264) {
       return AdsStatusSwitch118(263);
     }
   };
 
-  var AdsLinksMenu120 = function(x) {
+  var AdsLinksMenu120 = function (x) {
     if (x === 275) {
       return ReactPopoverMenu20(274);
     }
   };
 
-  var FluxContainer_AdsPluginizedLinksMenuContainer_121 = function(x) {
+  var FluxContainer_AdsPluginizedLinksMenuContainer_121 = function (x) {
     if (x === 276) {
       return React.createElement('div', null, null, AdsLinksMenu120(275));
     }
   };
 
-  var AdsCardLeftRightHeader122 = function(x) {
+  var AdsCardLeftRightHeader122 = function (x) {
     if (x === 278) {
       return LeftRight21(277);
     }
   };
 
-  var AdsPEIDSection123 = function(x) {
+  var AdsPEIDSection123 = function (x) {
     if (x === 282) {
       return AdsCard95(281);
     }
   };
 
-  var FluxContainer_AdsPECampaignGroupIDSectionContainer_124 = function(x) {
+  var FluxContainer_AdsPECampaignGroupIDSectionContainer_124 = function (x) {
     if (x === 283) {
       return AdsPEIDSection123(282);
     }
   };
 
-  var DeferredComponent125 = function(x) {
+  var DeferredComponent125 = function (x) {
     if (x === 284) {
       return FluxContainer_AdsPECampaignGroupIDSectionContainer_124(283);
     }
   };
 
-  var BootloadedComponent126 = function(x) {
+  var BootloadedComponent126 = function (x) {
     if (x === 285) {
       return DeferredComponent125(284);
     }
   };
 
-  var _render127 = function(x) {
+  var _render127 = function (x) {
     if (x === 286) {
       return BootloadedComponent126(285);
     }
   };
 
-  var AdsEditorErrorsCard128 = function(x) {
+  var AdsEditorErrorsCard128 = function (x) {
     if (x === 288) {
       return null;
     }
   };
 
-  var FluxContainer_FunctionalContainer_129 = function(x) {
+  var FluxContainer_FunctionalContainer_129 = function (x) {
     if (x === 289) {
       return AdsEditorErrorsCard128(288);
     }
   };
 
-  var _render130 = function(x) {
+  var _render130 = function (x) {
     if (x === 290) {
       return FluxContainer_FunctionalContainer_129(289);
     }
   };
 
-  var AdsEditorMultiColumnLayout131 = function(x) {
+  var AdsEditorMultiColumnLayout131 = function (x) {
     if (x === 294) {
       return React.createElement(
         'div',
@@ -2628,7 +2628,7 @@
     }
   };
 
-  var AdsPECampaignGroupEditor132 = function(x) {
+  var AdsPECampaignGroupEditor132 = function (x) {
     if (x === 295) {
       return React.createElement(
         'div',
@@ -2639,13 +2639,13 @@
     }
   };
 
-  var AdsPECampaignGroupEditorContainer133 = function(x) {
+  var AdsPECampaignGroupEditorContainer133 = function (x) {
     if (x === 296) {
       return AdsPECampaignGroupEditor132(295);
     }
   };
 
-  var AdsPESideTrayTabContent134 = function(x) {
+  var AdsPESideTrayTabContent134 = function (x) {
     if (x === 297) {
       return React.createElement(
         'div',
@@ -2655,13 +2655,13 @@
     }
   };
 
-  var AdsPEEditorTrayTabContentContainer135 = function(x) {
+  var AdsPEEditorTrayTabContentContainer135 = function (x) {
     if (x === 298) {
       return AdsPESideTrayTabContent134(297);
     }
   };
 
-  var AdsPEMultiTabDrawer136 = function(x) {
+  var AdsPEMultiTabDrawer136 = function (x) {
     if (x === 299) {
       return React.createElement(
         'div',
@@ -2683,13 +2683,13 @@
     }
   };
 
-  var FluxContainer_AdsPEMultiTabDrawerContainer_137 = function(x) {
+  var FluxContainer_AdsPEMultiTabDrawerContainer_137 = function (x) {
     if (x === 300) {
       return AdsPEMultiTabDrawer136(299);
     }
   };
 
-  var AdsPESimpleOrganizer138 = function(x) {
+  var AdsPESimpleOrganizer138 = function (x) {
     if (x === 309) {
       return React.createElement(
         'div',
@@ -2701,13 +2701,13 @@
     }
   };
 
-  var AdsPEOrganizerContainer139 = function(x) {
+  var AdsPEOrganizerContainer139 = function (x) {
     if (x === 310) {
       return React.createElement('div', null, AdsPESimpleOrganizer138(309));
     }
   };
 
-  var FixedDataTableColumnResizeHandle140 = function(x) {
+  var FixedDataTableColumnResizeHandle140 = function (x) {
     if (x === 313) {
       return React.createElement(
         'div',
@@ -2720,7 +2720,7 @@
     }
   };
 
-  var AdsPETableHeader141 = function(x) {
+  var AdsPETableHeader141 = function (x) {
     if (x === 315) {
       return React.createElement(
         'div',
@@ -2953,7 +2953,7 @@
     }
   };
 
-  var TransitionCell142 = function(x) {
+  var TransitionCell142 = function (x) {
     if (x === 316) {
       return React.createElement(
         'div',
@@ -3565,7 +3565,7 @@
     }
   };
 
-  var FixedDataTableCell143 = function(x) {
+  var FixedDataTableCell143 = function (x) {
     if (x === 317) {
       return React.createElement(
         'div',
@@ -3623,7 +3623,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 400, left: 42}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3662,7 +3666,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 150, left: 571}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3680,7 +3688,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3698,7 +3710,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3716,7 +3732,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3734,7 +3754,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3752,7 +3776,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3770,7 +3798,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3788,7 +3820,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3806,7 +3842,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3824,7 +3864,11 @@
         },
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3839,7 +3883,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 200, left: 798}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3854,7 +3902,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 100, left: 998}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3869,7 +3921,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 120, left: 1098}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3884,7 +3940,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 113, left: 1218}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3899,7 +3959,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 113, left: 1331}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3914,7 +3978,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 113, left: 1444}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3929,7 +3997,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 113, left: 1557}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3944,7 +4016,11 @@
         {className: '_4lg0 _4h2m', style: {height: 25, width: 150, left: 1670}},
         React.createElement(
           'div',
-          {className: '_4lg9', style: {height: 25}, onMouseDown: function() {}},
+          {
+            className: '_4lg9',
+            style: {height: 25},
+            onMouseDown: function () {},
+          },
           React.createElement('div', {
             className: '_4lga _4lgb',
             style: {height: 25},
@@ -3963,7 +4039,7 @@
     }
   };
 
-  var FixedDataTableCellGroupImpl144 = function(x) {
+  var FixedDataTableCellGroupImpl144 = function (x) {
     if (x === 318) {
       return React.createElement(
         'div',
@@ -4059,7 +4135,7 @@
     }
   };
 
-  var FixedDataTableCellGroup145 = function(x) {
+  var FixedDataTableCellGroup145 = function (x) {
     if (x === 319) {
       return React.createElement(
         'div',
@@ -4090,7 +4166,7 @@
     }
   };
 
-  var FixedDataTableRowImpl146 = function(x) {
+  var FixedDataTableRowImpl146 = function (x) {
     if (x === 334) {
       return React.createElement(
         'div',
@@ -4141,7 +4217,7 @@
     }
   };
 
-  var FixedDataTableRow147 = function(x) {
+  var FixedDataTableRow147 = function (x) {
     if (x === 335) {
       return React.createElement(
         'div',
@@ -4176,11 +4252,11 @@
     }
   };
 
-  var FixedDataTableAbstractSortableHeader148 = function(x) {
+  var FixedDataTableAbstractSortableHeader148 = function (x) {
     if (x === 341) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4192,7 +4268,7 @@
     if (x === 347) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _1kst _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _1kst _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4204,7 +4280,7 @@
     if (x === 353) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _1kst _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _1kst _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4216,7 +4292,7 @@
     if (x === 358) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4228,7 +4304,7 @@
     if (x === 363) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _54_9 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _54_9 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4240,7 +4316,7 @@
     if (x === 370) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4252,7 +4328,7 @@
     if (x === 375) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4264,7 +4340,7 @@
     if (x === 380) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4276,7 +4352,7 @@
     if (x === 385) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4288,7 +4364,7 @@
     if (x === 390) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4300,7 +4376,7 @@
     if (x === 395) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4312,7 +4388,7 @@
     if (x === 400) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4324,7 +4400,7 @@
     if (x === 405) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4336,7 +4412,7 @@
     if (x === 410) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4348,7 +4424,7 @@
     if (x === 415) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4360,7 +4436,7 @@
     if (x === 420) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4372,7 +4448,7 @@
     if (x === 425) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4384,7 +4460,7 @@
     if (x === 430) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4396,7 +4472,7 @@
     if (x === 435) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4408,7 +4484,7 @@
     if (x === 440) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4420,7 +4496,7 @@
     if (x === 445) {
       return React.createElement(
         'div',
-        {onClick: function() {}, className: '_54_8 _4h2r _2wzx'},
+        {onClick: function () {}, className: '_54_8 _4h2r _2wzx'},
         React.createElement(
           'div',
           {className: '_2eq6'},
@@ -4431,7 +4507,7 @@
     }
   };
 
-  var FixedDataTableSortableHeader149 = function(x) {
+  var FixedDataTableSortableHeader149 = function (x) {
     if (x === 342) {
       return FixedDataTableAbstractSortableHeader148(341);
     }
@@ -4497,7 +4573,7 @@
     }
   };
 
-  var FixedDataTableBufferedRows150 = function(x) {
+  var FixedDataTableBufferedRows150 = function (x) {
     if (x === 459) {
       return React.createElement('div', {
         style: {
@@ -4510,7 +4586,7 @@
     }
   };
 
-  var Scrollbar151 = function(x) {
+  var Scrollbar151 = function (x) {
     if (x === 460) {
       return null;
     }
@@ -4518,11 +4594,11 @@
       return React.createElement(
         'div',
         {
-          onFocus: function() {},
-          onBlur: function() {},
-          onKeyDown: function() {},
-          onMouseDown: function() {},
-          onWheel: function() {},
+          onFocus: function () {},
+          onBlur: function () {},
+          onKeyDown: function () {},
+          onMouseDown: function () {},
+          onWheel: function () {},
           className: '_1t0r _1t0t _4jdr _1t0u',
           style: {width: 1209, zIndex: 99},
           tabIndex: 0,
@@ -4539,7 +4615,7 @@
     }
   };
 
-  var HorizontalScrollbar152 = function(x) {
+  var HorizontalScrollbar152 = function (x) {
     if (x === 462) {
       return React.createElement(
         'div',
@@ -4562,13 +4638,13 @@
     }
   };
 
-  var FixedDataTable153 = function(x) {
+  var FixedDataTable153 = function (x) {
     if (x === 463) {
       return React.createElement(
         'div',
         {
           className: '_3h1i _1mie',
-          onWheel: function() {},
+          onWheel: function () {},
           style: {height: 25, width: 1209},
         },
         React.createElement(
@@ -4591,13 +4667,13 @@
     }
   };
 
-  var TransitionTable154 = function(x) {
+  var TransitionTable154 = function (x) {
     if (x === 464) {
       return FixedDataTable153(463);
     }
   };
 
-  var AdsSelectableFixedDataTable155 = function(x) {
+  var AdsSelectableFixedDataTable155 = function (x) {
     if (x === 465) {
       return React.createElement(
         'div',
@@ -4607,27 +4683,27 @@
     }
   };
 
-  var AdsDataTableKeyboardSupportDecorator156 = function(x) {
+  var AdsDataTableKeyboardSupportDecorator156 = function (x) {
     if (x === 466) {
       return React.createElement(
         'div',
-        {className: '_5d6f', tabIndex: '0', onKeyDown: function() {}},
+        {className: '_5d6f', tabIndex: '0', onKeyDown: function () {}},
         AdsSelectableFixedDataTable155(465)
       );
     }
   };
 
-  var AdsEditableDataTableDecorator157 = function(x) {
+  var AdsEditableDataTableDecorator157 = function (x) {
     if (x === 467) {
       return React.createElement(
         'div',
-        {onCopy: function() {}},
+        {onCopy: function () {}},
         AdsDataTableKeyboardSupportDecorator156(466)
       );
     }
   };
 
-  var AdsPEDataTableContainer158 = function(x) {
+  var AdsPEDataTableContainer158 = function (x) {
     if (x === 468) {
       return React.createElement(
         'div',
@@ -4640,13 +4716,13 @@
     }
   };
 
-  var AdsPECampaignGroupTableContainer159 = function(x) {
+  var AdsPECampaignGroupTableContainer159 = function (x) {
     if (x === 470) {
       return ResponsiveBlock37(469);
     }
   };
 
-  var AdsPEManageAdsPaneContainer160 = function(x) {
+  var AdsPEManageAdsPaneContainer160 = function (x) {
     if (x === 473) {
       return React.createElement(
         'div',
@@ -4687,13 +4763,13 @@
     }
   };
 
-  var AdsPEContentContainer161 = function(x) {
+  var AdsPEContentContainer161 = function (x) {
     if (x === 474) {
       return AdsPEManageAdsPaneContainer160(473);
     }
   };
 
-  var FluxContainer_AdsPEWorkspaceContainer_162 = function(x) {
+  var FluxContainer_AdsPEWorkspaceContainer_162 = function (x) {
     if (x === 477) {
       return React.createElement(
         'div',
@@ -4705,37 +4781,37 @@
     }
   };
 
-  var FluxContainer_AdsSessionExpiredDialogContainer_163 = function(x) {
+  var FluxContainer_AdsSessionExpiredDialogContainer_163 = function (x) {
     if (x === 478) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPEUploadDialogLazyContainer_164 = function(x) {
+  var FluxContainer_AdsPEUploadDialogLazyContainer_164 = function (x) {
     if (x === 479) {
       return null;
     }
   };
 
-  var FluxContainer_DialogContainer_165 = function(x) {
+  var FluxContainer_DialogContainer_165 = function (x) {
     if (x === 480) {
       return null;
     }
   };
 
-  var AdsBugReportContainer166 = function(x) {
+  var AdsBugReportContainer166 = function (x) {
     if (x === 481) {
       return React.createElement('span', null);
     }
   };
 
-  var AdsPEAudienceSplittingDialog167 = function(x) {
+  var AdsPEAudienceSplittingDialog167 = function (x) {
     if (x === 482) {
       return null;
     }
   };
 
-  var AdsPEAudienceSplittingDialogContainer168 = function(x) {
+  var AdsPEAudienceSplittingDialogContainer168 = function (x) {
     if (x === 483) {
       return React.createElement(
         'div',
@@ -4745,81 +4821,80 @@
     }
   };
 
-  var FluxContainer_AdsRuleDialogBootloadContainer_169 = function(x) {
+  var FluxContainer_AdsRuleDialogBootloadContainer_169 = function (x) {
     if (x === 484) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPECFTrayContainer_170 = function(x) {
+  var FluxContainer_AdsPECFTrayContainer_170 = function (x) {
     if (x === 485) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPEDeleteDraftContainer_171 = function(x) {
+  var FluxContainer_AdsPEDeleteDraftContainer_171 = function (x) {
     if (x === 486) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPEInitialDraftPublishDialogContainer_172 = function(x) {
+  var FluxContainer_AdsPEInitialDraftPublishDialogContainer_172 = function (x) {
     if (x === 487) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPEReachFrequencyStatusTransitionDialogBootloadContainer_173 = function(
-    x
-  ) {
-    if (x === 488) {
-      return null;
-    }
-  };
+  var FluxContainer_AdsPEReachFrequencyStatusTransitionDialogBootloadContainer_173 =
+    function (x) {
+      if (x === 488) {
+        return null;
+      }
+    };
 
-  var FluxContainer_AdsPEPurgeArchiveDialogContainer_174 = function(x) {
+  var FluxContainer_AdsPEPurgeArchiveDialogContainer_174 = function (x) {
     if (x === 489) {
       return null;
     }
   };
 
-  var AdsPECreateDialogContainer175 = function(x) {
+  var AdsPECreateDialogContainer175 = function (x) {
     if (x === 490) {
       return React.createElement('span', null);
     }
   };
 
-  var FluxContainer_AdsPEModalStatusContainer_176 = function(x) {
+  var FluxContainer_AdsPEModalStatusContainer_176 = function (x) {
     if (x === 491) {
       return null;
     }
   };
 
-  var FluxContainer_AdsBrowserExtensionErrorDialogContainer_177 = function(x) {
+  var FluxContainer_AdsBrowserExtensionErrorDialogContainer_177 = function (x) {
     if (x === 492) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPESortByErrorTipContainer_178 = function(x) {
+  var FluxContainer_AdsPESortByErrorTipContainer_178 = function (x) {
     if (x === 493) {
       return null;
     }
   };
 
-  var LeadDownloadDialogSelector179 = function(x) {
+  var LeadDownloadDialogSelector179 = function (x) {
     if (x === 494) {
       return null;
     }
   };
 
-  var FluxContainer_AdsPELeadDownloadDialogContainerClass_180 = function(x) {
+  var FluxContainer_AdsPELeadDownloadDialogContainerClass_180 = function (x) {
     if (x === 495) {
       return LeadDownloadDialogSelector179(494);
     }
   };
 
-  var AdsPEContainer181 = function(x) {
+  var AdsPEContainer181 = function (x) {
     if (x === 496) {
       return React.createElement(
         'div',
@@ -4854,7 +4929,7 @@
     }
   };
 
-  var Benchmark = function(x) {
+  var Benchmark = function (x) {
     if (x === undefined) {
       return AdsPEContainer181(496);
     }

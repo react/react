@@ -192,11 +192,11 @@ let isComposing = false;
  * @return {?object} A SyntheticCompositionEvent.
  */
 function extractCompositionEvent(
-  dispatchQueue,
-  domEventName,
-  targetInst,
-  nativeEvent,
-  nativeEventTarget,
+  dispatchQueue: DispatchQueue,
+  domEventName: DOMEventName,
+  targetInst: null | Fiber,
+  nativeEvent: AnyNativeEvent,
+  nativeEventTarget: null | EventTarget,
 ) {
   let eventType;
   let fallbackData;
@@ -379,11 +379,11 @@ function getFallbackBeforeInputChars(
  * @return {?object} A SyntheticInputEvent.
  */
 function extractBeforeInputEvent(
-  dispatchQueue,
-  domEventName,
-  targetInst,
-  nativeEvent,
-  nativeEventTarget,
+  dispatchQueue: DispatchQueue,
+  domEventName: DOMEventName,
+  targetInst: null | Fiber,
+  nativeEvent: AnyNativeEvent,
+  nativeEventTarget: null | EventTarget,
 ) {
   let chars;
 

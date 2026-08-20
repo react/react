@@ -50,6 +50,10 @@ module.exports = {
         return;
       }
       const errorMessage = nodeToErrorTemplate(errorMessageNode);
+      if (errorMessage === 'react-stack-top-frame') {
+        // This is a special case for generating stack traces.
+        return;
+      }
       if (errorMessages.has(errorMessage)) {
         return;
       }

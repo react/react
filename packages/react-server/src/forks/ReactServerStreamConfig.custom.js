@@ -23,21 +23,26 @@
 // So `$$$config` looks like a global variable, but it's
 // really an argument to a top-level wrapping function.
 
-declare var $$$hostConfig: any;
-export opaque type Destination = mixed; // eslint-disable-line no-undef
+declare const $$$config: any;
+export opaque type Destination = mixed;
 
-export opaque type PrecomputedChunk = mixed; // eslint-disable-line no-undef
-export opaque type Chunk = mixed; // eslint-disable-line no-undef
+export opaque type PrecomputedChunk = mixed;
+export opaque type Chunk = mixed;
+export opaque type BinaryChunk = mixed;
 
-export const scheduleWork = $$$hostConfig.scheduleWork;
-export const beginWriting = $$$hostConfig.beginWriting;
-export const writeChunk = $$$hostConfig.writeChunk;
-export const writeChunkAndReturn = $$$hostConfig.writeChunkAndReturn;
-export const completeWriting = $$$hostConfig.completeWriting;
-export const flushBuffered = $$$hostConfig.flushBuffered;
-export const supportsRequestStorage = $$$hostConfig.supportsRequestStorage;
-export const requestStorage = $$$hostConfig.requestStorage;
-export const close = $$$hostConfig.close;
-export const closeWithError = $$$hostConfig.closeWithError;
-export const stringToChunk = $$$hostConfig.stringToChunk;
-export const stringToPrecomputedChunk = $$$hostConfig.stringToPrecomputedChunk;
+export const scheduleWork = $$$config.scheduleWork;
+export const scheduleMicrotask = $$$config.scheduleMicrotask;
+export const beginWriting = $$$config.beginWriting;
+export const writeChunk = $$$config.writeChunk;
+export const writeChunkAndReturn = $$$config.writeChunkAndReturn;
+export const completeWriting = $$$config.completeWriting;
+export const flushBuffered = $$$config.flushBuffered;
+export const close = $$$config.close;
+export const closeWithError = $$$config.closeWithError;
+export const stringToChunk = $$$config.stringToChunk;
+export const stringToPrecomputedChunk = $$$config.stringToPrecomputedChunk;
+export const typedArrayToBinaryChunk = $$$config.typedArrayToBinaryChunk;
+export const byteLengthOfChunk = $$$config.byteLengthOfChunk;
+export const byteLengthOfBinaryChunk = $$$config.byteLengthOfBinaryChunk;
+export const createFastHash = $$$config.createFastHash;
+export const readAsDataURL = $$$config.readAsDataURL;

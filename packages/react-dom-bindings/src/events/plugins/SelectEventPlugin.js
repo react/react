@@ -23,7 +23,7 @@ import {registerTwoPhaseEvent} from '../EventRegistry';
 import getActiveElement from '../../client/getActiveElement';
 import {getNodeFromInstance} from '../../client/ReactDOMComponentTree';
 import {hasSelectionCapabilities} from '../../client/ReactInputSelection';
-import {DOCUMENT_NODE} from '../../shared/HTMLNodeType';
+import {DOCUMENT_NODE} from '../../client/HTMLNodeType';
 import {accumulateTwoPhaseListeners} from '../DOMPluginEventSystem';
 
 const skipSelectionChangeEvent =
@@ -80,8 +80,8 @@ function getEventTargetDocument(eventTarget: any) {
   return eventTarget.window === eventTarget
     ? eventTarget.document
     : eventTarget.nodeType === DOCUMENT_NODE
-    ? eventTarget
-    : eventTarget.ownerDocument;
+      ? eventTarget
+      : eventTarget.ownerDocument;
 }
 
 /**
@@ -91,7 +91,11 @@ function getEventTargetDocument(eventTarget: any) {
  * @param {object} nativeEventTarget
  * @return {?SyntheticEvent}
  */
-function constructSelectEvent(dispatchQueue, nativeEvent, nativeEventTarget) {
+function constructSelectEvent(
+  dispatchQueue: DispatchQueue,
+  nativeEvent: AnyNativeEvent,
+  nativeEventTarget: null | EventTarget,
+) {
   // Ensure we have the right element, and that the user is not dragging a
   // selection (this matches native `select` event behavior). In HTML5, select
   // fires only on input and textarea thus if there's no focused element we
@@ -158,7 +162,7 @@ function extractEvents(
     // Track the input node that has focus.
     case 'focusin':
       if (
-        isTextInputElement((targetNode: any)) ||
+        isTextInputElement(targetNode as any) ||
         targetNode.contentEditable === 'true'
       ) {
         activeElement = targetNode;

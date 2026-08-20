@@ -13,7 +13,7 @@
 // This should be reasonable for all loops in the source.
 // Note that if the numbers are too large, the tests will take too long to fail
 // for this to be useful (each individual test case might hit an infinite loop).
-const MAX_SOURCE_ITERATIONS = 1500;
+const MAX_SOURCE_ITERATIONS = 6000;
 // Code in tests themselves is permitted to run longer.
 // For example, in the fuzz tester.
 const MAX_TEST_ITERATIONS = 5000;

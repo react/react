@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const paths = require('./paths');
-const chalk = require('react-dev-utils/chalk');
+const chalk = require('chalk');
 const resolve = require('resolve');
 
 /**
@@ -108,9 +108,11 @@ function getModules() {
   // TypeScript project and set up the config
   // based on tsconfig.json
   if (hasTsConfig) {
-    const ts = require(resolve.sync('typescript', {
-      basedir: paths.appNodeModules,
-    }));
+    const ts = require(
+      resolve.sync('typescript', {
+        basedir: paths.appNodeModules,
+      })
+    );
     config = ts.readConfigFile(paths.appTsConfig, ts.sys.readFile).config;
     // Otherwise we'll check if there is jsconfig.json
     // for non TS projects.

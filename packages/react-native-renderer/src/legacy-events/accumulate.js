@@ -21,9 +21,7 @@ function accumulate<T>(
   next: T | Array<T>,
 ): T | Array<T> {
   if (next == null) {
-    throw new Error(
-      'accumulate(...): Accumulated items must not be null or undefined.',
-    );
+    throw new Error('Accumulated items must not be null or undefined.');
   }
 
   if (current == null) {
@@ -33,8 +31,7 @@ function accumulate<T>(
   // Both are not empty. Warning: Never call x.concat(y) when you are not
   // certain that x is an Array (x could be a string with concat method).
   if (isArray(current)) {
-    /* $FlowFixMe[incompatible-return] if `current` is `T` and `T` an array,
-     * `isArray` might refine to the array element type of `T` */
+    // $FlowFixMe[incompatible-use] `isArray` does not ensure array is mutable
     return current.concat(next);
   }
 

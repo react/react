@@ -10,8 +10,8 @@ of the React project. Then:
 ```
 cd fixtures/dom
 yarn
-yarn start
+yarn dev
 ```
 
-The `start` command runs a script that copies over the local build of react into
+The `dev` command runs a script that copies over the local build of react into
 the public directory.

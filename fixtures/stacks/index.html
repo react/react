@@ -25,14 +25,19 @@
         If you checked out the source from GitHub make sure to run <code>npm run build</code>.
       </p>
     </div>
-    <script src="../../build/node_modules/react/umd/react.production.min.js"></script>
-    <script src="../../build/node_modules/react-dom/umd/react-dom.production.min.js"></script>
-    <script src="./Components.js"></script>
-    <script src="./BabelClasses-compiled.js"></script>
-    <script src="./Example.js"></script>
-    <script>
-      const container = document.getElementById("container");
-      ReactDOM.render(React.createElement(Example), container);
+    <script type="module">
+      import React from 'https://esm.sh/react@canary/?dev';
+      import ReactDOMClient from 'https://esm.sh/react-dom@canary/client?dev';
+
+      window.React = React;
+      window.ReactDOMClient = ReactDOMClient;
+
+      import("./Example.js").then(({ default: Example }) => {
+        console.log("Example", Example)
+        const container = document.getElementById("container");
+        const root = ReactDOMClient.createRoot(container);
+        root.render(React.createElement(Example));
+      });
     </script>
     <h3>The above stack should look something like this:</h3>
     <pre>
@@ -44,7 +49,6 @@
     at BabelClass (/stacks/BabelClass-compiled.js:13:29)
     at FrozenClass (/stacks/Components.js:22:1)
     at NativeClass (/stacks/Component.js:16:1)
-    at SuspenseList
     at Custom Name (/stacks/Component.js:11:1)
     at ErrorBoundary (/stacks/Example.js:5:1)
     at Example (/stacks/Example.js:32:1)</pre>

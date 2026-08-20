@@ -7,7 +7,8 @@
  * @flow
  */
 
-export * from './index.experimental.js';
+export * from './client.js';
+
 export {
   createComponentSelector,
   createHasPseudoClassSelector,

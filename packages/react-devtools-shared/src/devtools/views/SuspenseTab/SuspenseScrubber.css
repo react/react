@@ -1,0 +1,60 @@
+.SuspenseScrubber {
+  position: relative;
+  width: 100%;
+  height: 1.5rem;
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+}
+
+.SuspenseScrubber:has(.SuspenseScrubberInput:focus-visible) {
+  outline: 2px solid var(--color-button-background-focus);
+}
+
+.SuspenseScrubberInput {
+  position: absolute;
+  width: 100%;
+  opacity: 0;
+  height: 0px;
+  overflow: hidden;
+}
+
+.SuspenseScrubberInput:focus {
+  outline: none;
+}
+
+.SuspenseScrubberStep {
+  cursor: pointer;
+  flex: 1;
+  height: 100%;
+  padding-right: 1px; /* we use this instead of flex gap to make every pixel clickable */
+  display: flex;
+  align-items: center;
+}
+.SuspenseScrubberStep:last-child {
+  padding-right: 0;
+}
+
+.SuspenseScrubberBead {
+  flex: 1;
+  height: 0.5rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--color-suspense) 10%, transparent);
+  transition: all 0.3s ease-in;
+}
+
+.SuspenseScrubberBeadSelected {
+  height: 1rem;
+  background: var(--color-suspense);
+}
+
+.SuspenseScrubberBeadTransition {
+  background: var(--color-transition);
+}
+
+.SuspenseScrubberStepHighlight > .SuspenseScrubberBead {
+  height: 0.75rem;
+  transition: all 0.3s ease-out;
+}
