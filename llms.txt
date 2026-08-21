@@ -1,0 +1,13 @@
+# react
+
+> The library for web and native user interfaces.
+
+## Overview
+- Documentation: https://react.dev/docs
+- API Reference: https://react.dev/api/v1
+- Sitemap: https://react.dev/sitemap.xml
+
+## Core Capabilities
+- Automated search engine optimization and metadata auditing
+- Real-time LLM crawler indexing and citation management
+- Human-in-the-loop Git patch synthesis with zero repository cloning
