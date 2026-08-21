@@ -538,6 +538,9 @@ function findFunctionsToCompile(
   programContext: ProgramContext,
 ): Array<CompileSource> {
   const queue: Array<CompileSource> = [];
+  // Track functions that have 'use no memo' to skip their nested functions
+  const optedOutFunctions: Set<t.Node> = new Set();
+
   const traverseFunction = (fn: BabelFn, pass: CompilerPass): void => {
     // In 'all' mode, compile only top level functions
     if (
@@ -547,10 +550,50 @@ function findFunctionsToCompile(
       return;
     }
 
+    // Check if this function has 'use no memo' directive and track it
+    if (fn.node.body.type === 'BlockStatement') {
+      const optOut = findDirectiveDisablingMemoization(
+        fn.node.body.directives,
+        pass.opts,
+      );
+      if (optOut != null) {
+        // Track this function so nested functions are also skipped
+        optedOutFunctions.add(fn.node);
+      }
+    }
+
     const fnType = getReactFunctionType(fn, pass);
 
     if (fnType === null || programContext.alreadyCompiled.has(fn.node)) {
       return;
+    }
+
+    // Check if this function explicitly opts in with 'use memo'
+    let hasExplicitOptIn = false;
+    if (fn.node.body.type === 'BlockStatement') {
+      const optIn = tryFindDirectiveEnablingMemoization(
+        fn.node.body.directives,
+        pass.opts,
+      );
+      hasExplicitOptIn = optIn.isOk() && optIn.unwrap() != null;
+    }
+
+    // Skip if any ancestor function has 'use no memo', unless this function explicitly opts in
+    if (!hasExplicitOptIn) {
+      let parentPath: NodePath<t.Node> | null = fn.parentPath;
+      while (parentPath != null) {
+        if (
+          parentPath.isFunctionDeclaration() ||
+          parentPath.isFunctionExpression() ||
+          parentPath.isArrowFunctionExpression()
+        ) {
+          if (optedOutFunctions.has(parentPath.node)) {
+            // Parent has 'use no memo', skip this nested function
+            return;
+          }
+        }
+        parentPath = parentPath.parentPath;
+      }
     }
 
     /*
