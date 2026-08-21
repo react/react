@@ -150,9 +150,15 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           break;
         }
         case 'PropertyLoad': {
+          /*
+           * Ref-typed property loads (for example props.ref) should keep their
+           * declared ref type instead of aliasing the containing object.
+           */
           if (
-            isUseRefType(value.object.identifier) &&
-            value.property === 'current'
+            (isUseRefType(value.object.identifier) &&
+              value.property === 'current') ||
+            isUseRefType(lvalue.identifier) ||
+            isRefValueType(lvalue.identifier)
           ) {
             continue;
           }
