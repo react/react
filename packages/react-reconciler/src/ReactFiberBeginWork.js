@@ -264,6 +264,7 @@ import {
   isSimpleFunctionComponent,
   isFunctionClassComponent,
 } from './ReactFiber';
+import {createFiberInstance, getPreviousVersion} from './ReactFiberInstance';
 import {
   scheduleUpdateOnFiber,
   renderDidSuspendDelayIfPossible,
@@ -1414,8 +1415,7 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
   const ref = workInProgress.ref;
   if (ref === null) {
     if (current !== null && current.ref !== null) {
-      // Schedule a Ref effect
-      workInProgress.flags |= Ref | RefStatic;
+      scheduleRefEffect(workInProgress);
     }
   } else {
     if (typeof ref !== 'function' && typeof ref !== 'object') {
@@ -1424,10 +1424,17 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
       );
     }
     if (current === null || current.ref !== ref) {
-      // Schedule a Ref effect
-      workInProgress.flags |= Ref | RefStatic;
+      scheduleRefEffect(workInProgress);
     }
   }
+}
+
+function scheduleRefEffect(workInProgress: Fiber) {
+  workInProgress.flags |= Ref | RefStatic;
+  // The cleanup that was cloned from current belongs to the previous ref. It
+  // gets invoked on current during the mutation phase; this version gets a
+  // new one when its ref is attached.
+  workInProgress.refCleanup = null;
 }
 
 function mountIncompleteFunctionComponent(
@@ -3222,9 +3229,12 @@ function scheduleSuspenseWorkOnFiber(
   propagationRoot: Fiber,
 ) {
   fiber.lanes = mergeLanes(fiber.lanes, renderLanes);
-  const alternate = fiber.alternate;
-  if (alternate !== null) {
-    alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
+  // This may be a work-in-progress fiber that was already cloned. beginWork
+  // checks the current version's lanes to decide whether there's scheduled
+  // work, so mark that too.
+  const current = fiber.instance.current;
+  if (current !== fiber) {
+    current.lanes = mergeLanes(current.lanes, renderLanes);
   }
   scheduleContextWorkOnParentPath(fiber.return, renderLanes, propagationRoot);
 }
@@ -3284,7 +3294,7 @@ function findLastContentRow(firstChild: null | Fiber): null | Fiber {
   let row = firstChild;
   let lastContentRow: null | Fiber = null;
   while (row !== null) {
-    const currentRow = row.alternate;
+    const currentRow = getPreviousVersion(row);
     // New rows can't be content rows.
     if (currentRow !== null && findFirstSuspended(currentRow) === null) {
       lastContentRow = row;
@@ -3556,7 +3566,7 @@ function updateSuspenseListComponent(
         let row = workInProgress.child;
         workInProgress.child = null;
         while (row !== null) {
-          const currentRow = row.alternate;
+          const currentRow = getPreviousVersion(row);
           // New rows can't be content rows.
           if (currentRow !== null && findFirstSuspended(currentRow) === null) {
             // This is the beginning of the main content.
@@ -3680,7 +3690,7 @@ function updateViewTransition(
   }
   if (current !== null && current.memoizedProps.name !== pendingProps.name) {
     // If the name changes, we schedule a ref effect to create a new ref instance.
-    workInProgress.flags |= Ref | RefStatic;
+    scheduleRefEffect(workInProgress);
   } else {
     markRef(current, workInProgress);
   }
@@ -3814,9 +3824,8 @@ function resetSuspendedCurrentOnMountInLegacyMode(
       // A lazy component only mounts if it suspended inside a non-
       // concurrent tree, in an inconsistent state. We want to treat it like
       // a new mount, even though an empty version of it already committed.
-      // Disconnect the alternate pointers.
-      current.alternate = null;
-      workInProgress.alternate = null;
+      // Give it a new identity so that it's no longer a version of current.
+      workInProgress.instance = createFiberInstance(workInProgress);
       // Since this is conceptually a new fiber, schedule a Placement effect
       workInProgress.flags |= Placement;
     }
@@ -3876,12 +3885,7 @@ function remountFiber(
       throw new Error('Cannot swap the root fiber.');
     }
 
-    // Disconnect from the old current.
-    // It will get deleted.
-    current.alternate = null;
-    oldWorkInProgress.alternate = null;
-
-    // Connect to the new tree.
+    // The old current will get deleted. Connect to the new tree.
     newWorkInProgress.index = oldWorkInProgress.index;
     newWorkInProgress.sibling = oldWorkInProgress.sibling;
     newWorkInProgress.return = oldWorkInProgress.return;

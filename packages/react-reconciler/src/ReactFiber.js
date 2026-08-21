@@ -81,6 +81,7 @@ import {getComponentNameFromOwner} from 'react-reconciler/src/getComponentNameFr
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
+import {createFiberInstance, getPreviousVersion} from './ReactFiberInstance';
 import {
   NoMode,
   ConcurrentMode,
@@ -170,8 +171,7 @@ function FiberNode(
   this.lanes = NoLanes;
   this.childLanes = NoLanes;
 
-  this.instance = {current: this, previous: null};
-  this.alternate = null;
+  this.instance = createFiberInstance(this);
 
   if (enableProfilerTimer) {
     // Note: The following is done to avoid a v8 performance cliff.
@@ -266,8 +266,7 @@ function createFiberImplObject(
     lanes: NoLanes,
     childLanes: NoLanes,
 
-    instance: (null as any),
-    alternate: null,
+    instance: null as any,
 
     // dynamic properties at the end for more efficient hermes bytecode
     tag,
@@ -275,7 +274,7 @@ function createFiberImplObject(
     pendingProps,
     mode,
   };
-  fiber.instance = {current: fiber, previous: null};
+  fiber.instance = createFiberInstance(fiber);
 
   if (enableProfilerTimer) {
     fiber.actualDuration = -0;
@@ -345,9 +344,6 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
     workInProgress._debugTask = current._debugTask;
     workInProgress._debugHookTypes = current._debugHookTypes;
   }
-
-  workInProgress.alternate = current;
-  current.alternate = workInProgress;
 
   // Reset all effects except static ones.
   // Static effects are not specific to a render.
@@ -451,7 +447,7 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
         node = next;
         continue outer;
       }
-      node = (node.return as any);
+      node = node.return as any;
     }
   }
 }
@@ -475,7 +471,7 @@ export function resetWorkInProgress(
 
   // The effects are no longer valid.
 
-  const current = workInProgress.alternate;
+  const current = getPreviousVersion(workInProgress);
   if (current === null) {
     // Reset to createFiber's initial values.
     workInProgress.childLanes = NoLanes;

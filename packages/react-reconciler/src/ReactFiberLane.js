@@ -1195,8 +1195,14 @@ export function movePendingFibersToMemoized(root: FiberRoot, lanes: Lanes) {
     const updaters = pendingUpdatersLaneMap[index];
     if (updaters.size > 0) {
       updaters.forEach(fiber => {
-        const alternate = fiber.alternate;
-        if (alternate === null || !memoizedUpdaters.has(alternate)) {
+        // Different versions of the same node count as one updater.
+        let isDuplicate = false;
+        memoizedUpdaters.forEach(memoizedUpdater => {
+          if (memoizedUpdater.instance === fiber.instance) {
+            isDuplicate = true;
+          }
+        });
+        if (!isDuplicate) {
           memoizedUpdaters.add(fiber);
         }
       });

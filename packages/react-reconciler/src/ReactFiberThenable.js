@@ -14,6 +14,7 @@ import type {
   RejectedThenable,
   ReactIOInfo,
 } from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {Fiber} from './ReactInternalTypes';
@@ -322,7 +323,7 @@ export function trackUsedThenable<T>(
           !didIssueUseWarning &&
           fiber !== null &&
           // Only track initial mount for now to avoid warning too much for updates.
-          fiber.alternate === null
+          getPreviousVersion(fiber) === null
         ) {
           lastSuspendedFiber = fiber;
           // Stash an error in case we end up triggering the use() warning.

@@ -127,7 +127,12 @@ import {
   flushHydrationEvents,
 } from './ReactFiberConfig';
 
-import {commitWorkInProgressAsCurrent, createWorkInProgress, resetWorkInProgress} from './ReactFiber';
+import {
+  commitWorkInProgressAsCurrent,
+  createWorkInProgress,
+  resetWorkInProgress,
+} from './ReactFiber';
+import {getPreviousVersion} from './ReactFiberInstance';
 import {isRootDehydrated} from './ReactFiberShellHydration';
 import {
   getIsHydrating,
@@ -2004,7 +2009,7 @@ function resetWorkInProgressStack() {
     interruptedWork = workInProgress;
   }
   while (interruptedWork !== null) {
-    const current = interruptedWork.alternate;
+    const current = getPreviousVersion(interruptedWork);
     unwindInterruptedWork(
       current,
       interruptedWork,
@@ -2266,8 +2271,12 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   pendingEffectsLanes = NoLanes;
 
   resetWorkInProgressStack();
+  // Updates that were enqueued since the last render or commit need to be
+  // marked on the current tree before it's cloned.
+  finishQueueingConcurrentUpdates();
   workInProgressRoot = root;
   const rootWorkInProgress = createWorkInProgress(root.current, null);
+  root.currentTreeUpdatedLanes = NoLanes;
   workInProgressRootFiber = rootWorkInProgress;
   workInProgress = rootWorkInProgress;
   workInProgressRootRenderLanes = lanes;
@@ -2295,8 +2304,6 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   // and Sync lane in the same batch, but at Transition priority, because the
   // Sync lane already suspended.
   entangledRenderLanes = getEntangledLanes(root, lanes);
-
-  finishQueueingConcurrentUpdates();
 
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -2774,9 +2781,6 @@ function renderRootSync(
     // Set this to null to indicate there's no in-progress render.
     workInProgressRoot = null;
     workInProgressRootRenderLanes = NoLanes;
-
-    // It's safe to process the queue now that the render phase is complete.
-    finishQueueingConcurrentUpdates();
   }
 
   return exitStatus;
@@ -3059,9 +3063,6 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
     workInProgressRoot = null;
     workInProgressRootRenderLanes = NoLanes;
 
-    // It's safe to process the queue now that the render phase is complete.
-    finishQueueingConcurrentUpdates();
-
     // Return the final exit status.
     return workInProgressRootExitStatus;
   }
@@ -3094,10 +3095,7 @@ function workLoopConcurrentByScheduler() {
 }
 
 function performUnitOfWork(unitOfWork: Fiber): void {
-  // The current, flushed, state of this fiber is the alternate. Ideally
-  // nothing should rely on this, but relying on it here means that we don't
-  // need an additional field on the work in progress.
-  const current = unitOfWork.alternate;
+  const current = getPreviousVersion(unitOfWork);
 
   let next;
   if (enableProfilerTimer && (unitOfWork.mode & ProfileMode) !== NoMode) {
@@ -3160,7 +3158,7 @@ function replayBeginWork(unitOfWork: Fiber): null | Fiber {
   // This is a fork of beginWork specifcally for replaying a fiber that
   // just suspended.
 
-  const current = unitOfWork.alternate;
+  const current = getPreviousVersion(unitOfWork);
 
   let next;
   const isProfilingMode =
@@ -3397,10 +3395,7 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       return;
     }
 
-    // The current, flushed, state of this fiber is the alternate. Ideally
-    // nothing should rely on this, but relying on it here means that we don't
-    // need an additional field on the work in progress.
-    const current = completedWork.alternate;
+    const current = getPreviousVersion(completedWork);
     const returnFiber = completedWork.return;
 
     let next;
@@ -3448,10 +3443,7 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
 function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
   let incompleteWork: Fiber = unitOfWork;
   do {
-    // The current, flushed, state of this fiber is the alternate. Ideally
-    // nothing should rely on this, but relying on it here means that we don't
-    // need an additional field on the work in progress.
-    const current = incompleteWork.alternate;
+    const current = getPreviousVersion(incompleteWork);
 
     // This fiber did not complete because something threw. Pop values off
     // the stack without entering the complete phase. If this is a boundary,
@@ -3578,10 +3570,12 @@ function completeRoot(
         workInProgressUpdateTask,
       );
     } else if (recoverableErrors !== null) {
+      const current =
+        finishedWork !== null ? getPreviousVersion(finishedWork) : null;
       const hydrationFailed =
         finishedWork !== null &&
-        finishedWork.alternate !== null &&
-        (finishedWork.alternate.memoizedState as RootState).isDehydrated &&
+        current !== null &&
+        (current.memoizedState as RootState).isDehydrated &&
         (finishedWork.flags & ForceClientRender) !== NoFlags;
       logRecoveredRenderPhase(
         completedRenderStartTime,
@@ -3755,9 +3749,12 @@ function commitRoot(
   pendingEffectsRemainingLanes = remainingLanes;
 
   // Make sure to account for lanes that were updated by a concurrent event
-  // during the render phase; don't mark them as finished.
+  // during the render phase; don't mark them as finished. Those updates are
+  // either still queued, or they were already marked on the tree that this
+  // one was cloned from.
   const concurrentlyUpdatedLanes = getConcurrentlyUpdatedLanes();
   remainingLanes = mergeLanes(remainingLanes, concurrentlyUpdatedLanes);
+  remainingLanes = mergeLanes(remainingLanes, root.currentTreeUpdatedLanes);
 
   if (enableGestureTransition && root.pendingGestures === null) {
     // Gestures don't clear their lanes while the gesture is still active but it
@@ -4065,6 +4062,9 @@ function flushMutationEffects(): void {
   // work is current during componentDidMount/Update.
   root.current = finishedWork;
   commitWorkInProgressAsCurrent(finishedWork);
+  // Updates that were enqueued since the render started haven't been marked
+  // on any tree yet. Now that the finished tree is current, mark them on it.
+  finishQueueingConcurrentUpdates();
   pendingEffectsStatus = PENDING_LAYOUT_PHASE;
 }
 
@@ -5353,7 +5353,11 @@ function doubleInvokeEffectsOnFiber(root: FiberRoot, fiber: Fiber) {
   try {
     disappearLayoutEffectsForDEVValidation(fiber);
     disconnectPassiveEffect(fiber);
-    reappearLayoutEffectsForDEVValidation(root, fiber.alternate, fiber);
+    reappearLayoutEffectsForDEVValidation(
+      root,
+      getPreviousVersion(fiber),
+      fiber,
+    );
     reconnectPassiveEffects(root, fiber, NoLanes, null, false, 0);
   } finally {
     setIsStrictModeForDevtools(false);

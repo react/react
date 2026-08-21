@@ -180,17 +180,13 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
       // a nested suspense boundary within it. So we can use this as a fast
       // bailout. Most of the time, when people add non-React children to
       // the tree, it is using a ref to a child-less DOM node.
-      // Normally we'd only need to check one of the fibers because if it
-      // has ever gone from having children to deleting them or vice versa
-      // it would have deleted the dehydrated boundary nested inside already.
-      // However, the HostRoot starts out with an alternate that might have
-      // children, so we need to check that too in case this was a root.
+      // If it has ever gone from having children to deleting them or vice
+      // versa it would have deleted the dehydrated boundary nested inside
+      // already. However, the HostRoot starts out without children while its
+      // first render is in progress, so we always check in case this was
+      // a root.
       const targetFiber = targetInst.current;
-      const alternate = targetFiber.alternate;
-      if (
-        targetFiber.child !== null ||
-        (alternate !== null && alternate.child !== null)
-      ) {
+      if (targetFiber.child !== null || targetFiber.tag === HostRoot) {
         // Next we need to figure out if the node that skipped past is
         // nested within a dehydrated boundary and if so, which one.
         let hydrationInstance = getParentHydrationBoundary(targetNode);
@@ -321,10 +317,10 @@ export function getFiberFromScopeInstance(
   scope: ReactScopeInstance,
 ): null | Fiber {
   if (enableScopeAPI) {
-    if (enableInternalInstanceMap) {
-      return internalInstanceMap.get(scope as any as InstanceUnion) || null;
-    }
-    return (scope as any)[internalInstanceKey] || null;
+    const instance = enableInternalInstanceMap
+      ? internalInstanceMap.get(scope as any as InstanceUnion)
+      : (scope as any)[internalInstanceKey];
+    return instance ? instance.current : null;
   }
   return null;
 }

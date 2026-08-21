@@ -281,14 +281,24 @@ export function createTreeTools(
 
   // Persistent uid state — survives across calls so the same fiber
   // always maps to the same uid, even after React re-renders (which
-  // swap fiber objects via double-buffering / alternates).
-  const fiberToUid: WeakMap<Fiber, string> = new WeakMap();
+  // replace fiber objects; older versions of React swap between two
+  // alternates instead).
+  const fiberToUid: WeakMap<any, string> = new WeakMap();
   let nextId: number = 0;
 
   function getUid(fiber: Fiber): string {
+    if (fiber.instance !== undefined) {
+      // The instance is shared by every version of the fiber.
+      let instanceUid = fiberToUid.get(fiber.instance);
+      if (instanceUid == null) {
+        instanceUid = 'r' + nextId++;
+        fiberToUid.set(fiber.instance, instanceUid);
+      }
+      return instanceUid;
+    }
     let uid = fiberToUid.get(fiber);
     if (uid != null) return uid;
-    const alt = fiber.alternate;
+    const alt = (fiber as any).alternate;
     if (alt != null) {
       uid = fiberToUid.get(alt);
       if (uid != null) {

@@ -65,6 +65,7 @@ import {
   createFiberFromPortal,
   createFiberFromThrow,
 } from './ReactFiber';
+import {getPreviousVersion} from './ReactFiberInstance';
 import {isCompatibleFamilyForHotReloading} from './ReactFiberHotReloading';
 import {getIsHydrating} from './ReactFiberHydrationContext';
 import {pushTreeFork} from './ReactFiberTreeContext';
@@ -520,7 +521,7 @@ function createChildReconciler(
       newFiber.flags |= Forked;
       return lastPlacedIndex;
     }
-    const current = newFiber.alternate;
+    const current = getPreviousVersion(newFiber);
     if (current !== null) {
       const oldIndex = current.index;
       if (oldIndex < lastPlacedIndex) {
@@ -543,7 +544,7 @@ function createChildReconciler(
   function placeSingleChild(newFiber: Fiber): Fiber {
     // This is simpler for the single child case. We only need to do a
     // placement for inserting new children.
-    if (shouldTrackSideEffects && newFiber.alternate === null) {
+    if (shouldTrackSideEffects && getPreviousVersion(newFiber) === null) {
       newFiber.flags |= Placement | PlacementDEV;
     }
     return newFiber;
@@ -1242,7 +1243,7 @@ function createChildReconciler(
       }
 
       if (shouldTrackSideEffects) {
-        if (oldFiber && newFiber.alternate === null) {
+        if (oldFiber && getPreviousVersion(newFiber) === null) {
           // We matched the slot, but we didn't reuse the existing fiber, so we
           // need to delete the existing child.
           deleteChild(returnFiber, oldFiber);
@@ -1327,7 +1328,7 @@ function createChildReconciler(
           );
         }
         if (shouldTrackSideEffects) {
-          const currentFiber = newFiber.alternate;
+          const currentFiber = getPreviousVersion(newFiber);
           if (currentFiber !== null) {
             // The new fiber is a work in progress, but if there exists a
             // current, that means that we reused the fiber. We need to delete
@@ -1544,7 +1545,7 @@ function createChildReconciler(
       }
 
       if (shouldTrackSideEffects) {
-        if (oldFiber && newFiber.alternate === null) {
+        if (oldFiber && getPreviousVersion(newFiber) === null) {
           // We matched the slot, but we didn't reuse the existing fiber, so we
           // need to delete the existing child.
           deleteChild(returnFiber, oldFiber);
@@ -1629,7 +1630,7 @@ function createChildReconciler(
           );
         }
         if (shouldTrackSideEffects) {
-          const currentFiber = newFiber.alternate;
+          const currentFiber = getPreviousVersion(newFiber);
           if (currentFiber !== null) {
             // The new fiber is a work in progress, but if there exists a
             // current, that means that we reused the fiber. We need to delete

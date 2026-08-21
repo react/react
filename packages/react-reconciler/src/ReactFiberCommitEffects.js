@@ -870,12 +870,10 @@ export function safelyDetachRef(
       } catch (error) {
         captureCommitPhaseError(current, nearestMountedAncestor, error);
       } finally {
-        // `refCleanup` has been called. Nullify all references to it to prevent double invocation.
+        // `refCleanup` has been called. Nullify the reference to it to prevent
+        // double invocation. A version of this fiber that attaches a different
+        // ref doesn't inherit this cleanup (see markRef).
         current.refCleanup = null;
-        const finishedWork = current.alternate;
-        if (finishedWork != null) {
-          finishedWork.refCleanup = null;
-        }
       }
     } else if (typeof ref === 'function') {
       try {

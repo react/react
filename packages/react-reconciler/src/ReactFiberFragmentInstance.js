@@ -8,6 +8,7 @@
  */
 
 import type {FragmentInstanceType} from './ReactFiberConfig';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {Fiber} from './ReactInternalTypes';
 
 import {
@@ -33,7 +34,7 @@ export function commitNewChildToFragmentInstances(
       fiber.tag !== HostSingleton &&
       !(enableFragmentRefsTextNodes && fiber.tag === HostText)) ||
     // Only run fragment insertion effects for initial insertions
-    fiber.alternate !== null ||
+    getPreviousVersion(fiber) !== null ||
     parentFragmentInstances === null
   ) {
     return;
