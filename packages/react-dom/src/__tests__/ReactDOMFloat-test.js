@@ -9591,14 +9591,14 @@ background-color: green;
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
           <head>
-            <link rel="rel3" href="linkhref" />
-            <link rel="rel4" href="linkhref" />
-            <meta name="name3" content="metacontent" />
-            <meta name="name4" content="metacontent" />
             <link rel="rel1" href="linkhref" />
             <link rel="rel2" href="linkhref" />
             <meta name="name1" content="metacontent" />
             <meta name="name2" content="metacontent" />
+            <link rel="rel3" href="linkhref" />
+            <link rel="rel4" href="linkhref" />
+            <meta name="name3" content="metacontent" />
+            <meta name="name4" content="metacontent" />
           </head>
           <body>loading...</body>
         </html>,
@@ -9629,15 +9629,15 @@ background-color: green;
             <link rel="rel4" href="linkhref" />
             <meta name="name3" content="metacontent" />
             <meta name="name4" content="metacontent" />
-            <link rel="rel5" href="linkhref" />
-            <link rel="rel6" href="linkhref" />
-            <meta name="name5" content="metacontent" />
-            <meta name="name6" content="metacontent" />
           </head>
           <body>
             <meta name="3rdparty" content="metacontent" />
             <link rel="3rdparty" href="linkhref" />
             <div>hello world</div>
+            <link rel="rel5" href="linkhref" />
+            <link rel="rel6" href="linkhref" />
+            <meta name="name5" content="metacontent" />
+            <meta name="name6" content="metacontent" />
           </body>
         </html>,
       );
