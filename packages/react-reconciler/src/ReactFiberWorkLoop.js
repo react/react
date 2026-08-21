@@ -129,6 +129,7 @@ import {
 
 import {
   commitWorkInProgressAsCurrent,
+  releasePreviousVersions,
   createWorkInProgress,
   resetWorkInProgress,
 } from './ReactFiber';
@@ -4264,6 +4265,10 @@ function flushSpawnedWork(): void {
   const renderPriority = lanesToEventPriority(lanes);
   onCommitRootDevTools(finishedWork.stateNode, renderPriority);
 
+  if (!rootDidHavePassiveEffects) {
+    releasePreviousVersions();
+  }
+
   if (enableUpdaterTracking) {
     if (isDevToolsPresent) {
       root.memoizedUpdaters.clear();
@@ -4817,6 +4822,8 @@ function flushPassiveEffectsImpl() {
   if (__DEV__) {
     commitDoubleInvokeEffectsInDEV(root, true);
   }
+
+  releasePreviousVersions();
 
   executionContext = prevExecutionContext;
 

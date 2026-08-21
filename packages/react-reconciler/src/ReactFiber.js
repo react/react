@@ -16,7 +16,7 @@ import type {
   ActivityProps,
   ReactKey,
 } from 'shared/ReactTypes';
-import type {Fiber} from './ReactInternalTypes';
+import type {Fiber, FiberInstance} from './ReactInternalTypes';
 import type {RootTag} from './ReactRootTags';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
@@ -403,12 +403,16 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   return workInProgress;
 }
 
+// The instances whose version was replaced by the commit in progress.
+const replacedInstances: Array<FiberInstance> = [];
+
 // The counterpart of createWorkInProgress. Makes every new version in the
 // finished tree the committed version of its node. The version it replaces
-// remains reachable through the instance as the base for diffing during the rest
-// of this commit. Children that were shared with the previous tree get their
-// return pointer repointed so that a committed fiber's return is always the
-// committed version of its parent.
+// remains reachable through the instance as the base for diffing until
+// releasePreviousVersions is called at the end of the commit. Children that
+// were shared with the previous tree get their return pointer repointed so
+// that a committed fiber's return is always the committed version of its
+// parent.
 export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
   let node = finishedWork;
   outer: while (true) {
@@ -417,6 +421,7 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
     if (current !== node) {
       instance.previous = current;
       instance.current = node;
+      replacedInstances.push(instance);
       let child = node.child;
       if (child !== null && child === current.child) {
         while (child !== null) {
@@ -450,6 +455,18 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
       node = node.return as any;
     }
   }
+}
+
+// Once a commit's effects have run nothing diffs against the replaced versions
+// anymore, so they're released. From then on a committed version is its own
+// previous version: the base for diffing a fiber that a later commit reuses
+// rather than replaces is the fiber itself.
+export function releasePreviousVersions(): void {
+  for (let i = 0; i < replacedInstances.length; i++) {
+    const instance = replacedInstances[i];
+    instance.previous = instance.current;
+  }
+  replacedInstances.length = 0;
 }
 
 // Used to reuse a Fiber for a second pass.

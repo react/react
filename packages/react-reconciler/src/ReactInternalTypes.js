@@ -92,8 +92,9 @@ export type MemoCache = {
 export type FiberInstance = {
   // The version of this node in the committed tree.
   current: Fiber,
-  // The version that `current` replaced in the commit that made it current.
-  // It's the base for diffing during that commit. Null if the node mounted.
+  // The version that `current` replaced, while the commit that made it
+  // current is running its effects: the base for diffing during that commit.
+  // Afterwards it's `current` itself. Null if the node has only ever mounted.
   previous: Fiber | null,
 };
 
