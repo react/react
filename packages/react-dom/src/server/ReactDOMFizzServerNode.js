@@ -214,9 +214,16 @@ function renderToReadableStream(
   return new Promise((resolve, reject) => {
     let onFatalError;
     let onAllReady;
+    let cleanupSignalListener = () => {};
     const allReady = new Promise<void>((res, rej) => {
-      onAllReady = res;
-      onFatalError = rej;
+      onAllReady = () => {
+        cleanupSignalListener();
+        res();
+      };
+      onFatalError = (error: mixed) => {
+        cleanupSignalListener();
+        rej(error);
+      };
     });
 
     function onShellReady() {
@@ -249,6 +256,7 @@ function renderToReadableStream(
       // However, `allReady` will be rejected by `onFatalError` as well.
       // So we need to catch the duplicate, uncatchable fatal error in `allReady` to prevent a `UnhandledPromiseRejection`.
       allReady.catch(() => {});
+      cleanupSignalListener();
       reject(error);
     }
 
@@ -298,6 +306,9 @@ function renderToReadableStream(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
@@ -375,9 +386,16 @@ function resume(
   return new Promise((resolve, reject) => {
     let onFatalError;
     let onAllReady;
+    let cleanupSignalListener = () => {};
     const allReady = new Promise<void>((res, rej) => {
-      onAllReady = res;
-      onFatalError = rej;
+      onAllReady = () => {
+        cleanupSignalListener();
+        res();
+      };
+      onFatalError = (error: mixed) => {
+        cleanupSignalListener();
+        rej(error);
+      };
     });
 
     function onShellReady() {
@@ -410,6 +428,7 @@ function resume(
       // However, `allReady` will be rejected by `onFatalError` as well.
       // So we need to catch the duplicate, uncatchable fatal error in `allReady` to prevent a `UnhandledPromiseRejection`.
       allReady.catch(() => {});
+      cleanupSignalListener();
       reject(error);
     }
     const request = resumeRequest(
@@ -436,6 +455,9 @@ function resume(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);

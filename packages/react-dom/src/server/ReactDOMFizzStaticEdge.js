@@ -70,7 +70,11 @@ function prerender(
   options?: Options,
 ): Promise<StaticResult> {
   return new Promise((resolve, reject) => {
-    const onFatalError = reject;
+    let cleanupSignalListener = () => {};
+    const onFatalError = (error: mixed) => {
+      cleanupSignalListener();
+      reject(error);
+    };
 
     function onAllReady() {
       const stream = new ReadableStream(
@@ -93,6 +97,7 @@ function prerender(
         postponed: getPostponedState(request),
         prelude: stream,
       };
+      cleanupSignalListener();
       resolve(result);
     }
 
@@ -140,6 +145,9 @@ function prerender(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
@@ -159,7 +167,11 @@ function resumeAndPrerender(
   options?: Omit<ResumeOptions, 'nonce'>,
 ): Promise<StaticResult> {
   return new Promise((resolve, reject) => {
-    const onFatalError = reject;
+    let cleanupSignalListener = () => {};
+    const onFatalError = (error: mixed) => {
+      cleanupSignalListener();
+      reject(error);
+    };
 
     function onAllReady() {
       const stream = new ReadableStream(
@@ -182,6 +194,7 @@ function resumeAndPrerender(
         postponed: getPostponedState(request),
         prelude: stream,
       };
+      cleanupSignalListener();
       resolve(result);
     }
 
@@ -206,6 +219,9 @@ function resumeAndPrerender(
           signal.removeEventListener('abort', listener);
         };
         signal.addEventListener('abort', listener);
+        cleanupSignalListener = () => {
+          signal.removeEventListener('abort', listener);
+        };
       }
     }
     startWork(request);
