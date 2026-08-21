@@ -7,7 +7,11 @@
  * @flow
  */
 
-import type {Fiber, FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
+import type {
+  Fiber,
+  FiberInstance,
+  FiberRoot,
+} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   Container,
   PublicInstance,
@@ -297,11 +301,11 @@ function getChildren(parent: Fiber) {
 }
 
 class ReactTestInstance {
-  _fiber: Fiber;
+  _instance: FiberInstance;
 
   _currentFiber(): Fiber {
     // Throws if this component has been unmounted.
-    const fiber = findCurrentFiberUsingSlowPath(this._fiber);
+    const fiber = findCurrentFiberUsingSlowPath(this._instance.current);
 
     if (fiber === null) {
       throw new Error(
@@ -321,24 +325,24 @@ class ReactTestInstance {
       );
     }
 
-    this._fiber = fiber;
+    this._instance = fiber.instance;
   }
 
   get instance(): $FlowFixMe {
-    const tag = this._fiber.tag;
+    const tag = this._instance.current.tag;
     if (
       tag === HostComponent ||
       tag === HostHoistable ||
       tag === HostSingleton
     ) {
-      return getPublicInstance(this._fiber.stateNode);
+      return getPublicInstance(this._instance.current.stateNode);
     } else {
-      return this._fiber.stateNode;
+      return this._instance.current.stateNode;
     }
   }
 
   get type(): any {
-    return this._fiber.type;
+    return this._instance.current.type;
   }
 
   get props(): Object {
@@ -346,7 +350,7 @@ class ReactTestInstance {
   }
 
   get parent(): ?ReactTestInstance {
-    let parent = this._fiber.return;
+    let parent = this._instance.current.return;
     while (parent !== null) {
       if (validWrapperTypes.has(parent.tag)) {
         if (parent.tag === HostRoot) {
@@ -630,15 +634,12 @@ function create(
   return entry;
 }
 
-const fiberToWrapper = new WeakMap<Fiber, ReactTestInstance>();
+const instanceToWrapper = new WeakMap<FiberInstance, ReactTestInstance>();
 function wrapFiber(fiber: Fiber): ReactTestInstance {
-  let wrapper = fiberToWrapper.get(fiber);
-  if (wrapper === undefined && fiber.alternate !== null) {
-    wrapper = fiberToWrapper.get(fiber.alternate);
-  }
+  let wrapper = instanceToWrapper.get(fiber.instance);
   if (wrapper === undefined) {
     wrapper = new ReactTestInstance(fiber);
-    fiberToWrapper.set(fiber, wrapper);
+    instanceToWrapper.set(fiber.instance, wrapper);
   }
   return wrapper;
 }

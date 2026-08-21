@@ -428,7 +428,7 @@ export function checkIfUseWrappedInAsyncCatch(rejectedReason: any) {
 }
 
 function areSameKeyPath(a: Fiber, b: Fiber): boolean {
-  if (a === b) {
+  if (a.instance === b.instance) {
     return true;
   }
   if (
@@ -439,9 +439,9 @@ function areSameKeyPath(a: Fiber, b: Fiber): boolean {
   ) {
     return false;
   }
-  if (a.tag === HostRoot && a.stateNode !== b.stateNode) {
-    // These are both roots but they're different roots so they're not in the same tree.
-    return false;
+  if (a.tag === HostRoot) {
+    // These are both roots. They're in the same tree if they're the same root.
+    return a.stateNode === b.stateNode;
   }
   if (a.return === null || b.return === null) {
     return false;

@@ -182,7 +182,6 @@ import {
   cancelRootViewTransitionName,
   restoreRootViewTransitionName,
   isSingletonScope,
-  updateFragmentInstanceFiber,
 } from './ReactFiberConfig';
 import {
   captureCommitPhaseError,
@@ -499,7 +498,7 @@ function commitBeforeMutationEffectsOnFiber(
         doesFiberContain(finishedWork, focusedInstanceHandle)
       ) {
         shouldFireAfterActiveInstanceBlur = true;
-        beforeActiveInstanceBlur(finishedWork);
+        beforeActiveInstanceBlur(finishedWork.instance);
       }
     }
   }
@@ -589,7 +588,7 @@ function commitBeforeMutationEffectsDeletion(
     // This assumes we can safely determine that instance during the "render" phase.
     if (doesFiberContain(deletion, focusedInstanceHandle as any as Fiber)) {
       shouldFireAfterActiveInstanceBlur = true;
-      beforeActiveInstanceBlur(deletion);
+      beforeActiveInstanceBlur(deletion.instance);
     }
   }
   if (isViewTransitionEligible) {
@@ -771,7 +770,7 @@ function commitLayoutEffectOnFiber(
             // Register a callback to retry this boundary once the server has sent the result.
             const retry = retryDehydratedSuspenseBoundary.bind(
               null,
-              finishedWork,
+              finishedWork.instance,
             );
             registerSuspenseInstanceRetry(dehydrated, retry);
           }
@@ -2001,7 +2000,11 @@ function attachSuspenseRetryListeners(
         }
       }
 
-      const retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
+      const retry = resolveRetryWakeable.bind(
+        null,
+        finishedWork.instance,
+        wakeable,
+      );
       wakeable.then(retry, retry);
     }
   });
@@ -2183,14 +2186,14 @@ function commitMutationEffectsOnFiber(
                     finishedWork.type,
                     finishedWork.memoizedProps,
                     root.containerInfo,
-                    finishedWork,
+                    finishedWork.instance,
                   );
                 } else {
                   finishedWork.stateNode = hydrateHoistable(
                     hoistableRoot,
                     finishedWork.type,
                     finishedWork.memoizedProps,
-                    finishedWork,
+                    finishedWork.instance,
                   );
                 }
               } else if (!offscreenSubtreeIsHidden) {
@@ -2773,7 +2776,7 @@ function commitMutationEffectsOnFiber(
         }
         if (flags & Update) {
           const scopeInstance = finishedWork.stateNode;
-          prepareScopeUpdate(scopeInstance, finishedWork);
+          prepareScopeUpdate(scopeInstance, finishedWork.instance);
         }
       }
       break;
@@ -2784,9 +2787,6 @@ function commitMutationEffectsOnFiber(
           if (!offscreenSubtreeWasHidden && current !== null) {
             safelyDetachRef(current, current.return);
           }
-        }
-        if (current && current.stateNode !== null) {
-          updateFragmentInstanceFiber(finishedWork, current.stateNode);
         }
       }
     // Fallthrough

@@ -144,7 +144,7 @@ function getContextForSubtree(
     return emptyContextObject;
   }
 
-  const fiber = getInstance(parentComponent);
+  const fiber = getInstance(parentComponent).current;
   const parentContext = findCurrentUnmaskedContext(fiber);
 
   if (fiber.tag === ClassComponent) {
@@ -158,8 +158,8 @@ function getContextForSubtree(
 }
 
 function findHostInstance(component: Object): PublicInstance | null {
-  const fiber = getInstance(component);
-  if (fiber === undefined) {
+  const instance = getInstance(component);
+  if (instance === undefined) {
     if (typeof component.render === 'function') {
       throw new Error('Unable to find node on an unmounted component.');
     } else {
@@ -169,7 +169,7 @@ function findHostInstance(component: Object): PublicInstance | null {
       );
     }
   }
-  const hostFiber = findCurrentHostFiber(fiber);
+  const hostFiber = findCurrentHostFiber(instance.current);
   if (hostFiber === null) {
     return null;
   }
@@ -181,8 +181,8 @@ function findHostInstanceWithWarning(
   methodName: string,
 ): PublicInstance | null {
   if (__DEV__) {
-    const fiber = getInstance(component);
-    if (fiber === undefined) {
+    const instance = getInstance(component);
+    if (instance === undefined) {
       if (typeof component.render === 'function') {
         throw new Error('Unable to find node on an unmounted component.');
       } else {
@@ -192,6 +192,7 @@ function findHostInstanceWithWarning(
         );
       }
     }
+    const fiber = instance.current;
     const hostFiber = findCurrentHostFiber(fiber);
     if (hostFiber === null) {
       return null;
@@ -713,13 +714,17 @@ if (__DEV__) {
     return currentHook;
   };
 
+  // DevTools may hold on to a Fiber across commits, so these resolve the
+  // version of the node that's currently committed before acting on it.
+
   // Support DevTools editable values for useState and useReducer.
   overrideHookState = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     id: number,
     path: Array<string | number>,
     value: any,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     const hook = findHook(fiber, id);
     if (hook !== null) {
       const newState = copyWithSet(hook.memoizedState, path, value);
@@ -740,10 +745,11 @@ if (__DEV__) {
     }
   };
   overrideHookStateDeletePath = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     id: number,
     path: Array<string | number>,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     const hook = findHook(fiber, id);
     if (hook !== null) {
       const newState = copyWithDelete(hook.memoizedState, path);
@@ -764,11 +770,12 @@ if (__DEV__) {
     }
   };
   overrideHookStateRenamePath = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     id: number,
     oldPath: Array<string | number>,
     newPath: Array<string | number>,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     const hook = findHook(fiber, id);
     if (hook !== null) {
       const newState = copyWithRename(hook.memoizedState, oldPath, newPath);
@@ -790,7 +797,12 @@ if (__DEV__) {
   };
 
   // Support DevTools props for function components, forwardRef, memo, host components, etc.
-  overrideProps = (fiber: Fiber, path: Array<string | number>, value: any) => {
+  overrideProps = (
+    fiberFromDevTools: Fiber,
+    path: Array<string | number>,
+    value: any,
+  ) => {
+    const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithSet(fiber.memoizedProps, path, value);
     if (fiber.alternate) {
       fiber.alternate.pendingProps = fiber.pendingProps;
@@ -800,7 +812,11 @@ if (__DEV__) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
-  overridePropsDeletePath = (fiber: Fiber, path: Array<string | number>) => {
+  overridePropsDeletePath = (
+    fiberFromDevTools: Fiber,
+    path: Array<string | number>,
+  ) => {
+    const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithDelete(fiber.memoizedProps, path);
     if (fiber.alternate) {
       fiber.alternate.pendingProps = fiber.pendingProps;
@@ -811,10 +827,11 @@ if (__DEV__) {
     }
   };
   overridePropsRenamePath = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     oldPath: Array<string | number>,
     newPath: Array<string | number>,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithRename(fiber.memoizedProps, oldPath, newPath);
     if (fiber.alternate) {
       fiber.alternate.pendingProps = fiber.pendingProps;
@@ -825,14 +842,16 @@ if (__DEV__) {
     }
   };
 
-  scheduleUpdate = (fiber: Fiber) => {
+  scheduleUpdate = (fiberFromDevTools: Fiber) => {
+    const fiber = fiberFromDevTools.instance.current;
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
 
-  scheduleRetry = (fiber: Fiber) => {
+  scheduleRetry = (fiberFromDevTools: Fiber) => {
+    const fiber = fiberFromDevTools.instance.current;
     const lane = claimNextRetryLane();
     const root = enqueueConcurrentRenderForLane(fiber, lane);
     if (root !== null) {

@@ -324,10 +324,6 @@ export function createFragmentInstance(fiber): null {
   return null;
 }
 
-export function updateFragmentInstanceFiber(fiber, instance): void {
-  // Noop
-}
-
 export function commitNewChildToFragmentInstance(
   child,
   fragmentInstance,

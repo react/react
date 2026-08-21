@@ -814,11 +814,10 @@ export function accumulateSinglePhaseListeners(
     // listeners.
     if (enableCreateEventHandleAPI && nativeEvent.type === 'beforeblur') {
       // $FlowFixMe[prop-missing] internal field
-      const detachedInterceptFiber = nativeEvent._detachedInterceptFiber;
+      const detachedInterceptInstance = nativeEvent._detachedInterceptFiber;
       if (
-        detachedInterceptFiber !== null &&
-        (detachedInterceptFiber === instance ||
-          detachedInterceptFiber === instance.alternate)
+        detachedInterceptInstance !== null &&
+        detachedInterceptInstance === instance.instance
       ) {
         listeners = [];
       }

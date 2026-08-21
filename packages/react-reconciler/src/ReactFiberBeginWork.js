@@ -2055,7 +2055,7 @@ function updateHostHoistable(
           workInProgress.type,
           workInProgress.pendingProps,
           getRootHostContainer(),
-          workInProgress,
+          workInProgress.instance,
         );
       }
     }

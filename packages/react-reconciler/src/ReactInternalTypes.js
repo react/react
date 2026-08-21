@@ -84,6 +84,19 @@ export type MemoCache = {
   index: number,
 };
 
+// The identity of a node in the tree. Every version of the node (each Fiber
+// that was ever created for it) points to the same instance, and the instance
+// points back to the committed version. Anything that needs to find a node
+// again later (hook dispatchers, class instances, host instances) holds the
+// instance rather than a Fiber, because Fibers are replaced on every update.
+export type FiberInstance = {
+  // The version of this node in the committed tree.
+  current: Fiber,
+  // The version that `current` replaced in the commit that made it current.
+  // It's the base for diffing during that commit. Null if the node mounted.
+  previous: Fiber | null,
+};
+
 // A Fiber is work on a Component that needs to be done or was done. There can
 // be more than one per component.
 export type Fiber = {
@@ -167,6 +180,9 @@ export type Fiber = {
 
   lanes: Lanes,
   childLanes: Lanes,
+
+  // Shared by every version of this node. See FiberInstance.
+  handle: FiberInstance,
 
   // This is a pooled version of a Fiber. Every fiber that gets updated will
   // eventually have a pair. There are cases when we can clean up pairs to save

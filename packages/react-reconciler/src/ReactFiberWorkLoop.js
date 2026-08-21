@@ -14,7 +14,7 @@ import type {
   Thenable,
   GestureOptionsRequired,
 } from 'shared/ReactTypes';
-import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import type {Fiber, FiberInstance, FiberRoot} from './ReactInternalTypes';
 import type {Lanes, Lane} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
 import type {SuspenseState} from './ReactFiberSuspenseComponent';
@@ -127,7 +127,7 @@ import {
   flushHydrationEvents,
 } from './ReactFiberConfig';
 
-import {createWorkInProgress, resetWorkInProgress} from './ReactFiber';
+import {commitWorkInProgressAsCurrent, createWorkInProgress, resetWorkInProgress} from './ReactFiber';
 import {isRootDehydrated} from './ReactFiberShellHydration';
 import {
   getIsHydrating,
@@ -437,6 +437,9 @@ const RootCompleted = 5;
 let executionContext: ExecutionContext = NoContext;
 // The root we're working on
 let workInProgressRoot: FiberRoot | null = null;
+// The HostRoot fiber of the tree we're working on. Unlike workInProgressRoot,
+// this isn't cleared when the render finishes because it's the finished tree.
+let workInProgressRootFiber: Fiber | null = null;
 // The fiber we're working on
 let workInProgress: Fiber | null = null;
 // The lanes we're rendering
@@ -767,6 +770,15 @@ let isRunningInsertionEffect = false;
 
 export function getWorkInProgressRoot(): FiberRoot | null {
   return workInProgressRoot;
+}
+
+export function getWorkInProgressRootFiber(): Fiber {
+  if (workInProgressRootFiber === null) {
+    throw new Error(
+      'Expected a work-in-progress root fiber. This is a bug in React.',
+    );
+  }
+  return workInProgressRootFiber;
 }
 
 export function getCommittingRoot(): FiberRoot | null {
@@ -1219,7 +1231,7 @@ export function performWorkOnRoot(
       // TODO: It's possible that even a concurrent render may never have yielded
       // to the main thread, if it was fast enough, or if it expired. We could
       // skip the consistency check in that case, too.
-      const finishedWork: Fiber = root.current.alternate as any;
+      let finishedWork: Fiber = getWorkInProgressRootFiber();
       if (
         renderWasConcurrent &&
         !isRenderConsistentWithExternalStores(finishedWork)
@@ -1282,7 +1294,9 @@ export function performWorkOnRoot(
             // at all.
             continue;
           } else {
-            // The root errored yet again. Proceed to commit the tree.
+            // The root errored yet again. Proceed to commit the tree from
+            // the retry.
+            finishedWork = getWorkInProgressRootFiber();
             if (enableProfilerTimer && enableComponentPerformanceTrack) {
               renderEndTime = now();
             }
@@ -2254,6 +2268,7 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   resetWorkInProgressStack();
   workInProgressRoot = root;
   const rootWorkInProgress = createWorkInProgress(root.current, null);
+  workInProgressRootFiber = rootWorkInProgress;
   workInProgress = rootWorkInProgress;
   workInProgressRootRenderLanes = lanes;
   workInProgressSuspendedReason = NotSuspended;
@@ -4049,6 +4064,7 @@ function flushMutationEffects(): void {
   // componentWillUnmount, but before the layout phase, so that the finished
   // work is current during componentDidMount/Update.
   root.current = finishedWork;
+  commitWorkInProgressAsCurrent(finishedWork);
   pendingEffectsStatus = PENDING_LAYOUT_PHASE;
 }
 
@@ -5152,7 +5168,10 @@ function retryTimedOutBoundary(boundaryFiber: Fiber, retryLane: Lane) {
   }
 }
 
-export function retryDehydratedSuspenseBoundary(boundaryFiber: Fiber) {
+export function retryDehydratedSuspenseBoundary(
+  boundaryInstance: FiberInstance,
+) {
+  const boundaryFiber = boundaryInstance.current;
   const suspenseState: null | SuspenseState = boundaryFiber.memoizedState;
   let retryLane: Lane = NoLane;
   if (suspenseState !== null) {
@@ -5161,7 +5180,11 @@ export function retryDehydratedSuspenseBoundary(boundaryFiber: Fiber) {
   retryTimedOutBoundary(boundaryFiber, retryLane);
 }
 
-export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
+export function resolveRetryWakeable(
+  boundaryInstance: FiberInstance,
+  wakeable: Wakeable,
+) {
+  const boundaryFiber = boundaryInstance.current;
   let retryLane: Lane = NoLane; // Default
   let retryCache: WeakSet<Wakeable> | Set<Wakeable> | null;
   switch (boundaryFiber.tag) {

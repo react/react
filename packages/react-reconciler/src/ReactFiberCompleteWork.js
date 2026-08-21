@@ -694,7 +694,7 @@ function updateHostText(
         newText,
         rootContainerInstance,
         currentHostContext,
-        workInProgress,
+        workInProgress.instance,
       );
     } else {
       workInProgress.stateNode = current.stateNode;
@@ -1428,7 +1428,7 @@ function completeWork(
             newProps,
             rootContainerInstance,
             currentHostContext,
-            workInProgress,
+            workInProgress.instance,
           );
           // TODO: For persistent renderers, we should pass children as part
           // of the initial instance creation
@@ -1499,7 +1499,7 @@ function completeWork(
             newText,
             rootContainerInstance,
             currentHostContext,
-            workInProgress,
+            workInProgress.instance,
           );
         }
       }
@@ -1945,7 +1945,7 @@ function completeWork(
         if (current === null) {
           const scopeInstance: ReactScopeInstance = createScopeInstance();
           workInProgress.stateNode = scopeInstance;
-          prepareScopeUpdate(scopeInstance, workInProgress);
+          prepareScopeUpdate(scopeInstance, workInProgress.instance);
           if (workInProgress.ref !== null) {
             // Scope components always do work in the commit phase if there's a
             // ref attached.

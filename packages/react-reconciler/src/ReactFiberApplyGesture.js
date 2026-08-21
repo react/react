@@ -855,7 +855,13 @@ function insertDestinationClonesOfFiber(
               // individual properties, the Update flag can be a false positive.
               // We have to apply the new props first o detect any mutations and
               // then revert them.
-              commitUpdate(instance, type, oldProps, newProps, finishedWork);
+              commitUpdate(
+                instance,
+                type,
+                oldProps,
+                newProps,
+                finishedWork.instance,
+              );
               if (viewTransitionMutationContext) {
                 console.error(
                   'startGestureTransition() caused something to mutate <%s>. ' +
@@ -867,7 +873,13 @@ function insertDestinationClonesOfFiber(
                 );
               }
               // Revert
-              commitUpdate(instance, type, newProps, oldProps, finishedWork);
+              commitUpdate(
+                instance,
+                type,
+                newProps,
+                oldProps,
+                finishedWork.instance,
+              );
             } finally {
               popMutationContext(prev);
             }
@@ -899,7 +911,7 @@ function insertDestinationClonesOfFiber(
         const oldProps = current.memoizedProps;
         const type = finishedWork.type;
         // Apply the delta to the clone.
-        commitUpdate(clone, type, oldProps, newProps, finishedWork);
+        commitUpdate(clone, type, oldProps, newProps, finishedWork.instance);
       }
 
       if (visitPhase === CLONE_EXIT || visitPhase === CLONE_UNHIDE) {

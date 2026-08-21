@@ -8,7 +8,11 @@
  */
 
 import type {DOMEventName} from '../events/DOMEventNames';
-import type {Fiber, FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
+import type {
+  Fiber,
+  FiberInstance,
+  FiberRoot,
+} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   BoundingRect,
   IntersectionObserverOptions,
@@ -2994,7 +2998,7 @@ type StoredEventListener = {
 };
 
 export type FragmentInstanceType = {
-  _fragmentFiber: Fiber,
+  _fiberInstance: FiberInstance,
   _eventListeners: null | Array<StoredEventListener>,
   _observers: null | Set<IntersectionObserver | ResizeObserver>,
   addEventListener(
@@ -3022,7 +3026,7 @@ export type FragmentInstanceType = {
 };
 
 function FragmentInstance(this: FragmentInstanceType, fragmentFiber: Fiber) {
-  this._fragmentFiber = fragmentFiber;
+  this._fiberInstance = fragmentFiber.instance;
   this._eventListeners = null;
   this._observers = null;
 }
@@ -3071,7 +3075,7 @@ FragmentInstance.prototype.addEventListener = function (
       attachedListener,
     });
     traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
+      this._fiberInstance.current,
       addEventListenerToChild,
       type,
       attachedListener,
@@ -3114,7 +3118,7 @@ FragmentInstance.prototype.removeEventListener = function (
     listeners[index];
   const attachOptions = getAttachOptions(storedOptions);
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     removeEventListenerFromChild,
     type,
     attachedListener,
@@ -3189,7 +3193,7 @@ FragmentInstance.prototype.dispatchEvent = function (
   event: Event,
 ): boolean {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
-    this._fragmentFiber,
+    this._fiberInstance.current,
   );
   if (parentHostFiber === null) {
     return true;
@@ -3244,7 +3248,7 @@ FragmentInstance.prototype.focus = function (
   focusOptions?: FocusOptions,
 ): void {
   traverseFragmentInstancesAndTextInstancesDeeply(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     setFocusOnFiberIfFocusable,
     focusOptions,
   );
@@ -3269,7 +3273,7 @@ FragmentInstance.prototype.focusLast = function (
 ): void {
   const children: Array<Fiber> = [];
   traverseFragmentInstancesAndTextInstancesDeeply(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     collectChildren,
     children,
   );
@@ -3287,7 +3291,7 @@ function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
-    this._fragmentFiber,
+    this._fiberInstance.current,
   );
   if (parentHostFiber === null) {
     return;
@@ -3304,7 +3308,7 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
     return;
   }
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     blurActiveElementWithinFragment,
     activeElement,
   );
@@ -3335,7 +3339,7 @@ FragmentInstance.prototype.observeUsing = function (
       let hasText = false;
       let hasElement = false;
       traverseFragmentInstancesAndTextInstances(
-        this._fragmentFiber,
+        this._fiberInstance.current,
         (child: Fiber) => {
           if (child.tag === HostText) {
             hasText = true;
@@ -3360,7 +3364,7 @@ FragmentInstance.prototype.observeUsing = function (
   }
   this._observers.add(observer);
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     observeChild,
     observer,
   );
@@ -3395,7 +3399,7 @@ FragmentInstance.prototype.unobserveUsing = function (
   } else {
     observers.delete(observer);
     traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
+      this._fiberInstance.current,
       unobserveChild,
       observer,
     );
@@ -3421,7 +3425,7 @@ FragmentInstance.prototype.getClientRects = function (
 ): Array<DOMRect> {
   const rects: Array<DOMRect> = [];
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     collectClientRects,
     rects,
   );
@@ -3447,7 +3451,7 @@ FragmentInstance.prototype.getRootNode = function (
   getRootNodeOptions?: {composed: boolean},
 ): Document | ShadowRoot | FragmentInstanceType {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
-    this._fragmentFiber,
+    this._fiberInstance.current,
   );
   if (parentHostFiber === null) {
     return this;
@@ -3466,14 +3470,14 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   otherNode: Instance,
 ): number {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
-    this._fragmentFiber,
+    this._fiberInstance.current,
   );
   if (parentHostFiber === null) {
     return Node.DOCUMENT_POSITION_DISCONNECTED;
   }
   const children: Array<Fiber> = [];
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     collectChildren,
     children,
   );
@@ -3485,16 +3489,16 @@ FragmentInstance.prototype.compareDocumentPosition = function (
     // Match non-empty CDP: when portaled, position against the portal
     // container rather than the React host parent.
     let emptyParentHostInstance = parentHostInstance;
-    if (fiberIsPortaledIntoHost(this._fragmentFiber)) {
+    if (fiberIsPortaledIntoHost(this._fiberInstance.current)) {
       const portalContainer = getFragmentPortalContainerInfo(
-        this._fragmentFiber,
+        this._fiberInstance.current,
       );
       if (portalContainer != null) {
         emptyParentHostInstance = portalContainer;
       }
     }
     return compareDocumentPositionForEmptyFragment(
-      this._fragmentFiber,
+      this._fiberInstance.current,
       emptyParentHostInstance,
       otherNode,
       getInstanceFromHostFiber,
@@ -3511,7 +3515,7 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   // If the fragment has been portaled into another host instance, we need to
   // our best guess is to use the parent of the child instance, rather than
   // the fiber tree host parent.
-  const parentHostInstanceFromDOM = fiberIsPortaledIntoHost(this._fragmentFiber)
+  const parentHostInstanceFromDOM = fiberIsPortaledIntoHost(this._fiberInstance.current)
     ? (firstNode.parentElement as ?Instance)
     : parentHostInstance;
 
@@ -3572,7 +3576,7 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   const documentPositionMatchesFiberPosition =
     validateDocumentPositionWithFiberTree(
       result,
-      this._fragmentFiber,
+      this._fiberInstance.current,
       children[0],
       children[children.length - 1],
       otherNode,
@@ -3654,7 +3658,7 @@ if (enableFragmentRefsScrollIntoView) {
     // First, get the children nodes
     const children: Array<Fiber> = [];
     traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
+      this._fiberInstance.current,
       collectChildren,
       children,
     );
@@ -3664,12 +3668,12 @@ if (enableFragmentRefsScrollIntoView) {
     // If there are no children, we can use the parent and siblings to determine a position
     if (children.length === 0) {
       const hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
-        this._fragmentFiber,
+        this._fiberInstance.current,
       );
       const targetFiber = resolvedAlignToTop
         ? hostSiblings[1] ||
           hostSiblings[0] ||
-          getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
+          getFragmentParentInstanceOrContainerFiber(this._fiberInstance.current)
         : hostSiblings[0] || hostSiblings[1];
 
       if (targetFiber === null) {
@@ -3768,13 +3772,6 @@ export function createFragmentInstance(
     );
   }
   return fragmentInstance;
-}
-
-export function updateFragmentInstanceFiber(
-  fragmentFiber: Fiber,
-  instance: FragmentInstanceType,
-): void {
-  instance._fragmentFiber = fragmentFiber;
 }
 
 export function commitNewChildToFragmentInstance(

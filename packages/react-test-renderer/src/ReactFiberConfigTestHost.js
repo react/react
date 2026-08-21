@@ -482,13 +482,6 @@ export function createFragmentInstance(
   return null;
 }
 
-export function updateFragmentInstanceFiber(
-  fragmentFiber: Object,
-  instance: FragmentInstanceType,
-): void {
-  // Noop
-}
-
 export function commitNewChildToFragmentInstance(
   child: Instance,
   fragmentInstance: FragmentInstanceType,
@@ -506,7 +499,7 @@ export function deleteChildFromFragmentInstance(
 export function getInstanceFromNode(mockNode: Object): Object | null {
   const instance = nodeToInstanceMap.get(mockNode);
   if (instance !== undefined) {
-    return instance.internalInstanceHandle;
+    return instance.internalInstanceHandle.current;
   }
   return null;
 }

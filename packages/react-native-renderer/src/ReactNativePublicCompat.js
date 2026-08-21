@@ -181,9 +181,9 @@ export function getNodeFromInternalInstanceHandle(
     // $FlowExpectedError[incompatible-type] internalInstanceHandle is opaque but we need to make an exception here.
     internalInstanceHandle &&
     // $FlowExpectedError[incompatible-type]
-    internalInstanceHandle.stateNode &&
+    internalInstanceHandle.current.stateNode &&
     // $FlowExpectedError[incompatible-use]
-    internalInstanceHandle.stateNode.node
+    internalInstanceHandle.current.stateNode.node
   );
 }
 
@@ -204,8 +204,8 @@ export function isChildPublicInstance(
       childInternalInstanceHandle != null
     ) {
       return doesFiberContain(
-        parentInternalInstanceHandle,
-        childInternalInstanceHandle,
+        parentInternalInstanceHandle.current,
+        childInternalInstanceHandle.current,
       );
     }
 

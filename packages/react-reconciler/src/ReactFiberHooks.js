@@ -17,6 +17,7 @@ import type {
 } from 'shared/ReactTypes';
 import type {
   Fiber,
+  FiberInstance,
   FiberRoot,
   Dispatcher,
   HookType,
@@ -1298,7 +1299,7 @@ function mountReducer<S, I, A>(
   hook.queue = queue;
   const dispatch: Dispatch<A> = (queue.dispatch = dispatchReducerAction.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     queue,
   ) as any);
   return [hook.memoizedState, dispatch];
@@ -1718,7 +1719,9 @@ function mountSyncExternalStore<T>(
   hook.queue = inst;
 
   // Schedule an effect to subscribe to the store.
-  mountEffect(subscribeToStore.bind(null, fiber, inst, subscribe), [subscribe]);
+  mountEffect(subscribeToStore.bind(null, fiber.instance, inst, subscribe), [
+    subscribe,
+  ]);
 
   // Schedule an effect to update the mutable instance fields. We will update
   // this whenever subscribe, getSnapshot, or value changes. Because there's no
@@ -1729,7 +1732,13 @@ function mountSyncExternalStore<T>(
   pushSimpleEffect(
     HookHasEffect | HookPassive,
     createEffectInstance(),
-    updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
+    updateStoreInstance.bind(
+      null,
+      fiber.instance,
+      inst,
+      nextSnapshot,
+      getSnapshot,
+    ),
     null,
   );
 
@@ -1779,7 +1788,7 @@ function updateSyncExternalStore<T>(
   }
   const inst = hook.queue;
 
-  updateEffect(subscribeToStore.bind(null, fiber, inst, subscribe), [
+  updateEffect(subscribeToStore.bind(null, fiber.instance, inst, subscribe), [
     subscribe,
   ]);
 
@@ -1806,7 +1815,13 @@ function updateSyncExternalStore<T>(
   pushSimpleEffect(
     storeChanged ? HookHasEffect | HookPassive : HookPassive,
     createEffectInstance(),
-    updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
+    updateStoreInstance.bind(
+      null,
+      fiber.instance,
+      inst,
+      nextSnapshot,
+      getSnapshot,
+    ),
     null,
   );
 
@@ -1859,7 +1874,7 @@ function pushStoreConsistencyCheck<T>(
 }
 
 function updateStoreInstance<T>(
-  fiber: Fiber,
+  instance: FiberInstance,
   inst: StoreInstance<T>,
   nextSnapshot: T,
   getSnapshot: () => T,
@@ -1877,12 +1892,12 @@ function updateStoreInstance<T>(
     // Force a re-render.
     // We intentionally don't log update times and stacks here because this
     // was not an external trigger but rather an internal one.
-    forceStoreRerender(fiber);
+    forceStoreRerender(instance.current);
   }
 }
 
 function subscribeToStore<T>(
-  fiber: Fiber,
+  instance: FiberInstance,
   inst: StoreInstance<T>,
   subscribe: (() => void) => () => void,
 ): any {
@@ -1891,6 +1906,7 @@ function subscribeToStore<T>(
     // read from the store.
     if (checkIfSnapshotChanged(inst)) {
       // Force a re-render.
+      const fiber = instance.current;
       startUpdateTimerByLane(SyncLane, 'updateSyncExternalStore()', fiber);
       forceStoreRerender(fiber);
     }
@@ -1952,7 +1968,7 @@ function mountState<S>(
   const queue = hook.queue;
   const dispatch: Dispatch<BasicStateAction<S>> = dispatchSetState.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     queue,
   ) as any;
   queue.dispatch = dispatch;
@@ -1989,7 +2005,7 @@ function mountOptimistic<S, A>(
   // This is different than the normal setState function.
   const dispatch: A => void = dispatchOptimisticSetState.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     true,
     queue,
   ) as any;
@@ -2104,13 +2120,13 @@ type ActionStateQueueNode<S, P> = {
 };
 
 function dispatchActionState<S, P>(
-  fiber: Fiber,
+  instance: FiberInstance,
   actionQueue: ActionStateQueue<S, P>,
   setPendingState: boolean => void,
   setState: Dispatch<ActionStateQueueNode<S, P>>,
   payload: P,
 ): void {
-  if (isRenderPhaseUpdate(fiber)) {
+  if (isRenderPhaseUpdate(instance.current)) {
     throw new Error('Cannot update action state while rendering.');
   }
 
@@ -2415,7 +2431,7 @@ function mountActionState<S, P>(
   stateHook.queue = stateQueue;
   const setState: Dispatch<S | Awaited<S>> = dispatchSetState.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     stateQueue as any as UpdateQueue<S | Awaited<S>, S | Awaited<S>>,
   ) as any;
   stateQueue.dispatch = setState;
@@ -2425,7 +2441,7 @@ function mountActionState<S, P>(
   const pendingStateHook = mountStateImpl(false as Thenable<boolean> | boolean);
   const setPendingState: boolean => void = dispatchOptimisticSetState.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     false,
     pendingStateHook.queue as any as UpdateQueue<
       S | Awaited<S>,
@@ -2447,7 +2463,7 @@ function mountActionState<S, P>(
   actionQueueHook.queue = actionQueue;
   const dispatch = (dispatchActionState as any).bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     actionQueue,
     setPendingState,
     setState,
@@ -3115,13 +3131,14 @@ function releaseAsyncTransition() {
 }
 
 function startTransition<S>(
-  fiber: Fiber,
+  instance: FiberInstance,
   queue: UpdateQueue<S | Thenable<S>, BasicStateAction<S | Thenable<S>>>,
   pendingState: S,
   finishedState: S,
   callback: () => mixed,
   options?: StartTransitionOptions,
 ): void {
+  const fiber = instance.current;
   const previousPriority = getCurrentUpdatePriority();
   setCurrentUpdatePriority(
     higherEventPriority(previousPriority, ContinuousEventPriority),
@@ -3159,7 +3176,7 @@ function startTransition<S>(
   // diverges; for example, both an optimistic update and this one should
   // share the same lane.
   ReactSharedInternals.T = currentTransition;
-  dispatchOptimisticSetState(fiber, false, queue, pendingState);
+  dispatchOptimisticSetState(instance, false, queue, pendingState);
 
   try {
     const returnValue = callback();
@@ -3286,7 +3303,7 @@ export function startHostTransition<F>(
   startHostActionTimer(formFiber);
 
   startTransition(
-    formFiber,
+    formFiber.instance,
     queue,
     pendingState,
     NoPendingHostTransition,
@@ -3430,7 +3447,7 @@ function mountTransition(): [
   // The `start` method never changes.
   const start = startTransition.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
     stateHook.queue,
     true,
     false,
@@ -3521,7 +3538,7 @@ function mountRefresh(): any {
   const hook = mountWorkInProgressHook();
   const refresh = (hook.memoizedState = refreshCache.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber.instance,
   ));
   return refresh;
 }
@@ -3531,7 +3548,12 @@ function updateRefresh(): any {
   return hook.memoizedState;
 }
 
-function refreshCache<T>(fiber: Fiber, seedKey: ?() => T, seedValue: T): void {
+function refreshCache<T>(
+  instance: FiberInstance,
+  seedKey: ?() => T,
+  seedValue: T,
+): void {
+  const fiber = instance.current;
   // TODO: Does Cache work in legacy mode? Should decide and write a test.
   // TODO: Consider warning if the refresh is at discrete priority, or if we
   // otherwise suspect that it wasn't batched properly.
@@ -3581,10 +3603,11 @@ function refreshCache<T>(fiber: Fiber, seedKey: ?() => T, seedValue: T): void {
 }
 
 function dispatchReducerAction<S, A>(
-  fiber: Fiber,
+  instance: FiberInstance,
   queue: UpdateQueue<S, A>,
   action: A,
 ): void {
+  const fiber = instance.current;
   if (__DEV__) {
     // using a reference to `arguments` bails out of GCC optimizations which affect function arity
     const args = arguments;
@@ -3624,10 +3647,11 @@ function dispatchReducerAction<S, A>(
 }
 
 function dispatchSetState<S, A>(
-  fiber: Fiber,
+  instance: FiberInstance,
   queue: UpdateQueue<S, A>,
   action: A,
 ): void {
+  const fiber = instance.current;
   if (__DEV__) {
     // using a reference to `arguments` bails out of GCC optimizations which affect function arity
     const args = arguments;
@@ -3726,11 +3750,12 @@ function dispatchSetStateInternal<S, A>(
 }
 
 function dispatchOptimisticSetState<S, A>(
-  fiber: Fiber,
+  instance: FiberInstance,
   throwIfDuringRender: boolean,
   queue: UpdateQueue<S, A>,
   action: A,
 ): void {
+  const fiber = instance.current;
   const transition = requestCurrentTransition();
 
   if (__DEV__) {
@@ -3836,10 +3861,9 @@ function dispatchOptimisticSetState<S, A>(
 }
 
 function isRenderPhaseUpdate(fiber: Fiber): boolean {
-  const alternate = fiber.alternate;
   return (
-    fiber === currentlyRenderingFiber ||
-    (alternate !== null && alternate === currentlyRenderingFiber)
+    currentlyRenderingFiber !== null &&
+    fiber.instance === currentlyRenderingFiber.instance
   );
 }
 

@@ -69,6 +69,7 @@ import {
   attachPingListener,
   restorePendingUpdaters,
   renderDidSuspend,
+  getWorkInProgressRootFiber,
 } from './ReactFiberWorkLoop';
 import {propagateParentContextChangesToDeferredTree} from './ReactFiberNewContext';
 import {logUncaughtError, logCaughtError} from './ReactFiberErrorLogger';
@@ -604,7 +605,7 @@ function throwException(
           createCapturedValueAtFiber(wrapperError, sourceFiber),
         );
       }
-      const workInProgress: Fiber = (root.current as any).alternate;
+      const workInProgress: Fiber = getWorkInProgressRootFiber();
       // Schedule an update at the root to log the error but this shouldn't
       // actually happen because we should recover.
       workInProgress.flags |= ShouldCapture;

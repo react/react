@@ -249,7 +249,7 @@ function legacyCreateRootFromDOMContainer(
       null,
     );
     container._reactRootContainer = root;
-    markContainerAsRoot(root.current, container);
+    markContainerAsRoot(root.current.instance, container);
 
     const rootContainerElement =
       !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
@@ -286,7 +286,7 @@ function legacyCreateRootFromDOMContainer(
       null, // transitionCallbacks
     );
     container._reactRootContainer = root;
-    markContainerAsRoot(root.current, container);
+    markContainerAsRoot(root.current.instance, container);
 
     const rootContainerElement =
       !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
