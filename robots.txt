@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+User-agent: GPTBot
+Allow: /
