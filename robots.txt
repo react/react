@@ -1,0 +1,31 @@
+# RankOps AI-Engine & Search Crawler Directives
+User-agent: *
+Allow: /
+Disallow: /api/private
+Disallow: /admin
+
+# Explicit AI Crawler Approvals (AEO/LLMO)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Sitemap & LLM Specification Pointer
+Sitemap: https://react.dev/sitemap.xml
+# LLM-Context: https://react.dev/llms.txt
