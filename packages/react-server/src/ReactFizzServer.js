@@ -15,6 +15,7 @@ import type {
 import type {
   ReactNodeList,
   ReactContext,
+  ReactRecoverable,
   ReactConsumerType,
   Wakeable,
   Thenable,
@@ -3718,6 +3719,12 @@ function retryNode(request: Request, task: Task): void {
         readContext(context),
         childIndex,
       );
+    }
+
+    if (maybeUsable.$$typeof === REACT_RECOVERABLE_TYPE) {
+      // Materialize the diagnostic when the rendered usable is consumed.
+      const recoverable: ReactRecoverable = maybeUsable as any;
+      throw createRecoverableError(recoverable);
     }
 
     // $FlowFixMe[method-unbinding]

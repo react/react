@@ -822,7 +822,20 @@ function use<T>(usable: Usable<T>): T {
     if (typeof usable.then === 'function') {
       // This is a thenable.
       const thenable: Thenable<T> = usable as any;
-      return unwrapThenable(thenable);
+      const result = unwrapThenable(thenable);
+      if (
+        // $FlowFixMe[invalid-compare]
+        result !== null &&
+        typeof result === 'object' &&
+        // $FlowFixMe[prop-missing]
+        result.$$typeof === REACT_RECOVERABLE_TYPE
+      ) {
+        // Create the recoverable error here so its stack captures the
+        // component that passed the thenable to use().
+        const recoverable: ReactRecoverable = result as any;
+        throw createRecoverableError(recoverable);
+      }
+      return result;
     } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
       // Create the recoverable error here so its stack captures the component
       // that passed this value to use(). The internal brand lets the renderer

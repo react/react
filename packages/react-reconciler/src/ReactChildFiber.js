@@ -38,6 +38,7 @@ import {
   REACT_PORTAL_TYPE,
   REACT_LAZY_TYPE,
   REACT_CONTEXT_TYPE,
+  REACT_RECOVERABLE_TYPE,
   REACT_LEGACY_ELEMENT_TYPE,
   REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
@@ -824,6 +825,12 @@ function createChildReconciler(
         );
       }
 
+      if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
+        // Fiber is the final renderer, so there is no downstream host that
+        // needs to recover this subtree. Treat it as an empty child.
+        return null;
+      }
+
       throwOnInvalidObjectType(returnFiber, newChild);
     }
 
@@ -967,6 +974,12 @@ function createChildReconciler(
         );
       }
 
+      if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
+        // Fiber is the final renderer, so there is no downstream host that
+        // needs to recover this subtree. Treat it as an empty child.
+        return null;
+      }
+
       throwOnInvalidObjectType(returnFiber, newChild);
     }
 
@@ -1099,6 +1112,12 @@ function createChildReconciler(
           readContextDuringReconciliation(returnFiber, context, lanes),
           lanes,
         );
+      }
+
+      if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
+        // Fiber is the final renderer, so there is no downstream host that
+        // needs to recover this subtree. Treat it as an empty child.
+        return null;
       }
 
       throwOnInvalidObjectType(returnFiber, newChild);
@@ -1997,6 +2016,12 @@ function createChildReconciler(
           readContextDuringReconciliation(returnFiber, context, lanes),
           lanes,
         );
+      }
+
+      if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
+        // Fiber is the final renderer, so there is no downstream host that
+        // needs to recover this subtree. Treat it as an empty child.
+        return deleteRemainingChildren(returnFiber, currentFirstChild);
       }
 
       throwOnInvalidObjectType(returnFiber, newChild);

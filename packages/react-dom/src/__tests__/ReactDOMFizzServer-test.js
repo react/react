@@ -576,6 +576,157 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // @gate enableBrowserAPI
+  it('can resolve a thenable to browser-only rendering', async () => {
+    let resolveBrowserOnly;
+    const browserOnly = new Promise(resolve => {
+      resolveBrowserOnly = resolve;
+    });
+    const browserReason = 'Only render this content in a browser';
+    const initializeReason = jest.fn(() => browserReason);
+
+    function BrowserOnly() {
+      use(browserOnly);
+      return <span>Browser</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveBrowserOnly(ReactDOM.browser(initializeReason));
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].stack).toContain('BrowserOnly');
+    expect(browserBailouts[0].cause).toBe(browserReason);
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('can render a thenable that resolves to browser-only rendering', async () => {
+    let resolveBrowserOnly;
+    const browserOnly = new Promise(resolve => {
+      resolveBrowserOnly = resolve;
+    });
+    const browserReason = 'Only render this content in a browser';
+    const initializeReason = jest.fn(() => browserReason);
+    let isClient = false;
+
+    function BrowserOnly() {
+      return isClient ? <span>Browser</span> : browserOnly;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error, errorInfo) {
+          browserBailouts.push({error, errorInfo});
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveBrowserOnly(ReactDOM.browser(initializeReason));
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].error.message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].error.cause).toBe(browserReason);
+    expect(
+      normalizeCodeLocInfo(browserBailouts[0].errorInfo.componentStack),
+    ).toBe(componentStack(['BrowserOnly', 'Suspense', 'div', 'App']));
+
+    isClient = true;
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
   it('supports omitted and direct string browser reasons', async () => {
     const directReason = 'Only render this content in a browser';
     const withoutReason = ReactDOM.browser();

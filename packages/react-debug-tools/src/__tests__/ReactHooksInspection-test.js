@@ -687,6 +687,27 @@ describe('ReactHooksInspection', () => {
     `);
   });
 
+  it('should inspect a Promise resolved to a recoverable', () => {
+    const recoverable = {
+      $$typeof: Symbol.for('react.recoverable'),
+      _reason: undefined,
+    };
+    const promise = {
+      then() {},
+      status: 'fulfilled',
+      value: recoverable,
+    };
+
+    function Foo() {
+      React.use(promise);
+    }
+
+    const tree = ReactDebugTools.inspectHooks(Foo, {});
+    expect(tree).toHaveLength(1);
+    expect(tree[0].name).toBe('Use');
+    expect(tree[0].value).toBe(undefined);
+  });
+
   it('should inspect use() calls for unresolved Promise', () => {
     const promise = Promise.resolve('hi');
 
