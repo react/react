@@ -41,6 +41,33 @@ function resolveDispatcher() {
   return dispatcher as any as Dispatcher;
 }
 
+function warnOnMissingEffectCallback(
+  hookName: 'useEffect' | 'useInsertionEffect' | 'useLayoutEffect',
+  create: mixed,
+): void {
+  if (__DEV__) {
+    if (create == null) {
+      switch (hookName) {
+        case 'useEffect':
+          console.warn(
+            'React Hook useEffect requires an effect callback. Did you forget to pass a callback to the hook?',
+          );
+          break;
+        case 'useInsertionEffect':
+          console.warn(
+            'React Hook useInsertionEffect requires an effect callback. Did you forget to pass a callback to the hook?',
+          );
+          break;
+        case 'useLayoutEffect':
+          console.warn(
+            'React Hook useLayoutEffect requires an effect callback. Did you forget to pass a callback to the hook?',
+          );
+          break;
+      }
+    }
+  }
+}
+
 export function getCacheForType<T>(resourceType: () => T): T {
   const dispatcher = ReactSharedInternals.A;
   if (!dispatcher) {
@@ -88,14 +115,7 @@ export function useEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
-  if (__DEV__) {
-    if (create == null) {
-      console.warn(
-        'React Hook useEffect requires an effect callback. Did you forget to pass a callback to the hook?',
-      );
-    }
-  }
-
+  warnOnMissingEffectCallback('useEffect', create);
   const dispatcher = resolveDispatcher();
   return dispatcher.useEffect(create, deps);
 }
@@ -104,14 +124,7 @@ export function useInsertionEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
-  if (__DEV__) {
-    if (create == null) {
-      console.warn(
-        'React Hook useInsertionEffect requires an effect callback. Did you forget to pass a callback to the hook?',
-      );
-    }
-  }
-
+  warnOnMissingEffectCallback('useInsertionEffect', create);
   const dispatcher = resolveDispatcher();
   return dispatcher.useInsertionEffect(create, deps);
 }
@@ -120,14 +133,7 @@ export function useLayoutEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
-  if (__DEV__) {
-    if (create == null) {
-      console.warn(
-        'React Hook useLayoutEffect requires an effect callback. Did you forget to pass a callback to the hook?',
-      );
-    }
-  }
-
+  warnOnMissingEffectCallback('useLayoutEffect', create);
   const dispatcher = resolveDispatcher();
   return dispatcher.useLayoutEffect(create, deps);
 }
