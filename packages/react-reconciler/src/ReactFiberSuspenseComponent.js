@@ -40,6 +40,7 @@ export type SuspenseState = {
   retryLane: Lane,
   // Stashed Errors that happened while attempting to hydrate this boundary.
   hydrationErrors: Array<CapturedValue<mixed>> | null,
+  didContextChange: boolean,
 };
 
 export type SuspenseListRenderState = {
