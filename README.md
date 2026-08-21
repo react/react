@@ -71,8 +71,20 @@ Read our [contributing guide](https://legacy.reactjs.org/docs/how-to-contribute.
 
 ### [Good First Issues](https://github.com/facebook/react/labels/good%20first%20issue)
 
-To help you get your feet wet and get you familiar with our contribution process, we have a list of [good first issues](https://github.com/facebook/react/labels/good%20first%20issue) that contain bugs that have a relatively limited scope. This is a great place to get started.
+To help you get your feet wet and get you familiar with our contribution process, we have a list of [good first issues]
+(https://github.com/facebook/react/labels/good%20first%20issue) that contain bugs that have a relatively limited scope. This is a great place to get started.
 
 ### License
 
 React is [MIT licensed](./LICENSE).
+
+
+## Student Contribution
+
+This repository was studied as part of an Open Source Software contribution experiment.
+
+
+
+
+
+
