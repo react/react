@@ -8,6 +8,7 @@
  */
 
 export {
+  render,
   renderToPipeableStream,
   renderToReadableStream,
   decodeReply,
