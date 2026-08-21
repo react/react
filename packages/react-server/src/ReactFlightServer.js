@@ -4635,34 +4635,16 @@ function emitErrorChunk(
   }
 }
 
-// This maps every string in the metadata through serializeImportString the
-// way a stringify replacer would, but ahead of time so that stringify can
-// run without one. A replacer would allocate a closure for every import row
-// and take stringify off its fast path. The metadata is plain JSON data or
-// unwraps to it through toJSON.
-function transformImportMetadata(request: Request, value: mixed): mixed {
+// Null on the debug channel, which can't reference rows in the main stream.
+let importStringRequest: null | Request = null;
+
+function importMetadataReplacer(key: string, value: mixed): mixed {
   if (typeof value === 'string') {
+    const request = importStringRequest;
+    if (request === null) {
+      return escapeStringValue(value);
+    }
     return serializeImportString(request, value);
-  }
-  if (typeof value === 'object' && value !== null) {
-    if (typeof (value as any).toJSON === 'function') {
-      // stringify would have called toJSON before the replacer saw the value.
-      return transformImportMetadata(request, (value as any).toJSON());
-    }
-    if (isArray(value)) {
-      const copy: Array<mixed> = [];
-      for (let i = 0; i < value.length; i++) {
-        copy.push(transformImportMetadata(request, value[i]));
-      }
-      return copy;
-    }
-    const copy: {[string]: mixed} = {};
-    for (const name in value) {
-      if (hasOwnProperty.call(value, name)) {
-        copy[name] = transformImportMetadata(request, (value as any)[name]);
-      }
-    }
-    return copy;
   }
   return value;
 }
@@ -4673,12 +4655,14 @@ function emitImportChunk(
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): void {
-  const json: string =
-    __DEV__ && debug
-      ? // The debug channel can't reference rows in the main stream.
-        stringify(clientReferenceMetadata)
-      : // $FlowFixMe[incompatible-type] stringify can return null
-        stringify(transformImportMetadata(request, clientReferenceMetadata));
+  importStringRequest = __DEV__ && debug ? null : request;
+  let json: string;
+  try {
+    // $FlowFixMe[incompatible-type] stringify can return null
+    json = stringify(clientReferenceMetadata, importMetadataReplacer);
+  } finally {
+    importStringRequest = null;
+  }
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {

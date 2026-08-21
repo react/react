@@ -1222,6 +1222,19 @@ describe('ReactFlightDOMEdge', () => {
     expect(findsItFull.split(chunk).length - 1).toBe(10);
   });
 
+  it('should dedupe import strings produced by toJSON', async () => {
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const payload = await renderClients(
+      Array.from({length: 3}, () => ({
+        toJSON() {
+          return chunk;
+        },
+      })),
+    );
+
+    expect(payload.split(chunk).length - 1).toBe(2);
+  });
+
   it('should not dedupe strings in the model', async () => {
     // Only import metadata is deduped. Keying a map on arbitrary model strings
     // would hold them in memory for the rest of the request.
@@ -2609,6 +2622,12 @@ describe('ReactFlightDOMEdge', () => {
 
   it('can resolve a client reference while debug info is still blocked', async () => {
     const result = await renderThroughDebugChannel('path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
+  it('should escape strings in import metadata on the debug channel', async () => {
+    const result = await renderThroughDebugChannel('$path/to/chunk.js');
 
     expect(result).toBe('<span>Client</span>');
   });
