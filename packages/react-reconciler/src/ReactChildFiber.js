@@ -825,6 +825,7 @@ function createChildReconciler(
         );
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
         // Fiber is the final renderer, so there is no downstream host that
         // needs to recover this subtree. Treat it as an empty child.
@@ -974,6 +975,7 @@ function createChildReconciler(
         );
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
         // Fiber is the final renderer, so there is no downstream host that
         // needs to recover this subtree. Treat it as an empty child.
@@ -1114,6 +1116,7 @@ function createChildReconciler(
         );
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
         // Fiber is the final renderer, so there is no downstream host that
         // needs to recover this subtree. Treat it as an empty child.
@@ -2018,6 +2021,7 @@ function createChildReconciler(
         );
       }
 
+      // $FlowFixMe[invalid-compare]
       if (newChild.$$typeof === REACT_RECOVERABLE_TYPE) {
         // Fiber is the final renderer, so there is no downstream host that
         // needs to recover this subtree. Treat it as an empty child.
