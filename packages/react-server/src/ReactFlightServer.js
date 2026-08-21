@@ -6479,12 +6479,6 @@ function flushCompletedChunks(request: Request): void {
       );
     }
   }
-  drainDeliveries(request);
-  // Every path that finishes emitting ends in a flush, so this is where a
-  // consumer learns that nothing more is coming. (Flushing itself can't
-  // change the outcome: it decrements the reserved and queued counters in
-  // lockstep.)
-  closeConsumerIfDone(request);
   if (__DEV__ && request.debugDestination !== null) {
     const debugDestination = request.debugDestination;
     beginWriting(debugDestination);
@@ -6661,6 +6655,16 @@ function flushCompletedChunks(request: Request): void {
     }
     flushBuffered(destination);
   }
+  // Deliveries drain after the same rows' bytes are written: the buffered
+  // wire chunks are ready to go as-is, while delivering runs consumer code
+  // (revival, renderer wake-ups) that would otherwise sit between the byte
+  // stream and the destination on every flush.
+  drainDeliveries(request);
+  // Every path that finishes emitting ends in a flush, so this is where a
+  // consumer learns that nothing more is coming. (Flushing itself can't
+  // change the outcome: it decrements the reserved and queued counters in
+  // lockstep.)
+  closeConsumerIfDone(request);
   if (request.pendingChunks === 0) {
     if (__DEV__) {
       const debugDestination = request.debugDestination;
