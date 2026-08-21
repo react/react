@@ -618,6 +618,8 @@ export type Request = {
   writtenObjects: WeakMap<Reference, string>,
   // A null entry means the string has been seen once and is still inline.
   writtenImportStrings: Map<string, null | string>,
+  // The combined length of the keys in writtenImportStrings.
+  writtenImportStringsSize: number,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -744,6 +746,7 @@ function RequestInstance(
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
   this.writtenImportStrings = new Map();
+  this.writtenImportStringsSize = 0;
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -2259,11 +2262,9 @@ const MAX_ROW_SIZE = 3200;
 // something as short as an export name costs more than copying it.
 const MIN_DEDUPLICATED_IMPORT_STRING_LENGTH = 16;
 
-// The dedupe map retains every tracked string for the rest of the request, so
-// both the entry size and the entry count are bounded. Anything past these
-// limits is pathological input and simply doesn't dedupe.
-const MAX_DEDUPLICATED_IMPORT_STRING_LENGTH = 32768;
-const MAX_DEDUPLICATED_IMPORT_STRINGS = 256;
+// Tracked strings are retained for the rest of the request, so their combined
+// length is capped.
+const MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE = 32768;
 
 function deferTask(request: Request, task: Task): ReactJSONValue {
   // Like outlineTask but instead the item is scheduled to be serialized
@@ -3610,10 +3611,7 @@ function escapeStringValue(value: string): string {
 }
 
 function serializeImportString(request: Request, value: string): string {
-  if (
-    value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH ||
-    value.length > MAX_DEDUPLICATED_IMPORT_STRING_LENGTH
-  ) {
+  if (value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH) {
     return escapeStringValue(value);
   }
   const writtenStrings = request.writtenImportStrings;
@@ -3636,11 +3634,13 @@ function serializeImportString(request: Request, value: string): string {
     writtenStrings.set(value, ref);
     return ref;
   }
-  if (writtenStrings.size >= MAX_DEDUPLICATED_IMPORT_STRINGS) {
+  const size = request.writtenImportStringsSize + value.length;
+  if (size > MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE) {
     // The map is full. Strings already tracked keep deduping; new ones are
     // written out every time.
     return escapeStringValue(value);
   }
+  request.writtenImportStringsSize = size;
   writtenStrings.set(value, null);
   return escapeStringValue(value);
 }

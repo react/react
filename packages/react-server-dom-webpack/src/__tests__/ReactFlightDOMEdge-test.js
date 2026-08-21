@@ -1199,27 +1199,33 @@ describe('ReactFlightDOMEdge', () => {
     expect(long.length).toBeLessThan(short.length);
   });
 
-  it('should not dedupe import strings above the size limit', async () => {
-    // Tracking a string this large would hold it in memory for the rest of
-    // the request.
+  it('should stop tracking new import strings once the budget is spent', async () => {
+    // Chunks that never repeat are tracked too, in case they do later.
+    // 32 fillers of 1 KiB fill the 32 KiB budget.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const repeats = new Array(10).fill(chunk);
+    const filler = (count, length) =>
+      Array.from({length: count}, (_, i) =>
+        ('filler/chunk-' + i + '-').padEnd(length - 3, 'x').concat('.js'),
+      );
+    const fitsInTheRest = await renderClients(filler(31, 1024).concat(repeats));
+    const findsItSpent = await renderClients(filler(32, 1024).concat(repeats));
+
+    expect(fitsInTheRest.split(chunk).length - 1).toBe(2);
+    expect(findsItSpent.split(chunk).length - 1).toBe(10);
+
+    // A string tracked before the budget is spent keeps deduping after.
+    const lastFiller = filler(1, 32768 - 31 * 1024 - chunk.length);
+    const trackedBefore = await renderClients(
+      [chunk].concat(filler(31, 1024), lastFiller, repeats),
+    );
+
+    expect(trackedBefore.split(chunk).length - 1).toBe(2);
+
     const bigChunk = 'path/to/' + 'a'.repeat(40000) + '.js';
     const big = await renderClients(new Array(3).fill(bigChunk));
 
     expect(big.split(bigChunk).length - 1).toBe(3);
-  });
-
-  it('should stop tracking new import strings once the map is full', async () => {
-    // Every chunk is tracked in case it repeats later, so the map has room for
-    // one more entry after 255 distinct ones and none after 256.
-    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
-    const repeats = new Array(10).fill(chunk);
-    const filler = count =>
-      Array.from({length: count}, (_, i) => 'filler/hashed-chunk-' + i + '.js');
-    const takesTheLastSlot = await renderClients(filler(255).concat(repeats));
-    const findsItFull = await renderClients(filler(256).concat(repeats));
-
-    expect(takesTheLastSlot.split(chunk).length - 1).toBe(2);
-    expect(findsItFull.split(chunk).length - 1).toBe(10);
   });
 
   it('should dedupe import strings produced by toJSON', async () => {
