@@ -3082,6 +3082,85 @@ describe('ReactFlightDOMBrowser', () => {
     }
   });
 
+  it('should abort the cache signal when a render completes while debug objects are still retained', async () => {
+    // A debug channel with a readable side lets the client fetch debug objects
+    // lazily. React serializes each component's props into the debug model, and
+    // it defers the part of an object tree that exceeds the model's object
+    // limit. A deferred object stays retained, and its debug chunk stays
+    // pending, until the client asks for it or the channel closes. The render
+    // below finishes while one such object is outstanding.
+    function createDeepJSX(n) {
+      if (n <= 0) {
+        return null;
+      }
+      return <div>{createDeepJSX(n - 1)}</div>;
+    }
+
+    let cacheSignal;
+
+    function ServerComponent() {
+      cacheSignal = ReactServer.cacheSignal();
+      return <div>not using props</div>;
+    }
+
+    let debugChannelReadableController;
+    const debugChunks = [];
+
+    const debugChannelReadable = new ReadableStream({
+      start(controller) {
+        debugChannelReadableController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // These children nest deeper than the debug model's object limit.
+        <ServerComponent>{createDeepJSX(20)}</ServerComponent>,
+        webpackMap,
+        {
+          debugChannel: {
+            readable: debugChannelReadable,
+            writable: new WritableStream({
+              write(chunk) {
+                debugChunks.push(chunk);
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const reader = stream.getReader();
+    while (true) {
+      const {done} = await reader.read();
+      if (done) {
+        break;
+      }
+    }
+    await serverAct(() => {});
+
+    if (__DEV__) {
+      // Fail loudly if the setup stops deferring anything, for example because
+      // the object limit changed. Without a retained object this test passes
+      // for the wrong reason.
+      const debugOutput = debugChunks
+        .map(chunk => new TextDecoder().decode(chunk))
+        .join('');
+      expect(debugOutput).toContain('$Y');
+    }
+
+    expect(cacheSignal.aborted).toBe(true);
+
+    // Closing the debug channel drops the retained objects. The signal must
+    // already be aborted at that point, and must stay aborted.
+    await serverAct(() => {
+      debugChannelReadableController.close();
+    });
+    await serverAct(() => {});
+
+    expect(cacheSignal.aborted).toBe(true);
+  });
+
   it('should resolve a cycle between debug info and the value it produces when using a debug channel', async () => {
     // Same as `should resolve a cycle between debug info and the value it produces`, but using a debug channel.
 
