@@ -3188,9 +3188,15 @@ function serializeClientReference(
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    // Stringify before claiming a chunk id so a throw can't leave it pending.
+    const json = stringifyImportMetadata(
+      request,
+      clientReferenceMetadata,
+      false,
+    );
     request.pendingChunks++;
     const importId = request.nextChunkId++;
-    emitImportChunk(request, importId, clientReferenceMetadata, false);
+    emitImportChunk(request, importId, json, false);
     writtenClientReferences.set(clientReferenceKey, importId);
     if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
       // If we're encoding the "type" of an element, we can refer
@@ -3238,9 +3244,14 @@ function serializeDebugClientReference(
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    const json = stringifyImportMetadata(
+      request,
+      clientReferenceMetadata,
+      true,
+    );
     request.pendingDebugChunks++;
     const importId = request.nextChunkId++;
-    emitImportChunk(request, importId, clientReferenceMetadata, true);
+    emitImportChunk(request, importId, json, true);
     if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
       // If we're encoding the "type" of an element, we can refer
       // to that by a lazy reference instead of directly since React
@@ -4649,20 +4660,26 @@ function importMetadataReplacer(key: string, value: mixed): mixed {
   return value;
 }
 
-function emitImportChunk(
+function stringifyImportMetadata(
   request: Request,
-  id: number,
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
-): void {
+): string {
   importStringRequest = __DEV__ && debug ? null : request;
-  let json: string;
   try {
     // $FlowFixMe[incompatible-type] stringify can return null
-    json = stringify(clientReferenceMetadata, importMetadataReplacer);
+    return stringify(clientReferenceMetadata, importMetadataReplacer);
   } finally {
     importStringRequest = null;
   }
+}
+
+function emitImportChunk(
+  request: Request,
+  id: number,
+  json: string,
+  debug: boolean,
+): void {
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {

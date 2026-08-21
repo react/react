@@ -1241,6 +1241,26 @@ describe('ReactFlightDOMEdge', () => {
     expect(payload.split(chunk).length - 1).toBe(2);
   });
 
+  it('should error on circular client reference metadata', async () => {
+    const circular = [];
+    circular.push(circular);
+    const Client = clientComponent('Client', circular);
+
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<Client />, webpackMap, {
+        onError(error) {
+          errors.push(error.message);
+        },
+      }),
+    );
+    await readResult(stream);
+
+    expect(errors).toEqual([
+      expect.stringContaining('Converting circular structure to JSON'),
+    ]);
+  });
+
   it('should not dedupe strings in the model', async () => {
     // Only import metadata is deduped. Keying a map on arbitrary model strings
     // would hold them in memory for the rest of the request.
