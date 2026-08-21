@@ -14,6 +14,7 @@ import type {
   RejectedThenable,
   ReactIOInfo,
 } from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {Fiber} from './ReactInternalTypes';
@@ -322,7 +323,7 @@ export function trackUsedThenable<T>(
           !didIssueUseWarning &&
           fiber !== null &&
           // Only track initial mount for now to avoid warning too much for updates.
-          fiber.alternate === null
+          getPreviousVersion(fiber) === null
         ) {
           lastSuspendedFiber = fiber;
           // Stash an error in case we end up triggering the use() warning.
@@ -429,6 +430,7 @@ export function checkIfUseWrappedInAsyncCatch(rejectedReason: any) {
 
 function areSameKeyPath(a: Fiber, b: Fiber): boolean {
   if (a.instance === b.instance) {
+    // Versions of the same node.
     return true;
   }
   if (
@@ -439,9 +441,9 @@ function areSameKeyPath(a: Fiber, b: Fiber): boolean {
   ) {
     return false;
   }
-  if (a.tag === HostRoot) {
-    // These are both roots. They're in the same tree if they're the same root.
-    return a.stateNode === b.stateNode;
+  if (a.tag === HostRoot && a.stateNode !== b.stateNode) {
+    // These are both roots but they're different roots so they're not in the same tree.
+    return false;
   }
   if (a.return === null || b.return === null) {
     return false;

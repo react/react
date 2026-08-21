@@ -8,6 +8,7 @@
  */
 
 import type {ViewTransitionProps} from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 
@@ -766,7 +767,7 @@ function recursivelyInsertClones(
   }
 
   if (
-    parentFiber.alternate === null ||
+    getPreviousVersion(parentFiber) === null ||
     (parentFiber.subtreeFlags & MutationMask) !== NoFlags
   ) {
     // If we have mutations or if this is a newly inserted tree, clone as we go.
@@ -798,7 +799,7 @@ function insertDestinationClonesOfFiber(
   parentViewTransition: null | ViewTransitionState,
   visitPhase: VisitPhase,
 ) {
-  const current = finishedWork.alternate;
+  const current = getPreviousVersion(finishedWork);
   if (current === null) {
     // This is a newly mounted subtree. Insert any HostComponents and trigger
     // Enter transitions.
@@ -1105,7 +1106,7 @@ function recursivelyRestoreNew(
     case ForwardRef:
     case MemoComponent:
     case SimpleMemoComponent: {
-      const current = finishedWork.alternate;
+      const current = getPreviousVersion(finishedWork);
       if (current === null && finishedWork.flags & Update) {
         // Insertion Effects are mounted temporarily during the rendering of the snapshot.
         // We have now already takes a snapshot of the inserted state so we can now unmount
@@ -1131,13 +1132,13 @@ function recursivelyApplyViewTransitions(parentFiber: Fiber) {
   }
 
   if (
-    parentFiber.alternate === null ||
+    getPreviousVersion(parentFiber) === null ||
     (parentFiber.subtreeFlags & MutationMask) !== NoFlags
   ) {
     // If we have mutations or if this is a newly inserted tree, clone as we go.
     let child = parentFiber.child;
     while (child !== null) {
-      const current = child.alternate;
+      const current = getPreviousVersion(child);
       if (current === null) {
         measureExitViewTransitions(child);
         recursivelyRestoreNew(child, parentFiber);
@@ -1293,7 +1294,7 @@ function recursivelyRestoreViewTransitions(parentFiber: Fiber) {
   }
 
   if (
-    parentFiber.alternate === null ||
+    getPreviousVersion(parentFiber) === null ||
     (parentFiber.subtreeFlags & MutationMask) !== NoFlags
   ) {
     // If we have mutations or if this is a newly inserted tree, clone as we go.
@@ -1311,7 +1312,7 @@ function recursivelyRestoreViewTransitions(parentFiber: Fiber) {
 }
 
 function restoreViewTransitionsOnFiber(finishedWork: Fiber) {
-  const current = finishedWork.alternate;
+  const current = getPreviousVersion(finishedWork);
   if (current === null) {
     restoreEnterOrExitViewTransitions(finishedWork);
     return;

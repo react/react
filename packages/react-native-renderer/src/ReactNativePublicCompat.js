@@ -177,13 +177,13 @@ export function sendAccessibilityEvent(handle: any, eventType: string) {
 export function getNodeFromInternalInstanceHandle(
   internalInstanceHandle: mixed,
 ): ?Node {
+  // internalInstanceHandle is opaque but we need to make an exception here.
+  const instance: any = internalInstanceHandle;
   return (
-    // $FlowExpectedError[incompatible-type] internalInstanceHandle is opaque but we need to make an exception here.
-    internalInstanceHandle &&
-    // $FlowExpectedError[incompatible-type]
-    internalInstanceHandle.current.stateNode &&
-    // $FlowExpectedError[incompatible-use]
-    internalInstanceHandle.current.stateNode.node
+    instance &&
+    instance.current &&
+    instance.current.stateNode &&
+    instance.current.stateNode.node
   );
 }
 

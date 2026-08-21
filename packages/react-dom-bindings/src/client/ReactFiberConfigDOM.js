@@ -3515,7 +3515,9 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   // If the fragment has been portaled into another host instance, we need to
   // our best guess is to use the parent of the child instance, rather than
   // the fiber tree host parent.
-  const parentHostInstanceFromDOM = fiberIsPortaledIntoHost(this._fiberInstance.current)
+  const parentHostInstanceFromDOM = fiberIsPortaledIntoHost(
+    this._fiberInstance.current,
+  )
     ? (firstNode.parentElement as ?Instance)
     : parentHostInstance;
 

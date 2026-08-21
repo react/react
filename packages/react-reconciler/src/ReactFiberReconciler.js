@@ -525,11 +525,7 @@ function markRetryLaneImpl(fiber: Fiber, retryLane: Lane) {
 
 // Increases the priority of thenables when they resolve within this boundary.
 function markRetryLaneIfNotHydrated(fiber: Fiber, retryLane: Lane) {
-  markRetryLaneImpl(fiber, retryLane);
-  const alternate = fiber.alternate;
-  if (alternate) {
-    markRetryLaneImpl(alternate, retryLane);
-  }
+  markRetryLaneImpl(fiber.instance.current, retryLane);
 }
 
 export function attemptContinuousHydration(fiber: Fiber): void {
@@ -730,6 +726,12 @@ if (__DEV__) {
       const newState = copyWithSet(hook.memoizedState, path, value);
       hook.memoizedState = newState;
       hook.baseState = newState;
+      // The eager state optimization in dispatchSetState computes the next
+      // state from the last state it rendered with, so that has to reflect
+      // the override too.
+      if (hook.queue !== null) {
+        hook.queue.lastRenderedState = newState;
+      }
 
       // We aren't actually adding an update to the queue,
       // because there is no update we can add for useReducer hooks that won't trigger an error.
@@ -755,6 +757,12 @@ if (__DEV__) {
       const newState = copyWithDelete(hook.memoizedState, path);
       hook.memoizedState = newState;
       hook.baseState = newState;
+      // The eager state optimization in dispatchSetState computes the next
+      // state from the last state it rendered with, so that has to reflect
+      // the override too.
+      if (hook.queue !== null) {
+        hook.queue.lastRenderedState = newState;
+      }
 
       // We aren't actually adding an update to the queue,
       // because there is no update we can add for useReducer hooks that won't trigger an error.
@@ -781,6 +789,12 @@ if (__DEV__) {
       const newState = copyWithRename(hook.memoizedState, oldPath, newPath);
       hook.memoizedState = newState;
       hook.baseState = newState;
+      // The eager state optimization in dispatchSetState computes the next
+      // state from the last state it rendered with, so that has to reflect
+      // the override too.
+      if (hook.queue !== null) {
+        hook.queue.lastRenderedState = newState;
+      }
 
       // We aren't actually adding an update to the queue,
       // because there is no update we can add for useReducer hooks that won't trigger an error.
@@ -804,9 +818,6 @@ if (__DEV__) {
   ) => {
     const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithSet(fiber.memoizedProps, path, value);
-    if (fiber.alternate) {
-      fiber.alternate.pendingProps = fiber.pendingProps;
-    }
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
@@ -818,9 +829,6 @@ if (__DEV__) {
   ) => {
     const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithDelete(fiber.memoizedProps, path);
-    if (fiber.alternate) {
-      fiber.alternate.pendingProps = fiber.pendingProps;
-    }
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
@@ -833,9 +841,6 @@ if (__DEV__) {
   ) => {
     const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithRename(fiber.memoizedProps, oldPath, newPath);
-    if (fiber.alternate) {
-      fiber.alternate.pendingProps = fiber.pendingProps;
-    }
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);

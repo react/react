@@ -85,6 +85,7 @@
 // resources, but the final state is always the same.
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {Lanes, Lane} from './ReactFiberLane';
 
 import {
@@ -311,7 +312,7 @@ export function enqueueCapturedUpdate<State>(
   let queue: UpdateQueue<State> = workInProgress.updateQueue as any;
 
   // Check if the work-in-progress queue is a clone.
-  const current = workInProgress.alternate;
+  const current = getPreviousVersion(workInProgress);
   if (current !== null) {
     const currentQueue: UpdateQueue<State> = current.updateQueue as any;
     if (queue === currentQueue) {
@@ -527,7 +528,7 @@ export function processUpdateQueue<State>(
     // queue is a singly-linked list with no cycles, we can append to both
     // lists and take advantage of structural sharing.
     // TODO: Pass `current` as argument
-    const current = workInProgress.alternate;
+    const current = getPreviousVersion(workInProgress);
     if (current !== null) {
       // This is always non-null on a ClassComponent or HostRoot
       const currentQueue: UpdateQueue<State> = current.updateQueue as any;

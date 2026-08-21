@@ -27,7 +27,7 @@ export function trackNamedViewTransition(fiber: Fiber): void {
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);
       if (existing !== undefined) {
-        if (existing !== fiber && existing !== fiber.alternate) {
+        if (existing.instance !== fiber.instance) {
           if (!didWarnAboutName[name]) {
             didWarnAboutName[name] = true;
             const stringifiedName = JSON.stringify(name);
@@ -60,10 +60,7 @@ export function untrackNamedViewTransition(fiber: Fiber): void {
     const name = (fiber.memoizedProps as ViewTransitionProps).name;
     if (name != null && name !== 'auto') {
       const existing = mountedNamedViewTransitions.get(name);
-      if (
-        existing !== undefined &&
-        (existing === fiber || existing === fiber.alternate)
-      ) {
+      if (existing !== undefined && existing.instance === fiber.instance) {
         mountedNamedViewTransitions.delete(name);
       }
     }

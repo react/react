@@ -8,6 +8,7 @@
  */
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {RootState} from './ReactFiberRoot';
 import type {Lanes, Lane} from './ReactFiberLane';
 import type {ReactScopeInstance, ReactContext} from 'shared/ReactTypes';
@@ -469,8 +470,8 @@ function updateHostComponent(
 ) {
   // $FlowFixMe[constant-condition]
   if (supportsMutation) {
-    // If we have an alternate, that means this is an update and we need to
-    // schedule a side-effect to do the updates.
+    // If we have a current version, that means this is an update and we need
+    // to schedule a side-effect to do the updates.
     const oldProps = current.memoizedProps;
     if (oldProps === newProps) {
       // In mutation mode, this is sufficient for a bailout because
@@ -725,7 +726,7 @@ function cutOffTailIfNeeded(
       let tailNode = renderState.tail;
       let lastTailNode = null;
       while (tailNode !== null) {
-        if (tailNode.alternate !== null) {
+        if (getPreviousVersion(tailNode) !== null) {
           lastTailNode = tailNode;
         }
         tailNode = tailNode.sibling;
@@ -759,7 +760,7 @@ function cutOffTailIfNeeded(
       let tailNode = renderState.tail;
       let lastTailNode = null;
       while (tailNode !== null) {
-        if (tailNode.alternate !== null) {
+        if (getPreviousVersion(tailNode) !== null) {
           lastTailNode = tailNode;
         }
         tailNode = tailNode.sibling;
@@ -782,7 +783,7 @@ function cutOffTailIfNeeded(
 function isOnlyNewMounts(tail: Fiber): boolean {
   let fiber: null | Fiber = tail;
   while (fiber !== null) {
-    if (fiber.alternate !== null) {
+    if (getPreviousVersion(fiber) !== null) {
       return false;
     }
     fiber = fiber.sibling;
@@ -791,9 +792,8 @@ function isOnlyNewMounts(tail: Fiber): boolean {
 }
 
 function bubbleProperties(completedWork: Fiber) {
-  const didBailout =
-    completedWork.alternate !== null &&
-    completedWork.alternate.child === completedWork.child;
+  const current = getPreviousVersion(completedWork);
+  const didBailout = current !== null && current.child === completedWork.child;
 
   let newChildLanes: Lanes = NoLanes;
   let subtreeFlags: Flags = NoFlags;
@@ -1475,8 +1475,8 @@ function completeWork(
       const newText = newProps;
       if (current && workInProgress.stateNode != null) {
         const oldText = current.memoizedProps;
-        // If we have an alternate, that means this is an update and we need
-        // to schedule a side-effect to do the updates.
+        // If we have a current version, that means this is an update and we
+        // need to schedule a side-effect to do the updates.
         updateHostText(current, workInProgress, oldText, newText);
       } else {
         if (typeof newText !== 'string') {
@@ -1604,13 +1604,14 @@ function completeWork(
 
       if (nextDidTimeout) {
         const offscreenFiber: Fiber = workInProgress.child as any;
+        const currentOffscreenFiber = getPreviousVersion(offscreenFiber);
         let previousCache: Cache | null = null;
         if (
-          offscreenFiber.alternate !== null &&
-          offscreenFiber.alternate.memoizedState !== null &&
-          offscreenFiber.alternate.memoizedState.cachePool !== null
+          currentOffscreenFiber !== null &&
+          currentOffscreenFiber.memoizedState !== null &&
+          currentOffscreenFiber.memoizedState.cachePool !== null
         ) {
-          previousCache = offscreenFiber.alternate.memoizedState.cachePool.pool;
+          previousCache = currentOffscreenFiber.memoizedState.cachePool.pool;
         }
         let cache: Cache | null = null;
         if (
@@ -1835,7 +1836,7 @@ function completeWork(
               renderState.tail === null &&
               renderState.tailMode !== 'collapsed' &&
               renderState.tailMode !== 'visible' &&
-              !renderedTail.alternate &&
+              !getPreviousVersion(renderedTail) &&
               !getIsHydrating() // We don't cut it if we're hydrating.
             ) {
               // We're done.

@@ -101,8 +101,12 @@ describe('ReactHooks', () => {
 
     assertLog(['Parent: 1, 1', 'Child: 1, 1', 'Effect: 1, 1']);
 
-    // Update that bails out.
-    await act(() => setCounter1(1));
+    // Update that bails out. The first update schedules a render, so the
+    // second one can't bail out eagerly and we enter the render phase.
+    await act(() => {
+      setCounter1(2);
+      setCounter1(1);
+    });
     assertLog(['Parent: 1, 1']);
 
     // This time, one of the state updates but the other one doesn't. So we
@@ -189,8 +193,12 @@ describe('ReactHooks', () => {
 
     assertLog(['Parent: 1, 1 (light)', 'Child: 1, 1 (light)']);
 
-    // Update that bails out.
-    await act(() => setCounter1(1));
+    // Update that bails out. The first update schedules a render, so the
+    // second one can't bail out eagerly and we enter the render phase.
+    await act(() => {
+      setCounter1(2);
+      setCounter1(1);
+    });
     assertLog(['Parent: 1, 1 (light)']);
 
     // This time, one of the state updates but the other one doesn't. So we
@@ -212,14 +220,15 @@ describe('ReactHooks', () => {
 
     assertLog(['Parent: 1, 2 (dark)', 'Child: 1, 2 (dark)']);
 
-    // Both props and state bail out
+    // Both props and state bail out. The state updates bail out eagerly
+    // because the queue is known to be empty, so nothing renders.
     await act(() => {
       setCounter1(1);
       setCounter2(2);
       root.update(<Parent theme="dark" />);
     });
 
-    assertLog(['Parent: 1, 2 (dark)']);
+    assertLog([]);
   });
 
   it('warns about setState second argument', async () => {
@@ -348,8 +357,13 @@ describe('ReactHooks', () => {
     assertLog(['Parent: 1 (light)', 'Child: 1 (light)', 'Effect: 1 (light)']);
     expect(root).toMatchRenderedOutput('1 (light)');
 
-    // Update that doesn't change state, so it bails out
-    await act(() => setCounter(1));
+    // Update that doesn't change state, so it bails out. The first update
+    // schedules a render, so the second one can't bail out eagerly and we
+    // enter the render phase.
+    await act(() => {
+      setCounter(2);
+      setCounter(1);
+    });
     assertLog(['Parent: 1 (light)']);
     expect(root).toMatchRenderedOutput('1 (light)');
 
@@ -398,18 +412,22 @@ describe('ReactHooks', () => {
     assertLog(['Parent: 1', 'Child: 1', 'Effect: 1']);
     expect(root).toMatchRenderedOutput('1');
 
-    // Update to the same state. React doesn't know if the queue is empty
-    // because the alternate fiber has pending update priority, so we have to
-    // enter the render phase before we can bail out. But we bail out before
-    // rendering the child, and we don't fire any effects.
-    await act(() => setCounter(1));
-    assertLog(['Parent: 1']);
-    expect(root).toMatchRenderedOutput('1');
-
-    // Update to the same state again. This times, neither fiber has pending
-    // update priority, so we can bail out before even entering the render phase.
+    // Update to the same state. The fiber has no pending update priority, so
+    // React knows the queue is empty and bails out before even entering the
+    // render phase.
     await act(() => setCounter(1));
     await waitForAll([]);
+    expect(root).toMatchRenderedOutput('1');
+
+    // Update to the same state, but this time there's already a pending
+    // update, so we have to enter the render phase before we can bail out.
+    // But we bail out before rendering the child, and we don't fire
+    // any effects.
+    await act(() => {
+      setCounter(2);
+      setCounter(1);
+    });
+    assertLog(['Parent: 1']);
     expect(root).toMatchRenderedOutput('1');
 
     // This changes the state to something different so it renders normally.
@@ -424,15 +442,7 @@ describe('ReactHooks', () => {
     assertLog(['Parent: 0', 'Child: 0', 'Effect: 0']);
     expect(root).toMatchRenderedOutput('0');
 
-    // Update to the same state for the first time to flush the queue
-    await act(() => {
-      setCounter(0);
-    });
-
-    assertLog(['Parent: 0']);
-    expect(root).toMatchRenderedOutput('0');
-
-    // Update again to the same state. Should bail out.
+    // Update to the same state. Should bail out.
     await act(() => {
       setCounter(0);
     });

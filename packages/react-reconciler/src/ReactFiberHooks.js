@@ -15,6 +15,7 @@ import type {
   RejectedThenable,
   Awaited,
 } from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {
   Fiber,
   FiberInstance,
@@ -1009,7 +1010,7 @@ function updateWorkInProgressHook(): Hook {
   // use as a base.
   let nextCurrentHook: null | Hook;
   if (currentHook === null) {
-    const current = currentlyRenderingFiber.alternate;
+    const current = getPreviousVersion(currentlyRenderingFiber);
     if (current !== null) {
       nextCurrentHook = current.memoizedState;
     } else {
@@ -1036,7 +1037,7 @@ function updateWorkInProgressHook(): Hook {
     // Clone from the current hook.
 
     if (nextCurrentHook === null) {
-      const currentFiber = currentlyRenderingFiber.alternate;
+      const currentFiber = getPreviousVersion(currentlyRenderingFiber);
       if (currentFiber === null) {
         // This is the initial render. This branch is reached when the component
         // suspends, resumes, then renders an additional hook.
@@ -1140,7 +1141,7 @@ function useThenable<T>(thenable: Thenable<T>): T {
     // This is the same as the logic in renderWithHooks, except we don't bother
     // to track the hook types debug information in this case (sufficient to
     // only do that when nothing suspends).
-    const currentFiber = workInProgressFiber.alternate;
+    const currentFiber = getPreviousVersion(workInProgressFiber);
     if (__DEV__) {
       if (currentFiber !== null && currentFiber.memoizedState !== null) {
         ReactSharedInternals.H = HooksDispatcherOnUpdateInDEV;
@@ -1189,7 +1190,7 @@ function useMemoCache(size: number): Array<mixed> {
   }
   // Otherwise clone from the current fiber
   if (memoCache == null) {
-    const current: Fiber | null = currentlyRenderingFiber.alternate;
+    const current: Fiber | null = getPreviousVersion(currentlyRenderingFiber);
     if (current !== null) {
       const currentUpdateQueue: FunctionComponentUpdateQueue | null =
         current.updateQueue as any;
@@ -3380,13 +3381,11 @@ function ensureFormComponentIsStateful(formFiber: Fiber) {
   };
   stateHook.next = resetStateHook;
 
-  // Add the hook list to both fiber alternates. The idea is that the fiber
-  // had this hook all along.
+  // Add the hook list to the committed fiber. The idea is that the fiber had
+  // this hook all along. If a work-in-progress version of it was cloned
+  // before this, finishQueueingConcurrentUpdates carries the hook list over
+  // when it processes the update that's about to be enqueued.
   formFiber.memoizedState = stateHook;
-  const alternate = formFiber.alternate;
-  if (alternate !== null) {
-    alternate.memoizedState = stateHook;
-  }
 
   return stateHook;
 }
@@ -3419,16 +3418,8 @@ export function requestFormReset(formFiber: Fiber) {
     );
   }
 
-  let stateHook: Hook = ensureFormComponentIsStateful(formFiber);
+  const stateHook: Hook = ensureFormComponentIsStateful(formFiber);
   const newResetState = {};
-  if (stateHook.next === null) {
-    // Hack alert. If formFiber is the workInProgress Fiber then
-    // we might get a broken intermediate state. Try the alternate
-    // instead.
-    // TODO: We should really stash the Queue somewhere stateful
-    // just like how setState binds the Queue.
-    stateHook = (formFiber.alternate as any).memoizedState;
-  }
   const resetStateHook: Hook = stateHook.next as any;
   const resetStateQueue = resetStateHook.queue;
   dispatchSetStateInternal(
@@ -3696,11 +3687,7 @@ function dispatchSetStateInternal<S, A>(
   if (isRenderPhaseUpdate(fiber)) {
     enqueueRenderPhaseUpdate(queue, update);
   } else {
-    const alternate = fiber.alternate;
-    if (
-      fiber.lanes === NoLanes &&
-      (alternate === null || alternate.lanes === NoLanes)
-    ) {
+    if (fiber.lanes === NoLanes) {
       // The queue is currently empty, which means we can eagerly compute the
       // next state before entering the render phase. If the new state is the
       // same as the current state, we may be able to bail out entirely.
@@ -3862,7 +3849,7 @@ function dispatchOptimisticSetState<S, A>(
 
 function isRenderPhaseUpdate(fiber: Fiber): boolean {
   return (
-    currentlyRenderingFiber !== null &&
+    (currentlyRenderingFiber as Fiber | null) !== null &&
     fiber.instance === currentlyRenderingFiber.instance
   );
 }
