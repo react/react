@@ -134,6 +134,13 @@ import {
   resetWorkInProgress,
 } from './ReactFiber';
 import {getPreviousVersion} from './ReactFiberInstance';
+import {
+  startResumableRender,
+  recordCompletedFiber,
+  discardRecordedWork,
+  publishAbandonedWork,
+  taintAncestorsOfThrow,
+} from './ReactFiberResuming';
 import {isRootDehydrated} from './ReactFiberShellHydration';
 import {
   getIsHydrating,
@@ -450,6 +457,8 @@ let workInProgressRootFiber: Fiber | null = null;
 let workInProgress: Fiber | null = null;
 // The lanes we're rendering
 let workInProgressRootRenderLanes: Lanes = NoLanes;
+// Whether the render is a synchronous retry of a render that errored.
+let workInProgressRootIsErrorRecovery: boolean = false;
 
 export opaque type SuspendedReason = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 const NotSuspended: SuspendedReason = 0;
@@ -1252,7 +1261,9 @@ export function performWorkOnRoot(
           finalizeRender(lanes, renderEndTime);
         }
         // A store was mutated in an interleaved event. Render again,
-        // synchronously, to block further mutations.
+        // synchronously, to block further mutations. Everything has to render
+        // again since anything could have read the store.
+        discardRecordedWork();
         exitStatus = renderRootSync(root, lanes, false);
         // We assume the tree is now consistent because we didn't yield to any
         // concurrent events.
@@ -1374,7 +1385,13 @@ function recoverFromConcurrentError(
     rootWorkInProgress.flags |= ForceClientRender;
   }
 
-  const exitStatus = renderRootSync(root, errorRetryLanes, false);
+  workInProgressRootIsErrorRecovery = true;
+  let exitStatus;
+  try {
+    exitStatus = renderRootSync(root, errorRetryLanes, false);
+  } finally {
+    workInProgressRootIsErrorRecovery = false;
+  }
   // A status of RootSuspendedAtTheShell means the retry unwound to the root
   // without completing (e.g. something suspended in the shell), so the tree is
   // incomplete and must not be treated as recovered — committing it would
@@ -2272,6 +2289,9 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   pendingEffectsLanes = NoLanes;
 
   resetWorkInProgressStack();
+  // If a render was in progress, it's abandoned now. What it finished stays
+  // available to the next render, unless the updates below invalidate it.
+  publishAbandonedWork(entangledRenderLanes);
   // Updates that were enqueued since the last render or commit need to be
   // marked on the current tree before it's cloned.
   finishQueueingConcurrentUpdates();
@@ -2305,6 +2325,11 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   // and Sync lane in the same batch, but at Transition priority, because the
   // Sync lane already suspended.
   entangledRenderLanes = getEntangledLanes(root, lanes);
+  // A render that's retrying after an error has to render everything again to
+  // find out whether the error was caused by a concurrent mutation.
+  startResumableRender(
+    workInProgressRootIsErrorRecovery ? NoLanes : entangledRenderLanes,
+  );
 
   if (__DEV__) {
     resetOwnerStackLimit();
@@ -3259,6 +3284,7 @@ function throwAndUnwindWorkLoop(
   resetSuspendedWorkLoopOnUnwind(unitOfWork);
 
   const returnFiber = unitOfWork.return;
+  taintAncestorsOfThrow(returnFiber);
   try {
     // Find and mark the nearest Suspense or error boundary that can handle
     // this "exception".
@@ -3421,6 +3447,10 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       workInProgress = next;
       return;
     }
+
+    // This version is done. If this render doesn't get to commit it, a later
+    // render can continue from it.
+    recordCompletedFiber(completedWork);
 
     const siblingFiber = completedWork.sibling;
     // A sibling that's shared with the current tree still points at the

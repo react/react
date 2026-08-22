@@ -26,6 +26,10 @@ import {
   isAlreadyRendering,
 } from './ReactFiberWorkLoop';
 import {getPreviousVersion} from './ReactFiberInstance';
+import {
+  invalidateInProgressVersion,
+  markInProgressSubtreeStale,
+} from './ReactFiberResuming';
 import {NoLane, NoLanes, mergeLanes, markHiddenUpdate} from './ReactFiberLane';
 import {NoFlags, Placement, Hydrating} from './ReactFiberFlags';
 import {HostComponent, HostRoot, OffscreenComponent} from './ReactWorkTags';
@@ -220,6 +224,7 @@ function markUpdateLaneFromFiberToRoot(
 ): null | FiberRoot {
   // Update the source fiber's lanes
   sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
+  invalidateInProgressVersion(sourceFiber);
   // Walk the parent path to the root and update the child lanes.
   let isHidden = false;
   let parent = sourceFiber.return;
@@ -232,6 +237,7 @@ function markUpdateLaneFromFiberToRoot(
       parent = parent.instance.current;
     }
     parent.childLanes = mergeLanes(parent.childLanes, lane);
+    markInProgressSubtreeStale(parent);
 
     if (parent.tag === OffscreenComponent) {
       // Check if this offscreen boundary is currently hidden.

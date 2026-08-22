@@ -96,6 +96,15 @@ export type FiberInstance = {
   // current is running its effects: the base for diffing during that commit.
   // Afterwards it's `current` itself. Null if the node has only ever mounted.
   previous: Fiber | null,
+  // A version that a render finished but didn't get to commit, and the lanes
+  // it rendered at. A later render can continue from it. See
+  // ReactFiberResuming.
+  inProgress: Fiber | null,
+  inProgressLanes: Lanes,
+  // Whether something in `inProgress`'s subtree has been invalidated since,
+  // so a render that continues from it has to descend into the children
+  // rather than take the subtree as done.
+  inProgressSubtreeIsStale: boolean,
 };
 
 // A Fiber is work on a Component that needs to be done or was done. There can

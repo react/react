@@ -33,6 +33,7 @@ export const enableConditionalUseWarning = false;
 export const enableLegacyCache = false;
 export const enableLegacyFBSupport = false;
 export const enableLegacyHidden = false;
+export const enableResumingInterruptedRenders: boolean = false;
 export const enableNoCloningMemoCache = false;
 export const enableObjectFiber = false;
 export const enableProfilerCommitHooks = __PROFILE__;

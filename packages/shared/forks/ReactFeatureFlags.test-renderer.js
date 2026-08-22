@@ -43,6 +43,7 @@ export const transitionLaneExpirationMs = 5000;
 
 export const disableSchedulerTimeoutInWorkLoop: boolean = false;
 export const enableLegacyHidden: boolean = false;
+export const enableResumingInterruptedRenders: boolean = false;
 
 export const enableTransitionTracing: boolean = false;
 

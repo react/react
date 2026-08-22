@@ -83,6 +83,11 @@ import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
 import {createFiberInstance, getPreviousVersion} from './ReactFiberInstance';
 import {
+  getInProgressVersion,
+  discardRecordedWork,
+  releaseInProgressVersionOnCommit,
+} from './ReactFiberResuming';
+import {
   NoMode,
   ConcurrentMode,
   ProfileMode,
@@ -323,8 +328,14 @@ export function isFunctionClassComponent(
 
 // Creates a new version of `current` to do work on. The work-in-progress tree
 // is always freshly allocated; subtrees without work are shared with the
-// current tree rather than cloned.
+// current tree rather than cloned. If a previous render already finished a
+// version of this node that is still good, it's continued from instead.
 export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+  const inProgress = getInProgressVersion(current, pendingProps);
+  if (inProgress !== null) {
+    return inProgress;
+  }
+
   const workInProgress = createFiber(
     current.tag,
     pendingProps,
@@ -418,6 +429,8 @@ const committingInstances: Array<FiberInstance> = [];
 // previous version (see releaseCommittedFibers), which is how it's told apart
 // from the fibers that are being committed.
 export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
+  // These are the versions being committed.
+  discardRecordedWork();
   let node = finishedWork;
   outer: while (true) {
     const instance = node.instance;
@@ -425,10 +438,15 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
     if (current !== node) {
       instance.previous = current;
       instance.current = node;
+      releaseInProgressVersionOnCommit(instance, node, current);
     }
     committingInstances.push(instance);
+    // A child that this render rendered points at `node`. One that's shared
+    // with the current tree still points at the version of the parent it was
+    // committed under, which is how it's told apart. Only a trailing run of
+    // children can be shared, so this stops at the first child normally.
     let next = node.child;
-    while (next !== null && next.instance.previous === next) {
+    while (next !== null && next.return !== node) {
       next.return = node;
       next = next.sibling;
     }
@@ -440,16 +458,17 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
       if (node === finishedWork) {
         break outer;
       }
+      const returnFiber: Fiber = node.return as any;
       next = node.sibling;
-      while (next !== null && next.instance.previous === next) {
-        next.return = node.return;
+      while (next !== null && next.return !== returnFiber) {
+        next.return = returnFiber;
         next = next.sibling;
       }
       if (next !== null) {
         node = next;
         continue outer;
       }
-      node = node.return as any;
+      node = returnFiber;
     }
   }
 }

@@ -282,7 +282,13 @@ describe('ReactCache', () => {
     ]);
 
     await act(() => jest.advanceTimersByTime(100));
-    assertLog(['Promise resolved [4]', 'Promise resolved [5]', 1, 4, 5]);
+    // 1 was already rendered by the attempt that suspended on 4 and 5. If that
+    // render is continued from, it isn't rendered again.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Promise resolved [4]', 'Promise resolved [5]', 4, 5]
+        : ['Promise resolved [4]', 'Promise resolved [5]', 1, 4, 5],
+    );
 
     expect(root).toMatchRenderedOutput('145');
 
@@ -310,7 +316,11 @@ describe('ReactCache', () => {
     ]);
 
     await act(() => jest.advanceTimersByTime(100));
-    assertLog(['Promise resolved [2]', 'Promise resolved [3]', 1, 2, 3]);
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Promise resolved [2]', 'Promise resolved [3]', 2, 3]
+        : ['Promise resolved [2]', 'Promise resolved [3]', 1, 2, 3],
+    );
     expect(root).toMatchRenderedOutput('123');
   });
 
