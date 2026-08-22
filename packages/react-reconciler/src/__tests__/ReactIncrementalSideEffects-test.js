@@ -16,6 +16,7 @@ let Scheduler;
 let waitForAll;
 let waitFor;
 let waitForPaint;
+let assertLog;
 
 describe('ReactIncrementalSideEffects', () => {
   beforeEach(() => {
@@ -29,6 +30,7 @@ describe('ReactIncrementalSideEffects', () => {
     waitForAll = InternalTestUtils.waitForAll;
     waitFor = InternalTestUtils.waitFor;
     waitForPaint = InternalTestUtils.waitForPaint;
+    assertLog = InternalTestUtils.assertLog;
   });
 
   // Note: This is based on a similar component we use in www. We can delete
@@ -755,100 +757,99 @@ describe('ReactIncrementalSideEffects', () => {
     );
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can defer side-effects and resume them later on', async () => {
+  it('can defer side-effects and resume them later on', async () => {
     class Bar extends React.Component {
       shouldComponentUpdate(nextProps) {
         return this.props.idx !== nextProps.idx;
       }
       render() {
+        Scheduler.log('Bar:' + this.props.idx);
         return <span prop={this.props.idx} />;
       }
     }
     function Foo(props) {
+      Scheduler.log('Foo');
       return (
         <div>
           <span prop={props.tick} />
-          <div hidden={true}>
+          <React.Activity mode="hidden">
             <Bar idx={props.idx} />
             <Bar idx={props.idx + 1} />
-          </div>
+          </React.Activity>
         </div>
       );
     }
     ReactNoop.render(<Foo tick={0} idx={0} />);
-    ReactNoop.flushDeferredPri(40 + 25);
+    await waitForPaint(['Foo']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={0} />
-        <div />
       </div>,
     );
     ReactNoop.render(<Foo tick={1} idx={0} />);
-    ReactNoop.flushDeferredPri(35 + 25);
+    await waitForPaint(['Foo']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={1} />
-        <div>{/*still not rendered yet*/}</div>
+        {/*still not rendered yet*/}
       </div>,
     );
-    ReactNoop.flushDeferredPri(30 + 25);
+    await waitForAll(['Bar:0', 'Bar:1']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={1} />
-        <div>
-          {/* Now we had enough time to finish the spans. */}
-          <span prop={0} />
-          <span prop={1} />
-        </div>
-        ,
+        {/* Now we had enough time to finish the spans. */}
+        <span prop={0} hidden={true} />
+        <span prop={1} hidden={true} />
       </div>,
     );
-    const innerSpanA =
-      ReactNoop.dangerouslyGetChildren()[0].children[1].children[1];
+    const innerSpanA = ReactNoop.dangerouslyGetChildren()[0].children[1];
+    // Update the hidden content, and render part of it before interrupting.
     ReactNoop.render(<Foo tick={2} idx={1} />);
-    ReactNoop.flushDeferredPri(30 + 25);
+    await waitForPaint(['Foo']);
+    await waitFor(['Bar:1']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={2} />
-        <div>
-          {/* Still same old numbers. */}
-          <span prop={0} />
-          <span prop={1} />
-        </div>
+        {/* Still same old numbers. */}
+        <span prop={0} hidden={true} />
+        <span prop={1} hidden={true} />
       </div>,
     );
-    ReactNoop.render(<Foo tick={3} idx={1} />);
-    await waitForAll([]);
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(<Foo tick={3} idx={1} />);
+    });
+    assertLog(['Foo']);
+    // If the interrupted render is continued from, the first Bar isn't
+    // rendered again.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Bar:2']
+        : ['Bar:1', 'Bar:2'],
+    );
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={3} />
-        <div>
-          {/* New numbers. */}
-          <span prop={1} />
-          <span prop={2} />
-        </div>
+        {/* New numbers. */}
+        <span prop={1} hidden={true} />
+        <span prop={2} hidden={true} />
       </div>,
     );
 
-    const innerSpanB =
-      ReactNoop.dangerouslyGetChildren()[0].children[1].children[1];
+    const innerSpanB = ReactNoop.dangerouslyGetChildren()[0].children[1];
     // This should have been an update to an existing instance, not recreation.
     // We verify that by ensuring that the child instance was the same as
     // before.
     expect(innerSpanA).toBe(innerSpanB);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can defer side-effects and reuse them later - complex', async function () {
-    let ops = [];
-
+  it('can defer side-effects and reuse them later - complex', async function () {
     class Bar extends React.Component {
       shouldComponentUpdate(nextProps) {
         return this.props.idx !== nextProps.idx;
       }
       render() {
-        ops.push('Bar');
+        Scheduler.log('Bar');
         return <span prop={this.props.idx} />;
       }
     }
@@ -857,7 +858,7 @@ describe('ReactIncrementalSideEffects', () => {
         return this.props.idx !== nextProps.idx;
       }
       render() {
-        ops.push('Baz');
+        Scheduler.log('Baz');
         return [
           <Bar key="a" idx={this.props.idx} />,
           <Bar key="b" idx={this.props.idx} />,
@@ -865,128 +866,117 @@ describe('ReactIncrementalSideEffects', () => {
       }
     }
     function Foo(props) {
-      ops.push('Foo');
+      Scheduler.log('Foo');
       return (
         <div>
           <span prop={props.tick} />
-          <div hidden={true}>
+          <React.Activity mode="hidden">
             <Baz idx={props.idx} />
             <Baz idx={props.idx} />
             <Baz idx={props.idx} />
-          </div>
+          </React.Activity>
         </div>
       );
     }
     ReactNoop.render(<Foo tick={0} idx={0} />);
-    ReactNoop.flushDeferredPri(65 + 5);
+    await waitForPaint(['Foo']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={0} />
         {/*the spans are down-prioritized and not rendered yet*/}
-        <div />
       </div>,
     );
 
-    expect(ops).toEqual(['Foo', 'Baz', 'Bar']);
-    ops = [];
-
     ReactNoop.render(<Foo tick={1} idx={0} />);
-    ReactNoop.flushDeferredPri(70);
+    await waitForPaint(['Foo']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={1} />
         {/*still not rendered yet*/}
-        <div />
       </div>,
     );
 
-    expect(ops).toEqual(['Foo']);
-    ops = [];
-
-    await waitForAll([]);
-    expect(ReactNoop).toMatchRenderedOutput([
-      <div>
-        <span prop={1} />,
-        <div>
-          {/* Now we had enough time to finish the spans. */}
-          <span prop={0} />,
-          <span prop={0} />,
-          <span prop={0} />,
-          <span prop={0} />,
-          <span prop={0} />,
-          <span prop={0} />,
-        </div>
-      </div>,
+    await waitForAll([
+      'Baz',
+      'Bar',
+      'Bar',
+      'Baz',
+      'Bar',
+      'Bar',
+      'Baz',
+      'Bar',
+      'Bar',
     ]);
-
-    expect(ops).toEqual(['Bar', 'Baz', 'Bar', 'Bar', 'Baz', 'Bar', 'Bar']);
-    ops = [];
+    expect(ReactNoop).toMatchRenderedOutput(
+      <div>
+        <span prop={1} />
+        {/* Now we had enough time to finish the spans. */}
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+      </div>,
+    );
 
     // Now we're going to update the index but we'll only let it finish half
     // way through.
     ReactNoop.render(<Foo tick={2} idx={1} />);
-    ReactNoop.flushDeferredPri(95);
+    await waitForPaint(['Foo']);
+    // We let it finish half way through. That means we'll have one fully
+    // completed Baz, one half-way completed Baz and one fully incomplete Baz.
+    await waitFor(['Baz', 'Bar', 'Bar', 'Baz', 'Bar']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
-        <span prop={2} />,
-        <div>
-          {/* Still same old numbers. */}
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-        </div>
+        <span prop={2} />
+        {/* Still same old numbers. */}
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
       </div>,
     );
 
-    // We let it finish half way through. That means we'll have one fully
-    // completed Baz, one half-way completed Baz and one fully incomplete Baz.
-    expect(ops).toEqual(['Foo', 'Baz', 'Bar', 'Bar', 'Baz', 'Bar']);
-    ops = [];
-
-    // We'll update again, without letting the new index update yet. Only half
-    // way through.
-    ReactNoop.render(<Foo tick={3} idx={1} />);
-    ReactNoop.flushDeferredPri(50);
+    // We'll update again, without letting the new index update yet.
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(<Foo tick={3} idx={1} />);
+    });
+    assertLog(['Foo']);
     expect(ReactNoop).toMatchRenderedOutput(
       <div>
         <span prop={3} />
-        <div>
-          {/* Old numbers. */}
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-          <span prop={0} />
-        </div>
+        {/* Old numbers. */}
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
+        <span prop={0} hidden={true} />
       </div>,
     );
 
-    expect(ops).toEqual(['Foo']);
-    ops = [];
-
     // We should now be able to reuse some of the work we've already done
     // and replay those side-effects.
-    await waitForAll([]);
-    expect(ReactNoop).toMatchRenderedOutput([
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Bar', 'Baz', 'Bar', 'Bar']
+        : ['Baz', 'Bar', 'Bar', 'Baz', 'Bar', 'Bar', 'Baz', 'Bar', 'Bar'],
+    );
+    expect(ReactNoop).toMatchRenderedOutput(
       <div>
-        <span prop={3} />,
-        <div>
-          {/* New numbers. */}
-          <span prop={1} />
-          <span prop={1} />
-          <span prop={1} />
-          <span prop={1} />
-          <span prop={1} />
-          <span prop={1} />
-        </div>
+        <span prop={3} />
+        {/* New numbers. */}
+        <span prop={1} hidden={true} />
+        <span prop={1} hidden={true} />
+        <span prop={1} hidden={true} />
+        <span prop={1} hidden={true} />
+        <span prop={1} hidden={true} />
+        <span prop={1} hidden={true} />
       </div>,
-    ]);
-
-    expect(ops).toEqual(['Bar', 'Baz', 'Bar', 'Bar']);
+    );
   });
 
   // @gate enableLegacyHidden
