@@ -3087,6 +3087,66 @@ function pushLink(
       // them up when the primary content is ready. They are never hydrated on the client anyway because
       // boundaries in fallback are awaited or client render, in either case there is never hydration
       return null;
+    } else if (rel === 'preload') {
+      // Preload links can be deduplicated against preloads initiated via the
+      // imperative preload() API or received as Flight hints. We check and
+      // register in resumableState to avoid duplicate link tags.
+      const as = props.as;
+      if (typeof as === 'string') {
+        switch (as) {
+          case 'image': {
+            const imageSrcSet =
+              typeof props.imageSrcSet === 'string'
+                ? props.imageSrcSet
+                : undefined;
+            const imageSizes =
+              typeof props.imageSizes === 'string'
+                ? props.imageSizes
+                : undefined;
+            const key = getImageResourceKey(href, imageSrcSet, imageSizes);
+            if (resumableState.imageResources.hasOwnProperty(key)) {
+              return null;
+            }
+            resumableState.imageResources[key] = PRELOAD_NO_CREDS;
+            break;
+          }
+          case 'style': {
+            const key = getResourceKey(href);
+            if (resumableState.styleResources.hasOwnProperty(key)) {
+              return null;
+            }
+            resumableState.styleResources[key] = PRELOAD_NO_CREDS;
+            break;
+          }
+          case 'script': {
+            const key = getResourceKey(href);
+            if (resumableState.scriptResources.hasOwnProperty(key)) {
+              return null;
+            }
+            resumableState.scriptResources[key] = PRELOAD_NO_CREDS;
+            break;
+          }
+          default: {
+            // font, audio, video, document, embed, fetch, object, track, worker, and others
+            const key = getResourceKey(href);
+            const hasAsType =
+              resumableState.unknownResources.hasOwnProperty(as);
+            let resources;
+            if (hasAsType) {
+              resources = resumableState.unknownResources[as];
+              if (resources.hasOwnProperty(key)) {
+                return null;
+              }
+            } else {
+              resources = ({}: ResumableState['unknownResources']['asType']);
+              resumableState.unknownResources[as] = resources;
+            }
+            resources[key] = PRELOAD_NO_CREDS;
+            break;
+          }
+        }
+      }
+      return pushLinkImpl(renderState.hoistableChunks, props);
     } else {
       return pushLinkImpl(renderState.hoistableChunks, props);
     }
