@@ -616,8 +616,7 @@ export type Request = {
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
-  // A null entry means the string has been seen once and is still inline.
-  writtenImportStrings: Map<string, null | string>,
+  writtenImportStrings: Map<string, string>,
   // The combined length of the keys in writtenImportStrings.
   writtenImportStringsSize: number,
   temporaryReferences: void | TemporaryReferenceSet,
@@ -3630,32 +3629,30 @@ function serializeImportString(request: Request, value: string): string {
   const writtenStrings = request.writtenImportStrings;
   const existing = writtenStrings.get(value);
   if (existing !== undefined) {
-    if (existing !== null) {
-      return existing;
-    }
-    request.pendingChunks++;
-    const outlinedId = request.nextChunkId++;
-    // $FlowFixMe[incompatible-type] stringify can return null
-    const json: string = stringify(escapeStringValue(value));
-    // The client reads import metadata synchronously, so this row has to have
-    // been written by the time the referencing row arrives. Import chunks are
-    // flushed ahead of regular ones, which regular chunks can't guarantee.
-    request.completedImportChunks.push(
-      stringToChunk(outlinedId.toString(16) + ':' + json + '\n'),
-    );
-    const ref = serializeByValueID(outlinedId);
-    writtenStrings.set(value, ref);
-    return ref;
+    return existing;
   }
   const size = request.writtenImportStringsSize + value.length;
   if (size > MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE) {
-    // The map is full. Strings already tracked keep deduping; new ones are
+    // The map is full. Strings already outlined keep deduping; new ones are
     // written out every time.
     return escapeStringValue(value);
   }
   request.writtenImportStringsSize = size;
-  writtenStrings.set(value, null);
-  return escapeStringValue(value);
+  // Chunk names are almost always shared, so the first occurrence is outlined
+  // right away instead of waiting for a repeat.
+  request.pendingChunks++;
+  const outlinedId = request.nextChunkId++;
+  // $FlowFixMe[incompatible-type] stringify can return null
+  const json: string = stringify(escapeStringValue(value));
+  // The client reads import metadata synchronously, so this row has to have
+  // been written by the time the referencing row arrives. Import chunks are
+  // flushed ahead of regular ones, which regular chunks can't guarantee.
+  request.completedImportChunks.push(
+    stringToChunk(outlinedId.toString(16) + ':' + json + '\n'),
+  );
+  const ref = serializeByValueID(outlinedId);
+  writtenStrings.set(value, ref);
+  return ref;
 }
 
 let modelRoot: null | ReactClientValue = false;

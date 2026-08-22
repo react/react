@@ -1162,17 +1162,16 @@ describe('ReactFlightDOMEdge', () => {
       ),
     );
 
-    // However many references there are, the chunk goes on the wire twice:
-    // inline for the first one, then as a row that the rest point at.
-    expect(shared.split(chunk).length - 1).toBe(2);
-    expect(distinct.length - shared.length).toBeGreaterThan(6 * chunk.length);
+    // However many references there are, the chunk goes on the wire once, as a
+    // row that every import row points at.
+    expect(shared.split(chunk).length - 1).toBe(1);
+    expect(distinct.length - shared.length).toBeGreaterThan(8 * chunk.length);
 
     // The client resolves a client reference while parsing its row, so the
-    // outlined copy has to arrive before every row that points at it. Only one
-    // import row comes first, the one that spells the chunk out. The chunk id
-    // is too short to be outlined, so it counts the rows.
-    const beforeOutlinedCopy = shared.slice(0, shared.lastIndexOf(chunk));
-    expect(beforeOutlinedCopy.split('chunk-Client').length - 1).toBe(1);
+    // outlined copy has to arrive before every row that points at it. The
+    // chunk id is too short to be outlined, so it counts the rows.
+    const beforeOutlinedCopy = shared.slice(0, shared.indexOf(chunk));
+    expect(beforeOutlinedCopy).not.toContain('chunk-Client');
   });
 
   it('should escape strings inside client reference metadata', async () => {
@@ -1182,7 +1181,7 @@ describe('ReactFlightDOMEdge', () => {
     const outlined = await renderClients(new Array(3).fill(outlinedChunk));
     const inline = await renderClients(new Array(3).fill(inlineChunk));
 
-    expect(outlined.split('$' + outlinedChunk).length - 1).toBe(2);
+    expect(outlined.split('$' + outlinedChunk).length - 1).toBe(1);
     expect(inline.split('$' + inlineChunk).length - 1).toBe(3);
   });
 
@@ -1194,14 +1193,14 @@ describe('ReactFlightDOMEdge', () => {
     const long = await renderClients(new Array(10).fill(longChunk));
 
     expect(short.split(shortChunk).length - 1).toBe(10);
-    expect(long.split(longChunk).length - 1).toBe(2);
+    expect(long.split(longChunk).length - 1).toBe(1);
     // The longer chunk is the one that produces the smaller payload.
     expect(long.length).toBeLessThan(short.length);
   });
 
   it('should stop tracking new import strings once the budget is spent', async () => {
-    // Chunks that never repeat are tracked too, in case they do later.
-    // 32 fillers of 1 KiB fill the 32 KiB budget.
+    // Every chunk is outlined the first time it's seen, so chunks that never
+    // repeat spend budget too. 32 fillers of 1 KiB fill the 32 KiB budget.
     const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
     const repeats = new Array(10).fill(chunk);
     const filler = (count, length) =>
@@ -1211,16 +1210,16 @@ describe('ReactFlightDOMEdge', () => {
     const fitsInTheRest = await renderClients(filler(31, 1024).concat(repeats));
     const findsItSpent = await renderClients(filler(32, 1024).concat(repeats));
 
-    expect(fitsInTheRest.split(chunk).length - 1).toBe(2);
+    expect(fitsInTheRest.split(chunk).length - 1).toBe(1);
     expect(findsItSpent.split(chunk).length - 1).toBe(10);
 
-    // A string tracked before the budget is spent keeps deduping after.
+    // A string outlined before the budget is spent keeps deduping after.
     const lastFiller = filler(1, 32768 - 31 * 1024 - chunk.length);
     const trackedBefore = await renderClients(
       [chunk].concat(filler(31, 1024), lastFiller, repeats),
     );
 
-    expect(trackedBefore.split(chunk).length - 1).toBe(2);
+    expect(trackedBefore.split(chunk).length - 1).toBe(1);
 
     const bigChunk = 'path/to/' + 'a'.repeat(40000) + '.js';
     const big = await renderClients(new Array(3).fill(bigChunk));
@@ -1238,7 +1237,7 @@ describe('ReactFlightDOMEdge', () => {
       })),
     );
 
-    expect(payload.split(chunk).length - 1).toBe(2);
+    expect(payload.split(chunk).length - 1).toBe(1);
   });
 
   it('should error on circular client reference metadata', async () => {
@@ -1324,7 +1323,7 @@ describe('ReactFlightDOMEdge', () => {
     const payload = await readResult(stream);
 
     // The main stream dedupes as usual.
-    expect(payload.split(chunk).length - 1).toBe(2);
+    expect(payload.split(chunk).length - 1).toBe(1);
 
     // The debug channel can't point at that row, so every import row it writes
     // spells the chunk out. The chunk id is too short to be outlined, so it
