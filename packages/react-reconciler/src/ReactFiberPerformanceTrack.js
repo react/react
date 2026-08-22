@@ -10,6 +10,7 @@
 /* eslint-disable react-internal/no-production-logging */
 
 import type {Fiber} from './ReactInternalTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 
 import type {Lanes} from './ReactFiberLane';
 
@@ -231,7 +232,7 @@ export function logComponentRender(
     return;
   }
   if (supportsUserTiming) {
-    const alternate = fiber.alternate;
+    const alternate = getPreviousVersion(fiber);
     let selfTime: number = fiber.actualDuration as any;
     if (alternate === null || alternate.child !== fiber.child) {
       for (let child = fiber.child; child !== null; child = child.sibling) {

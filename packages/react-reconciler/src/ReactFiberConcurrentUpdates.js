@@ -23,10 +23,16 @@ import {
   warnAboutUpdateOnNotYetMountedFiberInDEV,
   throwIfInfiniteUpdateLoopDetected,
   getWorkInProgressRoot,
+  isAlreadyRendering,
 } from './ReactFiberWorkLoop';
+import {getPreviousVersion} from './ReactFiberInstance';
+import {
+  invalidateInProgressVersion,
+  markInProgressSubtreeStale,
+} from './ReactFiberResuming';
 import {NoLane, NoLanes, mergeLanes, markHiddenUpdate} from './ReactFiberLane';
 import {NoFlags, Placement, Hydrating} from './ReactFiberFlags';
-import {HostRoot, OffscreenComponent} from './ReactWorkTags';
+import {HostComponent, HostRoot, OffscreenComponent} from './ReactWorkTags';
 import {OffscreenVisible} from './ReactFiberOffscreenComponent';
 
 export type ConcurrentUpdate = {
@@ -55,7 +61,20 @@ export function finishQueueingConcurrentUpdates(): void {
 
   let i = 0;
   while (i < endIndex) {
-    const fiber: Fiber = concurrentQueues[i];
+    // A commit may have happened since the update was enqueued, in which case
+    // the fiber it was enqueued on has been replaced by a newer version.
+    const enqueuedFiber: Fiber = concurrentQueues[i];
+    const fiber: Fiber = enqueuedFiber.instance.current;
+    if (
+      fiber !== enqueuedFiber &&
+      enqueuedFiber.tag === HostComponent &&
+      fiber.memoizedState === null
+    ) {
+      // A host component became stateful (see ensureFormComponentIsStateful)
+      // after the version that replaced it was cloned. Its hooks were
+      // installed outside of the render phase, so they're carried over here.
+      fiber.memoizedState = enqueuedFiber.memoizedState;
+    }
     concurrentQueues[i++] = null;
     const queue: ConcurrentQueue = concurrentQueues[i];
     concurrentQueues[i++] = null;
@@ -78,7 +97,7 @@ export function finishQueueingConcurrentUpdates(): void {
     }
 
     if (lane !== NoLane) {
-      markUpdateLaneFromFiberToRoot(fiber, update, lane);
+      markUpdateLaneFromFiberToRoot(fiber, update, lane, true);
     }
   }
 }
@@ -106,10 +125,6 @@ function enqueueUpdate(
   // scheduled, to perform an eager bailout, so we need to update it immediately.
   // TODO: We should probably move this to the "shared" queue instead.
   fiber.lanes = mergeLanes(fiber.lanes, lane);
-  const alternate = fiber.alternate;
-  if (alternate !== null) {
-    alternate.lanes = mergeLanes(alternate.lanes, lane);
-  }
 }
 
 export function enqueueConcurrentHookUpdate<S, A>(
@@ -142,10 +157,11 @@ export function enqueueConcurrentHookUpdateAndEagerlyBailout<S, A>(
   // here. So the update we just queued will leak until something else happens
   // to schedule work (if ever).
   //
-  // Check if we're currently in the middle of rendering a tree, and if not,
-  // process the queue immediately to prevent a leak.
+  // Check if we're currently in the middle of rendering or committing a tree,
+  // and if not, process the queue immediately to prevent a leak. During a
+  // commit the queue is processed once the finished tree has become current.
   const isConcurrentlyRendering = getWorkInProgressRoot() !== null;
-  if (!isConcurrentlyRendering) {
+  if (!isConcurrentlyRendering && !isAlreadyRendering()) {
     finishQueueingConcurrentUpdates();
   }
 }
@@ -182,7 +198,21 @@ export function unsafe_markUpdateLaneFromFiberToRoot(
   // that, at the time of this writing, there's an internal product test that
   // happens to rely on this.
   const root = getRootForUpdatedFiber(sourceFiber);
-  markUpdateLaneFromFiberToRoot(sourceFiber, null, lane);
+  if (sourceFiber.instance.current !== sourceFiber) {
+    // This is a work-in-progress fiber (legacy Suspense marking a fiber that
+    // didn't complete). The render that's in progress decides what happens to
+    // the lane, so only its tree is marked.
+    markUpdateLaneFromFiberToRoot(sourceFiber, null, lane, false);
+  } else {
+    // This is the committed version of the fiber. Mark the committed tree so
+    // that, if the render hasn't visited this fiber yet, it knows there's work
+    // when it does. If the render has already visited it, the update can only
+    // be processed by the next render, which clones whatever this one commits.
+    // Queue the lane so that it gets marked on that tree too (or on this one
+    // again, if this render is thrown away).
+    markUpdateLaneFromFiberToRoot(sourceFiber, null, lane, true);
+    enqueueUpdate(sourceFiber, null, null, lane);
+  }
   return root;
 }
 
@@ -190,23 +220,24 @@ function markUpdateLaneFromFiberToRoot(
   sourceFiber: Fiber,
   update: ConcurrentUpdate | null,
   lane: Lane,
+  isCommittedTree: boolean,
 ): null | FiberRoot {
   // Update the source fiber's lanes
   sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
-  let alternate = sourceFiber.alternate;
-  if (alternate !== null) {
-    alternate.lanes = mergeLanes(alternate.lanes, lane);
-  }
+  invalidateInProgressVersion(sourceFiber);
   // Walk the parent path to the root and update the child lanes.
   let isHidden = false;
   let parent = sourceFiber.return;
   let node = sourceFiber;
   while (parent !== null) {
-    parent.childLanes = mergeLanes(parent.childLanes, lane);
-    alternate = parent.alternate;
-    if (alternate !== null) {
-      alternate.childLanes = mergeLanes(alternate.childLanes, lane);
+    if (isCommittedTree) {
+      // Return pointers of fibers in the committed tree normally point to
+      // committed parents, but the render phase may have repointed one at a
+      // work-in-progress parent that has since been committed or thrown away.
+      parent = parent.instance.current;
     }
+    parent.childLanes = mergeLanes(parent.childLanes, lane);
+    markInProgressSubtreeStale(parent);
 
     if (parent.tag === OffscreenComponent) {
       // Check if this offscreen boundary is currently hidden.
@@ -244,6 +275,15 @@ function markUpdateLaneFromFiberToRoot(
     if (isHidden && update !== null) {
       markHiddenUpdate(root, update, lane);
     }
+    if (isCommittedTree) {
+      // A work-in-progress tree that was cloned from this one before the
+      // update was marked doesn't know about this lane. Track it on the root
+      // so that it isn't dropped when that tree commits.
+      root.currentTreeUpdatedLanes = mergeLanes(
+        root.currentTreeUpdatedLanes,
+        lane,
+      );
+    }
     return root;
   }
   return null;
@@ -269,7 +309,8 @@ function getRootForUpdatedFiber(sourceFiber: Fiber): FiberRoot | null {
   let parent = node.return;
   while (parent !== null) {
     detectUpdateOnUnmountedFiber(sourceFiber, node);
-    node = parent;
+    // See markUpdateLaneFromFiberToRoot for why this resolves the parent.
+    node = parent.instance.current;
     parent = node.return;
   }
   return node.tag === HostRoot ? (node.stateNode as FiberRoot) : null;
@@ -277,7 +318,7 @@ function getRootForUpdatedFiber(sourceFiber: Fiber): FiberRoot | null {
 
 function detectUpdateOnUnmountedFiber(sourceFiber: Fiber, parent: Fiber) {
   if (__DEV__) {
-    const alternate = parent.alternate;
+    const alternate = getPreviousVersion(parent);
     if (
       alternate === null &&
       (parent.flags & (Placement | Hydrating)) !== NoFlags

@@ -535,7 +535,12 @@ export function injectIntoGlobalHook(globalObject: any): void {
         helpersByRoot.set(root, helpers);
 
         const current = root.current;
-        const alternate = current.alternate;
+        // The version of the root fiber that this commit replaced. Older
+        // versions of React keep it on the fiber as its alternate.
+        const alternate =
+          current.instance !== undefined
+            ? current.instance.previous
+            : (current as any).alternate;
 
         // We need to determine whether this root has just (un)mounted.
         // This logic is copy-pasted from similar logic in the DevTools backend.

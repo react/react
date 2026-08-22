@@ -2461,8 +2461,6 @@ describe('ReactInteractionTracing', () => {
       // end pre-warming
       'onTransitionStart(transition, 0)',
       'onTransitionProgress(transition, 0, 1000, [two])',
-      // pre-warming
-      'Suspend [Text Two]',
     ]);
 
     await act(() => {

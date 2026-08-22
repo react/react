@@ -277,6 +277,56 @@ function createSuspenseNode(
 const knownEnvironmentNames: Set<string> = new Set();
 
 // Map of FiberRoot to their root FiberInstance.
+// Newer versions of React replace the Fiber of a node on every update and
+// share a FiberInstance between all versions of it. Older versions keep two
+// Fibers per node that alternate. These helpers paper over the difference.
+
+// A key that's stable across all versions of a Fiber's node.
+function getNodeKey(fiber: Fiber): mixed {
+  return fiber.instance !== undefined ? fiber.instance : fiber;
+}
+
+// The other Fiber of the pair in older versions of React, or null.
+function getLegacyAlternate(fiber: Fiber): null | Fiber {
+  const alternate = (fiber as any).alternate;
+  return fiber.instance === undefined && alternate != null ? alternate : null;
+}
+
+// Whether two Fibers are versions of the same node.
+function isSameNode(a: Fiber, b: Fiber): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a.instance !== undefined) {
+    return a.instance === b.instance;
+  }
+  return (a as any).alternate === b;
+}
+
+// The version of the node that this Fiber replaced, if any.
+function getPreviousVersionOfFiber(fiber: Fiber): null | Fiber {
+  if (fiber.instance !== undefined) {
+    const instance = fiber.instance;
+    return instance.current === fiber ? instance.previous : instance.current;
+  }
+  const alternate = (fiber as any).alternate;
+  return alternate == null ? null : alternate;
+}
+
+// Whether the set of updaters contains any version of this Fiber's node.
+function isFiberInUpdaters(updaters: Set<Fiber>, fiber: Fiber): boolean {
+  if (updaters.has(fiber)) {
+    return true;
+  }
+  let found = false;
+  updaters.forEach(updater => {
+    if (isSameNode(updater, fiber)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
 const rootToFiberInstanceMap: Map<FiberRoot, FiberInstance> = new Map();
 
 // Map of id to FiberInstance or VirtualInstance.
@@ -480,7 +530,22 @@ export function attach(
   // picked up a FiberInstance. This keeps it around as long as the Fiber is alive which
   // lets the Fiber get reparented/remounted and still observe the previous errors/warnings.
   // Unless we explicitly clear the logs from a Fiber.
-  const fiberToComponentLogsMap: WeakMap<Fiber, ComponentLogs> = new WeakMap();
+  const fiberToComponentLogsMap: WeakMap<any, ComponentLogs> = new WeakMap();
+
+  function getComponentLogsForFiber(fiber: Fiber): void | ComponentLogs {
+    let componentLogsEntry = fiberToComponentLogsMap.get(getNodeKey(fiber));
+    if (componentLogsEntry === undefined) {
+      const alternate = getLegacyAlternate(fiber);
+      if (alternate !== null) {
+        componentLogsEntry = fiberToComponentLogsMap.get(alternate);
+        if (componentLogsEntry !== undefined) {
+          // Use the same set for both Fibers.
+          fiberToComponentLogsMap.set(fiber, componentLogsEntry);
+        }
+      }
+    }
+    return componentLogsEntry;
+  }
   // Tracks whether we've performed a commit since the last log. This is used to know
   // whether we received any new logs between the commit and post commit phases. I.e.
   // if any passive effects called console.warn / console.error.
@@ -519,9 +584,10 @@ export function attach(
     for (const devtoolsInstance of idToDevToolsInstanceMap.values()) {
       if (devtoolsInstance.kind === FIBER_INSTANCE) {
         const fiber = devtoolsInstance.data;
-        fiberToComponentLogsMap.delete(fiber);
-        if (fiber.alternate) {
-          fiberToComponentLogsMap.delete(fiber.alternate);
+        fiberToComponentLogsMap.delete(getNodeKey(fiber));
+        const alternate = getLegacyAlternate(fiber);
+        if (alternate !== null) {
+          fiberToComponentLogsMap.delete(alternate);
         }
       } else {
         componentInfoToComponentLogsMap.delete(devtoolsInstance.data);
@@ -540,11 +606,7 @@ export function attach(
       let componentLogsEntry;
       if (devtoolsInstance.kind === FIBER_INSTANCE) {
         const fiber = devtoolsInstance.data;
-        componentLogsEntry = fiberToComponentLogsMap.get(fiber);
-
-        if (componentLogsEntry === undefined && fiber.alternate !== null) {
-          componentLogsEntry = fiberToComponentLogsMap.get(fiber.alternate);
-        }
+        componentLogsEntry = getComponentLogsForFiber(fiber);
       } else {
         const componentInfo = devtoolsInstance.data;
         componentLogsEntry = componentInfoToComponentLogsMap.get(componentInfo);
@@ -651,11 +713,7 @@ export function attach(
     }
     if (type === 'error') {
       // if this is an error simulated by us to trigger error boundary, ignore
-      if (
-        forceErrorForFibers.get(fiber) === true ||
-        (fiber.alternate !== null &&
-          forceErrorForFibers.get(fiber.alternate) === true)
-      ) {
+      if (isErrorForcedForFiber(fiber)) {
         return;
       }
     }
@@ -669,14 +727,7 @@ export function attach(
     const message = formatConsoleArgumentsToSingleString(...args);
 
     // Track the warning/error for later.
-    let componentLogsEntry = fiberToComponentLogsMap.get(fiber);
-    if (componentLogsEntry === undefined && fiber.alternate !== null) {
-      componentLogsEntry = fiberToComponentLogsMap.get(fiber.alternate);
-      if (componentLogsEntry !== undefined) {
-        // Use the same set for both Fibers.
-        fiberToComponentLogsMap.set(fiber, componentLogsEntry);
-      }
-    }
+    let componentLogsEntry = getComponentLogsForFiber(fiber);
     if (componentLogsEntry === undefined) {
       componentLogsEntry = {
         errors: new Map(),
@@ -684,7 +735,7 @@ export function attach(
         warnings: new Map(),
         warningsCount: 0 as number,
       };
-      fiberToComponentLogsMap.set(fiber, componentLogsEntry);
+      fiberToComponentLogsMap.set(getNodeKey(fiber), componentLogsEntry);
     }
 
     const messageMap =
@@ -1233,20 +1284,14 @@ export function attach(
   // This method should always be called when a Fiber is unmounting.
   function untrackFiber(nearestInstance: DevToolsInstance, fiber: Fiber) {
     if (forceErrorForFibers.size > 0) {
-      forceErrorForFibers.delete(fiber);
-      if (fiber.alternate) {
-        forceErrorForFibers.delete(fiber.alternate);
-      }
+      forceErrorForFibers.delete(getNodeKey(fiber));
       if (forceErrorForFibers.size === 0 && setErrorHandler != null) {
         setErrorHandler(shouldErrorFiberAlwaysNull);
       }
     }
 
     if (forceFallbackForFibers.size > 0) {
-      forceFallbackForFibers.delete(fiber);
-      if (fiber.alternate) {
-        forceFallbackForFibers.delete(fiber.alternate);
-      }
+      forceFallbackForFibers.delete(getNodeKey(fiber));
       if (forceFallbackForFibers.size === 0 && setSuspenseHandler != null) {
         setSuspenseHandler(shouldSuspendFiberAlwaysFalse);
       }
@@ -1885,10 +1930,7 @@ export function attach(
       }
     }
 
-    let componentLogsEntry = fiberToComponentLogsMap.get(fiber);
-    if (componentLogsEntry === undefined && fiber.alternate !== null) {
-      componentLogsEntry = fiberToComponentLogsMap.get(fiber.alternate);
-    }
+    const componentLogsEntry = getComponentLogsForFiber(fiber);
     recordConsoleLogs(fiberInstance, componentLogsEntry);
 
     if (isProfilingSupported) {
@@ -3262,8 +3304,7 @@ export function attach(
     traceNearestHostComponentUpdate: boolean,
   ): void {
     const isFocusedActivityEntry =
-      focusedActivity !== null &&
-      (fiber === focusedActivity || fiber.alternate === focusedActivity);
+      focusedActivity !== null && isSameNode(fiber, focusedActivity);
     if (isFocusedActivityEntry) {
       isInFocusedActivity = true;
     }
@@ -3757,13 +3798,7 @@ export function attach(
       // it to be included in the description of the commit.
       const fiberRoot: FiberRoot = currentRoot.data.stateNode;
       const updaters = fiberRoot.memoizedUpdaters;
-      if (
-        updaters != null &&
-        (updaters.has(fiber) ||
-          // We check the alternate here because we're matching identity and
-          // prevFiber might be same as fiber.
-          (fiber.alternate !== null && updaters.has(fiber.alternate)))
-      ) {
+      if (updaters != null && isFiberInUpdaters(updaters, fiber)) {
         const metadata =
           currentCommitProfilingMetadata as any as CommitProfilingData;
         if (metadata.updaters === null) {
@@ -4144,17 +4179,22 @@ export function attach(
           // children again.
           prevChild = nextChild;
         } else {
-          // We don't actually need to rely on the alternate here. We could also
-          // reconcile against stateNode, key or whatever. Doesn't have to be same
-          // Fiber pair.
-          prevChild = nextChild.alternate;
+          // The previous version of this node is whichever one we recorded
+          // last time. Newer versions of React let us match it by node identity
+          // regardless of which version that was.
+          prevChild = getPreviousVersionOfFiber(nextChild);
         }
         let previousSiblingOfExistingInstance = null;
         let existingInstance = null;
         if (prevChild !== null) {
+          const nextChildNode: Fiber = nextChild;
           existingInstance = remainingReconcilingChildren;
           while (existingInstance !== null) {
-            if (existingInstance.data === prevChild) {
+            if (
+              existingInstance.kind !== VIRTUAL_INSTANCE &&
+              isSameNode(existingInstance.data, nextChildNode)
+            ) {
+              prevChild = existingInstance.data;
               break;
             }
             previousSiblingOfExistingInstance = existingInstance;
@@ -4803,17 +4843,9 @@ export function attach(
         );
 
         if (fiberInstance.kind === FIBER_INSTANCE) {
-          let componentLogsEntry = fiberToComponentLogsMap.get(
+          const componentLogsEntry = getComponentLogsForFiber(
             fiberInstance.data,
           );
-          if (
-            componentLogsEntry === undefined &&
-            fiberInstance.data.alternate
-          ) {
-            componentLogsEntry = fiberToComponentLogsMap.get(
-              fiberInstance.data.alternate,
-            );
-          }
           recordConsoleLogs(fiberInstance, componentLogsEntry);
 
           if (!isInDisconnectedSubtree) {
@@ -5515,10 +5547,11 @@ export function attach(
         parentInstance.data === owner ||
         // Typically both owner and instance.data would refer to the current version of a Fiber
         // but it is possible for memoization to ignore the owner on the JSX. Then the new Fiber
-        // isn't propagated down as the new owner. In that case we might match the alternate
+        // isn't propagated down as the new owner. In that case we might match another version
         // instead. This is a bit hacky but the fastest check since type casting owner to a Fiber
         // needs a duck type check anyway.
-        parentInstance.data === (owner as any).alternate
+        (parentInstance.kind !== VIRTUAL_INSTANCE &&
+          isSameNode(parentInstance.data as any, owner as any))
       ) {
         if (parentInstance.kind === FILTERED_FIBER_INSTANCE) {
           return null;
@@ -6215,10 +6248,7 @@ export function attach(
       // from the reconciler instead.
       const DidCapture = 0b000000000000000000010000000;
       isErrored =
-        (fiber.flags & DidCapture) !== 0 ||
-        forceErrorForFibers.get(fiber) === true ||
-        (fiber.alternate !== null &&
-          forceErrorForFibers.get(fiber.alternate) === true);
+        (fiber.flags & DidCapture) !== 0 || isErrorForcedForFiber(fiber);
     }
 
     const plugins: Plugins = {
@@ -6236,10 +6266,7 @@ export function attach(
       source = getSourceForFiberInstance(fiberInstance);
     }
 
-    let componentLogsEntry = fiberToComponentLogsMap.get(fiber);
-    if (componentLogsEntry === undefined && fiber.alternate !== null) {
-      componentLogsEntry = fiberToComponentLogsMap.get(fiber.alternate);
-    }
+    const componentLogsEntry = getComponentLogsForFiber(fiber);
 
     let nativeTag = null;
     if (elementType === ElementTypeHostComponent) {
@@ -6315,9 +6342,7 @@ export function attach(
         (!isSuspended ||
           // If it's showing fallback because we previously forced it to,
           // allow toggling it back to remove the fallback override.
-          forceFallbackForFibers.has(fiber) ||
-          (fiber.alternate !== null &&
-            forceFallbackForFibers.has(fiber.alternate))),
+          isFallbackForcedForFiber(fiber)),
       isSuspended: isSuspended,
 
       source,
@@ -7404,8 +7429,17 @@ export function attach(
     return null;
   }
 
-  // Map of Fiber and its force error status: true (error), false (toggled off)
-  const forceErrorForFibers = new Map<Fiber, boolean>();
+  // Map of a Fiber's node and its force error status: true (error),
+  // false (toggled off)
+  const forceErrorForFibers = new Map<mixed, boolean>();
+
+  function isErrorForcedForFiber(fiber: Fiber): boolean {
+    if (forceErrorForFibers.get(getNodeKey(fiber)) === true) {
+      return true;
+    }
+    const alternate = getLegacyAlternate(fiber);
+    return alternate !== null && forceErrorForFibers.get(alternate) === true;
+  }
 
   function shouldErrorFiberAccordingToMap(fiber: any): boolean | null {
     if (typeof setErrorHandler !== 'function') {
@@ -7414,7 +7448,15 @@ export function attach(
       );
     }
 
-    let status = forceErrorForFibers.get(fiber);
+    let key = getNodeKey(fiber);
+    let status = forceErrorForFibers.get(key);
+    if (status === undefined) {
+      const alternate = getLegacyAlternate(fiber);
+      if (alternate !== null) {
+        key = alternate;
+        status = forceErrorForFibers.get(key);
+      }
+    }
     if (status === false) {
       // TRICKY overrideError adds entries to this Map,
       // so ideally it would be the method that clears them too,
@@ -7425,22 +7467,12 @@ export function attach(
       // Technically this is premature and we should schedule it for later,
       // since the render could always fail without committing the updated error boundary,
       // but since this is a DEV-only feature, the simplicity is worth the trade off.
-      forceErrorForFibers.delete(fiber);
+      forceErrorForFibers.delete(key);
       if (forceErrorForFibers.size === 0) {
         // Last override is gone. Switch React back to fast path.
         setErrorHandler(shouldErrorFiberAlwaysNull);
       }
       return false;
-    }
-    if (status === undefined && fiber.alternate !== null) {
-      status = forceErrorForFibers.get(fiber.alternate);
-      if (status === false) {
-        forceErrorForFibers.delete(fiber.alternate);
-        if (forceErrorForFibers.size === 0) {
-          // Last override is gone. Switch React back to fast path.
-          setErrorHandler(shouldErrorFiberAlwaysNull);
-        }
-      }
     }
     if (status === undefined) {
       return null;
@@ -7473,10 +7505,11 @@ export function attach(
       }
       fiber = fiber.return;
     }
-    forceErrorForFibers.set(fiber, forceError);
-    if (fiber.alternate !== null) {
+    forceErrorForFibers.set(getNodeKey(fiber), forceError);
+    const alternate = getLegacyAlternate(fiber);
+    if (alternate !== null) {
       // We only need one of the Fibers in the set.
-      forceErrorForFibers.delete(fiber.alternate);
+      forceErrorForFibers.delete(alternate);
     }
     if (forceErrorForFibers.size === 1) {
       // First override is added. Switch React to slower path.
@@ -7495,13 +7528,19 @@ export function attach(
     return false;
   }
 
-  const forceFallbackForFibers = new Set<Fiber>();
+  // Map of a Fiber's node to a Fiber of that node that we force the fallback of.
+  const forceFallbackForFibers = new Map<mixed, Fiber>();
+
+  function isFallbackForcedForFiber(fiber: Fiber): boolean {
+    if (forceFallbackForFibers.has(getNodeKey(fiber))) {
+      return true;
+    }
+    const alternate = getLegacyAlternate(fiber);
+    return alternate !== null && forceFallbackForFibers.has(alternate);
+  }
 
   function shouldSuspendFiberAccordingToSet(fiber: Fiber): boolean {
-    return (
-      forceFallbackForFibers.has(fiber) ||
-      (fiber.alternate !== null && forceFallbackForFibers.has(fiber.alternate))
-    );
+    return isFallbackForcedForFiber(fiber);
   }
 
   function overrideSuspense(id: number, forceFallback: boolean) {
@@ -7529,18 +7568,19 @@ export function attach(
       fiber = fiber.return;
     }
 
-    if (fiber.alternate !== null) {
+    const alternate = getLegacyAlternate(fiber);
+    if (alternate !== null) {
       // We only need one of the Fibers in the set.
-      forceFallbackForFibers.delete(fiber.alternate);
+      forceFallbackForFibers.delete(alternate);
     }
     if (forceFallback) {
-      forceFallbackForFibers.add(fiber);
+      forceFallbackForFibers.set(getNodeKey(fiber), fiber);
       if (forceFallbackForFibers.size === 1) {
         // First override is added. Switch React to slower path.
         setSuspenseHandler(shouldSuspendFiberAccordingToSet);
       }
     } else {
-      forceFallbackForFibers.delete(fiber);
+      forceFallbackForFibers.delete(getNodeKey(fiber));
       if (forceFallbackForFibers.size === 0) {
         // Last override is gone. Switch React back to fast path.
         setSuspenseHandler(shouldSuspendFiberAlwaysFalse);
@@ -7569,7 +7609,7 @@ export function attach(
       );
     }
 
-    const unsuspendedSet: Set<Fiber> = new Set(forceFallbackForFibers);
+    const unsuspendedSet: Map<mixed, Fiber> = new Map(forceFallbackForFibers);
 
     let resuspended = false;
     for (let i = 0; i < suspendedSet.length; ++i) {
@@ -7583,18 +7623,15 @@ export function attach(
 
       if (instance.kind === FIBER_INSTANCE) {
         const fiber = instance.data;
-        if (
-          forceFallbackForFibers.has(fiber) ||
-          (fiber.alternate !== null &&
-            forceFallbackForFibers.has(fiber.alternate))
-        ) {
+        if (isFallbackForcedForFiber(fiber)) {
           // We're already forcing fallback for this fiber. Mark it as not unsuspended.
-          unsuspendedSet.delete(fiber);
-          if (fiber.alternate !== null) {
-            unsuspendedSet.delete(fiber.alternate);
+          unsuspendedSet.delete(getNodeKey(fiber));
+          const alternate = getLegacyAlternate(fiber);
+          if (alternate !== null) {
+            unsuspendedSet.delete(alternate);
           }
         } else {
-          forceFallbackForFibers.add(fiber);
+          forceFallbackForFibers.set(getNodeKey(fiber), fiber);
           // We could find a minimal set that covers all the Fibers in this suspended set.
           // For now we rely on React's batching of updates.
           scheduleUpdate(fiber);
@@ -7606,8 +7643,8 @@ export function attach(
     }
 
     // Unsuspend any existing forced fallbacks if they're not in the new set.
-    unsuspendedSet.forEach(fiber => {
-      forceFallbackForFibers.delete(fiber);
+    unsuspendedSet.forEach((fiber, key) => {
+      forceFallbackForFibers.delete(key);
       if (!resuspended && typeof scheduleRetry === 'function') {
         // If nothing new resuspended we don't need this to be sync. If we're only
         // unsuspending then we can schedule this as a Retry if the renderer supports it.
@@ -7659,13 +7696,14 @@ export function attach(
       return false;
     }
     const returnFiber = fiber.return;
-    const returnAlternate = returnFiber !== null ? returnFiber.alternate : null;
     // By now we know there's some selection to restore, and this is a new Fiber.
     // Is this newly mounted Fiber a direct child of the current best match?
     // (This will also be true for new roots if we haven't matched anything yet.)
     if (
       trackedPathMatchFiber === returnFiber ||
-      (trackedPathMatchFiber === returnAlternate && returnAlternate !== null)
+      (trackedPathMatchFiber !== null &&
+        returnFiber !== null &&
+        isSameNode(trackedPathMatchFiber, returnFiber))
     ) {
       // Is this the next Fiber we should select? Let's compare the frames.
       const actualFrame = getPathFrame(fiber);

@@ -38,6 +38,7 @@ export const enableConditionalUseWarning: boolean = false;
 export const enableLegacyCache: boolean = false;
 export const enableLegacyFBSupport: boolean = false;
 export const enableLegacyHidden: boolean = false;
+export const enableResumingInterruptedRenders: boolean = false;
 export const enableNoCloningMemoCache: boolean = false;
 export const enableObjectFiber: boolean = false;
 export const enableReactTestRendererWarning: boolean = false;

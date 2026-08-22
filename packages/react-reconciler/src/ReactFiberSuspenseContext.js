@@ -8,6 +8,7 @@
  */
 
 import type {SuspenseProps} from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {Fiber} from './ReactInternalTypes';
 import type {StackCursor} from './ReactFiberStack';
 import type {SuspenseState} from './ReactFiberSuspenseComponent';
@@ -42,7 +43,7 @@ export function getShellBoundary(): Fiber | null {
 
 export function pushPrimaryTreeSuspenseHandler(handler: Fiber): void {
   // TODO: Pass as argument
-  const current = handler.alternate;
+  const current = getPreviousVersion(handler);
   const props: SuspenseProps = handler.pendingProps;
 
   // Shallow Suspense context fields, like ForceSuspenseFallback, should only be

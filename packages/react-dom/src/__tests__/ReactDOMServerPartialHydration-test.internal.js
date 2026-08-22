@@ -312,7 +312,23 @@ describe('ReactDOMServerPartialHydration', () => {
     suspend = false;
     resolve();
     await promise;
-    await waitForAll([]);
+    // Child only calls use() while `suspend` is set, which is conditional.
+    spyOnDev(console, 'error').mockImplementation(() => {});
+    try {
+      await waitForAll([]);
+      if (__DEV__ && gate(flags => flags.enableConditionalUseWarning)) {
+        expect(console.error).toHaveBeenCalledTimes(1);
+        expect(console.error.mock.calls[0][0].message).toBe(
+          'This library called use() to suspend in a previous render but ' +
+            'did not call use() when it finished. This indicates an incorrect use of use(). ' +
+            'Learn more: https://react.dev/warnings/conditional-use-of-use',
+        );
+      }
+    } finally {
+      if (__DEV__) {
+        console.error.mockRestore();
+      }
+    }
 
     expect(container.textContent).toBe('Hello');
     if (__DEV__) {

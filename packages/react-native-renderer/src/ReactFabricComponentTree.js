@@ -26,7 +26,7 @@ function getInstanceFromNode(node: Instance | TextInstance): Fiber | null {
     instance.canonical != null &&
     instance.canonical.internalInstanceHandle != null
   ) {
-    return instance.canonical.internalInstanceHandle;
+    return instance.canonical.internalInstanceHandle.current;
   }
 
   // $FlowFixMe[incompatible-type] DevTools incorrectly passes a fiber in React Native.

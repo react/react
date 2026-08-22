@@ -240,7 +240,13 @@ describe('ReactLazy', () => {
     expect(root).not.toMatchRenderedOutput('FooBar');
 
     await act(() => resolveFakeImport(Bar));
-    assertLog(['Foo', 'Bar']);
+    // Foo already rendered in the attempt that suspended on Bar. If that
+    // attempt is continued from, it isn't rendered again.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Bar']
+        : ['Foo', 'Bar'],
+    );
     expect(root).toMatchRenderedOutput('FooBar');
   });
 

@@ -91,6 +91,7 @@ export const enableScopeAPI: boolean = true;
 export const enableSuspenseCallback: boolean = true;
 
 export const enableLegacyHidden: boolean = true;
+export const enableResumingInterruptedRenders: boolean = false;
 
 export const disableTextareaChildren = __EXPERIMENTAL__;
 

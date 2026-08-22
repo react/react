@@ -1477,7 +1477,9 @@ describe('ReactSuspenseList', () => {
     await act(() => D.resolve());
     assertLog([
       'D',
-      'F',
+      // F already rendered in the attempt that suspended on D. If that attempt
+      // is continued from, it isn't rendered again.
+      ...(gate(flags => flags.enableResumingInterruptedRenders) ? [] : ['F']),
       'Suspend! [B]',
       // pre-warming
       'Suspend! [B]',
@@ -2538,7 +2540,13 @@ describe('ReactSuspenseList', () => {
     );
 
     await act(() => B.resolve());
-    assertLog(['B', 'Suspend! [C]', 'B', 'Suspend! [C]']);
+    // The second attempt continues from the first one's B row, if nothing
+    // about it changed.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['B', 'Suspend! [C]', 'Suspend! [C]']
+        : ['B', 'Suspend! [C]', 'B', 'Suspend! [C]'],
+    );
 
     // Incremental loading is suspended.
     jest.advanceTimersByTime(500);
@@ -2556,7 +2564,11 @@ describe('ReactSuspenseList', () => {
     );
 
     await act(() => C.resolve());
-    assertLog(['B', 'C']);
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['C']
+        : ['B', 'C'],
+    );
 
     expect(ReactNoop).toMatchRenderedOutput(
       <>

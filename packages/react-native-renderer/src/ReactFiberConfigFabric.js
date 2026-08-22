@@ -21,7 +21,10 @@ import {
   IdleEventPriority,
   type EventPriority,
 } from 'react-reconciler/src/ReactEventPriorities';
-import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
+import type {
+  Fiber,
+  FiberInstance,
+} from 'react-reconciler/src/ReactInternalTypes';
 import {HostText} from 'react-reconciler/src/ReactWorkTags';
 import {
   getFragmentParentInstanceOrContainerFiber,
@@ -335,7 +338,8 @@ function getPublicTextInstance(
 export function getPublicInstanceFromInternalInstanceHandle(
   internalInstanceHandle: InternalInstanceHandle,
 ): null | PublicInstance | PublicTextInstance {
-  const instance = internalInstanceHandle.stateNode;
+  const fiber = internalInstanceHandle.current;
+  const instance = fiber.stateNode;
 
   // React resets all the fields in the fiber when the component is unmounted
   // to prevent memory leaks.
@@ -343,12 +347,12 @@ export function getPublicInstanceFromInternalInstanceHandle(
     return null;
   }
 
-  if (internalInstanceHandle.tag === HostText) {
+  if (fiber.tag === HostText) {
     const textInstance: TextInstance = instance;
     return getPublicTextInstance(textInstance, internalInstanceHandle);
   }
 
-  const elementInstance: Instance = internalInstanceHandle.stateNode;
+  const elementInstance: Instance = fiber.stateNode;
   return getPublicInstance(elementInstance);
 }
 
@@ -679,7 +683,7 @@ export function getSuspendedCommitReason(
 }
 
 export type FragmentInstanceType = {
-  _fragmentFiber: Fiber,
+  _fiberInstance: FiberInstance,
   _observers: null | Set<IntersectionObserver>,
   observeUsing: (observer: IntersectionObserver) => void,
   unobserveUsing: (observer: IntersectionObserver) => void,
@@ -691,7 +695,7 @@ export type FragmentInstanceType = {
 };
 
 function FragmentInstance(this: FragmentInstanceType, fragmentFiber: Fiber) {
-  this._fragmentFiber = fragmentFiber;
+  this._fiberInstance = fragmentFiber.instance;
   this._observers = null;
 }
 
@@ -705,7 +709,7 @@ FragmentInstance.prototype.observeUsing = function (
   }
   this._observers.add(observer);
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     observeChild,
     observer,
   );
@@ -733,7 +737,7 @@ FragmentInstance.prototype.unobserveUsing = function (
   } else {
     observers.delete(observer);
     traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
+      this._fiberInstance.current,
       unobserveChild,
       observer,
     );
@@ -753,21 +757,21 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   otherNode: PublicInstance,
 ): number {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
-    this._fragmentFiber,
+    this._fiberInstance.current,
   );
   if (parentHostFiber === null) {
     return Node.DOCUMENT_POSITION_DISCONNECTED;
   }
   const children: Array<Fiber> = [];
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     collectChildren,
     children,
   );
   if (children.length === 0) {
     const parentHostInstance = getPublicInstanceFromHostFiber(parentHostFiber);
     return compareDocumentPositionForEmptyFragment<PublicInstance>(
-      this._fragmentFiber,
+      this._fiberInstance.current,
       parentHostInstance,
       otherNode,
       getPublicInstanceFromHostFiber,
@@ -819,7 +823,7 @@ FragmentInstance.prototype.getRootNode = function (
   getRootNodeOptions?: {composed: boolean},
 ): Node | FragmentInstanceType {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
-    this._fragmentFiber,
+    this._fiberInstance.current,
   );
   if (parentHostFiber === null) {
     return this;
@@ -836,7 +840,7 @@ FragmentInstance.prototype.getClientRects = function (
 ): Array<DOMRect> {
   const rects: Array<DOMRect> = [];
   traverseFragmentInstancesAndTextInstances(
-    this._fragmentFiber,
+    this._fiberInstance.current,
     collectClientRects,
     rects,
   );
@@ -894,13 +898,6 @@ export function createFragmentInstance(
     );
   }
   return fragmentInstance;
-}
-
-export function updateFragmentInstanceFiber(
-  fragmentFiber: Fiber,
-  instance: FragmentInstanceType,
-): void {
-  instance._fragmentFiber = fragmentFiber;
 }
 
 export function commitNewChildToFragmentInstance(

@@ -406,7 +406,13 @@ describe('ReactSuspenseWithNoopRenderer', () => {
 
     // Wait for data to resolve
     await resolveText('B');
-    await waitForAll(['A', 'B', 'C', 'D']);
+    // The siblings already rendered in the attempt that suspended. If that
+    // attempt is continued from, they aren't rendered again.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['B']
+        : ['A', 'B', 'C', 'D'],
+    );
     // Renders successfully
     expect(ReactNoop).toMatchRenderedOutput(
       <>
@@ -1821,8 +1827,14 @@ describe('ReactSuspenseWithNoopRenderer', () => {
       await resolveText('B');
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Loading..." />);
 
-      // Restart and render the complete content.
-      await waitForAll(['A', 'B']);
+      // Restart and render the complete content. A already rendered in the
+      // attempt that suspended on B. If that attempt is continued from, it
+      // isn't rendered again.
+      await waitForAll(
+        gate(flags => flags.enableResumingInterruptedRenders)
+          ? ['B']
+          : ['A', 'B'],
+      );
 
       if (gate(flags => flags.alwaysThrottleRetries)) {
         // Correct behavior:

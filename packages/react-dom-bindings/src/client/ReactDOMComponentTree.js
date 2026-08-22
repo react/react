@@ -7,7 +7,10 @@
  * @flow
  */
 
-import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
+import type {
+  Fiber,
+  FiberInstance,
+} from 'react-reconciler/src/ReactInternalTypes';
 import type {ReactScopeInstance} from 'shared/ReactTypes';
 import type {
   ReactDOMEventHandle,
@@ -62,8 +65,8 @@ type InstanceUnion =
 
 const PossiblyWeakMap = typeof WeakMap === 'function' ? WeakMap : Map;
 const internalInstanceMap:
-  | WeakMap<InstanceUnion, Fiber>
-  | Map<InstanceUnion, Fiber> = new PossiblyWeakMap();
+  | WeakMap<InstanceUnion, FiberInstance>
+  | Map<InstanceUnion, FiberInstance> = new PossiblyWeakMap();
 const internalPropsMap:
   | WeakMap<InstanceUnion, Props>
   | Map<InstanceUnion, Props> = new PossiblyWeakMap();
@@ -92,7 +95,7 @@ export function detachDeletedInstance(node: Instance): void {
 }
 
 export function precacheFiberNode(
-  hostInst: Fiber,
+  hostInst: FiberInstance,
   node:
     | Instance
     | TextInstance
@@ -110,7 +113,10 @@ export function precacheFiberNode(
   (node as any)[internalInstanceKey] = hostInst;
 }
 
-export function markContainerAsRoot(hostRoot: Fiber, node: Container): void {
+export function markContainerAsRoot(
+  hostRoot: FiberInstance,
+  node: Container,
+): void {
   // $FlowFixMe[prop-missing]
   node[internalContainerInstanceKey] = hostRoot;
 }
@@ -134,7 +140,7 @@ export function isContainerMarkedAsRoot(node: Container): boolean {
 // HostRoot back. To get to the HostRoot, you need to pass a child of it.
 // The same thing applies to Suspense and Activity boundaries.
 export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
-  let targetInst: void | Fiber;
+  let targetInst: void | FiberInstance;
   if (enableInternalInstanceMap) {
     targetInst = internalInstanceMap.get(targetNode as any as InstanceUnion);
   } else {
@@ -142,7 +148,7 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
   }
   if (targetInst) {
     // Don't return HostRoot, SuspenseComponent or ActivityComponent here.
-    return targetInst;
+    return targetInst.current;
   }
   // If the direct event target isn't a React owned DOM node, we need to look
   // to see if one of its parents is a React owned DOM node.
@@ -174,17 +180,13 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
       // a nested suspense boundary within it. So we can use this as a fast
       // bailout. Most of the time, when people add non-React children to
       // the tree, it is using a ref to a child-less DOM node.
-      // Normally we'd only need to check one of the fibers because if it
-      // has ever gone from having children to deleting them or vice versa
-      // it would have deleted the dehydrated boundary nested inside already.
-      // However, since the HostRoot starts out with an alternate it might
-      // have one on the alternate so we need to check in case this was a
-      // root.
-      const alternate = targetInst.alternate;
-      if (
-        targetInst.child !== null ||
-        (alternate !== null && alternate.child !== null)
-      ) {
+      // If it has ever gone from having children to deleting them or vice
+      // versa it would have deleted the dehydrated boundary nested inside
+      // already. However, the HostRoot starts out without children while its
+      // first render is in progress, so we always check in case this was
+      // a root.
+      const targetFiber = targetInst.current;
+      if (targetFiber.child !== null || targetFiber.tag === HostRoot) {
         // Next we need to figure out if the node that skipped past is
         // nested within a dehydrated boundary and if so, which one.
         let hydrationInstance = getParentHydrationBoundary(targetNode);
@@ -197,12 +199,12 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
           // have had an internalInstanceKey on it.
           // Let's get the fiber associated with the SuspenseComponent
           // as the deepest instance.
-          const targetFiber = enableInternalInstanceMap
+          const boundaryInst = enableInternalInstanceMap
             ? internalInstanceMap.get(hydrationInstance)
             : // $FlowFixMe[prop-missing]
               hydrationInstance[internalInstanceKey];
-          if (targetFiber) {
-            return targetFiber;
+          if (boundaryInst) {
+            return boundaryInst.current;
           }
           // If we don't find a Fiber on the comment, it might be because
           // we haven't gotten to hydrate it yet. There might still be a
@@ -214,7 +216,7 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
           // below since it will bail out on the isMounted check later.
         }
       }
-      return targetInst;
+      return targetFiber;
     }
     targetNode = parentNode;
     parentNode = targetNode.parentNode;
@@ -227,17 +229,18 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
  * instance, or null if the node was not rendered by this React.
  */
 export function getInstanceFromNode(node: Node): Fiber | null {
-  let inst: void | null | Fiber;
+  let instance: void | null | FiberInstance;
   if (enableInternalInstanceMap) {
-    inst =
+    instance =
       internalInstanceMap.get(node as any as InstanceUnion) ||
       (node as any)[internalContainerInstanceKey];
   } else {
-    inst =
+    instance =
       (node as any)[internalInstanceKey] ||
       (node as any)[internalContainerInstanceKey];
   }
-  if (inst) {
+  if (instance) {
+    const inst = instance.current;
     const tag = inst.tag;
     if (
       tag === HostComponent ||
@@ -314,10 +317,10 @@ export function getFiberFromScopeInstance(
   scope: ReactScopeInstance,
 ): null | Fiber {
   if (enableScopeAPI) {
-    if (enableInternalInstanceMap) {
-      return internalInstanceMap.get(scope as any as InstanceUnion) || null;
-    }
-    return (scope as any)[internalInstanceKey] || null;
+    const instance = enableInternalInstanceMap
+      ? internalInstanceMap.get(scope as any as InstanceUnion)
+      : (scope as any)[internalInstanceKey];
+    return instance ? instance.current : null;
   }
   return null;
 }

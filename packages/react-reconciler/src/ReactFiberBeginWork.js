@@ -23,6 +23,7 @@ import type {
 } from 'shared/ReactTypes';
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Lanes, Lane} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
@@ -83,6 +84,7 @@ import {
   Throw,
   ViewTransitionComponent,
   ActivityComponent,
+  DehydratedFragment,
 } from './ReactWorkTags';
 import {
   NoFlags,
@@ -106,6 +108,7 @@ import {
   ViewTransitionNamedStatic,
   ViewTransitionNamedMount,
   LayoutStatic,
+  DidPropagateContext,
 } from './ReactFiberFlags';
 import {
   disableLegacyContext,
@@ -139,6 +142,7 @@ import {
   mountChildFibers,
   reconcileChildFibers,
   cloneChildFibers,
+  cloneSharedChildFibers,
   validateSuspenseListChildren,
 } from './ReactChildFiber';
 import {
@@ -261,9 +265,17 @@ import {
   createFiberFromFragment,
   createFiberFromOffscreen,
   createWorkInProgress,
+  resetWorkInProgress,
   isSimpleFunctionComponent,
   isFunctionClassComponent,
 } from './ReactFiber';
+import {createFiberInstance, getPreviousVersion} from './ReactFiberInstance';
+import {
+  isInProgressVersion,
+  invalidateInProgressVersion,
+  hasStaleDescendants,
+  pushProviderValue,
+} from './ReactFiberResuming';
 import {
   scheduleUpdateOnFiber,
   renderDidSuspendDelayIfPossible,
@@ -521,19 +533,25 @@ function updateMemoComponent(
   }
   const currentChild = current.child as any as Fiber; // This is always exactly one child
   const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
-    current,
+    workInProgress,
     renderLanes,
   );
   if (!hasScheduledUpdateOrContext) {
     // This will be the props with resolved defaultProps,
     // unlike current.memoizedProps which will be the unresolved ones.
-    const prevProps = currentChild.memoizedProps;
+    // The work-in-progress child is the one whose props were last rendered:
+    // the same as current's unless this is a version a previous render
+    // finished.
+    const prevProps = (workInProgress.child as any as Fiber).memoizedProps;
     // Default to shallow comparison
     let compare = Component.compare;
     compare = compare !== null ? compare : shallowEqual;
     if (compare(prevProps, nextProps) && current.ref === workInProgress.ref) {
       return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
     }
+  }
+  if (isInProgressVersion(workInProgress)) {
+    resetResumedWorkInProgress(workInProgress, renderLanes);
   }
   // React DevTools reads this flag.
   workInProgress.flags |= PerformedWork;
@@ -554,13 +572,15 @@ function updateSimpleMemoComponent(
   // TODO: current can be non-null here even if the component
   // hasn't yet mounted. This happens when the inner render suspends.
   // We'll need to figure out if this is fine or can cause issues.
-  if (current !== null) {
-    const prevProps = current.memoizedProps;
+  if (current !== null || isInProgressVersion(workInProgress)) {
+    const prevProps = workInProgress.memoizedProps;
     if (
       shallowEqual(prevProps, nextProps) &&
-      current.ref === workInProgress.ref &&
+      (current === null || current.ref === workInProgress.ref) &&
       // Prevent bailout if the implementation changed due to hot reload.
-      (__DEV__ ? workInProgress.type === current.type : true)
+      (__DEV__ && current !== null
+        ? workInProgress.type === current.type
+        : true)
     ) {
       didReceiveUpdate = false;
 
@@ -581,31 +601,37 @@ function updateSimpleMemoComponent(
       // affect whether the props object is reused during a bailout.
       workInProgress.pendingProps = nextProps = prevProps;
 
-      if (!checkScheduledUpdateOrContext(current, renderLanes)) {
+      if (!checkScheduledUpdateOrContext(workInProgress, renderLanes)) {
         // The pending lanes were cleared at the beginning of beginWork. We're
         // about to bail out, but there might be other lanes that weren't
         // included in the current render. Usually, the priority level of the
         // remaining updates is accumulated during the evaluation of the
         // component (i.e. when processing the update queue). But since since
         // we're bailing out early *without* evaluating the component, we need
-        // to account for it here, too. Reset to the value of the current fiber.
+        // to account for it here, too. Reset to the value it had.
         // NOTE: This only applies to SimpleMemoComponent, not MemoComponent,
         // because a MemoComponent fiber does not have hooks or an update queue;
         // rather, it wraps around an inner component, which may or may not
         // contains hooks.
         // TODO: Move the reset at in beginWork out of the common path so that
         // this is no longer necessary.
-        workInProgress.lanes = current.lanes;
+        workInProgress.lanes = workInProgressScheduledLanes;
         return bailoutOnAlreadyFinishedWork(
           current,
           workInProgress,
           renderLanes,
         );
-      } else if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
+      } else if (
+        current !== null &&
+        (current.flags & ForceUpdateForLegacySuspense) !== NoFlags
+      ) {
         // This is a special case that only exists for legacy mode.
         // See https://github.com/facebook/react/pull/19216.
         didReceiveUpdate = true;
       }
+    }
+    if (isInProgressVersion(workInProgress)) {
+      resetResumedWorkInProgress(workInProgress, renderLanes);
     }
   }
   return updateFunctionComponent(
@@ -1414,8 +1440,7 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
   const ref = workInProgress.ref;
   if (ref === null) {
     if (current !== null && current.ref !== null) {
-      // Schedule a Ref effect
-      workInProgress.flags |= Ref | RefStatic;
+      scheduleRefEffect(workInProgress);
     }
   } else {
     if (typeof ref !== 'function' && typeof ref !== 'object') {
@@ -1424,10 +1449,17 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
       );
     }
     if (current === null || current.ref !== ref) {
-      // Schedule a Ref effect
-      workInProgress.flags |= Ref | RefStatic;
+      scheduleRefEffect(workInProgress);
     }
   }
+}
+
+function scheduleRefEffect(workInProgress: Fiber) {
+  workInProgress.flags |= Ref | RefStatic;
+  // The cleanup that was cloned from current belongs to the previous ref. It
+  // gets invoked on current during the mutation phase; this version gets a
+  // new one when its ref is attached.
+  workInProgress.refCleanup = null;
 }
 
 function mountIncompleteFunctionComponent(
@@ -1694,6 +1726,13 @@ function updateClassComponent(
       nextProps,
       renderLanes,
     );
+  }
+  if (shouldUpdate && isInProgressVersion(workInProgress)) {
+    // A version a previous render finished, that's rendering again. The
+    // lifecycles above compared against what it rendered with, like
+    // shouldComponentUpdate would against the props of an interrupted render.
+    // Its children are replaced by the render below.
+    resetResumedChildren(current, workInProgress);
   }
   const nextUnitOfWork = finishClassComponent(
     current,
@@ -2055,7 +2094,7 @@ function updateHostHoistable(
           workInProgress.type,
           workInProgress.pendingProps,
           getRootHostContainer(),
-          workInProgress,
+          workInProgress.instance,
         );
       }
     }
@@ -3222,10 +3261,14 @@ function scheduleSuspenseWorkOnFiber(
   propagationRoot: Fiber,
 ) {
   fiber.lanes = mergeLanes(fiber.lanes, renderLanes);
-  const alternate = fiber.alternate;
-  if (alternate !== null) {
-    alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
+  // This may be a work-in-progress fiber that was already cloned. beginWork
+  // checks the current version's lanes to decide whether there's scheduled
+  // work, so mark that too.
+  const current = fiber.instance.current;
+  if (current !== fiber) {
+    current.lanes = mergeLanes(current.lanes, renderLanes);
   }
+  invalidateInProgressVersion(fiber);
   scheduleContextWorkOnParentPath(fiber.return, renderLanes, propagationRoot);
 }
 
@@ -3284,7 +3327,7 @@ function findLastContentRow(firstChild: null | Fiber): null | Fiber {
   let row = firstChild;
   let lastContentRow: null | Fiber = null;
   while (row !== null) {
-    const currentRow = row.alternate;
+    const currentRow = getPreviousVersion(row);
     // New rows can't be content rows.
     if (currentRow !== null && findFirstSuspended(currentRow) === null) {
       lastContentRow = row;
@@ -3556,7 +3599,7 @@ function updateSuspenseListComponent(
         let row = workInProgress.child;
         workInProgress.child = null;
         while (row !== null) {
-          const currentRow = row.alternate;
+          const currentRow = getPreviousVersion(row);
           // New rows can't be content rows.
           if (currentRow !== null && findFirstSuspended(currentRow) === null) {
             // This is the beginning of the main content.
@@ -3680,7 +3723,7 @@ function updateViewTransition(
   }
   if (current !== null && current.memoizedProps.name !== pendingProps.name) {
     // If the name changes, we schedule a ref effect to create a new ref instance.
-    workInProgress.flags |= Ref | RefStatic;
+    scheduleRefEffect(workInProgress);
   } else {
     markRef(current, workInProgress);
   }
@@ -3736,6 +3779,17 @@ function updateContextProvider(
     }
   }
 
+  if (current !== null) {
+    let previousValue;
+    if (isInProgressVersion(workInProgress)) {
+      // Anything finished below it was rendered with the value it provided.
+      previousValue = workInProgress.memoizedProps.value;
+      resetResumedWorkInProgress(workInProgress, renderLanes);
+    } else {
+      previousValue = current.memoizedProps.value;
+    }
+    pushProviderValue(workInProgress, previousValue, newValue);
+  }
   pushProvider(workInProgress, context, newValue);
 
   const newChildren = newProps.children;
@@ -3814,12 +3868,89 @@ function resetSuspendedCurrentOnMountInLegacyMode(
       // A lazy component only mounts if it suspended inside a non-
       // concurrent tree, in an inconsistent state. We want to treat it like
       // a new mount, even though an empty version of it already committed.
-      // Disconnect the alternate pointers.
-      current.alternate = null;
-      workInProgress.alternate = null;
+      // Give it a new identity so that it's no longer a version of current.
+      workInProgress.instance = createFiberInstance(workInProgress);
       // Since this is conceptually a new fiber, schedule a Placement effect
       workInProgress.flags |= Placement;
     }
+  }
+}
+
+// Returns the last child that beginWork would do something with. The children
+// after it would be cloned only to bail out again unchanged, so they can be
+// shared with the current tree instead. This has to agree with the bailout
+// checks at the top of beginWork and with attemptEarlyBailoutIfNoScheduledUpdate.
+function findLastChildToClone(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+): Fiber {
+  let child: Fiber = workInProgress.child as any;
+  if (current === null || getIsHydrating() || hasLegacyContextChanged()) {
+    // Every child needs to be visited.
+    while (child.sibling !== null) {
+      child = child.sibling;
+    }
+    return child;
+  }
+  const lastChildToClone = findLastChildToCloneFrom(child, renderLanes);
+  if (lastChildToClone !== null) {
+    return lastChildToClone;
+  }
+  // Something had work according to the parent's childLanes, but if it wasn't
+  // detected here, visit every child the way it always was.
+  while (child.sibling !== null) {
+    child = child.sibling;
+  }
+  return child;
+}
+
+// The last child, starting from `firstChild`, that beginWork would do
+// something with, or null if there's none.
+function findLastChildToCloneFrom(
+  firstChild: Fiber,
+  renderLanes: Lanes,
+): Fiber | null {
+  let lastChildToClone = null;
+  let node: null | Fiber = firstChild;
+  while (node !== null) {
+    if (
+      includesSomeLane(renderLanes, mergeLanes(node.lanes, node.childLanes)) ||
+      node.pendingProps !== node.memoizedProps ||
+      (node.dependencies !== null &&
+        checkIfContextChanged(node.dependencies)) ||
+      !canShareBailedOutFiber(node.tag)
+    ) {
+      lastChildToClone = node;
+    }
+    node = node.sibling;
+  }
+  return lastChildToClone;
+}
+
+// Tags whose early bailout in attemptEarlyBailoutIfNoScheduledUpdate does more
+// than push something for its children, so they need to be visited even when
+// nothing changed.
+export function canShareBailedOutFiber(tag: WorkTag): boolean {
+  switch (tag) {
+    case HostRoot:
+    case SuspenseComponent:
+    case SuspenseListComponent:
+    case OffscreenComponent:
+    case LegacyHiddenComponent:
+    case ActivityComponent:
+    case Profiler:
+    case CacheComponent:
+    case TracingMarkerComponent:
+    case ViewTransitionComponent:
+    case DehydratedFragment:
+    case IncompleteClassComponent:
+    case IncompleteFunctionComponent:
+    case LazyComponent:
+    case Throw:
+      return false;
+    default:
+      return true;
   }
 }
 
@@ -3828,9 +3959,23 @@ function bailoutOnAlreadyFinishedWork(
   workInProgress: Fiber,
   renderLanes: Lanes,
 ): Fiber | null {
-  if (current !== null) {
+  // Whether this is a version a previous render finished, with children that
+  // render rendered, rather than a clone whose children are still current's.
+  const isResumed = isInProgressVersion(workInProgress);
+
+  if (isResumed) {
+    // The children this version finished were rendered with the current
+    // providers' values (see pushProviderValue). The ones that render again
+    // from current check the providers for themselves when they bail out, and
+    // have to be able to walk up past this fiber to find them.
+    workInProgress.flags &= ~DidPropagateContext;
+  } else if (current !== null) {
     // Reuse previous dependencies
     workInProgress.dependencies = current.dependencies;
+    // Context changes in the ancestors are propagated before deciding which
+    // children to visit: a consumer of a changed context may be under a child
+    // that has no other work, which would otherwise be shared.
+    lazilyPropagateParentContextChanges(current, workInProgress, renderLanes);
   }
 
   if (enableProfilerTimer) {
@@ -3841,27 +3986,116 @@ function bailoutOnAlreadyFinishedWork(
   markSkippedUpdateLanes(workInProgress.lanes);
 
   // Check if the children have any pending work.
-  if (!includesSomeLane(renderLanes, workInProgress.childLanes)) {
+  if (
+    !includesSomeLane(renderLanes, workInProgress.childLanes) &&
+    // A version whose subtree was invalidated has to be descended into even
+    // though the children it finished don't have work.
+    !(isResumed && hasStaleDescendants(workInProgress))
+  ) {
     // The children don't have any work either. We can skip them.
-    // TODO: Once we add back resuming, we should check if the children are
-    // a work-in-progress set. If so, we need to transfer their effects.
-
-    if (current !== null) {
-      // Before bailing out, check if there are any context changes in
-      // the children.
-      lazilyPropagateParentContextChanges(current, workInProgress, renderLanes);
-      if (!includesSomeLane(renderLanes, workInProgress.childLanes)) {
-        return null;
-      }
-    } else {
-      return null;
-    }
+    return null;
   }
 
   // This fiber doesn't have work, but its subtree does. Clone the child
   // fibers and continue.
-  cloneChildFibers(current, workInProgress);
+  if (isResumed) {
+    // Its children are about to change. Until this render completes it
+    // again, it isn't a finished version anymore.
+    invalidateInProgressVersion(workInProgress);
+    return resumeChildFibers(current as any, workInProgress, renderLanes);
+  }
+  cloneChildFibers(
+    current,
+    workInProgress,
+    findLastChildToClone(current, workInProgress, renderLanes),
+  );
   return workInProgress.child;
+}
+
+// A version a previous render finished is being rendered again. From here on
+// it's a fresh clone of current, and until this render completes it again it
+// isn't a finished version that another render could continue from.
+function resetResumedWorkInProgress(
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+): void {
+  invalidateInProgressVersion(workInProgress);
+  resetWorkInProgress(workInProgress, renderLanes);
+}
+
+// A version a previous render finished is rendering its children again. The
+// ones it has are discarded, along with the effects that reconciling them
+// left on it, and until this render completes it again it isn't a finished
+// version that another render could continue from.
+function resetResumedChildren(
+  current: Fiber | null,
+  workInProgress: Fiber,
+): void {
+  invalidateInProgressVersion(workInProgress);
+  workInProgress.child = current === null ? null : current.child;
+  workInProgress.deletions = null;
+  workInProgress.flags &= ~ChildDeletion;
+  workInProgress.subtreeFlags = NoFlags;
+}
+
+// The children of a resumed fiber are the ones the previous render left: a
+// leading run that it rendered, followed by a trailing run that it shared with
+// the current tree because they had no work. Returns the first child to work
+// on, if any.
+function resumeChildFibers(
+  current: Fiber,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+): Fiber | null {
+  let lastRendered = null;
+  let child = workInProgress.child;
+  // The children the previous render rendered point at this fiber; the ones
+  // it shared point at the committed parent (see cloneChildFibers).
+  while (child !== null && child.return === workInProgress) {
+    if (!isInProgressVersion(child)) {
+      // This one was invalidated since. It renders again from current, with
+      // the props the previous render gave it.
+      resetWorkInProgress(child, renderLanes);
+    }
+    lastRendered = child;
+    child = child.sibling;
+  }
+  if (child === null) {
+    return workInProgress.child;
+  }
+  // The shared children are the committed versions from when the previous
+  // render ran. A commit since may have replaced some of them, so the run is
+  // relinked to what's committed now. The parent didn't render again in the
+  // meantime (that would have invalidated this version), so it's the same set
+  // of children.
+  const firstShared = child.instance.current;
+  if (lastRendered === null) {
+    workInProgress.child = firstShared;
+  } else {
+    lastRendered.sibling = firstShared;
+  }
+  child = firstShared;
+  // The shared children may have work now that the previous render didn't
+  // know about.
+  const lastChildToClone = findLastChildToCloneFrom(firstShared, renderLanes);
+  if (lastChildToClone !== null) {
+    cloneSharedChildFibers(
+      current,
+      workInProgress,
+      lastRendered,
+      firstShared,
+      lastChildToClone,
+    );
+    return workInProgress.child;
+  }
+  // Context propagation may have repointed the shared children at this
+  // fiber. They need to point at current so the work loop skips them.
+  while (child !== null) {
+    child.return = current;
+    child = child.sibling;
+  }
+  // Only the rendered children, if any, need visiting.
+  return lastRendered === null ? null : workInProgress.child;
 }
 
 function remountFiber(
@@ -3876,12 +4110,7 @@ function remountFiber(
       throw new Error('Cannot swap the root fiber.');
     }
 
-    // Disconnect from the old current.
-    // It will get deleted.
-    current.alternate = null;
-    oldWorkInProgress.alternate = null;
-
-    // Connect to the new tree.
+    // The old current will get deleted. Connect to the new tree.
     newWorkInProgress.index = oldWorkInProgress.index;
     newWorkInProgress.sibling = oldWorkInProgress.sibling;
     newWorkInProgress.return = oldWorkInProgress.return;
@@ -3936,19 +4165,25 @@ function remountFiber(
   }
 }
 
+// The lanes that were scheduled on the fiber beginWork is working on, before
+// beginWork cleared them.
+let workInProgressScheduledLanes: Lanes = NoLanes;
+
 function checkScheduledUpdateOrContext(
-  current: Fiber,
+  workInProgress: Fiber,
   renderLanes: Lanes,
 ): boolean {
   // Before performing an early bailout, we must check if there are pending
-  // updates or context.
-  const updateLanes = current.lanes;
-  if (includesSomeLane(updateLanes, renderLanes)) {
+  // updates or context. These are checked on the work-in-progress rather than
+  // on current because the work-in-progress may be a version that a previous
+  // render already finished, in which case the updates and context reads it
+  // already applied don't count as pending.
+  if (includesSomeLane(workInProgressScheduledLanes, renderLanes)) {
     return true;
   }
   // No pending update, but because context is propagated lazily, we need
   // to check for a context change before we bail out.
-  const dependencies = current.dependencies;
+  const dependencies = workInProgress.dependencies;
   if (dependencies !== null && checkIfContextChanged(dependencies)) {
     return true;
   }
@@ -3956,6 +4191,8 @@ function checkScheduledUpdateOrContext(
 }
 
 function attemptEarlyBailoutIfNoScheduledUpdate(
+  // Null for a version a previous render mounted that's being kept as is. That
+  // only happens for tags that don't read from current here.
   current: Fiber,
   workInProgress: Fiber,
   renderLanes: Lanes,
@@ -4040,6 +4277,20 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       const state: SuspenseState | null = workInProgress.memoizedState;
       if (state !== null) {
         if (state.dehydrated !== null) {
+          // There are no children to find out whether a context above changed,
+          // so check here. A change means the boundary can't hydrate as is.
+          lazilyPropagateParentContextChanges(
+            current,
+            workInProgress,
+            renderLanes,
+          );
+          if (includesSomeLane(renderLanes, workInProgress.lanes)) {
+            return updateSuspenseComponent(
+              current,
+              workInProgress,
+              renderLanes,
+            );
+          }
           // We're not going to render the children, so this is just to maintain
           // push/pop symmetry
           pushPrimaryTreeSuspenseHandler(workInProgress);
@@ -4247,9 +4498,15 @@ function beginWork(
     }
   }
 
+  workInProgressScheduledLanes = workInProgress.lanes;
   if (current !== null) {
-    const oldProps = current.memoizedProps;
+    // The props the work-in-progress was last rendered with. Same as
+    // current's, unless this is a version a previous render already finished.
+    const oldProps = workInProgress.memoizedProps;
     const newProps = workInProgress.pendingProps;
+    // Whether this is a version a previous render finished. If it doesn't
+    // bail out, it's rendered again from current, like a fresh clone.
+    const isResumed = isInProgressVersion(workInProgress);
 
     if (
       oldProps !== newProps ||
@@ -4264,7 +4521,7 @@ function beginWork(
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
-        current,
+        workInProgress,
         renderLanes,
       );
       if (
@@ -4293,8 +4550,43 @@ function beginWork(
         didReceiveUpdate = false;
       }
     }
+    if (
+      isResumed &&
+      // Memo and class components compare the new props to the ones the
+      // finished version rendered with before deciding, so they reset
+      // themselves. Providers compare the values.
+      workInProgress.tag !== SimpleMemoComponent &&
+      workInProgress.tag !== MemoComponent &&
+      workInProgress.tag !== ClassComponent &&
+      workInProgress.tag !== ContextProvider
+    ) {
+      resetResumedWorkInProgress(workInProgress, renderLanes);
+    }
   } else {
     didReceiveUpdate = false;
+
+    if (isInProgressVersion(workInProgress)) {
+      // A version a previous render mounted. With the same element and no
+      // update, it's kept as is; otherwise it mounts again, except that a class
+      // component keeps its instance (see resumeMountClassInstance) and a memo
+      // component compares the props first.
+      if (
+        workInProgress.pendingProps === workInProgress.memoizedProps &&
+        !includesSomeLane(renderLanes, workInProgress.lanes)
+      ) {
+        return attemptEarlyBailoutIfNoScheduledUpdate(
+          null as any,
+          workInProgress,
+          renderLanes,
+        );
+      }
+      if (
+        workInProgress.tag !== ClassComponent &&
+        workInProgress.tag !== SimpleMemoComponent
+      ) {
+        resetResumedWorkInProgress(workInProgress, renderLanes);
+      }
+    }
 
     if (getIsHydrating() && isForkedChild(workInProgress)) {
       // Check if this child belongs to a list of muliple children in

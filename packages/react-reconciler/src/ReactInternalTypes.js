@@ -84,6 +84,33 @@ export type MemoCache = {
   index: number,
 };
 
+// The identity of a node in the tree. Every version of the node (each Fiber
+// that was ever created for it) points to the same instance, and the instance
+// points back to the committed version. Anything that needs to find a node
+// again later (hook dispatchers, class instances, host instances) holds the
+// instance rather than a Fiber, because Fibers are replaced on every update.
+export type FiberInstance = {
+  // The version of this node in the committed tree.
+  current: Fiber,
+  // The version that `current` replaced, while the commit that made it
+  // current is running its effects: the base for diffing during that commit.
+  // Afterwards it's `current` itself. Null if the node has only ever mounted.
+  previous: Fiber | null,
+  // A version that a render finished but didn't get to commit, and the lanes
+  // it rendered at. A later render can continue from it. See
+  // ReactFiberResuming.
+  inProgress: Fiber | null,
+  inProgressLanes: Lanes,
+  // Whether something in `inProgress`'s subtree has been invalidated since,
+  // so a render that continues from it has to descend into the children
+  // rather than take the subtree as done.
+  inProgressSubtreeIsStale: boolean,
+  // Children that a render mounted under this node but didn't get to commit.
+  // A later render that creates a child for the same element continues from
+  // them. See getInProgressMountVersion.
+  inProgressMounts: Array<Fiber> | null,
+};
+
 // A Fiber is work on a Component that needs to be done or was done. There can
 // be more than one per component.
 export type Fiber = {
@@ -92,10 +119,9 @@ export type Fiber = {
   // but until Flow fixes its intersection bugs, we've merged them into a
   // single type.
 
-  // An Instance is shared between all versions of a component. We can easily
-  // break this out into a separate object to avoid copying so much to the
-  // alternate versions of the tree. We put this on a single object for now to
-  // minimize the number of objects created during the initial render.
+  // These fields are the same on every version of a node. The object that is
+  // actually shared between versions is the FiberInstance; these are copied to
+  // each new version to avoid an indirection on hot paths.
 
   // Tag identifying the type of fiber.
   tag: WorkTag,
@@ -168,10 +194,8 @@ export type Fiber = {
   lanes: Lanes,
   childLanes: Lanes,
 
-  // This is a pooled version of a Fiber. Every fiber that gets updated will
-  // eventually have a pair. There are cases when we can clean up pairs to save
-  // memory if we need to.
-  alternate: Fiber | null,
+  // Shared by every version of this node. See FiberInstance.
+  instance: FiberInstance,
 
   // Time spent rendering this Fiber and its descendants for the current update.
   // This tells us how well the tree makes use of sCU for memoization.
@@ -194,9 +218,6 @@ export type Fiber = {
   // This field is only set when the enableProfilerTimer flag is enabled.
   treeBaseDuration?: number,
 
-  // Conceptual aliases
-  // workInProgress : Fiber ->  alternate The alternate used for reuse happens
-  // to be the same as work in progress.
   // __DEV__ only
 
   _debugInfo?: ReactDebugInfo | null,
@@ -245,6 +266,9 @@ type BaseFiberRootProperties = {
   hiddenUpdates: LaneMap<Array<ConcurrentUpdate> | null>,
 
   pendingLanes: Lanes,
+  // Lanes that were marked on the current tree since it was last cloned into
+  // a work-in-progress tree. That tree doesn't know about them.
+  currentTreeUpdatedLanes: Lanes,
   suspendedLanes: Lanes,
   pingedLanes: Lanes,
   warmLanes: Lanes,

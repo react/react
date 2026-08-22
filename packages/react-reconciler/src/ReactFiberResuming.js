@@ -1,0 +1,439 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
+
+import type {Fiber, FiberInstance} from './ReactInternalTypes';
+import type {Lanes} from './ReactFiberLane';
+import type {ReactElement} from 'shared/ReactElementType';
+
+import {enableResumingInterruptedRenders} from 'shared/ReactFeatureFlags';
+import {NoLanes, isSubsetOfLanes, mergeLanes} from './ReactFiberLane';
+import {
+  NoFlags,
+  DidCapture,
+  PerformedWork,
+  Placement,
+  PlacementDEV,
+  Hydrating,
+} from './ReactFiberFlags';
+import {
+  HostRoot,
+  HostPortal,
+  ClassComponent,
+  MemoComponent,
+  SimpleMemoComponent,
+} from './ReactWorkTags';
+import {canShareBailedOutFiber} from './ReactFiberBeginWork';
+import is from 'shared/objectIs';
+import {getIsHydrating} from './ReactFiberHydrationContext';
+import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
+
+// A render that gets interrupted leaves behind versions of nodes that it
+// finished. The next render of the same node would produce the same version
+// if nothing about the node's inputs changed in between, so instead of cloning
+// the committed version again it continues from the finished one.
+//
+// A version is a function of the committed version it was cloned from, the
+// updates in the lanes it rendered at, the context values it read, and the
+// state of anything it suspended on. Every one of these has a hook below that
+// either invalidates the version or limits which renders may continue from it:
+//
+// - The lanes are recorded with it, and a render only continues from versions
+//   that applied exactly the updates it would apply (getInProgressVersion).
+// - An update to the node invalidates its version. Its ancestors' versions
+//   are still good, but contain the stale one, so they're marked to be
+//   descended into rather than taken as done (markInProgressSubtreeStale).
+//   Context changes do the same for the consumers.
+// - Anything that completes above a fiber that threw isn't recorded: it may
+//   be a boundary whose state depends on a promise or an error.
+// - A commit replaces the committed version the finished one was cloned from.
+//   If the new committed version only bailed out of the old one, the finished
+//   version is still good but something below it changed, so it's marked to be
+//   descended into; otherwise it's released (releaseInProgressVersionOnCommit).
+// - Finished versions only become available once the render that produced
+//   them is abandoned. While it's running, its own second passes over a node
+//   start from current like they always did.
+//
+// The fibers on the path from the root to where the render was interrupted
+// have rendered and reconciled their children but haven't completed. They're
+// kept too, marked stale so that the next render descends into them and
+// completes them (recordInterruptedFiber).
+//
+// A fiber the render mounted has no committed version that a later render
+// would clone, so it's kept under its parent's instance instead, and found
+// there when a render creates a child for the same element in the same place
+// (getInProgressMountVersion). If its props changed, a class component keeps
+// its instance and goes through the mount lifecycles again; anything else
+// mounts again, though its own children can still be continued from.
+
+// The lanes the render in progress applies updates for. NoLanes when it has to
+// render everything from the committed tree, e.g. to recover from an error.
+let resumableLanes: Lanes = NoLanes;
+
+// The versions the render in progress has finished.
+const completedFibers: Array<Fiber> = [];
+
+// The versions the render in progress began but didn't finish, once it's
+// interrupted.
+const interruptedFibers: Array<Fiber> = [];
+
+// Fibers above something that threw in the render in progress.
+let taintedFibers: Set<Fiber> | null = null;
+
+// The providers on the current path that provide a different value than the
+// one the finished versions below them were rendered with.
+const changedProviders: Array<Fiber> = [];
+
+export function startResumableRender(lanes: Lanes): void {
+  resumableLanes = enableResumingInterruptedRenders ? lanes : NoLanes;
+  taintedFibers = null;
+  changedProviders.length = 0;
+}
+
+// A provider is rendering. `previousValue` is what the finished versions below
+// it were rendered with: the value its own finished version provided if that's
+// what's rendering again, otherwise the committed value. If that's not the
+// value it provides now, nothing below it can be continued from, since the
+// consumers inside a finished version read the old value and there's no way
+// to find them short of rendering it.
+export function pushProviderValue(
+  workInProgress: Fiber,
+  previousValue: mixed,
+  nextValue: mixed,
+): void {
+  if (enableResumingInterruptedRenders && !is(previousValue, nextValue)) {
+    changedProviders.push(workInProgress);
+  }
+}
+
+export function popProviderValue(workInProgress: Fiber): void {
+  if (
+    changedProviders.length > 0 &&
+    changedProviders[changedProviders.length - 1] === workInProgress
+  ) {
+    changedProviders.pop();
+  }
+}
+
+// A fiber threw. The versions of its ancestors that this render goes on to
+// complete are shaped by what caught it, so they aren't kept.
+export function taintAncestorsOfThrow(returnFiber: Fiber | null): void {
+  if (!enableResumingInterruptedRenders) {
+    return;
+  }
+  let tainted = taintedFibers;
+  if (tainted === null) {
+    tainted = taintedFibers = new Set();
+  }
+  let fiber = returnFiber;
+  // Everything above an already tainted fiber is tainted too.
+  while (fiber !== null && !tainted.has(fiber)) {
+    tainted.add(fiber);
+    fiber = fiber.return;
+  }
+}
+
+export function recordCompletedFiber(completedWork: Fiber): void {
+  if (!enableResumingInterruptedRenders) {
+    return;
+  }
+  if (
+    completedWork.instance.current === completedWork &&
+    !canKeepMountedVersion(completedWork)
+  ) {
+    return;
+  }
+  if (taintedFibers !== null && taintedFibers.has(completedWork)) {
+    return;
+  }
+  completedFibers.push(completedWork);
+}
+
+function canKeepMountedVersion(fiber: Fiber): boolean {
+  return (
+    // A mounted version is continued from by bailing out of it, which only
+    // works for tags whose bailout is just pushing for their children.
+    canShareBailedOutFiber(fiber.tag) &&
+    fiber.tag !== HostPortal &&
+    // Hydration claims host instances in order; a kept one would be out of
+    // order.
+    (fiber.flags & Hydrating) === NoFlags &&
+    !getIsHydrating()
+  );
+}
+
+// The render in progress is being interrupted, and `interruptedWork` is on the
+// path from the root to where it stopped. It rendered and reconciled its
+// children; only completing is left, which the render that continues from it
+// does.
+export function recordInterruptedFiber(interruptedWork: Fiber): void {
+  if (!enableResumingInterruptedRenders) {
+    return;
+  }
+  if (
+    interruptedWork.instance.current === interruptedWork &&
+    !canKeepMountedVersion(interruptedWork)
+  ) {
+    return;
+  }
+  if (taintedFibers !== null && taintedFibers.has(interruptedWork)) {
+    return;
+  }
+  interruptedFibers.push(interruptedWork);
+}
+
+// The render in progress is being committed or has to be redone from scratch.
+export function discardRecordedWork(): void {
+  completedFibers.length = 0;
+  interruptedFibers.length = 0;
+}
+
+// The render in progress is abandoned. What it finished is now available to
+// the renders that follow.
+export function publishAbandonedWork(lanes: Lanes): void {
+  for (let i = 0; i < completedFibers.length; i++) {
+    registerVersion(completedFibers[i], lanes, false);
+  }
+  completedFibers.length = 0;
+  for (let i = 0; i < interruptedFibers.length; i++) {
+    // Its children include the one that was interrupted, which is where the
+    // next render picks up.
+    registerVersion(interruptedFibers[i], lanes, true);
+  }
+  interruptedFibers.length = 0;
+}
+
+function registerVersion(fiber: Fiber, lanes: Lanes, isStale: boolean): void {
+  const instance = fiber.instance;
+  if (instance.current === fiber) {
+    // A mount. Its parent is where a later render looks for it.
+    const returnFiber = fiber.return;
+    if (returnFiber === null) {
+      return;
+    }
+    const parentInstance = returnFiber.instance;
+    if (parentInstance.inProgressMounts === null) {
+      parentInstance.inProgressMounts = [fiber];
+    } else {
+      parentInstance.inProgressMounts.push(fiber);
+    }
+  }
+  instance.inProgress = fiber;
+  instance.inProgressLanes = lanes;
+  instance.inProgressSubtreeIsStale = isStale;
+}
+
+// The version of `current` that a previous render finished, if this render can
+// continue from it instead of cloning `current`. It's a complete render of the
+// node against inputs that are still current, so the only thing left for
+// beginWork to decide is whether the new pendingProps change anything, which it
+// does the same way it would for a bailout against `current`.
+export function getInProgressVersion(
+  current: Fiber,
+  pendingProps: any,
+): Fiber | null {
+  const instance = current.instance;
+  const inProgress = instance.inProgress;
+  if (
+    inProgress === null ||
+    current.tag === HostRoot ||
+    // It committed since it was published. It's the current tree now.
+    inProgress === current ||
+    // A provider above changed its value (see pushProviderValue).
+    changedProviders.length > 0
+  ) {
+    return null;
+  }
+  if (
+    // A version that captured an error or suspended isn't a plain function of
+    // its inputs: the render that's starting over may be doing so precisely to
+    // find out whether it throws again.
+    (inProgress.flags & DidCapture) !== NoFlags ||
+    // The finished version applied the updates in the lanes it rendered at.
+    // This render must include all of those, or it would show state it isn't
+    // rendering yet. And everything this render would apply here must have
+    // been among them, or the finished version is missing an update.
+    !isSubsetOfLanes(resumableLanes, instance.inProgressLanes) ||
+    !isSubsetOfLanes(
+      instance.inProgressLanes,
+      mergeLanes(current.lanes, current.childLanes) & resumableLanes,
+    ) ||
+    getIsHydrating() ||
+    // A version rendered with an implementation that has since been hot
+    // reloaded is stale.
+    (__DEV__ && inProgress.type !== resolveTypeForHotReloading(current.type))
+  ) {
+    return null;
+  }
+  inProgress.pendingProps = pendingProps;
+  // The version is authoritative for the lanes it rendered: it applied those
+  // updates, and its own render may have scheduled more of them. For every
+  // other lane the committed version is authoritative, since work in those
+  // lanes may have been done by a render that committed in the meantime.
+  const renderedLanes = instance.inProgressLanes;
+  inProgress.lanes =
+    (inProgress.lanes & renderedLanes) | (current.lanes & ~renderedLanes);
+  inProgress.childLanes =
+    (inProgress.childLanes & renderedLanes) |
+    (current.childLanes & ~renderedLanes);
+  // Where this version ends up is decided by the reconciliation that's
+  // adopting it, not the one that created it.
+  inProgress.flags &= ~(Placement | PlacementDEV);
+  inProgress.index = current.index;
+  inProgress.sibling = current.sibling;
+  return inProgress;
+}
+
+// The fiber that a previous render mounted for this element under this parent,
+// if this render can continue from it instead of mounting a new one. Like
+// getInProgressVersion, what's left for beginWork to decide is whether the new
+// props change anything.
+export function getInProgressMountVersion(
+  returnFiber: Fiber,
+  element: ReactElement,
+  index: number,
+): Fiber | null {
+  const mounts = returnFiber.instance.inProgressMounts;
+  if (
+    mounts === null ||
+    changedProviders.length > 0 ||
+    resumableLanes === NoLanes ||
+    getIsHydrating()
+  ) {
+    return null;
+  }
+  const key = element.key;
+  const type = element.type;
+  for (let i = 0; i < mounts.length; i++) {
+    const fiber = mounts[i];
+    if (fiber.instance.inProgress !== fiber) {
+      // It was invalidated or committed since.
+      mounts.splice(i, 1);
+      i--;
+      continue;
+    }
+    if (
+      fiber.elementType === type &&
+      fiber.key === key &&
+      (key !== null || fiber.index === index)
+    ) {
+      mounts.splice(i, 1);
+      if (
+        (fiber.flags & DidCapture) !== NoFlags ||
+        !isSubsetOfLanes(resumableLanes, fiber.instance.inProgressLanes)
+      ) {
+        return null;
+      }
+      fiber.pendingProps = element.props;
+      fiber.sibling = null;
+      return fiber;
+    }
+  }
+  return null;
+}
+
+// Whether this work-in-progress fiber is a version a previous render finished.
+export function isInProgressVersion(workInProgress: Fiber): boolean {
+  return workInProgress.instance.inProgress === workInProgress;
+}
+
+// The node has an update that the version a previous render finished doesn't
+// include.
+export function invalidateInProgressVersion(fiber: Fiber): void {
+  const instance = fiber.instance;
+  if (
+    instance.inProgress === fiber &&
+    instance.current === fiber &&
+    fiber.tag === ClassComponent
+  ) {
+    // A class component that an interrupted render mounted. There's no
+    // committed version to render the update from; the mount is continued from
+    // instead, which keeps the instance and processes the update
+    // (resumeMountClassInstance).
+    return;
+  }
+  instance.inProgress = null;
+}
+
+// A node below this one was invalidated. This node's finished version is still
+// good, but a render that continues from it has to descend into it to get to
+// the invalidated one.
+export function markInProgressSubtreeStale(fiber: Fiber): void {
+  fiber.instance.inProgressSubtreeIsStale = true;
+}
+
+// `instance` is being committed by a render at `lanes`. The children that
+// were mounted under it for those lanes and weren't picked up by now aren't
+// going to be; the ones mounted for other lanes still might.
+export function releaseInProgressMountsOnCommit(
+  instance: FiberInstance,
+  lanes: Lanes,
+): void {
+  const mounts = instance.inProgressMounts;
+  if (mounts === null) {
+    return;
+  }
+  let remaining = null;
+  for (let i = 0; i < mounts.length; i++) {
+    const fiber = mounts[i];
+    if (
+      fiber.instance.inProgress === fiber &&
+      !isSubsetOfLanes(lanes, fiber.instance.inProgressLanes)
+    ) {
+      if (remaining === null) {
+        remaining = [fiber];
+      } else {
+        remaining.push(fiber);
+      }
+    }
+  }
+  instance.inProgressMounts = remaining;
+}
+
+// Whether a render that continued from this version has to descend into the
+// children even though it looks like there's no work in them.
+export function hasStaleDescendants(workInProgress: Fiber): boolean {
+  const instance = workInProgress.instance;
+  return (
+    instance.inProgress === workInProgress && instance.inProgressSubtreeIsStale
+  );
+}
+
+// `node` is being committed in place of `current`. The version a previous
+// render finished was cloned from `current`; it's still good if `node` only
+// bailed out of `current`, even if it descended into the children to update
+// one of them.
+export function releaseInProgressVersionOnCommit(
+  instance: FiberInstance,
+  node: Fiber,
+  current: Fiber,
+): void {
+  const inProgress = instance.inProgress;
+  if (inProgress === null) {
+    return;
+  }
+  if (
+    inProgress === node ||
+    (node.flags & PerformedWork) !== NoFlags ||
+    node.memoizedState !== current.memoizedState ||
+    (node.memoizedProps !== current.memoizedProps &&
+      // These record the new props even when they decide not to render, and
+      // nothing about them changes when they don't. For everything else,
+      // new props mean a new render.
+      node.tag !== ClassComponent &&
+      node.tag !== MemoComponent &&
+      node.tag !== SimpleMemoComponent)
+  ) {
+    instance.inProgress = null;
+  } else {
+    // This node didn't change, but a new version of it only gets committed
+    // when something below it did. The version's own render is still good;
+    // its children have to be checked against what was committed.
+    instance.inProgressSubtreeIsStale = true;
+  }
+}

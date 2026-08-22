@@ -94,7 +94,7 @@ describe('FragmentRefs', () => {
       );
     });
 
-    expect(fragmentRef._fragmentFiber).toBeTruthy();
+    expect(fragmentRef._fiberInstance).toBeTruthy();
   });
 
   // @gate enableFragmentRefs

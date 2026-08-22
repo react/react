@@ -10,7 +10,7 @@
 /* eslint-disable react-internal/prod-error-codes */
 
 import type {ReactElement} from 'shared/ReactElementType';
-import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import type {Fiber, FiberInstance, FiberRoot} from './ReactInternalTypes';
 import type {ReactNodeList} from 'shared/ReactTypes';
 
 import {
@@ -53,7 +53,8 @@ export type ScheduleRefresh = (root: FiberRoot, update: RefreshUpdate) => void;
 export type ScheduleRoot = (root: FiberRoot, element: ReactNodeList) => void;
 
 let resolveFamily: RefreshHandler | null = null;
-let failedBoundaries: WeakSet<Fiber> | null = null;
+// Keyed by the instance so that it covers every version of the boundary.
+let failedBoundaries: WeakSet<FiberInstance> | null = null;
 
 export const setRefreshHandler = (handler: RefreshHandler | null): void => {
   if (__DEV__) {
@@ -170,7 +171,7 @@ export function markFailedErrorBoundaryForHotReloading(fiber: Fiber) {
     if (failedBoundaries === null) {
       failedBoundaries = new WeakSet();
     }
-    failedBoundaries.add(fiber);
+    failedBoundaries.add(fiber.instance);
   }
 }
 
@@ -217,7 +218,7 @@ function scheduleFibersWithFamiliesRecursively(
 ): void {
   if (__DEV__) {
     do {
-      const {alternate, child, sibling, tag, type, elementType} = fiber;
+      const {child, sibling, tag, type, elementType} = fiber;
 
       let candidateType = null;
       // Wrapper fibers (memo, forwardRef) resolve their family through the
@@ -285,11 +286,7 @@ function scheduleFibersWithFamiliesRecursively(
         }
       }
       if (failedBoundaries !== null) {
-        if (
-          failedBoundaries.has(fiber) ||
-          // $FlowFixMe[incompatible-use] found when upgrading Flow
-          (alternate !== null && failedBoundaries.has(alternate))
-        ) {
+        if (failedBoundaries.has(fiber.instance)) {
           needsRemount = true;
         }
       }

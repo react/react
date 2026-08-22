@@ -8,6 +8,7 @@
  */
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {Lane, Lanes} from './ReactFiberLane';
 import type {CapturedValue} from './ReactCapturedValue';
 import type {Update} from './ReactFiberClassUpdateQueue';
@@ -69,6 +70,7 @@ import {
   attachPingListener,
   restorePendingUpdaters,
   renderDidSuspend,
+  getWorkInProgressRootFiber,
 } from './ReactFiberWorkLoop';
 import {propagateParentContextChangesToDeferredTree} from './ReactFiberNewContext';
 import {logUncaughtError, logCaughtError} from './ReactFiberErrorLogger';
@@ -201,7 +203,7 @@ function initializeClassErrorUpdate(
 }
 
 function resetSuspendedComponent(sourceFiber: Fiber, rootRenderLanes: Lanes) {
-  const currentSourceFiber = sourceFiber.alternate;
+  const currentSourceFiber = getPreviousVersion(sourceFiber);
   if (currentSourceFiber !== null) {
     // Since we never visited the children of the suspended component, we
     // need to propagate the context change now, to ensure that we visit
@@ -226,7 +228,7 @@ function resetSuspendedComponent(sourceFiber: Fiber, rootRenderLanes: Lanes) {
       tag === ForwardRef ||
       tag === SimpleMemoComponent)
   ) {
-    const currentSource = sourceFiber.alternate;
+    const currentSource = getPreviousVersion(sourceFiber);
     if (currentSource) {
       sourceFiber.updateQueue = currentSource.updateQueue;
       sourceFiber.memoizedState = currentSource.memoizedState;
@@ -284,7 +286,7 @@ function markSuspenseBoundaryShouldCapture(
       sourceFiber.flags &= ~(LifecycleEffectMask | Incomplete);
 
       if (sourceFiber.tag === ClassComponent) {
-        const currentSourceFiber = sourceFiber.alternate;
+        const currentSourceFiber = getPreviousVersion(sourceFiber);
         if (currentSourceFiber === null) {
           // This is a new mount. Change the tag so it's not mistaken for a
           // completed class component. For example, we should not call
@@ -299,7 +301,7 @@ function markSuspenseBoundaryShouldCapture(
           enqueueUpdate(sourceFiber, update, SyncLane);
         }
       } else if (sourceFiber.tag === FunctionComponent) {
-        const currentSourceFiber = sourceFiber.alternate;
+        const currentSourceFiber = getPreviousVersion(sourceFiber);
         if (currentSourceFiber === null) {
           // This is a new mount. Change the tag so it's not mistaken for a
           // completed function component.
@@ -428,7 +430,7 @@ function throwException(
                 // retries, not just ones that render an additional fallback. For
                 // 2, we should check subtreeFlags instead. Then we can delete
                 // this branch.
-                const current = suspenseBoundary.alternate;
+                const current = getPreviousVersion(suspenseBoundary);
                 if (current === null) {
                   renderDidSuspend();
                 }
@@ -604,7 +606,7 @@ function throwException(
           createCapturedValueAtFiber(wrapperError, sourceFiber),
         );
       }
-      const workInProgress: Fiber = (root.current as any).alternate;
+      const workInProgress: Fiber = getWorkInProgressRootFiber();
       // Schedule an update at the root to log the error but this shouldn't
       // actually happen because we should recover.
       workInProgress.flags |= ShouldCapture;

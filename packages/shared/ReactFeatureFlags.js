@@ -119,6 +119,10 @@ export const enableTransitionTracing: boolean = false;
 // FB-only usage. The new API has different semantics.
 export const enableLegacyHidden: boolean = false;
 
+// Lets a render that was interrupted continue from the work it finished
+// instead of starting over.
+export const enableResumingInterruptedRenders = __EXPERIMENTAL__;
+
 // Enables unstable_avoidThisFallback feature in Fiber
 export const enableSuspenseAvoidThisFallback: boolean = false;
 

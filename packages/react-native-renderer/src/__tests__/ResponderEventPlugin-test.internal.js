@@ -341,27 +341,32 @@ const PARENT_HOST_NODE = {};
 const CHILD_HOST_NODE = {};
 const CHILD_HOST_NODE2 = {};
 
-// These intentionally look like Fibers. ReactTreeTraversal depends on their field names.
+// These intentionally look like Fibers. ReactTreeTraversal depends on their
+// field names, and `instance` identifies the node across versions of a Fiber.
 // TODO: we could test this with regular DOM nodes (and real fibers) instead.
 const GRANDPARENT_INST = {
+  instance: {},
   return: null,
   tag: HostComponent,
   stateNode: GRANDPARENT_HOST_NODE,
   memoizedProps: {},
 };
 const PARENT_INST = {
+  instance: {},
   return: GRANDPARENT_INST,
   tag: HostComponent,
   stateNode: PARENT_HOST_NODE,
   memoizedProps: {},
 };
 const CHILD_INST = {
+  instance: {},
   return: PARENT_INST,
   tag: HostComponent,
   stateNode: CHILD_HOST_NODE,
   memoizedProps: {},
 };
 const CHILD_INST2 = {
+  instance: {},
   return: PARENT_INST,
   tag: HostComponent,
   stateNode: CHILD_HOST_NODE2,

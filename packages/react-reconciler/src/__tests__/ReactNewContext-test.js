@@ -850,6 +850,74 @@ describe('ReactNewContext', () => {
           </>,
         );
       });
+
+      it('propagates to a consumer under a sibling that has no other work', async () => {
+        const Context = React.createContext(0);
+        const ContextConsumer = getConsumer(Context);
+
+        let setStep;
+        function Step() {
+          const [step, _setStep] = React.useState(0);
+          setStep = _setStep;
+          Scheduler.log('Step ' + step);
+          return <span prop={'step ' + step} />;
+        }
+
+        function Indirection() {
+          Scheduler.log('Indirection');
+          return (
+            <ContextConsumer>
+              {value => {
+                Scheduler.log('Consumer ' + value);
+                return <span prop={value} />;
+              }}
+            </ContextConsumer>
+          );
+        }
+
+        const Children = React.memo(function Children() {
+          Scheduler.log('Children');
+          return (
+            <>
+              <Step />
+              <Indirection />
+            </>
+          );
+        });
+
+        let setValue;
+        function App() {
+          const [value, _setValue] = React.useState(0);
+          setValue = _setValue;
+          Scheduler.log('App');
+          return (
+            <Context.Provider value={value}>
+              <Children />
+            </Context.Provider>
+          );
+        }
+
+        ReactNoop.render(<App />);
+        await waitForAll([
+          'App',
+          'Children',
+          'Step 0',
+          'Indirection',
+          'Consumer 0',
+        ]);
+
+        // Children bails out with work in Step only. The consumer under
+        // Indirection has to see the new value anyway.
+        setStep(1);
+        setValue(1);
+        await waitForAll(['App', 'Step 1', 'Consumer 1']);
+        expect(ReactNoop).toMatchRenderedOutput(
+          <>
+            <span prop="step 1" />
+            <span prop={1} />
+          </>,
+        );
+      });
     });
   }
 
