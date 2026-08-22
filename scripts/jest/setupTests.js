@@ -326,6 +326,30 @@ jest.mock('async_hooks', () => {
   };
 });
 
+// The Node server also tracks Promises with v8.promiseHooks, whose hooks have
+// no disable() method; createHook returns a stop function instead. Track it the
+// same way so it can be cleaned up too.
+let stopInstalledPromiseHook = null;
+jest.mock('v8', () => {
+  const actual = jest.requireActual('v8');
+  if (actual.promiseHooks == null) {
+    return actual;
+  }
+  return {
+    ...actual,
+    promiseHooks: {
+      ...actual.promiseHooks,
+      createHook(config) {
+        if (stopInstalledPromiseHook) {
+          stopInstalledPromiseHook();
+        }
+        return (stopInstalledPromiseHook =
+          actual.promiseHooks.createHook(config));
+      },
+    },
+  };
+});
+
 // Ensure async hooks are disabled after each test to prevent cross-test pollution.
 // This is needed because test files that load the Node server (with async debug hooks)
 // can pollute test files that load the Edge server (which doesn't create new hooks
@@ -334,5 +358,9 @@ afterEach(() => {
   if (installedHook) {
     installedHook.disable();
     installedHook = null;
+  }
+  if (stopInstalledPromiseHook) {
+    stopInstalledPromiseHook();
+    stopInstalledPromiseHook = null;
   }
 });
