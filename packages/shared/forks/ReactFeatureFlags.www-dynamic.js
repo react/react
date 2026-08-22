@@ -39,6 +39,7 @@ export const enableFragmentRefs: boolean = __VARIANT__;
 export const enableFragmentRefsScrollIntoView: boolean = __VARIANT__;
 export const enableFragmentRefsTextNodes: boolean = __VARIANT__;
 export const enableInternalInstanceMap: boolean = __VARIANT__;
+export const enableMemoizedContextPropagation: boolean = __VARIANT__;
 export const enableParallelTransitions: boolean = __VARIANT__;
 
 // TODO: These flags are hard-coded to the default values used in open source.
