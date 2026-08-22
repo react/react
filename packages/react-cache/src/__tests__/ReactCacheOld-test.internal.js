@@ -251,14 +251,22 @@ describe('ReactCache', () => {
       ...(gate('alwaysThrottleRetries') ? [] : ['Promise resolved [3]']),
     ]);
     await waitForAll([
-      1,
+      // 1 already rendered in the attempt that suspended on 2. If that attempt
+      // is continued from, it isn't rendered again.
+      ...(gate(flags => flags.enableResumingInterruptedRenders) ? [] : [1]),
       2,
       ...(gate('alwaysThrottleRetries') ? ['Suspend! [3]'] : [3]),
     ]);
 
     jest.advanceTimersByTime(100);
     assertLog(gate('alwaysThrottleRetries') ? ['Promise resolved [3]'] : []);
-    await waitForAll(gate('alwaysThrottleRetries') ? [1, 2, 3] : []);
+    await waitForAll(
+      gate('alwaysThrottleRetries')
+        ? gate(flags => flags.enableResumingInterruptedRenders)
+          ? [3]
+          : [1, 2, 3]
+        : [],
+    );
 
     await act(() => jest.advanceTimersByTime(100));
     expect(root).toMatchRenderedOutput('123');

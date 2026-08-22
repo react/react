@@ -392,6 +392,65 @@ describe('ReactIncrementalResuming', () => {
   });
 
   // @gate enableResumingInterruptedRenders
+  it('continues from children that were mounted', async () => {
+    const Item = React.memo(function Item({id}) {
+      Scheduler.log('Item ' + id);
+      return span(id);
+    });
+    function List({show}) {
+      Scheduler.log('List');
+      return show ? [1, 2, 3].map(id => <Item key={id} id={id} />) : null;
+    }
+    function Sibling() {
+      Scheduler.log('Sibling');
+      return span('sibling');
+    }
+    let setShow;
+    let setOther;
+    function App() {
+      const [show, _setShow] = useState(false);
+      const [, _setOther] = useState(0);
+      setShow = _setShow;
+      setOther = _setOther;
+      Scheduler.log('App');
+      return (
+        <>
+          <List show={show} />
+          <Sibling />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App />));
+    assertLog(['App', 'List', 'Sibling']);
+
+    await act(async () => {
+      // Mount the items in a transition, and stop once the second one has
+      // rendered, before it completed.
+      startTransition(() => setShow(true));
+      await waitFor(['App', 'List', 'Item 1', 'Item 2']);
+
+      // An update to App interrupts the transition.
+      ReactNoop.flushSync(() => setOther(1));
+      assertLog(['App', 'List', 'Sibling']);
+
+      // The transition continues. App and List render again, since App was
+      // updated, but the first two items already rendered and their props
+      // haven't changed, so they're continued from.
+      await waitForAll(['App', 'List', 'Item 3', 'Sibling']);
+    });
+    expect(root).toMatchRenderedOutput(
+      <>
+        {span(1)}
+        {span(2)}
+        {span(3)}
+        {span('sibling')}
+      </>,
+    );
+  });
+
+  // @gate enableResumingInterruptedRenders
   it('does not continue from work that suspended', async () => {
     let resolvePromise;
     const options = {

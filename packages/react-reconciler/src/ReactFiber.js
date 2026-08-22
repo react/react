@@ -86,6 +86,7 @@ import {
   getInProgressVersion,
   discardRecordedWork,
   releaseInProgressVersionOnCommit,
+  releaseInProgressMountsOnCommit,
 } from './ReactFiberResuming';
 import {
   NoMode,
@@ -428,7 +429,10 @@ const committingInstances: Array<FiberInstance> = [];
 // A fiber that was committed before and is shared with this tree is its own
 // previous version (see releaseCommittedFibers), which is how it's told apart
 // from the fibers that are being committed.
-export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
+export function commitWorkInProgressAsCurrent(
+  finishedWork: Fiber,
+  lanes: Lanes,
+): void {
   // These are the versions being committed.
   discardRecordedWork();
   let node = finishedWork;
@@ -439,6 +443,12 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
       instance.previous = current;
       instance.current = node;
       releaseInProgressVersionOnCommit(instance, node, current);
+    } else if (instance.inProgress === node) {
+      // A mounted version that a previous render left behind, committed now.
+      instance.inProgress = null;
+    }
+    if (instance.inProgressMounts !== null) {
+      releaseInProgressMountsOnCommit(instance, lanes);
     }
     committingInstances.push(instance);
     // A child that this render rendered points at `node`. One that's shared

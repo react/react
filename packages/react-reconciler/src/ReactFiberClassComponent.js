@@ -955,6 +955,11 @@ function resumeMountClassInstance(
     );
 
   if (shouldUpdate) {
+    // Like on a first mount, componentWillMount sees the props and state it's
+    // about to render with, and the updates it schedules are processed before
+    // rendering.
+    instance.props = newProps;
+    instance.state = newState;
     // In order to support react-lifecycles-compat polyfilled components,
     // Unsafe lifecycles should not be invoked for components using the new APIs.
     if (
@@ -962,12 +967,10 @@ function resumeMountClassInstance(
       (typeof instance.UNSAFE_componentWillMount === 'function' ||
         typeof instance.componentWillMount === 'function')
     ) {
-      if (typeof instance.componentWillMount === 'function') {
-        instance.componentWillMount();
-      }
-      if (typeof instance.UNSAFE_componentWillMount === 'function') {
-        instance.UNSAFE_componentWillMount();
-      }
+      callComponentWillMount(workInProgress, instance);
+      processUpdateQueue(workInProgress, newProps, instance, renderLanes);
+      suspendIfUpdateReadFromEntangledAsyncAction();
+      newState = workInProgress.memoizedState;
     }
     if (typeof instance.componentDidMount === 'function') {
       workInProgress.flags |= Update | LayoutStatic;

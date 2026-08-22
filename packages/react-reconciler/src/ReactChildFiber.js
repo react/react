@@ -65,6 +65,7 @@ import {
   createFiberFromPortal,
   createFiberFromThrow,
 } from './ReactFiber';
+import {getInProgressMountVersion} from './ReactFiberResuming';
 import {getPreviousVersion} from './ReactFiberInstance';
 import {isCompatibleFamilyForHotReloading} from './ReactFiberHotReloading';
 import {getIsHydrating} from './ReactFiberHydrationContext';
@@ -583,6 +584,7 @@ function createChildReconciler(
     current: Fiber | null,
     element: ReactElement,
     lanes: Lanes,
+    index: number,
   ): Fiber {
     const elementType = element.type;
     if (elementType === REACT_FRAGMENT_TYPE) {
@@ -627,7 +629,7 @@ function createChildReconciler(
       }
     }
     // Insert
-    const created = createFiberFromElement(element, returnFiber.mode, lanes);
+    const created = createChildFromElement(returnFiber, element, lanes, index);
     coerceRef(created, element);
     created.return = returnFiber;
     if (__DEV__) {
@@ -708,10 +710,27 @@ function createChildReconciler(
     }
   }
 
+  // A new fiber for an element that has no existing child to update. If an
+  // interrupted render mounted one for it in this position, that's continued
+  // from.
+  function createChildFromElement(
+    returnFiber: Fiber,
+    element: ReactElement,
+    lanes: Lanes,
+    index: number,
+  ): Fiber {
+    const resumed = getInProgressMountVersion(returnFiber, element, index);
+    if (resumed !== null) {
+      return resumed;
+    }
+    return createFiberFromElement(element, returnFiber.mode, lanes);
+  }
+
   function createChild(
     returnFiber: Fiber,
     newChild: any,
     lanes: Lanes,
+    index: number,
   ): Fiber | null {
     if (
       (typeof newChild === 'string' && newChild !== '') ||
@@ -740,10 +759,11 @@ function createChildReconciler(
     if (typeof newChild === 'object' && newChild !== null) {
       switch (newChild.$$typeof) {
         case REACT_ELEMENT_TYPE: {
-          const created = createFiberFromElement(
+          const created = createChildFromElement(
+            returnFiber,
             newChild,
-            returnFiber.mode,
             lanes,
+            index,
           );
           coerceRef(created, newChild);
           created.return = returnFiber;
@@ -769,7 +789,7 @@ function createChildReconciler(
         case REACT_LAZY_TYPE: {
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
           const resolvedChild = resolveLazy(newChild as any);
-          const created = createChild(returnFiber, resolvedChild, lanes);
+          const created = createChild(returnFiber, resolvedChild, lanes, index);
           currentDebugInfo = prevDebugInfo;
           return created;
         }
@@ -810,6 +830,7 @@ function createChildReconciler(
           returnFiber,
           unwrapThenable(thenable),
           lanes,
+          index,
         );
         currentDebugInfo = prevDebugInfo;
         return created;
@@ -822,6 +843,7 @@ function createChildReconciler(
           returnFiber,
           readContextDuringReconciliation(returnFiber, context, lanes),
           lanes,
+          index,
         );
       }
 
@@ -845,6 +867,7 @@ function createChildReconciler(
     oldFiber: Fiber | null,
     newChild: any,
     lanes: Lanes,
+    index: number,
   ): Fiber | null {
     // Update the fiber if the keys match, otherwise return null.
     const key = oldFiber !== null ? oldFiber.key : null;
@@ -885,6 +908,7 @@ function createChildReconciler(
               oldFiber,
               newChild,
               lanes,
+              index,
             );
             currentDebugInfo = prevDebugInfo;
             return updated;
@@ -913,6 +937,7 @@ function createChildReconciler(
             oldFiber,
             resolvedChild,
             lanes,
+            index,
           );
           currentDebugInfo = prevDebugInfo;
           return updated;
@@ -952,6 +977,7 @@ function createChildReconciler(
           oldFiber,
           unwrapThenable(thenable),
           lanes,
+          index,
         );
         currentDebugInfo = prevDebugInfo;
         return updated;
@@ -965,6 +991,7 @@ function createChildReconciler(
           oldFiber,
           readContextDuringReconciliation(returnFiber, context, lanes),
           lanes,
+          index,
         );
       }
 
@@ -1024,6 +1051,7 @@ function createChildReconciler(
             matchedFiber,
             newChild,
             lanes,
+            newIdx,
           );
           currentDebugInfo = prevDebugInfo;
           return updated;
@@ -1221,6 +1249,7 @@ function createChildReconciler(
         oldFiber,
         newChildren[newIdx],
         lanes,
+        newIdx,
       );
       if (newFiber === null) {
         // TODO: This breaks on empty slots like null children. That's
@@ -1278,7 +1307,12 @@ function createChildReconciler(
       // If we don't have any more existing children we can choose a fast path
       // since the rest will all be insertions.
       for (; newIdx < newChildren.length; newIdx++) {
-        const newFiber = createChild(returnFiber, newChildren[newIdx], lanes);
+        const newFiber = createChild(
+          returnFiber,
+          newChildren[newIdx],
+          lanes,
+          newIdx,
+        );
         if (newFiber === null) {
           continue;
         }
@@ -1523,7 +1557,13 @@ function createChildReconciler(
       } else {
         nextOldFiber = oldFiber.sibling;
       }
-      const newFiber = updateSlot(returnFiber, oldFiber, step.value, lanes);
+      const newFiber = updateSlot(
+        returnFiber,
+        oldFiber,
+        step.value,
+        lanes,
+        newIdx,
+      );
       if (newFiber === null) {
         // TODO: This breaks on empty slots like null children. That's
         // unfortunate because it triggers the slow path all the time. We need
@@ -1580,7 +1620,7 @@ function createChildReconciler(
       // If we don't have any more existing children we can choose a fast path
       // since the rest will all be insertions.
       for (; !step.done; newIdx++, step = newChildren.next()) {
-        const newFiber = createChild(returnFiber, step.value, lanes);
+        const newFiber = createChild(returnFiber, step.value, lanes, newIdx);
         if (newFiber === null) {
           continue;
         }
@@ -1796,7 +1836,7 @@ function createChildReconciler(
       validateFragmentProps(element, created, returnFiber);
       return created;
     } else {
-      const created = createFiberFromElement(element, returnFiber.mode, lanes);
+      const created = createChildFromElement(returnFiber, element, lanes, 0);
       coerceRef(created, element);
       created.return = returnFiber;
       if (__DEV__) {

@@ -4105,7 +4105,7 @@ function flushMutationEffects(): void {
   // componentWillUnmount, but before the layout phase, so that the finished
   // work is current during componentDidMount/Update.
   root.current = finishedWork;
-  commitWorkInProgressAsCurrent(finishedWork);
+  commitWorkInProgressAsCurrent(finishedWork, pendingEffectsLanes);
   // Updates that were enqueued since the render started haven't been marked
   // on any tree yet. Now that the finished tree is current, mark them on it.
   finishQueueingConcurrentUpdates();

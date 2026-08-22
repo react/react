@@ -104,6 +104,7 @@ import {
   Hydrate,
   PortalStatic,
 } from './ReactFiberFlags';
+import {isInProgressVersion} from './ReactFiberResuming';
 
 import {
   createInstance,
@@ -1374,6 +1375,12 @@ function completeWork(
     case HostComponent: {
       popHostContext(workInProgress);
       const type = workInProgress.type;
+      if (current === null && isInProgressVersion(workInProgress)) {
+        // A version a previous render mounted, kept as is. Its instance and
+        // its children are already set up.
+        bubbleProperties(workInProgress);
+        return null;
+      }
       if (current !== null && workInProgress.stateNode != null) {
         updateHostComponent(
           current,
@@ -1473,6 +1480,11 @@ function completeWork(
     }
     case HostText: {
       const newText = newProps;
+      if (current === null && isInProgressVersion(workInProgress)) {
+        // A version a previous render mounted, kept as is.
+        bubbleProperties(workInProgress);
+        return null;
+      }
       if (current && workInProgress.stateNode != null) {
         const oldText = current.memoizedProps;
         // If we have a current version, that means this is an update and we

@@ -105,6 +105,10 @@ export type FiberInstance = {
   // so a render that continues from it has to descend into the children
   // rather than take the subtree as done.
   inProgressSubtreeIsStale: boolean,
+  // Children that a render mounted under this node but didn't get to commit.
+  // A later render that creates a child for the same element continues from
+  // them. See getInProgressMountVersion.
+  inProgressMounts: Array<Fiber> | null,
 };
 
 // A Fiber is work on a Component that needs to be done or was done. There can
