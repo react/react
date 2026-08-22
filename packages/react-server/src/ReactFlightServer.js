@@ -6488,19 +6488,19 @@ function flushCompletedChunks(request: Request): void {
     flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
-    // There are no pending chunks left, so the render is complete. This code
-    // releases its resources. Debug chunks can still be pending, but they carry
+    // There are no pending chunks left, so the render is complete and its cache
+    // signal is aborted here. Debug chunks can still be pending, but they carry
     // development-only instrumentation rather than the render's output.
     //
-    // The release runs before the stream bookkeeping below, because that
-    // bookkeeping can close the main stream and set the status to CLOSED while
-    // debug chunks are outstanding. The cache controller is only aborted below
-    // ABORTING, so a later flush would skip it. Repeated flushes are safe,
-    // because emptying the taint queue and aborting an aborted controller both
-    // do nothing a second time.
-    if (enableTaint) {
-      cleanupTaintQueue(request);
-    }
+    // This runs before the stream bookkeeping below, because that bookkeeping
+    // can close the main stream and set the status to CLOSED while debug chunks
+    // are outstanding. The abort only happens below ABORTING, so a later flush
+    // would skip it. Repeated flushes are safe, because aborting an aborted
+    // controller does nothing a second time.
+    //
+    // The taint queue stays untouched here. Debug chunks are checked against
+    // the taint registry as they are written, and a deferred debug object can
+    // be written long after this point.
     if (request.status < ABORTING) {
       const abortReason = new Error(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
@@ -6534,6 +6534,9 @@ function flushCompletedChunks(request: Request): void {
       }
     }
     // We're done.
+    if (enableTaint) {
+      cleanupTaintQueue(request);
+    }
     if (request.destination !== null) {
       request.status = CLOSED;
       close(request.destination);
