@@ -41,11 +41,11 @@ function Component(props) {
   const $ = _c(5);
   const Foo = useContext(FooContext);
   let t0;
-  if ($[0] !== Foo.current) {
+  if ($[0] !== Foo) {
     t0 = () => {
       mutate(Foo.current);
     };
-    $[0] = Foo.current;
+    $[0] = Foo;
     $[1] = t0;
   } else {
     t0 = $[1];
