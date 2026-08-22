@@ -1477,7 +1477,9 @@ describe('ReactSuspenseList', () => {
     await act(() => D.resolve());
     assertLog([
       'D',
-      'F',
+      // F already rendered in the attempt that suspended on D. If that attempt
+      // is continued from, it isn't rendered again.
+      ...(gate(flags => flags.enableResumingInterruptedRenders) ? [] : ['F']),
       'Suspend! [B]',
       // pre-warming
       'Suspend! [B]',

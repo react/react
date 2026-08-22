@@ -1334,6 +1334,7 @@ function detachFiberAfterEffects(fiber: Fiber) {
   const instance = fiber.instance;
   instance.previous = null;
   instance.inProgress = null;
+  instance.inProgressMounts = null;
 
   // Clear cyclical Fiber fields. `setState` is bound to the FiberInstance
   // rather than the Fiber, and the instance has none of these fields, so this

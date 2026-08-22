@@ -305,7 +305,13 @@ describe('ReactSuspense', () => {
     await act(() => resolveText('B'));
     // By this point, B has resolved.
     // The contents of both should pop in together.
-    assertLog(['A', 'B']);
+    // A already rendered in the attempt that suspended on B. If that attempt
+    // is continued from, it isn't rendered again.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['B']
+        : ['A', 'B'],
+    );
     expect(container.textContent).toEqual('AB');
   });
 

@@ -392,6 +392,65 @@ describe('ReactIncrementalResuming', () => {
   });
 
   // @gate enableResumingInterruptedRenders
+  it('continues from children that were mounted', async () => {
+    const Item = React.memo(function Item({id}) {
+      Scheduler.log('Item ' + id);
+      return span(id);
+    });
+    function List({show}) {
+      Scheduler.log('List');
+      return show ? [1, 2, 3].map(id => <Item key={id} id={id} />) : null;
+    }
+    function Sibling() {
+      Scheduler.log('Sibling');
+      return span('sibling');
+    }
+    let setShow;
+    let setOther;
+    function App() {
+      const [show, _setShow] = useState(false);
+      const [, _setOther] = useState(0);
+      setShow = _setShow;
+      setOther = _setOther;
+      Scheduler.log('App');
+      return (
+        <>
+          <List show={show} />
+          <Sibling />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App />));
+    assertLog(['App', 'List', 'Sibling']);
+
+    await act(async () => {
+      // Mount the items in a transition, and stop once the second one has
+      // rendered, before it completed.
+      startTransition(() => setShow(true));
+      await waitFor(['App', 'List', 'Item 1', 'Item 2']);
+
+      // An update to App interrupts the transition.
+      ReactNoop.flushSync(() => setOther(1));
+      assertLog(['App', 'List', 'Sibling']);
+
+      // The transition continues. App and List render again, since App was
+      // updated, but the first two items already rendered and their props
+      // haven't changed, so they're continued from.
+      await waitForAll(['App', 'List', 'Item 3', 'Sibling']);
+    });
+    expect(root).toMatchRenderedOutput(
+      <>
+        {span(1)}
+        {span(2)}
+        {span(3)}
+        {span('sibling')}
+      </>,
+    );
+  });
+
+  // @gate enableResumingInterruptedRenders
   it('deletes what is committed when a deleted child updated in the meantime', async () => {
     let setExtra;
     function C() {
@@ -613,6 +672,69 @@ describe('ReactIncrementalResuming', () => {
       <>
         {span('c:1:1')}
         {span('q')}
+      </>,
+    );
+  });
+
+  it('does not continue from a mount that read a context that changed', async () => {
+    const Ctx = React.createContext('a');
+    function Cell() {
+      const value = useContext(Ctx);
+      Scheduler.log('Cell ' + value);
+      return span('cell:' + value);
+    }
+    const Row = React.memo(function Row() {
+      Scheduler.log('Row');
+      return <Cell />;
+    });
+    function Other() {
+      Scheduler.log('Other');
+      return span('other');
+    }
+    function List({show}) {
+      Scheduler.log('List');
+      return show ? (
+        <>
+          <Row />
+          <Other />
+        </>
+      ) : null;
+    }
+    let setShow;
+    let setCtx;
+    function App() {
+      const [show, _setShow] = useState(false);
+      const [ctx, _setCtx] = useState('a');
+      setShow = _setShow;
+      setCtx = _setCtx;
+      Scheduler.log('App');
+      return (
+        <Ctx.Provider value={ctx}>
+          <List show={show} />
+        </Ctx.Provider>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App />));
+    assertLog(['App', 'List']);
+
+    await act(async () => {
+      // Mount Row, whose Cell reads the context, then stop.
+      startTransition(() => setShow(true));
+      await waitFor(['App', 'List', 'Row', 'Cell a']);
+
+      // The context changes and commits. Nothing in the committed tree reads
+      // it, so nothing gets marked; the mounted Row does read it.
+      ReactNoop.flushSync(() => setCtx('b'));
+      assertLog(['App', 'List']);
+
+      await waitForAll(['App', 'List', 'Row', 'Cell b', 'Other']);
+    });
+    expect(root).toMatchRenderedOutput(
+      <>
+        {span('cell:b')}
+        {span('other')}
       </>,
     );
   });

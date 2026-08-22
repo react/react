@@ -86,6 +86,7 @@ import {
   getInProgressVersion,
   discardRecordedWork,
   releaseInProgressVersionOnCommit,
+  releaseInProgressMountsOnCommit,
   releasePublishedWorkOnCommit,
   syncClassInstance,
 } from './ReactFiberResuming';
@@ -448,6 +449,12 @@ export function commitWorkInProgressAsCurrent(
       instance.previous = current;
       instance.current = node;
       releaseInProgressVersionOnCommit(instance, node, current);
+    } else if (instance.inProgress === node) {
+      // A mounted version that a previous render left behind, committed now.
+      instance.inProgress = null;
+    }
+    if (instance.inProgressMounts !== null) {
+      releaseInProgressMountsOnCommit(instance, lanes);
     }
     committingInstances.push(instance);
     // A child that this render rendered points at `node`. One that's shared

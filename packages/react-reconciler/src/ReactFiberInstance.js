@@ -18,6 +18,7 @@ export function createFiberInstance(fiber: Fiber): FiberInstance {
     inProgress: null,
     inProgressLanes: 0,
     inProgressSubtreeIsStale: false,
+    inProgressMounts: null,
   };
 }
 

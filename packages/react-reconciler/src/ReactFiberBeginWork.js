@@ -276,6 +276,7 @@ import {
   hasStaleDescendants,
   pushProviderValue,
   refreshDeletions,
+  mountedVersionReadsChangedContext,
 } from './ReactFiberResuming';
 import {
   scheduleUpdateOnFiber,
@@ -573,13 +574,15 @@ function updateSimpleMemoComponent(
   // TODO: current can be non-null here even if the component
   // hasn't yet mounted. This happens when the inner render suspends.
   // We'll need to figure out if this is fine or can cause issues.
-  if (current !== null) {
+  if (current !== null || isInProgressVersion(workInProgress)) {
     const prevProps = workInProgress.memoizedProps;
     if (
       shallowEqual(prevProps, nextProps) &&
-      current.ref === workInProgress.ref &&
+      (current === null || current.ref === workInProgress.ref) &&
       // Prevent bailout if the implementation changed due to hot reload.
-      (__DEV__ ? workInProgress.type === current.type : true)
+      (__DEV__ && current !== null
+        ? workInProgress.type === current.type
+        : true)
     ) {
       didReceiveUpdate = false;
 
@@ -620,7 +623,10 @@ function updateSimpleMemoComponent(
           workInProgress,
           renderLanes,
         );
-      } else if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
+      } else if (
+        current !== null &&
+        (current.flags & ForceUpdateForLegacySuspense) !== NoFlags
+      ) {
         // This is a special case that only exists for legacy mode.
         // See https://github.com/facebook/react/pull/19216.
         didReceiveUpdate = true;
@@ -1728,7 +1734,7 @@ function updateClassComponent(
     // lifecycles above compared against what it rendered with, like
     // shouldComponentUpdate would against the props of an interrupted render.
     // Its children are replaced by the render below.
-    resetResumedChildren(current as any, workInProgress);
+    resetResumedChildren(current, workInProgress);
   }
   const nextUnitOfWork = finishClassComponent(
     current,
@@ -4024,9 +4030,12 @@ function resetResumedWorkInProgress(
 // ones it has are discarded, along with the effects that reconciling them
 // left on it, and until this render completes it again it isn't a finished
 // version that another render could continue from.
-function resetResumedChildren(current: Fiber, workInProgress: Fiber): void {
+function resetResumedChildren(
+  current: Fiber | null,
+  workInProgress: Fiber,
+): void {
   invalidateInProgressVersion(workInProgress);
-  workInProgress.child = current.child;
+  workInProgress.child = current === null ? null : current.child;
   workInProgress.deletions = null;
   workInProgress.flags &= ~ChildDeletion;
   workInProgress.subtreeFlags = NoFlags;
@@ -4049,6 +4058,13 @@ function resumeChildFibers(
     if (!isInProgressVersion(child)) {
       // This one was invalidated since. It renders again from current, with
       // the props the previous render gave it.
+      resetWorkInProgress(child, renderLanes);
+    } else if (
+      child.instance.current === child &&
+      mountedVersionReadsChangedContext(child)
+    ) {
+      // A mounted version whose consumers can't be marked by propagation.
+      invalidateInProgressVersion(child);
       resetWorkInProgress(child, renderLanes);
     }
     lastRendered = child;
@@ -4185,6 +4201,8 @@ function checkScheduledUpdateOrContext(
 }
 
 function attemptEarlyBailoutIfNoScheduledUpdate(
+  // Null for a version a previous render mounted that's being kept as is. That
+  // only happens for tags that don't read from current here.
   current: Fiber,
   workInProgress: Fiber,
   renderLanes: Lanes,
@@ -4556,6 +4574,25 @@ function beginWork(
     }
   } else {
     didReceiveUpdate = false;
+
+    if (isInProgressVersion(workInProgress)) {
+      // A version a previous render mounted. With the same element and no
+      // update, it's kept as is; otherwise it mounts again, except that a memo
+      // component compares the props first.
+      if (
+        workInProgress.pendingProps === workInProgress.memoizedProps &&
+        !includesSomeLane(renderLanes, workInProgress.lanes)
+      ) {
+        return attemptEarlyBailoutIfNoScheduledUpdate(
+          null as any,
+          workInProgress,
+          renderLanes,
+        );
+      }
+      if (workInProgress.tag !== SimpleMemoComponent) {
+        resetResumedWorkInProgress(workInProgress, renderLanes);
+      }
+    }
 
     if (getIsHydrating() && isForkedChild(workInProgress)) {
       // Check if this child belongs to a list of muliple children in
