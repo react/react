@@ -14,3 +14,6 @@ rustc-hash = "2"
 [dev-dependencies]
 walkdir = "2"
 similar = "3"
+
+[lints]
+workspace = true

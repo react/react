@@ -1,9 +1,48 @@
 [workspace]
-members = [
-  "crates/*",
-  "packages/babel-plugin-react-compiler-rust/native",
-]
+members = ["crates/*", "packages/babel-plugin-react-compiler-rust/native"]
 resolver = "3"
+
+[workspace.lints.clippy]
+collapsible_if = "allow"
+collapsible_match = "allow"
+manual_flatten = "allow"
+redundant_field_names = "allow"
+while_let_loop = "allow"
+needless_borrow = "allow"
+manual_strip = "allow"
+single_match = "allow"
+for_kv_map = "allow"
+if_same_then_else = "allow"
+let_and_return = "allow"
+needless_borrows_for_generic_args = "allow"
+redundant_closure = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+unnecessary_map_or = "allow"
+unwrap_or_default = "allow"
+new_without_default = "allow"
+derivable_impls = "allow"
+ptr_arg = "allow"
+needless_question_mark = "allow"
+needless_return = "allow"
+mem_replace_with_default = "allow"
+manual_range_contains = "allow"
+bind_instead_of_map = "allow"
+neg_multiply = "allow"
+manual_map = "allow"
+match_like_matches_macro = "allow"
+
+clone_on_copy = "allow"
+large_enum_variant = "allow"
+iter_cloned_collect = "allow"
+map_entry = "allow"
+needless_range_loop = "allow"
+only_used_in_recursion = "allow"
+result_large_err = "allow"
+unnecessary_mut_passed = "allow"
+implicit_saturating_sub = "allow"
+useless_format = "allow"
+useless_conversion = "allow"
 
 # Sizes the shipped napi binary (index.node). Measured on arm64 macOS:
 # default release is 11.2MB; fat LTO + one codegen unit + stripping symbols
@@ -13,4 +52,3 @@ resolver = "3"
 lto = "fat"
 codegen-units = 1
 strip = true
-

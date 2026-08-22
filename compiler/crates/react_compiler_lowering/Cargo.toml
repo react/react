@@ -10,3 +10,6 @@ react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
 indexmap = "2"
 rustc-hash = "2"
 serde_json = "1"
+
+[lints]
+workspace = true
