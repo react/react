@@ -72,6 +72,7 @@ export class ProgramContext {
   reactRuntimeModule: string;
   suppressions: Array<SuppressionRange>;
   hasModuleScopeOptOut: boolean;
+  useJestMockCompatibleMemoCacheIdentifier: boolean = false;
 
   /*
    * This is a hack to work around what seems to be a Babel bug. Babel doesn't
@@ -147,7 +148,7 @@ export class ProgramContext {
         source: this.reactRuntimeModule,
         importSpecifierName: 'c',
       },
-      '_c',
+      this.useJestMockCompatibleMemoCacheIdentifier ? 'mock_c' : '_c',
     );
   }
 
