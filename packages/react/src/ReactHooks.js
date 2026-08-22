@@ -210,6 +210,14 @@ export function use<T>(usable: Usable<T>): T {
 }
 
 export function useMemoCache(size: number): Array<mixed> {
+  if (__DEV__) {
+    if (typeof size !== 'number' || size < 0 || !Number.isInteger(size)) {
+      console.error(
+        'useMemoCache expected a non-negative integer for size, but received %s.',
+        size,
+      );
+    }
+  }
   const dispatcher = resolveDispatcher();
   // $FlowFixMe[not-a-function] This is unstable, thus optional
   return dispatcher.useMemoCache(size);
