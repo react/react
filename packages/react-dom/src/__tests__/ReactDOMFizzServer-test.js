@@ -4503,16 +4503,17 @@ describe('ReactDOMFizzServer', () => {
         </html>,
         {
           importMap,
+          nonce: 'R4nd0m',
         },
       ).pipe(writable);
     });
 
     expect(document.head.innerHTML).toBe(
-      '<script type="importmap">' +
+      '<script type="importmap" nonce="R4nd0m">' +
         JSON.stringify(importMap) +
         '</script><script async="" src="foo"></script>' +
         (gate(flags => flags.shouldUseFizzExternalRuntime)
-          ? '<script src="react-dom-bindings/src/server/ReactDOMServerExternalRuntime.js" async=""></script>'
+          ? '<script src="react-dom-bindings/src/server/ReactDOMServerExternalRuntime.js" async="" nonce="R4nd0m"></script>'
           : '') +
         (gate(flags => flags.enableFizzBlockingRender)
           ? '<link rel="expect" href="#_R_" blocking="render">'
