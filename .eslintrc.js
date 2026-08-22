@@ -433,7 +433,6 @@ module.exports = {
         'packages/*/npm/**/*.js',
         'packages/dom-event-testing-library/**/*.js',
         'packages/react-devtools*/**/*.js',
-        'dangerfile.js',
         'fixtures',
         'packages/react-dom/src/test-utils/*.js',
       ],
