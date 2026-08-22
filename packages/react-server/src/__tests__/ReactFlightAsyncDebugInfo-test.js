@@ -4160,4 +4160,259 @@ describe('ReactFlightAsyncDebugInfo', () => {
       `);
     }
   });
+
+  it('names I/O started from an fs callback before the request', async () => {
+    // I/O started outside of a render has no owner, so its name comes from
+    // the top frame of the stack captured when it starts. The callback form
+    // of the fs API dispatches through a different depth than fs/promises,
+    // and that frame used to be attributed one frame too deep, naming the io
+    // after whatever userspace frame sat there instead of the fs call.
+    const {readFile} = require('fs');
+    const filename = path.join(__dirname, 'test-file.txt');
+    function readFileWithCallback() {
+      return new Promise((resolve, reject) => {
+        readFile(filename, (error, buffer) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(buffer.toString('utf8').slice(0, 26));
+          }
+        });
+      });
+    }
+    const filePromise = readFileWithCallback();
+    async function Component() {
+      return await filePromise;
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      ReactServer.createElement(Component),
+      {},
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+    expect(await result).toBe('Lorem ipsum dolor sit amet');
+    await finishLoadingStream(readable);
+
+    if (
+      __DEV__ &&
+      gate(
+        flags =>
+          flags.enableComponentPerformanceTrack && flags.enableAsyncDebugInfo,
+      )
+    ) {
+      const ioNames = getDebugInfo(result)
+        .filter(entry => entry.awaited)
+        .map(entry => entry.awaited.name);
+      expect(ioNames).toContain('readFile');
+    }
+  });
+
+  it('does not turn a caught rejection in debug info into an unhandled rejection', async () => {
+    // A rejection that the server component caught still gets its value
+    // serialized into the debug info as a rejected promise. Subscribing to
+    // that value without a rejection handler, which is what getDebugInfo
+    // does, must not turn the already-handled error into an unhandled
+    // rejection. There is no explicit assertion for the leak: jest fails
+    // any test that leaks one.
+    function rejectAfterIO() {
+      return new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('boom')), 1);
+      });
+    }
+
+    async function Component() {
+      try {
+        await rejectAfterIO();
+      } catch (x) {
+        // The rejection is handled. The render succeeds.
+      }
+      return 'ok';
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      ReactServer.createElement(Component),
+      {},
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+    expect(await result).toBe('ok');
+    await finishLoadingStream(readable);
+
+    if (
+      __DEV__ &&
+      gate(
+        flags =>
+          flags.enableComponentPerformanceTrack && flags.enableAsyncDebugInfo,
+      )
+    ) {
+      const rejectedValues = getDebugInfo(result)
+        .filter(entry => entry.awaited && entry.awaited.value)
+        .map(entry => entry.awaited.value)
+        .filter(value => value.reason !== undefined);
+      expect(rejectedValues.length).toBe(1);
+      expect(rejectedValues[0].reason.message).toBe('boom');
+    }
+
+    // Node reports a rejection as unhandled once the microtask queue of the
+    // current macrotask has drained without a handler getting attached. One
+    // timer hop moves past that point, so a leak fails this test instead of
+    // whichever test happens to run next.
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+
+  // A thenable that throws for any property access outside the thenable
+  // protocol. Our own ClientReference proxies exempt the serialization
+  // probes, but userland reference proxies of the same shape don't.
+  function proxyThenable(value) {
+    return new Proxy(
+      {
+        then(resolve) {
+          resolve(value);
+        },
+      },
+      {
+        get(target, key) {
+          if (
+            key === 'then' ||
+            key === 'status' ||
+            key === 'value' ||
+            key === 'reason' ||
+            key === 'constructor' ||
+            typeof key === 'symbol'
+          ) {
+            return target[key];
+          }
+          throw new Error('touched forbidden key ' + String(key));
+        },
+        set(target, key, newValue) {
+          target[key] = newValue;
+          return true;
+        },
+      },
+    );
+  }
+
+  it('tolerates a proxy thenable prop on a component that awaits I/O', async () => {
+    // The prop makes JSON.stringify of the component's debug info throw.
+    // That must never affect the component's actual data.
+    // I/O created outside any component so the degraded component info is
+    // only referenced by the Child task's awaited debug rows.
+    const io1 = delay(1);
+    const io2 = delay(10);
+
+    async function Child({data}) {
+      // Awaited debug rows flush earlier than the task's own model row.
+      await io1;
+      await io2;
+      return 'child:' + (await data);
+    }
+
+    async function App() {
+      await io1;
+      return [
+        'app',
+        [
+          ReactServer.createElement(Child, {
+            key: '0',
+            data: proxyThenable('a'),
+          }),
+        ],
+      ];
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      ReactServer.createElement(App, null),
+      {},
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+    expect((await result)[0]).toBe('app');
+    await finishLoadingStream(readable);
+  });
+
+  it('tolerates a prop with a throwing toJSON getter on a component that awaits I/O', async () => {
+    // JSON.stringify probes toJSON on every raw object before the replacer
+    // runs, so the probe throws while the component's debug info is
+    // serialized. That must never affect the component's actual data.
+    const throwingToJSON = {
+      get toJSON() {
+        throw new Error('touched forbidden key toJSON');
+      },
+    };
+
+    const io1 = delay(1);
+    const io2 = delay(10);
+
+    async function Child({data}) {
+      await io1;
+      await io2;
+      return 'child';
+    }
+
+    async function App() {
+      await io1;
+      return [
+        'app',
+        [ReactServer.createElement(Child, {key: '0', data: throwingToJSON})],
+      ];
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      ReactServer.createElement(App, null),
+      {},
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+    expect((await result)[0]).toBe('app');
+    await finishLoadingStream(readable);
+  });
+
+  it('tolerates a userland thenable prop that resolves twice', async () => {
+    // Every consumer that attaches raw .then() callbacks in this path
+    // already guards against multiple settles.
+    const evilThenable = {
+      then(resolve) {
+        resolve('a');
+        resolve('b');
+      },
+    };
+
+    async function Child({data}) {
+      return 'child:' + (await data);
+    }
+
+    function App() {
+      return ReactServer.createElement(Child, {data: evilThenable});
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      ReactServer.createElement(App, null),
+      {},
+    );
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+    expect(await result).toBe('child:a');
+    await finishLoadingStream(readable);
+  });
 });

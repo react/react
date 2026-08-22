@@ -54,6 +54,16 @@ function resolvePromiseOrAwaitNode(
 
 const emptyStack: ReactStackTrace = [];
 
+// Stacks captured inside a hook callback start with our own frame, then the
+// dispatch frames of the hook infrastructure, which are not a fixed depth
+// (Node adds a frame when something else in the process also registered
+// v8.promiseHooks). So we skip our frame by count and the dispatch frames
+// by module. Only the dispatch modules: frames from other node internals
+// are what classifies an await as not being in user space.
+function parseHookStackTrace(error: Error): null | ReactStackTrace {
+  return parseStackTracePrivate(error, 1, true);
+}
+
 // Initialize the tracing of async operations.
 // We do this globally since the async work can potentially eagerly
 // start before the first request and once requests start they can interleave.
@@ -104,7 +114,7 @@ export function initAsyncDebugInfo(): void {
               if (request === null) {
                 // We don't collect stacks for awaits that weren't in the scope of a specific render.
               } else {
-                stack = parseStackTracePrivate(new Error(), 5);
+                stack = parseHookStackTrace(new Error());
                 if (stack !== null && !isAwaitInUserspace(request, stack)) {
                   // If this await was not done directly in user space, then clear the stack. We won't use it
                   // anyway. This lets future awaits on this await know that we still need to get their stacks
@@ -129,8 +139,7 @@ export function initAsyncDebugInfo(): void {
             node = {
               tag: UNRESOLVED_PROMISE_NODE,
               owner: owner,
-              stack:
-                owner === null ? null : parseStackTracePrivate(new Error(), 5),
+              stack: owner === null ? null : parseHookStackTrace(new Error()),
               start: performance.now(),
               end: -1.1, // Set when we resolve.
               promise: new WeakRef(resource as Promise<any>),
@@ -170,8 +179,7 @@ export function initAsyncDebugInfo(): void {
             node = {
               tag: IO_NODE,
               owner: owner,
-              stack:
-                owner === null ? parseStackTracePrivate(new Error(), 3) : null,
+              stack: owner === null ? parseHookStackTrace(new Error()) : null,
               start: performance.now(),
               end: -1.1, // Only set when pinged.
               promise: null,
@@ -187,8 +195,7 @@ export function initAsyncDebugInfo(): void {
             node = {
               tag: IO_NODE,
               owner: owner,
-              stack:
-                owner === null ? parseStackTracePrivate(new Error(), 3) : null,
+              stack: owner === null ? parseHookStackTrace(new Error()) : null,
               start: performance.now(),
               end: -1.1, // Only set when pinged.
               promise: null,
