@@ -180,6 +180,13 @@ describe('utils', () => {
         formatConsoleArgumentsToSingleString('%o', Object.create(null)),
       ).toEqual('%o [object Object]');
     });
+
+    it('should keep specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual('1 %d');
+    });
   });
 
   describe('formatWithStyles', () => {
