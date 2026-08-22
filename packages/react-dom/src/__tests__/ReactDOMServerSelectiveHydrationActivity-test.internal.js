@@ -1356,7 +1356,12 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
         root.render(<App text="B" />);
       });
     });
-    assertLog(['App B', 'Child A', 'App B', 'Child B']);
+    // If the interrupted render is continued from, App doesn't render again.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['App B', 'Child A', 'Child B']
+        : ['App B', 'Child A', 'App B', 'Child B'],
+    );
     expect(initialSpan).toBe(spanRef);
   });
 
@@ -1425,7 +1430,12 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     await act(() => {
       root.render(<App text="B" />);
     });
-    assertLog(['App B', 'Child A', 'App B', 'Child B']);
+    // If the interrupted render is continued from, App doesn't render again.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['App B', 'Child A', 'Child B']
+        : ['App B', 'Child A', 'App B', 'Child B'],
+    );
     expect(initialSpan).toBe(spanRef);
   });
 
@@ -1535,7 +1545,11 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       ReactDOM.flushSync(() => {
         root.render(<App a="AA" />);
       });
-      assertLog(['App', 'A', 'App', 'AA', 'DefaultContext', 'Commit']);
+      assertLog(
+        gate(flags => flags.enableResumingInterruptedRenders)
+          ? ['App', 'A', 'AA', 'DefaultContext', 'Commit']
+          : ['App', 'A', 'App', 'AA', 'DefaultContext', 'Commit'],
+      );
     });
   });
 

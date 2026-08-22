@@ -659,8 +659,8 @@ describe('ReactIncremental', () => {
     await waitForAll(['Middle']);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can reuse work that began but did not complete, after being preempted', async () => {
+  // @gate enableResumingInterruptedRenders
+  it('can reuse work that began but did not complete, after being preempted', async () => {
     let child;
     let sibling;
 
@@ -694,12 +694,6 @@ describe('ReactIncremental', () => {
     function Parent() {
       Scheduler.log('Parent');
       return [
-        // The extra div is necessary because when Parent bails out during the
-        // high priority update, its progressedPriority is set to high.
-        // So its direct children cannot be reused when we resume at
-        // low priority. I think this would be fixed by changing
-        // pendingWorkPriority and progressedPriority to be the priority of
-        // the children only, not including the fiber itself.
         <div key="a">
           <Child />
         </div>,
@@ -708,17 +702,23 @@ describe('ReactIncremental', () => {
     }
 
     ReactNoop.render(<Parent />);
-    await waitForAll([]);
+    await waitForAll([
+      'Parent',
+      'Child',
+      'Grandchild',
+      'GreatGrandchild',
+      'Sibling',
+    ]);
 
     // Begin working on a low priority update to Child, but stop before
     // GreatGrandchild. Child and Grandchild begin but don't complete.
-    child.setState({step: 1});
-    ReactNoop.flushDeferredPri(30);
-    assertLog(['Child', 'Grandchild']);
+    React.startTransition(() => {
+      child.setState({step: 1});
+    });
+    await waitFor(['Child', 'Grandchild']);
 
     // Interrupt the current low pri work with a high pri update elsewhere in
     // the tree.
-
     ReactNoop.flushSync(() => {
       sibling.setState({});
     });
@@ -726,7 +726,6 @@ describe('ReactIncremental', () => {
 
     // Continue the low pri work. The work on Child and GrandChild was memoized
     // so they should not be worked on again.
-
     await waitForAll([
       // No Child
       // No Grandchild

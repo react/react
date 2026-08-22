@@ -137,6 +137,7 @@ import {getPreviousVersion} from './ReactFiberInstance';
 import {
   startResumableRender,
   recordCompletedFiber,
+  recordInterruptedFiber,
   discardRecordedWork,
   publishAbandonedWork,
   taintAncestorsOfThrow,
@@ -245,6 +246,7 @@ import {
   SelectiveHydrationException,
   beginWork,
   replayFunctionComponent,
+  canShareBailedOutFiber,
 } from './ReactFiberBeginWork';
 import {completeWork} from './ReactFiberCompleteWork';
 import {unwindWork, unwindInterruptedWork} from './ReactFiberUnwindWork';
@@ -2031,6 +2033,15 @@ function resetWorkInProgressStack() {
       interruptedWork,
       workInProgressRootRenderLanes,
     );
+    if (
+      // The suspended fiber threw. The ones above it rendered normally.
+      interruptedWork !== workInProgress &&
+      // For these tags, what beginWork does when nothing changed depends on
+      // more than the children, so an incomplete version isn't kept.
+      canShareBailedOutFiber(interruptedWork.tag)
+    ) {
+      recordInterruptedFiber(interruptedWork);
+    }
     interruptedWork = interruptedWork.return;
   }
   workInProgress = null;

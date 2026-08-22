@@ -3920,7 +3920,7 @@ function findLastChildToCloneFrom(
 // Tags whose early bailout in attemptEarlyBailoutIfNoScheduledUpdate does more
 // than push something for its children, so they need to be visited even when
 // nothing changed.
-function canShareBailedOutFiber(tag: WorkTag): boolean {
+export function canShareBailedOutFiber(tag: WorkTag): boolean {
   switch (tag) {
     case HostRoot:
     case SuspenseComponent:
