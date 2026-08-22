@@ -54,6 +54,11 @@ import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 // - Finished versions only become available once the render that produced
 //   them is abandoned. While it's running, its own second passes over a node
 //   start from current like they always did.
+//
+// The fibers on the path from the root to where the render was interrupted
+// have rendered and reconciled their children but haven't completed. They're
+// kept too, marked stale so that the next render descends into them and
+// completes them (recordInterruptedFiber).
 
 // The lanes the render in progress applies updates for. NoLanes when it has to
 // render everything from the committed tree, e.g. to recover from an error.
@@ -61,6 +66,10 @@ let resumableLanes: Lanes = NoLanes;
 
 // The versions the render in progress has finished.
 const completedFibers: Array<Fiber> = [];
+
+// The versions the render in progress began but didn't finish, once it's
+// interrupted.
+const interruptedFibers: Array<Fiber> = [];
 
 // Fibers above something that threw in the render in progress.
 let taintedFibers: Set<Fiber> | null = null;
@@ -133,9 +142,27 @@ export function recordCompletedFiber(completedWork: Fiber): void {
   completedFibers.push(completedWork);
 }
 
+// The render in progress is being interrupted, and `interruptedWork` is on the
+// path from the root to where it stopped. It rendered and reconciled its
+// children; only completing is left, which the render that continues from it
+// does.
+export function recordInterruptedFiber(interruptedWork: Fiber): void {
+  if (!enableResumingInterruptedRenders) {
+    return;
+  }
+  if (interruptedWork.instance.current === interruptedWork) {
+    return;
+  }
+  if (taintedFibers !== null && taintedFibers.has(interruptedWork)) {
+    return;
+  }
+  interruptedFibers.push(interruptedWork);
+}
+
 // The render in progress is being committed or has to be redone from scratch.
 export function discardRecordedWork(): void {
   completedFibers.length = 0;
+  interruptedFibers.length = 0;
 }
 
 // The render in progress is abandoned. What it finished is now available to
@@ -155,6 +182,16 @@ export function publishAbandonedWork(lanes: Lanes): void {
     instance.inProgressSubtreeIsStale = false;
   }
   completedFibers.length = 0;
+  for (let i = 0; i < interruptedFibers.length; i++) {
+    const fiber = interruptedFibers[i];
+    const instance = fiber.instance;
+    instance.inProgress = fiber;
+    instance.inProgressLanes = lanes;
+    // Its children include the one that was interrupted, which is where the
+    // next render picks up.
+    instance.inProgressSubtreeIsStale = true;
+  }
+  interruptedFibers.length = 0;
 }
 
 // The version of `current` that a previous render finished, if this render can

@@ -254,13 +254,14 @@ describe('ReactSuspense', () => {
     assertLog([]);
     expect(container.textContent).toEqual('Initial');
 
-    // Start over from the root, instead of continuing.
-    await waitForAll([
-      // Async renders again *before* Sibling
-      'Async',
-      'After Suspense',
-      'Sibling',
-    ]);
+    // Start over from the root, instead of continuing. Async renders again
+    // *before* Sibling. "After Suspense" already rendered and nothing about it
+    // changed, so if the render is continued from, it isn't rendered again.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Async', 'Sibling']
+        : ['Async', 'After Suspense', 'Sibling'],
+    );
     expect(container.textContent).toEqual('AsyncAfter SuspenseSibling');
   });
 

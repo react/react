@@ -594,11 +594,14 @@ describe('ReactIncrementalSideEffects', () => {
     // render some higher priority work. The middle content will bailout so
     // it remains untouched which means that it should reuse it next time.
     ReactNoop.render(<Foo text="foo" step={1} />);
-    await waitForAll(['Foo', 'Bar', 'Bar']);
-
     // Since we did nothing to the middle subtree during the interruption,
-    // we should be able to reuse the reconciliation work that we already did
+    // the reconciliation work that we already did on the first Bar is reused
     // without restarting. The side-effects should still be replayed.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Foo', 'Bar']
+        : ['Foo', 'Bar', 'Bar'],
+    );
 
     expect(ReactNoop.getChildrenAsJSX()).toEqual(
       <div hidden={true}>
@@ -1064,8 +1067,13 @@ describe('ReactIncrementalSideEffects', () => {
     );
 
     // However, once we render fully, we will have enough time to finish it all
-    // at once.
-    await waitForAll(['Bar', 'Bar']);
+    // at once. The second Bar had finished before the interruption and nothing
+    // about it changed, so only the third one renders now.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Bar']
+        : ['Bar', 'Bar'],
+    );
     expect(ReactNoop.getChildrenAsJSX()).toEqual(
       <div>
         <span prop={1} />

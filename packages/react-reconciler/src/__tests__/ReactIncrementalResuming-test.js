@@ -47,8 +47,7 @@ describe('ReactIncrementalResuming', () => {
   // A transition that renders five memoized children, interrupted while the
   // third one is rendering. Each test interrupts it in a different way and
   // checks what has to render again when it continues. The first two children
-  // finished; the third began but didn't complete, so it renders again, as do
-  // the ancestors it was rendering under.
+  // finished; the third and its ancestors began but didn't complete.
   function createApp(options) {
     const Context = React.createContext(null);
     const childSetters = new Map();
@@ -135,12 +134,13 @@ describe('ReactIncrementalResuming', () => {
       await waitFor(['App', 'Parent', 'Child 1', 'Child 2', 'Child 3']);
 
       // An update to Parent interrupts the transition. When the transition
-      // continues, the children that already finished don't render again.
+      // continues, only Parent renders again: the children that already
+      // rendered, finished or not, don't, and neither does anything above.
       ReactNoop.flushSync(() => app.setParentState(1));
       assertLog(['Parent']);
       expect(root).toMatchRenderedOutput(output(0, {}, 'a'));
 
-      await waitForAll(['App', 'Parent', 'Child 3', 'Child 4', 'Child 5']);
+      await waitForAll(['Parent', 'Child 4', 'Child 5']);
     });
     expect(root).toMatchRenderedOutput(output(1, {}, 'a'));
 
@@ -167,14 +167,7 @@ describe('ReactIncrementalResuming', () => {
       expect(root).toMatchRenderedOutput(output(0, {2: 1}, 'a'));
 
       // Child 2 finished before the update, so its finished work is stale.
-      await waitForAll([
-        'App',
-        'Parent',
-        'Child 2',
-        'Child 3',
-        'Child 4',
-        'Child 5',
-      ]);
+      await waitForAll(['Child 2', 'Child 4', 'Child 5']);
     });
     expect(root).toMatchRenderedOutput(output(1, {2: 1}, 'a'));
   });
@@ -327,34 +320,22 @@ describe('ReactIncrementalResuming', () => {
       assertLog(['Dot*']);
 
       // The transition continues where it left off. The first leaf renders
-      // again with its new state, but the finished ancestor it shares with the
-      // rest of the tree doesn't; only the ones that hadn't finished do.
-      await waitFor(['App', 'Tri2', 'Tri1', 'Dot*', 'Tri0', 'Dot']);
+      // again with its new state; nothing above it does, whether it had
+      // finished or not.
+      await waitFor(['Dot*', 'Tri1', 'Tri0', 'Dot']);
 
-      // Hover a leaf the transition hasn't reached yet. The ancestors that
-      // hadn't finished render again; the finished subtree doesn't.
-      ReactNoop.flushSync(() => setHovers[3](true));
+      // Hover the leaf the transition is in the middle of rendering.
+      ReactNoop.flushSync(() => setHovers[2](true));
       assertLog(['Dot*']);
 
-      await waitForAll([
-        'App',
-        'Tri2',
-        'Tri1',
-        'Tri0',
-        'Dot',
-        'Tri1',
-        'Tri0',
-        'Dot',
-        'Tri0',
-        'Dot*',
-      ]);
+      await waitForAll(['Dot*', 'Tri0', 'Dot']);
     });
     expect(root).toMatchRenderedOutput(
       <>
         {span('*1*')}
         {span(1)}
-        {span(1)}
         {span('*1*')}
+        {span(1)}
       </>,
     );
   });
