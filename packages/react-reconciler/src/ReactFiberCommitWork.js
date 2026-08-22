@@ -1329,8 +1329,11 @@ function didReconcileChildren(fiber: Fiber): boolean {
 function detachFiberAfterEffects(fiber: Fiber) {
   // The instance keeps pointing at this fiber so that updates scheduled on it
   // can be detected as updates on an unmounted component, but it no longer
-  // needs the version this one replaced.
-  fiber.instance.previous = null;
+  // needs the version this one replaced, nor any version a render left for it
+  // to continue from: those point back into the tree that left them.
+  const instance = fiber.instance;
+  instance.previous = null;
+  instance.inProgress = null;
 
   // Clear cyclical Fiber fields. `setState` is bound to the FiberInstance
   // rather than the Fiber, and the instance has none of these fields, so this

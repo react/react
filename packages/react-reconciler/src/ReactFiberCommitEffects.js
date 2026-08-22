@@ -40,6 +40,7 @@ import {
 import {NoFlags} from './ReactFiberFlags';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
 import {resolveClassComponentProps} from './ReactFiberClassComponent';
+import {syncClassInstance} from './ReactFiberResuming';
 import {
   recordEffectDuration,
   startEffectTimer,
@@ -636,9 +637,7 @@ export function commitClassSnapshot(finishedWork: Fiber, current: Fiber) {
   const prevProps = current.memoizedProps;
   const prevState = current.memoizedState;
   const instance = finishedWork.stateNode;
-  // We could update instance props and state here,
-  // but instead we rely on them being set during last render.
-  // TODO: revisit this when we implement resuming.
+  syncClassInstance(finishedWork);
   if (__DEV__) {
     if (
       !finishedWork.type.defaultProps &&

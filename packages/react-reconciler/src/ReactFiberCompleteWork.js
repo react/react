@@ -844,10 +844,9 @@ function bubbleProperties(completedWork: Fiber) {
         subtreeFlags |= child.subtreeFlags;
         subtreeFlags |= child.flags;
 
-        // Update the return pointer so the tree is consistent. This is a code
-        // smell because it assumes the commit phase is never concurrent with
-        // the render phase. Will address during refactor to alternate model.
-        child.return = completedWork;
+        // Children that are shared with the current tree point at the current
+        // version of this fiber until the commit (see cloneChildFibers), which
+        // is how the commit tells them apart, so they aren't repointed here.
 
         child = child.sibling;
       }
@@ -896,10 +895,7 @@ function bubbleProperties(completedWork: Fiber) {
         subtreeFlags |= child.subtreeFlags & StaticMask;
         subtreeFlags |= child.flags & StaticMask;
 
-        // Update the return pointer so the tree is consistent. This is a code
-        // smell because it assumes the commit phase is never concurrent with
-        // the render phase. Will address during refactor to alternate model.
-        child.return = completedWork;
+        // These children are all shared with the current tree; see above.
 
         child = child.sibling;
       }

@@ -2126,17 +2126,36 @@ export function cloneChildFibers(
   workInProgress: Fiber,
   lastChildToClone: Fiber,
 ): void {
-  if (current !== null && workInProgress.child !== current.child) {
-    throw new Error('Resuming work not yet implemented.');
-  }
-
   if (workInProgress.child === null) {
     return;
   }
+  cloneSharedChildFibers(
+    current,
+    workInProgress,
+    null,
+    workInProgress.child,
+    lastChildToClone,
+  );
+}
 
-  let currentChild: Fiber = workInProgress.child;
+// Clones the run of current children from `firstChildToClone` up to and
+// including `lastChildToClone`, and links the clones in after `previousChild`
+// (or as the first child if that's null). The children after the run stay
+// shared with the current tree.
+export function cloneSharedChildFibers(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  previousChild: Fiber | null,
+  firstChildToClone: Fiber,
+  lastChildToClone: Fiber,
+): void {
+  let currentChild: Fiber = firstChildToClone;
   let newChild = createWorkInProgress(currentChild, currentChild.pendingProps);
-  workInProgress.child = newChild;
+  if (previousChild === null) {
+    workInProgress.child = newChild;
+  } else {
+    previousChild.sibling = newChild;
+  }
 
   newChild.return = workInProgress;
   while (currentChild !== lastChildToClone && currentChild.sibling !== null) {

@@ -9,6 +9,11 @@
 
 import type {ReactContext} from 'shared/ReactTypes';
 import {getPreviousVersion} from './ReactFiberInstance';
+import {
+  invalidateInProgressVersion,
+  markInProgressSubtreeStale,
+  popProviderValue,
+} from './ReactFiberResuming';
 import type {
   Fiber,
   ContextDependency,
@@ -151,6 +156,7 @@ export function popProvider(
   }
 
   pop(valueCursor, providerFiber);
+  popProviderValue(providerFiber);
 }
 
 export function scheduleContextWorkOnParentPath(
@@ -166,6 +172,7 @@ export function scheduleContextWorkOnParentPath(
   // the current version is marked too.
   let node = parent;
   while (node !== null) {
+    markInProgressSubtreeStale(node);
     if (!isSubsetOfLanes(node.childLanes, renderLanes)) {
       node.childLanes = mergeLanes(node.childLanes, renderLanes);
     } else {
@@ -250,6 +257,7 @@ function propagateContextChanges<T>(
             // checking, but until we have selectors it's not really worth
             // the trouble.
             consumer.lanes = mergeLanes(consumer.lanes, renderLanes);
+            invalidateInProgressVersion(consumer);
             scheduleContextWorkOnParentPath(
               consumer.return,
               renderLanes,
@@ -284,6 +292,7 @@ function propagateContextChanges<T>(
       }
 
       parentSuspense.lanes = mergeLanes(parentSuspense.lanes, renderLanes);
+      invalidateInProgressVersion(parentSuspense);
       // This is intentionally passing this fiber as the parent
       // because we want to schedule this fiber as having work
       // on its children. We'll use the childLanes on
@@ -309,6 +318,7 @@ function propagateContextChanges<T>(
       // When it re-renders, it will re-mount the primary children,
       // which will read the updated context value.
       fiber.lanes = mergeLanes(fiber.lanes, renderLanes);
+      invalidateInProgressVersion(fiber);
       scheduleContextWorkOnParentPath(
         fiber.return,
         renderLanes,
