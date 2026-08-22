@@ -615,21 +615,7 @@ export function isFragmentContainedByFiber(
   fragmentFiber: Fiber,
   otherFiber: Fiber,
 ): boolean {
-  let current: Fiber | null = fragmentFiber;
-  const fiberHostParent: Fiber | null =
-    getFragmentParentInstanceOrContainerFiber(fragmentFiber);
-  while (current !== null) {
-    if (
-      (current.tag === HostComponent ||
-        current.tag === HostRoot ||
-        current.tag === HostSingleton) &&
-      (current === fiberHostParent || current.alternate === fiberHostParent)
-    ) {
-      return true;
-    }
-    current = current.return;
-  }
-  return false;
+  return doesFiberContain(otherFiber, fragmentFiber);
 }
 
 export function isFiberPreceding(fiber: Fiber, otherFiber: Fiber): boolean {
