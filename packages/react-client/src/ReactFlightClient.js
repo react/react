@@ -1280,10 +1280,11 @@ function getTaskName(type: mixed): string {
     type !== null &&
     type.$$typeof === REACT_LAZY_TYPE
   ) {
-    if (type._init === readChunk) {
-      // This is a lazy node created by Flight. It is probably a client reference.
-      // We use the "use client" string to indicate that this is the boundary into
-      // the client. There will only be one for any given owner chain.
+    if (type._payload instanceof ReactPromise) {
+      // This is a lazy node created by Flight, i.e. it wraps a chunk. It is
+      // probably a client reference. We use the "use client" string to indicate
+      // that this is the boundary into the client. There will only be one for
+      // any given owner chain.
       return '"use client"';
     }
     // We don't want to eagerly initialize the initializer in DEV mode so we can't
@@ -1374,16 +1375,6 @@ function initializeElement(
   }
 
   if (lazyNode !== null) {
-    // In case the JSX runtime has validated the lazy type as a static child, we
-    // need to transfer this information to the element.
-    if (
-      lazyNode._store &&
-      lazyNode._store.validated &&
-      !element._store.validated
-    ) {
-      element._store.validated = lazyNode._store.validated;
-    }
-
     // If the lazy node is initialized, we move its debug info to the inner
     // value.
     if (lazyNode._payload.status === INITIALIZED && lazyNode._debugInfo) {
@@ -1535,6 +1526,29 @@ function createElement(
   return element;
 }
 
+function transferValidation(store: {validated: 0 | 1 | 2}, value: mixed): void {
+  if (store.validated && typeof value === 'object' && value !== null) {
+    // Only elements and lazy nodes carry key validation. Any other value, e.g.
+    // an array of children, needs to have its own items validated instead.
+    const $$typeof = (value as any).$$typeof;
+    if ($$typeof === REACT_ELEMENT_TYPE || $$typeof === REACT_LAZY_TYPE) {
+      const valueStore = (value as any)._store;
+      if (valueStore && !valueStore.validated) {
+        valueStore.validated = store.validated;
+      }
+    }
+  }
+}
+
+function readChunkAndTransferValidation<T>(
+  store: {validated: 0 | 1 | 2},
+  payload: SomeChunk<T>,
+): T {
+  const value: T = readChunk(payload);
+  transferValidation(store, value);
+  return value;
+}
+
 function createLazyChunkWrapper<T>(
   chunk: SomeChunk<T>,
   validated: 0 | 1 | 2, // DEV-only
@@ -1547,8 +1561,16 @@ function createLazyChunkWrapper<T>(
   if (__DEV__) {
     // Forward the live array
     lazyType._debugInfo = chunk._debugInfo;
-    // Initialize a store for key validation by the JSX runtime.
-    lazyType._store = {validated: validated};
+    // Initialize a store for key validation by the JSX runtime. It can only
+    // validate the lazy node itself, because the value it refers to might not
+    // exist yet at that point, e.g. if it's an outlined row that hasn't been
+    // initialized. So the validation is transferred to the value when the lazy
+    // node is unwrapped. If the value is another lazy node, unwrapping that one
+    // forwards the validation further.
+    const store = {validated: validated};
+    lazyType._store = store;
+    // $FlowFixMe[incompatible-type] `bind` loses the type argument.
+    lazyType._init = readChunkAndTransferValidation.bind(null, store);
   }
   return lazyType;
 }
