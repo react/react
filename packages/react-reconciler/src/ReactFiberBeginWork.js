@@ -1723,6 +1723,13 @@ function updateClassComponent(
       renderLanes,
     );
   }
+  if (shouldUpdate && isInProgressVersion(workInProgress)) {
+    // A version a previous render finished, that's rendering again. The
+    // lifecycles above compared against what it rendered with, like
+    // shouldComponentUpdate would against the props of an interrupted render.
+    // Its children are replaced by the render below.
+    resetResumedChildren(current as any, workInProgress);
+  }
   const nextUnitOfWork = finishClassComponent(
     current,
     workInProgress,
@@ -4013,6 +4020,18 @@ function resetResumedWorkInProgress(
   resetWorkInProgress(workInProgress, renderLanes);
 }
 
+// A version a previous render finished is rendering its children again. The
+// ones it has are discarded, along with the effects that reconciling them
+// left on it, and until this render completes it again it isn't a finished
+// version that another render could continue from.
+function resetResumedChildren(current: Fiber, workInProgress: Fiber): void {
+  invalidateInProgressVersion(workInProgress);
+  workInProgress.child = current.child;
+  workInProgress.deletions = null;
+  workInProgress.flags &= ~ChildDeletion;
+  workInProgress.subtreeFlags = NoFlags;
+}
+
 // The children of a resumed fiber are the ones the previous render left: a
 // leading run that it rendered, followed by a trailing run that it shared with
 // the current tree because they had no work. Returns the first child to work
@@ -4525,11 +4544,12 @@ function beginWork(
     }
     if (
       isResumed &&
-      // Memo components compare the new props to the ones the finished version
-      // rendered with before deciding, so they reset themselves. Providers
-      // compare the values.
+      // Memo and class components compare the new props to the ones the
+      // finished version rendered with before deciding, so they reset
+      // themselves. Providers compare the values.
       workInProgress.tag !== SimpleMemoComponent &&
       workInProgress.tag !== MemoComponent &&
+      workInProgress.tag !== ClassComponent &&
       workInProgress.tag !== ContextProvider
     ) {
       resetResumedWorkInProgress(workInProgress, renderLanes);
