@@ -3622,6 +3622,8 @@ function escapeStringValue(value: string): string {
 }
 
 function serializeImportString(request: Request, value: string): string {
+  // No maximum length because import strings are short and repeat often.
+  // Deduping model strings too would need one to skip very long strings.
   if (value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH) {
     return escapeStringValue(value);
   }
@@ -4665,12 +4667,13 @@ function stringifyImportMetadata(
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
 ): string {
+  const prevRequest = importStringRequest;
   importStringRequest = __DEV__ && debug ? null : request;
   try {
     // $FlowFixMe[incompatible-type] stringify can return null
     return stringify(clientReferenceMetadata, importMetadataReplacer);
   } finally {
-    importStringRequest = null;
+    importStringRequest = prevRequest;
   }
 }
 
