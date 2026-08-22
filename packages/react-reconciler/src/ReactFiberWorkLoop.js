@@ -129,7 +129,7 @@ import {
 
 import {
   commitWorkInProgressAsCurrent,
-  releasePreviousVersions,
+  releaseCommittedFibers,
   createWorkInProgress,
   resetWorkInProgress,
 } from './ReactFiber';
@@ -3423,7 +3423,9 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
     }
 
     const siblingFiber = completedWork.sibling;
-    if (siblingFiber !== null) {
+    // A sibling that's shared with the current tree still points at the
+    // current version of the parent (see cloneChildFibers).
+    if (siblingFiber !== null && siblingFiber.return === returnFiber) {
       // If there is more work to do in this returnFiber, do that next.
       workInProgress = siblingFiber;
       return;
@@ -3497,7 +3499,7 @@ function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
 
     if (!skipSiblings) {
       const siblingFiber = incompleteWork.sibling;
-      if (siblingFiber !== null) {
+      if (siblingFiber !== null && siblingFiber.return === returnFiber) {
         // This branch will return us to the normal work loop.
         workInProgress = siblingFiber;
         return;
@@ -4266,7 +4268,7 @@ function flushSpawnedWork(): void {
   onCommitRootDevTools(finishedWork.stateNode, renderPriority);
 
   if (!rootDidHavePassiveEffects) {
-    releasePreviousVersions();
+    releaseCommittedFibers();
   }
 
   if (enableUpdaterTracking) {
@@ -4823,7 +4825,7 @@ function flushPassiveEffectsImpl() {
     commitDoubleInvokeEffectsInDEV(root, true);
   }
 
-  releasePreviousVersions();
+  releaseCommittedFibers();
 
   executionContext = prevExecutionContext;
 
