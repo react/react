@@ -4659,7 +4659,7 @@ function importMetadataReplacer(key: string, value: mixed): mixed {
   return value;
 }
 
-function stringifyImportMetadata(
+function stringifyImportMetadataWithReplacer(
   request: Request,
   clientReferenceMetadata: ClientReferenceMetadata,
   debug: boolean,
@@ -4672,6 +4672,105 @@ function stringifyImportMetadata(
   } finally {
     importStringRequest = prevRequest;
   }
+}
+
+// Bundler metadata is two or three levels deep. The bound is only there so a
+// cycle ends up in stringify itself, which throws its own error for it.
+const MAX_IMPORT_METADATA_DEPTH = 16;
+
+const NOT_PLAIN_IMPORT_METADATA = {};
+
+// Copies the metadata with every string replaced by its serialized form, so
+// that stringify can run without a replacer. Anything stringify would treat
+// specially (toJSON, boxed primitives, class instances) makes this give up
+// instead, because the copy would not reproduce that treatment.
+function transformImportMetadata(
+  request: Request,
+  value: mixed,
+  depth: number,
+): mixed {
+  switch (typeof value) {
+    case 'string':
+      return serializeImportString(request, value);
+    case 'number':
+    case 'boolean':
+    case 'undefined':
+      return value;
+    case 'object': {
+      if (value === null) {
+        return null;
+      }
+      if (depth > MAX_IMPORT_METADATA_DEPTH) {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      if (typeof (value as any).toJSON === 'function') {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      if (isArray(value)) {
+        const length = value.length;
+        const copy: Array<mixed> = new Array(length);
+        for (let i = 0; i < length; i++) {
+          const element = value[i];
+          if (typeof element === 'string') {
+            copy[i] = serializeImportString(request, element);
+            continue;
+          }
+          const child = transformImportMetadata(request, element, depth + 1);
+          if (child === NOT_PLAIN_IMPORT_METADATA) {
+            return NOT_PLAIN_IMPORT_METADATA;
+          }
+          copy[i] = child;
+        }
+        return copy;
+      }
+      const proto = getPrototypeOf(value);
+      if (proto !== ObjectPrototype && proto !== null) {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      const keys = Object.keys(value);
+      const copy: {[string]: mixed} = {};
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (key in ObjectPrototype) {
+          // The copy inherits from Object.prototype, so assigning this key would
+          // hit an accessor like __proto__ or, if the prototype is frozen, throw.
+          return NOT_PLAIN_IMPORT_METADATA;
+        }
+        const element = (value as any)[key];
+        if (typeof element === 'string') {
+          copy[key] = serializeImportString(request, element);
+          continue;
+        }
+        const child = transformImportMetadata(request, element, depth + 1);
+        if (child === NOT_PLAIN_IMPORT_METADATA) {
+          return NOT_PLAIN_IMPORT_METADATA;
+        }
+        copy[key] = child;
+      }
+      return copy;
+    }
+    default:
+      return NOT_PLAIN_IMPORT_METADATA;
+  }
+}
+
+function stringifyImportMetadata(
+  request: Request,
+  clientReferenceMetadata: ClientReferenceMetadata,
+  debug: boolean,
+): string {
+  if (!(__DEV__ && debug)) {
+    const copy = transformImportMetadata(request, clientReferenceMetadata, 0);
+    if (copy !== NOT_PLAIN_IMPORT_METADATA) {
+      // $FlowFixMe[incompatible-type] stringify can return null
+      return stringify(copy);
+    }
+  }
+  return stringifyImportMetadataWithReplacer(
+    request,
+    clientReferenceMetadata,
+    debug,
+  );
 }
 
 function emitImportChunk(
