@@ -6,7 +6,7 @@
     "start": "cross-env NODE_ENV=development node ./webpack-server.js"
   },
   "dependencies": {
-    "immutable": "^4.0.0-rc.12",
+    "immutable": "^4.3.9",
     "react-native-web": "0.0.0-26873b469",
     "semver": "^6.3.0"
   },
