@@ -91,6 +91,7 @@ describe('Fabric FragmentRefs', () => {
           // We only need to test that each child node is observed on insertion
           logs.push(entry.__internalInstanceHandle.pendingProps.nativeID);
         },
+        unobserve: () => {},
       };
       function Test({showB}) {
         const fragmentRef = React.useRef(null);
@@ -120,6 +121,55 @@ describe('Fabric FragmentRefs', () => {
         ReactFabric.render(<Test showB={true} />, 11, null, true);
       });
       expect(logs).toEqual(['B']);
+    });
+
+    // @gate enableFragmentRefs
+    it('unobserves children removed from the fragment', async () => {
+      const observed = [];
+      const observer = {
+        observe: instance => {
+          observed.push(instance);
+        },
+        unobserve: instance => {
+          const index = observed.indexOf(instance);
+          if (index >= 0) {
+            observed.splice(index, 1);
+          }
+        },
+      };
+      const fragmentRef = React.createRef();
+      const childARef = React.createRef();
+      const childBRef = React.createRef();
+      function Test({showB}) {
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(observer);
+          const lastRefValue = fragmentRef.current;
+          return () => {
+            lastRefValue.unobserveUsing(observer);
+          };
+        }, []);
+        return (
+          <View>
+            <React.Fragment ref={fragmentRef}>
+              <View ref={childARef} />
+              {showB && <View ref={childBRef} />}
+            </React.Fragment>
+          </View>
+        );
+      }
+
+      await act(() => {
+        ReactFabric.render(<Test showB={true} />, 11, null, true);
+      });
+      const childA = childARef.current;
+      const childB = childBRef.current;
+      expect(observed).toEqual([childA, childB]);
+
+      await act(() => {
+        ReactFabric.render(<Test showB={false} />, 11, null, true);
+      });
+      expect(observed).toEqual([childA]);
+      expect(observed.includes(childB)).toBe(false);
     });
   });
 });
