@@ -54,6 +54,7 @@ describe('ReactIncrementalResuming', () => {
     let setCounter;
     let setParentState;
     let setContextValue;
+    let setAppState;
 
     const Child = React.memo(function Child({id, counter}) {
       const [localState, setLocalState] = useState(0);
@@ -76,16 +77,33 @@ describe('ReactIncrementalResuming', () => {
       ));
     }
 
+    // Optionally between App and Parent. Only renders if the counter changed.
+    class Wrapper extends React.Component {
+      shouldComponentUpdate(nextProps) {
+        return this.props.counter !== nextProps.counter;
+      }
+      render() {
+        Scheduler.log('Wrapper');
+        return <Parent counter={this.props.counter} />;
+      }
+    }
+
     function App() {
       const [counter, _setCounter] = useState(0);
       const [contextValue, _setContextValue] = useState('a');
+      const [, _setAppState] = useState(0);
       setCounter = _setCounter;
       setContextValue = _setContextValue;
+      setAppState = _setAppState;
       Scheduler.log('App');
       return (
         <Context.Provider value={contextValue}>
           <Suspense fallback={span('Loading...')}>
-            <Parent counter={counter} />
+            {options.wrapParent ? (
+              <Wrapper counter={counter} />
+            ) : (
+              <Parent counter={counter} />
+            )}
           </Suspense>
         </Context.Provider>
       );
@@ -96,6 +114,7 @@ describe('ReactIncrementalResuming', () => {
       setCounter: value => setCounter(value),
       setParentState: value => setParentState(value),
       setContextValue: value => setContextValue(value),
+      setAppState: value => setAppState(value),
       setChildState: (id, value) => childSetters.get(id)(value),
     };
   }
@@ -149,6 +168,38 @@ describe('ReactIncrementalResuming', () => {
     await act(() => startTransition(() => app.setCounter(2)));
     assertLog(initialLog);
     expect(root).toMatchRenderedOutput(output(2, {}, 'a'));
+  });
+
+  // @gate enableResumingInterruptedRenders
+  it('continues past a class component whose shouldComponentUpdate is false', async () => {
+    const app = createApp({wrapParent: true});
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<app.App />));
+    assertLog(['App', 'Wrapper', 'Parent', ...initialLog.slice(2)]);
+
+    await act(async () => {
+      startTransition(() => app.setCounter(1));
+      await waitFor([
+        'App',
+        'Wrapper',
+        'Parent',
+        'Child 1',
+        'Child 2',
+        'Child 3',
+      ]);
+
+      // An update to App interrupts the transition. Wrapper's props are the
+      // same as the committed ones, so it bails out.
+      ReactNoop.flushSync(() => app.setAppState(1));
+      assertLog(['App']);
+
+      // When the transition continues, App renders again and gives Wrapper a
+      // new props object. Wrapper compares it to the props it rendered with
+      // during the transition, not the committed ones, so it bails out again
+      // and everything below it is continued from.
+      await waitForAll(['App', 'Child 4', 'Child 5']);
+    });
+    expect(root).toMatchRenderedOutput(output(1, {}, 'a'));
   });
 
   // @gate enableResumingInterruptedRenders
