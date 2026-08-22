@@ -676,7 +676,12 @@ function reduceMaybeOptionalChains(
         // If the base is known to be non-null, replace with a non-optional load
         const nextEntry: DependencyPathEntry =
           entry.optional && nodes.has(currNode)
-            ? {property: entry.property, optional: false, loc: entry.loc}
+            ? {
+                property: entry.property,
+                computed: entry.computed,
+                optional: false,
+                loc: entry.loc,
+              }
             : entry;
         currNode = PropertyPathRegistry.getOrCreatePropertyEntry(
           currNode,
