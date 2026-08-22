@@ -6696,6 +6696,11 @@ function flushCompletedChunks(request: Request): void {
     if (enableTaint) {
       cleanupTaintQueue(request);
     }
+    // Nothing is serialized after this point, so the dedupe registry (one
+    // entry per object the render visited, each with its path string) can
+    // go even if the caller keeps a handle to this render around, e.g. the
+    // result object from render() for as long as a consumer reads from it.
+    request.writtenObjects = new WeakMap();
     if (request.status < ABORTING) {
       const abortReason = new Error(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
