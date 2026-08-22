@@ -15,7 +15,6 @@ import type {
   PendingThenable,
   FulfilledThenable,
   RejectedThenable,
-  ReactRecoverable,
 } from 'shared/ReactTypes';
 import type {ComponentStackNode} from './ReactFizzComponentStack';
 
@@ -83,7 +82,7 @@ export function trackUsedThenable<T>(
     case 'rejected': {
       const rejectedError = thenable.reason;
       if (isReactRecoverable(rejectedError)) {
-        throw createRecoverableError(rejectedError as ReactRecoverable);
+        throw createRecoverableError(rejectedError as any);
       }
 
       // Rejected Promises are rarer so we're doing an extra type-check in
@@ -141,7 +140,7 @@ export function trackUsedThenable<T>(
           const rejectedThenable: RejectedThenable<T> = thenable as any;
           const rejectedError = rejectedThenable.reason;
           if (isReactRecoverable(rejectedError)) {
-            throw createRecoverableError(rejectedError as ReactRecoverable);
+            throw createRecoverableError(rejectedError as any);
           }
           throw rejectedError;
         }
