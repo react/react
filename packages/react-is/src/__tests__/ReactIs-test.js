@@ -116,6 +116,42 @@ describe('ReactIs', () => {
     expect(ReactIs.isElement(<React.Suspense />)).toBe(true);
   });
 
+  it('should identify elements created by React 17 and 18', () => {
+    // React 19 renamed the element symbol, but tooling is frequently used
+    // against elements created by an older copy of React.
+    const createLegacyElement = type => ({
+      $$typeof: Symbol.for('react.element'),
+      type,
+      key: null,
+      ref: null,
+      props: {},
+      _owner: null,
+    });
+
+    expect(ReactIs.isElement(createLegacyElement('div'))).toBe(true);
+    expect(ReactIs.typeOf(createLegacyElement('div'))).toBe(ReactIs.Element);
+
+    // Types whose symbols are unchanged across versions still resolve.
+    expect(ReactIs.isFragment(createLegacyElement(React.Fragment))).toBe(true);
+    expect(ReactIs.isStrictMode(createLegacyElement(React.StrictMode))).toBe(
+      true,
+    );
+    expect(ReactIs.isSuspense(createLegacyElement(React.Suspense))).toBe(true);
+    expect(ReactIs.isProfiler(createLegacyElement(React.Profiler))).toBe(true);
+    expect(
+      ReactIs.isForwardRef(createLegacyElement(React.forwardRef(() => null))),
+    ).toBe(true);
+    expect(ReactIs.isMemo(createLegacyElement(React.memo(() => null)))).toBe(
+      true,
+    );
+    expect(ReactIs.isLazy(createLegacyElement(React.lazy(() => null)))).toBe(
+      true,
+    );
+
+    // An element is still not a valid element *type*.
+    expect(ReactIs.isValidElementType(createLegacyElement('div'))).toBe(false);
+  });
+
   it('should identify ref forwarding component', () => {
     const RefForwardingComponent = React.forwardRef((props, ref) => null);
     expect(ReactIs.isValidElementType(RefForwardingComponent)).toBe(true);
