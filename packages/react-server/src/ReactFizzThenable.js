@@ -15,11 +15,16 @@ import type {
   PendingThenable,
   FulfilledThenable,
   RejectedThenable,
+  ReactRecoverable,
 } from 'shared/ReactTypes';
 import type {ComponentStackNode} from './ReactFizzComponentStack';
 
 import noop from 'shared/noop';
 import {currentTaskInDEV} from './ReactFizzCurrentTask';
+import {
+  createRecoverableError,
+  isReactRecoverable,
+} from './ReactFizzRecoverable';
 
 export opaque type ThenableState = Array<Thenable<any>>;
 
@@ -77,6 +82,9 @@ export function trackUsedThenable<T>(
     }
     case 'rejected': {
       const rejectedError = thenable.reason;
+      if (isReactRecoverable(rejectedError)) {
+        throw createRecoverableError(rejectedError as ReactRecoverable);
+      }
 
       // Rejected Promises are rarer so we're doing an extra type-check in
       // case of a bad instrumentation that doesn't set .reason
@@ -131,7 +139,11 @@ export function trackUsedThenable<T>(
         }
         case 'rejected': {
           const rejectedThenable: RejectedThenable<T> = thenable as any;
-          throw rejectedThenable.reason;
+          const rejectedError = rejectedThenable.reason;
+          if (isReactRecoverable(rejectedError)) {
+            throw createRecoverableError(rejectedError as ReactRecoverable);
+          }
+          throw rejectedError;
         }
       }
 

@@ -30,6 +30,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 
 import noop from 'shared/noop';
+import {REACT_RECOVERABLE_TYPE} from 'shared/ReactSymbols';
 
 import {HostRoot} from './ReactWorkTags';
 
@@ -41,6 +42,15 @@ opaque type ThenableStateDev = {
 opaque type ThenableStateProd = Array<Thenable<any>>;
 
 export opaque type ThenableState = ThenableStateDev | ThenableStateProd;
+
+function isReactRecoverable(value: mixed): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    // $FlowFixMe[prop-missing]
+    value.$$typeof === REACT_RECOVERABLE_TYPE
+  );
+}
 
 function getThenablesFromState(state: ThenableState): Array<Thenable<any>> {
   if (__DEV__) {
@@ -219,6 +229,11 @@ export function trackUsedThenable<T>(
     }
     case 'rejected': {
       const rejectedError = thenable.reason;
+      if (isReactRecoverable(rejectedError)) {
+        // A final renderer has no downstream host to recover this subtree.
+        // Treat the recoverable rejection as a fulfilled void value.
+        return undefined as any;
+      }
       checkIfUseWrappedInAsyncCatch(rejectedError);
 
       // Rejected Promises are rarer so we're doing an extra type-check in
@@ -302,6 +317,11 @@ export function trackUsedThenable<T>(
         case 'rejected': {
           const rejectedThenable: RejectedThenable<T> = thenable as any;
           const rejectedError = rejectedThenable.reason;
+          if (isReactRecoverable(rejectedError)) {
+            // A final renderer has no downstream host to recover this subtree.
+            // Treat the recoverable rejection as a fulfilled void value.
+            return undefined as any;
+          }
           checkIfUseWrappedInAsyncCatch(rejectedError);
           throw rejectedError;
         }

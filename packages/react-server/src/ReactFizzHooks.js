@@ -40,7 +40,6 @@ import {
 import {createFastHash} from './ReactServerStreamConfig';
 
 import is from 'shared/objectIs';
-import hasOwnProperty from 'shared/hasOwnProperty';
 import {
   REACT_CONTEXT_TYPE,
   REACT_RECOVERABLE_TYPE,
@@ -48,6 +47,7 @@ import {
 } from 'shared/ReactSymbols';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
 import {getFormState} from './ReactFizzServer';
+import {createRecoverableError} from './ReactFizzRecoverable';
 
 import noop from 'shared/noop';
 
@@ -92,69 +92,6 @@ let actionStateMatchingIndex: number = -1;
 // Counts the number of use(thenable) calls in this component
 let thenableIndexCounter: number = 0;
 let thenableState: ThenableState | null = null;
-
-const browserReasonInitializationFallback =
-  'The reason for browser-only rendering could not be determined because its ' +
-  'initializer threw.';
-
-export function createRecoverableError(recoverable: ReactRecoverable): Error {
-  const reason = recoverable._reason;
-  let initializedReason;
-  if (typeof reason === 'function') {
-    try {
-      initializedReason = reason();
-    } catch {
-      // A reason is only diagnostic metadata. Its initializer must not affect
-      // whether the renderer can defer this subtree to the browser.
-      initializedReason = browserReasonInitializationFallback;
-    }
-  } else {
-    initializedReason = reason;
-  }
-  // Always create the recoverable at the consumption point so its stack
-  // identifies the relevant use() or abort() call. A lazy reason is diagnostic
-  // metadata and can be any value supported by Error.cause.
-  const error = new Error(
-    'Browser-only rendering was requested by `browser()`.',
-    reason === undefined ? undefined : {cause: initializedReason},
-  );
-  Object.defineProperty(error, REACT_RECOVERABLE_TYPE, {value: true});
-  return error;
-}
-
-export function isRecoverableError(error: mixed): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-  return (error as any)[REACT_RECOVERABLE_TYPE] === true;
-}
-
-export function cloneRecoverableErrorAsFatal(recoverableError: Error): Error {
-  // Create a separate diagnostic for fatal reporting without changing the
-  // branded recoverable error that other tasks may still need to observe.
-  const fatalRecoverableError = new Error(
-    'The server render could not complete because client rendering was ' +
-      "requested outside a Suspense boundary. See this error's cause for " +
-      'additional details.',
-    hasOwnProperty.call(recoverableError, 'cause')
-      ? {cause: (recoverableError as any).cause}
-      : undefined,
-  );
-  // Keep the frames captured where the recoverable was consumed, but replace
-  // the first line with the fatal error's message.
-  const stack = recoverableError.stack;
-  if (stack !== undefined) {
-    const frameStart = stack.indexOf('\n');
-    fatalRecoverableError.stack =
-      fatalRecoverableError.name +
-      ': ' +
-      fatalRecoverableError.message +
-      (frameStart === -1 ? '' : stack.slice(frameStart));
-  } else {
-    (fatalRecoverableError as any).stack = undefined;
-  }
-  return fatalRecoverableError;
-}
 
 // Lazily created map of render-phase updates
 let renderPhaseUpdates: Map<UpdateQueue<any>, Update<any>> | null = null;
@@ -822,20 +759,7 @@ function use<T>(usable: Usable<T>): T {
     if (typeof usable.then === 'function') {
       // This is a thenable.
       const thenable: Thenable<T> = usable as any;
-      const result = unwrapThenable(thenable);
-      if (
-        // $FlowFixMe[invalid-compare]
-        result !== null &&
-        typeof result === 'object' &&
-        // $FlowFixMe[prop-missing]
-        result.$$typeof === REACT_RECOVERABLE_TYPE
-      ) {
-        // Create the recoverable error here so its stack captures the
-        // component that passed the thenable to use().
-        const recoverable: ReactRecoverable = result as any;
-        throw createRecoverableError(recoverable);
-      }
-      return result;
+      return unwrapThenable(thenable);
     } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
       // Create the recoverable error here so its stack captures the component
       // that passed this value to use(). The internal brand lets the renderer

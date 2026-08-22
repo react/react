@@ -218,27 +218,36 @@ function use<T>(usable: Usable<T>): T {
       switch (thenable.status) {
         case 'fulfilled': {
           const fulfilledValue: T = thenable.value;
-          const value =
-            // $FlowFixMe[invalid-compare]
-            fulfilledValue !== null &&
-            typeof fulfilledValue === 'object' &&
-            // $FlowFixMe[prop-missing]
-            fulfilledValue.$$typeof === REACT_RECOVERABLE_TYPE
-              ? undefined
-              : fulfilledValue;
           hookLog.push({
             displayName: null,
             primitive: 'Promise',
             stackError: new Error(),
-            value,
+            value: fulfilledValue,
             debugInfo:
               thenable._debugInfo === undefined ? null : thenable._debugInfo,
             dispatcherHookName: 'Use',
           });
-          return value as any;
+          return fulfilledValue;
         }
         case 'rejected': {
           const rejectedError = thenable.reason;
+          if (
+            typeof rejectedError === 'object' &&
+            rejectedError !== null &&
+            // $FlowFixMe[prop-missing]
+            rejectedError.$$typeof === REACT_RECOVERABLE_TYPE
+          ) {
+            hookLog.push({
+              displayName: null,
+              primitive: 'Promise',
+              stackError: new Error(),
+              value: undefined,
+              debugInfo:
+                thenable._debugInfo === undefined ? null : thenable._debugInfo,
+              dispatcherHookName: 'Use',
+            });
+            return undefined as any;
+          }
           throw rejectedError;
         }
       }

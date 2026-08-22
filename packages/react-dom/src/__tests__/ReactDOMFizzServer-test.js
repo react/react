@@ -576,10 +576,10 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // @gate enableBrowserAPI
-  it('can resolve a thenable to browser-only rendering', async () => {
-    let resolveBrowserOnly;
-    const browserOnly = new Promise(resolve => {
-      resolveBrowserOnly = resolve;
+  it('can reject a thenable with browser-only rendering', async () => {
+    let rejectBrowserOnly;
+    const browserOnly = new Promise((_, reject) => {
+      rejectBrowserOnly = reject;
     });
     const browserReason = 'Only render this content in a browser';
     const initializeReason = jest.fn(() => browserReason);
@@ -620,7 +620,7 @@ describe('ReactDOMFizzServer', () => {
     );
 
     await act(() => {
-      resolveBrowserOnly(ReactDOM.browser(initializeReason));
+      rejectBrowserOnly(ReactDOM.browser(initializeReason));
     });
 
     expect(serverErrors).toEqual([]);
@@ -650,10 +650,10 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // @gate enableBrowserAPI
-  it('can render a thenable that resolves to browser-only rendering', async () => {
-    let resolveBrowserOnly;
-    const browserOnly = new Promise(resolve => {
-      resolveBrowserOnly = resolve;
+  it('can render a thenable that rejects with browser-only rendering', async () => {
+    let rejectBrowserOnly;
+    const browserOnly = new Promise((_, reject) => {
+      rejectBrowserOnly = reject;
     });
     const browserReason = 'Only render this content in a browser';
     const initializeReason = jest.fn(() => browserReason);
@@ -694,7 +694,7 @@ describe('ReactDOMFizzServer', () => {
     );
 
     await act(() => {
-      resolveBrowserOnly(ReactDOM.browser(initializeReason));
+      rejectBrowserOnly(ReactDOM.browser(initializeReason));
     });
 
     expect(serverErrors).toEqual([]);

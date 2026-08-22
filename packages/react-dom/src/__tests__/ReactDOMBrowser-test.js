@@ -44,15 +44,15 @@ describe('ReactDOM.browser', () => {
   });
 
   // @gate enableBrowserAPI
-  it('can resolve a thenable to browser-only content', async () => {
+  it('can reject a thenable with browser-only content', async () => {
     const React = require('react');
     const ReactDOM = require('react-dom');
     const initializeReason = jest.fn(
       () => new Error('Only render this content in a browser'),
     );
-    let resolveBrowserOnly;
-    const browserOnly = new Promise(resolve => {
-      resolveBrowserOnly = resolve;
+    let rejectBrowserOnly;
+    const browserOnly = new Promise((_, reject) => {
+      rejectBrowserOnly = reject;
     });
     const ReactDOMClient = require('react-dom/client');
     const {act} = require('internal-test-utils');
@@ -74,22 +74,22 @@ describe('ReactDOM.browser', () => {
     expect(container.innerHTML).toBe('<span>Fallback</span>');
 
     await act(() => {
-      resolveBrowserOnly(ReactDOM.browser(initializeReason));
+      rejectBrowserOnly(ReactDOM.browser(initializeReason));
     });
     expect(container.innerHTML).toBe('<span>Browser</span>');
     expect(initializeReason).not.toHaveBeenCalled();
   });
 
   // @gate enableBrowserAPI
-  it('can render a thenable that resolves to browser-only content', async () => {
+  it('can render a thenable that rejects with browser-only content', async () => {
     const React = require('react');
     const ReactDOM = require('react-dom');
     const initializeReason = jest.fn(
       () => new Error('Only render this content in a browser'),
     );
-    let resolveBrowserOnly;
-    const browserOnly = new Promise(resolve => {
-      resolveBrowserOnly = resolve;
+    let rejectBrowserOnly;
+    const browserOnly = new Promise((_, reject) => {
+      rejectBrowserOnly = reject;
     });
     const ReactDOMClient = require('react-dom/client');
     const {act} = require('internal-test-utils');
@@ -110,7 +110,7 @@ describe('ReactDOM.browser', () => {
     expect(container.innerHTML).toBe('<span>Fallback</span>');
 
     await act(() => {
-      resolveBrowserOnly(ReactDOM.browser(initializeReason));
+      rejectBrowserOnly(ReactDOM.browser(initializeReason));
     });
     expect(container.innerHTML).toBe('');
     expect(initializeReason).not.toHaveBeenCalled();

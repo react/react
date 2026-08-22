@@ -687,15 +687,15 @@ describe('ReactHooksInspection', () => {
     `);
   });
 
-  it('should inspect a Promise resolved to a recoverable', () => {
+  it('should inspect a Promise rejected with a recoverable', () => {
     const recoverable = {
       $$typeof: Symbol.for('react.recoverable'),
       _reason: undefined,
     };
     const promise = {
       then() {},
-      status: 'fulfilled',
-      value: recoverable,
+      status: 'rejected',
+      reason: recoverable,
     };
 
     function Foo() {

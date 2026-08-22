@@ -1163,19 +1163,7 @@ function use<T>(usable: Usable<T>): T {
     if (typeof usable.then === 'function') {
       // This is a thenable.
       const thenable: Thenable<T> = usable as any;
-      const result = useThenable(thenable);
-      if (
-        // $FlowFixMe[invalid-compare]
-        result !== null &&
-        typeof result === 'object' &&
-        // $FlowFixMe[prop-missing]
-        result.$$typeof === REACT_RECOVERABLE_TYPE
-      ) {
-        // Fiber is the final renderer, so there is no downstream host that
-        // needs to recover this subtree. Continue rendering through it.
-        return undefined as any;
-      }
-      return result;
+      return useThenable(thenable);
     } else if (usable.$$typeof === REACT_RECOVERABLE_TYPE) {
       // Fiber is the final renderer, so there is no downstream host that
       // needs to recover this subtree. Continue rendering through it.
