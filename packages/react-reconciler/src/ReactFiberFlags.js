@@ -148,3 +148,10 @@ export const StaticMask =
   ViewTransitionNamedStatic |
   PortalStatic |
   Forked;
+
+// Flags that keep their meaning on a committed fiber after the commit that set
+// them. Everything else describes work in a single render and commit, and is
+// cleared once that commit's effects have run, so that a committed fiber that
+// a later work-in-progress tree shares is inert in that tree.
+export const CommittedMask: number =
+  StaticMask | DidCapture | ForceUpdateForLegacySuspense;

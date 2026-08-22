@@ -23,6 +23,7 @@ import type {
 } from 'shared/ReactTypes';
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Lanes, Lane} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
@@ -83,6 +84,7 @@ import {
   Throw,
   ViewTransitionComponent,
   ActivityComponent,
+  DehydratedFragment,
 } from './ReactWorkTags';
 import {
   NoFlags,
@@ -3832,6 +3834,69 @@ function resetSuspendedCurrentOnMountInLegacyMode(
   }
 }
 
+// Returns the last child that beginWork would do something with. The children
+// after it would be cloned only to bail out again unchanged, so they can be
+// shared with the current tree instead. This has to agree with the bailout
+// checks at the top of beginWork and with attemptEarlyBailoutIfNoScheduledUpdate.
+function findLastChildToClone(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+): Fiber {
+  let child: Fiber = workInProgress.child as any;
+  if (current === null || getIsHydrating() || hasLegacyContextChanged()) {
+    // Every child needs to be visited.
+    while (child.sibling !== null) {
+      child = child.sibling;
+    }
+    return child;
+  }
+  let lastChildToClone = null;
+  let node: null | Fiber = child;
+  while (node !== null) {
+    if (
+      includesSomeLane(renderLanes, mergeLanes(node.lanes, node.childLanes)) ||
+      node.pendingProps !== node.memoizedProps ||
+      (node.dependencies !== null &&
+        checkIfContextChanged(node.dependencies)) ||
+      !canShareBailedOutFiber(node.tag)
+    ) {
+      lastChildToClone = node;
+    }
+    child = node;
+    node = node.sibling;
+  }
+  // Something had work according to the parent's childLanes, but if it wasn't
+  // detected here, visit every child the way it always was.
+  return lastChildToClone === null ? child : lastChildToClone;
+}
+
+// Tags whose early bailout in attemptEarlyBailoutIfNoScheduledUpdate does more
+// than push something for its children, so they need to be visited even when
+// nothing changed.
+function canShareBailedOutFiber(tag: WorkTag): boolean {
+  switch (tag) {
+    case HostRoot:
+    case SuspenseComponent:
+    case SuspenseListComponent:
+    case OffscreenComponent:
+    case LegacyHiddenComponent:
+    case ActivityComponent:
+    case Profiler:
+    case CacheComponent:
+    case TracingMarkerComponent:
+    case ViewTransitionComponent:
+    case DehydratedFragment:
+    case IncompleteClassComponent:
+    case IncompleteFunctionComponent:
+    case LazyComponent:
+    case Throw:
+      return false;
+    default:
+      return true;
+  }
+}
+
 function bailoutOnAlreadyFinishedWork(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3840,6 +3905,10 @@ function bailoutOnAlreadyFinishedWork(
   if (current !== null) {
     // Reuse previous dependencies
     workInProgress.dependencies = current.dependencies;
+    // Context changes in the ancestors are propagated before deciding which
+    // children to visit: a consumer of a changed context may be under a child
+    // that has no other work, which would otherwise be shared.
+    lazilyPropagateParentContextChanges(current, workInProgress, renderLanes);
   }
 
   if (enableProfilerTimer) {
@@ -3854,22 +3923,16 @@ function bailoutOnAlreadyFinishedWork(
     // The children don't have any work either. We can skip them.
     // TODO: Once we add back resuming, we should check if the children are
     // a work-in-progress set. If so, we need to transfer their effects.
-
-    if (current !== null) {
-      // Before bailing out, check if there are any context changes in
-      // the children.
-      lazilyPropagateParentContextChanges(current, workInProgress, renderLanes);
-      if (!includesSomeLane(renderLanes, workInProgress.childLanes)) {
-        return null;
-      }
-    } else {
-      return null;
-    }
+    return null;
   }
 
   // This fiber doesn't have work, but its subtree does. Clone the child
   // fibers and continue.
-  cloneChildFibers(current, workInProgress);
+  cloneChildFibers(
+    current,
+    workInProgress,
+    findLastChildToClone(current, workInProgress, renderLanes),
+  );
   return workInProgress.child;
 }
 

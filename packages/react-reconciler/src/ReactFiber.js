@@ -46,7 +46,7 @@ import {
   enableSuspenseyImages,
   enableOptimisticKey,
 } from 'shared/ReactFeatureFlags';
-import {NoFlags, Placement, StaticMask} from './ReactFiberFlags';
+import {NoFlags, Placement, StaticMask, CommittedMask} from './ReactFiberFlags';
 import {ConcurrentRoot} from './ReactRootTags';
 import {
   ClassComponent,
@@ -403,16 +403,20 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   return workInProgress;
 }
 
-// The instances whose version was replaced by the commit in progress.
-const replacedInstances: Array<FiberInstance> = [];
+// The instances of the fibers that the commit in progress is committing.
+const committingInstances: Array<FiberInstance> = [];
 
 // The counterpart of createWorkInProgress. Makes every new version in the
 // finished tree the committed version of its node. The version it replaces
 // remains reachable through the instance as the base for diffing until
-// releasePreviousVersions is called at the end of the commit. Children that
-// were shared with the previous tree get their return pointer repointed so
+// releaseCommittedFibers is called at the end of the commit. Children that
+// are shared with the previous tree get their return pointer repointed so
 // that a committed fiber's return is always the committed version of its
 // parent.
+//
+// A fiber that was committed before and is shared with this tree is its own
+// previous version (see releaseCommittedFibers), which is how it's told apart
+// from the fibers that are being committed.
 export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
   let node = finishedWork;
   outer: while (true) {
@@ -421,19 +425,11 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
     if (current !== node) {
       instance.previous = current;
       instance.current = node;
-      replacedInstances.push(instance);
-      let child = node.child;
-      if (child !== null && child === current.child) {
-        while (child !== null) {
-          child.return = node;
-          child = child.sibling;
-        }
-      }
     }
-    // Only new versions need visiting. Structurally shared subtrees and
-    // freshly mounted subtrees already point at themselves.
+    committingInstances.push(instance);
     let next = node.child;
-    while (next !== null && next.instance.current === next) {
+    while (next !== null && next.instance.previous === next) {
+      next.return = node;
       next = next.sibling;
     }
     if (next !== null) {
@@ -445,7 +441,8 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
         break outer;
       }
       next = node.sibling;
-      while (next !== null && next.instance.current === next) {
+      while (next !== null && next.instance.previous === next) {
+        next.return = node.return;
         next = next.sibling;
       }
       if (next !== null) {
@@ -458,15 +455,23 @@ export function commitWorkInProgressAsCurrent(finishedWork: Fiber): void {
 }
 
 // Once a commit's effects have run nothing diffs against the replaced versions
-// anymore, so they're released. From then on a committed version is its own
-// previous version: the base for diffing a fiber that a later commit reuses
-// rather than replaces is the fiber itself.
-export function releasePreviousVersions(): void {
-  for (let i = 0; i < replacedInstances.length; i++) {
-    const instance = replacedInstances[i];
-    instance.previous = instance.current;
+// anymore, so they're released: from then on a committed version is its own
+// previous version. The flags that only described this commit's work are
+// cleared at the same time, so that a later work-in-progress tree that shares
+// the fiber doesn't see them.
+export function releaseCommittedFibers(): void {
+  for (let i = 0; i < committingInstances.length; i++) {
+    const instance = committingInstances[i];
+    const fiber = instance.current;
+    instance.previous = fiber;
+    fiber.flags &= CommittedMask;
+    fiber.subtreeFlags &= StaticMask;
+    fiber.deletions = null;
+    if (enableProfilerTimer) {
+      fiber.actualDuration = -0;
+    }
   }
-  replacedInstances.length = 0;
+  committingInstances.length = 0;
 }
 
 // Used to reuse a Fiber for a second pass.

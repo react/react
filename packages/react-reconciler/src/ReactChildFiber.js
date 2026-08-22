@@ -2118,9 +2118,13 @@ export function resetChildReconcilerOnUnwind(): void {
   thenableIndexCounter = 0;
 }
 
+// Clones the children up to and including `lastChildToClone`. The children
+// after it are shared with the current tree instead; since children are a
+// linked list, only a trailing run of them can be shared.
 export function cloneChildFibers(
   current: Fiber | null,
   workInProgress: Fiber,
+  lastChildToClone: Fiber,
 ): void {
   if (current !== null && workInProgress.child !== current.child) {
     throw new Error('Resuming work not yet implemented.');
@@ -2130,12 +2134,12 @@ export function cloneChildFibers(
     return;
   }
 
-  let currentChild = workInProgress.child;
+  let currentChild: Fiber = workInProgress.child;
   let newChild = createWorkInProgress(currentChild, currentChild.pendingProps);
   workInProgress.child = newChild;
 
   newChild.return = workInProgress;
-  while (currentChild.sibling !== null) {
+  while (currentChild !== lastChildToClone && currentChild.sibling !== null) {
     currentChild = currentChild.sibling;
     newChild = newChild.sibling = createWorkInProgress(
       currentChild,
@@ -2143,14 +2147,35 @@ export function cloneChildFibers(
     );
     newChild.return = workInProgress;
   }
-  newChild.sibling = null;
+  // The shared children keep pointing at the current version of the parent
+  // until this tree commits. That's also how the work loop tells them apart
+  // from the clones, so undo any repointing context propagation did.
+  let sharedChild = (newChild.sibling = currentChild.sibling);
+  while (sharedChild !== null) {
+    sharedChild.return = current;
+    sharedChild = sharedChild.sibling;
+  }
 }
 
 // Reset a workInProgress child set to prepare it for a second pass.
 export function resetChildFibers(workInProgress: Fiber, lanes: Lanes): void {
+  let prevChild: Fiber | null = null;
   let child = workInProgress.child;
   while (child !== null) {
-    resetWorkInProgress(child, lanes);
+    if (child.return !== workInProgress) {
+      // Shared with the current tree, so it can't be reset in place.
+      const clone = createWorkInProgress(child, child.pendingProps);
+      clone.return = workInProgress;
+      if (prevChild === null) {
+        workInProgress.child = clone;
+      } else {
+        prevChild.sibling = clone;
+      }
+      child = clone;
+    } else {
+      resetWorkInProgress(child, lanes);
+    }
+    prevChild = child;
     child = child.sibling;
   }
 }
