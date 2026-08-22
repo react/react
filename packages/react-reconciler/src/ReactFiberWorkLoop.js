@@ -3162,7 +3162,13 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   }
 
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
-  if (next === null) {
+  if (
+    next === null ||
+    // The children are all shared with the current tree (see
+    // reconcileChildrenArray): the first child still points at the current
+    // version of this fiber. There's nothing to do below.
+    (next.return !== unitOfWork && next.return === current)
+  ) {
     // If this doesn't spawn new work, complete the current work.
     completeUnitOfWork(unitOfWork);
   } else {
@@ -3181,7 +3187,14 @@ function replaySuspendedUnitOfWork(unitOfWork: Fiber): void {
   }
 
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
-  if (next === null) {
+  if (
+    next === null ||
+    // The children are all shared with the current tree (see
+    // reconcileChildrenArray): the first child still points at the current
+    // version of this fiber. There's nothing to do below.
+    (next.return !== unitOfWork &&
+      next.return === getPreviousVersion(unitOfWork))
+  ) {
     // If this doesn't spawn new work, complete the current work.
     completeUnitOfWork(unitOfWork);
   } else {

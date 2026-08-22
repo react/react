@@ -374,6 +374,12 @@ function propagateContextChanges<T>(
   }
 }
 
+// Whether any provider above `workInProgress` changed its value in this render.
+// Unlike propagating, this doesn't mark anything.
+export function hasChangedParentContexts(workInProgress: Fiber): boolean {
+  return collectChangedParentContexts(workInProgress) !== null;
+}
+
 export function lazilyPropagateParentContextChanges(
   current: Fiber,
   workInProgress: Fiber,
@@ -406,15 +412,15 @@ export function propagateParentContextChangesToDeferredTree(
   );
 }
 
-function propagateParentContextChanges(
-  current: Fiber,
+// The contexts of the providers above `workInProgress` that changed their
+// value in this render, or null if none did. Stops at an ancestor that already
+// propagated, unless inside a tree whose propagation was deferred.
+function collectChangedParentContexts(
   workInProgress: Fiber,
-  renderLanes: Lanes,
-  forcePropagateEntireTree: boolean,
-): boolean {
+): Array<ReactContext<any>> | null {
   // Collect all the parent providers that changed. Since this is usually small
   // number, we use an Array instead of Set.
-  let contexts = null;
+  let contexts: Array<ReactContext<any>> | null = null;
   let parent: null | Fiber = workInProgress;
   let isInsidePropagationBailout = false;
   while (parent !== null) {
@@ -475,6 +481,17 @@ function propagateParentContextChanges(
     }
     parent = parent.return;
   }
+
+  return contexts;
+}
+
+function propagateParentContextChanges(
+  current: Fiber,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+  forcePropagateEntireTree: boolean,
+): boolean {
+  const contexts = collectChangedParentContexts(workInProgress);
 
   if (contexts !== null) {
     // If there were any changed providers, search through the children and

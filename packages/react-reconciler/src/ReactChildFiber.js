@@ -20,6 +20,7 @@ import type {
 } from 'shared/ReactTypes';
 import type {Fiber} from './ReactInternalTypes';
 import type {Lanes} from './ReactFiberLane';
+import {includesSomeLane, mergeLanes} from './ReactFiberLane';
 import type {ThenableState} from './ReactFiberThenable';
 
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -34,6 +35,7 @@ import {
   getIteratorFn,
   ASYNC_ITERATOR,
   REACT_ELEMENT_TYPE,
+  REACT_MEMO_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_PORTAL_TYPE,
   REACT_LAZY_TYPE,
@@ -47,6 +49,11 @@ import {
   HostPortal,
   Fragment,
   FunctionComponent,
+  SimpleMemoComponent,
+  SuspenseListComponent,
+  OffscreenComponent,
+  LegacyHiddenComponent,
+  ActivityComponent,
 } from './ReactWorkTags';
 import isArray from 'shared/isArray';
 import {
@@ -67,7 +74,10 @@ import {
 } from './ReactFiber';
 import {getInProgressMountVersion} from './ReactFiberResuming';
 import {getPreviousVersion} from './ReactFiberInstance';
-import {isCompatibleFamilyForHotReloading} from './ReactFiberHotReloading';
+import {
+  isCompatibleFamilyForHotReloading,
+  resolveTypeForHotReloading,
+} from './ReactFiberHotReloading';
 import {getIsHydrating} from './ReactFiberHydrationContext';
 import {pushTreeFork} from './ReactFiberTreeContext';
 import {
@@ -77,7 +87,13 @@ import {
   trackUsedThenable,
   resolveLazy,
 } from './ReactFiberThenable';
-import {readContextDuringReconciliation} from './ReactFiberNewContext';
+import {
+  readContextDuringReconciliation,
+  checkIfContextChanged,
+  hasChangedParentContexts,
+} from './ReactFiberNewContext';
+import {hasContextChanged as hasLegacyContextChanged} from './ReactFiberLegacyContext';
+import shallowEqual from 'shared/shallowEqual';
 
 import {runWithFiberInDEV} from './ReactCurrentFiber';
 
@@ -1203,12 +1219,132 @@ function createChildReconciler(
     return knownKeys;
   }
 
+  // Whether `oldFiber` would bail out if it were cloned for `newChild`: a
+  // memoized component with equal props, no update, and no context change.
+  // Such a child can stay in the tree as is instead of being cloned only to
+  // bail out.
+  function canShareUnchangedChild(
+    oldFiber: Fiber,
+    newChild: any,
+    lanes: Lanes,
+  ): boolean {
+    return (
+      oldFiber.tag === SimpleMemoComponent &&
+      typeof newChild === 'object' &&
+      newChild !== null &&
+      newChild.$$typeof === REACT_ELEMENT_TYPE &&
+      oldFiber.key === newChild.key &&
+      oldFiber.elementType === newChild.type &&
+      // Prevent sharing if the implementation changed due to hot reload.
+      (__DEV__
+        ? resolveTypeForHotReloading(oldFiber.type) === oldFiber.type
+        : true) &&
+      !includesSomeLane(
+        lanes,
+        mergeLanes(oldFiber.lanes, oldFiber.childLanes),
+      ) &&
+      (oldFiber.dependencies === null ||
+        !checkIfContextChanged(oldFiber.dependencies)) &&
+      shallowEqual(oldFiber.memoizedProps, newChild.props)
+    );
+  }
+
+  // The first of the trailing run of children that can be shared with the
+  // current tree (see canShareUnchangedChild), if the lists line up position
+  // for position and the run reaches the end of both. Null if there's none.
+  function findSharedTrailingRun(
+    returnFiber: Fiber,
+    currentFirstChild: Fiber,
+    newChildren: Array<any>,
+    lanes: Lanes,
+  ): Fiber | null {
+    if (
+      getIsHydrating() ||
+      hasLegacyContextChanged() ||
+      // A SuspenseList works on its rows after reconciling them: it marks the
+      // boundaries in them and cuts the list to render the tail separately.
+      returnFiber.tag === SuspenseListComponent ||
+      // These reconcile with the lanes they were begun with, before the hidden
+      // tree's base lanes are added, so the children's work may not show.
+      returnFiber.tag === OffscreenComponent ||
+      returnFiber.tag === LegacyHiddenComponent ||
+      returnFiber.tag === ActivityComponent
+    ) {
+      return null;
+    }
+    // Only a run that reaches the end can be shared, so the last pair decides
+    // cheaply whether the scan is worth doing.
+    const lastChild = newChildren[newChildren.length - 1];
+    if (
+      typeof lastChild !== 'object' ||
+      lastChild === null ||
+      lastChild.$$typeof !== REACT_ELEMENT_TYPE ||
+      typeof lastChild.type !== 'object' ||
+      lastChild.type === null ||
+      lastChild.type.$$typeof !== REACT_MEMO_TYPE
+    ) {
+      return null;
+    }
+    let lastOldFiber = currentFirstChild;
+    while (lastOldFiber.sibling !== null) {
+      lastOldFiber = lastOldFiber.sibling;
+    }
+    if (
+      lastOldFiber.index !== newChildren.length - 1 ||
+      !canShareUnchangedChild(lastOldFiber, lastChild, lanes)
+    ) {
+      return null;
+    }
+    if (hasChangedParentContexts(returnFiber)) {
+      // A consumer somewhere below would have to render. Propagating from
+      // here would mark fibers in subtrees that aren't rendering (e.g. hidden
+      // ones), so the children are cloned and propagate when they bail out.
+      return null;
+    }
+    let firstShared: Fiber | null = null;
+    let oldFiber: Fiber | null = currentFirstChild;
+    let newIdx = 0;
+    for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+      if (oldFiber.index !== newIdx) {
+        return null;
+      }
+      if (canShareUnchangedChild(oldFiber, newChildren[newIdx], lanes)) {
+        if (firstShared === null) {
+          firstShared = oldFiber;
+        }
+      } else {
+        firstShared = null;
+      }
+      oldFiber = oldFiber.sibling;
+    }
+    if (oldFiber !== null || newIdx !== newChildren.length) {
+      return null;
+    }
+    return firstShared;
+  }
+
   function reconcileChildrenArray(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
     newChildren: Array<any>,
     lanes: Lanes,
   ): Fiber | null {
+    // The trailing children that stay shared with the current tree, and the
+    // index of the first of them. Only a trailing run can be shared because
+    // children are a linked list.
+    let firstSharedChild: Fiber | null = null;
+    let sharedStart = newChildren.length;
+    if (shouldTrackSideEffects && currentFirstChild !== null) {
+      firstSharedChild = findSharedTrailingRun(
+        returnFiber,
+        currentFirstChild,
+        newChildren,
+        lanes,
+      );
+      if (firstSharedChild !== null) {
+        sharedStart = firstSharedChild.index;
+      }
+    }
     // This algorithm can't optimize by searching from both ends since we
     // don't have backpointers on fibers. I'm trying to see how far we can get
     // with that model. If it ends up not being worth the tradeoffs, we can
@@ -1237,7 +1373,7 @@ function createChildReconciler(
     let lastPlacedIndex = 0;
     let newIdx = 0;
     let nextOldFiber = null;
-    for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+    for (; oldFiber !== null && newIdx < sharedStart; newIdx++) {
       if (oldFiber.index > newIdx) {
         nextOldFiber = oldFiber;
         oldFiber = null;
@@ -1291,6 +1427,40 @@ function createChildReconciler(
       }
       previousNewFiber = newFiber;
       oldFiber = nextOldFiber;
+    }
+
+    if (firstSharedChild !== null && oldFiber === firstSharedChild) {
+      // Everything before the shared run was reconciled position for position.
+      // The shared children keep pointing at the current version of the
+      // parent until this tree commits, which is how the work loop and the
+      // commit tell them apart from the clones (see cloneChildFibers).
+      if (__DEV__) {
+        for (
+          let child: Fiber | null = firstSharedChild;
+          child !== null;
+          child = child.sibling
+        ) {
+          knownKeys = warnOnInvalidKey(
+            returnFiber,
+            child,
+            newChildren[child.index],
+            knownKeys,
+          );
+        }
+      }
+      const current = getPreviousVersion(returnFiber);
+      for (
+        let child: Fiber | null = firstSharedChild;
+        child !== null;
+        child = child.sibling
+      ) {
+        child.return = current;
+      }
+      if (previousNewFiber === null) {
+        return firstSharedChild;
+      }
+      previousNewFiber.sibling = firstSharedChild;
+      return resultingFirstChild;
     }
 
     if (newIdx === newChildren.length) {

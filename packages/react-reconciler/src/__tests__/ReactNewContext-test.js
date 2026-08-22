@@ -851,6 +851,64 @@ describe('ReactNewContext', () => {
         );
       });
 
+      it('propagates to a consumer among memoized children that stay unchanged', async () => {
+        const Context = React.createContext(0);
+        const ContextConsumer = getConsumer(Context);
+
+        const Item = React.memo(function Item({id}) {
+          Scheduler.log('Item ' + id);
+          return <span prop={id} />;
+        });
+
+        const ConsumerItem = React.memo(function ConsumerItem() {
+          Scheduler.log('ConsumerItem');
+          return (
+            <ContextConsumer>
+              {value => {
+                Scheduler.log('Consumer ' + value);
+                return <span prop={value} />;
+              }}
+            </ContextConsumer>
+          );
+        });
+
+        let setValue;
+        function App() {
+          const [value, _setValue] = React.useState(0);
+          setValue = _setValue;
+          Scheduler.log('App');
+          // The parent renders new elements with equal props for every child,
+          // so they could all be left as they are, except that one of them
+          // reads the context.
+          return (
+            <Context.Provider value={value}>
+              <Item id="a" />
+              <ConsumerItem />
+              <Item id="b" />
+            </Context.Provider>
+          );
+        }
+
+        ReactNoop.render(<App />);
+        await waitForAll([
+          'App',
+          'Item a',
+          'ConsumerItem',
+          'Consumer 0',
+          'Item b',
+        ]);
+
+        setValue(1);
+        await waitForAll(['App', 'Consumer 1']);
+        expect(ReactNoop).toMatchRenderedOutput(
+          <>
+            <span prop="a" />
+            <span prop={1} />
+            <span prop="b" />
+          </>,
+        );
+      });
+
       it('propagates to a consumer under a sibling that has no other work', async () => {
         const Context = React.createContext(0);
         const ContextConsumer = getConsumer(Context);
