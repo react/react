@@ -46,7 +46,8 @@
     "yargs": "^17.7.2"
   },
   "resolutions": {
-    "@babel/types": "7.26.3"
+    "@babel/types": "7.26.3",
+    "basic-ftp": "5.2.0"
   },
   "packageManager": "yarn@1.22.22"
 }
