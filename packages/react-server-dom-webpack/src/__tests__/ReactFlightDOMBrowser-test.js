@@ -3082,6 +3082,85 @@ describe('ReactFlightDOMBrowser', () => {
     }
   });
 
+  it('should abort the cache signal when a render completes while debug objects are still retained', async () => {
+    // A debug channel with a readable side lets the client fetch debug objects
+    // lazily. React serializes each component's props into the debug model, and
+    // it defers the part of an object tree that exceeds the model's object
+    // limit. A deferred object stays retained, and its debug chunk stays
+    // pending, until the client asks for it or the channel closes. The render
+    // below finishes while one such object is outstanding.
+    function createDeepJSX(n) {
+      if (n <= 0) {
+        return null;
+      }
+      return <div>{createDeepJSX(n - 1)}</div>;
+    }
+
+    let cacheSignal;
+
+    function ServerComponent() {
+      cacheSignal = ReactServer.cacheSignal();
+      return <div>not using props</div>;
+    }
+
+    let debugChannelReadableController;
+    const debugChunks = [];
+
+    const debugChannelReadable = new ReadableStream({
+      start(controller) {
+        debugChannelReadableController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // These children nest deeper than the debug model's object limit.
+        <ServerComponent>{createDeepJSX(20)}</ServerComponent>,
+        webpackMap,
+        {
+          debugChannel: {
+            readable: debugChannelReadable,
+            writable: new WritableStream({
+              write(chunk) {
+                debugChunks.push(chunk);
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const reader = stream.getReader();
+    while (true) {
+      const {done} = await reader.read();
+      if (done) {
+        break;
+      }
+    }
+    await serverAct(() => {});
+
+    if (__DEV__) {
+      // Fail loudly if the setup stops deferring anything, for example because
+      // the object limit changed. Without a retained object this test passes
+      // for the wrong reason.
+      const debugOutput = debugChunks
+        .map(chunk => new TextDecoder().decode(chunk))
+        .join('');
+      expect(debugOutput).toContain('$Y');
+    }
+
+    expect(cacheSignal.aborted).toBe(true);
+
+    // Closing the debug channel drops the retained objects. The signal must
+    // already be aborted at that point, and must stay aborted.
+    await serverAct(() => {
+      debugChannelReadableController.close();
+    });
+    await serverAct(() => {});
+
+    expect(cacheSignal.aborted).toBe(true);
+  });
+
   it('should resolve a cycle between debug info and the value it produces when using a debug channel', async () => {
     // Same as `should resolve a cycle between debug info and the value it produces`, but using a debug channel.
 
@@ -3357,6 +3436,152 @@ describe('ReactFlightDOMBrowser', () => {
     expect(container.innerHTML).toBe(
       '<div><span>4000</span><span>Hello</span></div>',
     );
+  });
+
+  describe('abort signal lifetime', () => {
+    // Collects the lifetime signal that React bounds each abort listener with.
+    // React passes that signal to addEventListener instead of calling
+    // removeEventListener, so the runtime performs the removal and nothing here
+    // observes it directly. An aborted lifetime is what shows the listener is
+    // gone. ReactFlightDOMNode-test asserts the removal itself, which needs a
+    // Node API that jsdom does not have.
+    function trackAbortListenerLifetimes(signal) {
+      const lifetimes = [];
+      const add = signal.addEventListener.bind(signal);
+      signal.addEventListener = (type, listener, options) => {
+        if (type === 'abort') {
+          lifetimes.push(options.signal);
+        }
+        return add(type, listener, options);
+      };
+      return lifetimes;
+    }
+
+    async function drain(stream) {
+      const reader = stream.getReader();
+      while (true) {
+        const {done} = await reader.read();
+        if (done) {
+          return;
+        }
+      }
+    }
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    it('detaches the listener when a prerender completes', async () => {
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const {prelude} = await serverAct(() =>
+        ReactServerDOMStaticServer.prerender(<App />, webpackMap, {
+          signal: controller.signal,
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => drain(prelude));
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when a render completes', async () => {
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<App />, webpackMap, {
+          signal: controller.signal,
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => drain(stream));
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when the signal aborts mid-render', async () => {
+      let resolveGreeting;
+      const greetingPromise = new Promise(resolve => {
+        resolveGreeting = resolve;
+      });
+
+      async function Greeting() {
+        await greetingPromise;
+        return 'hello world';
+      }
+
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const {pendingResult} = await serverAct(async () => {
+        return {
+          pendingResult: ReactServerDOMStaticServer.prerender(
+            <Greeting />,
+            webpackMap,
+            {signal: controller.signal, onError() {}},
+          ),
+        };
+      });
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      controller.abort('boom');
+      resolveGreeting();
+      await serverAct(() => pendingResult);
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when the stream is cancelled', async () => {
+      let resolveGreeting;
+      const greetingPromise = new Promise(resolve => {
+        resolveGreeting = resolve;
+      });
+
+      async function Greeting() {
+        await greetingPromise;
+        return 'hello world';
+      }
+
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<Greeting />, webpackMap, {
+          signal: controller.signal,
+          onError() {},
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => stream.cancel('boom'));
+      resolveGreeting();
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('attaches no listener when the signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort('boom');
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      await serverAct(() =>
+        ReactServerDOMStaticServer.prerender(<App />, webpackMap, {
+          signal: controller.signal,
+          onError() {},
+        }),
+      );
+
+      expect(lifetimes).toHaveLength(0);
+    });
+
+    // The composite-signal case lives in ReactFlightDOMNode-test, because
+    // jsdom's AbortSignal has no AbortSignal.any.
   });
 
   describe('with console.createTask', () => {
