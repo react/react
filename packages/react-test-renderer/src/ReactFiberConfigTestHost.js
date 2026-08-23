@@ -482,13 +482,6 @@ export function createFragmentInstance(
   return null;
 }
 
-export function updateFragmentInstanceFiber(
-  fragmentFiber: Object,
-  instance: FragmentInstanceType,
-): void {
-  // Noop
-}
-
 export function commitNewChildToFragmentInstance(
   child: Instance,
   fragmentInstance: FragmentInstanceType,
@@ -506,7 +499,7 @@ export function deleteChildFromFragmentInstance(
 export function getInstanceFromNode(mockNode: Object): Object | null {
   const instance = nodeToInstanceMap.get(mockNode);
   if (instance !== undefined) {
-    return instance.internalInstanceHandle;
+    return instance.internalInstanceHandle.current;
   }
   return null;
 }
@@ -529,12 +522,20 @@ export function preparePortalMount(portalInstance: Instance): void {
   // noop
 }
 
-export function prepareScopeUpdate(scopeInstance: Object, inst: Object): void {
-  nodeToInstanceMap.set(scopeInstance, inst);
+const scopeToInstanceMap = new WeakMap<Object, Object>();
+
+export function prepareScopeUpdate(
+  scopeInstance: Object,
+  internalInstanceHandle: Object,
+): void {
+  scopeToInstanceMap.set(scopeInstance, internalInstanceHandle);
 }
 
 export function getInstanceFromScope(scopeInstance: Object): null | Object {
-  return nodeToInstanceMap.get(scopeInstance) || null;
+  const internalInstanceHandle = scopeToInstanceMap.get(scopeInstance);
+  return internalInstanceHandle !== undefined
+    ? internalInstanceHandle.current
+    : null;
 }
 
 export function detachDeletedInstance(node: Instance): void {

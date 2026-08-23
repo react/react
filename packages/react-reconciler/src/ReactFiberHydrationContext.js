@@ -573,7 +573,7 @@ function prepareToHydrateHostInstance(
     fiber.type,
     fiber.memoizedProps,
     hostContext,
-    fiber,
+    fiber.instance,
   );
   if (!didHydrate) {
     throwOnHydrationMismatch(fiber, true);
@@ -643,7 +643,7 @@ function prepareToHydrateHostTextInstance(fiber: Fiber): void {
   const didHydrate = hydrateTextInstance(
     textInstance,
     textContent,
-    fiber,
+    fiber.instance,
     parentProps,
   );
   if (!didHydrate) {
@@ -670,7 +670,7 @@ function prepareToHydrateHostActivityInstance(fiber: Fiber): void {
     );
   }
 
-  hydrateActivityInstance(activityInstance, fiber);
+  hydrateActivityInstance(activityInstance, fiber.instance);
 }
 
 function prepareToHydrateHostSuspenseInstance(fiber: Fiber): void {
@@ -693,7 +693,7 @@ function prepareToHydrateHostSuspenseInstance(fiber: Fiber): void {
     );
   }
 
-  hydrateSuspenseInstance(suspenseInstance, fiber);
+  hydrateSuspenseInstance(suspenseInstance, fiber.instance);
 }
 
 function skipPastDehydratedActivityInstance(

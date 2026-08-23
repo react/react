@@ -40,6 +40,7 @@ import {
 import {NoFlags} from './ReactFiberFlags';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
 import {resolveClassComponentProps} from './ReactFiberClassComponent';
+import {syncClassInstance} from './ReactFiberResuming';
 import {
   recordEffectDuration,
   startEffectTimer,
@@ -636,9 +637,7 @@ export function commitClassSnapshot(finishedWork: Fiber, current: Fiber) {
   const prevProps = current.memoizedProps;
   const prevState = current.memoizedState;
   const instance = finishedWork.stateNode;
-  // We could update instance props and state here,
-  // but instead we rely on them being set during last render.
-  // TODO: revisit this when we implement resuming.
+  syncClassInstance(finishedWork);
   if (__DEV__) {
     if (
       !finishedWork.type.defaultProps &&
@@ -870,12 +869,10 @@ export function safelyDetachRef(
       } catch (error) {
         captureCommitPhaseError(current, nearestMountedAncestor, error);
       } finally {
-        // `refCleanup` has been called. Nullify all references to it to prevent double invocation.
+        // `refCleanup` has been called. Nullify the reference to it to prevent
+        // double invocation. A version of this fiber that attaches a different
+        // ref doesn't inherit this cleanup (see markRef).
         current.refCleanup = null;
-        const finishedWork = current.alternate;
-        if (finishedWork != null) {
-          finishedWork.refCleanup = null;
-        }
       }
     } else if (typeof ref === 'function') {
       try {

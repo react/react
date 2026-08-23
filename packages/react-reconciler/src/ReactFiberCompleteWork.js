@@ -8,6 +8,7 @@
  */
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {RootState} from './ReactFiberRoot';
 import type {Lanes, Lane} from './ReactFiberLane';
 import type {ReactScopeInstance, ReactContext} from 'shared/ReactTypes';
@@ -103,6 +104,7 @@ import {
   Hydrate,
   PortalStatic,
 } from './ReactFiberFlags';
+import {isInProgressVersion} from './ReactFiberResuming';
 
 import {
   createInstance,
@@ -469,8 +471,8 @@ function updateHostComponent(
 ) {
   // $FlowFixMe[constant-condition]
   if (supportsMutation) {
-    // If we have an alternate, that means this is an update and we need to
-    // schedule a side-effect to do the updates.
+    // If we have a current version, that means this is an update and we need
+    // to schedule a side-effect to do the updates.
     const oldProps = current.memoizedProps;
     if (oldProps === newProps) {
       // In mutation mode, this is sufficient for a bailout because
@@ -694,7 +696,7 @@ function updateHostText(
         newText,
         rootContainerInstance,
         currentHostContext,
-        workInProgress,
+        workInProgress.instance,
       );
     } else {
       workInProgress.stateNode = current.stateNode;
@@ -725,7 +727,7 @@ function cutOffTailIfNeeded(
       let tailNode = renderState.tail;
       let lastTailNode = null;
       while (tailNode !== null) {
-        if (tailNode.alternate !== null) {
+        if (getPreviousVersion(tailNode) !== null) {
           lastTailNode = tailNode;
         }
         tailNode = tailNode.sibling;
@@ -759,7 +761,7 @@ function cutOffTailIfNeeded(
       let tailNode = renderState.tail;
       let lastTailNode = null;
       while (tailNode !== null) {
-        if (tailNode.alternate !== null) {
+        if (getPreviousVersion(tailNode) !== null) {
           lastTailNode = tailNode;
         }
         tailNode = tailNode.sibling;
@@ -782,7 +784,7 @@ function cutOffTailIfNeeded(
 function isOnlyNewMounts(tail: Fiber): boolean {
   let fiber: null | Fiber = tail;
   while (fiber !== null) {
-    if (fiber.alternate !== null) {
+    if (getPreviousVersion(fiber) !== null) {
       return false;
     }
     fiber = fiber.sibling;
@@ -791,9 +793,8 @@ function isOnlyNewMounts(tail: Fiber): boolean {
 }
 
 function bubbleProperties(completedWork: Fiber) {
-  const didBailout =
-    completedWork.alternate !== null &&
-    completedWork.alternate.child === completedWork.child;
+  const current = getPreviousVersion(completedWork);
+  const didBailout = current !== null && current.child === completedWork.child;
 
   let newChildLanes: Lanes = NoLanes;
   let subtreeFlags: Flags = NoFlags;
@@ -844,10 +845,9 @@ function bubbleProperties(completedWork: Fiber) {
         subtreeFlags |= child.subtreeFlags;
         subtreeFlags |= child.flags;
 
-        // Update the return pointer so the tree is consistent. This is a code
-        // smell because it assumes the commit phase is never concurrent with
-        // the render phase. Will address during refactor to alternate model.
-        child.return = completedWork;
+        // Children that are shared with the current tree point at the current
+        // version of this fiber until the commit (see cloneChildFibers), which
+        // is how the commit tells them apart, so they aren't repointed here.
 
         child = child.sibling;
       }
@@ -896,10 +896,7 @@ function bubbleProperties(completedWork: Fiber) {
         subtreeFlags |= child.subtreeFlags & StaticMask;
         subtreeFlags |= child.flags & StaticMask;
 
-        // Update the return pointer so the tree is consistent. This is a code
-        // smell because it assumes the commit phase is never concurrent with
-        // the render phase. Will address during refactor to alternate model.
-        child.return = completedWork;
+        // These children are all shared with the current tree; see above.
 
         child = child.sibling;
       }
@@ -1374,6 +1371,12 @@ function completeWork(
     case HostComponent: {
       popHostContext(workInProgress);
       const type = workInProgress.type;
+      if (current === null && isInProgressVersion(workInProgress)) {
+        // A version a previous render mounted, kept as is. Its instance and
+        // its children are already set up.
+        bubbleProperties(workInProgress);
+        return null;
+      }
       if (current !== null && workInProgress.stateNode != null) {
         updateHostComponent(
           current,
@@ -1428,7 +1431,7 @@ function completeWork(
             newProps,
             rootContainerInstance,
             currentHostContext,
-            workInProgress,
+            workInProgress.instance,
           );
           // TODO: For persistent renderers, we should pass children as part
           // of the initial instance creation
@@ -1473,10 +1476,15 @@ function completeWork(
     }
     case HostText: {
       const newText = newProps;
+      if (current === null && isInProgressVersion(workInProgress)) {
+        // A version a previous render mounted, kept as is.
+        bubbleProperties(workInProgress);
+        return null;
+      }
       if (current && workInProgress.stateNode != null) {
         const oldText = current.memoizedProps;
-        // If we have an alternate, that means this is an update and we need
-        // to schedule a side-effect to do the updates.
+        // If we have a current version, that means this is an update and we
+        // need to schedule a side-effect to do the updates.
         updateHostText(current, workInProgress, oldText, newText);
       } else {
         if (typeof newText !== 'string') {
@@ -1499,7 +1507,7 @@ function completeWork(
             newText,
             rootContainerInstance,
             currentHostContext,
-            workInProgress,
+            workInProgress.instance,
           );
         }
       }
@@ -1604,13 +1612,14 @@ function completeWork(
 
       if (nextDidTimeout) {
         const offscreenFiber: Fiber = workInProgress.child as any;
+        const currentOffscreenFiber = getPreviousVersion(offscreenFiber);
         let previousCache: Cache | null = null;
         if (
-          offscreenFiber.alternate !== null &&
-          offscreenFiber.alternate.memoizedState !== null &&
-          offscreenFiber.alternate.memoizedState.cachePool !== null
+          currentOffscreenFiber !== null &&
+          currentOffscreenFiber.memoizedState !== null &&
+          currentOffscreenFiber.memoizedState.cachePool !== null
         ) {
-          previousCache = offscreenFiber.alternate.memoizedState.cachePool.pool;
+          previousCache = currentOffscreenFiber.memoizedState.cachePool.pool;
         }
         let cache: Cache | null = null;
         if (
@@ -1835,7 +1844,7 @@ function completeWork(
               renderState.tail === null &&
               renderState.tailMode !== 'collapsed' &&
               renderState.tailMode !== 'visible' &&
-              !renderedTail.alternate &&
+              !getPreviousVersion(renderedTail) &&
               !getIsHydrating() // We don't cut it if we're hydrating.
             ) {
               // We're done.
@@ -1945,7 +1954,7 @@ function completeWork(
         if (current === null) {
           const scopeInstance: ReactScopeInstance = createScopeInstance();
           workInProgress.stateNode = scopeInstance;
-          prepareScopeUpdate(scopeInstance, workInProgress);
+          prepareScopeUpdate(scopeInstance, workInProgress.instance);
           if (workInProgress.ref !== null) {
             // Scope components always do work in the commit phase if there's a
             // ref attached.

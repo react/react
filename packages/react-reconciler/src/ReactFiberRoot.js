@@ -75,6 +75,7 @@ function FiberRootNode(
   this.expirationTimes = createLaneMap(NoTimestamp);
 
   this.pendingLanes = NoLanes;
+  this.currentTreeUpdatedLanes = NoLanes;
   this.suspendedLanes = NoLanes;
   this.pingedLanes = NoLanes;
   this.warmLanes = NoLanes;

@@ -165,7 +165,7 @@ function applyDerivedStateFromProps(
 const classComponentUpdater = {
   // $FlowFixMe[missing-local-annot]
   enqueueSetState(inst: any, payload: any, callback) {
-    const fiber = getInstance(inst);
+    const fiber = getInstance(inst).current;
     const lane = requestUpdateLane(fiber);
 
     const update = createUpdate(lane);
@@ -189,7 +189,7 @@ const classComponentUpdater = {
     }
   },
   enqueueReplaceState(inst: any, payload: any, callback: null) {
-    const fiber = getInstance(inst);
+    const fiber = getInstance(inst).current;
     const lane = requestUpdateLane(fiber);
 
     const update = createUpdate(lane);
@@ -216,7 +216,7 @@ const classComponentUpdater = {
   },
   // $FlowFixMe[missing-local-annot]
   enqueueForceUpdate(inst: any, callback) {
-    const fiber = getInstance(inst);
+    const fiber = getInstance(inst).current;
     const lane = requestUpdateLane(fiber);
 
     const update = createUpdate(lane);
@@ -605,7 +605,7 @@ function constructClassInstance(
   instance.updater = classComponentUpdater;
   workInProgress.stateNode = instance;
   // The instance needs access to the fiber so that it can schedule updates
-  setInstance(instance, workInProgress);
+  setInstance(instance, workInProgress.instance);
   if (__DEV__) {
     instance._reactInternalInstance = fakeInternalInstance;
   }

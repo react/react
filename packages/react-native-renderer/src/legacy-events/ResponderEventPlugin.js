@@ -198,7 +198,7 @@ export function getLowestCommonAncestor(instA, instB) {
   // Walk in lockstep until we find a match.
   let depth = depthA;
   while (depth--) {
-    if (instA === instB || instA === instB.alternate) {
+    if (instA === instB || instA.instance === instB.instance) {
       return instA;
     }
     instA = getParent(instA);
@@ -212,7 +212,7 @@ export function getLowestCommonAncestor(instA, instB) {
  */
 function isAncestor(instA, instB) {
   while (instB) {
-    if (instA === instB || instA === instB.alternate) {
+    if (instA === instB || instA.instance === instB.instance) {
       return true;
     }
     instB = getParent(instB);

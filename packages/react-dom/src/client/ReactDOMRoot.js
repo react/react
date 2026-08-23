@@ -249,7 +249,7 @@ export function createRoot(
     onDefaultTransitionIndicator,
     transitionCallbacks,
   );
-  markContainerAsRoot(root.current, container);
+  markContainerAsRoot(root.current.instance, container);
 
   const rootContainerElement: Document | Element | DocumentFragment =
     !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
@@ -352,7 +352,7 @@ export function hydrateRoot(
     transitionCallbacks,
     formState,
   );
-  markContainerAsRoot(root.current, container);
+  markContainerAsRoot(root.current.instance, container);
   // This can't be a comment node since hydration doesn't work on comment nodes anyway.
   listenToAllSupportedEvents(container);
 

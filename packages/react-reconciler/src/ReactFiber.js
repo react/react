@@ -16,7 +16,7 @@ import type {
   ActivityProps,
   ReactKey,
 } from 'shared/ReactTypes';
-import type {Fiber} from './ReactInternalTypes';
+import type {Fiber, FiberInstance} from './ReactInternalTypes';
 import type {RootTag} from './ReactRootTags';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
@@ -46,7 +46,7 @@ import {
   enableSuspenseyImages,
   enableOptimisticKey,
 } from 'shared/ReactFeatureFlags';
-import {NoFlags, Placement, StaticMask} from './ReactFiberFlags';
+import {NoFlags, Placement, StaticMask, CommittedMask} from './ReactFiberFlags';
 import {ConcurrentRoot} from './ReactRootTags';
 import {
   ClassComponent,
@@ -81,6 +81,15 @@ import {getComponentNameFromOwner} from 'react-reconciler/src/getComponentNameFr
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 import {NoLanes} from './ReactFiberLane';
+import {createFiberInstance, getPreviousVersion} from './ReactFiberInstance';
+import {
+  getInProgressVersion,
+  discardRecordedWork,
+  releaseInProgressVersionOnCommit,
+  releaseInProgressMountsOnCommit,
+  releasePublishedWorkOnCommit,
+  syncClassInstance,
+} from './ReactFiberResuming';
 import {
   NoMode,
   ConcurrentMode,
@@ -170,7 +179,7 @@ function FiberNode(
   this.lanes = NoLanes;
   this.childLanes = NoLanes;
 
-  this.alternate = null;
+  this.instance = createFiberInstance(this);
 
   if (enableProfilerTimer) {
     // Note: The following is done to avoid a v8 performance cliff.
@@ -265,7 +274,7 @@ function createFiberImplObject(
     lanes: NoLanes,
     childLanes: NoLanes,
 
-    alternate: null,
+    instance: null as any,
 
     // dynamic properties at the end for more efficient hermes bytecode
     tag,
@@ -273,6 +282,7 @@ function createFiberImplObject(
     pendingProps,
     mode,
   };
+  fiber.instance = createFiberInstance(fiber);
 
   if (enableProfilerTimer) {
     fiber.actualDuration = -0;
@@ -319,63 +329,34 @@ export function isFunctionClassComponent(
   return shouldConstruct(type);
 }
 
-// This is used to create an alternate fiber to do work on.
+// Creates a new version of `current` to do work on. The work-in-progress tree
+// is always freshly allocated; subtrees without work are shared with the
+// current tree rather than cloned. If a previous render already finished a
+// version of this node that is still good, it's continued from instead.
 export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
-  let workInProgress = current.alternate;
-  if (workInProgress === null) {
-    // We use a double buffering pooling technique because we know that we'll
-    // only ever need at most two versions of a tree. We pool the "other" unused
-    // node that we're free to reuse. This is lazily created to avoid allocating
-    // extra objects for things that are never updated. It also allow us to
-    // reclaim the extra memory if needed.
-    workInProgress = createFiber(
-      current.tag,
-      pendingProps,
-      current.key,
-      current.mode,
-    );
-    workInProgress.elementType = current.elementType;
-    workInProgress.type = current.type;
-    workInProgress.stateNode = current.stateNode;
+  const inProgress = getInProgressVersion(current, pendingProps);
+  if (inProgress !== null) {
+    return inProgress;
+  }
 
-    if (__DEV__) {
-      // DEV-only fields
+  const workInProgress = createFiber(
+    current.tag,
+    pendingProps,
+    current.key,
+    current.mode,
+  );
+  workInProgress.elementType = current.elementType;
+  workInProgress.type = current.type;
+  workInProgress.stateNode = current.stateNode;
+  workInProgress.instance = current.instance;
 
-      workInProgress._debugOwner = current._debugOwner;
-      workInProgress._debugStack = current._debugStack;
-      workInProgress._debugTask = current._debugTask;
-      workInProgress._debugHookTypes = current._debugHookTypes;
-    }
+  if (__DEV__) {
+    // DEV-only fields
 
-    workInProgress.alternate = current;
-    current.alternate = workInProgress;
-  } else {
-    workInProgress.pendingProps = pendingProps;
-    // Needed because Blocks store data on type.
-    workInProgress.type = current.type;
-
-    // We already have an alternate.
-    // Reset the effect tag.
-    workInProgress.flags = NoFlags;
-
-    // The effects are no longer valid.
-    workInProgress.subtreeFlags = NoFlags;
-    workInProgress.deletions = null;
-
-    if (enableOptimisticKey) {
-      // For optimistic keys, the Fibers can have different keys if one is optimistic
-      // and the other one is filled in.
-      workInProgress.key = current.key;
-    }
-
-    if (enableProfilerTimer) {
-      // We intentionally reset, rather than copy, actualDuration & actualStartTime.
-      // This prevents time from endlessly accumulating in new commits.
-      // This has the downside of resetting values for different priority renders,
-      // But works for yielding (the common case) and should support resuming.
-      workInProgress.actualDuration = -0;
-      workInProgress.actualStartTime = -1.1;
-    }
+    workInProgress._debugOwner = current._debugOwner;
+    workInProgress._debugStack = current._debugStack;
+    workInProgress._debugTask = current._debugTask;
+    workInProgress._debugHookTypes = current._debugHookTypes;
   }
 
   // Reset all effects except static ones.
@@ -436,6 +417,98 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   return workInProgress;
 }
 
+// The instances of the fibers that the commit in progress is committing.
+const committingInstances: Array<FiberInstance> = [];
+
+// The counterpart of createWorkInProgress. Makes every new version in the
+// finished tree the committed version of its node. The version it replaces
+// remains reachable through the instance as the base for diffing until
+// releaseCommittedFibers is called at the end of the commit. Children that
+// are shared with the previous tree get their return pointer repointed so
+// that a committed fiber's return is always the committed version of its
+// parent.
+//
+// A fiber that was committed before and is shared with this tree is its own
+// previous version (see releaseCommittedFibers), which is how it's told apart
+// from the fibers that are being committed.
+export function commitWorkInProgressAsCurrent(
+  finishedWork: Fiber,
+  lanes: Lanes,
+): void {
+  // These are the versions being committed.
+  discardRecordedWork();
+  releasePublishedWorkOnCommit(lanes);
+  let node = finishedWork;
+  outer: while (true) {
+    const instance = node.instance;
+    const current = instance.current;
+    if (node.tag === ClassComponent) {
+      syncClassInstance(node);
+    }
+    if (current !== node) {
+      instance.previous = current;
+      instance.current = node;
+      releaseInProgressVersionOnCommit(instance, node, current);
+    } else if (instance.inProgress === node) {
+      // A mounted version that a previous render left behind, committed now.
+      instance.inProgress = null;
+    }
+    if (instance.inProgressMounts !== null) {
+      releaseInProgressMountsOnCommit(instance, lanes);
+    }
+    committingInstances.push(instance);
+    // A child that this render rendered points at `node`. One that's shared
+    // with the current tree still points at the version of the parent it was
+    // committed under, which is how it's told apart. Only a trailing run of
+    // children can be shared, so this stops at the first child normally.
+    let next = node.child;
+    while (next !== null && next.return !== node) {
+      next.return = node;
+      next = next.sibling;
+    }
+    if (next !== null) {
+      node = next;
+      continue;
+    }
+    while (true) {
+      if (node === finishedWork) {
+        break outer;
+      }
+      const returnFiber: Fiber = node.return as any;
+      next = node.sibling;
+      while (next !== null && next.return !== returnFiber) {
+        next.return = returnFiber;
+        next = next.sibling;
+      }
+      if (next !== null) {
+        node = next;
+        continue outer;
+      }
+      node = returnFiber;
+    }
+  }
+}
+
+// Once a commit's effects have run nothing diffs against the replaced versions
+// anymore, so they're released: from then on a committed version is its own
+// previous version. The flags that only described this commit's work are
+// cleared at the same time, so that a later work-in-progress tree that shares
+// the fiber doesn't see them.
+export function releaseCommittedFibers(): void {
+  for (let i = 0; i < committingInstances.length; i++) {
+    const instance = committingInstances[i];
+    const fiber = instance.current;
+    instance.previous = fiber;
+    fiber.flags &= CommittedMask;
+    fiber.subtreeFlags &= StaticMask;
+    fiber.deletions = null;
+    if (enableProfilerTimer) {
+      fiber.actualDuration = -0;
+    }
+  }
+  committingInstances.length = 0;
+}
+
 // Used to reuse a Fiber for a second pass.
 export function resetWorkInProgress(
   workInProgress: Fiber,
@@ -455,7 +528,7 @@ export function resetWorkInProgress(
 
   // The effects are no longer valid.
 
-  const current = workInProgress.alternate;
+  const current = getPreviousVersion(workInProgress);
   if (current === null) {
     // Reset to createFiber's initial values.
     workInProgress.childLanes = NoLanes;

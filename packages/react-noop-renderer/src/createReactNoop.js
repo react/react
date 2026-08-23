@@ -530,10 +530,6 @@ function createReactNoop(
       return null;
     },
 
-    updateFragmentInstanceFiber(fragmentFiber: mixed, fragmentInstance: mixed) {
-      // Noop
-    },
-
     commitNewChildToFragmentInstance(child: mixed, fragmentInstance: mixed) {
       // Noop
     },

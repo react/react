@@ -144,7 +144,7 @@ function getContextForSubtree(
     return emptyContextObject;
   }
 
-  const fiber = getInstance(parentComponent);
+  const fiber = getInstance(parentComponent).current;
   const parentContext = findCurrentUnmaskedContext(fiber);
 
   if (fiber.tag === ClassComponent) {
@@ -158,8 +158,8 @@ function getContextForSubtree(
 }
 
 function findHostInstance(component: Object): PublicInstance | null {
-  const fiber = getInstance(component);
-  if (fiber === undefined) {
+  const instance = getInstance(component);
+  if (instance === undefined) {
     if (typeof component.render === 'function') {
       throw new Error('Unable to find node on an unmounted component.');
     } else {
@@ -169,7 +169,7 @@ function findHostInstance(component: Object): PublicInstance | null {
       );
     }
   }
-  const hostFiber = findCurrentHostFiber(fiber);
+  const hostFiber = findCurrentHostFiber(instance.current);
   if (hostFiber === null) {
     return null;
   }
@@ -181,8 +181,8 @@ function findHostInstanceWithWarning(
   methodName: string,
 ): PublicInstance | null {
   if (__DEV__) {
-    const fiber = getInstance(component);
-    if (fiber === undefined) {
+    const instance = getInstance(component);
+    if (instance === undefined) {
       if (typeof component.render === 'function') {
         throw new Error('Unable to find node on an unmounted component.');
       } else {
@@ -192,6 +192,7 @@ function findHostInstanceWithWarning(
         );
       }
     }
+    const fiber = instance.current;
     const hostFiber = findCurrentHostFiber(fiber);
     if (hostFiber === null) {
       return null;
@@ -524,11 +525,7 @@ function markRetryLaneImpl(fiber: Fiber, retryLane: Lane) {
 
 // Increases the priority of thenables when they resolve within this boundary.
 function markRetryLaneIfNotHydrated(fiber: Fiber, retryLane: Lane) {
-  markRetryLaneImpl(fiber, retryLane);
-  const alternate = fiber.alternate;
-  if (alternate) {
-    markRetryLaneImpl(alternate, retryLane);
-  }
+  markRetryLaneImpl(fiber.instance.current, retryLane);
 }
 
 export function attemptContinuousHydration(fiber: Fiber): void {
@@ -713,18 +710,28 @@ if (__DEV__) {
     return currentHook;
   };
 
+  // DevTools may hold on to a Fiber across commits, so these resolve the
+  // version of the node that's currently committed before acting on it.
+
   // Support DevTools editable values for useState and useReducer.
   overrideHookState = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     id: number,
     path: Array<string | number>,
     value: any,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     const hook = findHook(fiber, id);
     if (hook !== null) {
       const newState = copyWithSet(hook.memoizedState, path, value);
       hook.memoizedState = newState;
       hook.baseState = newState;
+      // The eager state optimization in dispatchSetState computes the next
+      // state from the last state it rendered with, so that has to reflect
+      // the override too.
+      if (hook.queue !== null) {
+        hook.queue.lastRenderedState = newState;
+      }
 
       // We aren't actually adding an update to the queue,
       // because there is no update we can add for useReducer hooks that won't trigger an error.
@@ -740,15 +747,22 @@ if (__DEV__) {
     }
   };
   overrideHookStateDeletePath = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     id: number,
     path: Array<string | number>,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     const hook = findHook(fiber, id);
     if (hook !== null) {
       const newState = copyWithDelete(hook.memoizedState, path);
       hook.memoizedState = newState;
       hook.baseState = newState;
+      // The eager state optimization in dispatchSetState computes the next
+      // state from the last state it rendered with, so that has to reflect
+      // the override too.
+      if (hook.queue !== null) {
+        hook.queue.lastRenderedState = newState;
+      }
 
       // We aren't actually adding an update to the queue,
       // because there is no update we can add for useReducer hooks that won't trigger an error.
@@ -764,16 +778,23 @@ if (__DEV__) {
     }
   };
   overrideHookStateRenamePath = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     id: number,
     oldPath: Array<string | number>,
     newPath: Array<string | number>,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     const hook = findHook(fiber, id);
     if (hook !== null) {
       const newState = copyWithRename(hook.memoizedState, oldPath, newPath);
       hook.memoizedState = newState;
       hook.baseState = newState;
+      // The eager state optimization in dispatchSetState computes the next
+      // state from the last state it rendered with, so that has to reflect
+      // the override too.
+      if (hook.queue !== null) {
+        hook.queue.lastRenderedState = newState;
+      }
 
       // We aren't actually adding an update to the queue,
       // because there is no update we can add for useReducer hooks that won't trigger an error.
@@ -790,49 +811,52 @@ if (__DEV__) {
   };
 
   // Support DevTools props for function components, forwardRef, memo, host components, etc.
-  overrideProps = (fiber: Fiber, path: Array<string | number>, value: any) => {
+  overrideProps = (
+    fiberFromDevTools: Fiber,
+    path: Array<string | number>,
+    value: any,
+  ) => {
+    const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithSet(fiber.memoizedProps, path, value);
-    if (fiber.alternate) {
-      fiber.alternate.pendingProps = fiber.pendingProps;
-    }
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
-  overridePropsDeletePath = (fiber: Fiber, path: Array<string | number>) => {
+  overridePropsDeletePath = (
+    fiberFromDevTools: Fiber,
+    path: Array<string | number>,
+  ) => {
+    const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithDelete(fiber.memoizedProps, path);
-    if (fiber.alternate) {
-      fiber.alternate.pendingProps = fiber.pendingProps;
-    }
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
   overridePropsRenamePath = (
-    fiber: Fiber,
+    fiberFromDevTools: Fiber,
     oldPath: Array<string | number>,
     newPath: Array<string | number>,
   ) => {
+    const fiber = fiberFromDevTools.instance.current;
     fiber.pendingProps = copyWithRename(fiber.memoizedProps, oldPath, newPath);
-    if (fiber.alternate) {
-      fiber.alternate.pendingProps = fiber.pendingProps;
-    }
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
 
-  scheduleUpdate = (fiber: Fiber) => {
+  scheduleUpdate = (fiberFromDevTools: Fiber) => {
+    const fiber = fiberFromDevTools.instance.current;
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
 
-  scheduleRetry = (fiber: Fiber) => {
+  scheduleRetry = (fiberFromDevTools: Fiber) => {
+    const fiber = fiberFromDevTools.instance.current;
     const lane = claimNextRetryLane();
     const root = enqueueConcurrentRenderForLane(fiber, lane);
     if (root !== null) {

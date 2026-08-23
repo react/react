@@ -603,7 +603,13 @@ describe('ReactSuspensePlaceholder', () => {
             'Promise resolved [Loaded]',
             'Promise resolved [Sibling]',
           ]);
-          await waitForAll(['Suspending', 'Loaded', 'New', 'Sibling']);
+          // "New" already rendered in the attempt that suspended. If that
+          // render is continued from, it isn't rendered again.
+          await waitForAll(
+            gate(flags => flags.enableResumingInterruptedRenders)
+              ? ['Suspending', 'Loaded', 'Sibling']
+              : ['Suspending', 'Loaded', 'New', 'Sibling'],
+          );
         });
 
         expect(onRender).toHaveBeenCalledTimes(

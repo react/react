@@ -19,6 +19,7 @@ let assertConsoleErrorDev;
 let waitForAll;
 let waitFor;
 let waitForThrow;
+let waitForPaint;
 let assertLog;
 
 describe('ReactIncremental', () => {
@@ -34,6 +35,7 @@ describe('ReactIncremental', () => {
       waitForAll,
       waitFor,
       waitForThrow,
+      waitForPaint,
       assertLog,
     } = require('internal-test-utils'));
   });
@@ -329,8 +331,7 @@ describe('ReactIncremental', () => {
     await waitForAll(['Middle', 'Middle']);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can resume work in a subtree even when a parent bails out', async () => {
+  it('can resume work in a subtree even when a parent bails out', async () => {
     function Bar(props) {
       Scheduler.log('Bar');
       return <div>{props.children}</div>;
@@ -351,11 +352,11 @@ describe('ReactIncremental', () => {
     const middleContent = (
       <aaa>
         <Tester />
-        <bbb hidden={true}>
+        <React.Activity mode="hidden">
           <ccc>
             <Middle>Hi</Middle>
           </ccc>
-        </bbb>
+        </React.Activity>
       </aaa>
     );
 
@@ -370,24 +371,19 @@ describe('ReactIncremental', () => {
       );
     }
 
-    // Init
+    // Init. The hidden content is deferred until after the rest commits.
     ReactNoop.render(<Foo text="foo" />);
-    ReactNoop.flushDeferredPri(52);
-
-    assertLog(['Foo', 'Bar', 'Tester', 'Bar']);
+    await waitForPaint(['Foo', 'Bar', 'Tester', 'Bar']);
 
     // We're now rendering an update that will bail out on updating middle.
     ReactNoop.render(<Foo text="bar" />);
-    ReactNoop.flushDeferredPri(45 + 5);
-
-    assertLog(['Foo', 'Bar', 'Bar']);
+    await waitForPaint(['Foo', 'Bar', 'Bar']);
 
     // Flush the rest to make sure that the bailout didn't block this work.
     await waitForAll(['Middle']);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can resume work in a bailed subtree within one pass', async () => {
+  it('can resume work in a bailed subtree within one pass', async () => {
     function Bar(props) {
       Scheduler.log('Bar');
       return <div>{props.children}</div>;
@@ -410,8 +406,6 @@ describe('ReactIncremental', () => {
       return <span>{props.children}</span>;
     }
 
-    // Should content not just bail out on current, not workInProgress?
-
     class Content extends React.Component {
       shouldComponentUpdate() {
         return false;
@@ -419,11 +413,11 @@ describe('ReactIncremental', () => {
       render() {
         return [
           <Tester key="a" unused={this.props.unused} />,
-          <bbb key="b" hidden={true}>
+          <React.Activity key="b" mode="hidden">
             <ccc>
               <Middle>Hi</Middle>
             </ccc>
-          </bbb>,
+          </React.Activity>,
         ];
       }
     }
@@ -431,26 +425,24 @@ describe('ReactIncremental', () => {
     function Foo(props) {
       Scheduler.log('Foo');
       return (
-        <div hidden={props.text === 'bar'}>
-          <Bar>{props.text}</Bar>
-          <Content unused={props.text} />
-          <Bar>{props.text}</Bar>
-        </div>
+        <React.Activity mode={props.text === 'bar' ? 'hidden' : 'visible'}>
+          <div>
+            <Bar>{props.text}</Bar>
+            <Content unused={props.text} />
+            <Bar>{props.text}</Bar>
+          </div>
+        </React.Activity>
       );
     }
 
-    // Init
+    // Init. The hidden content is deferred until after the rest commits.
     ReactNoop.render(<Foo text="foo" />);
-    ReactNoop.flushDeferredPri(52 + 5);
+    await waitForPaint(['Foo', 'Bar', 'Tester', 'Bar']);
 
-    assertLog(['Foo', 'Bar', 'Tester', 'Bar']);
-
-    // Make a quick update which will create a low pri tree on top of the
-    // already low pri tree.
+    // Hide the whole thing. The update to what's now hidden is deferred, on
+    // top of the already deferred content.
     ReactNoop.render(<Foo text="bar" />);
-    ReactNoop.flushDeferredPri(15);
-
-    assertLog(['Foo']);
+    await waitForPaint(['Foo']);
 
     // At this point, middle will bail out but it has not yet fully rendered.
     // Since that is the same priority as its parent tree. This should render
@@ -461,21 +453,31 @@ describe('ReactIncremental', () => {
 
     // Let us try this again without fully finishing the first time. This will
     // create a hanging subtree that is reconciling at the normal priority.
-    ReactNoop.render(<Foo text="foo" />);
-    ReactNoop.flushDeferredPri(40);
-
-    assertLog(['Foo', 'Bar']);
+    React.startTransition(() => {
+      ReactNoop.render(<Foo text="foo" />);
+    });
+    await waitFor(['Foo', 'Bar']);
 
     // This update will create a tree that aborts that work and down-prioritizes
     // it. If the priority levels aren't down-prioritized correctly this may
     // abort rendering of the down-prioritized content.
-    ReactNoop.render(<Foo text="bar" />);
-    await waitForAll(['Foo', 'Bar', 'Bar']);
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(<Foo text="bar" />);
+    });
+    assertLog(['Foo']);
+    await waitForAll(['Bar', 'Bar']);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can resume mounting a class component', async () => {
+  it('constructs a class component again if its mount was interrupted', async () => {
     let foo;
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
+    }
     class Parent extends React.Component {
       shouldComponentUpdate() {
         return false;
@@ -503,18 +505,55 @@ describe('ReactIncremental', () => {
       return <div />;
     }
 
-    ReactNoop.render(<Parent prop="foo" />);
-    ReactNoop.flushDeferredPri(20);
-    assertLog(['Foo constructor: foo', 'Foo']);
+    function App({show}) {
+      return [<Sibling key="s" />, show ? <Parent key="p" prop="foo" /> : null];
+    }
 
-    foo.setState({value: 'bar'});
+    ReactNoop.render(<App show={false} />);
+    await waitForAll(['Sibling']);
 
-    await waitForAll(['Foo', 'Bar']);
+    // Start mounting Foo, and stop before Bar.
+    React.startTransition(() => {
+      ReactNoop.render(<App show={true} />);
+    });
+    await waitFor(['Sibling', 'Foo constructor: foo', 'Foo']);
+
+    // Update Foo's state before it has mounted, as part of the same
+    // transition. Then interrupt the transition with a higher priority update
+    // elsewhere in the tree.
+    React.startTransition(() => {
+      foo.setState({value: 'bar'});
+    });
+    assertConsoleErrorDev([
+      "Can't perform a React state update on a component that hasn't mounted yet. " +
+        'This indicates that you have a side-effect in your render function that ' +
+        'asynchronously tries to update the component. ' +
+        'Move this work to useEffect instead.\n' +
+        '    in Parent (at **)\n' +
+        '    in App (at **)',
+    ]);
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
+
+    // The mount wasn't committed, so its instance isn't the one that mounts
+    // when the transition continues. Foo is constructed again, and the update
+    // to the instance that was thrown away is lost, which React warned about.
+    await waitForAll(['Sibling', 'Foo constructor: foo', 'Foo', 'Bar']);
+    expect(foo.state).toBe(null);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('reuses the same instance when resuming a class instance', async () => {
+  it('does not reuse a class instance whose mount was interrupted', async () => {
     let foo;
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
+    }
     class Parent extends React.Component {
       shouldComponentUpdate() {
         return false;
@@ -559,29 +598,59 @@ describe('ReactIncremental', () => {
       return <div />;
     }
 
-    ReactNoop.render(<Parent prop="foo" />);
-    ReactNoop.flushDeferredPri(25);
-    assertLog([
+    function App({show}) {
+      return [<Sibling key="s" />, show ? <Parent key="p" prop="foo" /> : null];
+    }
+
+    ReactNoop.render(<App show={false} />);
+    await waitForAll(['Sibling']);
+
+    // Mount Foo completely, without committing.
+    React.startTransition(() => {
+      ReactNoop.render(<App show={true} />);
+    });
+    await waitFor([
+      'Sibling',
       'constructor: foo',
       'componentWillMount: foo',
       'render: foo',
       'Foo did complete',
     ]);
 
-    foo.setState({value: 'bar'});
+    // Update Foo's state before it has committed, as part of the same
+    // transition. Then interrupt the transition with a higher priority update
+    // elsewhere in the tree.
+    React.startTransition(() => {
+      foo.setState({value: 'bar'});
+    });
+    assertConsoleErrorDev([
+      "Can't perform a React state update on a component that hasn't mounted yet. " +
+        'This indicates that you have a side-effect in your render function that ' +
+        'asynchronously tries to update the component. ' +
+        'Move this work to useEffect instead.\n' +
+        '    in Parent (at **)\n' +
+        '    in App (at **)',
+    ]);
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
 
-    await waitForAll([]);
-    expect(constructorCount).toEqual(1);
-    assertLog([
+    // The mount wasn't committed, so its instance isn't the one that mounts
+    // when the transition continues. Foo is constructed again, and the update
+    // to the instance that was thrown away is lost, which React warned about.
+    await waitForAll([
+      'Sibling',
+      'constructor: foo',
       'componentWillMount: foo',
       'render: foo',
       'Foo did complete',
       'componentDidMount: foo',
     ]);
+    expect(constructorCount).toEqual(2);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can reuse work done after being preempted', async () => {
+  it('can reuse work done after being preempted', async () => {
     function Bar(props) {
       Scheduler.log('Bar');
       return <div>{props.children}</div>;
@@ -613,54 +682,61 @@ describe('ReactIncremental', () => {
       return (
         <div>
           <Bar>{props.text2}</Bar>
-          <div hidden={true}>{props.step === 0 ? step0 : middleContent}</div>
+          <React.Activity mode="hidden">
+            {props.step === 0 ? step0 : middleContent}
+          </React.Activity>
         </div>
       );
     }
 
-    // Init
+    // Init. The hidden content is deferred until after the rest commits. Start
+    // rendering it, and stop once the first Middle finished and the Bar began.
     ReactNoop.render(<Foo text="foo" text2="foo" step={0} />);
-    ReactNoop.flushDeferredPri(55 + 25 + 5 + 5);
-
-    // We only finish the higher priority work. So the low pri content
-    // has not yet finished mounting.
-    assertLog(['Foo', 'Bar', 'Middle', 'Bar']);
+    await waitForPaint(['Foo', 'Bar']);
+    await waitFor(['Middle', 'Bar']);
 
     // Interrupt the rendering with a quick update. This should not touch the
     // middle content.
-    ReactNoop.render(<Foo text="foo" text2="bar" step={0} />);
-    await waitForAll([]);
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(<Foo text="foo" text2="bar" step={0} />);
+    });
+    assertLog(['Foo', 'Bar']);
 
     // We've now rendered the entire tree but we didn't have to redo the work
     // done by the first Middle and Bar already.
-    assertLog(['Foo', 'Bar', 'Middle']);
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Middle']
+        : ['Middle', 'Bar', 'Middle'],
+    );
 
     // Make a quick update which will schedule low priority work to
     // update the middle content.
     ReactNoop.render(<Foo text="bar" text2="bar" step={1} />);
-    ReactNoop.flushDeferredPri(30 + 25 + 5);
-
-    assertLog(['Foo', 'Bar']);
+    await waitForPaint(['Foo', 'Bar']);
 
     // The middle content is now pending rendering...
-    ReactNoop.flushDeferredPri(30 + 5);
-    assertLog(['Middle', 'Bar']);
+    await waitFor(['Middle', 'Bar']);
 
     // but we'll interrupt it to render some higher priority work.
     // The middle content will bailout so it remains untouched.
-    ReactNoop.render(<Foo text="foo" text2="bar" step={1} />);
-    ReactNoop.flushDeferredPri(30);
-
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(<Foo text="foo" text2="bar" step={1} />);
+    });
     assertLog(['Foo', 'Bar']);
 
     // Since we did nothing to the middle subtree during the interruption,
     // we should be able to reuse the reconciliation work that we already did
     // without restarting.
-    await waitForAll(['Middle']);
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Middle']
+        : ['Middle', 'Bar', 'Middle'],
+    );
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can reuse work that began but did not complete, after being preempted', async () => {
+  // @gate enableResumingInterruptedRenders
+  it('can reuse work that began but did not complete, after being preempted', async () => {
     let child;
     let sibling;
 
@@ -694,12 +770,6 @@ describe('ReactIncremental', () => {
     function Parent() {
       Scheduler.log('Parent');
       return [
-        // The extra div is necessary because when Parent bails out during the
-        // high priority update, its progressedPriority is set to high.
-        // So its direct children cannot be reused when we resume at
-        // low priority. I think this would be fixed by changing
-        // pendingWorkPriority and progressedPriority to be the priority of
-        // the children only, not including the fiber itself.
         <div key="a">
           <Child />
         </div>,
@@ -708,17 +778,23 @@ describe('ReactIncremental', () => {
     }
 
     ReactNoop.render(<Parent />);
-    await waitForAll([]);
+    await waitForAll([
+      'Parent',
+      'Child',
+      'Grandchild',
+      'GreatGrandchild',
+      'Sibling',
+    ]);
 
     // Begin working on a low priority update to Child, but stop before
     // GreatGrandchild. Child and Grandchild begin but don't complete.
-    child.setState({step: 1});
-    ReactNoop.flushDeferredPri(30);
-    assertLog(['Child', 'Grandchild']);
+    React.startTransition(() => {
+      child.setState({step: 1});
+    });
+    await waitFor(['Child', 'Grandchild']);
 
     // Interrupt the current low pri work with a high pri update elsewhere in
     // the tree.
-
     ReactNoop.flushSync(() => {
       sibling.setState({});
     });
@@ -726,7 +802,6 @@ describe('ReactIncremental', () => {
 
     // Continue the low pri work. The work on Child and GrandChild was memoized
     // so they should not be worked on again.
-
     await waitForAll([
       // No Child
       // No Grandchild
@@ -734,8 +809,7 @@ describe('ReactIncremental', () => {
     ]);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can reuse work if shouldComponentUpdate is false, after being preempted', async () => {
+  it('can reuse work if shouldComponentUpdate is false, after being preempted', async () => {
     function Bar(props) {
       Scheduler.log('Bar');
       return <div>{props.children}</div>;
@@ -772,9 +846,9 @@ describe('ReactIncremental', () => {
       return (
         <div>
           <Bar>{props.text}</Bar>
-          <div hidden={true}>
+          <React.Activity mode="hidden">
             <Content step={props.step} text={props.text} />
-          </div>
+          </React.Activity>
         </div>
       );
     }
@@ -786,25 +860,26 @@ describe('ReactIncremental', () => {
     // Make a quick update which will schedule low priority work to
     // update the middle content.
     ReactNoop.render(<Foo text="bar" step={1} />);
-    ReactNoop.flushDeferredPri(30 + 5);
-
-    assertLog(['Foo', 'Bar']);
+    await waitForPaint(['Foo', 'Bar']);
 
     // The middle content is now pending rendering...
-    ReactNoop.flushDeferredPri(30 + 25 + 5);
-    assertLog(['Content', 'Middle', 'Bar']); // One more Middle left.
+    await waitFor(['Content', 'Middle', 'Bar']); // One more Middle left.
 
     // but we'll interrupt it to render some higher priority work.
     // The middle content will bailout so it remains untouched.
-    ReactNoop.render(<Foo text="foo" step={1} />);
-    ReactNoop.flushDeferredPri(30);
-
+    ReactNoop.flushSync(() => {
+      ReactNoop.render(<Foo text="foo" step={1} />);
+    });
     assertLog(['Foo', 'Bar']);
 
     // Since we did nothing to the middle subtree during the interruption,
     // we should be able to reuse the reconciliation work that we already did
     // without restarting.
-    await waitForAll(['Middle']);
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Middle']
+        : ['Content', 'Middle', 'Bar', 'Middle'],
+    );
   });
 
   it('memoizes work even if shouldComponentUpdate returns false', async () => {
@@ -1059,9 +1134,17 @@ describe('ReactIncremental', () => {
     await waitForAll([]);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('can call sCU while resuming a partly mounted component', () => {
+  it('constructs class components again if the render mounting them was interrupted with new props', async () => {
     const instances = new Set();
+
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
+    }
 
     class Bar extends React.Component {
       state = {y: 'A'};
@@ -1088,25 +1171,42 @@ describe('ReactIncremental', () => {
       ];
     }
 
-    ReactNoop.render(<Foo step={0} />);
-    ReactNoop.flushDeferredPri(40);
-    assertLog(['Foo', 'Bar:A', 'Bar:B', 'Bar:C']);
+    function App({show, step}) {
+      return [<Sibling key="s" />, show ? <Foo key="f" step={step} /> : null];
+    }
+
+    ReactNoop.render(<App show={false} step={0} />);
+    await waitForAll(['Sibling']);
+
+    // Start mounting Foo, and stop while the third Bar is rendering.
+    React.startTransition(() => {
+      ReactNoop.render(<App show={true} step={0} />);
+    });
+    await waitFor(['Sibling', 'Foo', 'Bar:A', 'Bar:B', 'Bar:C']);
 
     expect(instances.size).toBe(3);
 
-    ReactNoop.render(<Foo step={1} />);
-    ReactNoop.flushDeferredPri(50);
-    // A was memoized and reused. B was memoized but couldn't be reused because
-    // props differences. C was memoized and reused. D never even started so it
-    // needed a new instance.
-    assertLog(['Foo', 'Bar:B2', 'Bar:D']);
+    // Update the props, as part of the same transition, and interrupt it with
+    // a higher priority update elsewhere in the tree.
+    React.startTransition(() => {
+      ReactNoop.render(<App show={true} step={1} />);
+    });
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
+
+    // Foo renders again with new props, so every Bar gets a new element. A
+    // class component that was mounted by the interrupted render isn't
+    // continued from with a different element, so each one is constructed
+    // again.
+    await waitForAll(['Sibling', 'Foo', 'Bar:A', 'Bar:B2', 'Bar:C', 'Bar:D']);
 
     // We expect each rerender to correspond to a new instance.
-    expect(instances.size).toBe(4);
+    expect(instances.size).toBe(7);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('gets new props when setting state on a partly updated component', async () => {
+  it('gets new props when setting state on a partly updated component', async () => {
     const instances = [];
 
     class Bar extends React.Component {
@@ -1148,28 +1248,47 @@ describe('ReactIncremental', () => {
         <Baz />
       </div>,
     );
-    await waitForAll([]);
+    await waitForAll(['Foo', 'Bar:A-0', 'Bar:B-0', 'Baz', 'Baz']);
 
-    // Flush part way through with new props, fully completing the first Bar.
-    // However, it doesn't commit yet.
-    ReactNoop.render(
+    // Render part way through with new props, fully completing both Bars and
+    // the first Baz. It doesn't commit yet.
+    React.startTransition(() => {
+      ReactNoop.render(
+        <div>
+          <Foo step={1} />
+          <Baz />
+          <Baz />
+        </div>,
+      );
+    });
+    await waitFor(['Foo', 'Bar:A-1', 'Bar:B-1', 'Baz']);
+
+    // Make an update to the first Bar. It renders with the props that are
+    // committed, since the new ones aren't yet.
+    ReactNoop.flushSync(() => {
+      instances[0].performAction();
+    });
+    assertLog(['Bar:A-0']);
+
+    // When the transition continues, the first Bar renders again with the new
+    // props and the new state. If the transition is continued from the work it
+    // finished, the second Bar and the first Baz don't render again.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Bar:A-1', 'Baz']
+        : ['Foo', 'Bar:A-1', 'Bar:B-1', 'Baz', 'Baz'],
+    );
+    expect(ReactNoop).toMatchRenderedOutput(
       <div>
-        <Foo step={1} />
-        <Baz />
-        <Baz />
+        <span prop="false" />
+        <span prop="false" />
+        <div />
+        <div />
       </div>,
     );
-    ReactNoop.flushDeferredPri(45);
-    assertLog(['Foo', 'Bar:A-1', 'Bar:B-1', 'Baz']);
-
-    // Make an update to the same Bar.
-    instances[0].performAction();
-
-    await waitForAll(['Bar:A-1', 'Baz']);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('calls componentWillMount twice if the initial render is aborted', async () => {
+  it('calls componentWillMount twice if the initial render is aborted', async () => {
     class LifeCycle extends React.Component {
       state = {x: this.props.x};
       UNSAFE_componentWillReceiveProps(nextProps) {
@@ -1206,23 +1325,51 @@ describe('ReactIncremental', () => {
       );
     }
 
-    ReactNoop.render(<App x={0} />);
-    ReactNoop.flushDeferredPri(30);
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
+    }
 
-    assertLog(['App', 'componentWillMount:0-0']);
+    function Root({show, x}) {
+      return [<Sibling key="s" />, show ? <App key="a" x={x} /> : null];
+    }
 
-    ReactNoop.render(<App x={1} />);
+    ReactNoop.render(<Root show={false} x={0} />);
+    await waitForAll(['Sibling']);
+
+    // Start mounting App, and stop once LifeCycle has rendered but before it
+    // completed.
+    React.startTransition(() => {
+      ReactNoop.render(<Root show={true} x={0} />);
+    });
+    await waitFor(['Sibling', 'App', 'componentWillMount:0-0']);
+
+    // Change the props as part of the same transition, and interrupt it with a
+    // higher priority update elsewhere in the tree.
+    React.startTransition(() => {
+      ReactNoop.render(<Root show={true} x={1} />);
+    });
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
+
+    // The mount wasn't committed and the props changed, so LifeCycle mounts
+    // again with the new props.
     await waitForAll([
+      'Sibling',
       'App',
-      'componentWillReceiveProps:0-1',
       'componentWillMount:1-1',
       'Trail',
       'componentDidMount:1-1',
     ]);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('uses state set in componentWillMount even if initial render was aborted', async () => {
+  it('uses state set in componentWillMount even if initial render was aborted', async () => {
     class LifeCycle extends React.Component {
       constructor(props) {
         super(props);
@@ -1246,22 +1393,56 @@ describe('ReactIncremental', () => {
       return <LifeCycle x={props.x} />;
     }
 
-    ReactNoop.render(<App x={0} />);
-    ReactNoop.flushDeferredPri(20);
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
+    }
 
-    assertLog(['App', 'componentWillMount:0(ctor)', 'render:0(willMount)']);
+    function Root({show, x}) {
+      return [<Sibling key="s" />, show ? <App key="a" x={x} /> : null];
+    }
 
-    ReactNoop.render(<App x={1} />);
-    await waitForAll([
+    ReactNoop.render(<Root show={false} x={0} />);
+    await waitForAll(['Sibling']);
+
+    // Start mounting App, and stop once LifeCycle has rendered but before it
+    // completed.
+    React.startTransition(() => {
+      ReactNoop.render(<Root show={true} x={0} />);
+    });
+    await waitFor([
+      'Sibling',
       'App',
-      'componentWillMount:0(willMount)',
+      'componentWillMount:0(ctor)',
+      'render:0(willMount)',
+    ]);
+
+    // Change the props as part of the same transition, and interrupt it with a
+    // higher priority update elsewhere in the tree.
+    React.startTransition(() => {
+      ReactNoop.render(<Root show={true} x={1} />);
+    });
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
+
+    // The mount wasn't committed and the props changed, so LifeCycle mounts
+    // again, and componentWillMount sets its state again.
+    await waitForAll([
+      'Sibling',
+      'App',
+      'componentWillMount:1(ctor)',
       'render:1(willMount)',
       'componentDidMount:1(willMount)',
     ]);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('calls componentWill* twice if an update render is aborted', async () => {
+  it('calls componentWill* again only if an interrupted update render is not continued from', async () => {
     class LifeCycle extends React.Component {
       UNSAFE_componentWillMount() {
         Scheduler.log('componentWillMount:' + this.props.x);
@@ -1294,11 +1475,15 @@ describe('ReactIncremental', () => {
       }
     }
 
-    function Sibling() {
-      // The sibling is used to confirm that we've completed the first child,
-      // but not yet flushed.
-      Scheduler.log('Sibling');
-      return <span />;
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        // The sibling is used to confirm that we've completed the first child,
+        // but not yet flushed, and to interrupt the render.
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
     }
 
     function App(props) {
@@ -1316,10 +1501,10 @@ describe('ReactIncremental', () => {
       'componentDidMount:0',
     ]);
 
-    ReactNoop.render(<App x={1} />);
-    ReactNoop.flushDeferredPri(30);
-
-    assertLog([
+    React.startTransition(() => {
+      ReactNoop.render(<App x={1} />);
+    });
+    await waitFor([
       'App',
       'componentWillReceiveProps:0-1',
       'shouldComponentUpdate:0-1',
@@ -1329,6 +1514,29 @@ describe('ReactIncremental', () => {
       // no componentDidUpdate
     ]);
 
+    // Interrupt the update with a higher priority update elsewhere.
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
+
+    // The update continues. The interrupted render already called the
+    // lifecycles for these props, so if it's continued from, they aren't
+    // called again; only componentDidUpdate is, when it commits.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['Sibling', 'componentDidUpdate:1-0']
+        : [
+            'App',
+            'componentWillReceiveProps:0-1',
+            'shouldComponentUpdate:0-1',
+            'componentWillUpdate:0-1',
+            'render:1',
+            'Sibling',
+            'componentDidUpdate:1-0',
+          ],
+    );
+
     ReactNoop.render(<App x={2} />);
     await waitForAll([
       'App',
@@ -1337,8 +1545,7 @@ describe('ReactIncremental', () => {
       'componentWillUpdate:1-2',
       'render:2',
       'Sibling',
-      // When componentDidUpdate finally gets called, it covers both updates.
-      'componentDidUpdate:2-0',
+      'componentDidUpdate:2-1',
     ]);
   });
 
@@ -1406,8 +1613,7 @@ describe('ReactIncremental', () => {
     await waitForAll(['Child']);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('does not call componentWillReceiveProps for state-only updates', async () => {
+  it('does not call componentWillReceiveProps for state-only updates', async () => {
     const instances = [];
 
     class LifeCycle extends React.Component {
@@ -1447,9 +1653,6 @@ describe('ReactIncremental', () => {
       }
     }
 
-    // This wrap is a bit contrived because we can't pause a completed root and
-    // there is currently an issue where a component can't reuse its render
-    // output unless it fully completed.
     class Wrap extends React.Component {
       state = {y: 0};
       UNSAFE_componentWillMount() {
@@ -1466,11 +1669,14 @@ describe('ReactIncremental', () => {
       }
     }
 
-    function Sibling() {
-      // The sibling is used to confirm that we've completed the first child,
-      // but not yet flushed.
-      Scheduler.log('Sibling');
-      return <span />;
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        // The sibling is used to interrupt the render.
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
     }
 
     function App(props) {
@@ -1488,12 +1694,11 @@ describe('ReactIncremental', () => {
       'componentDidMount:0',
     ]);
 
-    // LifeCycle
-    instances[1].tick();
-
-    ReactNoop.flushDeferredPri(25);
-
-    assertLog([
+    // LifeCycle. Stop after it rendered, before it completed.
+    React.startTransition(() => {
+      instances[1].tick();
+    });
+    await waitFor([
       // no componentWillReceiveProps
       'shouldComponentUpdate:0-1',
       'componentWillUpdate:0-1',
@@ -1501,36 +1706,47 @@ describe('ReactIncremental', () => {
       // no componentDidUpdate
     ]);
 
+    // Interrupt the update with a higher priority update elsewhere.
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
+
+    // If the update is continued from, the lifecycles aren't called again.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['componentDidUpdate:1-0']
+        : [
+            'shouldComponentUpdate:0-1',
+            'componentWillUpdate:0-1',
+            'render:1',
+            'componentDidUpdate:1-0',
+          ],
+    );
+
     // LifeCycle
     instances[1].tick();
-
     await waitForAll([
       // no componentWillReceiveProps
       'shouldComponentUpdate:1-2',
       'componentWillUpdate:1-2',
       'render:2',
-      // When componentDidUpdate finally gets called, it covers both updates.
-      'componentDidUpdate:2-0',
+      'componentDidUpdate:2-1',
     ]);
 
     // Next we will update props of LifeCycle by updating its parent.
-
     instances[0].tick();
-
-    ReactNoop.flushDeferredPri(30);
-
-    assertLog([
+    await waitForAll([
       'Wrap',
       'componentWillReceiveProps',
       'shouldComponentUpdate:2-2',
       'componentWillUpdate:2-2',
       'render:2',
-      // no componentDidUpdate
+      'componentDidUpdate:2-2',
     ]);
 
     // Next we will update LifeCycle directly but not with new props.
     instances[1].tick();
-
     await waitForAll([
       // This should not trigger another componentWillReceiveProps because
       // we never got new props.
@@ -1539,13 +1755,9 @@ describe('ReactIncremental', () => {
       'render:3',
       'componentDidUpdate:3-2',
     ]);
-
-    // TODO: Test that we get the expected values for the same scenario with
-    // incomplete parents.
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('skips will/DidUpdate when bailing unless an update was already in progress', async () => {
+  it('skips will/DidUpdate when bailing unless an update was already in progress', async () => {
     class LifeCycle extends React.Component {
       UNSAFE_componentWillMount() {
         Scheduler.log('componentWillMount');
@@ -1573,9 +1785,13 @@ describe('ReactIncremental', () => {
       }
     }
 
-    function Sibling() {
-      Scheduler.log('render sibling');
-      return <span />;
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('render sibling');
+        return <span />;
+      }
     }
 
     function App(props) {
@@ -1602,10 +1818,10 @@ describe('ReactIncremental', () => {
     ]);
 
     // Begin updating to new props...
-    ReactNoop.render(<App x={1} />);
-    ReactNoop.flushDeferredPri(30);
-
-    assertLog([
+    React.startTransition(() => {
+      ReactNoop.render(<App x={1} />);
+    });
+    await waitFor([
       'componentWillReceiveProps',
       'shouldComponentUpdate',
       'componentWillUpdate',
@@ -1614,19 +1830,26 @@ describe('ReactIncremental', () => {
       // no componentDidUpdate yet
     ]);
 
-    // ...but we'll interrupt it to rerender the same props.
-    ReactNoop.render(<App x={1} />);
-    await waitForAll([]);
+    // ...but we'll interrupt it with a higher priority update elsewhere.
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['render sibling']);
 
-    // We can bail out this time, but we must call componentDidUpdate.
-    assertLog([
-      'componentWillReceiveProps',
-      'shouldComponentUpdate',
-      // no componentWillUpdate
-      // no render
-      'render sibling',
-      'componentDidUpdate',
-    ]);
+    // If the update is continued from, LifeCycle's render is kept as is, but
+    // it's an update that hasn't committed, so componentDidUpdate is called.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['render sibling', 'componentDidUpdate']
+        : [
+            'componentWillReceiveProps',
+            'shouldComponentUpdate',
+            'componentWillUpdate',
+            'render',
+            'render sibling',
+            'componentDidUpdate',
+          ],
+    );
   });
 
   it('can nest batchedUpdates', async () => {
@@ -2338,8 +2561,7 @@ describe('ReactIncremental', () => {
     ]);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('should reuse memoized work if pointers are updated before calling lifecycles', async () => {
+  it('reuses the work of an interrupted render without calling lifecycles again', async () => {
     const cduNextProps = [];
     const cduPrevProps = [];
     const scuNextProps = [];
@@ -2347,6 +2569,7 @@ describe('ReactIncremental', () => {
     let renderCounter = 0;
 
     function SecondChild(props) {
+      Scheduler.log('SecondChild');
       return <span>{props.children}</span>;
     }
 
@@ -2362,6 +2585,7 @@ describe('ReactIncremental', () => {
       }
       render() {
         renderCounter++;
+        Scheduler.log('FirstChild');
         return <span>{this.props.children}</span>;
       }
     }
@@ -2377,26 +2601,36 @@ describe('ReactIncremental', () => {
       }
     }
 
+    let sibling;
+    class Sibling extends React.Component {
+      render() {
+        sibling = this;
+        Scheduler.log('Sibling');
+        return <span />;
+      }
+    }
+
     function Root(props) {
       return (
-        <div hidden={true}>
+        <div>
           <Middle {...props} />
+          <Sibling />
         </div>
       );
     }
 
     // Initial render of the entire tree.
-    // Renders: Root, Middle, FirstChild, SecondChild
     ReactNoop.render(<Root>A</Root>);
-    await waitForAll([]);
+    await waitForAll(['FirstChild', 'SecondChild', 'Sibling']);
 
     expect(renderCounter).toBe(1);
 
-    // Schedule low priority work to update children.
-    // Give it enough time to partially render.
-    // Renders: Root, Middle, FirstChild
-    ReactNoop.render(<Root>B</Root>);
-    ReactNoop.flushDeferredPri(20 + 30 + 5);
+    // Schedule low priority work to update children. Stop once FirstChild has
+    // rendered, before it completed.
+    React.startTransition(() => {
+      ReactNoop.render(<Root>B</Root>);
+    });
+    await waitFor(['FirstChild']);
 
     // At this point our FirstChild component has rendered a second time,
     // But since the render is not completed cDU should not be called yet.
@@ -2406,18 +2640,28 @@ describe('ReactIncremental', () => {
     expect(cduPrevProps).toEqual([]);
     expect(cduNextProps).toEqual([]);
 
-    // Next interrupt the partial render with higher priority work.
-    // The in-progress child content will bailout.
-    // Renders: Root, Middle, FirstChild, SecondChild
-    ReactNoop.render(<Root>B</Root>);
-    await waitForAll([]);
+    // Next interrupt the partial render with higher priority work elsewhere.
+    ReactNoop.flushSync(() => {
+      sibling.setState({});
+    });
+    assertLog(['Sibling']);
 
-    // At this point the higher priority render has completed.
-    // Since FirstChild props didn't change, sCU returned false.
-    // The previous memoized copy should be used.
-    expect(renderCounter).toBe(2);
-    expect(scuPrevProps).toEqual([{children: 'A'}, {children: 'B'}]);
-    expect(scuNextProps).toEqual([{children: 'B'}, {children: 'B'}]);
+    // When the update continues, FirstChild's render is kept if the render is
+    // continued from, without calling shouldComponentUpdate again.
+    await waitForAll(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['SecondChild', 'Sibling']
+        : ['FirstChild', 'SecondChild', 'Sibling'],
+    );
+    if (gate(flags => flags.enableResumingInterruptedRenders)) {
+      expect(renderCounter).toBe(2);
+      expect(scuPrevProps).toEqual([{children: 'A'}]);
+      expect(scuNextProps).toEqual([{children: 'B'}]);
+    } else {
+      expect(renderCounter).toBe(3);
+      expect(scuPrevProps).toEqual([{children: 'A'}, {children: 'A'}]);
+      expect(scuNextProps).toEqual([{children: 'B'}, {children: 'B'}]);
+    }
     expect(cduPrevProps).toEqual([{children: 'A'}]);
     expect(cduNextProps).toEqual([{children: 'B'}]);
   });

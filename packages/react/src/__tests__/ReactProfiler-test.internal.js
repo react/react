@@ -1016,14 +1016,18 @@ describe(`onRender`, () => {
       // And does not include the original (interrupted) 10ms.
       // The tree contains 42ms of base render time at this point,
       // Reflecting the most recent (longer) render durations.
-      // TODO: This actual time should decrease by 10ms once the scheduler supports resuming.
-      await waitForAll(['FirstComponent:10', 'Yield:4']);
+      const didResume = gate(flags => flags.enableResumingInterruptedRenders);
+      // FirstComponent rendered before the interruption and nothing about it
+      // changed, so that render is continued from rather than redone.
+      await waitForAll(
+        didResume ? ['Yield:4'] : ['FirstComponent:10', 'Yield:4'],
+      );
       expect(callback).toHaveBeenCalledTimes(1);
       call = callback.mock.calls[0];
       expect(call[2]).toBe(14); // actual time
       expect(call[3]).toBe(51); // base time
       expect(call[4]).toBe(366); // start time
-      expect(call[5]).toBe(380); // commit time
+      expect(call[5]).toBe(didResume ? 370 : 380); // commit time
     });
 
     it('should accumulate actual time after an error handled by componentDidCatch()', async () => {

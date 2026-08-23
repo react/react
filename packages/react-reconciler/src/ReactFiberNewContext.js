@@ -8,6 +8,12 @@
  */
 
 import type {ReactContext} from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
+import {
+  invalidateInProgressVersion,
+  markInProgressSubtreeStale,
+  popProviderValue,
+} from './ReactFiberResuming';
 import type {
   Fiber,
   ContextDependency,
@@ -150,6 +156,7 @@ export function popProvider(
   }
 
   pop(valueCursor, providerFiber);
+  popProviderValue(providerFiber);
 }
 
 export function scheduleContextWorkOnParentPath(
@@ -157,27 +164,27 @@ export function scheduleContextWorkOnParentPath(
   renderLanes: Lanes,
   propagationRoot: Fiber,
 ) {
-  // Update the child lanes of all the ancestors, including the alternates.
+  // Update the child lanes of all the ancestors. Some of these are fibers in
+  // the current tree that are shared with the work-in-progress tree, and
+  // cloning copies childLanes, which is what makes the work-in-progress render
+  // descend into them. Some of them are work-in-progress fibers; those may
+  // later be reset from their current version (see resetWorkInProgress), so
+  // the current version is marked too.
   let node = parent;
   while (node !== null) {
-    const alternate = node.alternate;
+    markInProgressSubtreeStale(node);
     if (!isSubsetOfLanes(node.childLanes, renderLanes)) {
       node.childLanes = mergeLanes(node.childLanes, renderLanes);
-      if (alternate !== null) {
-        alternate.childLanes = mergeLanes(alternate.childLanes, renderLanes);
-      }
-    } else if (
-      alternate !== null &&
-      !isSubsetOfLanes(alternate.childLanes, renderLanes)
-    ) {
-      alternate.childLanes = mergeLanes(alternate.childLanes, renderLanes);
     } else {
-      // Neither alternate was updated.
       // Normally, this would mean that the rest of the
       // ancestor path already has sufficient priority.
       // However, this is not necessarily true inside offscreen
       // or fallback trees because childLanes may be inconsistent
       // with the surroundings. This is why we continue the loop.
+    }
+    const current = node.instance.current;
+    if (current !== node && !isSubsetOfLanes(current.childLanes, renderLanes)) {
+      current.childLanes = mergeLanes(current.childLanes, renderLanes);
     }
     if (node === propagationRoot) {
       break;
@@ -250,10 +257,7 @@ function propagateContextChanges<T>(
             // checking, but until we have selectors it's not really worth
             // the trouble.
             consumer.lanes = mergeLanes(consumer.lanes, renderLanes);
-            const alternate = consumer.alternate;
-            if (alternate !== null) {
-              alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
-            }
+            invalidateInProgressVersion(consumer);
             scheduleContextWorkOnParentPath(
               consumer.return,
               renderLanes,
@@ -288,10 +292,7 @@ function propagateContextChanges<T>(
       }
 
       parentSuspense.lanes = mergeLanes(parentSuspense.lanes, renderLanes);
-      const alternate = parentSuspense.alternate;
-      if (alternate !== null) {
-        alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
-      }
+      invalidateInProgressVersion(parentSuspense);
       // This is intentionally passing this fiber as the parent
       // because we want to schedule this fiber as having work
       // on its children. We'll use the childLanes on
@@ -317,10 +318,7 @@ function propagateContextChanges<T>(
       // When it re-renders, it will re-mount the primary children,
       // which will read the updated context value.
       fiber.lanes = mergeLanes(fiber.lanes, renderLanes);
-      const alternate = fiber.alternate;
-      if (alternate !== null) {
-        alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
-      }
+      invalidateInProgressVersion(fiber);
       scheduleContextWorkOnParentPath(
         fiber.return,
         renderLanes,
@@ -376,6 +374,12 @@ function propagateContextChanges<T>(
   }
 }
 
+// Whether any provider above `workInProgress` changed its value in this render.
+// Unlike propagating, this doesn't mark anything.
+export function hasChangedParentContexts(workInProgress: Fiber): boolean {
+  return collectChangedParentContexts(workInProgress) !== null;
+}
+
 export function lazilyPropagateParentContextChanges(
   current: Fiber,
   workInProgress: Fiber,
@@ -408,15 +412,15 @@ export function propagateParentContextChangesToDeferredTree(
   );
 }
 
-function propagateParentContextChanges(
-  current: Fiber,
+// The contexts of the providers above `workInProgress` that changed their
+// value in this render, or null if none did. Stops at an ancestor that already
+// propagated, unless inside a tree whose propagation was deferred.
+function collectChangedParentContexts(
   workInProgress: Fiber,
-  renderLanes: Lanes,
-  forcePropagateEntireTree: boolean,
-): boolean {
+): Array<ReactContext<any>> | null {
   // Collect all the parent providers that changed. Since this is usually small
   // number, we use an Array instead of Set.
-  let contexts = null;
+  let contexts: Array<ReactContext<any>> | null = null;
   let parent: null | Fiber = workInProgress;
   let isInsidePropagationBailout = false;
   while (parent !== null) {
@@ -429,7 +433,7 @@ function propagateParentContextChanges(
     }
 
     if (parent.tag === ContextProvider) {
-      const currentParent = parent.alternate;
+      const currentParent = getPreviousVersion(parent);
 
       if (currentParent === null) {
         throw new Error('Should have a current fiber. This is a bug in React.');
@@ -454,7 +458,7 @@ function propagateParentContextChanges(
     } else if (parent === getHostTransitionProvider()) {
       // During a host transition, a host component can act like a context
       // provider. E.g. in React DOM, this would be a <form />.
-      const currentParent = parent.alternate;
+      const currentParent = getPreviousVersion(parent);
       if (currentParent === null) {
         throw new Error('Should have a current fiber. This is a bug in React.');
       }
@@ -477,6 +481,17 @@ function propagateParentContextChanges(
     }
     parent = parent.return;
   }
+
+  return contexts;
+}
+
+function propagateParentContextChanges(
+  current: Fiber,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+  forcePropagateEntireTree: boolean,
+): boolean {
+  const contexts = collectChangedParentContexts(workInProgress);
 
   if (contexts !== null) {
     // If there were any changed providers, search through the children and

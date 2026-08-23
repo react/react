@@ -8,6 +8,7 @@
  */
 
 import type {ViewTransitionProps} from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 
@@ -766,7 +767,7 @@ function recursivelyInsertClones(
   }
 
   if (
-    parentFiber.alternate === null ||
+    getPreviousVersion(parentFiber) === null ||
     (parentFiber.subtreeFlags & MutationMask) !== NoFlags
   ) {
     // If we have mutations or if this is a newly inserted tree, clone as we go.
@@ -798,7 +799,7 @@ function insertDestinationClonesOfFiber(
   parentViewTransition: null | ViewTransitionState,
   visitPhase: VisitPhase,
 ) {
-  const current = finishedWork.alternate;
+  const current = getPreviousVersion(finishedWork);
   if (current === null) {
     // This is a newly mounted subtree. Insert any HostComponents and trigger
     // Enter transitions.
@@ -855,7 +856,13 @@ function insertDestinationClonesOfFiber(
               // individual properties, the Update flag can be a false positive.
               // We have to apply the new props first o detect any mutations and
               // then revert them.
-              commitUpdate(instance, type, oldProps, newProps, finishedWork);
+              commitUpdate(
+                instance,
+                type,
+                oldProps,
+                newProps,
+                finishedWork.instance,
+              );
               if (viewTransitionMutationContext) {
                 console.error(
                   'startGestureTransition() caused something to mutate <%s>. ' +
@@ -867,7 +874,13 @@ function insertDestinationClonesOfFiber(
                 );
               }
               // Revert
-              commitUpdate(instance, type, newProps, oldProps, finishedWork);
+              commitUpdate(
+                instance,
+                type,
+                newProps,
+                oldProps,
+                finishedWork.instance,
+              );
             } finally {
               popMutationContext(prev);
             }
@@ -899,7 +912,7 @@ function insertDestinationClonesOfFiber(
         const oldProps = current.memoizedProps;
         const type = finishedWork.type;
         // Apply the delta to the clone.
-        commitUpdate(clone, type, oldProps, newProps, finishedWork);
+        commitUpdate(clone, type, oldProps, newProps, finishedWork.instance);
       }
 
       if (visitPhase === CLONE_EXIT || visitPhase === CLONE_UNHIDE) {
@@ -1093,7 +1106,7 @@ function recursivelyRestoreNew(
     case ForwardRef:
     case MemoComponent:
     case SimpleMemoComponent: {
-      const current = finishedWork.alternate;
+      const current = getPreviousVersion(finishedWork);
       if (current === null && finishedWork.flags & Update) {
         // Insertion Effects are mounted temporarily during the rendering of the snapshot.
         // We have now already takes a snapshot of the inserted state so we can now unmount
@@ -1119,13 +1132,13 @@ function recursivelyApplyViewTransitions(parentFiber: Fiber) {
   }
 
   if (
-    parentFiber.alternate === null ||
+    getPreviousVersion(parentFiber) === null ||
     (parentFiber.subtreeFlags & MutationMask) !== NoFlags
   ) {
     // If we have mutations or if this is a newly inserted tree, clone as we go.
     let child = parentFiber.child;
     while (child !== null) {
-      const current = child.alternate;
+      const current = getPreviousVersion(child);
       if (current === null) {
         measureExitViewTransitions(child);
         recursivelyRestoreNew(child, parentFiber);
@@ -1281,7 +1294,7 @@ function recursivelyRestoreViewTransitions(parentFiber: Fiber) {
   }
 
   if (
-    parentFiber.alternate === null ||
+    getPreviousVersion(parentFiber) === null ||
     (parentFiber.subtreeFlags & MutationMask) !== NoFlags
   ) {
     // If we have mutations or if this is a newly inserted tree, clone as we go.
@@ -1299,7 +1312,7 @@ function recursivelyRestoreViewTransitions(parentFiber: Fiber) {
 }
 
 function restoreViewTransitionsOnFiber(finishedWork: Fiber) {
-  const current = finishedWork.alternate;
+  const current = getPreviousVersion(finishedWork);
   if (current === null) {
     restoreEnterOrExitViewTransitions(finishedWork);
     return;

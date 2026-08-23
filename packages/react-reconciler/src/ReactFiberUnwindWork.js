@@ -8,6 +8,7 @@
  */
 
 import type {ReactContext} from 'shared/ReactTypes';
+import {getPreviousVersion} from './ReactFiberInstance';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 import type {Lanes} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
@@ -129,7 +130,7 @@ function unwindWork(
       if (activityState !== null) {
         popSuspenseHandler(workInProgress);
 
-        if (workInProgress.alternate === null) {
+        if (getPreviousVersion(workInProgress) === null) {
           throw new Error(
             'Threw in newly mounted dehydrated component. This is likely a bug in ' +
               'React. Please file an issue.',
@@ -157,7 +158,7 @@ function unwindWork(
       popSuspenseHandler(workInProgress);
       const suspenseState: null | SuspenseState = workInProgress.memoizedState;
       if (suspenseState !== null && suspenseState.dehydrated !== null) {
-        if (workInProgress.alternate === null) {
+        if (getPreviousVersion(workInProgress) === null) {
           throw new Error(
             'Threw in newly mounted dehydrated component. This is likely a bug in ' +
               'React. Please file an issue.',

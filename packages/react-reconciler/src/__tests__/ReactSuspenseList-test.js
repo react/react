@@ -1477,7 +1477,9 @@ describe('ReactSuspenseList', () => {
     await act(() => D.resolve());
     assertLog([
       'D',
-      'F',
+      // F already rendered in the attempt that suspended on D. If that attempt
+      // is continued from, it isn't rendered again.
+      ...(gate(flags => flags.enableResumingInterruptedRenders) ? [] : ['F']),
       'Suspend! [B]',
       // pre-warming
       'Suspend! [B]',
@@ -2538,7 +2540,13 @@ describe('ReactSuspenseList', () => {
     );
 
     await act(() => B.resolve());
-    assertLog(['B', 'Suspend! [C]', 'B', 'Suspend! [C]']);
+    // The second attempt continues from the first one's B row, if nothing
+    // about it changed.
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['B', 'Suspend! [C]', 'Suspend! [C]']
+        : ['B', 'Suspend! [C]', 'B', 'Suspend! [C]'],
+    );
 
     // Incremental loading is suspended.
     jest.advanceTimersByTime(500);
@@ -2556,7 +2564,11 @@ describe('ReactSuspenseList', () => {
     );
 
     await act(() => C.resolve());
-    assertLog(['B', 'C']);
+    assertLog(
+      gate(flags => flags.enableResumingInterruptedRenders)
+        ? ['C']
+        : ['B', 'C'],
+    );
 
     expect(ReactNoop).toMatchRenderedOutput(
       <>
@@ -3735,5 +3747,87 @@ describe('ReactSuspenseList', () => {
         'except via a Suspense-compatible library or framework.\n' +
         '    in Foo (at **)',
     ]);
+  });
+  // Portals are only hidden when the host tree can be mutated.
+  // @gate enableSuspenseList && !persistent
+  it('keeps the committed static flags of rows it did not render again', async () => {
+    const portalContainer = ReactNoop.getOrCreateRootContainer('portal');
+    let setB;
+    let setOuter;
+
+    function Inner({id, suspend}) {
+      if (suspend) {
+        Scheduler.log('Suspend ' + id);
+        throw new Promise(() => {});
+      }
+      return <span prop={id} />;
+    }
+
+    const Row = React.memo(function Row({id}) {
+      const [suspend, set] = React.useState(false);
+      if (id === 'b') {
+        setB = set;
+      }
+      Scheduler.log('Row ' + id);
+      return (
+        <>
+          <Suspense fallback={<span prop={'Loading ' + id} />}>
+            <Inner id={id} suspend={suspend} />
+          </Suspense>
+          {id === 'c'
+            ? ReactNoop.createPortal(
+                <span prop="portal" />,
+                portalContainer,
+                null,
+              )
+            : null}
+        </>
+      );
+    });
+
+    function Outer() {
+      const [suspend, set] = React.useState(false);
+      setOuter = set;
+      if (suspend) {
+        throw new Promise(() => {});
+      }
+      return null;
+    }
+
+    function App() {
+      return (
+        <Suspense fallback={<span prop="Outer loading" />}>
+          <div>
+            <SuspenseList revealOrder="forwards" tail="visible">
+              <Row id="a" />
+              <Row id="b" />
+              <Row id="c" />
+            </SuspenseList>
+          </div>
+          <Outer />
+        </Suspense>
+      );
+    }
+
+    await act(() => ReactNoop.render(<App />));
+    assertLog(['Row a', 'Row b', 'Row c']);
+
+    // A transition that suspends in a row and never commits. The list
+    // bails out around the row, so the rows after it are shared with the
+    // committed tree, and then resets its rows to render the tail.
+    await act(async () => {
+      React.startTransition(() => setB(true));
+      await waitFor(['Row b', 'Suspend b']);
+    });
+    assertLog(['Row b', 'Suspend b']);
+
+    // The outer boundary hides its content, including the portal inside the
+    // shared row.
+    await act(() => ReactNoop.flushSync(() => setOuter(true)));
+    expect(ReactNoop.getChildrenAsJSX('portal')).toEqual(
+      <span prop="portal" hidden={true} />,
+    );
+    // The transition retried after the sync commit.
+    assertLog(['Row b', 'Suspend b', 'Row b', 'Suspend b']);
   });
 });

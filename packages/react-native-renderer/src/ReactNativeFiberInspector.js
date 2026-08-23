@@ -160,14 +160,14 @@ function getInspectorDataForViewAtPoint(
             return;
           }
 
+          const closestFiber = internalInstanceHandle.current;
           closestInstance =
-            internalInstanceHandle.stateNode.canonical.internalInstanceHandle;
+            closestFiber.stateNode.canonical.internalInstanceHandle.current;
           const closestPublicInstance =
-            internalInstanceHandle.stateNode.canonical.publicInstance;
+            closestFiber.stateNode.canonical.publicInstance;
 
           // Note: this is deprecated and we want to remove it ASAP. Keeping it here for React DevTools compatibility for now.
-          const nativeViewTag =
-            internalInstanceHandle.stateNode.canonical.nativeTag;
+          const nativeViewTag = closestFiber.stateNode.canonical.nativeTag;
 
           nativeFabricUIManager.measure(
             node,

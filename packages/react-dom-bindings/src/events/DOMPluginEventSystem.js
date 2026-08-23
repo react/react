@@ -814,11 +814,10 @@ export function accumulateSinglePhaseListeners(
     // listeners.
     if (enableCreateEventHandleAPI && nativeEvent.type === 'beforeblur') {
       // $FlowFixMe[prop-missing] internal field
-      const detachedInterceptFiber = nativeEvent._detachedInterceptFiber;
+      const detachedInterceptInstance = nativeEvent._detachedInterceptFiber;
       if (
-        detachedInterceptFiber !== null &&
-        (detachedInterceptFiber === instance ||
-          detachedInterceptFiber === instance.alternate)
+        detachedInterceptInstance !== null &&
+        detachedInterceptInstance === instance.instance
       ) {
         listeners = [];
       }
@@ -909,13 +908,10 @@ function accumulateEnterLeaveListenersForEvent(
 
   let instance: null | Fiber = target;
   while (instance !== null) {
-    if (instance === common) {
+    if (common !== null && instance.instance === common.instance) {
       break;
     }
-    const {alternate, stateNode, tag} = instance;
-    if (alternate !== null && alternate === common) {
-      break;
-    }
+    const {stateNode, tag} = instance;
     if (
       (tag === HostComponent ||
         tag === HostHoistable ||

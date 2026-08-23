@@ -11,7 +11,10 @@ import type {
   AnyNativeEvent,
   LegacyPluginModule,
 } from './legacy-events/PluginModuleType';
-import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
+import type {
+  Fiber,
+  FiberInstance,
+} from 'react-reconciler/src/ReactInternalTypes';
 import type {ReactSyntheticEvent} from './legacy-events/ReactSyntheticEventType';
 import type {
   RNTopLevelEventType,
@@ -96,7 +99,9 @@ export function dispatchEvent(
     nativeEventParam != null && typeof nativeEventParam === 'object'
       ? (nativeEventParam as any)
       : {};
-  const targetFiber = target as null | Fiber;
+  // The target is the internalInstanceHandle that was passed to createNode.
+  const targetInstance = target as null | FiberInstance;
+  const targetFiber = targetInstance == null ? null : targetInstance.current;
 
   let eventTarget = null;
   if (targetFiber != null) {

@@ -1,0 +1,16 @@
+{
+  "name": "fiber-triangle",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "react": "0.0.0-experimental-269dd6ec5",
+    "react-dom": "0.0.0-experimental-269dd6ec5",
+    "react-scripts": "^1.1.4"
+  },
+  "scripts": {
+    "copy-source": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "dev": "react-scripts start",
+    "build": "react-scripts build",
+    "eject": "react-scripts eject"
+  }
+}

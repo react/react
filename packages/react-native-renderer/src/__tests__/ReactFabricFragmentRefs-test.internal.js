@@ -78,7 +78,7 @@ describe('Fabric FragmentRefs', () => {
       );
     });
 
-    expect(fragmentRef && fragmentRef._fragmentFiber).toBeTruthy();
+    expect(fragmentRef && fragmentRef._fiberInstance).toBeTruthy();
   });
 
   describe('observers', () => {
@@ -89,7 +89,9 @@ describe('Fabric FragmentRefs', () => {
         observe: entry => {
           // Here we reference internals because we don't need to mock the native observer
           // We only need to test that each child node is observed on insertion
-          logs.push(entry.__internalInstanceHandle.pendingProps.nativeID);
+          logs.push(
+            entry.__internalInstanceHandle.current.pendingProps.nativeID,
+          );
         },
       };
       function Test({showB}) {

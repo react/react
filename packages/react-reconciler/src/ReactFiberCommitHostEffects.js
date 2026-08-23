@@ -79,10 +79,10 @@ export function commitHostMount(finishedWork: Fiber) {
         instance,
         type,
         props,
-        finishedWork,
+        finishedWork.instance,
       );
     } else {
-      commitMount(instance, type, props, finishedWork);
+      commitMount(instance, type, props, finishedWork.instance);
     }
   } catch (error) {
     captureCommitPhaseError(finishedWork, finishedWork.return, error);
@@ -101,10 +101,10 @@ export function commitHostHydratedInstance(finishedWork: Fiber) {
         instance,
         type,
         props,
-        finishedWork,
+        finishedWork.instance,
       );
     } else {
-      commitHydratedInstance(instance, type, props, finishedWork);
+      commitHydratedInstance(instance, type, props, finishedWork.instance);
     }
   } catch (error) {
     captureCommitPhaseError(finishedWork, finishedWork.return, error);
@@ -125,7 +125,7 @@ export function commitHostUpdate(
         finishedWork.type,
         oldProps,
         newProps,
-        finishedWork,
+        finishedWork.instance,
       );
     } else {
       commitUpdate(
@@ -133,7 +133,7 @@ export function commitHostUpdate(
         finishedWork.type,
         oldProps,
         newProps,
-        finishedWork,
+        finishedWork.instance,
       );
     }
     // Mutations are tracked manually from within commitUpdate.
@@ -759,14 +759,14 @@ export function commitHostSingletonAcquisition(finishedWork: Fiber) {
         finishedWork.type,
         props,
         singleton,
-        finishedWork,
+        finishedWork.instance,
       );
     } else {
       acquireSingletonInstance(
         finishedWork.type,
         props,
         singleton,
-        finishedWork,
+        finishedWork.instance,
       );
     }
   } catch (error) {

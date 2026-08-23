@@ -124,7 +124,12 @@ export function createProfilerTools(
     const {ReactTypeOfWork, getDisplayNameForFiber} = internals;
     const displayName = getDisplayNameForFiber(fiber);
     if (displayName != null) {
-      const prevFiber = fiber.alternate;
+      // The version of the node that this commit replaced. Older versions of
+      // React keep it on the fiber as its alternate.
+      const prevFiber =
+        fiber.instance !== undefined
+          ? fiber.instance.previous
+          : (fiber as any).alternate;
       if (
         prevFiber == null ||
         didFiberRender(ReactTypeOfWork, prevFiber, fiber)

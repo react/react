@@ -245,10 +245,10 @@ describe('React hooks DevTools integration', () => {
       expect(renderer.toJSON().children).toEqual(['Done']);
 
       // Ensure it checks specific fibers.
-      setSuspenseHandler(f => f === fiber || f === fiber.alternate);
+      setSuspenseHandler(f => f.instance === fiber.instance);
       await act(() => scheduleUpdate(fiber)); // Re-render
       expect(renderer.toJSON().children).toEqual(['Loading']);
-      setSuspenseHandler(f => f !== fiber && f !== fiber.alternate);
+      setSuspenseHandler(f => f.instance !== fiber.instance);
       await act(() => scheduleUpdate(fiber)); // Re-render
       expect(renderer.toJSON().children).toEqual(['Done']);
     } else {
@@ -305,10 +305,10 @@ describe('React hooks DevTools integration', () => {
       expect(renderer.toJSON().children).toEqual(['Done']);
 
       // Ensure it checks specific fibers.
-      setSuspenseHandler(f => f === fiber || f === fiber.alternate);
+      setSuspenseHandler(f => f.instance === fiber.instance);
       await act(() => scheduleUpdate(fiber)); // Re-render
       expect(renderer.toJSON().children).toEqual(['Loading']);
-      setSuspenseHandler(f => f !== fiber && f !== fiber.alternate);
+      setSuspenseHandler(f => f.instance !== fiber.instance);
       await act(() => scheduleUpdate(fiber)); // Re-render
       expect(renderer.toJSON().children).toEqual(['Done']);
     } else {
