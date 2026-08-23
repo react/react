@@ -6488,6 +6488,25 @@ function flushCompletedChunks(request: Request): void {
     flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
+    // There are no pending chunks left, so the render is complete and its cache
+    // signal is aborted here. Debug chunks can still be pending, but they carry
+    // development-only instrumentation rather than the render's output.
+    //
+    // This runs before the stream bookkeeping below, because that bookkeeping
+    // can close the main stream and set the status to CLOSED while debug chunks
+    // are outstanding. The abort only happens below ABORTING, so a later flush
+    // would skip it. Repeated flushes are safe, because aborting an aborted
+    // controller does nothing a second time.
+    //
+    // The taint queue stays untouched here. Debug chunks are checked against
+    // the taint registry as they are written, and a deferred debug object can
+    // be written long after this point.
+    if (request.status < ABORTING) {
+      const abortReason = new Error(
+        'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
+      );
+      request.cacheController.abort(abortReason);
+    }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
       if (request.pendingDebugChunks === 0) {
@@ -6517,12 +6536,6 @@ function flushCompletedChunks(request: Request): void {
     // We're done.
     if (enableTaint) {
       cleanupTaintQueue(request);
-    }
-    if (request.status < ABORTING) {
-      const abortReason = new Error(
-        'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
-      );
-      request.cacheController.abort(abortReason);
     }
     if (request.destination !== null) {
       request.status = CLOSED;
@@ -6657,6 +6670,34 @@ function finishAbort(
     logRecoverableError(request, error, null);
     fatalError(request, error);
   }
+}
+
+// Aborts the request when the caller's signal aborts. The cache controller's
+// signal bounds the listener's lifetime, so the runtime removes the listener as
+// soon as that signal aborts. The cache controller aborts at every point that
+// ends the render: a fatal error, the completion of the flush loop, and abort()
+// itself. From any of those points on, abort() returns early, so the listener
+// has nothing left to do.
+//
+// The listener has to be removed, because it would otherwise keep the whole
+// Request reachable for as long as the caller's signal lives. A composite
+// signal from AbortSignal.any() is itself retained by the runtime while it has
+// any abort listener attached.
+//
+// A request whose stream is neither consumed nor cancelled never ends, so its
+// listener stays attached for as long as the caller's signal lives.
+export function attachAbortSignal(request: Request, signal: AbortSignal): void {
+  if (signal.aborted) {
+    abort(request, signal.reason);
+    return;
+  }
+  signal.addEventListener(
+    'abort',
+    () => {
+      abort(request, signal.reason);
+    },
+    {signal: request.cacheController.signal},
+  );
 }
 
 export function abort(request: Request, reason: mixed): void {
