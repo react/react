@@ -790,7 +790,9 @@ export default class Agent extends EventEmitter<{
     const renderer = this._rendererInterfaces[
       rendererID as any
     ] as any as RendererInterface;
-    if (renderer.supportsTogglingSuspense) {
+    if (renderer == null) {
+      console.warn(`Invalid renderer id "${rendererID}"`);
+    } else if (renderer.supportsTogglingSuspense) {
       renderer.overrideSuspenseMilestone(suspendedSet);
     }
   };
