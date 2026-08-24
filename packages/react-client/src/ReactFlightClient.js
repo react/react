@@ -1771,7 +1771,7 @@ function fulfillReference(
       const element: any = handler.value;
       switch (key) {
         case '3':
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           element.props = mappedValue;
@@ -1789,7 +1789,7 @@ function fulfillReference(
           }
           break;
         default:
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           break;
@@ -1867,7 +1867,11 @@ function rejectReference(
         // $FlowFixMe[cannot-write]
         erroredComponent.debugTask = element._debugTask;
       }
-      chunk._debugInfo.push(erroredComponent);
+      try {
+        chunk._debugInfo.push(erroredComponent);
+      } catch (e) {
+        // If _debugInfo is full or cannot accept pushes, continue without failing the error handler
+      }
     }
   }
 
@@ -2159,13 +2163,21 @@ function transferReferencedDebugInfo(
     if (parentChunk !== null) {
       const referencedDebugInfo = referencedChunk._debugInfo;
       const parentDebugInfo = parentChunk._debugInfo;
+      // Cap debug info accumulation to prevent unbounded superlinear growth on heavily deduplicated model graphs
+      const MAX_DEBUG_INFO_ENTRIES = 50000;
+      if (parentDebugInfo.length >= MAX_DEBUG_INFO_ENTRIES) {
+        return;
+      }
       for (let i = 0; i < referencedDebugInfo.length; ++i) {
+        if (parentDebugInfo.length >= MAX_DEBUG_INFO_ENTRIES) {
+          break;
+        }
         const debugInfoEntry = referencedDebugInfo[i];
         if (debugInfoEntry.name != null) {
           debugInfoEntry as ReactComponentInfo;
           // We're not transferring Component info since we use Component info
           // in Debug info to fill in gaps between Fibers for the parent stack.
-        } else {
+        } else if (!parentDebugInfo.includes(debugInfoEntry)) {
           parentDebugInfo.push(debugInfoEntry);
         }
       }
