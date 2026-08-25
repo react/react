@@ -631,7 +631,7 @@ pub fn compile_fn(
     }
 
     context.timing.start("AlignObjectMethodScopes");
-    react_compiler_inference::align_object_method_scopes(&mut hir, &mut env);
+    react_compiler_inference::align_object_method_scopes(&mut hir, &mut env)?;
     context.timing.stop();
 
     if context.debug_enabled {
@@ -1742,7 +1742,7 @@ fn run_pipeline_passes(
     }
 
     react_compiler_inference::align_method_call_scopes(hir, env);
-    react_compiler_inference::align_object_method_scopes(hir, env);
+    react_compiler_inference::align_object_method_scopes(hir, env)?;
 
     react_compiler_optimization::prune_unused_labels_hir(hir);
 
