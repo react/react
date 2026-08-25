@@ -1779,6 +1779,41 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
+    it('keeps children removed from the fragment in the observer target set', async () => {
+      const observerMock = mockIntersectionObserver();
+      const fragmentRef = React.createRef();
+      const childARef = React.createRef();
+      const childBRef = React.createRef();
+      const observer = new IntersectionObserver(() => {});
+
+      function Test({showB}) {
+        return (
+          <React.Fragment ref={fragmentRef}>
+            <div ref={childARef}>A</div>
+            {showB && <div ref={childBRef}>B</div>}
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test showB={true} />));
+      fragmentRef.current.observeUsing(observer);
+
+      const childA = childARef.current;
+      const childB = childBRef.current;
+      expect(observerMock.observedTargets).toEqual([childA, childB]);
+
+      await act(() => root.render(<Test showB={false} />));
+      // Deleted children stay in the observer's target set.
+      expect(observerMock.observedTargets).toEqual([childA, childB]);
+
+      // unobserveUsing only walks current children, so it cannot clean up
+      // deleted ones either.
+      fragmentRef.current.unobserveUsing(observer);
+      expect(observerMock.observedTargets).toEqual([childB]);
+    });
+
+    // @gate enableFragmentRefs
     it('warns when unobserveUsing() is called with an observer that was not observed', async () => {
       const fragmentRef = React.createRef();
       const observer = new IntersectionObserver(() => {});
