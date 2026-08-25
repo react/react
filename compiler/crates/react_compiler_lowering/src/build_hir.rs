@@ -2055,20 +2055,19 @@ fn lower_expression(
                     JsxTag::Builtin(b) => b.name.clone(),
                     _ => "fbt".to_string(),
                 };
-                // Get the opening element's name identifier and check if it's a local binding
                 if let react_compiler_ast::jsx::JSXElementName::JSXIdentifier(jsx_id) =
                     &jsx_element.opening_element.name
                 {
                     let id_loc = convert_opt_loc(&jsx_id.base.loc);
-                    // Check if fbt/fbs tag name resolves to a local binding.
-                    // JSX identifiers may not be in our position-based reference map,
-                    // so check if ANY binding with this name exists in the function scope.
-                    let is_local_binding = builder.has_local_binding(&jsx_id.name);
-                    if is_local_binding {
-                        // Record as a Diagnostic (not ErrorDetail) to match TS behavior
-                        // where CompilerError.invariant creates a CompilerDiagnostic.
-                        // TS invariant() throws immediately, so only the first fbt error
-                        // is reported. We return Err to match this behavior.
+                    let error_count = builder.environment().error_count();
+                    let local_binding =
+                        builder.resolve_local_binding_by_name(&jsx_id.name, id_loc.clone())?;
+                    if builder.environment().error_count() > error_count {
+                        // If fbt introduced a new error, return it specifically
+                        return Err(builder.environment_mut().take_errors_since(error_count));
+                    }
+
+                    if local_binding.is_some() {
                         let reason = format!("<{}> tags should be module-level imports", tag_name);
                         return Err(CompilerDiagnostic::new(
                             ErrorCategory::Invariant,
@@ -2589,8 +2588,12 @@ fn lower_block_statement(
     block: &react_compiler_ast::statements::BlockStatement,
     parent_scope: Option<react_compiler_ast::scope::ScopeId>,
 ) -> Result<(), CompilerError> {
-    let _ = lower_block_statement_inner(builder, block, None, parent_scope);
-    Ok(())
+    Ok(lower_block_statement_inner(
+        builder,
+        block,
+        None,
+        parent_scope,
+    )?)
 }
 
 fn lower_block_statement_with_scope(
@@ -2598,8 +2601,12 @@ fn lower_block_statement_with_scope(
     block: &react_compiler_ast::statements::BlockStatement,
     scope_override: react_compiler_ast::scope::ScopeId,
 ) -> Result<(), CompilerError> {
-    let _ = lower_block_statement_inner(builder, block, Some(scope_override), None);
-    Ok(())
+    Ok(lower_block_statement_inner(
+        builder,
+        block,
+        Some(scope_override),
+        None,
+    )?)
 }
 
 fn lower_block_statement_inner(
