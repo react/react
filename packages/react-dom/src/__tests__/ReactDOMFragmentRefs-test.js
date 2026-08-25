@@ -1779,7 +1779,7 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
-    it('keeps children removed from the fragment in the observer target set', async () => {
+    it('unobserves children removed from the fragment', async () => {
       const observerMock = mockIntersectionObserver();
       const fragmentRef = React.createRef();
       const childARef = React.createRef();
@@ -1804,13 +1804,10 @@ describe('FragmentRefs', () => {
       expect(observerMock.observedTargets).toEqual([childA, childB]);
 
       await act(() => root.render(<Test showB={false} />));
-      // Deleted children stay in the observer's target set.
-      expect(observerMock.observedTargets).toEqual([childA, childB]);
+      expect(observerMock.observedTargets).toEqual([childA]);
 
-      // unobserveUsing only walks current children, so it cannot clean up
-      // deleted ones either.
       fragmentRef.current.unobserveUsing(observer);
-      expect(observerMock.observedTargets).toEqual([childB]);
+      expect(observerMock.observedTargets).toEqual([]);
     });
 
     // @gate enableFragmentRefs

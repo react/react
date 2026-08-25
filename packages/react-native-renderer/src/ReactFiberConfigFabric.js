@@ -943,6 +943,16 @@ export function deleteChildFromFragmentInstance(
   const publicInstance = getPublicInstance(
     instance,
   ) as any as PublicInstanceWithFragmentHandles;
+  if (fragmentInstance._observers !== null) {
+    if (publicInstance == null) {
+      throw new Error('Expected to find a host node. This is a bug in React.');
+    }
+    // $FlowFixMe[incompatible-type]
+    fragmentInstance._observers.forEach(observer => {
+      // $FlowFixMe[incompatible-type] Element types are behind a flag in RN
+      observer.unobserve(publicInstance);
+    });
+  }
   if (enableFragmentRefsInstanceHandles) {
     if (publicInstance.reactFragments != null) {
       publicInstance.reactFragments.delete(fragmentInstance);

@@ -123,7 +123,7 @@ describe('Fabric FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
-    it('keeps children removed from the fragment in the observer target set', async () => {
+    it('unobserves children removed from the fragment', async () => {
       const observed = [];
       const observer = {
         observe: instance => {
@@ -167,8 +167,7 @@ describe('Fabric FragmentRefs', () => {
       await act(() => {
         ReactFabric.render(<Test showB={false} />, 11, null, true);
       });
-      // Deleted children stay in the observer's target set.
-      expect(observed).toEqual([childA, childB]);
+      expect(observed).toEqual([childA]);
     });
   });
 });

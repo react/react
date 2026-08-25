@@ -3826,6 +3826,11 @@ export function deleteChildFromFragmentInstance(
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
+  if (fragmentInstance._observers !== null) {
+    fragmentInstance._observers.forEach(observer => {
+      observer.unobserve(instance);
+    });
+  }
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {
       instance.reactFragments.delete(fragmentInstance);
