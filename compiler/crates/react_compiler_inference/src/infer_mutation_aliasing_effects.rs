@@ -346,6 +346,107 @@ impl ValueReasonSet {
 // InferenceState
 // =============================================================================
 
+/// Number of `ValueId`s a [`ValueIdSet`] holds before spilling to the heap.
+///
+/// Measured against a corpus of real projects containing over 10,000 files,
+/// 97.6% of these sets hold a single value, 99.7% hold at most two, and 99.98%
+/// at most five. Five entries is coincidentally "free" since it fits in the
+/// overhead of the `Vec` we're replacing, so it's a natural cut-off.
+const VALUE_ID_INLINE_CAPACITY: usize = 5;
+
+/// An insertion-ordered set of `ValueId`s.
+///
+/// This was previously an `FxHashSet`, which allocated for every entry of
+/// [`InferenceState::variables`] — and since the inference fixpoint retains a
+/// state per block, those overwhelmingly single-element sets were the largest
+/// remaining source of peak heap in the pass. Almost all of them now live
+/// inline, similar to a `tinyvec` / `smolvec`.
+///
+/// It maintains insertion order, bringing it closer to the original TS
+/// implementation, which uses a `Set` and iterates it in insertion order.
+#[derive(Debug, Clone)]
+enum ValueIdSet {
+    Inline {
+        items: [ValueId; VALUE_ID_INLINE_CAPACITY],
+        len: u8,
+    },
+    Spilled(Vec<ValueId>),
+}
+
+impl Default for ValueIdSet {
+    fn default() -> Self {
+        ValueIdSet::Inline {
+            items: [ValueId(0); VALUE_ID_INLINE_CAPACITY],
+            len: 0,
+        }
+    }
+}
+
+impl ValueIdSet {
+    fn single(value: ValueId) -> Self {
+        let mut set = Self::default();
+        set.insert(value);
+        set
+    }
+
+    fn as_slice(&self) -> &[ValueId] {
+        match self {
+            ValueIdSet::Inline { items, len } => &items[..*len as usize],
+            ValueIdSet::Spilled(values) => values,
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = ValueId> + '_ {
+        self.as_slice().iter().copied()
+    }
+
+    fn contains(&self, value: ValueId) -> bool {
+        self.as_slice().contains(&value)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+
+    /// Appends `value` if not already present, spilling to the heap once the
+    /// inline capacity is exhausted.
+    fn insert(&mut self, value: ValueId) {
+        if self.contains(value) {
+            return;
+        }
+        match self {
+            ValueIdSet::Inline { items, len } if (*len as usize) < VALUE_ID_INLINE_CAPACITY => {
+                items[*len as usize] = value;
+                *len += 1;
+            }
+            ValueIdSet::Inline { items, len } => {
+                let mut values = items[..*len as usize].to_vec();
+                values.push(value);
+                *self = ValueIdSet::Spilled(values);
+            }
+            ValueIdSet::Spilled(values) => values.push(value),
+        }
+    }
+
+    /// Adds every member of `other`, keeping `self`'s order and appending
+    /// newcomers in `other`'s order.
+    fn union_with(&mut self, other: &ValueIdSet) {
+        for value in other.iter() {
+            self.insert(value);
+        }
+    }
+}
+
+impl FromIterator<ValueId> for ValueIdSet {
+    fn from_iter<T: IntoIterator<Item = ValueId>>(iter: T) -> Self {
+        let mut set = Self::default();
+        for value in iter {
+            set.insert(value);
+        }
+        set
+    }
+}
+
 /// The abstract state tracked during inference.
 /// Uses interior mutability via a struct with direct fields (no Rc needed since
 /// we always have exclusive access in the pass).
@@ -355,7 +456,7 @@ struct InferenceState {
     /// The kind of each value, based on its allocation site
     values: FxHashMap<ValueId, AbstractValue>,
     /// The set of values pointed to by each identifier
-    variables: FxHashMap<IdentifierId, FxHashSet<ValueId>>,
+    variables: FxHashMap<IdentifierId, ValueIdSet>,
     /// Tracks uninitialized identifier access errors (matches TS invariant).
     /// Uses Cell so it can be set from `&self` methods like `kind()`.
     /// Stores (IdentifierId, usage_loc) where usage_loc is the source location
@@ -392,8 +493,8 @@ impl InferenceState {
             }
         };
         let mut merged_kind: Option<AbstractValue> = None;
-        for value_id in values {
-            let kind = match self.values.get(value_id) {
+        for value_id in values.iter() {
+            let kind = match self.values.get(&value_id) {
                 Some(k) => k,
                 None => continue,
             };
@@ -413,9 +514,8 @@ impl InferenceState {
     }
 
     fn define(&mut self, place_id: IdentifierId, value_id: ValueId) {
-        let mut set = FxHashSet::default();
-        set.insert(value_id);
-        self.variables.insert(place_id, set);
+        self.variables
+            .insert(place_id, ValueIdSet::single(value_id));
     }
 
     fn assign(&mut self, into: IdentifierId, from: IdentifierId) {
@@ -425,8 +525,7 @@ impl InferenceState {
                 // Create a stable value for uninitialized identifiers
                 // Use a deterministic ID based on the from identifier
                 let vid = ValueId(from.0 | 0x80000000);
-                let mut set = FxHashSet::default();
-                set.insert(vid);
+                let set = ValueIdSet::single(vid);
                 if !self.values.contains_key(&vid) {
                     self.values.insert(
                         vid,
@@ -451,7 +550,8 @@ impl InferenceState {
             Some(v) => v.clone(),
             None => return,
         };
-        let merged: FxHashSet<ValueId> = prev_values.union(&new_values).copied().collect();
+        let mut merged = prev_values;
+        merged.union_with(&new_values);
         self.variables.insert(place, merged);
     }
 
@@ -461,7 +561,7 @@ impl InferenceState {
 
     fn values_for(&self, place_id: IdentifierId) -> Vec<ValueId> {
         match self.variables.get(&place_id) {
-            Some(values) => values.iter().copied().collect(),
+            Some(values) => values.iter().collect(),
             None => Vec::new(),
         }
     }
@@ -470,8 +570,8 @@ impl InferenceState {
     fn kind_opt(&self, place_id: IdentifierId) -> Option<AbstractValue> {
         let values = self.variables.get(&place_id)?;
         let mut merged_kind: Option<AbstractValue> = None;
-        for value_id in values {
-            let kind = self.values.get(value_id)?;
+        for value_id in values.iter() {
+            let kind = self.values.get(&value_id)?;
             merged_kind = Some(match merged_kind {
                 Some(prev) => merge_abstract_values(&prev, kind),
                 None => kind.clone(),
@@ -558,7 +658,7 @@ impl InferenceState {
 
     fn merge(&self, other: &InferenceState) -> Option<InferenceState> {
         let mut next_values: Option<FxHashMap<ValueId, AbstractValue>> = None;
-        let mut next_variables: Option<FxHashMap<IdentifierId, FxHashSet<ValueId>>> = None;
+        let mut next_variables: Option<FxHashMap<IdentifierId, ValueIdSet>> = None;
 
         // Merge values present in both
         for (id, this_value) in &self.values {
@@ -583,17 +683,11 @@ impl InferenceState {
         // Merge variables present in both
         for (id, this_values) in &self.variables {
             if let Some(other_values) = other.variables.get(id) {
-                let mut has_new = false;
-                for ov in other_values {
-                    if !this_values.contains(ov) {
-                        has_new = true;
-                        break;
-                    }
-                }
+                let has_new = other_values.iter().any(|ov| !this_values.contains(ov));
                 if has_new {
                     let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                    let merged: FxHashSet<ValueId> =
-                        this_values.union(other_values).copied().collect();
+                    let mut merged = this_values.clone();
+                    merged.union_with(other_values);
                     nvars.insert(*id, merged);
                 }
             }
@@ -623,11 +717,11 @@ impl InferenceState {
         phi_place_id: IdentifierId,
         phi_operands: &IndexMap<BlockId, Place, FxBuildHasher>,
     ) {
-        let mut values: FxHashSet<ValueId> = FxHashSet::default();
+        let mut values = ValueIdSet::default();
         for (_, operand) in phi_operands {
             if let Some(operand_values) = self.variables.get(&operand.identifier) {
-                for v in operand_values {
-                    values.insert(*v);
+                for v in operand_values.iter() {
+                    values.insert(v);
                 }
             }
             // If not found, it's a backedge that will be handled later by merge
