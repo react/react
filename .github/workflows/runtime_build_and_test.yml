@@ -82,6 +82,38 @@ jobs:
       - run: yarn --cwd compiler install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
 
+  # ----- BUILD WEIGHTS -----
+  # Pins one weights snapshot for the whole run. A cache restore with
+  # restore-keys returns the newest entry at call time, so 50 workers
+  # restoring individually can disagree when another run saves a new entry
+  # mid-fan-out, which scrambles the shard assignment and drops bundles from
+  # the build.
+  resolve_build_weights:
+    name: Resolve build shard weights
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.available.outputs.available }}
+    steps:
+      - name: Restore latest build shard weights
+        id: weights
+        uses: actions/cache/restore@v4
+        with:
+          # Must match the save step's path in process_artifacts_combined
+          # exactly: the cache version is a hash of the path, so a different
+          # path never matches the key.
+          path: build-weights.json
+          key: build-weights-v1-${{ github.run_id }}
+          restore-keys: build-weights-v1-
+      - id: available
+        run: echo "available=${{ steps.weights.outputs.cache-matched-key != '' }}" >> "$GITHUB_OUTPUT"
+      - name: Publish build shard weights for this run
+        if: steps.available.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-weights
+          path: build-weights.json
+          if-no-files-found: error
+
   # ----- FLOW -----
   discover_flow_inline_configs:
     name: Discover flow inline configs
@@ -269,7 +301,7 @@ jobs:
   # ----- BUILD -----
   build_and_lint:
     name: yarn build and lint
-    needs: [runtime_compiler_node_modules_cache]
+    needs: [runtime_compiler_node_modules_cache, resolve_build_weights]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -307,15 +339,14 @@ jobs:
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: yarn --cwd compiler install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
-      - name: Restore build shard weights
-        uses: actions/cache/restore@v4
+      # Pinned once per run by resolve_build_weights so every worker computes
+      # the same shard assignment. Absent on a cold start; the build then
+      # falls back to round-robin sharding.
+      - name: Download build shard weights
+        if: needs.resolve_build_weights.outputs.available == 'true'
+        uses: actions/download-artifact@v4
         with:
-          # Written by process_artifacts_combined on every push. The
-          # restore-keys prefix picks up the most recent entry. On a miss the
-          # build falls back to round-robin sharding.
-          path: build-weights.json
-          key: build-weights-v1-${{ github.run_id }}
-          restore-keys: build-weights-v1-
+          name: build-weights
       # setup-java's exports (e.g. JAVA_HOME) only apply to steps after this wait.
       - name: Wait for Java setup
         wait: setup_java
@@ -469,7 +500,7 @@ jobs:
 
   process_artifacts_combined:
     name: Process artifacts combined
-    needs: [build_and_lint, runtime_node_modules_cache]
+    needs: [build_and_lint, runtime_node_modules_cache, resolve_build_weights]
     permissions:
       # https://github.com/actions/attest-build-provenance
       id-token: write
@@ -505,15 +536,14 @@ jobs:
       - name: Wait for archived build
         wait: download_build
       # Only used to log weight variance; the new measurement is what gets
-      # saved, so removed bundles drop out instead of accumulating.
-      - name: Restore previous build shard weights
-        uses: actions/cache/restore@v4
+      # saved, so removed bundles drop out instead of accumulating. Downloads
+      # the run's pinned snapshot so the diff compares against the weights
+      # that actually drove this run's assignment.
+      - name: Download previous build shard weights
+        if: needs.resolve_build_weights.outputs.available == 'true'
+        uses: actions/download-artifact@v4
         with:
-          # Must match the save step's path exactly: the cache version is a
-          # hash of the path, so a different path never matches the key.
-          path: build-weights.json
-          key: build-weights-v1-${{ github.run_id }}
-          restore-keys: build-weights-v1-
+          name: build-weights
       - name: Update build shard weights
         run: node scripts/ci/merge-build-weights.js
       - name: Save build shard weights
