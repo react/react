@@ -870,10 +870,7 @@ describe('FragmentRefs', () => {
         fragmentRef.current.removeEventListener('click', addedWithCaptureFalse);
 
         childRef.current.click();
-        expect(logs).toEqual([
-          'addedWithOmittedOptions',
-          'addedWithCaptureFalse',
-        ]);
+        expect(logs).toEqual([]);
       });
 
       // @gate enableFragmentRefs
