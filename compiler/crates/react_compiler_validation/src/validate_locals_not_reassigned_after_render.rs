@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::{CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory};
 use react_compiler_hir::environment::Environment;
@@ -20,7 +20,7 @@ use react_compiler_hir::{
 /// This prevents a category of bugs in which a closure captures a
 /// binding from one render but does not update.
 pub fn validate_locals_not_reassigned_after_render(func: &HirFunction, env: &mut Environment) {
-    let mut context_variables: HashSet<IdentifierId> = HashSet::new();
+    let mut context_variables: FxHashSet<IdentifierId> = FxHashSet::default();
     let mut diagnostics: Vec<CompilerDiagnostic> = Vec::new();
 
     let reassignment = get_context_reassignment(
@@ -85,13 +85,13 @@ fn get_context_reassignment(
     types: &[Type],
     functions: &[HirFunction],
     env: &Environment,
-    context_variables: &mut HashSet<IdentifierId>,
+    context_variables: &mut FxHashSet<IdentifierId>,
     is_function_expression: bool,
     is_async: bool,
     diagnostics: &mut Vec<CompilerDiagnostic>,
 ) -> Option<Place> {
     // Maps identifiers to the place that they reassign
-    let mut reassigning_functions: HashMap<IdentifierId, Place> = HashMap::new();
+    let mut reassigning_functions: FxHashMap<IdentifierId, Place> = FxHashMap::default();
 
     for (_block_id, block) in &func.body.blocks {
         for &instruction_id in &block.instructions {

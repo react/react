@@ -59,7 +59,6 @@
     "confusing-browser-globals": "^1.0.9",
     "core-js": "^3.6.4",
     "create-react-class": "^15.6.3",
-    "danger": "^11.2.3",
     "error-stack-parser": "^2.0.6",
     "eslint": "^7.7.0",
     "eslint-config-prettier": "^6.9.0",

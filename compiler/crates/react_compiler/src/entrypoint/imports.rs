@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_ast::common::BaseNode;
 use react_compiler_ast::declarations::{
@@ -72,9 +72,9 @@ pub struct ProgramContext {
     pub debug_enabled: bool,
 
     // Internal state
-    already_compiled: HashSet<u32>,
-    known_referenced_names: HashSet<String>,
-    imports: HashMap<String, HashMap<String, NonLocalImportSpecifier>>,
+    already_compiled: FxHashSet<u32>,
+    known_referenced_names: FxHashSet<String>,
+    imports: FxHashMap<String, FxHashMap<String, NonLocalImportSpecifier>>,
 }
 
 impl ProgramContext {
@@ -104,9 +104,9 @@ impl ProgramContext {
             renames: Vec::new(),
             timing: TimingData::new(profiling),
             debug_enabled,
-            already_compiled: HashSet::new(),
-            known_referenced_names: HashSet::new(),
-            imports: HashMap::new(),
+            already_compiled: FxHashSet::default(),
+            known_referenced_names: FxHashSet::default(),
+            imports: FxHashMap::default(),
         }
     }
 
@@ -230,13 +230,13 @@ impl ProgramContext {
     }
 
     /// Get the set of known referenced names for seeding per-function Environment UID generation.
-    pub fn known_referenced_names(&self) -> &HashSet<String> {
+    pub fn known_referenced_names(&self) -> &FxHashSet<String> {
         &self.known_referenced_names
     }
 
     /// Merge UID names generated during a function compilation back into the program context,
     /// so subsequent function compilations avoid collisions.
-    pub fn merge_uid_known_names(&mut self, names: &HashSet<String>) {
+    pub fn merge_uid_known_names(&mut self, names: &FxHashSet<String>) {
         self.known_referenced_names.extend(names.iter().cloned());
     }
 
@@ -259,7 +259,7 @@ impl ProgramContext {
     }
 
     /// Get an immutable view of the generated imports.
-    pub fn imports(&self) -> &HashMap<String, HashMap<String, NonLocalImportSpecifier>> {
+    pub fn imports(&self) -> &FxHashMap<String, FxHashMap<String, NonLocalImportSpecifier>> {
         &self.imports
     }
 }
@@ -274,7 +274,7 @@ pub fn validate_restricted_imports(
         Some(b) if !b.is_empty() => b,
         _ => return None,
     };
-    let restricted: HashSet<&str> = blocklisted.iter().map(|s| s.as_str()).collect();
+    let restricted: FxHashSet<&str> = blocklisted.iter().map(|s| s.as_str()).collect();
     let mut error = CompilerError::new();
 
     for stmt in &program.body {
@@ -326,7 +326,7 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
     }
 
     // Collect existing non-namespaced imports by module name
-    let existing_import_indices: HashMap<String, usize> = program
+    let existing_import_indices: FxHashMap<String, usize> = program
         .body
         .iter()
         .enumerate()

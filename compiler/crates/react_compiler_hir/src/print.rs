@@ -8,7 +8,7 @@
 //! It also exports standalone formatting functions (format_loc, format_primitive, etc.)
 //! that require no state.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use react_compiler_diagnostics::CompilerError;
 use react_compiler_diagnostics::CompilerErrorOrDiagnostic;
@@ -223,8 +223,8 @@ pub fn format_value_reason(reason: ValueReason) -> &'static str {
 /// like Places, Identifiers, Scopes, Types, InstructionValues, etc.
 pub struct PrintFormatter<'a> {
     pub env: &'a Environment,
-    pub seen_identifiers: HashSet<IdentifierId>,
-    pub seen_scopes: HashSet<ScopeId>,
+    pub seen_identifiers: FxHashSet<IdentifierId>,
+    pub seen_scopes: FxHashSet<ScopeId>,
     pub output: Vec<String>,
     pub indent_level: usize,
 }
@@ -233,8 +233,8 @@ impl<'a> PrintFormatter<'a> {
     pub fn new(env: &'a Environment) -> Self {
         Self {
             env,
-            seen_identifiers: HashSet::new(),
-            seen_scopes: HashSet::new(),
+            seen_identifiers: FxHashSet::default(),
+            seen_scopes: FxHashSet::default(),
             output: Vec::new(),
             indent_level: 0,
         }

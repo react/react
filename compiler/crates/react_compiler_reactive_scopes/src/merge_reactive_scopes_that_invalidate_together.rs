@@ -8,7 +8,7 @@
 //!
 //! Corresponds to `src/ReactiveScopes/MergeReactiveScopesThatInvalidateTogether.ts`.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_diagnostics::CompilerError;
 use react_compiler_hir::{
@@ -36,14 +36,14 @@ pub fn merge_reactive_scopes_that_invalidate_together(
 ) -> Result<(), CompilerError> {
     // Pass 1: find last usage of each declaration
     let visitor = FindLastUsageVisitor { env: &*env };
-    let mut last_usage: HashMap<DeclarationId, EvaluationOrder> = HashMap::new();
+    let mut last_usage: FxHashMap<DeclarationId, EvaluationOrder> = FxHashMap::default();
     visit_reactive_function(func, &visitor, &mut last_usage);
 
     // Pass 2+3: merge scopes
     let mut transform = MergeTransform {
         env,
         last_usage,
-        temporaries: HashMap::new(),
+        temporaries: FxHashMap::default(),
     };
     let mut state: Option<Vec<ReactiveScopeDependency>> = None;
     transform_reactive_function(func, &mut transform, &mut state)
@@ -59,7 +59,7 @@ struct FindLastUsageVisitor<'a> {
 }
 
 impl<'a> ReactiveFunctionVisitor for FindLastUsageVisitor<'a> {
-    type State = HashMap<DeclarationId, EvaluationOrder>;
+    type State = FxHashMap<DeclarationId, EvaluationOrder>;
 
     fn env(&self) -> &Environment {
         self.env
@@ -81,8 +81,8 @@ impl<'a> ReactiveFunctionVisitor for FindLastUsageVisitor<'a> {
 /// TS: `class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | null>`
 struct MergeTransform<'a> {
     env: &'a mut Environment,
-    last_usage: HashMap<DeclarationId, EvaluationOrder>,
-    temporaries: HashMap<DeclarationId, DeclarationId>,
+    last_usage: FxHashMap<DeclarationId, EvaluationOrder>,
+    temporaries: FxHashMap<DeclarationId, DeclarationId>,
 }
 
 impl<'a> ReactiveFunctionTransform for MergeTransform<'a> {
@@ -138,7 +138,7 @@ impl<'a> MergeTransform<'a> {
             scope_id: ScopeId,
             from: usize,
             to: usize,
-            lvalues: HashSet<DeclarationId>,
+            lvalues: FxHashSet<DeclarationId>,
         }
 
         let mut current: Option<MergedScope> = None;
@@ -308,7 +308,7 @@ impl<'a> MergeTransform<'a> {
                                     scope_id: next_scope_id,
                                     from: i,
                                     to: i + 1,
-                                    lvalues: HashSet::new(),
+                                    lvalues: FxHashSet::default(),
                                 });
                             }
                         }
@@ -319,7 +319,7 @@ impl<'a> MergeTransform<'a> {
                                 scope_id: next_scope_id,
                                 from: i,
                                 to: i + 1,
-                                lvalues: HashSet::new(),
+                                lvalues: FxHashSet::default(),
                             });
                         }
                     }
@@ -398,7 +398,7 @@ impl<'a> MergeTransform<'a> {
 /// Updates scope declarations to remove any that are not used after the scope.
 fn update_scope_declarations(
     scope_id: ScopeId,
-    last_usage: &HashMap<DeclarationId, EvaluationOrder>,
+    last_usage: &FxHashMap<DeclarationId, EvaluationOrder>,
     env: &mut Environment,
 ) {
     let range_end = env.scopes[scope_id.0 as usize].range.end;
@@ -417,8 +417,8 @@ fn update_scope_declarations(
 /// Returns whether all lvalues are last used at or before the given scope.
 fn are_lvalues_last_used_by_scope(
     scope_id: ScopeId,
-    lvalues: &HashSet<DeclarationId>,
-    last_usage: &HashMap<DeclarationId, EvaluationOrder>,
+    lvalues: &FxHashSet<DeclarationId>,
+    last_usage: &FxHashMap<DeclarationId, EvaluationOrder>,
     env: &Environment,
 ) -> bool {
     let range_end = env.scopes[scope_id.0 as usize].range.end;
@@ -437,7 +437,7 @@ fn can_merge_scopes(
     current_id: ScopeId,
     next_id: ScopeId,
     env: &Environment,
-    temporaries: &HashMap<DeclarationId, DeclarationId>,
+    temporaries: &FxHashMap<DeclarationId, DeclarationId>,
 ) -> bool {
     let current = &env.scopes[current_id.0 as usize];
     let next = &env.scopes[next_id.0 as usize];

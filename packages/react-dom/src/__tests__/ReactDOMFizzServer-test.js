@@ -406,6 +406,769 @@ describe('ReactDOMFizzServer', () => {
     );
   }
 
+  // @gate enableBrowserAPI
+  it('can opt a component into browser-only rendering', async () => {
+    let resolveBrowserText;
+    const browserText = new Promise(resolve => {
+      resolveBrowserText = resolve;
+    });
+    let browserReason;
+    const initializeReason = jest.fn(() => {
+      browserReason = Object.freeze(
+        new Error('Only render this content in a browser'),
+      );
+      return browserReason;
+    });
+    const browserOnly = ReactDOM.browser(initializeReason);
+
+    function BrowserOnly() {
+      use(browserOnly);
+      const text = use(browserText);
+      Scheduler.log(text);
+      return <span>{text}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error, errorInfo) {
+          browserBailouts.push({error, errorInfo});
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].error).toBeInstanceOf(Error);
+    expect(browserBailouts[0].error.message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].error.stack).toContain('BrowserOnly');
+    expect(browserBailouts[0].error.cause).toBe(browserReason);
+    expect(
+      normalizeCodeLocInfo(browserBailouts[0].errorInfo.componentStack),
+    ).toBe(componentStack(['BrowserOnly', 'Suspense', 'div', 'App']));
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await clientAct(() => {
+      resolveBrowserText('Browser');
+    });
+    assertLog(['Browser']);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('can opt a component into browser-only rendering after streaming the fallback', async () => {
+    let resolveServerReady;
+    const serverReady = new Promise(resolve => {
+      resolveServerReady = resolve;
+    });
+    const initializeReason = jest.fn(
+      () => 'Only render this content in a browser',
+    );
+
+    function BrowserOnly() {
+      use(serverReady);
+      use(ReactDOM.browser(initializeReason));
+      return <span>Browser</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback={<span>Fallback</span>}>
+            <BrowserOnly />
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Fallback</span>
+      </div>,
+    );
+
+    await act(() => {
+      resolveServerReady();
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].stack).toContain('BrowserOnly');
+    expect(browserBailouts[0].cause).toBe(
+      'Only render this content in a browser',
+    );
+
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Browser</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('supports omitted and direct string browser reasons', async () => {
+    const directReason = 'Only render this content in a browser';
+    const withoutReason = ReactDOM.browser();
+    const withDirectReason = ReactDOM.browser(directReason);
+
+    function WithoutReason() {
+      use(withoutReason);
+      return <span>Browser</span>;
+    }
+
+    function WithDirectReason() {
+      use(withDirectReason);
+      return <span>Browser</span>;
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <>
+          <Suspense fallback={<span>Fallback A</span>}>
+            <WithoutReason />
+          </Suspense>
+          <Suspense fallback={<span>Fallback B</span>}>
+            <WithDirectReason />
+          </Suspense>
+        </>,
+        {
+          onError(error) {
+            serverErrors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(2);
+    expect(browserBailouts[0].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].stack).toContain('WithoutReason');
+    expect(
+      Object.prototype.hasOwnProperty.call(browserBailouts[0], 'cause'),
+    ).toBe(false);
+    expect(browserBailouts[1].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[1].stack).toContain('WithDirectReason');
+    expect(browserBailouts[1].cause).toBe(directReason);
+  });
+
+  // @gate enableBrowserAPI
+  it('supports any value returned by a browser reason initializer', async () => {
+    const reasonValues = [undefined, null, 42, Symbol('browser reason')];
+    const initializeReasons = reasonValues.map(reason => jest.fn(() => reason));
+    const browserValues = initializeReasons.map(initializeReason =>
+      ReactDOM.browser(initializeReason),
+    );
+
+    function BrowserOnly({browserValue}) {
+      use(browserValue);
+      return <span>Browser</span>;
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <>
+          {browserValues.map((browserValue, index) => (
+            <Suspense key={index} fallback={<span>Fallback</span>}>
+              <BrowserOnly browserValue={browserValue} />
+            </Suspense>
+          ))}
+        </>,
+        {
+          onError(error) {
+            serverErrors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(reasonValues.length);
+    initializeReasons.forEach(initializeReason => {
+      expect(initializeReason).toHaveBeenCalledTimes(1);
+    });
+    browserBailouts.forEach((error, index) => {
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe(
+        'Browser-only rendering was requested by `browser()`.',
+      );
+      expect(Object.prototype.hasOwnProperty.call(error, 'cause')).toBe(true);
+      expect(error.cause).toBe(reasonValues[index]);
+    });
+  });
+
+  // @gate enableBrowserAPI
+  it('initializes a shared browser reason at each use site', async () => {
+    const browserReasons = [];
+    const initializeReason = jest.fn(() => {
+      const browserReason = {index: browserReasons.length};
+      browserReasons.push(browserReason);
+      return browserReason;
+    });
+    const browserValue = ReactDOM.browser(initializeReason);
+
+    function BrowserOnlyA() {
+      use(browserValue);
+      return <span>Browser A</span>;
+    }
+
+    function BrowserOnlyB() {
+      use(browserValue);
+      return <span>Browser B</span>;
+    }
+
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <>
+          <Suspense fallback={<span>Fallback A</span>}>
+            <BrowserOnlyA />
+          </Suspense>
+          <Suspense fallback={<span>Fallback B</span>}>
+            <BrowserOnlyB />
+          </Suspense>
+        </>,
+        {
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(initializeReason).toHaveBeenCalledTimes(2);
+    expect(browserBailouts).toHaveLength(2);
+    expect(browserBailouts[0]).not.toBe(browserBailouts[1]);
+    expect(browserBailouts[0].cause).toBe(browserReasons[0]);
+    expect(browserBailouts[0].stack).toContain('BrowserOnlyA');
+    expect(browserBailouts[1].cause).toBe(browserReasons[1]);
+    expect(browserBailouts[1].stack).toContain('BrowserOnlyB');
+  });
+
+  // @gate enableBrowserAPI
+  it('uses a fallback if a browser reason initializer throws', async () => {
+    const reasonError = new Error('Failed to initialize browser reason');
+    const initializeReason = jest.fn(() => {
+      throw reasonError;
+    });
+    const browserValue = ReactDOM.browser(initializeReason);
+
+    function BrowserOnly() {
+      use(browserValue);
+      return <span>Browser</span>;
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <Suspense fallback={<span>Fallback</span>}>
+          <BrowserOnly />
+        </Suspense>,
+        {
+          onError(error) {
+            serverErrors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(serverErrors).toEqual([]);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0].cause).toBe(
+      'The reason for browser-only rendering could not be determined because ' +
+        'its initializer threw.',
+    );
+    expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+  });
+
+  // @gate enableBrowserAPI
+  it('errors if browser-only content is rendered outside Suspense', async () => {
+    const browserReason = 'Only render this content in a browser';
+    const browserValue = ReactDOM.browser(browserReason);
+
+    function BrowserOnly() {
+      use(browserValue);
+      return <span>Browser</span>;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    let shellReady = false;
+    let shellError;
+    await act(() => {
+      renderToPipeableStream(<BrowserOnly />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+        onShellReady() {
+          shellReady = true;
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.cause).toBe(browserReason);
+    expect(shellError.stack).toContain('BrowserOnly');
+    expect(shellError.stack.split('\n')[0]).toBe(
+      'Error: ' + shellError.message,
+    );
+    expect(shellReady).toBe(false);
+    expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('can abort all pending boundaries into browser-only rendering', async () => {
+    const never = new Promise(() => {});
+    let isClient = false;
+
+    function Pending({children}) {
+      if (!isClient) {
+        use(never);
+      }
+      return <span>{children}</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <span>Shell</span>
+          <Suspense fallback={<span>Loading A</span>}>
+            <Pending>A</Pending>
+          </Suspense>
+          <Suspense fallback={<span>Loading B</span>}>
+            <Pending>B</Pending>
+          </Suspense>
+        </div>
+      );
+    }
+
+    const serverErrors = [];
+    const browserBailouts = [];
+    const browserReason = {code: 'render-pending-content-in-browser'};
+    const initializeReason = jest.fn(() => browserReason);
+    const browserValue = ReactDOM.browser(initializeReason);
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<App />, {
+        onError(error) {
+          serverErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+      });
+      abort = controls.abort;
+      controls.pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Shell</span>
+        <span>Loading A</span>
+        <span>Loading B</span>
+      </div>,
+    );
+
+    await act(() => {
+      function abortToBrowser() {
+        abort(browserValue);
+      }
+      abortToBrowser();
+    });
+
+    expect(serverErrors).toEqual([]);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(browserBailouts).toHaveLength(2);
+    expect(browserBailouts[0]).toBeInstanceOf(Error);
+    expect(browserBailouts[0].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].stack).toContain('abortToBrowser');
+    expect(browserBailouts[0].cause).toBe(browserReason);
+    expect(browserBailouts[1]).toBe(browserBailouts[0]);
+
+    isClient = true;
+    const recoverableErrors = [];
+    ReactDOMClient.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        recoverableErrors.push(error);
+      },
+    });
+    await waitForAll([]);
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>Shell</span>
+        <span>A</span>
+        <span>B</span>
+      </div>,
+    );
+  });
+
+  // @gate enableBrowserAPI
+  it('errors if aborted with browser() before the shell completes', async () => {
+    const never = new Promise(() => {});
+    let browserReason;
+    const initializeReason = jest.fn(() => {
+      browserReason = new Error('Only abort this render on the server');
+      return browserReason;
+    });
+    const browserValue = ReactDOM.browser(initializeReason);
+
+    function PendingRoot() {
+      use(never);
+      return <span>Root</span>;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    let shellReady = false;
+    let shellError;
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<PendingRoot />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+        onShellReady() {
+          shellReady = true;
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+      abort = controls.abort;
+    });
+
+    await act(() => {
+      function abortToBrowser() {
+        abort(browserValue);
+      }
+      abortToBrowser();
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.cause).toBe(browserReason);
+    expect(shellError.stack).toContain('abortToBrowser');
+    expect(shellReady).toBe(false);
+    expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('reports nested browser bailouts if aborting fatals the shell', async () => {
+    const never = new Promise(() => {});
+    const browserReason = 'Abort pending work into browser rendering';
+    const browserValue = ReactDOM.browser(browserReason);
+
+    function Pending() {
+      use(never);
+      return <span>Pending</span>;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    let shellError;
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(
+        <>
+          <Suspense fallback={<span>Fallback</span>}>
+            <Pending />
+          </Suspense>
+          <Pending />
+          <Suspense fallback={<span>Fallback</span>}>
+            <Pending />
+          </Suspense>
+          <Pending />
+        </>,
+        {
+          onError(error) {
+            reportedErrors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+          onShellError(error) {
+            shellError = error;
+          },
+        },
+      );
+      abort = controls.abort;
+    });
+
+    await act(() => {
+      abort(browserValue);
+    });
+
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.message).toBe(
+      'The server render could not complete because client rendering was ' +
+        "requested outside a Suspense boundary. See this error's cause for " +
+        'additional details.',
+    );
+    expect(shellError.cause).toBe(browserReason);
+    expect(reportedErrors).toHaveLength(2);
+    expect(reportedErrors[0]).toBe(shellError);
+    expect(reportedErrors[1].message).toBe(shellError.message);
+    expect(reportedErrors[1].cause).toBe(browserReason);
+    expect(browserBailouts).toHaveLength(2);
+    expect(browserBailouts[0]).toBe(browserBailouts[1]);
+    expect(browserBailouts[0]).not.toBe(shellError);
+    expect(browserBailouts[0].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].cause).toBe(browserReason);
+  });
+
+  // @gate enableBrowserAPI
+  it('uses a fallback if a browser reason initializer throws during abort', async () => {
+    const never = new Promise(() => {});
+    const reasonError = new Error('Failed to initialize browser reason');
+    const initializeReason = jest.fn(() => {
+      throw reasonError;
+    });
+    const browserValue = ReactDOM.browser(initializeReason);
+
+    function PendingRoot() {
+      use(never);
+      return <span>Root</span>;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    let shellError;
+    let abort;
+    await act(() => {
+      const controls = renderToPipeableStream(<PendingRoot />, {
+        onError(error) {
+          reportedErrors.push(error);
+        },
+        onBrowserBailout(error) {
+          browserBailouts.push(error);
+        },
+        onShellError(error) {
+          shellError = error;
+        },
+      });
+      abort = controls.abort;
+    });
+
+    await act(() => {
+      abort(browserValue);
+    });
+
+    expect(initializeReason).toHaveBeenCalledTimes(1);
+    expect(shellError).toBeInstanceOf(Error);
+    expect(shellError.cause).toBe(
+      'The reason for browser-only rendering could not be determined because ' +
+        'its initializer threw.',
+    );
+    expect(reportedErrors).toEqual([shellError]);
+    expect(browserBailouts).toEqual([]);
+  });
+
+  // @gate enableBrowserAPI
+  it('reports the browser value if it is thrown instead of passed to use', async () => {
+    const initializeReason = jest.fn(
+      () => new Error('Only render this content in a browser'),
+    );
+    const browserValue = ReactDOM.browser(initializeReason);
+
+    function BrowserOnly() {
+      throw browserValue;
+    }
+
+    const reportedErrors = [];
+    const browserBailouts = [];
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <Suspense fallback={<span>Fallback</span>}>
+          <BrowserOnly />
+        </Suspense>,
+        {
+          onError(error) {
+            reportedErrors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+        },
+      );
+      pipe(writable);
+    });
+
+    expect(reportedErrors).toEqual([browserValue]);
+    expect(browserBailouts).toEqual([]);
+    expect(initializeReason).not.toHaveBeenCalled();
+    expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+  });
+
+  ['', 'BROWSER'].forEach(userDigest => {
+    it(`does not reserve the ${JSON.stringify(
+      userDigest,
+    )} user error digest for browser rendering`, async () => {
+      let isClient = false;
+      const serverError = new Error('Server error');
+
+      function ServerError() {
+        if (!isClient) {
+          throw serverError;
+        }
+        return <span>Client</span>;
+      }
+
+      function App() {
+        return (
+          <Suspense fallback={<span>Fallback</span>}>
+            <ServerError />
+          </Suspense>
+        );
+      }
+
+      const serverErrors = [];
+      await act(() => {
+        const {pipe} = renderToPipeableStream(<App />, {
+          onError(error) {
+            serverErrors.push(error);
+            return userDigest;
+          },
+        });
+        pipe(writable);
+      });
+
+      expect(serverErrors).toEqual([serverError]);
+      expect(getVisibleChildren(container)).toEqual(<span>Fallback</span>);
+
+      isClient = true;
+      const recoverableErrors = [];
+      ReactDOMClient.hydrateRoot(container, <App />, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error);
+        },
+      });
+      await waitForAll([]);
+
+      expect(recoverableErrors).toHaveLength(1);
+      expect(recoverableErrors[0].digest).toBe(userDigest || undefined);
+      expect(getVisibleChildren(container)).toEqual(<span>Client</span>);
+    });
+  });
+
   it('should asynchronously load a lazy component', async () => {
     let resolveA;
     const LazyA = React.lazy(() => {
@@ -7211,6 +7974,60 @@ describe('ReactDOMFizzServer', () => {
     expect(errors).toEqual(['abort reason', 'abort reason']);
   });
 
+  // @gate enableBrowserAPI
+  it('reports an in-flight browser bailout after another root task fatals while aborting', async () => {
+    const promise = new Promise(() => {});
+    function SuspendedRoot() {
+      use(promise);
+      return null;
+    }
+
+    function Child() {
+      return 'child';
+    }
+
+    const browserValue = ReactDOM.browser('abort reason');
+    const abortRef = {current: null};
+    function ComponentThatAborts() {
+      abortRef.current(browserValue);
+      return <Child />;
+    }
+
+    const errors = [];
+    const browserBailouts = [];
+    let shellError;
+    await act(() => {
+      const {abort} = renderToPipeableStream(
+        <>
+          <SuspendedRoot />
+          <Suspense fallback="loading...">
+            <ComponentThatAborts />
+          </Suspense>
+        </>,
+        {
+          onError(error) {
+            errors.push(error);
+          },
+          onBrowserBailout(error) {
+            browserBailouts.push(error);
+          },
+          onShellError(error) {
+            shellError = error;
+          },
+        },
+      );
+      abortRef.current = abort;
+    });
+
+    expect(errors).toEqual([shellError]);
+    expect(browserBailouts).toHaveLength(1);
+    expect(browserBailouts[0]).not.toBe(shellError);
+    expect(browserBailouts[0].message).toBe(
+      'Browser-only rendering was requested by `browser()`.',
+    );
+    expect(browserBailouts[0].cause).toBe('abort reason');
+  });
+
   it('reports a root task before rendering a suspended child returned after aborting', async () => {
     const promise = new Promise(() => {});
     function SuspendedRoot() {
@@ -7676,13 +8493,14 @@ describe('ReactDOMFizzServer', () => {
       return <span>hi</span>;
     }
 
-    // Recursively render a component tree deep enough to trigger stack overflow.
-    // Don't make this too short to not hit the limit but also not too deep to slow
-    // down the test.
+    // Recursively render a component tree deep enough to trigger stack overflow
+    // more than once. The first overflow is recovered by the renderNode
+    // trampoline; deeper trees must also recover when the retried task
+    // overflows again. Don't make this too deep to slow down the test.
     await act(() => {
       const {pipe} = renderToPipeableStream(
         <div>
-          <Recursive n={1000} />
+          <Recursive n={1200} />
         </div>,
       );
       pipe(writable);
@@ -7727,6 +8545,94 @@ describe('ReactDOMFizzServer', () => {
     }).rejects.toThrow('Maximum call stack size exceeded');
 
     expect(caughtError.message).toBe('Maximum call stack size exceeded');
+  });
+
+  it('can recover from very deep trees during resume to avoid stack overflow', async () => {
+    const promise = new Promise(() => {});
+
+    let prerendering = true;
+
+    // Deep wrappers above the postponed boundary. On resume, replaying this
+    // path goes through retryReplayTask → retryNode (no trampoline), so a
+    // tree deep enough to overflow must recover there — not only on the
+    // ordinary render retry path.
+    function Deep({n, children}) {
+      if (n > 0) {
+        return <Deep n={n - 1}>{children}</Deep>;
+      }
+      return children;
+    }
+
+    function Content() {
+      if (prerendering) {
+        return React.use(promise);
+      }
+      return <span>hi</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Deep n={1200}>
+            <Suspense fallback="Loading...">
+              <Content />
+            </Suspense>
+          </Deep>
+        </div>
+      );
+    }
+
+    const controller = new AbortController();
+    const errors = [];
+    let pendingPrerender;
+    await act(() => {
+      pendingPrerender = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
+        signal: controller.signal,
+        onError(error) {
+          errors.push(error);
+        },
+      });
+    });
+    controller.abort('abort');
+
+    const prerendered = await pendingPrerender;
+    expect(errors).toEqual(['abort']);
+    expect(prerendered.postponed).not.toBe(null);
+
+    const preludeWritable = new Stream.PassThrough();
+    preludeWritable.setEncoding('utf8');
+    preludeWritable.on('data', chunk => {
+      writable.write(chunk);
+    });
+
+    await act(() => {
+      prerendered.prelude.pipe(preludeWritable);
+    });
+    expect(getVisibleChildren(container)).toEqual(<div>Loading...</div>);
+
+    prerendering = false;
+    errors.length = 0;
+
+    const resumed = await ReactDOMFizzServer.resumeToPipeableStream(
+      <App />,
+      JSON.parse(JSON.stringify(prerendered.postponed)),
+      {
+        onError(error) {
+          errors.push(error);
+        },
+      },
+    );
+
+    await act(() => {
+      resumed.pipe(writable);
+    });
+
+    expect(errors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>hi</span>
+      </div>,
+    );
   });
 
   it('client renders incomplete Suspense boundaries when the document is no longer loading when hydration begins', async () => {
@@ -9836,6 +10742,43 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>hello</span>
+      </div>,
+    );
+  });
+
+  it('outlines boundaries based on UTF-8 byte size, not code unit count', async () => {
+    // Boundaries are outlined when byteSize > 500, which streams the fallback
+    // first. Content is 200 three-byte characters: 600 UTF-8 bytes but only 200
+    // code units. The fallback should be shown initially because the boundary is
+    // large enough to outline. A string.length shortcut for byte size would
+    // count 200, stay under the threshold, and inline the content with no
+    // fallback shown — which would be incorrect.
+    const multiByte = '✓'.repeat(200);
+
+    function App() {
+      return (
+        <div>
+          <Suspense fallback="Waiting">
+            <span>{multiByte}</span>
+          </Suspense>
+        </div>
+      );
+    }
+
+    await act(async () => {
+      renderToPipeableStream(<App />, {progressiveChunkSize: 100}).pipe(
+        writable,
+      );
+      await jest.runAllTimers();
+      const temp = document.createElement('body');
+      temp.innerHTML = buffer;
+      // Fallback is shown because the boundary is outlined by its UTF-8 size.
+      expect(getVisibleChildren(temp)).toEqual(<div>Waiting</div>);
+    });
+
+    expect(getVisibleChildren(container)).toEqual(
+      <div>
+        <span>{multiByte}</span>
       </div>,
     );
   });

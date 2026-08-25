@@ -1107,6 +1107,233 @@ describe('ReactFlightDOMEdge', () => {
     expect(items[5]).toEqual(items[10]);
   });
 
+  function clientComponent(name, chunkFilename) {
+    return clientExports(
+      function Client() {
+        return <span>{name}</span>;
+      },
+      'chunk-' + name,
+      chunkFilename,
+      Promise.resolve(),
+    );
+  }
+
+  async function renderClients(chunkFilenames) {
+    const Clients = chunkFilenames.map(chunkFilename =>
+      clientComponent('Client', chunkFilename),
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <div>
+          {Clients.map((Client, i) => (
+            <Client key={i} />
+          ))}
+        </div>,
+        webpackMap,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+    const payload = await readResult(stream1);
+    const model = await ReactServerDOMClient.createFromReadableStream(stream2, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(model),
+    );
+    expect(await readResult(ssrStream)).toBe(
+      '<div>' + '<span>Client</span>'.repeat(Clients.length) + '</div>',
+    );
+    return payload;
+  }
+
+  it('should dedupe strings inside client reference metadata', async () => {
+    // Bundlers repeat the same chunk in the metadata of every client reference
+    // that needs it.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const shared = await renderClients(new Array(10).fill(chunk));
+    // The same length, so sharing is the only difference between the two.
+    const distinct = await renderClients(
+      Array.from(
+        {length: 10},
+        (_, i) => 'unique/hashed-chunk-' + ('' + i).padStart(16, '0') + '.js',
+      ),
+    );
+
+    // However many references there are, the chunk goes on the wire once, as a
+    // row that every import row points at.
+    expect(shared.split(chunk).length - 1).toBe(1);
+    expect(distinct.length - shared.length).toBeGreaterThan(8 * chunk.length);
+
+    // The client resolves a client reference while parsing its row, so the
+    // outlined copy has to arrive before every row that points at it. The
+    // chunk id is too short to be outlined, so it counts the rows.
+    const beforeOutlinedCopy = shared.slice(0, shared.indexOf(chunk));
+    expect(beforeOutlinedCopy).not.toContain('chunk-Client');
+  });
+
+  it('should escape strings inside client reference metadata', async () => {
+    // A leading $ has to be escaped whether the string gets outlined or not.
+    const outlinedChunk = '$shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const inlineChunk = '$chunk.js';
+    const outlined = await renderClients(new Array(3).fill(outlinedChunk));
+    const inline = await renderClients(new Array(3).fill(inlineChunk));
+
+    expect(outlined.split('$' + outlinedChunk).length - 1).toBe(1);
+    expect(inline.split('$' + inlineChunk).length - 1).toBe(3);
+  });
+
+  it('should not dedupe import strings below the size limit', async () => {
+    // A short string costs more to reference than to repeat.
+    const shortChunk = 'abc/chunk-15.js';
+    const longChunk = 'abcd/chunk-16.js';
+    const short = await renderClients(new Array(10).fill(shortChunk));
+    const long = await renderClients(new Array(10).fill(longChunk));
+
+    expect(short.split(shortChunk).length - 1).toBe(10);
+    expect(long.split(longChunk).length - 1).toBe(1);
+    // The longer chunk is the one that produces the smaller payload.
+    expect(long.length).toBeLessThan(short.length);
+  });
+
+  it('should stop tracking new import strings once the budget is spent', async () => {
+    // Every chunk is outlined the first time it's seen, so chunks that never
+    // repeat spend budget too. 32 fillers of 1 KiB fill the 32 KiB budget.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const repeats = new Array(10).fill(chunk);
+    const filler = (count, length) =>
+      Array.from({length: count}, (_, i) =>
+        ('filler/chunk-' + i + '-').padEnd(length - 3, 'x').concat('.js'),
+      );
+    const fitsInTheRest = await renderClients(filler(31, 1024).concat(repeats));
+    const findsItSpent = await renderClients(filler(32, 1024).concat(repeats));
+
+    expect(fitsInTheRest.split(chunk).length - 1).toBe(1);
+    expect(findsItSpent.split(chunk).length - 1).toBe(10);
+
+    // A string outlined before the budget is spent keeps deduping after.
+    const lastFiller = filler(1, 32768 - 31 * 1024 - chunk.length);
+    const trackedBefore = await renderClients(
+      [chunk].concat(filler(31, 1024), lastFiller, repeats),
+    );
+
+    expect(trackedBefore.split(chunk).length - 1).toBe(1);
+
+    const bigChunk = 'path/to/' + 'a'.repeat(40000) + '.js';
+    const big = await renderClients(new Array(3).fill(bigChunk));
+
+    expect(big.split(bigChunk).length - 1).toBe(3);
+  });
+
+  it('should dedupe import strings produced by toJSON', async () => {
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const payload = await renderClients(
+      Array.from({length: 3}, () => ({
+        toJSON() {
+          return chunk;
+        },
+      })),
+    );
+
+    expect(payload.split(chunk).length - 1).toBe(1);
+  });
+
+  it('should error on circular client reference metadata', async () => {
+    const circular = [];
+    circular.push(circular);
+    const Client = clientComponent('Client', circular);
+
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<Client />, webpackMap, {
+        onError(error) {
+          errors.push(error.message);
+        },
+      }),
+    );
+    await readResult(stream);
+
+    expect(errors).toEqual([
+      expect.stringContaining('Converting circular structure to JSON'),
+    ]);
+  });
+
+  it('should not dedupe strings in the model', async () => {
+    // Only import metadata is deduped. Keying a map on arbitrary model strings
+    // would hold them in memory for the rest of the request.
+    const text = 'a repeated model string well past the import threshold';
+    const model = new Array(10).fill(text);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const payload = await readResult(stream1);
+    expect(payload.split(text).length - 1).toBe(10);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(model);
+  });
+
+  // @gate __DEV__
+  it('should not dedupe import metadata on the debug channel', async () => {
+    // The debug channel is a separate transport, so a row it emits can't be
+    // referenced from the main stream and vice versa.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const A = clientComponent('Client', chunk);
+    const B = clientComponent('Client', chunk);
+    const C = clientComponent('Client', chunk);
+
+    function Server({a, b, c}) {
+      return ReactServer.createElement('div', null, a, b, c);
+    }
+
+    let debugContent = '';
+    const debugChannel = {
+      writable: new WritableStream({
+        write(value) {
+          debugContent += Buffer.from(value).toString('utf8');
+        },
+      }),
+    };
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // We can't use JSX here because it'll use the Client React.
+        ReactServer.createElement(Server, {
+          a: ReactServer.createElement(A),
+          b: ReactServer.createElement(B),
+          c: ReactServer.createElement(C),
+        }),
+        webpackMap,
+        {debugChannel},
+      ),
+    );
+    const payload = await readResult(stream);
+
+    // The main stream dedupes as usual.
+    expect(payload.split(chunk).length - 1).toBe(1);
+
+    // The debug channel can't point at that row, so every import row it writes
+    // spells the chunk out. The chunk id is too short to be outlined, so it
+    // counts those rows.
+    expect(debugContent).toContain('chunk-Client');
+    expect(debugContent.split(chunk).length).toBe(
+      debugContent.split('chunk-Client').length,
+    );
+  });
+
   it('warns if passing a this argument to bind() of a server reference', async () => {
     const ServerModule = serverExports({
       greet: function () {},
@@ -1794,23 +2021,33 @@ describe('ReactFlightDOMEdge', () => {
     const expectedError = new Error('Bam!');
     const errors = [];
 
-    const {prelude} = await ReactServerDOMStaticServer.prerender(
-      new ReadableStream({
-        async start(controller) {
-          await serverAct(() => {
-            setTimeout(() => {
-              controller.error(expectedError);
-            });
-          });
-        },
-      }),
-      webpackMap,
-      {
-        onError(err) {
-          errors.push(err);
-        },
+    let streamController;
+    const erroringStream = new ReadableStream({
+      start(controller) {
+        streamController = controller;
       },
-    );
+    });
+
+    const {pendingResult} = await serverAct(async () => {
+      // destructure trick to avoid the act scope from awaiting the returned value
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(
+          erroringStream,
+          webpackMap,
+          {
+            onError(err) {
+              errors.push(err);
+            },
+          },
+        ),
+      };
+    });
+
+    await serverAct(() => {
+      streamController.error(expectedError);
+    });
+
+    const {prelude} = await pendingResult;
 
     expect(errors).toEqual([expectedError]);
 
@@ -2007,25 +2244,33 @@ describe('ReactFlightDOMEdge', () => {
 
     const serverAbortController = new AbortController();
     const errors = [];
-    const prerenderResult = ReactServerDOMStaticServer.prerender(
-      ReactServer.createElement(App, null),
-      webpackMap,
-      {
-        signal: serverAbortController.signal,
-        onError(err) {
-          errors.push(err);
-        },
-      },
-    );
-
-    await new Promise(resolve => {
-      setImmediate(() => {
-        serverAbortController.abort();
-        resolve();
-      });
+    const {pendingResult} = await serverAct(async () => {
+      // destructure trick to avoid the act scope from awaiting the returned value
+      return {
+        pendingResult: ReactServerDOMStaticServer.prerender(
+          ReactServer.createElement(App, null),
+          webpackMap,
+          {
+            signal: serverAbortController.signal,
+            onError(err) {
+              errors.push(err);
+            },
+          },
+        ),
+      };
     });
 
-    const {prelude} = await prerenderResult;
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          setImmediate(() => {
+            serverAbortController.abort();
+            resolve();
+          });
+        }),
+    );
+
+    const {prelude} = await pendingResult;
 
     expect(errors).toEqual([]);
 
@@ -2061,12 +2306,15 @@ describe('ReactFlightDOMEdge', () => {
       },
     );
 
-    await new Promise(resolve => {
-      setImmediate(() => {
-        clientAbortController.abort();
-        resolve();
-      });
-    });
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          setImmediate(() => {
+            clientAbortController.abort();
+            resolve();
+          });
+        }),
+    );
 
     const fizzPrerenderStream = await fizzPrerenderStreamResult;
     const prerenderHTML = await readResult(fizzPrerenderStream.prelude);
@@ -2349,6 +2597,66 @@ describe('ReactFlightDOMEdge', () => {
     );
   });
 
+  async function renderThroughDebugChannel(chunkFilename) {
+    const Client = clientComponent('Client', chunkFilename);
+    // The client reference shows up in the owner's props on the debug channel.
+    function Server({component}) {
+      return ReactServer.createElement(component, null);
+    }
+
+    let debugReadableStreamController;
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        ReactServer.createElement(Server, {component: Client}),
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+      debugChannel: {readable: debugReadableStream},
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    return readResult(ssrStream);
+  }
+
+  it('can resolve a client reference while debug info is still blocked', async () => {
+    const result = await renderThroughDebugChannel('path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
+  it('should escape strings in import metadata on the debug channel', async () => {
+    const result = await renderThroughDebugChannel('$path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
   it('should properly resolve with deduped objects', async () => {
     const obj = {foo: 'hi'};
 
@@ -2402,5 +2710,355 @@ describe('ReactFlightDOMEdge', () => {
         'anonymous-id',
       ).toString(),
     ).toBe('function () { [omitted code] }');
+  });
+
+  // A thenable with status 'pending_weak' doesn't keep the Flight stream
+  // open. If it settles before the stream closes for other reasons its value
+  // is emitted like a normal pending thenable; otherwise its reference is
+  // left unfulfilled and stays forever pending on the client.
+  //
+  // A framework-style tracker for whether a page accessed its search params
+  // during a render. The params object is instrumented so that the first
+  // access settles the usedSearchParams thenable. It settles synchronously
+  // at the access point, so an access is guaranteed to be encoded before
+  // the response closes.
+  function createSearchParams(values) {
+    const listeners = [];
+    const usedSearchParams = {
+      status: 'pending_weak',
+      value: undefined,
+      then(onFulfill) {
+        if (usedSearchParams.status === 'fulfilled') {
+          onFulfill(usedSearchParams.value);
+        } else {
+          listeners.push(onFulfill);
+        }
+      },
+    };
+    const searchParams = new Proxy(values, {
+      get(target, key) {
+        if (usedSearchParams.status === 'pending_weak') {
+          usedSearchParams.status = 'fulfilled';
+          usedSearchParams.value = true;
+          for (let i = 0; i < listeners.length; i++) {
+            listeners[i](true);
+          }
+          listeners.length = 0;
+        }
+        return target[key];
+      },
+    });
+    return {searchParams, usedSearchParams};
+  }
+
+  it('emits the value of a weak-pending thenable that settles during the render', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    function Page() {
+      return <div>{'Results for ' + searchParams.q}</div>;
+    }
+
+    let response;
+    await serverAct(() => {
+      const stream = ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Page />,
+      });
+      // Start consuming immediately, like a server that pipes the response
+      // while it renders.
+      response = ReactServerDOMClient.createFromReadableStream(stream, {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      });
+    });
+
+    const result = await response;
+    expect(await result.usedSearchParams).toBe(true);
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result.root),
+    );
+    expect(await readResult(ssrStream)).toBe('<div>Results for react</div>');
+  });
+
+  // @gate enableFlightWeakThenables
+  it('completes the response without waiting for a weak-pending thenable that never settles', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    function Page() {
+      return <div>Static content</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Page />,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+    await serverAct(async () => {});
+    // The response completed even though the weak thenable never settled.
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+
+    // Accessing the params after the response already completed doesn't do
+    // anything.
+    expect(searchParams.q).toBe('react');
+
+    // The reference is left forever pending, without erroring.
+    const raced = await Promise.race([
+      result.usedSearchParams,
+      Promise.resolve('never accessed'),
+    ]);
+    expect(raced).toBe('never accessed');
+  });
+
+  it('emits the value of a weak-pending thenable that settles while the response is still streaming', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    let resolveData;
+    const data = new Promise(res => (resolveData = res));
+    async function Results() {
+      const filter = await data;
+      return <div>{'Results for ' + searchParams[filter]}</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Results />,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+
+    // The response stays open while the data is loading — because of the
+    // async component, not because of the unresolved weak thenable.
+    await serverAct(async () => {});
+    expect(content).toBe(null);
+
+    // The data resolves, the component accesses the search params, and the
+    // response completes.
+    await serverAct(() => resolveData('q'));
+    await serverAct(async () => {});
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(await result.usedSearchParams).toBe(true);
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(result.root),
+    );
+    expect(await readResult(ssrStream)).toBe('<div>Results for react</div>');
+  });
+
+  // @gate !enableFlightWeakThenables
+  it('treats a weak-pending thenable like a normal pending thenable when the flag is off', async () => {
+    const {searchParams, usedSearchParams} = createSearchParams({q: 'react'});
+
+    function Page() {
+      return <div>Static content</div>;
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        usedSearchParams,
+        root: <Page />,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+
+    // Without the flag, the unknown thenable status is treated as an
+    // ordinary pending thenable, which keeps the response open.
+    await serverAct(async () => {});
+    expect(content).toBe(null);
+
+    // Accessing the params settles the thenable and lets the response
+    // complete.
+    await serverAct(() => {
+      expect(searchParams.q).toBe('react');
+    });
+    await serverAct(async () => {});
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(await result.usedSearchParams).toBe(true);
+  });
+
+  // @gate enableFlightWeakThenables
+  it('supports linked lists of weak-pending thenables', async () => {
+    // Weak thenables compose recursively: the value that a weak-pending
+    // thenable settles with can itself contain more weak-pending thenables.
+    // A linked list of them forms an async sequence that never blocks the
+    // response from completing. Modeled here as a framework tracking which
+    // params a page accessed during a dynamic render, encoded into the
+    // response itself as WeakThenable<{value: T, next: WeakThenable<...>}>.
+    function instrumentParams(params) {
+      function createWeakNode() {
+        const listeners = [];
+        const node = {
+          status: 'pending_weak',
+          value: undefined,
+          then(onFulfill) {
+            if (node.status === 'fulfilled') {
+              onFulfill(node.value);
+            } else {
+              listeners.push(onFulfill);
+            }
+          },
+        };
+        return {node, listeners};
+      }
+      let tail = createWeakNode();
+      const head = tail.node;
+      const accessed = new Set();
+      const instrumentedParams = new Proxy(params, {
+        get(target, name) {
+          if (
+            typeof name === 'string' &&
+            name in target &&
+            !accessed.has(name)
+          ) {
+            accessed.add(name);
+            const settledTail = tail;
+            tail = createWeakNode();
+            // Settle the tail of the list synchronously at the access point
+            // so it's guaranteed to be encoded before the response closes.
+            const result = {value: name, next: tail.node};
+            settledTail.node.status = 'fulfilled';
+            settledTail.node.value = result;
+            for (let i = 0; i < settledTail.listeners.length; i++) {
+              settledTail.listeners[i](result);
+            }
+            settledTail.listeners.length = 0;
+          }
+          return target[name];
+        },
+      });
+      return {params: instrumentedParams, accessedParams: head};
+    }
+
+    const {params, accessedParams} = instrumentParams({
+      a: 'value-of-a',
+      b: 'value-of-b',
+      c: 'value-of-c',
+    });
+
+    function Page() {
+      // The page reads param a during the render.
+      return 'Accessed: ' + params.a;
+    }
+
+    let resolveNormal;
+    const pending = new Promise(res => {
+      resolveNormal = res;
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({
+        accessedParams,
+        page: <Page />,
+        pending,
+      }),
+    );
+    const [stream1, stream2] = stream.tee();
+
+    let content = null;
+    const readPromise = readResult(stream1).then(c => (content = c));
+
+    // While the normal pending promise holds the stream open, param c is
+    // accessed, settling the next node of the list.
+    await serverAct(() => {
+      expect(params.c).toBe('value-of-c');
+    });
+    await serverAct(async () => {});
+    expect(content).toBe(null);
+
+    // Param b is never accessed, so the tail of the list stays unsettled.
+    // It doesn't keep the response open: once the normal promise resolves,
+    // the response completes.
+    await serverAct(() => {
+      resolveNormal('done');
+    });
+    await serverAct(async () => {});
+    expect(content).not.toBe(null);
+    await readPromise;
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result.page).toBe('Accessed: value-of-a');
+
+    // Wait until the full response has been processed.
+    await serverAct(async () => {});
+
+    // Read the accessed params off the list, synchronously. A node that
+    // was never settled by the server stays forever pending, without
+    // erroring, which marks the end of the accessed params.
+    function readNode(node) {
+      // Attach a no-op listener to force Flight to synchronously unwrap a
+      // node that was received but not yet initialized.
+      node.then(() => {});
+      if (node.status !== 'fulfilled') {
+        return null;
+      }
+      return node.value;
+    }
+
+    const accessed = [];
+    let node = result.accessedParams;
+    while (node !== null) {
+      const entry = readNode(node);
+      if (entry === null) {
+        break;
+      }
+      accessed.push(entry.value);
+      node = entry.next;
+    }
+    expect(accessed).toEqual(['a', 'c']);
   });
 });

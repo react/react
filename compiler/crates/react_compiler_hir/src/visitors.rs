@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::environment::Environment;
 use crate::{
@@ -1289,14 +1289,14 @@ pub struct ScopeBlockTraversal {
     /// Live stack of active scopes
     active_scopes: Vec<ScopeId>,
     /// Map from block ID to scope block info
-    pub block_infos: HashMap<BlockId, ScopeBlockInfo>,
+    pub block_infos: FxHashMap<BlockId, ScopeBlockInfo>,
 }
 
 impl ScopeBlockTraversal {
     pub fn new() -> Self {
         ScopeBlockTraversal {
             active_scopes: Vec::new(),
-            block_infos: HashMap::new(),
+            block_infos: FxHashMap::default(),
         }
     }
 

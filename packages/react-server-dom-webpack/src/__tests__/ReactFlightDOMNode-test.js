@@ -338,6 +338,31 @@ describe('ReactFlightDOMNode', () => {
     expect(result.text).toBe(testString);
   });
 
+  it('round-trips long multi-byte strings using true UTF-8 byte length', async () => {
+    // Strings >= 1024 chars are emitted out-of-band with a binary length
+    // prefix (`id:T<byteLength>,`). The client reads exactly that many bytes,
+    // so the prefix must be the true UTF-8 byte length. These are three-byte
+    // characters: byte length is 3x the code unit count. A string.length
+    // shortcut for byteLengthOfChunk would undercount and truncate parsing.
+    const testString = '✓'.repeat(1100);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        text: testString,
+      }),
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+    const parsedResult = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+
+    const result = await parsedResult;
+    expect(result.text).toBe(testString);
+  });
+
   it('should be able to serialize any kind of typed array', async () => {
     const buffer = new Uint8Array([
       123, 4, 10, 5, 100, 255, 244, 45, 56, 67, 43, 124, 67, 89, 100, 20,
@@ -955,10 +980,10 @@ describe('ReactFlightDOMNode', () => {
           // The concrete location may change as this test is updated.
           // Just make sure they still point at React.use(p2)
           (gate(flags => flags.enableAsyncDebugInfo)
-            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:813:7)'
+            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:838:7)'
             : '') +
-          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:835:26)' +
-          '\n    at App (file://./ReactFlightDOMNode-test.js:852:25)',
+          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:860:26)' +
+          '\n    at App (file://./ReactFlightDOMNode-test.js:877:25)',
       );
     } else {
       expect(ownerStack).toBeNull();
@@ -1542,12 +1567,12 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in Dynamic' +
             (gate(flags => flags.enableAsyncDebugInfo)
-              ? ' (file://ReactFlightDOMNode-test.js:1416:27)\n'
+              ? ' (file://ReactFlightDOMNode-test.js:1441:27)\n'
               : '\n') +
             '    in body\n' +
             '    in html\n' +
-            '    in App (file://ReactFlightDOMNode-test.js:1429:25)\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1504:16)',
+            '    in App (file://ReactFlightDOMNode-test.js:1454:25)\n' +
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1529:16)',
         );
       } else {
         expect(
@@ -1556,7 +1581,7 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1504:16)',
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1529:16)',
         );
       }
 
@@ -1566,8 +1591,8 @@ describe('ReactFlightDOMNode', () => {
             normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
           ).toBe(
             '\n' +
-              '    in Dynamic (file://ReactFlightDOMNode-test.js:1416:27)\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1429:25)',
+              '    in Dynamic (file://ReactFlightDOMNode-test.js:1441:27)\n' +
+              '    in App (file://ReactFlightDOMNode-test.js:1454:25)',
           );
         } else {
           expect(
@@ -1575,7 +1600,7 @@ describe('ReactFlightDOMNode', () => {
           ).toBe(
             '' +
               '\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1429:25)',
+              '    in App (file://ReactFlightDOMNode-test.js:1454:25)',
           );
         }
       } else {
@@ -1732,7 +1757,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1679:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1704:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1743,7 +1768,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1679:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1704:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1756,10 +1781,10 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             gate(flags =>
               flags.enableAsyncDebugInfo
-                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1680:9)\n'
+                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1705:9)\n'
                 : '',
             ) +
-            '    at ClientRoot (./ReactFlightDOMNode-test.js:1693:21)',
+            '    at ClientRoot (./ReactFlightDOMNode-test.js:1718:21)',
         );
       } else {
         expect(ownerStack).toBeNull();
@@ -2393,5 +2418,71 @@ describe('ReactFlightDOMNode', () => {
     // Client2's Import row bytes followed by whatever happened to land in
     // the next 1024-byte window.
     expect(result.payload).toEqual(binaryData);
+  });
+
+  // A Node.js Buffer carries a `toJSON` method, so Flight serializes it through
+  // that method instead of as binary, and warns. It is therefore deserialized
+  // as a plain `{type: 'Buffer', data: [...]}` object rather than a
+  // Buffer/Uint8Array.
+  it('serializes a Node Buffer through its toJSON and warns', async () => {
+    const buffer = Buffer.from([1, 2, 3, 4]);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({font: buffer}),
+    );
+    assertConsoleErrorDev([
+      'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+        'serialized through toJSON instead of as binary. Pass a ' +
+        'Uint8Array or ArrayBuffer to send binary data.\n' +
+        '  {font: Uint8Array}\n' +
+        '         ^^^^^^^^^^',
+    ]);
+    const readable = new Stream.PassThrough(streamOptions);
+    const promise = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await promise;
+    expect(Buffer.isBuffer(result.font)).toBe(false);
+    expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
+  });
+
+  it('detaches the abort listener from a composite signal once the prerender completes', async () => {
+    // A composite signal from AbortSignal.any() is retained by the runtime for
+    // as long as it has an abort listener attached, so a listener left behind
+    // by a completed render keeps that render reachable for the lifetime of the
+    // source signals.
+    //
+    // React bounds its listener with a lifetime signal, so the runtime removes
+    // the listener rather than React calling removeEventListener. This test
+    // observes the registration itself through a Node API, which is the only
+    // way to see that removal. The suites that run under jsdom assert on the
+    // lifetime signal instead.
+    const {getEventListeners} = require('node:events');
+
+    const outer = new AbortController();
+    const timeout = new AbortController();
+    const composite = AbortSignal.any([outer.signal, timeout.signal]);
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    const {prelude} = await serverAct(() =>
+      ReactServerDOMStaticServer.prerenderToNodeStream(<App />, webpackMap, {
+        signal: composite,
+      }),
+    );
+    expect(getEventListeners(composite, 'abort')).toHaveLength(1);
+
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          prelude.resume();
+          prelude.on('end', resolve);
+        }),
+    );
+
+    expect(getEventListeners(composite, 'abort')).toHaveLength(0);
   });
 });

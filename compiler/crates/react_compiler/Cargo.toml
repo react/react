@@ -15,5 +15,6 @@ react_compiler_ssa = { path = "../react_compiler_ssa" }
 react_compiler_typeinference = { path = "../react_compiler_typeinference" }
 react_compiler_validation = { path = "../react_compiler_validation" }
 indexmap = "2"
+rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }

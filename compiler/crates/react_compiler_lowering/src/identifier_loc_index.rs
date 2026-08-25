@@ -5,7 +5,7 @@
 //! lookups; each entry also stores `start` (byte offset) for range-containment
 //! checks in `gather_captured_context`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use react_compiler_ast::expressions::*;
 use react_compiler_ast::jsx::JSXIdentifier;
@@ -45,7 +45,7 @@ pub struct IdentifierLocEntry {
 
 /// Index mapping node_id → IdentifierLocEntry for all Identifier
 /// and JSXIdentifier nodes in a function's AST.
-pub type IdentifierLocIndex = HashMap<u32, IdentifierLocEntry>;
+pub type IdentifierLocIndex = FxHashMap<u32, IdentifierLocEntry>;
 
 struct IdentifierLocVisitor {
     index: IdentifierLocIndex,
@@ -268,7 +268,7 @@ pub fn build_identifier_loc_index(
         .unwrap_or(scope_info.program_scope);
 
     let mut visitor = IdentifierLocVisitor {
-        index: HashMap::new(),
+        index: FxHashMap::default(),
         current_opening_element_loc: None,
     };
     let mut walker = AstWalker::with_initial_scope(scope_info, func_scope);

@@ -11,10 +11,9 @@
 //! creation, aliasing, mutation, freezing, and error conditions for each
 //! instruction and terminal in the HIR.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use indexmap::IndexMap;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-use indexmap::IndexSet;
 use react_compiler_diagnostics::CompilerDiagnostic;
 use react_compiler_diagnostics::CompilerDiagnosticDetail;
 use react_compiler_diagnostics::ErrorCategory;
@@ -61,7 +60,7 @@ pub fn infer_mutation_aliasing_effects(
     let mut initial_state = InferenceState::empty(env, is_function_expression);
 
     // Map of blocks to the last (merged) incoming state that was processed
-    let mut states_by_block: HashMap<BlockId, InferenceState> = HashMap::new();
+    let mut states_by_block: FxHashMap<BlockId, InferenceState> = FxHashMap::default();
 
     // Initialize context variables
     for ctx_place in &func.context {
@@ -70,7 +69,7 @@ pub fn infer_mutation_aliasing_effects(
             value_id,
             AbstractValue {
                 kind: ValueKind::Context,
-                reason: hashset_of(ValueReason::Other),
+                reason: ValueReasonSet::single(ValueReason::Other),
             },
         );
         initial_state.define(ctx_place.identifier, value_id);
@@ -79,12 +78,12 @@ pub fn infer_mutation_aliasing_effects(
     let param_kind: AbstractValue = if is_function_expression {
         AbstractValue {
             kind: ValueKind::Mutable,
-            reason: hashset_of(ValueReason::Other),
+            reason: ValueReasonSet::single(ValueReason::Other),
         }
     } else {
         AbstractValue {
             kind: ValueKind::Frozen,
-            reason: hashset_of(ValueReason::ReactiveFunctionArgument),
+            reason: ValueReasonSet::single(ValueReason::ReactiveFunctionArgument),
         }
     };
 
@@ -104,7 +103,7 @@ pub fn infer_mutation_aliasing_effects(
                 value_id,
                 AbstractValue {
                     kind: ValueKind::Mutable,
-                    reason: hashset_of(ValueReason::Other),
+                    reason: ValueReasonSet::single(ValueReason::Other),
                 },
             );
             initial_state.define(ref_place.identifier, value_id);
@@ -115,12 +114,12 @@ pub fn infer_mutation_aliasing_effects(
         }
     }
 
-    let mut queued_states: indexmap::IndexMap<BlockId, InferenceState> = indexmap::IndexMap::new();
+    let mut queued_states: IndexMap<BlockId, InferenceState, FxBuildHasher> = IndexMap::default();
 
     // Queue helper
     fn queue(
-        queued_states: &mut indexmap::IndexMap<BlockId, InferenceState>,
-        states_by_block: &HashMap<BlockId, InferenceState>,
+        queued_states: &mut IndexMap<BlockId, InferenceState, FxBuildHasher>,
+        states_by_block: &FxHashMap<BlockId, InferenceState>,
         block_id: BlockId,
         state: InferenceState,
     ) {
@@ -152,16 +151,16 @@ pub fn infer_mutation_aliasing_effects(
     let non_mutating_spreads = find_non_mutated_destructure_spreads(func, env);
 
     let mut context = Context {
-        interned_effects: HashMap::new(),
-        instruction_signature_cache: HashMap::new(),
-        catch_handlers: HashMap::new(),
+        interned_effects: FxHashMap::default(),
+        instruction_signature_cache: FxHashMap::default(),
+        catch_handlers: FxHashMap::default(),
         is_function_expression,
         hoisted_context_declarations,
         non_mutating_spreads,
-        effect_value_id_cache: HashMap::new(),
-        function_values: HashMap::new(),
-        function_signature_cache: HashMap::new(),
-        aliasing_config_temp_cache: HashMap::new(),
+        effect_value_id_cache: FxHashMap::default(),
+        function_values: FxHashMap::default(),
+        function_signature_cache: FxHashMap::default(),
+        aliasing_config_temp_cache: FxHashMap::default(),
     };
 
     let mut iteration_count = 0;
@@ -186,7 +185,7 @@ pub fn infer_mutation_aliasing_effects(
             };
 
             states_by_block.insert(block_id, incoming_state.clone());
-            let mut state = incoming_state.clone();
+            let mut state = incoming_state;
 
             infer_block(&mut context, &mut state, block_id, func, env)?;
 
@@ -259,16 +258,88 @@ impl ValueId {
 // AbstractValue
 // =============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct AbstractValue {
     kind: ValueKind,
-    reason: IndexSet<ValueReason>,
+    reason: ValueReasonSet,
 }
 
-fn hashset_of(r: ValueReason) -> IndexSet<ValueReason> {
-    let mut s = IndexSet::new();
-    s.insert(r);
-    s
+/// Capacity of [`ValueReasonSet`]. A set holds at most one of each `ValueReason`
+/// variant, of which there are currently 12; the extra slots are headroom so
+/// that adding variants upstream cannot overflow the set.
+const VALUE_REASON_CAPACITY: usize = 16;
+
+/// An insertion-ordered set of [`ValueReason`]s, stored inline.
+///
+/// This is a deliberate replacement for `IndexSet`, enabling insertion-order
+/// memory while avoiding any heap allocation. At `AbstractValue`'s scale, this
+/// has a dramatic impact on heap memory and wall time.
+/// This takes advantage of the format of the data it's actually storing. A set
+/// can hold at most one of each variant, so the members fit into a fixed inline
+/// array. `ValueReason` is implemented as a single byte, so this struct is
+/// ~18 bytes on the stack.
+///
+/// Insertion order is preserved deliberately: [`primary_reason`] returns the
+/// first non-`Other` member, matching the iteration order of the `Set` used by
+/// the TypeScript implementation this is ported from.
+#[derive(Debug, Clone, Copy)]
+struct ValueReasonSet {
+    /// Members in insertion order. Only the first `len` entries are meaningful.
+    members: [ValueReason; VALUE_REASON_CAPACITY],
+    len: u8,
+}
+
+impl Default for ValueReasonSet {
+    fn default() -> Self {
+        ValueReasonSet {
+            members: [ValueReason::Other; VALUE_REASON_CAPACITY],
+            len: 0,
+        }
+    }
+}
+
+impl ValueReasonSet {
+    fn single(reason: ValueReason) -> Self {
+        let mut set = Self::default();
+        set.insert(reason);
+        set
+    }
+
+    fn contains(&self, reason: ValueReason) -> bool {
+        self.members[..self.len as usize].contains(&reason)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = ValueReason> + '_ {
+        self.members[..self.len as usize].iter().copied()
+    }
+
+    /// Appends `reason` if not already present, preserving insertion order.
+    fn insert(&mut self, reason: ValueReason) {
+        if self.contains(reason) {
+            return;
+        }
+        debug_assert!(
+            (self.len as usize) < VALUE_REASON_CAPACITY,
+            "ValueReasonSet capacity must cover every ValueReason variant"
+        );
+        if (self.len as usize) < VALUE_REASON_CAPACITY {
+            self.members[self.len as usize] = reason;
+            self.len += 1;
+        }
+    }
+
+    /// True when every member of `other` is also a member of `self`.
+    fn is_superset_of(&self, other: &ValueReasonSet) -> bool {
+        other.iter().all(|reason| self.contains(reason))
+    }
+
+    /// Adds every member of `other`, keeping `self`'s existing order and
+    /// appending newcomers in `other`'s order — matching `IndexSet::insert`.
+    fn union_with(&mut self, other: &ValueReasonSet) {
+        for reason in other.iter() {
+            self.insert(reason);
+        }
+    }
 }
 
 // =============================================================================
@@ -282,9 +353,9 @@ fn hashset_of(r: ValueReason) -> IndexSet<ValueReason> {
 struct InferenceState {
     is_function_expression: bool,
     /// The kind of each value, based on its allocation site
-    values: HashMap<ValueId, AbstractValue>,
+    values: FxHashMap<ValueId, AbstractValue>,
     /// The set of values pointed to by each identifier
-    variables: HashMap<IdentifierId, HashSet<ValueId>>,
+    variables: FxHashMap<IdentifierId, FxHashSet<ValueId>>,
     /// Tracks uninitialized identifier access errors (matches TS invariant).
     /// Uses Cell so it can be set from `&self` methods like `kind()`.
     /// Stores (IdentifierId, usage_loc) where usage_loc is the source location
@@ -296,8 +367,8 @@ impl InferenceState {
     fn empty(_env: &Environment, is_function_expression: bool) -> Self {
         InferenceState {
             is_function_expression,
-            values: HashMap::new(),
-            variables: HashMap::new(),
+            values: FxHashMap::default(),
+            variables: FxHashMap::default(),
             uninitialized_access: std::cell::Cell::new(None),
         }
     }
@@ -316,7 +387,7 @@ impl InferenceState {
                 }
                 return AbstractValue {
                     kind: ValueKind::Mutable,
-                    reason: hashset_of(ValueReason::Other),
+                    reason: ValueReasonSet::single(ValueReason::Other),
                 };
             }
         };
@@ -333,7 +404,7 @@ impl InferenceState {
         }
         merged_kind.unwrap_or_else(|| AbstractValue {
             kind: ValueKind::Mutable,
-            reason: hashset_of(ValueReason::Other),
+            reason: ValueReasonSet::single(ValueReason::Other),
         })
     }
 
@@ -342,7 +413,7 @@ impl InferenceState {
     }
 
     fn define(&mut self, place_id: IdentifierId, value_id: ValueId) {
-        let mut set = HashSet::new();
+        let mut set = FxHashSet::default();
         set.insert(value_id);
         self.variables.insert(place_id, set);
     }
@@ -354,14 +425,14 @@ impl InferenceState {
                 // Create a stable value for uninitialized identifiers
                 // Use a deterministic ID based on the from identifier
                 let vid = ValueId(from.0 | 0x80000000);
-                let mut set = HashSet::new();
+                let mut set = FxHashSet::default();
                 set.insert(vid);
                 if !self.values.contains_key(&vid) {
                     self.values.insert(
                         vid,
                         AbstractValue {
                             kind: ValueKind::Mutable,
-                            reason: hashset_of(ValueReason::Other),
+                            reason: ValueReasonSet::single(ValueReason::Other),
                         },
                     );
                 }
@@ -380,7 +451,7 @@ impl InferenceState {
             Some(v) => v.clone(),
             None => return,
         };
-        let merged: HashSet<ValueId> = prev_values.union(&new_values).copied().collect();
+        let merged: FxHashSet<ValueId> = prev_values.union(&new_values).copied().collect();
         self.variables.insert(place, merged);
     }
 
@@ -439,7 +510,7 @@ impl InferenceState {
             value_id,
             AbstractValue {
                 kind: ValueKind::Frozen,
-                reason: hashset_of(reason),
+                reason: ValueReasonSet::single(reason),
             },
         );
         // Note: In TS, this also transitively freezes FunctionExpression captures
@@ -486,15 +557,15 @@ impl InferenceState {
     }
 
     fn merge(&self, other: &InferenceState) -> Option<InferenceState> {
-        let mut next_values: Option<HashMap<ValueId, AbstractValue>> = None;
-        let mut next_variables: Option<HashMap<IdentifierId, HashSet<ValueId>>> = None;
+        let mut next_values: Option<FxHashMap<ValueId, AbstractValue>> = None;
+        let mut next_variables: Option<FxHashMap<IdentifierId, FxHashSet<ValueId>>> = None;
 
         // Merge values present in both
         for (id, this_value) in &self.values {
             if let Some(other_value) = other.values.get(id) {
                 let merged = merge_abstract_values(this_value, other_value);
                 if merged.kind != this_value.kind
-                    || !is_superset(&this_value.reason, &merged.reason)
+                    || !this_value.reason.is_superset_of(&merged.reason)
                 {
                     let nv = next_values.get_or_insert_with(|| self.values.clone());
                     nv.insert(*id, merged);
@@ -521,7 +592,7 @@ impl InferenceState {
                 }
                 if has_new {
                     let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                    let merged: HashSet<ValueId> =
+                    let merged: FxHashSet<ValueId> =
                         this_values.union(other_values).copied().collect();
                     nvars.insert(*id, merged);
                 }
@@ -550,9 +621,9 @@ impl InferenceState {
     fn infer_phi(
         &mut self,
         phi_place_id: IdentifierId,
-        phi_operands: &indexmap::IndexMap<BlockId, Place>,
+        phi_operands: &IndexMap<BlockId, Place, FxBuildHasher>,
     ) {
-        let mut values: HashSet<ValueId> = HashSet::new();
+        let mut values: FxHashSet<ValueId> = FxHashSet::default();
         for (_, operand) in phi_operands {
             if let Some(operand_values) = self.variables.get(&operand.identifier) {
                 for v in operand_values {
@@ -565,10 +636,6 @@ impl InferenceState {
             self.variables.insert(phi_place_id, values);
         }
     }
-}
-
-fn is_superset(a: &IndexSet<ValueReason>, b: &IndexSet<ValueReason>) -> bool {
-    b.iter().all(|x| a.contains(x))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -593,24 +660,24 @@ enum MutationResult {
 // =============================================================================
 
 struct Context {
-    interned_effects: HashMap<String, AliasingEffect>,
-    instruction_signature_cache: HashMap<u32, InstructionSignature>,
-    catch_handlers: HashMap<BlockId, Place>,
+    interned_effects: FxHashMap<String, AliasingEffect>,
+    instruction_signature_cache: FxHashMap<u32, InstructionSignature>,
+    catch_handlers: FxHashMap<BlockId, Place>,
     is_function_expression: bool,
-    hoisted_context_declarations: HashMap<DeclarationId, Option<Place>>,
-    non_mutating_spreads: HashSet<IdentifierId>,
+    hoisted_context_declarations: FxHashMap<DeclarationId, Option<Place>>,
+    non_mutating_spreads: FxHashSet<IdentifierId>,
     /// Cache of ValueIds keyed by effect hash, ensuring stable allocation-site identity
     /// across fixpoint iterations. Mirrors TS `effectInstructionValueCache`.
-    effect_value_id_cache: HashMap<String, ValueId>,
+    effect_value_id_cache: FxHashMap<String, ValueId>,
     /// Maps ValueId to FunctionId for function expressions, so we can look up
     /// locally-declared functions when processing Apply effects.
-    function_values: HashMap<ValueId, FunctionId>,
+    function_values: FxHashMap<ValueId, FunctionId>,
     /// Cache of function expression signatures, keyed by FunctionId
-    function_signature_cache: HashMap<FunctionId, AliasingSignature>,
+    function_signature_cache: FxHashMap<FunctionId, AliasingSignature>,
     /// Cache of temporary places created for aliasing signature config temporaries.
     /// Keyed by (lvalue_identifier_id, temp_name) to ensure stable allocation
     /// across fixpoint iterations.
-    aliasing_config_temp_cache: HashMap<(IdentifierId, String), Place>,
+    aliasing_config_temp_cache: FxHashMap<(IdentifierId, String), Place>,
 }
 
 impl Context {
@@ -736,13 +803,11 @@ fn hash_effect(effect: &AliasingEffect) -> String {
 
 fn merge_abstract_values(a: &AbstractValue, b: &AbstractValue) -> AbstractValue {
     let kind = merge_value_kinds(a.kind, b.kind);
-    if kind == a.kind && kind == b.kind && is_superset(&a.reason, &b.reason) {
+    if kind == a.kind && kind == b.kind && a.reason.is_superset_of(&b.reason) {
         return a.clone();
     }
-    let mut reason = a.reason.clone();
-    for r in &b.reason {
-        reason.insert(*r);
-    }
+    let mut reason = a.reason;
+    reason.union_with(&b.reason);
     AbstractValue { kind, reason }
 }
 
@@ -785,11 +850,11 @@ fn merge_value_kinds(a: ValueKind, b: ValueKind) -> ValueKind {
 fn find_hoisted_context_declarations(
     func: &HirFunction,
     env: &Environment,
-) -> HashMap<DeclarationId, Option<Place>> {
-    let mut hoisted: HashMap<DeclarationId, Option<Place>> = HashMap::new();
+) -> FxHashMap<DeclarationId, Option<Place>> {
+    let mut hoisted: FxHashMap<DeclarationId, Option<Place>> = FxHashMap::default();
 
     fn visit(
-        hoisted: &mut HashMap<DeclarationId, Option<Place>>,
+        hoisted: &mut FxHashMap<DeclarationId, Option<Place>>,
         place: &Place,
         env: &Environment,
     ) {
@@ -831,8 +896,8 @@ fn find_hoisted_context_declarations(
 fn find_non_mutated_destructure_spreads(
     func: &HirFunction,
     env: &Environment,
-) -> HashSet<IdentifierId> {
-    let mut known_frozen: HashSet<IdentifierId> = HashSet::new();
+) -> FxHashSet<IdentifierId> {
+    let mut known_frozen: FxHashSet<IdentifierId> = FxHashSet::default();
     if func.fn_type == ReactFunctionType::Component {
         if let Some(param) = func.params.first() {
             if let ParamPattern::Place(p) = param {
@@ -847,7 +912,8 @@ fn find_non_mutated_destructure_spreads(
         }
     }
 
-    let mut candidate_non_mutating_spreads: HashMap<IdentifierId, IdentifierId> = HashMap::new();
+    let mut candidate_non_mutating_spreads: FxHashMap<IdentifierId, IdentifierId> =
+        FxHashMap::default();
     for (_block_id, block) in &func.body.blocks {
         if !candidate_non_mutating_spreads.is_empty() {
             for phi in &block.phis {
@@ -954,7 +1020,7 @@ fn find_non_mutated_destructure_spreads(
         }
     }
 
-    let mut non_mutating: HashSet<IdentifierId> = HashSet::new();
+    let mut non_mutating: FxHashSet<IdentifierId> = FxHashSet::default();
     for (key, value) in &candidate_non_mutating_spreads {
         if key == value {
             non_mutating.insert(*key);
@@ -991,7 +1057,7 @@ fn infer_block(
     let block = &func.body.blocks[&block_id];
 
     // Process phis
-    let phis: Vec<(IdentifierId, indexmap::IndexMap<BlockId, Place>)> = block
+    let phis: Vec<(IdentifierId, IndexMap<BlockId, Place, FxBuildHasher>)> = block
         .phis
         .iter()
         .map(|phi| (phi.place.identifier, phi.operands.clone()))
@@ -1144,7 +1210,7 @@ fn apply_signature(
         | InstructionValue::ObjectMethod { lowered_func, .. } => {
             let inner_func = &env.functions[lowered_func.func.0 as usize];
             if let Some(ref aliasing_effects) = inner_func.aliasing_effects {
-                let context_ids: HashSet<IdentifierId> =
+                let context_ids: FxHashSet<IdentifierId> =
                     inner_func.context.iter().map(|p| p.identifier).collect();
                 for effect in aliasing_effects {
                     let (mutate_value, is_mutate) = match effect {
@@ -1203,7 +1269,7 @@ fn apply_signature(
     }
 
     // Track which values we've already initialized
-    let mut initialized: HashSet<IdentifierId> = HashSet::new();
+    let mut initialized: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Get the cached signature effects
     let sig = context.instruction_signature_cache.get(&instr_idx).unwrap();
@@ -1230,7 +1296,7 @@ fn apply_signature(
             vid,
             AbstractValue {
                 kind: ValueKind::Mutable,
-                reason: hashset_of(ValueReason::Other),
+                reason: ValueReasonSet::single(ValueReason::Other),
             },
         );
         state.define(instr.lvalue.identifier, vid);
@@ -1296,7 +1362,7 @@ fn apply_effect(
     context: &mut Context,
     state: &mut InferenceState,
     effect: AliasingEffect,
-    initialized: &mut HashSet<IdentifierId>,
+    initialized: &mut FxHashSet<IdentifierId>,
     effects: &mut Vec<AliasingEffect>,
     env: &mut Environment,
     func: &HirFunction,
@@ -1338,7 +1404,7 @@ fn apply_effect(
                 value_id,
                 AbstractValue {
                     kind,
-                    reason: hashset_of(reason),
+                    reason: ValueReasonSet::single(reason),
                 },
             );
             state.define(into.identifier, value_id);
@@ -1367,7 +1433,7 @@ fn apply_effect(
                 value_id,
                 AbstractValue {
                     kind: from_value.kind,
-                    reason: from_value.reason.clone(),
+                    reason: from_value.reason,
                 },
             );
             state.define(into.identifier, value_id);
@@ -1484,7 +1550,7 @@ fn apply_effect(
                     } else {
                         ValueKind::Frozen
                     },
-                    reason: IndexSet::new(),
+                    reason: ValueReasonSet::default(),
                 },
             );
             state.define(into.identifier, value_id);
@@ -1596,7 +1662,7 @@ fn apply_effect(
                         value_id,
                         AbstractValue {
                             kind: from_value.kind,
-                            reason: from_value.reason.clone(),
+                            reason: from_value.reason,
                         },
                     );
                     state.define(into.identifier, value_id);
@@ -1612,7 +1678,7 @@ fn apply_effect(
                         value_id,
                         AbstractValue {
                             kind: from_value.kind,
-                            reason: from_value.reason.clone(),
+                            reason: from_value.reason,
                         },
                     );
                     state.define(into.identifier, value_id);
@@ -2582,7 +2648,7 @@ fn compute_effects_for_legacy_signature(
     args: &[PlaceOrSpreadOrHole],
     _loc: Option<&SourceLocation>,
     env: &Environment,
-    function_values: &HashMap<ValueId, FunctionId>,
+    function_values: &FxHashMap<ValueId, FunctionId>,
     todo_errors: &mut Vec<react_compiler_diagnostics::CompilerErrorDetail>,
 ) -> Vec<AliasingEffect> {
     let return_value_reason = signature.return_value_reason.unwrap_or(ValueReason::Other);
@@ -2786,7 +2852,7 @@ fn are_arguments_immutable_and_non_mutating(
     state: &InferenceState,
     args: &[PlaceOrSpreadOrHole],
     env: &Environment,
-    function_values: &HashMap<ValueId, FunctionId>,
+    function_values: &FxHashMap<ValueId, FunctionId>,
 ) -> bool {
     for arg in args {
         match arg {
@@ -2870,14 +2936,14 @@ fn compute_effects_for_aliasing_signature_config(
     args: &[PlaceOrSpreadOrHole],
     context: &[Place],
     _loc: Option<&SourceLocation>,
-    temp_cache: &mut HashMap<(IdentifierId, String), Place>,
+    temp_cache: &mut FxHashMap<(IdentifierId, String), Place>,
 ) -> Result<Option<Vec<AliasingEffect>>, CompilerDiagnostic> {
     // Build substitutions from config strings to places
-    let mut substitutions: HashMap<String, Vec<Place>> = HashMap::new();
+    let mut substitutions: FxHashMap<String, Vec<Place>> = FxHashMap::default();
     substitutions.insert(config.receiver.clone(), vec![receiver.clone()]);
     substitutions.insert(config.returns.clone(), vec![lvalue.clone()]);
 
-    let mut mutable_spreads: HashSet<IdentifierId> = HashSet::new();
+    let mut mutable_spreads: FxHashSet<IdentifierId> = FxHashSet::default();
 
     for (i, arg) in args.iter().enumerate() {
         match arg {
@@ -3113,8 +3179,8 @@ fn compute_effects_for_aliasing_signature(
         return Ok(None);
     }
 
-    let mut mutable_spreads: HashSet<IdentifierId> = HashSet::new();
-    let mut substitutions: HashMap<IdentifierId, Vec<Place>> = HashMap::new();
+    let mut mutable_spreads: FxHashSet<IdentifierId> = FxHashSet::default();
+    let mut substitutions: FxHashMap<IdentifierId, Vec<Place>> = FxHashMap::default();
     substitutions.insert(signature.receiver, vec![receiver.clone()]);
     substitutions.insert(signature.returns, vec![lvalue.clone()]);
 
@@ -3407,8 +3473,8 @@ fn compute_effects_for_aliasing_signature(
 /// since the primary reason is always inserted first, this effectively
 /// picks the most specific non-Other reason. We replicate this by
 /// preferring any non-Other reason over Other.
-fn primary_reason(reasons: &IndexSet<ValueReason>) -> ValueReason {
-    for &r in reasons {
+fn primary_reason(reasons: &ValueReasonSet) -> ValueReason {
+    for r in reasons.iter() {
         if r != ValueReason::Other {
             return r;
         }
@@ -3417,32 +3483,32 @@ fn primary_reason(reasons: &IndexSet<ValueReason>) -> ValueReason {
 }
 
 fn get_write_error_reason(abstract_value: &AbstractValue) -> String {
-    if abstract_value.reason.contains(&ValueReason::Global) {
+    if abstract_value.reason.contains(ValueReason::Global) {
         "Modifying a variable defined outside a component or hook is not allowed. Consider using an effect".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::JsxCaptured) {
+    } else if abstract_value.reason.contains(ValueReason::JsxCaptured) {
         "Modifying a value used previously in JSX is not allowed. Consider moving the modification before the JSX".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::Context) {
+    } else if abstract_value.reason.contains(ValueReason::Context) {
         "Modifying a value returned from 'useContext()' is not allowed.".to_string()
     } else if abstract_value
         .reason
-        .contains(&ValueReason::KnownReturnSignature)
+        .contains(ValueReason::KnownReturnSignature)
     {
         "Modifying a value returned from a function whose return value should not be mutated"
             .to_string()
     } else if abstract_value
         .reason
-        .contains(&ValueReason::ReactiveFunctionArgument)
+        .contains(ValueReason::ReactiveFunctionArgument)
     {
         "Modifying component props or hook arguments is not allowed. Consider using a local variable instead".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::State) {
+    } else if abstract_value.reason.contains(ValueReason::State) {
         "Modifying a value returned from 'useState()', which should not be modified directly. Use the setter function to update instead".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::ReducerState) {
+    } else if abstract_value.reason.contains(ValueReason::ReducerState) {
         "Modifying a value returned from 'useReducer()', which should not be modified directly. Use the dispatch function to update instead".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::Effect) {
+    } else if abstract_value.reason.contains(ValueReason::Effect) {
         "Modifying a value used previously in an effect function or as an effect dependency is not allowed. Consider moving the modification before calling useEffect()".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::HookCaptured) {
+    } else if abstract_value.reason.contains(ValueReason::HookCaptured) {
         "Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook".to_string()
-    } else if abstract_value.reason.contains(&ValueReason::HookReturn) {
+    } else if abstract_value.reason.contains(ValueReason::HookReturn) {
         "Modifying a value returned from a hook is not allowed. Consider moving the modification into the hook where the value is constructed".to_string()
     } else {
         "This modifies a variable that React considers immutable".to_string()

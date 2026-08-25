@@ -40,7 +40,8 @@
 //!
 //! Analogous to TS `Inference/InlineImmediatelyInvokedFunctionExpressions.ts`.
 
-use std::collections::{HashMap, HashSet};
+use indexmap::IndexSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::visitors;
@@ -62,9 +63,9 @@ pub fn inline_immediately_invoked_function_expressions(
     env: &mut Environment,
 ) {
     // Track all function expressions that are assigned to a temporary
-    let mut functions: HashMap<IdentifierId, FunctionId> = HashMap::new();
+    let mut functions: FxHashMap<IdentifierId, FunctionId> = FxHashMap::default();
     // Functions that are inlined (by identifier id of the callee)
-    let mut inlined_functions: HashSet<IdentifierId> = HashSet::new();
+    let mut inlined_functions: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Iterate the *existing* blocks from the outer component to find IIFEs
     // and inline them. During iteration we will modify `func` (by inlining the CFG
@@ -140,7 +141,7 @@ pub fn inline_immediately_invoked_function_expressions(
                         instructions: continuation_instructions,
                         kind: block_kind,
                         phis: Vec::new(),
-                        preds: indexmap::IndexSet::new(),
+                        preds: IndexSet::default(),
                         terminal: continuation_terminal,
                     };
                     func.body

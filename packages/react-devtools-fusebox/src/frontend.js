@@ -11,6 +11,7 @@ import * as React from 'react';
 import {createRoot} from 'react-dom/client';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import DevTools from 'react-devtools-shared/src/devtools/views/DevTools';
 
 import type {
@@ -32,16 +33,18 @@ export function createBridge(wall?: Wall): FrontendBridge {
     return new Bridge(wall);
   }
 
-  return new Bridge({listen: () => {}, send: () => {}});
+  return new Bridge({listen: () => () => {}, send: () => {}});
 }
 
 export function createStore(bridge: FrontendBridge, config?: Config): Store {
-  return new Store(bridge, {
+  const store = new Store(bridge, {
     checkBridgeProtocolCompatibility: true,
     supportsTraceUpdates: true,
     supportsClickToInspect: true,
     ...config,
   });
+  subscribeToStoreErrors(store, bridge);
+  return store;
 }
 
 type InitializationOptions = {

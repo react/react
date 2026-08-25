@@ -7,3 +7,4 @@ edition = "2024"
 react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
 react_compiler_hir = { path = "../react_compiler_hir" }
 indexmap = "2"
+rustc-hash = "2"

@@ -14,7 +14,7 @@
 //!   vars, aliasing between params/context-vars/return-value)
 //! - The legacy `Effect` to store on each Place
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
 use indexmap::IndexMap;
 
@@ -76,10 +76,10 @@ enum NodeValue {
 #[derive(Debug, Clone)]
 struct Node {
     id: IdentifierId,
-    created_from: IndexMap<IdentifierId, usize>,
-    captures: IndexMap<IdentifierId, usize>,
-    aliases: IndexMap<IdentifierId, usize>,
-    maybe_aliases: IndexMap<IdentifierId, usize>,
+    created_from: IndexMap<IdentifierId, usize, FxBuildHasher>,
+    captures: IndexMap<IdentifierId, usize, FxBuildHasher>,
+    aliases: IndexMap<IdentifierId, usize, FxBuildHasher>,
+    maybe_aliases: IndexMap<IdentifierId, usize, FxBuildHasher>,
     edges: Vec<Edge>,
     transitive: Option<MutationInfo>,
     local: Option<MutationInfo>,
@@ -92,10 +92,10 @@ impl Node {
     fn new(id: IdentifierId, value: NodeValue) -> Self {
         Node {
             id,
-            created_from: IndexMap::new(),
-            captures: IndexMap::new(),
-            aliases: IndexMap::new(),
-            maybe_aliases: IndexMap::new(),
+            created_from: IndexMap::default(),
+            captures: IndexMap::default(),
+            aliases: IndexMap::default(),
+            maybe_aliases: IndexMap::default(),
             edges: Vec::new(),
             transitive: None,
             local: None,
@@ -107,13 +107,13 @@ impl Node {
 }
 
 struct AliasingState {
-    nodes: IndexMap<IdentifierId, Node>,
+    nodes: IndexMap<IdentifierId, Node, FxBuildHasher>,
 }
 
 impl AliasingState {
     fn new() -> Self {
         AliasingState {
-            nodes: IndexMap::new(),
+            nodes: IndexMap::default(),
         }
     }
 
@@ -198,7 +198,7 @@ impl AliasingState {
     }
 
     fn render(&self, index: usize, start: IdentifierId, env: &mut Environment) {
-        let mut seen = HashSet::new();
+        let mut seen = FxHashSet::default();
         let mut queue: Vec<IdentifierId> = vec![start];
         while let Some(current) = queue.pop() {
             if !seen.insert(current) {
@@ -260,7 +260,7 @@ impl AliasingState {
             Forwards,
         }
 
-        let mut seen: HashMap<IdentifierId, MutationKind> = HashMap::new();
+        let mut seen: FxHashMap<IdentifierId, MutationKind> = FxHashMap::default();
         let mut queue: Vec<QueueEntry> = vec![QueueEntry {
             place: start,
             transitive,
@@ -475,7 +475,7 @@ pub fn infer_mutation_aliasing_ranges(
         into: Place,
         index: usize,
     }
-    let mut pending_phis: HashMap<BlockId, Vec<PendingPhiOperand>> = HashMap::new();
+    let mut pending_phis: FxHashMap<BlockId, Vec<PendingPhiOperand>> = FxHashMap::default();
 
     struct PendingMutation {
         index: usize,
@@ -510,7 +510,7 @@ pub fn infer_mutation_aliasing_ranges(
     }
     state.create(&func.returns, NodeValue::Object);
 
-    let mut seen_blocks: HashSet<BlockId> = HashSet::new();
+    let mut seen_blocks: FxHashSet<BlockId> = FxHashSet::default();
 
     // Collect block iteration data to avoid borrow conflicts
     let block_order: Vec<BlockId> = func.body.blocks.keys().cloned().collect();
@@ -734,7 +734,7 @@ pub fn infer_mutation_aliasing_ranges(
     // Set effect on mutated params/context vars
     // We need to do this in a separate pass because we need to know which params
     // were mutated before setting effects
-    let mut captured_params: HashSet<IdentifierId> = HashSet::new();
+    let mut captured_params: FxHashSet<IdentifierId> = FxHashSet::default();
     for param in &func.params {
         let place = match param {
             react_compiler_hir::ParamPattern::Place(p) => p,
@@ -892,7 +892,7 @@ pub fn infer_mutation_aliasing_ranges(
 
             // Compute operand effects from instruction effects
             let effects = instr.effects.as_ref().unwrap().clone();
-            let mut operand_effects: HashMap<IdentifierId, Effect> = HashMap::new();
+            let mut operand_effects: FxHashMap<IdentifierId, Effect> = FxHashMap::default();
 
             for effect in &effects {
                 match effect {

@@ -16,6 +16,7 @@ import {
   enableProfilerTimer,
   enableComponentPerformanceTrack,
   enableAsyncDebugInfo,
+  enableFlightWeakThenables,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -204,15 +205,24 @@ function isPromiseCreationInternal(url: string, functionName: string): boolean {
   if (url !== '') {
     return false;
   }
+  // V8 used to name the frames of static methods on the Promise constructor
+  // "Function.x" but newer versions name them "Promise.x". We match both.
   switch (functionName) {
     case 'new Promise':
     case 'Function.withResolvers':
+    case 'Promise.withResolvers':
     case 'Function.reject':
+    case 'Promise.reject':
     case 'Function.resolve':
+    case 'Promise.resolve':
     case 'Function.all':
+    case 'Promise.all':
     case 'Function.allSettled':
+    case 'Promise.allSettled':
     case 'Function.race':
+    case 'Promise.race':
     case 'Function.try':
+    case 'Promise.try':
       return true;
     default:
       return false;
@@ -333,18 +343,28 @@ function isPromiseAwaitInternal(url: string, functionName: string): boolean {
   if (url !== '') {
     return false;
   }
+  // V8 used to name the frames of static methods on the Promise constructor
+  // "Function.x" but newer versions name them "Promise.x". We match both.
   switch (functionName) {
     case 'Promise.then':
     case 'Promise.catch':
     case 'Promise.finally':
     case 'Function.reject':
+    case 'Promise.reject':
     case 'Function.resolve':
+    case 'Promise.resolve':
     case 'Function.all':
+    case 'Promise.all':
     case 'Function.allSettled':
+    case 'Promise.allSettled':
     case 'Function.any':
+    case 'Promise.any':
     case 'Function.race':
+    case 'Promise.race':
     case 'Function.try':
+    case 'Promise.try':
     case 'Function.withResolvers':
+    case 'Promise.withResolvers':
       return true;
     default:
       return false;
@@ -596,6 +616,9 @@ export type Request = {
   writtenClientReferences: Map<ClientReferenceKey, number>,
   writtenServerReferences: Map<ServerReference<any>, number>,
   writtenObjects: WeakMap<Reference, string>,
+  writtenImportStrings: Map<string, string>,
+  // The combined length of the keys in writtenImportStrings.
+  writtenImportStringsSize: number,
   temporaryReferences: void | TemporaryReferenceSet,
   identifierPrefix: string,
   identifierCount: number,
@@ -721,6 +744,8 @@ function RequestInstance(
   this.writtenClientReferences = new Map();
   this.writtenServerReferences = new Map();
   this.writtenObjects = new WeakMap();
+  this.writtenImportStrings = new Map();
+  this.writtenImportStringsSize = 0;
   this.temporaryReferences = temporaryReferences;
   this.identifierPrefix = identifierPrefix || '';
   this.identifierCount = 1;
@@ -1059,12 +1084,12 @@ function emitRequestedDebugThenable(
   );
 }
 
-function serializeThenable(
+function createThenableTask(
   request: Request,
   task: Task,
   thenable: Thenable<any>,
-): number {
-  const newTask = createTask(
+): Task {
+  return createTask(
     request,
     thenable as any, // will be replaced by the value before we retry. used for debug info.
     task.keyPath, // the server component sequence continues through Promise-as-a-child.
@@ -1079,9 +1104,16 @@ function serializeThenable(
     __DEV__ ? task.debugStack : null,
     __DEV__ ? task.debugTask : null,
   );
+}
 
+function serializeThenable(
+  request: Request,
+  task: Task,
+  thenable: Thenable<any>,
+): number {
   switch (thenable.status) {
     case 'fulfilled': {
+      const newTask = createThenableTask(request, task, thenable);
       forwardDebugInfoFromThenable(request, newTask, thenable, null, null);
       // We have the resolved value, we can go ahead and schedule it for serialization.
       newTask.model = thenable.value;
@@ -1089,12 +1121,102 @@ function serializeThenable(
       return newTask.id;
     }
     case 'rejected': {
+      const newTask = createThenableTask(request, task, thenable);
       forwardDebugInfoFromThenable(request, newTask, thenable, null, null);
       const x = thenable.reason;
       erroredTask(request, newTask, x);
       return newTask.id;
     }
+    case 'pending_weak': {
+      if (enableFlightWeakThenables) {
+        // A weak-pending thenable doesn't block the stream from closing, so
+        // we don't create a task for it yet. We only reserve an id for its
+        // reference. If it settles while the stream is still open, we
+        // create the task at that point, the same as if we had serialized
+        // an already settled thenable.
+        //
+        // Delivery is driven by the thenable's notification. If the stream
+        // closes before the listeners are notified, the value is dropped
+        // and the reference is left unfulfilled. Since the stream may close
+        // synchronously when the last task completes, a thenable that
+        // notifies its listeners synchronously (unlike a native Promise,
+        // which notifies in a microtask) is guaranteed delivery of any
+        // value it settles with before the stream closes.
+        const id = request.nextChunkId++;
+        // The parent task is mutated as serialization continues, so we
+        // snapshot the context that the new task needs if it's created
+        // later.
+        const keyPath = task.keyPath;
+        const implicitSlot = task.implicitSlot;
+        const formatContext = task.formatContext;
+        const lastTimestamp =
+          enableProfilerTimer &&
+          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+            ? task.time
+            : 0;
+        const debugOwner = __DEV__ ? task.debugOwner : null;
+        const debugStack = __DEV__ ? task.debugStack : null;
+        const debugTask = __DEV__ ? task.debugTask : null;
+        let settled = false;
+        thenable.then(
+          (value: any) => {
+            if (settled || request.status > OPEN) {
+              // Too late. The stream already closed (or the request was
+              // aborted), so the reference stays unfulfilled.
+              return;
+            }
+            settled = true;
+            const newTask = createTaskWithID(
+              request,
+              id,
+              value,
+              keyPath,
+              implicitSlot,
+              formatContext,
+              request.abortableTasks,
+              lastTimestamp,
+              debugOwner,
+              debugStack,
+              debugTask,
+            );
+            forwardDebugInfoFromCurrentContext(request, newTask, thenable);
+            pingTask(request, newTask);
+          },
+          (reason: mixed) => {
+            if (settled || request.status > OPEN) {
+              return;
+            }
+            settled = true;
+            const newTask = createTaskWithID(
+              request,
+              id,
+              thenable as any, // never rendered. used for debug info.
+              keyPath,
+              implicitSlot,
+              formatContext,
+              request.abortableTasks,
+              lastTimestamp,
+              debugOwner,
+              debugStack,
+              debugTask,
+            );
+            if (
+              enableProfilerTimer &&
+              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+            ) {
+              // If this is async we need to time when this task finishes.
+              newTask.timed = true;
+            }
+            erroredTask(request, newTask, reason);
+            enqueueFlush(request);
+          },
+        );
+        return id;
+      }
+      // Fallthrough
+    }
     default: {
+      const newTask = createThenableTask(request, task, thenable);
       if (request.status === ABORTING) {
         // We can no longer accept any resolved values
         request.abortableTasks.delete(newTask);
@@ -1108,59 +1230,56 @@ function serializeThenable(
         }
         return newTask.id;
       }
-      if (typeof thenable.status === 'string') {
+      if (typeof thenable.status !== 'string') {
         // Only instrument the thenable if the status if not defined. If
         // it's defined, but an unknown value, assume it's been instrumented by
         // some custom userspace implementation. We treat it as "pending".
-        break;
+        const pendingThenable: PendingThenable<mixed> = thenable as any;
+        pendingThenable.status = 'pending';
+        pendingThenable.then(
+          fulfilledValue => {
+            if (thenable.status === 'pending') {
+              const fulfilledThenable: FulfilledThenable<mixed> =
+                thenable as any;
+              fulfilledThenable.status = 'fulfilled';
+              fulfilledThenable.value = fulfilledValue;
+            }
+          },
+          (error: mixed) => {
+            if (thenable.status === 'pending') {
+              const rejectedThenable: RejectedThenable<mixed> = thenable as any;
+              rejectedThenable.status = 'rejected';
+              rejectedThenable.reason = error;
+            }
+          },
+        );
       }
-      const pendingThenable: PendingThenable<mixed> = thenable as any;
-      pendingThenable.status = 'pending';
-      pendingThenable.then(
-        fulfilledValue => {
-          if (thenable.status === 'pending') {
-            const fulfilledThenable: FulfilledThenable<mixed> = thenable as any;
-            fulfilledThenable.status = 'fulfilled';
-            fulfilledThenable.value = fulfilledValue;
-          }
+      thenable.then(
+        value => {
+          forwardDebugInfoFromCurrentContext(request, newTask, thenable);
+          newTask.model = value;
+          pingTask(request, newTask);
         },
-        (error: mixed) => {
-          if (thenable.status === 'pending') {
-            const rejectedThenable: RejectedThenable<mixed> = thenable as any;
-            rejectedThenable.status = 'rejected';
-            rejectedThenable.reason = error;
+        reason => {
+          if (newTask.status === PENDING) {
+            if (
+              enableProfilerTimer &&
+              (enableComponentPerformanceTrack || enableAsyncDebugInfo)
+            ) {
+              // If this is async we need to time when this task finishes.
+              newTask.timed = true;
+            }
+            // We expect that the only status it might be otherwise is ABORTED.
+            // When we abort we emit chunks in each pending task slot and don't need
+            // to do so again here.
+            erroredTask(request, newTask, reason);
+            enqueueFlush(request);
           }
         },
       );
-      break;
+      return newTask.id;
     }
   }
-
-  thenable.then(
-    value => {
-      forwardDebugInfoFromCurrentContext(request, newTask, thenable);
-      newTask.model = value;
-      pingTask(request, newTask);
-    },
-    reason => {
-      if (newTask.status === PENDING) {
-        if (
-          enableProfilerTimer &&
-          (enableComponentPerformanceTrack || enableAsyncDebugInfo)
-        ) {
-          // If this is async we need to time when this task finishes.
-          newTask.timed = true;
-        }
-        // We expect that the only status it might be otherwise is ABORTED.
-        // When we abort we emit chunks in each pending task slot and don't need
-        // to do so again here.
-        erroredTask(request, newTask, reason);
-        enqueueFlush(request);
-      }
-    },
-  );
-
-  return newTask.id;
 }
 
 function serializeReadableStream(
@@ -1385,7 +1504,7 @@ function serializeAsyncIterable(
     if (typeof (iterator as any).throw === 'function') {
       // The iterator protocol doesn't necessarily include this but a generator do.
       // $FlowFixMe[prop-missing] should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      iterator.throw(reason).then(noop, noop);
     }
   }
   function abortIterable() {
@@ -1405,9 +1524,11 @@ function serializeAsyncIterable(
       enqueueFlush(request);
     }
     if (typeof (iterator as any).throw === 'function') {
+      // TODO: Premature exits should call return() on the iterator if it exists
+      // to allow cleanup. See https://tc39.es/ecma262/multipage/control-abstraction-objects.html#table-async-iterator-optional
       // The iterator protocol doesn't necessarily include this but a generator do.
       // $FlowFixMe[prop-missing] should be able to pass mixed
-      iterator.throw(reason).then(error, error);
+      iterator.throw(reason).then(noop, noop);
     }
   }
   request.cacheController.signal.addEventListener('abort', abortIterable);
@@ -2134,6 +2255,16 @@ let canEmitDebugInfo: boolean = false;
 let serializedSize = 0;
 const MAX_ROW_SIZE = 3200;
 
+// Bundler metadata repeats the same chunk URLs across every client reference of
+// a route, so strings in it at least this long get outlined and deduplicated
+// when they repeat. The threshold is bounded away from zero because outlining
+// something as short as an export name costs more than copying it.
+const MIN_DEDUPLICATED_IMPORT_STRING_LENGTH = 16;
+
+// Tracked strings are retained for the rest of the request, so their combined
+// length is capped.
+const MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE = 32768;
+
 function deferTask(request: Request, task: Task): ReactJSONValue {
   // Like outlineTask but instead the item is scheduled to be serialized
   // after its parent in the stream.
@@ -2740,8 +2871,35 @@ function createTask(
   debugStack: null | Error, // DEV-only
   debugTask: null | ConsoleTask, // DEV-only
 ): Task {
+  return createTaskWithID(
+    request,
+    request.nextChunkId++,
+    model,
+    keyPath,
+    implicitSlot,
+    formatContext,
+    abortSet,
+    lastTimestamp,
+    debugOwner,
+    debugStack,
+    debugTask,
+  );
+}
+
+function createTaskWithID(
+  request: Request,
+  id: number,
+  model: ReactClientValue,
+  keyPath: ReactKey,
+  implicitSlot: boolean,
+  formatContext: FormatContext,
+  abortSet: Set<Task>,
+  lastTimestamp: number, // Profiling-only
+  debugOwner: null | ReactComponentInfo, // DEV-only
+  debugStack: null | Error, // DEV-only
+  debugTask: null | ConsoleTask, // DEV-only
+): Task {
   request.pendingChunks++;
-  const id = request.nextChunkId++;
   if (typeof model === 'object' && model !== null) {
     // If we're about to write this into a new task we can assign it an ID early so that
     // any other references can refer to the value we're about to write.
@@ -2822,7 +2980,18 @@ function resolveModel(
       // Call with the server component as the currently rendering component
       // for context.
       callWithDebugContextInDEV(request, task, () => {
-        if (objectName(originalValue) !== 'Object') {
+        if (ArrayBuffer.isView(originalValue)) {
+          // Binary data such as a Node.js Buffer carries a toJSON method, so it
+          // is serialized through that method rather than as binary. A plain
+          // Uint8Array or ArrayBuffer has no toJSON and is serialized as
+          // binary.
+          console.error(
+            'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+              'serialized through toJSON instead of as binary. Pass a ' +
+              'Uint8Array or ArrayBuffer to send binary data.%s',
+            describeObjectForErrorMessage(parent, parentPropertyName),
+          );
+        } else if (objectName(originalValue) !== 'Object') {
           const jsxParentType = jsxChildrenParents.get(parent);
           if (typeof jsxParentType === 'string') {
             console.error(
@@ -2908,6 +3077,10 @@ function serializeLazyID(id: number): string {
 
 function serializePromiseID(id: number): string {
   return '$@' + id.toString(16);
+}
+
+function serializeWeakPromiseID(id: number): string {
+  return '$w' + id.toString(16);
 }
 
 function serializeServerReferenceID(id: number): string {
@@ -3014,9 +3187,15 @@ function serializeClientReference(
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    // Stringify before claiming a chunk id so a throw can't leave it pending.
+    const json = stringifyImportMetadata(
+      request,
+      clientReferenceMetadata,
+      false,
+    );
     request.pendingChunks++;
     const importId = request.nextChunkId++;
-    emitImportChunk(request, importId, clientReferenceMetadata, false);
+    emitImportChunk(request, importId, json, false);
     writtenClientReferences.set(clientReferenceKey, importId);
     if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
       // If we're encoding the "type" of an element, we can refer
@@ -3064,9 +3243,14 @@ function serializeDebugClientReference(
   try {
     const clientReferenceMetadata: ClientReferenceMetadata =
       resolveClientReferenceMetadata(request.bundlerConfig, clientReference);
+    const json = stringifyImportMetadata(
+      request,
+      clientReferenceMetadata,
+      true,
+    );
     request.pendingDebugChunks++;
     const importId = request.nextChunkId++;
-    emitImportChunk(request, importId, clientReferenceMetadata, true);
+    emitImportChunk(request, importId, json, true);
     if (parent[0] === REACT_ELEMENT_TYPE && parentPropertyName === '1') {
       // If we're encoding the "type" of an element, we can refer
       // to that by a lazy reference instead of directly since React
@@ -3436,6 +3620,41 @@ function escapeStringValue(value: string): string {
   }
 }
 
+function serializeImportString(request: Request, value: string): string {
+  // No maximum length because import strings are short and repeat often.
+  // Deduping model strings too would need one to skip very long strings.
+  if (value.length < MIN_DEDUPLICATED_IMPORT_STRING_LENGTH) {
+    return escapeStringValue(value);
+  }
+  const writtenStrings = request.writtenImportStrings;
+  const existing = writtenStrings.get(value);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const size = request.writtenImportStringsSize + value.length;
+  if (size > MAX_DEDUPLICATED_IMPORT_STRINGS_SIZE) {
+    // The map is full. Strings already outlined keep deduping; new ones are
+    // written out every time.
+    return escapeStringValue(value);
+  }
+  request.writtenImportStringsSize = size;
+  // Chunk names are almost always shared, so the first occurrence is outlined
+  // right away instead of waiting for a repeat.
+  request.pendingChunks++;
+  const outlinedId = request.nextChunkId++;
+  // $FlowFixMe[incompatible-type] stringify can return null
+  const json: string = stringify(escapeStringValue(value));
+  // The client reads import metadata synchronously, so this row has to have
+  // been written by the time the referencing row arrives. Import chunks are
+  // flushed ahead of regular ones, which regular chunks can't guarantee.
+  request.completedImportChunks.push(
+    stringToChunk(outlinedId.toString(16) + ':' + json + '\n'),
+  );
+  const ref = serializeByValueID(outlinedId);
+  writtenStrings.set(value, ref);
+  return ref;
+}
+
 let modelRoot: null | ReactClientValue = false;
 
 function renderModel(
@@ -3796,13 +4015,20 @@ function renderModelDestructive(
     const existingReference = writtenObjects.get(value);
     // $FlowFixMe[method-unbinding]
     if (typeof value.then === 'function') {
+      // A weak-pending thenable may never emit, so its reference is marked
+      // on the wire ($w instead of $@). That way the client knows to leave
+      // it forever pending, instead of erroring it, if the stream closes
+      // first.
       if (existingReference !== undefined) {
         if (task.keyPath !== null || task.implicitSlot) {
           // If we're in some kind of context we can't reuse the result of this render or
           // previous renders of this element. We only reuse Promises if they're not wrapped
           // by another Server Component.
           const promiseId = serializeThenable(request, task, value as any);
-          return serializePromiseID(promiseId);
+          return enableFlightWeakThenables &&
+            (value as any).status === 'pending_weak'
+            ? serializeWeakPromiseID(promiseId)
+            : serializePromiseID(promiseId);
         } else if (modelRoot === value) {
           // This is the ID we're currently emitting so we need to write it
           // once but if we discover it again, we refer to it by id.
@@ -3815,7 +4041,10 @@ function renderModelDestructive(
       // We assume that any object with a .then property is a "Thenable" type,
       // or a Promise type. Either of which can be represented by a Promise.
       const promiseId = serializeThenable(request, task, value as any);
-      const promiseReference = serializePromiseID(promiseId);
+      const promiseReference =
+        enableFlightWeakThenables && (value as any).status === 'pending_weak'
+          ? serializeWeakPromiseID(promiseId)
+          : serializePromiseID(promiseId);
       writtenObjects.set(value, promiseReference);
       return promiseReference;
     }
@@ -4416,14 +4645,140 @@ function emitErrorChunk(
   }
 }
 
+// Null on the debug channel, which can't reference rows in the main stream.
+let importStringRequest: null | Request = null;
+
+function importMetadataReplacer(key: string, value: mixed): mixed {
+  if (typeof value === 'string') {
+    const request = importStringRequest;
+    if (request === null) {
+      return escapeStringValue(value);
+    }
+    return serializeImportString(request, value);
+  }
+  return value;
+}
+
+function stringifyImportMetadataWithReplacer(
+  request: Request,
+  clientReferenceMetadata: ClientReferenceMetadata,
+  debug: boolean,
+): string {
+  const prevRequest = importStringRequest;
+  importStringRequest = __DEV__ && debug ? null : request;
+  try {
+    // $FlowFixMe[incompatible-type] stringify can return null
+    return stringify(clientReferenceMetadata, importMetadataReplacer);
+  } finally {
+    importStringRequest = prevRequest;
+  }
+}
+
+// Bundler metadata is two or three levels deep. The bound is only there so a
+// cycle ends up in stringify itself, which throws its own error for it.
+const MAX_IMPORT_METADATA_DEPTH = 16;
+
+const NOT_PLAIN_IMPORT_METADATA = {};
+
+// Copies the metadata with every string replaced by its serialized form, so
+// that stringify can run without a replacer. Anything stringify would treat
+// specially (toJSON, boxed primitives, class instances) makes this give up
+// instead, because the copy would not reproduce that treatment.
+function transformImportMetadata(
+  request: Request,
+  value: mixed,
+  depth: number,
+): mixed {
+  switch (typeof value) {
+    case 'string':
+      return serializeImportString(request, value);
+    case 'number':
+    case 'boolean':
+    case 'undefined':
+      return value;
+    case 'object': {
+      if (value === null) {
+        return null;
+      }
+      if (depth > MAX_IMPORT_METADATA_DEPTH) {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      if (typeof (value as any).toJSON === 'function') {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      if (isArray(value)) {
+        const length = value.length;
+        const copy: Array<mixed> = new Array(length);
+        for (let i = 0; i < length; i++) {
+          const element = value[i];
+          if (typeof element === 'string') {
+            copy[i] = serializeImportString(request, element);
+            continue;
+          }
+          const child = transformImportMetadata(request, element, depth + 1);
+          if (child === NOT_PLAIN_IMPORT_METADATA) {
+            return NOT_PLAIN_IMPORT_METADATA;
+          }
+          copy[i] = child;
+        }
+        return copy;
+      }
+      const proto = getPrototypeOf(value);
+      if (proto !== ObjectPrototype && proto !== null) {
+        return NOT_PLAIN_IMPORT_METADATA;
+      }
+      const keys = Object.keys(value);
+      const copy: {[string]: mixed} = {};
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (key in ObjectPrototype) {
+          // The copy inherits from Object.prototype, so assigning this key would
+          // hit an accessor like __proto__ or, if the prototype is frozen, throw.
+          return NOT_PLAIN_IMPORT_METADATA;
+        }
+        const element = (value as any)[key];
+        if (typeof element === 'string') {
+          copy[key] = serializeImportString(request, element);
+          continue;
+        }
+        const child = transformImportMetadata(request, element, depth + 1);
+        if (child === NOT_PLAIN_IMPORT_METADATA) {
+          return NOT_PLAIN_IMPORT_METADATA;
+        }
+        copy[key] = child;
+      }
+      return copy;
+    }
+    default:
+      return NOT_PLAIN_IMPORT_METADATA;
+  }
+}
+
+function stringifyImportMetadata(
+  request: Request,
+  clientReferenceMetadata: ClientReferenceMetadata,
+  debug: boolean,
+): string {
+  if (!(__DEV__ && debug)) {
+    const copy = transformImportMetadata(request, clientReferenceMetadata, 0);
+    if (copy !== NOT_PLAIN_IMPORT_METADATA) {
+      // $FlowFixMe[incompatible-type] stringify can return null
+      return stringify(copy);
+    }
+  }
+  return stringifyImportMetadataWithReplacer(
+    request,
+    clientReferenceMetadata,
+    debug,
+  );
+}
+
 function emitImportChunk(
   request: Request,
   id: number,
-  clientReferenceMetadata: ClientReferenceMetadata,
+  json: string,
   debug: boolean,
 ): void {
-  // $FlowFixMe[incompatible-type] stringify can return null
-  const json: string = stringify(clientReferenceMetadata);
   const row = serializeRowHeader('I', id) + json + '\n';
   const processedChunk = stringToChunk(row);
   if (__DEV__ && debug) {
@@ -6125,6 +6480,12 @@ function finishAbortedTask(
   request.completedErrorChunks.push(processedChunk);
 }
 
+// "Halting" a task means finishing it without emitting anything into its
+// slot: the reference is intentionally left unfulfilled and never resolves
+// on the client. This is how an aborted prerender leaves its pending work.
+// It's also the same outcome as a weak-pending thenable that never settles
+// (see serializeThenable) — halting is initiated by the request aborting,
+// weakness by the value itself.
 function haltTask(task: Task, request: Request): void {
   if (task.status !== PENDING) {
     // If this is already completed/errored we don't abort it.
@@ -6314,6 +6675,25 @@ function flushCompletedChunks(request: Request): void {
     flushBuffered(destination);
   }
   if (request.pendingChunks === 0) {
+    // There are no pending chunks left, so the render is complete and its cache
+    // signal is aborted here. Debug chunks can still be pending, but they carry
+    // development-only instrumentation rather than the render's output.
+    //
+    // This runs before the stream bookkeeping below, because that bookkeeping
+    // can close the main stream and set the status to CLOSED while debug chunks
+    // are outstanding. The abort only happens below ABORTING, so a later flush
+    // would skip it. Repeated flushes are safe, because aborting an aborted
+    // controller does nothing a second time.
+    //
+    // The taint queue stays untouched here. Debug chunks are checked against
+    // the taint registry as they are written, and a deferred debug object can
+    // be written long after this point.
+    if (request.status < ABORTING) {
+      const abortReason = new Error(
+        'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
+      );
+      request.cacheController.abort(abortReason);
+    }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
       if (request.pendingDebugChunks === 0) {
@@ -6343,12 +6723,6 @@ function flushCompletedChunks(request: Request): void {
     // We're done.
     if (enableTaint) {
       cleanupTaintQueue(request);
-    }
-    if (request.status < ABORTING) {
-      const abortReason = new Error(
-        'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
-      );
-      request.cacheController.abort(abortReason);
     }
     if (request.destination !== null) {
       request.status = CLOSED;
@@ -6483,6 +6857,34 @@ function finishAbort(
     logRecoverableError(request, error, null);
     fatalError(request, error);
   }
+}
+
+// Aborts the request when the caller's signal aborts. The cache controller's
+// signal bounds the listener's lifetime, so the runtime removes the listener as
+// soon as that signal aborts. The cache controller aborts at every point that
+// ends the render: a fatal error, the completion of the flush loop, and abort()
+// itself. From any of those points on, abort() returns early, so the listener
+// has nothing left to do.
+//
+// The listener has to be removed, because it would otherwise keep the whole
+// Request reachable for as long as the caller's signal lives. A composite
+// signal from AbortSignal.any() is itself retained by the runtime while it has
+// any abort listener attached.
+//
+// A request whose stream is neither consumed nor cancelled never ends, so its
+// listener stays attached for as long as the caller's signal lives.
+export function attachAbortSignal(request: Request, signal: AbortSignal): void {
+  if (signal.aborted) {
+    abort(request, signal.reason);
+    return;
+  }
+  signal.addEventListener(
+    'abort',
+    () => {
+      abort(request, signal.reason);
+    },
+    {signal: request.cacheController.signal},
+  );
 }
 
 export function abort(request: Request, reason: mixed): void {

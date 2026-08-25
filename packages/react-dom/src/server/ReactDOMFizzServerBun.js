@@ -23,6 +23,7 @@ import {
   startFlowing,
   stopFlowing,
   abort,
+  attachAbortSignal,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -49,6 +50,7 @@ type Options = {
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   formState?: ReactFormState<any, any> | null,
@@ -131,6 +133,7 @@ function renderToReadableStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
@@ -138,16 +141,7 @@ function renderToReadableStream(
       options ? options.formState : undefined,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort(request, (signal as any).reason);
-      } else {
-        const listener = () => {
-          abort(request, (signal as any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

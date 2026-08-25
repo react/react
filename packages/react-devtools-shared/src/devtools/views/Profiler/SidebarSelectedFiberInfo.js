@@ -129,23 +129,31 @@ export default function SidebarSelectedFiberInfo(): React.Node {
           <ButtonIcon type="close" />
         </Button>
       </div>
-      <div className={styles.Content} onKeyDown={handleKeyDown} tabIndex={0}>
-        {node != null && (
-          <InspectedElementBadges
-            hocDisplayNames={node.hocDisplayNames}
-            compiledWithForget={node.compiledWithForget}
-          />
-        )}
-        <WhatChanged fiberID={selectedFiberID as any as number} />
-        {listItems.length > 0 && (
-          <div>
-            <label className={styles.Label}>Rendered at: </label>
-            {listItems}
+      <div className={styles.Content}>
+        <div className={styles.RenderInfo}>
+          <div className={styles.RenderInfoContent}>
+            {node != null && (
+              <InspectedElementBadges
+                hocDisplayNames={node.hocDisplayNames}
+                compiledWithForget={node.compiledWithForget}
+              />
+            )}
+            <WhatChanged fiberID={selectedFiberID as any as number} />
           </div>
-        )}
-        {listItems.length === 0 && (
-          <div>Did not render on the client during this profiling session.</div>
-        )}
+        </div>
+        <div className={styles.CommitList} onKeyDown={handleKeyDown}>
+          {listItems.length > 0 && (
+            <div>
+              <label className={styles.Label}>Rendered at: </label>
+              {listItems}
+            </div>
+          )}
+          {listItems.length === 0 && (
+            <div>
+              Did not render on the client during this profiling session.
+            </div>
+          )}
+        </div>
       </div>
     </Fragment>
   );

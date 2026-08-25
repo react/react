@@ -3082,6 +3082,85 @@ describe('ReactFlightDOMBrowser', () => {
     }
   });
 
+  it('should abort the cache signal when a render completes while debug objects are still retained', async () => {
+    // A debug channel with a readable side lets the client fetch debug objects
+    // lazily. React serializes each component's props into the debug model, and
+    // it defers the part of an object tree that exceeds the model's object
+    // limit. A deferred object stays retained, and its debug chunk stays
+    // pending, until the client asks for it or the channel closes. The render
+    // below finishes while one such object is outstanding.
+    function createDeepJSX(n) {
+      if (n <= 0) {
+        return null;
+      }
+      return <div>{createDeepJSX(n - 1)}</div>;
+    }
+
+    let cacheSignal;
+
+    function ServerComponent() {
+      cacheSignal = ReactServer.cacheSignal();
+      return <div>not using props</div>;
+    }
+
+    let debugChannelReadableController;
+    const debugChunks = [];
+
+    const debugChannelReadable = new ReadableStream({
+      start(controller) {
+        debugChannelReadableController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // These children nest deeper than the debug model's object limit.
+        <ServerComponent>{createDeepJSX(20)}</ServerComponent>,
+        webpackMap,
+        {
+          debugChannel: {
+            readable: debugChannelReadable,
+            writable: new WritableStream({
+              write(chunk) {
+                debugChunks.push(chunk);
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const reader = stream.getReader();
+    while (true) {
+      const {done} = await reader.read();
+      if (done) {
+        break;
+      }
+    }
+    await serverAct(() => {});
+
+    if (__DEV__) {
+      // Fail loudly if the setup stops deferring anything, for example because
+      // the object limit changed. Without a retained object this test passes
+      // for the wrong reason.
+      const debugOutput = debugChunks
+        .map(chunk => new TextDecoder().decode(chunk))
+        .join('');
+      expect(debugOutput).toContain('$Y');
+    }
+
+    expect(cacheSignal.aborted).toBe(true);
+
+    // Closing the debug channel drops the retained objects. The signal must
+    // already be aborted at that point, and must stay aborted.
+    await serverAct(() => {
+      debugChannelReadableController.close();
+    });
+    await serverAct(() => {});
+
+    expect(cacheSignal.aborted).toBe(true);
+  });
+
   it('should resolve a cycle between debug info and the value it produces when using a debug channel', async () => {
     // Same as `should resolve a cycle between debug info and the value it produces`, but using a debug channel.
 
@@ -3136,5 +3215,439 @@ describe('ReactFlightDOMBrowser', () => {
     });
 
     expect(container.innerHTML).toBe('<div></div>');
+  });
+
+  // Long enough to exceed MAX_ROW_SIZE in ReactFlightServer, which makes the
+  // element prop that follows it be outlined into its own row.
+  const longText = 'a'.repeat(4000);
+
+  it('should not have missing key warnings when a static child is outlined', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {element}
+        </div>
+      );
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  it('should not have missing key warnings when an outlined static child is blocked on debug info', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {element}
+        </div>
+      );
+    });
+
+    let debugReadableStreamController;
+
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      debugChannel: {readable: createDelayedStream(debugReadableStream)},
+    });
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    // Wait for the debug info to be processed.
+    await act(() => {});
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  it('should have missing key warnings when an outlined element is used in an array', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {[element]}
+        </div>
+      );
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `div`. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in span (at **)',
+    ]);
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  it('should have missing key warnings when an outlined element that is blocked on debug info is used in an array', async () => {
+    const ClientComponent = clientExports(function ClientComponent({
+      text,
+      element,
+    }) {
+      return (
+        <div>
+          <span>{text.length}</span>
+          {[element]}
+        </div>
+      );
+    });
+
+    let debugReadableStreamController;
+
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <ClientComponent text={longText} element={<span>Hello</span>} />,
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      debugChannel: {readable: createDelayedStream(debugReadableStream)},
+    });
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+
+    // The element can only be rendered, and therefore validated, after it's
+    // unblocked by the debug info.
+    await act(() => {});
+
+    assertConsoleErrorDev([
+      'Each child in a list should have a unique "key" prop.\n\n' +
+        'Check the render method of `div`. ' +
+        'See https://react.dev/link/warning-keys for more information.\n' +
+        '    in span (at **)',
+    ]);
+
+    expect(container.innerHTML).toBe(
+      '<div><span>4000</span><span>Hello</span></div>',
+    );
+  });
+
+  describe('abort signal lifetime', () => {
+    // Collects the lifetime signal that React bounds each abort listener with.
+    // React passes that signal to addEventListener instead of calling
+    // removeEventListener, so the runtime performs the removal and nothing here
+    // observes it directly. An aborted lifetime is what shows the listener is
+    // gone. ReactFlightDOMNode-test asserts the removal itself, which needs a
+    // Node API that jsdom does not have.
+    function trackAbortListenerLifetimes(signal) {
+      const lifetimes = [];
+      const add = signal.addEventListener.bind(signal);
+      signal.addEventListener = (type, listener, options) => {
+        if (type === 'abort') {
+          lifetimes.push(options.signal);
+        }
+        return add(type, listener, options);
+      };
+      return lifetimes;
+    }
+
+    async function drain(stream) {
+      const reader = stream.getReader();
+      while (true) {
+        const {done} = await reader.read();
+        if (done) {
+          return;
+        }
+      }
+    }
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    it('detaches the listener when a prerender completes', async () => {
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const {prelude} = await serverAct(() =>
+        ReactServerDOMStaticServer.prerender(<App />, webpackMap, {
+          signal: controller.signal,
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => drain(prelude));
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when a render completes', async () => {
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<App />, webpackMap, {
+          signal: controller.signal,
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => drain(stream));
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when the signal aborts mid-render', async () => {
+      let resolveGreeting;
+      const greetingPromise = new Promise(resolve => {
+        resolveGreeting = resolve;
+      });
+
+      async function Greeting() {
+        await greetingPromise;
+        return 'hello world';
+      }
+
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const {pendingResult} = await serverAct(async () => {
+        return {
+          pendingResult: ReactServerDOMStaticServer.prerender(
+            <Greeting />,
+            webpackMap,
+            {signal: controller.signal, onError() {}},
+          ),
+        };
+      });
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      controller.abort('boom');
+      resolveGreeting();
+      await serverAct(() => pendingResult);
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('detaches the listener when the stream is cancelled', async () => {
+      let resolveGreeting;
+      const greetingPromise = new Promise(resolve => {
+        resolveGreeting = resolve;
+      });
+
+      async function Greeting() {
+        await greetingPromise;
+        return 'hello world';
+      }
+
+      const controller = new AbortController();
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(<Greeting />, webpackMap, {
+          signal: controller.signal,
+          onError() {},
+        }),
+      );
+      expect(lifetimes).toHaveLength(1);
+      expect(lifetimes[0].aborted).toBe(false);
+
+      await serverAct(() => stream.cancel('boom'));
+      resolveGreeting();
+
+      expect(lifetimes[0].aborted).toBe(true);
+    });
+
+    it('attaches no listener when the signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort('boom');
+      const lifetimes = trackAbortListenerLifetimes(controller.signal);
+
+      await serverAct(() =>
+        ReactServerDOMStaticServer.prerender(<App />, webpackMap, {
+          signal: controller.signal,
+          onError() {},
+        }),
+      );
+
+      expect(lifetimes).toHaveLength(0);
+    });
+
+    // The composite-signal case lives in ReactFlightDOMNode-test, because
+    // jsdom's AbortSignal has no AbortSignal.any.
+  });
+
+  describe('with console.createTask', () => {
+    // Stands in for what a browser console does with fake tasks: whatever runs
+    // inside a task is shown under that task's name in the async stack. This is
+    // the same setup that `ReactServer-test` uses to assert on task names.
+    let currentTask;
+
+    beforeEach(() => {
+      const {AsyncLocalStorage} = require('node:async_hooks');
+      currentTask = new AsyncLocalStorage();
+      (console: any).createTask = taskName => ({
+        run: taskFn => {
+          const parentTask = currentTask.getStore() || '';
+          return currentTask.run(parentTask + '\n' + taskName, taskFn);
+        },
+      });
+
+      // `supportsCreateTask` is captured when ReactFlightClient is required, so
+      // the client modules need to be required again with this in place.
+      jest.resetModules();
+      patchMessageChannel();
+      ({act} = require('internal-test-utils'));
+      React = require('react');
+      use = React.use;
+      ReactDOMClient = require('react-dom/client');
+      ReactServerDOMClient = require('react-server-dom-webpack/client');
+    });
+
+    afterEach(() => {
+      delete (console: any).createTask;
+    });
+
+    // @gate __DEV__
+    it('renders a client component inside a "use client" task', async () => {
+      let taskWhileRendering;
+
+      const ClientComponent = clientExports(function ClientComponent() {
+        taskWhileRendering = currentTask.getStore();
+        return <span>Hello</span>;
+      });
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(
+          <ClientComponent />,
+          webpackMap,
+        ),
+      );
+
+      function ClientRoot({response}) {
+        return use(response);
+      }
+
+      const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(<ClientRoot response={response} />);
+      });
+
+      expect(container.innerHTML).toBe('<span>Hello</span>');
+      // The element's type is a lazy node wrapping the client reference, so the
+      // task that the component renders in marks the boundary into the client.
+      expect(taskWhileRendering).toBe('\n"use client"');
+    });
   });
 });

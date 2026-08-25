@@ -1,7 +1,6 @@
-use std::collections::HashSet;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 
-use indexmap::IndexMap;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use react_compiler_ast::scope::BindingId;
 use react_compiler_ast::scope::BindingKind as AstBindingKind;
 use react_compiler_ast::scope::ScopeId;
@@ -2531,7 +2530,7 @@ fn collect_binding_names_from_pattern(
     pattern: &react_compiler_ast::patterns::PatternLike,
     scope_id: react_compiler_ast::scope::ScopeId,
     scope_info: &ScopeInfo,
-    out: &mut HashSet<BindingId>,
+    out: &mut FxHashSet<BindingId>,
 ) {
     use react_compiler_ast::patterns::PatternLike;
     match pattern {
@@ -2712,7 +2711,7 @@ fn lower_block_statement_inner(
     }
 
     // Track which bindings have been "declared" (their declaration statement has been seen)
-    let mut declared: HashSet<BindingId> = HashSet::new();
+    let mut declared: FxHashSet<BindingId> = FxHashSet::default();
 
     for body_stmt in &block.body {
         let stmt_start = statement_start(body_stmt).unwrap_or(0);
@@ -3059,22 +3058,30 @@ fn lower_statement(
         Statement::VariableDeclaration(var_decl) => {
             use react_compiler_ast::patterns::PatternLike;
             use react_compiler_ast::statements::VariableDeclarationKind;
-            if matches!(var_decl.kind, VariableDeclarationKind::Var) {
+            let unsupported_node_kind = match var_decl.kind {
+                VariableDeclarationKind::Var => Some("var"),
+                VariableDeclarationKind::Using => Some("using"),
+                VariableDeclarationKind::AwaitUsing => Some("await using"),
+                VariableDeclarationKind::Let | VariableDeclarationKind::Const => None,
+            };
+            if let Some(node_kind) = unsupported_node_kind {
                 builder.record_error(CompilerErrorDetail {
-                    reason: "(BuildHIR::lowerStatement) Handle var kinds in VariableDeclaration"
-                        .to_string(),
+                    reason: format!(
+                        "(BuildHIR::lowerStatement) Handle {node_kind} kinds in VariableDeclaration"
+                    ),
                     category: ErrorCategory::Todo,
                     loc: convert_opt_loc(&var_decl.base.loc),
                     description: None,
                     suggestions: None,
                 })?;
-                // Treat `var` as `let` so references to the variable don't break
+                // Treat `var` as `let` and `using`/`await using` as `const` so
+                // references to the variable don't break while the error unwinds
             }
             let kind = match var_decl.kind {
                 VariableDeclarationKind::Let | VariableDeclarationKind::Var => InstructionKind::Let,
-                VariableDeclarationKind::Const | VariableDeclarationKind::Using => {
-                    InstructionKind::Const
-                }
+                VariableDeclarationKind::Const
+                | VariableDeclarationKind::Using
+                | VariableDeclarationKind::AwaitUsing => InstructionKind::Const,
             };
             for declarator in &var_decl.declarations {
                 let stmt_loc = convert_opt_loc(&var_decl.base.loc);
@@ -4320,8 +4327,11 @@ pub fn lower(
     let context_identifiers = find_context_identifiers(func, scope_info, env, &identifier_locs)?;
 
     // For top-level functions, context is empty (no captured refs)
-    let context_map: IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>> =
-        IndexMap::new();
+    let context_map: IndexMap<
+        react_compiler_ast::scope::BindingId,
+        Option<SourceLocation>,
+        FxBuildHasher,
+    > = IndexMap::default();
 
     let (hir_func, _used_names, _child_bindings) = lower_inner(
         params,
@@ -5592,7 +5602,7 @@ fn lower_function(
         } else {
             let parent = builder.function_scope();
             let scope_info = builder.scope_info();
-            let mapped: std::collections::HashSet<react_compiler_ast::scope::ScopeId> =
+            let mapped: rustc_hash::FxHashSet<react_compiler_ast::scope::ScopeId> =
                 scope_info.node_id_to_scope.values().copied().collect();
             let param_names: Vec<String> = params
                 .iter()
@@ -5604,7 +5614,7 @@ fn lower_function(
                     }
                 })
                 .collect();
-            let mut descendants = std::collections::HashSet::new();
+            let mut descendants = rustc_hash::FxHashSet::default();
             descendants.insert(parent);
             let mut changed = true;
             while changed {
@@ -5671,7 +5681,11 @@ fn lower_function(
         ident_locs,
         ref_override.as_ref(),
     );
-    let merged_context: IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>> = {
+    let merged_context: IndexMap<
+        react_compiler_ast::scope::BindingId,
+        Option<SourceLocation>,
+        FxBuildHasher,
+    > = {
         let parent_context = builder.context().clone();
         let mut merged = parent_context;
         for (k, v) in captured_context {
@@ -5743,7 +5757,11 @@ fn lower_function_declaration(
         ident_locs,
         None,
     );
-    let merged_context: IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>> = {
+    let merged_context: IndexMap<
+        react_compiler_ast::scope::BindingId,
+        Option<SourceLocation>,
+        FxBuildHasher,
+    > = {
         let parent_context = builder.context().clone();
         let mut merged = parent_context;
         for (k, v) in captured_context {
@@ -5944,7 +5962,11 @@ fn lower_function_for_object_method(
         ident_locs,
         None,
     );
-    let merged_context: IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>> = {
+    let merged_context: IndexMap<
+        react_compiler_ast::scope::BindingId,
+        Option<SourceLocation>,
+        FxBuildHasher,
+    > = {
         let parent_context = builder.context().clone();
         let mut merged = parent_context;
         for (k, v) in captured_context {
@@ -5991,19 +6013,27 @@ fn lower_inner(
     loc: Option<SourceLocation>,
     scope_info: &ScopeInfo,
     env: &mut Environment,
-    parent_bindings: Option<IndexMap<react_compiler_ast::scope::BindingId, IdentifierId>>,
-    parent_used_names: Option<IndexMap<String, react_compiler_ast::scope::BindingId>>,
-    context_map: IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>>,
+    parent_bindings: Option<
+        IndexMap<react_compiler_ast::scope::BindingId, IdentifierId, FxBuildHasher>,
+    >,
+    parent_used_names: Option<
+        IndexMap<String, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+    >,
+    context_map: IndexMap<
+        react_compiler_ast::scope::BindingId,
+        Option<SourceLocation>,
+        FxBuildHasher,
+    >,
     function_scope: react_compiler_ast::scope::ScopeId,
     component_scope: react_compiler_ast::scope::ScopeId,
-    context_identifiers: &HashSet<react_compiler_ast::scope::BindingId>,
+    context_identifiers: &FxHashSet<react_compiler_ast::scope::BindingId>,
     is_top_level: bool,
     identifier_locs: &IdentifierLocIndex,
 ) -> Result<
     (
         HirFunction,
-        IndexMap<String, react_compiler_ast::scope::BindingId>,
-        IndexMap<react_compiler_ast::scope::BindingId, IdentifierId>,
+        IndexMap<String, react_compiler_ast::scope::BindingId, FxBuildHasher>,
+        IndexMap<react_compiler_ast::scope::BindingId, IdentifierId, FxBuildHasher>,
     ),
     CompilerError,
 > {
@@ -6249,7 +6279,7 @@ fn lower_jsx_element_name(
             let tag = &id.name;
             let loc = convert_opt_loc(&id.base.loc);
             let start = id.base.start.unwrap_or(0);
-            if tag.starts_with(|c: char| c.is_ascii_uppercase()) {
+            if !tag.starts_with(|c: char| c.is_ascii_lowercase()) {
                 // Component tag: resolve as identifier and load
                 let place = lower_identifier(builder, tag, start, loc.clone(), id.base.node_id)?;
                 let load_value = if builder.is_context_identifier(tag, start, id.base.node_id) {
@@ -6776,22 +6806,22 @@ fn gather_captured_context(
     func_start: u32,
     func_end: u32,
     identifier_locs: &IdentifierLocIndex,
-    ref_node_ids_override: Option<&IndexSet<u32>>,
-) -> IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>> {
+    ref_node_ids_override: Option<&IndexSet<u32, FxBuildHasher>>,
+) -> IndexMap<react_compiler_ast::scope::BindingId, Option<SourceLocation>, FxBuildHasher> {
     let parent_scope = scope_info.scopes[function_scope.0 as usize].parent;
     let pure_scopes = match parent_scope {
         Some(parent) => capture_scopes(scope_info, parent, component_scope),
-        None => IndexSet::new(),
+        None => IndexSet::default(),
     };
 
     // Collect the earliest (lowest source position) reference location for each
     // captured binding. Using the minimum position makes the result independent of
     // ref_node_id_to_binding iteration order, matching the behavior the TS compiler
     // gets from Babel's position-ordered traversal.
-    let mut captured: std::collections::HashMap<
+    let mut captured: rustc_hash::FxHashMap<
         react_compiler_ast::scope::BindingId,
         (u32, Option<SourceLocation>), // (min_position, loc)
-    > = std::collections::HashMap::new();
+    > = rustc_hash::FxHashMap::default();
 
     for (&ref_nid, &binding_id) in &scope_info.ref_node_id_to_binding {
         if let Some(allowed) = ref_node_ids_override {
@@ -6878,8 +6908,8 @@ fn capture_scopes(
     scope_info: &ScopeInfo,
     from: react_compiler_ast::scope::ScopeId,
     to: react_compiler_ast::scope::ScopeId,
-) -> IndexSet<react_compiler_ast::scope::ScopeId> {
-    let mut result = IndexSet::new();
+) -> IndexSet<react_compiler_ast::scope::ScopeId, FxBuildHasher> {
+    let mut result = IndexSet::default();
     let mut current = Some(from);
     while let Some(scope_id) = current {
         result.insert(scope_id);
@@ -7118,8 +7148,8 @@ fn collect_fbt_sub_tags_from_stmts(
     }
 }
 
-fn collect_identifier_node_ids_from_body(body: &FunctionBody) -> IndexSet<u32> {
-    let mut positions = IndexSet::new();
+fn collect_identifier_node_ids_from_body(body: &FunctionBody) -> IndexSet<u32, FxBuildHasher> {
+    let mut positions = IndexSet::default();
     match body {
         FunctionBody::Block(block) => {
             for stmt in &block.body {
@@ -7135,7 +7165,7 @@ fn collect_identifier_node_ids_from_body(body: &FunctionBody) -> IndexSet<u32> {
 
 fn collect_identifier_node_ids_from_stmt(
     stmt: &react_compiler_ast::statements::Statement,
-    positions: &mut IndexSet<u32>,
+    positions: &mut IndexSet<u32, FxBuildHasher>,
 ) {
     use react_compiler_ast::statements::Statement;
     match stmt {
@@ -7175,7 +7205,7 @@ fn collect_identifier_node_ids_from_stmt(
 
 fn collect_identifier_node_ids_from_expr(
     expr: &react_compiler_ast::expressions::Expression,
-    positions: &mut IndexSet<u32>,
+    positions: &mut IndexSet<u32, FxBuildHasher>,
 ) {
     use react_compiler_ast::expressions::Expression;
     match expr {
