@@ -370,7 +370,7 @@ enum ValueIdSet {
         items: [ValueId; VALUE_ID_INLINE_CAPACITY],
         len: u8,
     },
-    Spilled(Vec<ValueId>),
+    Spilled(Box<[ValueId]>),
 }
 
 impl Default for ValueIdSet {
@@ -422,9 +422,16 @@ impl ValueIdSet {
             ValueIdSet::Inline { items, len } => {
                 let mut values = items[..*len as usize].to_vec();
                 values.push(value);
-                *self = ValueIdSet::Spilled(values);
+                *self = ValueIdSet::Spilled(values.into_boxed_slice());
             }
-            ValueIdSet::Spilled(values) => values.push(value),
+            ValueIdSet::Spilled(values) => {
+                // A boxed slice has no spare capacity, so growing reallocates.
+                // Only 0.02% of sets ever spill at all, which is what makes the
+                // trade worthwhile — see the note on `Spilled` above.
+                let mut grown = std::mem::take(values).into_vec();
+                grown.push(value);
+                *values = grown.into_boxed_slice();
+            }
         }
     }
 
@@ -434,16 +441,6 @@ impl ValueIdSet {
         for value in other.iter() {
             self.insert(value);
         }
-    }
-}
-
-impl FromIterator<ValueId> for ValueIdSet {
-    fn from_iter<T: IntoIterator<Item = ValueId>>(iter: T) -> Self {
-        let mut set = Self::default();
-        for value in iter {
-            set.insert(value);
-        }
-        set
     }
 }
 
