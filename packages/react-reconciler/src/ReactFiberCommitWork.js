@@ -2780,6 +2780,11 @@ function commitMutationEffectsOnFiber(
     }
     case Fragment:
       if (enableFragmentRefs) {
+        if (flags & Ref) {
+          if (!offscreenSubtreeWasHidden && current !== null) {
+            safelyDetachRef(current, current.return);
+          }
+        }
         if (current && current.stateNode !== null) {
           updateFragmentInstanceFiber(finishedWork, current.stateNode);
         }
