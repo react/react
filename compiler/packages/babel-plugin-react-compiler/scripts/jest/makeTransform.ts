@@ -5,12 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import babelJest from 'babel-jest';
 import {
   validateEnvironmentConfig,
   EnvironmentConfig,
 } from 'babel-plugin-react-compiler';
 import {execSync} from 'child_process';
+import {createRequire} from 'module';
 
 import type {NodePath, Visitor} from '@babel/traverse';
 import type {CallExpression} from '@babel/types';
@@ -27,6 +27,16 @@ const forgetOptions: EnvironmentConfig = validateEnvironmentConfig({
   enableAssumeHooksFollowRulesOfReact: true,
 });
 const debugMode = process.env['DEBUG_FORGET_COMPILER'] != null;
+
+/*
+ * This package's `resolutions` pin @babel/core to the minimum supported
+ * version so that tests exercise the compiler against it. The transform's
+ * preset stack requires a modern @babel/core though, so babel-jest is loaded
+ * from the workspace root, which is outside the scope of that pin.
+ */
+const babelJest: (typeof import('babel-jest'))['default'] = createRequire(
+  `${__dirname}/../../../../package.json`,
+)('babel-jest').default;
 
 const compilerCacheKey = execSync(
   'yarn --silent --cwd ../.. hash packages/babel-plugin-react-compiler/dist',
@@ -96,13 +106,9 @@ module.exports = (useForget: boolean) => {
           ],
         },
       ],
-      targets: {
-        esmodules: true,
-      },
     } as any);
     /*
-     * typecast needed as DefinitelyTyped does not have updated Babel configs types yet
-     * (missing passPerPreset and targets).
+     * typecast needed as the Babel config types do not include passPerPreset.
      */
   }
 
