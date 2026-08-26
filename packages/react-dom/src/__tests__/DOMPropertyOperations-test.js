@@ -50,10 +50,10 @@ describe('DOMPropertyOperations', () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
-        root.render(<div role="#" />);
+        root.render(<div enterKeyHint="go" />);
       });
-      expect(container.firstChild.getAttribute('role')).toBe('#');
-      expect(container.firstChild.role).toBeUndefined();
+      expect(container.firstChild.getAttribute('enterkeyhint')).toBe('go');
+      expect(container.firstChild.enterKeyHint).toBeUndefined();
     });
 
     it('should set values as namespace attributes if necessary', async () => {

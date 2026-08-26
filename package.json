@@ -159,7 +159,7 @@
   },
   "resolutions": {
     "react-is": "npm:react-is",
-    "jsdom": "22.1.0"
+    "jsdom": "26.1.0"
   },
   "packageManager": "yarn@1.22.22"
 }
