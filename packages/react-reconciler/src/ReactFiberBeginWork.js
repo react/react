@@ -248,6 +248,7 @@ import {
   claimNextHydratableSuspenseInstance,
   warnIfHydrating,
   queueHydrationError,
+  pauseHydrationState,
 } from './ReactFiberHydrationContext';
 import {
   constructClassInstance,
@@ -3695,6 +3696,12 @@ function updatePortalComponent(
   renderLanes: Lanes,
 ) {
   pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
+  // Portals can never be produced by the server renderer, so their subtree
+  // is never present in the server-rendered HTML of their host parent. If
+  // we're hydrating, suspend that ambient hydration state for the portal's
+  // children so they mount as fresh client instances instead of being
+  // matched against the wrong DOM nodes intended for the portal's siblings.
+  pauseHydrationState(workInProgress);
   const nextChildren = workInProgress.pendingProps;
   if (current === null) {
     // Portals are special because we don't append the children during mount
@@ -3991,6 +3998,7 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
     }
     case HostPortal:
       pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
+      pauseHydrationState(workInProgress);
       break;
     case ContextProvider: {
       const newValue = workInProgress.memoizedProps.value;
