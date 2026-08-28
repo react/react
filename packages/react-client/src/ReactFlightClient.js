@@ -1031,6 +1031,59 @@ let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
 
+// A model can become renderable while another outlined reference still has a
+// write pending into the same props object. Keep the DEV freeze until the last
+// such write completes so fulfillReference never mutates frozen props.
+const pendingReferenceCounts: WeakMap<Object, number> = new WeakMap();
+const elementsWithPendingProps: WeakMap<Object, Array<any>> = new WeakMap();
+
+function trackPendingReference(parentObject: Object): void {
+  if (!__DEV__) {
+    return;
+  }
+  const count = pendingReferenceCounts.get(parentObject) || 0;
+  pendingReferenceCounts.set(parentObject, count + 1);
+}
+
+function freezeElementProps(element: any): void {
+  if (!__DEV__) {
+    return;
+  }
+  const props = element.props;
+  if ((pendingReferenceCounts.get(props) || 0) > 0) {
+    const elements = elementsWithPendingProps.get(props);
+    if (elements === undefined) {
+      elementsWithPendingProps.set(props, [element]);
+    } else {
+      elements.push(element);
+    }
+    return;
+  }
+  Object.freeze(props);
+}
+
+function resolvePendingReference(parentObject: Object): void {
+  if (!__DEV__) {
+    return;
+  }
+  const count = pendingReferenceCounts.get(parentObject);
+  if (count === undefined) {
+    return;
+  }
+  if (count > 1) {
+    pendingReferenceCounts.set(parentObject, count - 1);
+    return;
+  }
+  pendingReferenceCounts.delete(parentObject);
+  const elements = elementsWithPendingProps.get(parentObject);
+  if (elements !== undefined) {
+    elementsWithPendingProps.delete(parentObject);
+    for (let i = 0; i < elements.length; i++) {
+      freezeElementProps(elements[i]);
+    }
+  }
+}
+
 function initializeDebugChunk(
   response: Response,
   chunk: ResolvedModelChunk<any> | PendingChunk<any> | PendingWeakChunk<any>,
@@ -1395,7 +1448,7 @@ function initializeElement(
 
   // TODO: We should be freezing the element but currently, we might write into
   // _debugInfo later. We could move it into _store which remains mutable.
-  Object.freeze(element.props);
+  freezeElementProps(element);
 }
 
 function createElement(
@@ -1752,6 +1805,9 @@ function fulfillReference(
     if (key !== __PROTO__) {
       parentObject[key] = mappedValue;
     }
+    if (__DEV__) {
+      resolvePendingReference(parentObject);
+    }
 
     // If this is the root object for a model reference, where `handler.value`
     // is a stale `null`, the resolved value can be used directly.
@@ -1926,6 +1982,9 @@ function waitForReference<T>(
     path,
   };
   if (__DEV__) {
+    trackPendingReference(parentObject);
+  }
+  if (__DEV__) {
     reference.isDebug = isAwaitingDebugInfo;
   }
 
@@ -2006,6 +2065,9 @@ function loadServerReference<A: Iterable<any>, T>(
       errored: false,
     };
   }
+  if (__DEV__) {
+    trackPendingReference(parentObject);
+  }
 
   function fulfill(): void {
     let resolvedValue = requireModule(serverReference) as any;
@@ -2026,6 +2088,9 @@ function loadServerReference<A: Iterable<any>, T>(
 
     if (key !== __PROTO__) {
       parentObject[key] = resolvedValue;
+    }
+    if (__DEV__) {
+      resolvePendingReference(parentObject);
     }
 
     // If this is the root object for a model reference, where `handler.value`
