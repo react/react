@@ -1088,11 +1088,10 @@ impl<'a> HirBuilder<'a> {
         self.context_identifiers.contains(&binding_id)
     }
 
-    /// Resolve the binding for a function declaration's id the way TS does:
-    /// Babel's `path.scope.getBinding(name)` starts at the function's OWN
-    /// scope, so a body-level local (or parameter) that shadows the function's
-    /// name resolves to that inner binding rather than to the function's
-    /// hoisted binding in the parent scope.
+    /// Resolve the binding for a function declaration's id from its parent
+    /// scope. A function's own scope may contain a parameter or body-level
+    /// local that shadows the declaration name, but the declaration itself is
+    /// bound in the parent scope.
     ///
     /// Babel's `scope.rename` re-keys a scope's bindings when the TS builder
     /// renames a shadowed binding (e.g. `init` -> `init_0`), so a binding only
@@ -1117,7 +1116,7 @@ impl<'a> HirBuilder<'a> {
                 _ => Some(false),
             }
         };
-        let mut current = Some(function_scope);
+        let mut current = self.scope_info.scopes[function_scope.0 as usize].parent;
         while let Some(id) = current {
             let scope = &self.scope_info.scopes[id.0 as usize];
             let mut found = scope
