@@ -70,7 +70,7 @@ describe('ReactEmptyComponent', () => {
         ReactDOM.flushSync(() => {
           root.render(<EmptyComponent />);
         });
-      }).not.toThrowError();
+      }).not.toThrow();
     });
 
     it('should not produce child DOM nodes for nullish and false', async () => {
@@ -380,7 +380,7 @@ describe('ReactEmptyComponent', () => {
         ReactDOM.flushSync(() => {
           root.render(<EmptyForwardRef />);
         });
-      }).not.toThrowError();
+      }).not.toThrow();
     });
 
     it('should not warn about React.memo that returns nullish', () => {
@@ -394,7 +394,7 @@ describe('ReactEmptyComponent', () => {
         ReactDOM.flushSync(() => {
           root.render(<EmptyMemo />);
         });
-      }).not.toThrowError();
+      }).not.toThrow();
     });
   });
 });

@@ -55,7 +55,7 @@ export const disableClientCache: boolean = true;
 
 export const enableInfiniteRenderLoopDetection: boolean = false;
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
-export const enableConditionalUseWarning: boolean = false;
+export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
 
 export const enableEffectEventMutationPhase: boolean = true;
 
@@ -96,7 +96,7 @@ export const enableReactTestRendererWarning: boolean = true;
 export const enableObjectFiber: boolean = false;
 
 export const enableOptimisticKey: boolean = false;
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
 export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;

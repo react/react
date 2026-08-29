@@ -16,6 +16,7 @@ let ReactDOMClient;
 let act;
 let document;
 let Fragment;
+let Node;
 
 describe('FragmentRefs', () => {
   beforeEach(() => {
@@ -28,10 +29,13 @@ describe('FragmentRefs', () => {
 
     const jsdom = new JSDOM.JSDOM('');
     document = jsdom.window.document;
+    Node = jsdom.window.Node;
     global.window = jsdom.window;
     global.document = global.window.document;
     global.navigator = global.window.navigator;
     global.Event = global.window.Event;
+    global.MouseEvent = global.window.MouseEvent;
+    global.Node = Node;
   });
 
   describe('focus methods', () => {
@@ -99,6 +103,106 @@ describe('FragmentRefs', () => {
 
         expect(fragmentListener).toHaveBeenCalledTimes(1);
         expect(bodyListener).toHaveBeenCalledTimes(1);
+      });
+
+      // @gate enableFragmentRefs
+      it('dispatches to its own listeners when the container is a Document', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+        const logs = [];
+
+        await act(() => {
+          root.render(
+            <>
+              <Fragment ref={fragmentRef} />
+              <html>
+                <body>
+                  <div id="child" />
+                </body>
+              </html>
+            </>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+        document.addEventListener('click', () => {
+          logs.push('document');
+        });
+
+        const isCancelable = !fragmentRef.current.dispatchEvent(
+          new MouseEvent('click', {bubbles: true}),
+        );
+
+        expect(logs).toEqual(['fragment', 'document']);
+        expect(isCancelable).toBe(false);
+      });
+
+      // @gate enableFragmentRefs
+      it('does not propagate through its own children when wrapping documentElement', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+        const logs = [];
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <html>
+                <body>
+                  <div id="child" />
+                </body>
+              </html>
+            </Fragment>,
+          );
+        });
+
+        // This also registers the listener on the <html> child. Because the
+        // fragment's position is a sibling of <html>, the event must not
+        // propagate through it and fire the listener a second time.
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+        document.addEventListener('click', () => {
+          logs.push('document');
+        });
+
+        fragmentRef.current.dispatchEvent(
+          new MouseEvent('click', {bubbles: true}),
+        );
+
+        expect(logs).toEqual(['fragment', 'document']);
+      });
+
+      // @gate enableFragmentRefs
+      it('dispatches non-bubbling events when the container is a Document', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(document);
+        const logs = [];
+
+        await act(() => {
+          root.render(
+            <>
+              <Fragment ref={fragmentRef} />
+              <html>
+                <body>
+                  <div id="child" />
+                </body>
+              </html>
+            </>,
+          );
+        });
+
+        document.addEventListener('click', () => {
+          logs.push('document');
+        });
+
+        const isCancelable = !fragmentRef.current.dispatchEvent(
+          new MouseEvent('click', {bubbles: false}),
+        );
+
+        expect(logs).toEqual([]);
+        expect(isCancelable).toBe(false);
       });
     });
 
@@ -250,6 +354,49 @@ describe('FragmentRefs', () => {
       // The <html> singleton is the fragment's child, so it is measured
       // instead of the elements inside it
       expect(fragmentRef.current.getClientRects()).toEqual(['html-rect']);
+    });
+  });
+
+  describe('compareDocumentPosition', () => {
+    function expectPosition(position, spec) {
+      const positionResult = {
+        following: (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        preceding: (position & Node.DOCUMENT_POSITION_PRECEDING) !== 0,
+        contains: (position & Node.DOCUMENT_POSITION_CONTAINS) !== 0,
+        containedBy: (position & Node.DOCUMENT_POSITION_CONTAINED_BY) !== 0,
+        disconnected: (position & Node.DOCUMENT_POSITION_DISCONNECTED) !== 0,
+        implementationSpecific:
+          (position & Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC) !== 0,
+      };
+      expect(positionResult).toEqual(spec);
+    }
+
+    // @gate enableFragmentRefs
+    it('treats documentElement as containing the fragment', async () => {
+      const fragmentRef = React.createRef();
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = ReactDOMClient.createRoot(container);
+
+      await act(() => {
+        root.render(
+          <Fragment ref={fragmentRef}>
+            <div id="child" />
+          </Fragment>,
+        );
+      });
+
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(document.documentElement),
+        {
+          preceding: true,
+          following: false,
+          contains: true,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: false,
+        },
+      );
     });
   });
 });
