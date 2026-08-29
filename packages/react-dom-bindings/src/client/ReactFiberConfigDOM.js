@@ -3399,6 +3399,7 @@ FragmentInstance.prototype.unobserveUsing = function (
       unobserveChild,
       observer,
     );
+    unobservePendingChildren(this, observer);
   }
 };
 function unobserveChild(
@@ -3414,6 +3415,92 @@ function unobserveChild(
   const instance = getInstanceFromHostFiber<Instance>(child);
   observer.unobserve(instance);
   return false;
+}
+
+type PendingIntersectionUnobserve = {
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver,
+  instance: Instance,
+};
+
+let pendingIntersectionUnobserves: Array<PendingIntersectionUnobserve> = [];
+let intersectionUnobserveScheduled: boolean = false;
+
+function isIntersectionObserver(
+  observer: IntersectionObserver | ResizeObserver,
+): boolean {
+  // IntersectionObserver has rootMargin; ResizeObserver does not. Avoid
+  // instanceof so jsdom mocks and cross-realm observers still match.
+  return typeof (observer as any).rootMargin === 'string';
+}
+
+// A later commit can reinsert the same node before the post-paint unobserve
+// runs (Activity hidden → visible). Cancel so the flush does not drop it.
+function cancelPendingIntersectionUnobserve(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver | ResizeObserver,
+  instance: Instance,
+): void {
+  let writeIdx = 0;
+  for (let i = 0; i < pendingIntersectionUnobserves.length; i++) {
+    const pending = pendingIntersectionUnobserves[i];
+    if (
+      pending.fragmentInstance !== fragmentInstance ||
+      pending.observer !== observer ||
+      pending.instance !== instance
+    ) {
+      pendingIntersectionUnobserves[writeIdx++] = pending;
+    }
+  }
+  pendingIntersectionUnobserves.length = writeIdx;
+}
+
+// unobserveUsing() only walks the children that are still mounted, so release
+// the deleted ones that are waiting for their exit record.
+function unobservePendingChildren(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver | ResizeObserver,
+): void {
+  let writeIdx = 0;
+  for (let i = 0; i < pendingIntersectionUnobserves.length; i++) {
+    const pending = pendingIntersectionUnobserves[i];
+    if (
+      pending.fragmentInstance === fragmentInstance &&
+      pending.observer === observer
+    ) {
+      observer.unobserve(pending.instance);
+    } else {
+      pendingIntersectionUnobserves[writeIdx++] = pending;
+    }
+  }
+  pendingIntersectionUnobserves.length = writeIdx;
+}
+
+function schedulePendingIntersectionUnobserve(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver,
+  instance: Instance,
+): void {
+  pendingIntersectionUnobserves.push({
+    fragmentInstance,
+    observer,
+    instance,
+  });
+  if (!intersectionUnobserveScheduled) {
+    intersectionUnobserveScheduled = true;
+    // Unobserving in this commit would cancel the record IntersectionObserver
+    // delivers for the now disconnected target. Wait until after paint so the
+    // exit fires first, then drop the observer's strong ref to the node.
+    requestPostPaintCallback(() => {
+      intersectionUnobserveScheduled = false;
+      const pending = pendingIntersectionUnobserves;
+      pendingIntersectionUnobserves = [];
+      for (let i = 0; i < pending.length; i++) {
+        const item = pending[i];
+        item.observer.unobserve(item.instance);
+      }
+    });
+  }
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.getClientRects = function (
@@ -3797,10 +3884,14 @@ export function commitNewChildToFragmentInstance(
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  if (fragmentInstance._observers !== null) {
-    fragmentInstance._observers.forEach(observer => {
+  const observers = fragmentInstance._observers;
+  if (observers !== null) {
+    const observerList = Array.from(observers);
+    for (let i = 0; i < observerList.length; i++) {
+      const observer = observerList[i];
+      cancelPendingIntersectionUnobserve(fragmentInstance, observer, instance);
       observer.observe(instance);
-    });
+    }
   }
   if (enableFragmentRefsInstanceHandles) {
     addFragmentHandleToInstance(instance, fragmentInstance);
@@ -3826,6 +3917,24 @@ export function deleteChildFromFragmentInstance(
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
+  const observers = fragmentInstance._observers;
+  if (observers !== null) {
+    const observerList = Array.from(observers);
+    for (let i = 0; i < observerList.length; i++) {
+      const observer = observerList[i];
+      if (isIntersectionObserver(observer)) {
+        // Stay observed until the next IntersectionObserver delivery so a
+        // disconnected target still gets an isIntersecting: false record.
+        schedulePendingIntersectionUnobserve(
+          fragmentInstance,
+          observer as any as IntersectionObserver,
+          instance,
+        );
+      } else {
+        observer.unobserve(instance);
+      }
+    }
+  }
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {
       instance.reactFragments.delete(fragmentInstance);
