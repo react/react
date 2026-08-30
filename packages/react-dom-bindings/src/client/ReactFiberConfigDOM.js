@@ -3886,12 +3886,10 @@ export function commitNewChildToFragmentInstance(
   const instance: InstanceWithFragmentHandles = childInstance as any;
   const observers = fragmentInstance._observers;
   if (observers !== null) {
-    const observerList = Array.from(observers);
-    for (let i = 0; i < observerList.length; i++) {
-      const observer = observerList[i];
+    observers.forEach(observer => {
       cancelPendingIntersectionUnobserve(fragmentInstance, observer, instance);
       observer.observe(instance);
-    }
+    });
   }
   if (enableFragmentRefsInstanceHandles) {
     addFragmentHandleToInstance(instance, fragmentInstance);
@@ -3919,9 +3917,7 @@ export function deleteChildFromFragmentInstance(
   const instance: InstanceWithFragmentHandles = childInstance as any;
   const observers = fragmentInstance._observers;
   if (observers !== null) {
-    const observerList = Array.from(observers);
-    for (let i = 0; i < observerList.length; i++) {
-      const observer = observerList[i];
+    observers.forEach(observer => {
       if (isIntersectionObserver(observer)) {
         // Stay observed until the next IntersectionObserver delivery so a
         // disconnected target still gets an isIntersecting: false record.
@@ -3933,7 +3929,7 @@ export function deleteChildFromFragmentInstance(
       } else {
         observer.unobserve(instance);
       }
-    }
+    });
   }
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {

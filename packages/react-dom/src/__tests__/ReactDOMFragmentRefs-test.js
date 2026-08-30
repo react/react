@@ -1782,13 +1782,10 @@ describe('FragmentRefs', () => {
       // Install before requiring React so host config captures this rAF
       // (requestPostPaintCallback / delayed observer unobserve).
       rafCallbacks = [];
-      global.requestAnimationFrame = cb => {
+      jest.spyOn(global, 'requestAnimationFrame').mockImplementation(cb => {
         rafCallbacks.push(cb);
         return rafCallbacks.length;
-      };
-      if (typeof window === 'object') {
-        window.requestAnimationFrame = global.requestAnimationFrame;
-      }
+      });
       loadModules();
       intersectionObserverMock = mockIntersectionObserver();
 
