@@ -1771,7 +1771,6 @@ function pushAttribute(
     case 'disablePictureInPicture':
     case 'disableRemotePlayback':
     case 'formNoValidate':
-    case 'hidden':
     case 'loop':
     case 'noModule':
     case 'noValidate':
@@ -1794,7 +1793,8 @@ function pushAttribute(
       return;
     }
     case 'capture':
-    case 'download': {
+    case 'download':
+    case 'hidden': {
       // Overloaded Boolean
       if (value === true) {
         target.push(
