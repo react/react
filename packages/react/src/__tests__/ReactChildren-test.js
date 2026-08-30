@@ -1224,4 +1224,36 @@ describe('ReactChildren', () => {
       ]);
     });
   });
+
+  it('should close an iterator when mapping throws', () => {
+    const returnSpy = jest.fn();
+    const iterable = {
+      [Symbol.iterator]() {
+        let i = 0;
+        return {
+          next() {
+            if (i < 3) {
+              return {value: <span key={String(i++)} />, done: false};
+            }
+            return {value: undefined, done: true};
+          },
+          return() {
+            returnSpy();
+            return {value: undefined, done: true};
+          },
+        };
+      },
+    };
+
+    expect(() => {
+      React.Children.map(iterable, (child, index) => {
+        if (index === 1) {
+          throw new Error('map callback error');
+        }
+        return child;
+      });
+    }).toThrow('map callback error');
+
+    expect(returnSpy).toHaveBeenCalledTimes(1);
+  });
 });

@@ -305,17 +305,29 @@ function mapIntoArray(
       const iterator = iteratorFn.call(iterableChildren);
       let step;
       let ii = 0;
-      // $FlowFixMe[incompatible-use] `iteratorFn` might return null according to typing.
-      while (!(step = iterator.next()).done) {
-        child = step.value;
-        nextName = nextNamePrefix + getElementKey(child, ii++);
-        subtreeCount += mapIntoArray(
-          child,
-          array,
-          escapedPrefix,
-          nextName,
-          callback,
-        );
+      let iteratorDone = false;
+      try {
+        // $FlowFixMe[incompatible-use] `iteratorFn` might return null according to typing.
+        while (!(step = iterator.next()).done) {
+          child = step.value;
+          nextName = nextNamePrefix + getElementKey(child, ii++);
+          subtreeCount += mapIntoArray(
+            child,
+            array,
+            escapedPrefix,
+            nextName,
+            callback,
+          );
+        }
+        iteratorDone = true;
+      } finally {
+        if (!iteratorDone && typeof iterator.return === 'function') {
+          try {
+            iterator.return();
+          } catch (_closeError) {
+            // Swallow — closing the iterator must not mask the original error.
+          }
+        }
       }
     } else if (type === 'object') {
       if (typeof (children as any).then === 'function') {
