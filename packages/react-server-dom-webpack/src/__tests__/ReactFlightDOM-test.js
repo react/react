@@ -87,6 +87,9 @@ describe('ReactFlightDOM', () => {
     Suspense = React.Suspense;
     ReactDOMClient = require('react-dom/client');
     ReactDOMFizzServer = require('react-dom/server.node');
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-webpack/client');
 
     ErrorBoundary = class extends React.Component {
@@ -733,7 +736,7 @@ describe('ReactFlightDOM', () => {
     function dotting() {
       return ClientModule.Component.deep;
     }
-    expect(dotting).toThrowError(
+    expect(dotting).toThrow(
       'Cannot access Component.deep on the server. ' +
         'You cannot dot into a client module from a server component. ' +
         'You can only pass the imported name through.',
@@ -748,7 +751,7 @@ describe('ReactFlightDOM', () => {
       const mod = await ClientModule;
       return await Promise.resolve(mod.Component);
     }
-    await expect(awaitExport()).rejects.toThrowError(
+    await expect(awaitExport()).rejects.toThrow(
       `Cannot await or return from a thenable. ` +
         `You cannot await a client module from a server component.`,
     );
@@ -762,7 +765,7 @@ describe('ReactFlightDOM', () => {
     function read() {
       return ClientModule[symbol];
     }
-    expect(read).toThrowError(
+    expect(read).toThrow(
       'Cannot read Symbol exports. ' +
         'Only named exports are supported on a client module imported on the server.',
     );
@@ -795,7 +798,7 @@ describe('ReactFlightDOM', () => {
     function dotting() {
       return ClientModule.Context.Provider;
     }
-    expect(dotting).not.toThrowError();
+    expect(dotting).not.toThrow();
   });
 
   it('can render a client Context.Provider from a server component', async () => {
@@ -1704,20 +1707,32 @@ describe('ReactFlightDOM', () => {
       FlightReactDOM.preconnect('c2 before', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l before', {as: 'style'});
       FlightReactDOM.preloadModule('lm before');
-      FlightReactDOM.preloadModule('lm2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i before', {as: 'script'});
       FlightReactDOM.preinitModule('m before');
-      FlightReactDOM.preinitModule('m2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       await 1;
       FlightReactDOM.prefetchDNS('d after');
       FlightReactDOM.preconnect('c after');
       FlightReactDOM.preconnect('c2 after', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l after', {as: 'style'});
       FlightReactDOM.preloadModule('lm after');
-      FlightReactDOM.preloadModule('lm2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i after', {as: 'script'});
       FlightReactDOM.preinitModule('m after');
-      FlightReactDOM.preinitModule('m2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       return <ClientComponent />;
     }
 
@@ -1766,19 +1781,41 @@ describe('ReactFlightDOM', () => {
           <link rel="preconnect" href="c2 before" crossorigin="" />
           <link rel="preload" as="style" href="l before" />
           <link rel="modulepreload" href="lm before" />
-          <link rel="modulepreload" href="lm2 before" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 before"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <script async="" src="i before" />
           <script type="module" async="" src="m before" />
-          <script type="module" async="" src="m2 before" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 before"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <link rel="dns-prefetch" href="d after" />
           <link rel="preconnect" href="c after" />
           <link rel="preconnect" href="c2 after" crossorigin="" />
           <link rel="preload" as="style" href="l after" />
           <link rel="modulepreload" href="lm after" />
-          <link rel="modulepreload" href="lm2 after" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 after"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <script async="" src="i after" />
           <script type="module" async="" src="m after" />
-          <script type="module" async="" src="m2 after" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 after"
+            crossorigin=""
+            fetchpriority="high"
+          />
         </head>
         <body />
       </html>,
@@ -1799,20 +1836,32 @@ describe('ReactFlightDOM', () => {
       FlightReactDOM.preconnect('c2 before', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l before', {as: 'style'});
       FlightReactDOM.preloadModule('lm before');
-      FlightReactDOM.preloadModule('lm2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i before', {as: 'script'});
       FlightReactDOM.preinitModule('m before');
-      FlightReactDOM.preinitModule('m2 before', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 before', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       await 1;
       FlightReactDOM.prefetchDNS('d after');
       FlightReactDOM.preconnect('c after');
       FlightReactDOM.preconnect('c2 after', {crossOrigin: 'anonymous'});
       FlightReactDOM.preload('l after', {as: 'style'});
       FlightReactDOM.preloadModule('lm after');
-      FlightReactDOM.preloadModule('lm2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preloadModule('lm2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'low',
+      });
       FlightReactDOM.preinit('i after', {as: 'script'});
       FlightReactDOM.preinitModule('m after');
-      FlightReactDOM.preinitModule('m2 after', {crossOrigin: 'anonymous'});
+      FlightReactDOM.preinitModule('m2 after', {
+        crossOrigin: 'anonymous',
+        fetchPriority: 'high',
+      });
       return <ClientComponent />;
     }
 
@@ -1866,16 +1915,38 @@ describe('ReactFlightDOM', () => {
           <link rel="preconnect" href="c2 after" crossorigin="" />
           <script async="" src="i before" />
           <script type="module" async="" src="m before" />
-          <script type="module" async="" src="m2 before" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 before"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <script async="" src="i after" />
           <script type="module" async="" src="m after" />
-          <script type="module" async="" src="m2 after" crossorigin="" />
+          <script
+            type="module"
+            async=""
+            src="m2 after"
+            crossorigin=""
+            fetchpriority="high"
+          />
           <link rel="preload" as="style" href="l before" />
           <link rel="modulepreload" href="lm before" />
-          <link rel="modulepreload" href="lm2 before" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 before"
+            crossorigin=""
+            fetchpriority="low"
+          />
           <link rel="preload" as="style" href="l after" />
           <link rel="modulepreload" href="lm after" />
-          <link rel="modulepreload" href="lm2 after" crossorigin="" />
+          <link
+            rel="modulepreload"
+            href="lm2 after"
+            crossorigin=""
+            fetchpriority="low"
+          />
         </head>
         <body>
           <p>hello world</p>
@@ -3164,7 +3235,7 @@ describe('ReactFlightDOM', () => {
     ]);
 
     await 1;
-    jest.advanceTimersByTime('100');
+    jest.advanceTimersByTime(100);
     expect(await race).toBe('timeout');
   });
 

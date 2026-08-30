@@ -156,7 +156,7 @@ export function printStore(
     }
 
     store.roots.forEach(rootID => {
-      const {weight} = ((store.getElementByID(rootID): any): Element);
+      const {weight} = store.getElementByID(rootID) as any as Element;
       const maybeWeightLabel = includeWeight ? ` (${weight})` : '';
 
       // Store does not (yet) expose a way to get errors/warnings per root.
@@ -235,6 +235,8 @@ export function smartParse(value: any): any | void | number {
   switch (value) {
     case 'Infinity':
       return Infinity;
+    case '-Infinity':
+      return -Infinity;
     case 'NaN':
       return NaN;
     case 'undefined':
@@ -249,7 +251,7 @@ export function smartStringify(value: any): string {
     if (Number.isNaN(value)) {
       return 'NaN';
     } else if (!Number.isFinite(value)) {
-      return 'Infinity';
+      return value > 0 ? 'Infinity' : '-Infinity';
     }
   } else if (value === undefined) {
     return 'undefined';

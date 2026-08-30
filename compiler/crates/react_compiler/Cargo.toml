@@ -1,0 +1,20 @@
+[package]
+name = "react_compiler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+react_compiler_ast = { path = "../react_compiler_ast" }
+react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
+react_compiler_hir = { path = "../react_compiler_hir" }
+react_compiler_inference = { path = "../react_compiler_inference" }
+react_compiler_lowering = { path = "../react_compiler_lowering" }
+react_compiler_optimization = { path = "../react_compiler_optimization" }
+react_compiler_reactive_scopes = { path = "../react_compiler_reactive_scopes" }
+react_compiler_ssa = { path = "../react_compiler_ssa" }
+react_compiler_typeinference = { path = "../react_compiler_typeinference" }
+react_compiler_validation = { path = "../react_compiler_validation" }
+indexmap = "2"
+rustc-hash = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }

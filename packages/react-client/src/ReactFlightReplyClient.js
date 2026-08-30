@@ -39,6 +39,12 @@ import getPrototypeOf from 'shared/getPrototypeOf';
 
 const ObjectPrototype = Object.prototype;
 
+// Passed to replyLifetimeController.abort(). Nothing reads the reason, but a
+// call to abort() without one constructs an AbortError DOMException. Capturing
+// the stack trace dominates that cost, and the cost grows with the depth of the
+// stack.
+const REPLY_ENDED = 'The reply ended.';
+
 import {
   usedWithSSR,
   checkEvalAvailabilityOnceDev,
@@ -184,14 +190,58 @@ export function processReply(
   root: ReactServerValue,
   formFieldPrefix: string,
   temporaryReferences: void | TemporaryReferenceSet,
-  resolve: (string | FormData) => void,
-  reject: (error: mixed) => void,
-): (reason: mixed) => void {
+  onResolve: (string | FormData) => void,
+  onReject: (error: mixed) => void,
+  signal: void | AbortSignal,
+): void {
   let nextPartId = 1;
   let pendingParts = 0;
   let formData: null | FormData = null;
   const writtenObjects: WeakMap<Reference, string> = new WeakMap();
   let modelRoot: null | ReactServerValue = root;
+  let settled = false;
+  // Bounds the abort listener that attachAbortSignal attaches to the caller's
+  // signal. Null until a signal is attached, so a reply that gets no signal
+  // never creates a controller.
+  let replyLifetimeController: null | AbortController = null;
+
+  // Ending the lifetime makes the runtime remove the caller's abort listener.
+  // Without that, the listener keeps everything this reply serialized reachable
+  // for as long as the caller's signal lives, and a composite signal from
+  // AbortSignal.any() is itself retained by the runtime while it has any abort
+  // listener attached.
+  function endReplyLifetime(): void {
+    if (replyLifetimeController !== null) {
+      replyLifetimeController.abort(REPLY_ENDED);
+    }
+  }
+
+  function resolve(value: string | FormData): void {
+    settled = true;
+    endReplyLifetime();
+    onResolve(value);
+  }
+
+  function reject(error: mixed): void {
+    settled = true;
+    endReplyLifetime();
+    onReject(error);
+  }
+
+  function attachAbortSignal(abortSignal: AbortSignal): void {
+    if (abortSignal.aborted) {
+      abort(abortSignal.reason);
+      return;
+    }
+    replyLifetimeController = new AbortController();
+    abortSignal.addEventListener(
+      'abort',
+      () => {
+        abort(abortSignal.reason);
+      },
+      {signal: replyLifetimeController.signal},
+    );
+  }
 
   if (__DEV__) {
     // We use eval to create fake function stacks which includes Component stacks.
@@ -415,7 +465,7 @@ export function processReply(
     }
 
     if (typeof value === 'object') {
-      switch ((value: any).$$typeof) {
+      switch ((value as any).$$typeof) {
         case REACT_ELEMENT_TYPE: {
           if (temporaryReferences !== undefined && key.indexOf(':') === -1) {
             // TODO: If the property name contains a colon, we don't dedupe. Escape instead.
@@ -445,7 +495,7 @@ export function processReply(
         }
         case REACT_LAZY_TYPE: {
           // Resolve lazy as if it wasn't here. In the future this will be encoded as a Promise.
-          const lazy: LazyComponent<any, any> = (value: any);
+          const lazy: LazyComponent<any, any> = value as any;
           const payload = lazy._payload;
           const init = lazy._init;
           if (formData === null) {
@@ -472,7 +522,7 @@ export function processReply(
               // Suspended
               pendingParts++;
               const lazyId = nextPartId++;
-              const thenable: Thenable<any> = (x: any);
+              const thenable: Thenable<any> = x as any;
               const retry = function () {
                 // While the first promise resolved, its value isn't necessarily what we'll
                 // resolve into because we might suspend again.
@@ -529,7 +579,7 @@ export function processReply(
         const promiseId = nextPartId++;
         const promiseReference = serializePromiseID(promiseId);
         writtenObjects.set(value, promiseReference);
-        const thenable: Thenable<any> = (value: any);
+        const thenable: Thenable<any> = value as any;
         thenable.then(
           partValue => {
             try {
@@ -584,7 +634,7 @@ export function processReply(
       }
 
       if (isArray(value)) {
-        // $FlowFixMe[incompatible-return]
+        // $FlowFixMe[incompatible-type]
         return value;
       }
       // TODO: Should we the Object.prototype.toString.call() to test for cross-realm objects?
@@ -598,10 +648,12 @@ export function processReply(
         // Copy all the form fields with a prefix for this reference.
         // These must come first in the form order because we assume that all the
         // fields are available before this is referenced.
-        const prefix = formFieldPrefix + refId + '_';
+        // We include a special marker so that the Server can detect FormData entries
+        // that are values in referenced FormData objects.
+        const prefix = formFieldPrefix + '_' + refId + '_';
         // $FlowFixMe[prop-missing]: FormData has forEach.
         value.forEach((originalValue: string | File, originalKey: string) => {
-          // $FlowFixMe[incompatible-call]
+          // $FlowFixMe[incompatible-type]
           data.append(prefix + originalKey, originalValue);
         });
         return serializeFormDataReference(refId);
@@ -695,11 +747,12 @@ export function processReply(
       const iteratorFn = getIteratorFn(value);
       if (iteratorFn) {
         const iterator = iteratorFn.call(value);
+        // $FlowFixMe[invalid-compare]
         if (iterator === value) {
           // Iterator, not Iterable
           const iteratorId = nextPartId++;
           const partJSON = serializeModel(
-            Array.from((iterator: any)),
+            Array.from(iterator as any),
             iteratorId,
           );
           if (formData === null) {
@@ -708,7 +761,7 @@ export function processReply(
           formData.append(formFieldPrefix + iteratorId, partJSON);
           return serializeIteratorID(iteratorId);
         }
-        return Array.from((iterator: any));
+        return Array.from(iterator as any);
       }
 
       // TODO: ReadableStream is not available in old Node. Remove the typeof check later.
@@ -718,13 +771,14 @@ export function processReply(
       ) {
         return serializeReadableStream(value);
       }
-      const getAsyncIterator: void | (() => $AsyncIterator<any, any, any>) =
-        (value: any)[ASYNC_ITERATOR];
+      const getAsyncIterator: void | (() => $AsyncIterator<any, any, any>) = (
+        value as any
+      )[ASYNC_ITERATOR];
       if (typeof getAsyncIterator === 'function') {
         // We treat AsyncIterables as a Fragment and as such we might need to key them.
         return serializeAsyncIterable(
-          (value: any),
-          getAsyncIterator.call((value: any)),
+          value as any,
+          getAsyncIterator.call(value as any),
         );
       }
 
@@ -746,7 +800,7 @@ export function processReply(
         return serializeTemporaryReferenceMarker();
       }
       if (__DEV__) {
-        if ((value: any).$$typeof === REACT_CONTEXT_TYPE) {
+        if ((value as any).$$typeof === REACT_CONTEXT_TYPE) {
           console.error(
             'React Context Providers cannot be passed to Server Functions from the Client.%s',
             describeObjectForErrorMessage(parent, key),
@@ -885,11 +939,14 @@ export function processReply(
       }
     }
     modelRoot = model;
-    // $FlowFixMe[incompatible-return] it's not going to be undefined because we'll encode it.
+    // $FlowFixMe[incompatible-type] it's not going to be undefined because we'll encode it.
     return JSON.stringify(model, resolveToJSON);
   }
 
   function abort(reason: mixed): void {
+    // Nothing can make the reply pending again from here, so the caller's
+    // signal has no further effect on it.
+    endReplyLifetime();
     if (pendingParts > 0) {
       pendingParts = 0; // Don't resolve again later.
       // Resolve with what we have so far, which may have holes at this point.
@@ -911,12 +968,22 @@ export function processReply(
     // Otherwise, we use FormData to let us stream in the result.
     formData.set(formFieldPrefix + '0', json);
     if (pendingParts === 0) {
-      // $FlowFixMe[incompatible-call] this has already been refined.
+      // $FlowFixMe[incompatible-type] this has already been refined.
       resolve(formData);
     }
   }
 
-  return abort;
+  // Wired up after serializing: abort() reads `json` and resolves with the
+  // parts that finished, so it must not be reachable before then. A reply that
+  // already settled gets no listener, since aborting it would be a no-op and
+  // the lifetime that removes the listener has already ended.
+  //
+  // TODO: Skip serializing when the signal is already aborted, the way the
+  // server entry points abort before rendering starts. Needs a decision on what
+  // to resolve with, since abort() resolves with the parts that finished.
+  if (signal !== undefined && !settled) {
+    attachAbortSignal(signal);
+  }
 }
 
 const boundCache: WeakMap<
@@ -942,13 +1009,13 @@ function encodeFormData(reference: any): Thenable<FormData> {
         data.append('0', body);
         body = data;
       }
-      const fulfilled: FulfilledThenable<FormData> = (thenable: any);
+      const fulfilled: FulfilledThenable<FormData> = thenable as any;
       fulfilled.status = 'fulfilled';
       fulfilled.value = body;
       resolve(body);
     },
     e => {
-      const rejected: RejectedThenable<FormData> = (thenable: any);
+      const rejected: RejectedThenable<FormData> = thenable as any;
       rejected.status = 'rejected';
       rejected.reason = e;
       reject(e);
@@ -990,7 +1057,7 @@ function defaultEncodeFormAction(
     const prefixedData = new FormData();
     // $FlowFixMe[prop-missing]
     encodedFormData.forEach((value: string | File, key: string) => {
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       prefixedData.append('$ACTION_' + identifierPrefix + ':' + key, value);
     });
     data = prefixedData;
@@ -1020,7 +1087,8 @@ function customEncodeFormAction(
         'This is a bug in React.',
     );
   }
-  let boundPromise: Promise<Array<any>> = (referenceClosure.bound: any);
+  let boundPromise: Promise<Array<any>> = referenceClosure.bound as any;
+  // $FlowFixMe[invalid-compare]
   if (boundPromise === null) {
     boundPromise = Promise.resolve([]);
   }
@@ -1068,18 +1136,18 @@ function isSignatureEqual(
         // Only instrument the thenable if the status if not defined.
       } else {
         const pendingThenable: PendingThenable<Array<any>> =
-          (boundPromise: any);
+          boundPromise as any;
         pendingThenable.status = 'pending';
         pendingThenable.then(
           (boundArgs: Array<any>) => {
             const fulfilledThenable: FulfilledThenable<Array<any>> =
-              (boundPromise: any);
+              boundPromise as any;
             fulfilledThenable.status = 'fulfilled';
             fulfilledThenable.value = boundArgs;
           },
           (error: mixed) => {
             const rejectedThenable: RejectedThenable<number> =
-              (boundPromise: any);
+              boundPromise as any;
             rejectedThenable.status = 'rejected';
             rejectedThenable.reason = error;
           },
@@ -1200,6 +1268,7 @@ export function registerBoundServerReference<T: Function>(
 
   // Expose encoder for use by SSR, as well as a special bind that can be used to
   // keep server capabilities.
+  // $FlowFixMe[constant-condition]
   if (usedWithSSR) {
     // Only expose this in builds that would actually use it. Not needed in the browser.
     const $$FORM_ACTION =
@@ -1215,7 +1284,7 @@ export function registerBoundServerReference<T: Function>(
               encodeFormAction,
             );
           };
-    Object.defineProperties((reference: any), {
+    Object.defineProperties(reference as any, {
       $$FORM_ACTION: {value: $$FORM_ACTION},
       $$IS_SIGNATURE_EQUAL: {value: isSignatureEqual},
       bind: {value: bind},
@@ -1240,7 +1309,7 @@ function bind(this: Function): Function {
   const referenceClosure = knownServerReferences.get(this);
 
   if (!referenceClosure) {
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     return FunctionBind.apply(this, arguments);
   }
 
@@ -1261,7 +1330,7 @@ function bind(this: Function): Function {
   const args = ArraySlice.call(arguments, 1);
   let boundPromise = null;
   if (referenceClosure.bound !== null) {
-    boundPromise = Promise.resolve((referenceClosure.bound: any)).then(
+    boundPromise = Promise.resolve(referenceClosure.bound as any).then(
       boundArgs => boundArgs.concat(args),
     );
   } else {
@@ -1276,9 +1345,10 @@ function bind(this: Function): Function {
 
   // Expose encoder for use by SSR, as well as a special bind that can be used to
   // keep server capabilities.
+  // $FlowFixMe[constant-condition]
   if (usedWithSSR) {
     // Only expose this in builds that would actually use it. Not needed on the client.
-    Object.defineProperties((newFn: any), {
+    Object.defineProperties(newFn as any, {
       $$FORM_ACTION: {value: this.$$FORM_ACTION},
       $$IS_SIGNATURE_EQUAL: {value: isSignatureEqual},
       bind: {value: bind},
@@ -1320,7 +1390,7 @@ export function createBoundServerReference<A: Iterable<any>, T>(
     }
     // Since this is a fake Promise whose .then doesn't chain, we have to wrap it.
     // TODO: Remove the wrapper once that's fixed.
-    return ((Promise.resolve(p): any): Promise<Array<any>>).then(
+    return (Promise.resolve(p) as any as Promise<Array<any>>).then(
       function (boundArgs) {
         return callServer(id, boundArgs.concat(args));
       },

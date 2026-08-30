@@ -25,6 +25,7 @@ type Destination = Array<Uint8Array | string>;
 const textEncoder = new TextEncoder();
 
 // $FlowFixMe[prop-missing]
+// $FlowFixMe[incompatible-type]
 const ReactNoopFlightServer = ReactFlightServer({
   scheduleMicrotask(callback: () => void) {
     callback();
@@ -82,7 +83,7 @@ function render(model: ReactClientValue, options?: Options): Destination {
   const bundlerConfig = undefined;
   const request = ReactNoopFlightServer.createRequest(
     model,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     bundlerConfig,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
@@ -90,20 +91,12 @@ function render(model: ReactClientValue, options?: Options): Destination {
     options ? options.startTime : undefined,
     __DEV__ && options ? options.environmentName : undefined,
     __DEV__ && options ? options.filterStackFrame : undefined,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     __DEV__ && options && options.debugChannel !== undefined,
   );
   const signal = options ? options.signal : undefined;
   if (signal) {
-    if (signal.aborted) {
-      ReactNoopFlightServer.abort(request, (signal: any).reason);
-    } else {
-      const listener = () => {
-        ReactNoopFlightServer.abort(request, (signal: any).reason);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
-    }
+    ReactNoopFlightServer.attachAbortSignal(request, signal);
   }
   if (__DEV__ && options && options.debugChannel !== undefined) {
     options.debugChannel.onMessage = message => {
@@ -113,7 +106,7 @@ function render(model: ReactClientValue, options?: Options): Destination {
   ReactNoopFlightServer.startWork(request);
   ReactNoopFlightServer.startFlowing(
     request,
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     destination,
   );
   return destination;

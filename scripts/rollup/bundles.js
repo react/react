@@ -756,6 +756,29 @@ const bundles = [
     externals: ['acorn'],
   },
 
+  /******* React Flight Server FB Server *******/
+  {
+    bundleTypes: [FB_WWW_DEV, FB_WWW_PROD],
+    moduleType: RENDERER,
+    entry: 'react-flight-server-fb/src/server/react-flight-dom-server.node',
+    global: 'ReactFlightServer',
+    condition: 'react-server',
+    minifyWithProdErrorCodes: false,
+    wrapWithModuleBoundaries: false,
+    externals: ['react', 'react-dom', 'stream'],
+  },
+
+  /******* React Flight Client FB *******/
+  {
+    bundleTypes: [FB_WWW_DEV, FB_WWW_PROD],
+    moduleType: RENDERER,
+    entry: 'react-flight-server-fb/client.browser',
+    global: 'ReactFlightClient',
+    minifyWithProdErrorCodes: false,
+    wrapWithModuleBoundaries: false,
+    externals: ['react', 'react-dom'],
+  },
+
   /******* React Server DOM Unbundled Server *******/
   {
     bundleTypes: [NODE_DEV, NODE_PROD],

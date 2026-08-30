@@ -116,11 +116,12 @@ export function parseInput(
       sourceFilename: filename,
       sourceType,
       enableExperimentalComponentSyntax: true,
+      enableExperimentalFlowMatchSyntax: true,
     });
   } else {
     return BabelParser.parse(input, {
       sourceFilename: filename,
-      plugins: ['typescript', 'jsx'],
+      plugins: ['typescript', 'jsx', 'explicitResourceManagement'],
       sourceType,
     });
   }

@@ -103,13 +103,17 @@ export function createBridge(contentWindow: any, wall?: Wall): BackendBridge {
           contentWindow.removeEventListener('message', onMessage);
         };
       },
-      send(event: string, payload: any, transferable?: Array<any>) {
+      send(
+        event: string,
+        payload: mixed,
+        transferable?: $ReadOnlyArray<mixed>,
+      ) {
         parent.postMessage({event, payload}, '*', transferable);
       },
     };
   }
 
-  return (new Bridge(wall): BackendBridge);
+  return new Bridge(wall) as BackendBridge;
 }
 
 export function initialize(contentWindow: any): void {

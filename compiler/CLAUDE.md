@@ -236,6 +236,21 @@ Feature flags are configured in `src/HIR/Environment.ts`, for example `enableJsx
 
 Would enable the `enableJsxOutlining` feature and disable the `enableNameAnonymousFunctions` feature.
 
+## Rust Port (Active)
+
+Work is tracked in `compiler/docs/rust-port/` with numbered plan docs.
+Rust crates live in `compiler/crates/`.
+
+### Before implementing from a plan:
+- Run `git log --oneline --grep="<plan-name>"` to see what's already done
+- Read the plan doc's Remaining Work / Status section
+- Only implement what's actually remaining
+
+### After implementing:
+- Update the plan doc's status
+- Run `/compiler-verify`
+- Ensure `compiler/scripts/test-babel-ast.sh` passes
+
 ## Debugging Tips
 
 1. Run `yarn snap -p <fixture>` to see full HIR output with effects

@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git",
+    "url": "git+https://github.com/react/react.git",
     "directory": "compiler/packages/snap"
   },
   "dependencies": {
@@ -33,7 +33,7 @@
     "chalk": "4",
     "fbt": "^1.0.2",
     "glob": "^10.3.10",
-    "hermes-parser": "^0.25.1",
+    "hermes-parser": "^0.32.0",
     "jsdom": "^22.1.0",
     "react": "0.0.0-experimental-4beb1fd8-20241118",
     "react-dom": "0.0.0-experimental-4beb1fd8-20241118",

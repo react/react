@@ -61,15 +61,54 @@
   justify-content: center;
 }
 
-.LearnMoreRow {
-  margin-top: 1rem;
-  color: var(--color-dim);
-  font-size: var(--font-size-sans-small);
-}
-
 .Header {
   font-size: var(--font-size-sans-large);
-  margin-bottom: 0.5rem;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+}
+
+.Description {
+  max-width: 100%;
+  text-align: center;
+  color: var(--color-dim);
+}
+
+.DescriptionLink {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+
+.PerformanceTracksCard {
+  margin-top: 1.5rem;
+  max-width: 80%;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-background-hover);
+  /* Squarer than the CTA's pill, so the two don't read as the same control. */
+  border-radius: 0.25rem;
+  text-align: center;
+}
+
+.CTAButton {
+  margin-top: 0.5rem;
+  padding: 0.375rem 1rem;
+  border: none;
+  border-radius: 1rem;
+  background: var(--color-background-hover);
+  color: var(--color-button-focus);
+  font-family: inherit;
+  font-size: var(--font-size-sans-normal);
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.CTAButton:hover {
+  background: var(--color-background-selected);
+  color: var(--color-text-selected);
+}
+
+.CTAButton:focus-visible {
+  outline: 2px solid var(--color-button-active);
+  outline-offset: 2px;
 }
 
 .Toolbar {
@@ -126,6 +165,21 @@
   flex: 1 1;
   display: flex;
   align-items: center;
+}
+
+/* Pinned to the bottom of the main view (like a Chrome-style find bar). */
+.SearchInputOverlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--color-background);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -2px 8px var(--color-shadow);
 }
 
 .LearnMoreLink {

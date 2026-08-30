@@ -22,6 +22,9 @@
 // when it rolls out to prod. We should remove these as soon as possible.
 // -----------------------------------------------------------------------------
 
+// Enables the browser() API exported from react-dom.
+export const enableBrowserAPI: boolean = true;
+
 // -----------------------------------------------------------------------------
 // Land or remove (moderate effort)
 //
@@ -76,9 +79,17 @@ export const enableLegacyCache = __EXPERIMENTAL__;
 
 export const enableAsyncIterableChildren = __EXPERIMENTAL__;
 
+// Support thenables with status 'pending_weak' in Flight. A weak-pending
+// thenable doesn't keep the stream open; if it resolves before the stream
+// closes for other reasons, its value is emitted, otherwise its reference is
+// left unfulfilled.
+export const enableFlightWeakThenables = __EXPERIMENTAL__;
+
 export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;
+
+export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
 
 export const enableViewTransitionForPersistenceMode: boolean = false;
 
@@ -125,11 +136,9 @@ export const alwaysThrottleRetries: boolean = true;
 
 // Gate whether useEffectEvent uses the mutation phase (true) or before-mutation
 // phase (false) for updating event function references.
-export const enableEffectEventMutationPhase: boolean = false;
+export const enableEffectEventMutationPhase: boolean = true;
 
 export const passChildrenWhenCloningPersistedNodes: boolean = false;
-
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
 
 /**
  * Enables an expiration time for retry lanes to avoid starvation.
@@ -144,6 +153,14 @@ export const transitionLaneExpirationMs = 5000;
  * by setState or similar outside of the component owning the state.
  */
 export const enableInfiniteRenderLoopDetection: boolean = false;
+/**
+ * When `enableInfiniteRenderLoopDetection` is on, forces the detection
+ * mechanism to throw instead of only warning in cases where it would
+ * otherwise downgrade to a warning.
+ */
+export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
+
+export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
 
 export const enableFragmentRefs: boolean = true;
 export const enableFragmentRefsScrollIntoView: boolean = true;
@@ -215,7 +232,7 @@ export const disableInputAttributeSyncing: boolean = false;
 export const disableTextareaChildren: boolean = false;
 
 // Disables children for <textarea> elements
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 // -----------------------------------------------------------------------------
 // Debugging and DevTools

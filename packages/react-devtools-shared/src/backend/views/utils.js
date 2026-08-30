@@ -104,6 +104,7 @@ export function getNestedBoundingClientRect(
     }
 
     // $FlowFixMe[incompatible-variance]
+    // $FlowFixMe[incompatible-type]
     return mergeRectOffsets(rects);
   } else {
     // $FlowFixMe[incompatible-variance]
@@ -148,7 +149,7 @@ export function extractHOCNames(displayName: string): {
 } {
   if (!displayName) return {baseComponentName: '', hocNames: []};
 
-  const hocRegex = /([A-Z][a-zA-Z0-9]*?)\((.*)\)/g;
+  const hocRegex = /^([A-Za-z_$][A-Za-z0-9_$]*)\((.*)\)$/;
   const hocNames: string[] = [];
   let baseComponentName = displayName;
   let match;

@@ -57,7 +57,7 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
     const dispatcher = ReactSharedInternals.A;
     if (!dispatcher) {
       // If there is no dispatcher, then we treat this as not being cached.
-      // $FlowFixMe[incompatible-call]: We don't want to use rest arguments since we transpile the code.
+      // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
       return fn.apply(null, arguments);
     }
     const fnMap: WeakMap<any, CacheNode<T>> = dispatcher.getCacheForType(
@@ -75,6 +75,7 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
       const arg = arguments[i];
       if (
         typeof arg === 'function' ||
+        // $FlowFixMe[invalid-compare]
         (typeof arg === 'object' && arg !== null)
       ) {
         // Objects go into a WeakMap
@@ -111,15 +112,15 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
       throw cacheNode.v;
     }
     try {
-      // $FlowFixMe[incompatible-call]: We don't want to use rest arguments since we transpile the code.
+      // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
       const result = fn.apply(null, arguments);
-      const terminatedNode: TerminatedCacheNode<T> = (cacheNode: any);
+      const terminatedNode: TerminatedCacheNode<T> = cacheNode as any;
       terminatedNode.s = TERMINATED;
       terminatedNode.v = result;
       return result;
     } catch (error) {
       // We store the first error that's thrown and rethrow it.
-      const erroredNode: ErroredCacheNode<T> = (cacheNode: any);
+      const erroredNode: ErroredCacheNode<T> = cacheNode as any;
       erroredNode.s = ERRORED;
       erroredNode.v = error;
       throw error;

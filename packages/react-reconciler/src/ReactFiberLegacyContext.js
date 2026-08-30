@@ -19,7 +19,7 @@ import {createCursor, push, pop} from './ReactFiberStack';
 let warnedAboutMissingGetChildContext;
 
 if (__DEV__) {
-  warnedAboutMissingGetChildContext = ({}: {[string]: boolean});
+  warnedAboutMissingGetChildContext = {} as {[string]: boolean};
 }
 
 export const emptyContextObject: {} = {};

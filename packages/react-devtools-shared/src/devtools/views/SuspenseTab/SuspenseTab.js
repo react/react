@@ -645,4 +645,4 @@ function setResizeCSSVariable(
   }
 }
 
-export default (portaledContent(SuspenseTab): component());
+export default portaledContent(SuspenseTab) as component();

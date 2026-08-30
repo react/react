@@ -22,7 +22,7 @@ export type Context = {
 };
 
 const ViewElementSourceContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 ViewElementSourceContext.displayName = 'ViewElementSourceContext';
 

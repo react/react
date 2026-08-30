@@ -20,11 +20,13 @@ export const enablePerformanceIssueReporting: boolean = false;
 export const enableUpdaterTracking: boolean = false;
 export const enableLegacyCache: boolean = __EXPERIMENTAL__;
 export const enableAsyncIterableChildren: boolean = false;
+export const enableFlightWeakThenables: boolean = false;
 export const enableTaint: boolean = true;
 export const disableCommentsAsDOMContainers: boolean = true;
 export const disableInputAttributeSyncing: boolean = false;
 export const enableScopeAPI: boolean = false;
 export const enableCreateEventHandleAPI: boolean = false;
+export const enableBrowserAPI: boolean = true;
 export const enableSuspenseCallback: boolean = false;
 export const enableTrustedTypesIntegration: boolean = true;
 export const disableTextareaChildren: boolean = false;
@@ -52,14 +54,16 @@ export const passChildrenWhenCloningPersistedNodes: boolean = false;
 export const disableClientCache: boolean = true;
 
 export const enableInfiniteRenderLoopDetection: boolean = false;
+export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
+export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
 
-export const enableEagerAlternateStateNodeCleanup: boolean = true;
-export const enableEffectEventMutationPhase: boolean = false;
+export const enableEffectEventMutationPhase: boolean = true;
 
 export const enableYieldingBeforePassive: boolean = true;
 
 export const enableThrottledScheduling: boolean = false;
 export const enableViewTransition: boolean = true;
+export const enableViewTransitionParentEnterExit = __EXPERIMENTAL__;
 export const enableViewTransitionForPersistenceMode: boolean = false;
 export const enableGestureTransition: boolean = false;
 export const enableScrollEndPolyfill: boolean = true;
@@ -92,7 +96,7 @@ export const enableReactTestRendererWarning: boolean = true;
 export const enableObjectFiber: boolean = false;
 
 export const enableOptimisticKey: boolean = false;
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
 export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;
@@ -103,4 +107,4 @@ export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
   | 'missing-only' = 'off';
 
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

@@ -46,6 +46,8 @@ export const REACT_VIEW_TRANSITION_TYPE: symbol = Symbol.for(
   'react.view_transition',
 );
 
+export const REACT_RECOVERABLE_TYPE: symbol = Symbol.for('react.recoverable');
+
 const MAYBE_ITERATOR_SYMBOL = Symbol.iterator;
 const FAUX_ITERATOR_SYMBOL = '@@iterator';
 
@@ -64,9 +66,9 @@ export function getIteratorFn(maybeIterable: ?any): ?() => ?Iterator<any> {
 
 export const ASYNC_ITERATOR = Symbol.asyncIterator;
 
-export const REACT_OPTIMISTIC_KEY: ReactOptimisticKey = (Symbol.for(
+export const REACT_OPTIMISTIC_KEY: ReactOptimisticKey = Symbol.for(
   'react.optimistic_key',
-): any);
+) as any;
 
 // This is actually a symbol but Flow doesn't support comparison of symbols to refine.
 // We use a boolean since in our code we often expect string (key) or number (index),

@@ -281,7 +281,7 @@ export default function ComponentsSettings({
         if (index >= 0) {
           if (componentFilter.type === ComponentFilterElementType) {
             cloned[index] = {
-              ...((cloned[index]: any): ElementTypeComponentFilter),
+              ...(cloned[index] as any as ElementTypeComponentFilter),
               isEnabled,
             };
           } else if (
@@ -289,17 +289,17 @@ export default function ComponentsSettings({
             componentFilter.type === ComponentFilterLocation
           ) {
             cloned[index] = {
-              ...((cloned[index]: any): RegExpComponentFilter),
+              ...(cloned[index] as any as RegExpComponentFilter),
               isEnabled,
             };
           } else if (componentFilter.type === ComponentFilterHOC) {
             cloned[index] = {
-              ...((cloned[index]: any): BooleanComponentFilter),
+              ...(cloned[index] as any as BooleanComponentFilter),
               isEnabled,
             };
           } else if (componentFilter.type === ComponentFilterEnvironmentName) {
             cloned[index] = {
-              ...((cloned[index]: any): EnvironmentNameComponentFilter),
+              ...(cloned[index] as any as EnvironmentNameComponentFilter),
               isEnabled,
             };
           }
@@ -404,10 +404,10 @@ export default function ComponentsSettings({
                   onChange={({currentTarget}) =>
                     changeFilterType(
                       componentFilter,
-                      ((parseInt(
+                      parseInt(
                         currentTarget.value,
                         10,
-                      ): any): ComponentFilterType),
+                      ) as any as ComponentFilterType,
                     )
                   }>
                   {/* TODO: currently disabled, need find a new way of doing this
@@ -445,7 +445,7 @@ export default function ComponentsSettings({
                     onChange={({currentTarget}) =>
                       updateFilterValueElementType(
                         componentFilter,
-                        ((parseInt(currentTarget.value, 10): any): ElementType),
+                        parseInt(currentTarget.value, 10) as any as ElementType,
                       )
                     }>
                     {isInternalFacebookBuild && (

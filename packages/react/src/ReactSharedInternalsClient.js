@@ -57,12 +57,12 @@ export type SharedStateClient = {
 
 export type RendererTask = boolean => RendererTask | null;
 
-const ReactSharedInternals: SharedStateClient = ({
+const ReactSharedInternals: SharedStateClient = {
   H: null,
   A: null,
   T: null,
   S: null,
-}: any);
+} as any;
 if (enableGestureTransition) {
   ReactSharedInternals.G = null;
 }
@@ -75,7 +75,7 @@ if (__DEV__) {
   ReactSharedInternals.didUsePromise = false;
   ReactSharedInternals.thrownErrors = [];
   // Stack implementation injected by the current renderer.
-  ReactSharedInternals.getCurrentStack = (null: null | (() => string));
+  ReactSharedInternals.getCurrentStack = null as null | (() => string);
   ReactSharedInternals.recentlyCreatedOwnerStacks = 0;
 }
 

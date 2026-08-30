@@ -90,7 +90,10 @@ async function initChrome() {
   if (platform === 'linux') {
     process.env.XVFBARGS = '-screen 0, 1024x768x16';
     process.env.LIGHTHOUSE_CHROMIUM_PATH = 'chromium-browser';
-    const child = spawn('xvfb start', [{detached: true, stdio: ['ignore']}]);
+    const child = spawn('xvfb', ['start'], {
+      detached: true,
+      stdio: 'ignore',
+    });
     child.unref();
     // wait for chrome to load then continue
     await wait(3000);

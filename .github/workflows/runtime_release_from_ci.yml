@@ -1,0 +1,219 @@
+name: (Runtime) Release From CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        required: true
+        description: Type of release to publish
+        type: choice
+        # The `─── ... ───` entries are visual separators in the dropdown.
+        # They're rejected by the `resolve` job below, so picking one fails
+        # the workflow up front instead of silently doing the wrong release.
+        # GitHub Actions requires choice values to be unique, so the strings
+        # differ by the number of dashes.
+        options:
+          # publishes canary + experimental.
+          - nightly
+          - "────────────────"
+          - "─────────────────"
+          # semver stable published with @latest.
+          - stable-latest
+          - "──────────────────"
+          - "───────────────────"
+          # semver stable published with @backport (used for patches to
+          # older release lines that shouldn't move @latest).
+          - stable-backport
+          - "────────────────────"
+          - "─────────────────────"
+          # only experimental is published.
+          - experimental_only
+      only_packages:
+        description: Packages to publish (space separated allow-list; empty means all)
+        type: string
+      dry:
+        description: Dry run
+        type: boolean
+        default: false
+      force_notify:
+        description: Force a Discord notification?
+        type: boolean
+        default: false
+  schedule:
+    # At 10 minutes past 16:00 on Mon, Tue, Wed, Thu, and Fri.
+    # Scheduled runs always publish a nightly (see `resolve` job).
+    - cron: 10 16 * * 1,2,3,4,5
+
+permissions: {}
+
+env:
+  TZ: /usr/share/zoneinfo/America/Los_Angeles
+  # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+
+jobs:
+  resolve:
+    name: Resolve release inputs
+    runs-on: ubuntu-latest
+    outputs:
+      release_type: ${{ steps.resolve.outputs.release_type }}
+    steps:
+      - name: Resolve release inputs
+        id: resolve
+        run: |
+          # Scheduled runs always publish a nightly. Manual dispatches always
+          # supply `inputs.type`. Anything else is unsupported and fails fast.
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            release_type=nightly
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            release_type="${{ inputs.type }}"
+          else
+            echo "Unsupported event: ${{ github.event_name }}" >&2
+            exit 1
+          fi
+          # Reject the dropdown's separator entries (and anything else that
+          # isn't one of the four real release types). Without this, picking
+          # a separator would fall through to all of publish.js's `if:` gates
+          # being false and the job would succeed without doing anything.
+          case "$release_type" in
+            nightly|stable-latest|stable-backport|experimental_only) ;;
+            *)
+              echo "Invalid release type: '$release_type' — pick one of nightly, stable-latest, stable-backport, experimental_only." >&2
+              exit 1
+              ;;
+          esac
+          echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
+
+  notify_starting:
+    name: Notify Discord (release starting)
+    # Manual dispatches always notify before the release starts so the team
+    # has a heads-up that a release is incoming. Scheduled (nightly) runs
+    # don't notify up front; we only notify on failure (see `notify` job).
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.DISABLE_DISCORD_NOTIFICATIONS != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tsickert/discord-webhook@86dc739f3f165f16dadc5666051c367efa1692f4
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          embed-author-name: ${{ github.event.sender.login }}
+          embed-author-url: ${{ github.event.sender.html_url }}
+          embed-author-icon-url: ${{ github.event.sender.avatar_url }}
+          embed-title: "⚠️ Publishing ${{ inputs.type }} release from source"
+          embed-description: |
+            ```json
+            ${{ toJson(inputs) }}
+            ```
+          embed-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  publish:
+    name: Publish release
+    needs: resolve
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
+    runs-on: ubuntu-latest
+    # Protected environment — requires reviewer approval before the publish
+    # job starts running.
+    environment: npm
+    permissions:
+      id-token: write
+      contents: read
+      # `actions: read` lets prepare-release-from-ci.js fetch the
+      # runtime_build_and_test workflow's artifacts for github.sha.
+      actions: read
+    env:
+      # Required by scripts/release/shared-commands/download-build-artifacts.js.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Always check out the commit the workflow file itself was loaded from.
+      # Crucially, no user-supplied ref is accepted, since this job runs in a
+      # protected environment.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          # Using modern Node.js that ships with NPM supporting trusted publishing
+          node-version: "24"
+      # scripts/release is the only thing this job actually needs to run —
+      # publish.js and prepare-release-from-ci.js both live there and use its
+      # own node_modules. Cache is owned by this workflow (this is the only
+      # consumer), so on a miss we install and save.
+      - name: Restore cached scripts/release node_modules
+        uses: actions/cache@v4
+        id: release_node_modules
+        with:
+          path: scripts/release/node_modules
+          key: release-scripts-node_modules-v1-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('scripts/release/yarn.lock') }}
+      - run: yarn --cwd scripts/release install --frozen-lockfile
+        if: steps.release_node_modules.outputs.cache-hit != 'true'
+
+      # ----- stable (semver) — either @latest or @backport -----
+      - name: Stage semver stable artifacts
+        if: ${{ startsWith(needs.resolve.outputs.release_type, 'stable-') }}
+        run: scripts/release/prepare-release-from-ci.js --skipTests -r latest --commit=${{ github.sha }}
+      - name: Publish semver stable to @latest
+        if: ${{ needs.resolve.outputs.release_type == 'stable-latest' }}
+        run: |
+          scripts/release/publish.js \
+            --tag=latest \
+            ${{ inputs.only_packages && format('--onlyPackages={0}', inputs.only_packages) || '' }} \
+            ${{ inputs.dry && '--dry' || '' }}
+      # Backport releases stay on the `@backport` dist-tag — we don't move
+      # @latest, and (under OIDC) we can't add/remove dist-tags after publish
+      # anyway. The tag goes on at publish time and is left in place.
+      - name: Publish semver stable to @backport
+        if: ${{ needs.resolve.outputs.release_type == 'stable-backport' }}
+        run: |
+          scripts/release/publish.js \
+            --tag=backport \
+            ${{ inputs.only_packages && format('--onlyPackages={0}', inputs.only_packages) || '' }} \
+            ${{ inputs.dry && '--dry' || '' }}
+
+      # ----- nightly: canary first, then experimental -----
+      # NOTE: Intentionally running sequentially because npm will sometimes
+      # fail if you try to concurrently publish two different versions of the
+      # same package, even if they use different dist tags.
+      - name: Stage canary artifacts
+        if: ${{ needs.resolve.outputs.release_type == 'nightly' }}
+        run: scripts/release/prepare-release-from-ci.js --skipTests -r stable --commit=${{ github.sha }}
+      # Single tag only — OIDC publish tokens can't add additional dist-tags
+      # after publish, so the historical `canary,next` aliasing is gone.
+      - name: Publish canary to @canary
+        if: ${{ needs.resolve.outputs.release_type == 'nightly' }}
+        run: |
+          scripts/release/publish.js \
+            --tag=canary \
+            ${{ inputs.only_packages && format('--onlyPackages={0}', inputs.only_packages) || '' }} \
+            ${{ inputs.dry && '--dry' || '' }}
+
+      # ----- experimental (nightly + experimental_only) -----
+      - name: Stage experimental artifacts
+        if: ${{ needs.resolve.outputs.release_type == 'nightly' || needs.resolve.outputs.release_type == 'experimental_only' }}
+        run: scripts/release/prepare-release-from-ci.js --skipTests -r experimental --commit=${{ github.sha }}
+      - name: Publish experimental to @experimental
+        if: ${{ needs.resolve.outputs.release_type == 'nightly' || needs.resolve.outputs.release_type == 'experimental_only' }}
+        run: |
+          scripts/release/publish.js \
+            --tag=experimental \
+            ${{ inputs.only_packages && format('--onlyPackages={0}', inputs.only_packages) || '' }} \
+            ${{ inputs.dry && '--dry' || '' }}
+
+  notify:
+    name: Notify Discord on failure
+    needs: [resolve, publish]
+    # Runs for every workflow run (manual + scheduled) and only fires when
+    # something didn't complete successfully — i.e. an actual failure or a
+    # cancellation. Successful runs stay silent.
+    if: ${{ always() && (needs.resolve.result == 'failure' || needs.resolve.result == 'cancelled' || needs.publish.result == 'failure' || needs.publish.result == 'cancelled') && vars.DISABLE_DISCORD_NOTIFICATIONS != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord Webhook Action
+        uses: tsickert/discord-webhook@86dc739f3f165f16dadc5666051c367efa1692f4
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          embed-author-name: "GitHub Actions"
+          embed-title: "❌ [Runtime] Release from source failed (${{ needs.resolve.outputs.release_type || inputs.type || 'nightly' }})"
+          embed-description: |
+            resolve: `${{ needs.resolve.result }}`
+            publish: `${{ needs.publish.result }}`
+            event: `${{ github.event_name }}`
+          embed-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}

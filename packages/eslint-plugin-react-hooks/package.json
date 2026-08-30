@@ -4,7 +4,7 @@
   "version": "7.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/eslint-plugin-react-hooks"
   },
   "files": [
@@ -27,7 +27,7 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/facebook/react/issues"
+    "url": "https://github.com/react/react/issues"
   },
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -62,7 +62,7 @@
     "eslint-v7": "npm:eslint@^7.7.0",
     "eslint-v8": "npm:eslint@^8.57.1",
     "eslint-v9": "npm:eslint@^9.0.0",
-    "jest": "^29.5.0",
+    "jest": "^30.4.1",
     "typescript": "^5.4.3"
   }
 }

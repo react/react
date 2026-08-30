@@ -14,7 +14,7 @@
  * TODO: require this in packager, not in React #10932517
  */
 // Module provided by RN:
-import 'react-native/Libraries/ReactPrivate/ReactNativePrivateInitializeCore';
+import 'react-native/setup-env';
 
 import ResponderEventPlugin from './legacy-events/ResponderEventPlugin';
 import {

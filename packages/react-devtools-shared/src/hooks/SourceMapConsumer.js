@@ -39,9 +39,9 @@ export default function SourceMapConsumer(
   sourceMapJSON: MixedSourceMap | IndexSourceMapSection,
 ): SourceMapConsumerType {
   if (sourceMapJSON.sections != null) {
-    return IndexedSourceMapConsumer(((sourceMapJSON: any): IndexSourceMap));
+    return IndexedSourceMapConsumer(sourceMapJSON as any as IndexSourceMap);
   } else {
-    return BasicSourceMapConsumer(((sourceMapJSON: any): BasicSourceMap));
+    return BasicSourceMapConsumer(sourceMapJSON as any as BasicSourceMap);
   }
 }
 
@@ -124,15 +124,15 @@ function BasicSourceMapConsumer(sourceMapJSON: BasicSourceMap) {
     return {
       column,
       line,
-      sourceContent: ((sourceContent: any): string | null),
-      sourceURL: ((sourceURL: any): string | null),
+      sourceContent: sourceContent as any as string | null,
+      sourceURL: sourceURL as any as string | null,
       ignored,
     };
   }
 
-  return (({
+  return {
     originalPositionFor,
-  }: any): SourceMapConsumerType);
+  } as any as SourceMapConsumerType;
 }
 
 type Section = {
@@ -231,7 +231,7 @@ function IndexedSourceMapConsumer(sourceMapJSON: IndexSourceMap) {
     });
   }
 
-  return (({
+  return {
     originalPositionFor,
-  }: any): SourceMapConsumerType);
+  } as any as SourceMapConsumerType;
 }

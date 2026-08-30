@@ -82,6 +82,7 @@ const originalURLToMetadataCache: LRUCache<string, CachedSourceCodeMetadata> =
       originalSourceURL: string,
       metadata: CachedSourceCodeMetadata,
     ) => {
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `originalURLToMetadataCache.dispose() Evicting cached metadata for "${originalSourceURL}"`,
@@ -128,7 +129,7 @@ function findHookNames(
 
   hooksList.map(hook => {
     // We already guard against a null HookSource in parseHookNames()
-    const hookSource = ((hook.hookSource: any): HookSource);
+    const hookSource = hook.hookSource as any as HookSource;
     const fileName = hookSource.fileName;
     if (!fileName) {
       return null; // Should not be reachable.
@@ -176,13 +177,14 @@ function findHookNames(
         getHookName(
           hook,
           hookParsedMetadata.originalSourceAST,
-          ((hookParsedMetadata.originalSourceCode: any): string),
-          ((originalSourceLineNumber: any): number),
+          hookParsedMetadata.originalSourceCode as any as string,
+          originalSourceLineNumber as any as number,
           originalSourceColumnNumber,
         ),
       );
     }
 
+    // $FlowFixMe[constant-condition]
     if (__DEBUG__) {
       console.log(`findHookNames() Found name "${name || '-'}"`);
     }
@@ -253,7 +255,7 @@ function parseSourceAST(
 
       const {metadataConsumer, sourceMapConsumer} = hookParsedMetadata;
       const runtimeSourceCode =
-        ((hookSourceAndMetadata.runtimeSourceCode: any): string);
+        hookSourceAndMetadata.runtimeSourceCode as any as string;
       let hasHookMap = false;
       let originalSourceURL;
       let originalSourceCode;
@@ -301,6 +303,7 @@ function parseSourceAST(
         hasHookMap = true;
       }
 
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `parseSourceAST() mapped line ${lineNumber}->${originalSourceLineNumber} and column ${columnNumber}->${originalSourceColumnNumber}`,
@@ -308,6 +311,7 @@ function parseSourceAST(
       }
 
       if (hasHookMap) {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.log(
             `parseSourceAST() Found hookMap and skipping parsing for "${originalSourceURL}"`,
@@ -319,6 +323,7 @@ function parseSourceAST(
         return;
       }
 
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `parseSourceAST() Did not find hook map for "${originalSourceURL}"`,
@@ -329,6 +334,7 @@ function parseSourceAST(
       // This may need to change if we switch to async parsing.
       const sourceMetadata = originalURLToMetadataCache.get(originalSourceURL);
       if (sourceMetadata != null) {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.groupCollapsed(
             `parseSourceAST() Found cached source metadata for "${originalSourceURL}"`,
@@ -359,6 +365,7 @@ function parseSourceAST(
           );
           hookParsedMetadata.originalSourceAST = originalSourceAST;
 
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             console.log(
               `parseSourceAST() Caching source metadata for "${originalSourceURL}"`,
@@ -398,6 +405,7 @@ function parseSourceMaps(
       // we can skip reloading it (and more importantly, re-parsing it).
       const runtimeMetadata = runtimeURLToMetadataCache.get(runtimeSourceURL);
       if (runtimeMetadata != null) {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.groupCollapsed(
             `parseHookNames() Found cached runtime metadata for file "${runtimeSourceURL}"`,
