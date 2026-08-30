@@ -814,85 +814,79 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual([]);
       });
 
-        // @gate enableFragmentRefs
-        it(
-          'removes a capture listener registered with boolean when removed with options object',
-          async () => {
-            const fragmentRef = React.createRef(null);
-            function Test() {
-              return (
-                <Fragment ref={fragmentRef}>
-                  <div id="child-a" />
-                </Fragment>
-              );
-            }
-            const root = ReactDOMClient.createRoot(container);
-            await act(() => {
-              root.render(<Test />);
-            });
+      // @gate enableFragmentRefs
+      it('removes a capture listener registered with boolean when removed with options object', async () => {
+        const fragmentRef = React.createRef(null);
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div id="child-a" />
+            </Fragment>
+          );
+        }
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(<Test />);
+        });
 
-            const logs = [];
-            function logCapture() {
-              logs.push('capture');
-            }
+        const logs = [];
+        function logCapture() {
+          logs.push('capture');
+        }
 
-            // Register with boolean `true` (capture phase)
-            fragmentRef.current.addEventListener('click', logCapture, true);
-            document.querySelector('#child-a').click();
-            expect(logs).toEqual(['capture']);
+        // Register with boolean `true` (capture phase)
+        fragmentRef.current.addEventListener('click', logCapture, true);
+        document.querySelector('#child-a').click();
+        expect(logs).toEqual(['capture']);
 
-            logs.length = 0;
+        logs.length = 0;
 
-            // Remove with equivalent options object {capture: true}
-            // Per DOM spec, these are identical - the listener MUST be removed
-            fragmentRef.current.removeEventListener('click', logCapture, {
-              capture: true,
-            });
-            document.querySelector('#child-a').click();
-            // Listener should have been removed - logs must remain empty
-            expect(logs).toEqual([]);
-          },
-        );
+        // Remove with equivalent options object {capture: true}
+        // Per DOM spec, these are identical - the listener MUST be removed
+        fragmentRef.current.removeEventListener('click', logCapture, {
+          capture: true,
+        });
+        document.querySelector('#child-a').click();
+        // Listener should have been removed - logs must remain empty
+        expect(logs).toEqual([]);
+      });
 
-        // @gate enableFragmentRefs
-        it(
-          'removes a capture listener registered with options object when removed with boolean',
-          async () => {
-            const fragmentRef = React.createRef(null);
-            function Test() {
-              return (
-                <Fragment ref={fragmentRef}>
-                  <div id="child-b" />
-                </Fragment>
-              );
-            }
-            const root = ReactDOMClient.createRoot(container);
-            await act(() => {
-              root.render(<Test />);
-            });
+      // @gate enableFragmentRefs
+      it('removes a capture listener registered with options object when removed with boolean', async () => {
+        const fragmentRef = React.createRef(null);
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div id="child-b" />
+            </Fragment>
+          );
+        }
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(<Test />);
+        });
 
-            const logs = [];
-            function logCapture() {
-              logs.push('capture');
-            }
+        const logs = [];
+        function logCapture() {
+          logs.push('capture');
+        }
 
-            // Register with options object {capture: true}
-            fragmentRef.current.addEventListener('click', logCapture, {
-              capture: true,
-            });
-            document.querySelector('#child-b').click();
-            expect(logs).toEqual(['capture']);
+        // Register with options object {capture: true}
+        fragmentRef.current.addEventListener('click', logCapture, {
+          capture: true,
+        });
+        document.querySelector('#child-b').click();
+        expect(logs).toEqual(['capture']);
 
-            logs.length = 0;
+        logs.length = 0;
 
-            // Remove with boolean `true`
-            // Per DOM spec, these are identical - the listener MUST be removed
-            fragmentRef.current.removeEventListener('click', logCapture, true);
-            document.querySelector('#child-b').click();
-            // Listener should have been removed - logs must remain empty
-            expect(logs).toEqual([]);
-          },
-        );
+        // Remove with boolean `true`
+        // Per DOM spec, these are identical - the listener MUST be removed
+        fragmentRef.current.removeEventListener('click', logCapture, true);
+        document.querySelector('#child-b').click();
+        // Listener should have been removed - logs must remain empty
+        expect(logs).toEqual([]);
+      });
 
       // @gate enableFragmentRefs
       it('applies event listeners to portaled children', async () => {
@@ -2762,87 +2756,81 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
-    it(
-      'treats passive:true and passive:false as same listener per DOM spec',
-      async () => {
-        const fragmentRef = React.createRef();
-        const root = ReactDOMClient.createRoot(container);
+    it('treats passive:true and passive:false as same listener per DOM spec', async () => {
+      const fragmentRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
 
-        await act(() => {
-          root.render(
-            <Fragment ref={fragmentRef}>
-              <div id="child" />
-            </Fragment>,
-          );
-        });
+      await act(() => {
+        root.render(
+          <Fragment ref={fragmentRef}>
+            <div id="child" />
+          </Fragment>,
+        );
+      });
 
-        const logs = [];
-        const handler = () => logs.push('fired');
+      const logs = [];
+      const handler = () => logs.push('fired');
 
-        const child = document.querySelector('#child');
-        const spy = jest.spyOn(child, 'addEventListener');
-        // Per DOM spec, listener identity is (type, callback, capture).
-        // passive is NOT part of the key, so these are the SAME listener.
-        fragmentRef.current.addEventListener('click', handler, {passive: false});
-        // Second add is a no-op: same (type, callback, capture) identity.
-        fragmentRef.current.addEventListener('click', handler, {passive: true});
-        expect(spy).toHaveBeenCalledTimes(1);
-        expect(spy).toHaveBeenCalledWith('click', handler, {passive: false});
+      const child = document.querySelector('#child');
+      const spy = jest.spyOn(child, 'addEventListener');
+      // Per DOM spec, listener identity is (type, callback, capture).
+      // passive is NOT part of the key, so these are the SAME listener.
+      fragmentRef.current.addEventListener('click', handler, {passive: false});
+      // Second add is a no-op: same (type, callback, capture) identity.
+      fragmentRef.current.addEventListener('click', handler, {passive: true});
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith('click', handler, {passive: false});
 
-        document.querySelector('#child').click();
-        // First handler fires once (second add was a no-op).
-        expect(logs).toEqual(['fired']);
+      document.querySelector('#child').click();
+      // First handler fires once (second add was a no-op).
+      expect(logs).toEqual(['fired']);
 
-        // removeEventListener also ignores passive when matching
-        fragmentRef.current.removeEventListener('click', handler, {
-          passive: true,
-        });
+      // removeEventListener also ignores passive when matching
+      fragmentRef.current.removeEventListener('click', handler, {
+        passive: true,
+      });
 
-        logs.length = 0;
-        document.querySelector('#child').click();
-        expect(logs).toEqual([]);
-      },
-    );
+      logs.length = 0;
+      document.querySelector('#child').click();
+      expect(logs).toEqual([]);
+    });
     // @gate enableFragmentRefs
-    it(
-      'removes a listener registered with passive:false when removed with passive:true',
-      async () => {
-        const fragmentRef = React.createRef(null);
-        function Test() {
-          return (
-            <>
-              <div id="child-x" />
-            </>
-          );
-        }
-        const root = ReactDOMClient.createRoot(container);
-        await act(() => {
-          root.render(
-            <Fragment ref={fragmentRef}>
-              <Test />
-            </Fragment>,
-          );
-        });
-        const logs = [];
-        function handler() {
-          logs.push('fired');
-        }
-        // Register with passive: false
-        fragmentRef.current.addEventListener('click', handler, {
-          passive: false,
-        });
-        document.querySelector('#child-x').click();
-        expect(logs).toEqual(['fired']);
-        logs.length = 0;
-        // Remove with passive: true - per DOM spec, passive is NOT part of identity
-        // so this MUST remove the listener regardless of passive mismatch.
-        fragmentRef.current.removeEventListener('click', handler, {
-          passive: true,
-        });
-        document.querySelector('#child-x').click();
-        // Listener removed - no more invocations
-        expect(logs).toEqual([]);
-      },
-    );
+    it('removes a listener registered with passive:false when removed with passive:true', async () => {
+      const fragmentRef = React.createRef(null);
+      function Test() {
+        return (
+          <>
+            <div id="child-x" />
+          </>
+        );
+      }
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <Fragment ref={fragmentRef}>
+            <Test />
+          </Fragment>,
+        );
+      });
+      const logs = [];
+      function handler() {
+        logs.push('fired');
+      }
+      // Register with passive: false
+      fragmentRef.current.addEventListener('click', handler, {
+        passive: false,
+      });
+      document.querySelector('#child-x').click();
+      expect(logs).toEqual(['fired']);
+      logs.length = 0;
+      // Remove with passive: true - per DOM spec, passive is NOT part of identity
+      // so this MUST remove the listener regardless of passive mismatch.
+      fragmentRef.current.removeEventListener('click', handler, {
+        passive: true,
+      });
+      document.querySelector('#child-x').click();
+      // Listener removed - no more invocations
+      expect(logs).toEqual([]);
+    });
   });
 });
