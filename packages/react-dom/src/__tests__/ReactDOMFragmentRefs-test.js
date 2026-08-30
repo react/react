@@ -1098,6 +1098,122 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual([]);
       });
 
+      // @gate enableFragmentRefs
+      it('should remove the listener when the signal is aborted before registration', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        const signal = AbortSignal.abort();
+        fragmentRef.current.addEventListener('click', registeredListener, {
+          signal,
+        });
+        childRef.current.click();
+        expect(logs).toEqual([]);
+
+        // The event listener can be re-added
+        fragmentRef.current.addEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+      });
+
+      // @gate enableFragmentRefs
+      it('should remove the listener when the signal is aborted after registration', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        const controller = new AbortController();
+        fragmentRef.current.addEventListener('click', registeredListener, {
+          signal: controller.signal,
+        });
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        logs = [];
+        controller.abort();
+        childRef.current.click();
+        expect(logs).toEqual([]);
+
+        // The event listener can be re-added
+        fragmentRef.current.addEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+      });
+
+      // @gate enableFragmentRefs
+      it('should NOT remove the new subscription when the signal for the old subscription is aborted', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        const controller = new AbortController();
+        fragmentRef.current.addEventListener('click', registeredListener, {
+          signal: controller.signal,
+        });
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        fragmentRef.current.removeEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual([]);
+
+        // Added without a signal
+        fragmentRef.current.addEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        // Listener is called
+        expect(logs).toEqual(['registered']);
+
+        logs = [];
+        controller.abort();
+        childRef.current.click();
+        // Listener is called
+        expect(logs).toEqual(['registered']);
+      });
+
       // @gate enableFragmentRefs && enableFragmentRefsTextNodes
       it('adds an event listener to a newly added text child', async () => {
         const fragmentRef = React.createRef();
