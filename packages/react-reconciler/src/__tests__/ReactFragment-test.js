@@ -1027,4 +1027,51 @@ describe('ReactFragment', () => {
     expect(ops).toEqual(['Update Stateful', 'Update Stateful']);
     expect(ReactNoop).toMatchRenderedOutput(<div>Hello</div>);
   });
+
+  it('should close an iterator when a yielded child throws during reconciliation', async () => {
+    const returnSpy = jest.fn();
+
+    function makeIterable() {
+      // The second item is a plain object — not a valid React child.
+      // createChild will throw via throwOnInvalidObjectType.
+      const items = [<span key="a">ok</span>, {invalid: true}];
+      return {
+        [Symbol.iterator]() {
+          let index = 0;
+          return {
+            next() {
+              if (index < items.length) {
+                return {value: items[index++], done: false};
+              }
+              return {value: undefined, done: true};
+            },
+            return() {
+              returnSpy();
+              return {value: undefined, done: true};
+            },
+          };
+        },
+      };
+    }
+
+    class ErrorBoundary extends React.Component {
+      state = {error: null};
+      static getDerivedStateFromError(error) {
+        return {error};
+      }
+      render() {
+        return this.state.error ? (
+          <span>error</span>
+        ) : (
+          this.props.children
+        );
+      }
+    }
+
+    ReactNoop.render(
+      <ErrorBoundary>{makeIterable()}</ErrorBoundary>,
+    );
+    await waitForAll([]);
+    expect(returnSpy).toHaveBeenCalled();
+  });
 });

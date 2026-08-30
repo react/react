@@ -1480,6 +1480,15 @@ function createChildReconciler(
       next(): IteratorResult<mixed, void> {
         return unwrapThenable(newChildren.next());
       },
+      return(value: mixed): IteratorResult<mixed, void> {
+        if (typeof newChildren.return === 'function') {
+          // Close the underlying async iterator. The result is a thenable but
+          // we intentionally do not unwrap it — the reconciler only needs to
+          // signal closure and does not consume the return value.
+          newChildren.return(value);
+        }
+        return {value: value, done: true};
+      },
     } as any;
 
     return reconcileChildrenIterator(
@@ -1509,6 +1518,9 @@ function createChildReconciler(
     let nextOldFiber = null;
 
     let knownKeys: Set<string> | null = null;
+
+    let iteratorDone = false;
+    try {
 
     let step = newChildren.next();
     for (
@@ -1567,6 +1579,7 @@ function createChildReconciler(
 
     if (step.done) {
       // We've reached the end of the new children. We can delete the rest.
+      iteratorDone = true;
       deleteRemainingChildren(returnFiber, oldFiber);
       if (getIsHydrating()) {
         const numberOfForks = newIdx;
@@ -1600,6 +1613,7 @@ function createChildReconciler(
         }
         previousNewFiber = newFiber;
       }
+      iteratorDone = true;
       if (getIsHydrating()) {
         const numberOfForks = newIdx;
         pushTreeFork(returnFiber, numberOfForks);
@@ -1657,6 +1671,8 @@ function createChildReconciler(
       }
     }
 
+    iteratorDone = true;
+
     if (shouldTrackSideEffects) {
       // Any existing children that weren't consumed above were deleted. We need
       // to add them to the deletion list.
@@ -1668,6 +1684,17 @@ function createChildReconciler(
       pushTreeFork(returnFiber, numberOfForks);
     }
     return resultingFirstChild;
+
+    } finally {
+      if (!iteratorDone && typeof newChildren.return === 'function') {
+        try {
+          newChildren.return();
+        } catch (_closeError) {
+          // Swallow — closing the iterator must not mask the original error
+          // that caused the abrupt exit from reconciliation.
+        }
+      }
+    }
   }
 
   function reconcileSingleTextNode(
