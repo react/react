@@ -96,7 +96,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           }),
         ],
       ]);
-      expect(console.warn).not.toBeCalled();
+      expect(console.warn).not.toHaveBeenCalled();
 
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
@@ -107,7 +107,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
 
       // Check next render doesn't throw.
@@ -118,8 +118,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
           [
@@ -129,7 +129,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
     });
 
@@ -175,8 +175,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.warn).not.toBeCalled();
-        expect(console.error).not.toBeCalled();
+        expect(console.warn).not.toHaveBeenCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
 
       // Check next render doesn't throw.
@@ -187,8 +187,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(console.warn).not.toBeCalled();
-      expect(windowOnError).not.toBeCalled();
+      expect(console.warn).not.toHaveBeenCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
           [
@@ -198,7 +198,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
     });
 
@@ -219,8 +219,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
 
       // The top-level error was caught with try/catch,
       // so we don't see an error event.
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
 
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
@@ -263,8 +263,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
           [
@@ -274,7 +274,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
     });
 
@@ -324,8 +324,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.warn).not.toBeCalled();
-        expect(console.error).not.toBeCalled();
+        expect(console.warn).not.toHaveBeenCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
 
       // Check next render doesn't throw.
@@ -336,8 +336,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(console.warn).not.toBeCalled();
-      expect(windowOnError).not.toBeCalled();
+      expect(console.warn).not.toHaveBeenCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
 
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
@@ -348,7 +348,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
     });
 
@@ -372,8 +372,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
 
       // The top-level error was caught with try/catch,
       // so we don't see an error event.
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
 
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
@@ -416,8 +416,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
           [
@@ -427,7 +427,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
     });
 
@@ -477,8 +477,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.warn).not.toBeCalled();
-        expect(console.error).not.toBeCalled();
+        expect(console.warn).not.toHaveBeenCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
 
       // Check next render doesn't throw.
@@ -489,8 +489,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
           [
@@ -500,7 +500,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.error).not.toBeCalled();
+        expect(console.error).not.toHaveBeenCalled();
       }
     });
 
@@ -524,8 +524,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
 
       // The top-level error was caught with try/catch,
       // so we don't see an error event.
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
 
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
@@ -568,8 +568,8 @@ describe('ReactDOMConsoleErrorReporting', () => {
         ReactDOM.render(<NoError />, container);
       });
       expect(container.textContent).toBe('OK');
-      expect(windowOnError).not.toBeCalled();
-      expect(console.warn).not.toBeCalled();
+      expect(windowOnError).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalled();
       if (__DEV__) {
         expect(console.error.mock.calls).toEqual([
           [
@@ -579,7 +579,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
           ],
         ]);
       } else {
-        expect(console.warn).not.toBeCalled();
+        expect(console.warn).not.toHaveBeenCalled();
       }
     });
   });

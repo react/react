@@ -833,6 +833,47 @@ describe('FragmentRefs', () => {
       });
 
       // @gate enableFragmentRefs
+      it('matches listeners by their normalized capture flag', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        const logs = [];
+
+        function addedWithOmittedOptions() {
+          logs.push('addedWithOmittedOptions');
+        }
+
+        function addedWithCaptureFalse() {
+          logs.push('addedWithCaptureFalse');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('click', addedWithOmittedOptions);
+        fragmentRef.current.addEventListener('click', addedWithCaptureFalse, {
+          capture: false,
+        });
+
+        // Omitted options and an explicit capture: false are the same
+        // EventTarget listener identity, so each removal should match.
+        fragmentRef.current.removeEventListener(
+          'click',
+          addedWithOmittedOptions,
+          false,
+        );
+        fragmentRef.current.removeEventListener('click', addedWithCaptureFalse);
+
+        childRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
+      // @gate enableFragmentRefs
       it('adds and removes event listeners from children with multiple fragments', async () => {
         const fragmentRef = React.createRef();
         const nestedFragmentRef = React.createRef();
@@ -2934,7 +2975,7 @@ describe('FragmentRefs', () => {
 
       expect(() => {
         fragmentRef.current.scrollIntoView({block: 'start'});
-      }).toThrowError(
+      }).toThrow(
         'FragmentInstance.scrollIntoView() does not support ' +
           'scrollIntoViewOptions. Use the alignToTop boolean instead.',
       );

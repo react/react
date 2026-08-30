@@ -1,4 +1,4 @@
-const DOMException = require('domexception/webidl2js-wrapper');
+const DOMException = require('jsdom/lib/jsdom/living/generated/DOMException');
 const {nodeRoot} = require('jsdom/lib/jsdom/living/helpers/node');
 const reportException = require('jsdom/lib/jsdom/living/helpers/runtime-script-errors');
 const {

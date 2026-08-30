@@ -324,7 +324,7 @@ describe('ReactDOMEventListener', () => {
         innerRef.current.dispatchEvent(nativeEvent);
       });
 
-      expect(mouseOut).toBeCalledWith(innerRef.current);
+      expect(mouseOut).toHaveBeenCalledWith(innerRef.current);
     } finally {
       document.body.removeChild(container);
     }
