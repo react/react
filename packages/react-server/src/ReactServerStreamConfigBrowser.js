@@ -14,10 +14,19 @@ export opaque type Chunk = Uint8Array;
 export type BinaryChunk = Uint8Array;
 
 const channel = new MessageChannel();
-const taskQueue = [];
+let taskQueue: Array<() => void> = [];
+let taskQueueHead = 0;
 channel.port1.onmessage = () => {
-  const task = taskQueue.shift();
-  if (task) {
+  if (taskQueueHead < taskQueue.length) {
+    const task = taskQueue[taskQueueHead];
+    taskQueue[taskQueueHead] = (undefined: any);
+    taskQueueHead++;
+    // Compact when the consumed prefix is both large enough to matter and
+    // at least half the array, so the copy is amortized.
+    if (taskQueueHead > 1024 && taskQueueHead > (taskQueue.length >>> 1)) {
+      taskQueue = taskQueue.slice(taskQueueHead);
+      taskQueueHead = 0;
+    }
     task();
   }
 };
