@@ -87,6 +87,9 @@ describe('ReactFlightDOM', () => {
     Suspense = React.Suspense;
     ReactDOMClient = require('react-dom/client');
     ReactDOMFizzServer = require('react-dom/server.node');
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-webpack/client');
 
     ErrorBoundary = class extends React.Component {
@@ -733,7 +736,7 @@ describe('ReactFlightDOM', () => {
     function dotting() {
       return ClientModule.Component.deep;
     }
-    expect(dotting).toThrowError(
+    expect(dotting).toThrow(
       'Cannot access Component.deep on the server. ' +
         'You cannot dot into a client module from a server component. ' +
         'You can only pass the imported name through.',
@@ -748,7 +751,7 @@ describe('ReactFlightDOM', () => {
       const mod = await ClientModule;
       return await Promise.resolve(mod.Component);
     }
-    await expect(awaitExport()).rejects.toThrowError(
+    await expect(awaitExport()).rejects.toThrow(
       `Cannot await or return from a thenable. ` +
         `You cannot await a client module from a server component.`,
     );
@@ -762,7 +765,7 @@ describe('ReactFlightDOM', () => {
     function read() {
       return ClientModule[symbol];
     }
-    expect(read).toThrowError(
+    expect(read).toThrow(
       'Cannot read Symbol exports. ' +
         'Only named exports are supported on a client module imported on the server.',
     );
@@ -795,7 +798,7 @@ describe('ReactFlightDOM', () => {
     function dotting() {
       return ClientModule.Context.Provider;
     }
-    expect(dotting).not.toThrowError();
+    expect(dotting).not.toThrow();
   });
 
   it('can render a client Context.Provider from a server component', async () => {
@@ -3232,7 +3235,7 @@ describe('ReactFlightDOM', () => {
     ]);
 
     await 1;
-    jest.advanceTimersByTime('100');
+    jest.advanceTimersByTime(100);
     expect(await race).toBe('timeout');
   });
 

@@ -142,18 +142,19 @@ fn visit_scope(scope_block: &ReactiveScopeBlock, state: &mut VisitorState) {
     if let Some(ref memo_state) = state.manual_memo_state {
         if let Some(ref deps_from_source) = memo_state.deps_from_source {
             let scope = &state.env.scopes[scope_block.scope.0 as usize];
+            // `dependencies` still has to be cloned because `env` is passed
+            // mutably below. `temporaries`, `decls` and `deps_from_source` do
+            // not: they live in fields disjoint from `env`, so they can simply
+            // be borrowed.
             let deps = scope.dependencies.clone();
             let memo_loc = memo_state.loc;
-            let decls = memo_state.decls.clone();
-            let deps_from_source = deps_from_source.clone();
-            let temporaries = state.temporaries.clone();
             for dep in &deps {
                 validate_inferred_dep(
                     dep.identifier,
                     &dep.path,
-                    &temporaries,
-                    &decls,
-                    &deps_from_source,
+                    &state.temporaries,
+                    &memo_state.decls,
+                    deps_from_source,
                     state.env,
                     memo_loc,
                 );

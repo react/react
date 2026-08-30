@@ -435,7 +435,9 @@ export opaque type Request = {
   onFatalError: (error: mixed) => void,
   // Aborted once the render ends, whether it completed, failed fatally or was
   // aborted. Bounds the lifetime of anything that must not outlive the render.
-  renderLifetimeController: AbortController,
+  // Null until attachAbortSignal creates it, so a render that is given no
+  // signal constructs no controller.
+  renderLifetimeController: null | AbortController,
   // Form state that was the result of an MPA submission, if it was provided.
   formState: null | ReactFormState<any, any>,
   // DEV-only, warning dedupe
@@ -589,7 +591,7 @@ function RequestInstance(
   this.onShellReady = onShellReady === undefined ? noop : onShellReady;
   this.onShellError = onShellError === undefined ? noop : onShellError;
   this.onFatalError = onFatalError === undefined ? noop : onFatalError;
-  this.renderLifetimeController = new AbortController();
+  this.renderLifetimeController = null;
   this.formState = formState === undefined ? null : formState;
   if (__DEV__) {
     this.didWarnForKey = null;
@@ -1455,7 +1457,7 @@ function fatalError(
     }
     onFatalError(error);
   }
-  request.renderLifetimeController.abort(RENDER_ENDED);
+  endRenderLifetime(request);
   if (request.destination !== null) {
     request.status = CLOSED;
     closeWithError(request.destination, error);
@@ -6352,7 +6354,7 @@ function flushCompletedQueues(
         }
       }
       // We're done.
-      request.renderLifetimeController.abort(RENDER_ENDED);
+      endRenderLifetime(request);
       request.status = CLOSED;
       close(destination);
       // We need to stop flowing now because we do not want any async contexts which might call
@@ -6516,6 +6518,13 @@ function finishAbort(request: Request, abortableTasks: Set<Task>): void {
   }
 }
 
+function endRenderLifetime(request: Request): void {
+  const renderLifetimeController = request.renderLifetimeController;
+  if (renderLifetimeController !== null) {
+    renderLifetimeController.abort(RENDER_ENDED);
+  }
+}
+
 // Aborts the request when the caller's signal aborts. The render lifetime
 // bounds the listener, so the runtime removes the listener as soon as the
 // render ends. From that point on abort() returns early, so the listener has
@@ -6533,12 +6542,14 @@ export function attachAbortSignal(request: Request, signal: AbortSignal): void {
     abort(request, signal.reason);
     return;
   }
+  const renderLifetimeController = new AbortController();
+  request.renderLifetimeController = renderLifetimeController;
   signal.addEventListener(
     'abort',
     () => {
       abort(request, signal.reason);
     },
-    {signal: request.renderLifetimeController.signal},
+    {signal: renderLifetimeController.signal},
   );
 }
 
@@ -6552,7 +6563,7 @@ export function abort(request: Request, reason: mixed): void {
     // can be aborted. in practice this makes abort callable at most once per render.
     return;
   }
-  request.renderLifetimeController.abort(RENDER_ENDED);
+  endRenderLifetime(request);
   const isRecoverableReason =
     typeof reason === 'object' &&
     reason !== null &&

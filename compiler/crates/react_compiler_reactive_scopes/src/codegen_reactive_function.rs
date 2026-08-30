@@ -555,12 +555,119 @@ pub fn codegen_function(
 // Context
 // =============================================================================
 
-type Temporaries = FxHashMap<DeclarationId, Option<ExpressionOrJsxText>>;
-
 #[derive(Clone)]
 enum ExpressionOrJsxText {
     Expression(Expression),
     JsxText(JSXText),
+}
+
+/// The entry a write to [`Temporaries`] displaced, kept so the write can be
+/// undone.
+///
+/// The expression is boxed because `ExpressionOrJsxText` is ~900 bytes (it
+/// inlines an `Expression`). Unboxed, the undo log would be a `Vec` of
+/// ~900-byte slots that are almost always `Absent`, costing more peak heap than
+/// the copy it replaces on shallow functions. Boxed, an entry is 16 bytes and
+/// only allocates when a write actually displaces a buffered expression.
+enum Displaced {
+    /// The key was not present before the write.
+    Absent,
+    /// The key was present as a declared temporary with no buffered value.
+    Empty,
+    /// The key was present with this buffered value.
+    Value(Box<ExpressionOrJsxText>),
+}
+
+/// A position in a [`Temporaries`] undo log, produced by [`Temporaries::mark`].
+#[derive(Clone, Copy)]
+struct TempMark(usize);
+
+/// Expressions buffered for temporaries that have not been emitted yet, plus an
+/// undo log allowing a nested block or scope to be codegen'd and its additions
+/// discarded.
+///
+/// The TypeScript implementation snapshots this with `new Map(cx.temp)`, which
+/// is a *shallow* copy: it duplicates references, not the AST nodes behind them.
+/// The equivalent Rust `.clone()` deep-copies every buffered `Expression` tree,
+/// which made codegen quadratic in component size and dominated both allocation
+/// volume and peak heap.
+///
+/// `TS CodegenReactiveFunction.codegenBlock` asserts that pre-existing entries
+/// are never mutated ("Expected temporary value to be unchanged"), so a
+/// snapshot's only job is to discard entries added by the nested block. Because
+/// entries are only ever inserted (never removed, nor mutated in place),
+/// rewinding an insert log restores the map exactly, with no copying.
+///
+/// All writes go through [`Temporaries::set`] so the log cannot drift out of
+/// sync with the map.
+#[derive(Default)]
+struct Temporaries {
+    values: FxHashMap<DeclarationId, Option<ExpressionOrJsxText>>,
+    journal: Vec<(DeclarationId, Displaced)>,
+}
+
+impl Temporaries {
+    fn get(&self, declaration_id: DeclarationId) -> Option<&Option<ExpressionOrJsxText>> {
+        self.values.get(&declaration_id)
+    }
+
+    fn contains_key(&self, declaration_id: DeclarationId) -> bool {
+        self.values.contains_key(&declaration_id)
+    }
+
+    /// Buffers `value` for `declaration_id`, journaling the displaced entry.
+    /// `HashMap::insert` returns that entry by move, so journaling costs no
+    /// clones.
+    fn set(&mut self, declaration_id: DeclarationId, value: Option<ExpressionOrJsxText>) {
+        let displaced = match self.values.insert(declaration_id, value) {
+            None => Displaced::Absent,
+            Some(None) => Displaced::Empty,
+            Some(Some(previous)) => Displaced::Value(Box::new(previous)),
+        };
+        self.journal.push((declaration_id, displaced));
+    }
+
+    /// Marks the current state, for a later [`Temporaries::rewind`].
+    fn mark(&self) -> TempMark {
+        TempMark(self.journal.len())
+    }
+
+    /// Restores the state captured by `mark`, discarding every write since.
+    fn rewind(&mut self, mark: TempMark) {
+        while self.journal.len() > mark.0 {
+            let (declaration_id, displaced) = self.journal.pop().unwrap();
+            match displaced {
+                Displaced::Absent => {
+                    self.values.remove(&declaration_id);
+                }
+                Displaced::Empty => {
+                    self.values.insert(declaration_id, None);
+                }
+                Displaced::Value(previous) => {
+                    self.values.insert(declaration_id, Some(*previous));
+                }
+            }
+        }
+    }
+
+    /// Hands the buffered expressions to a nested function's context, which may
+    /// read them but must not leak its own additions back out.
+    ///
+    /// The borrower gets a fresh log, so [`Temporaries::reclaim`] can undo
+    /// exactly the borrower's writes rather than the lender's whole history.
+    fn lend(&mut self) -> Temporaries {
+        Temporaries {
+            values: std::mem::take(&mut self.values),
+            journal: Vec::new(),
+        }
+    }
+
+    /// Takes back expressions handed out by [`Temporaries::lend`], discarding
+    /// every write the borrower made.
+    fn reclaim(&mut self, mut lent: Temporaries) {
+        lent.rewind(TempMark(0));
+        self.values = lent.values;
+    }
 }
 
 struct Context<'env> {
@@ -594,7 +701,7 @@ impl<'env> Context<'env> {
             fn_name,
             next_cache_index: 0,
             declarations: FxHashSet::default(),
-            temp: FxHashMap::default(),
+            temp: Temporaries::default(),
             object_methods: FxHashMap::default(),
             unique_identifiers,
             fbt_operands,
@@ -653,8 +760,8 @@ fn codegen_reactive_function(
             ParamPattern::Place(p) => p,
             ParamPattern::Spread(sp) => &sp.place,
         };
-        let ident = &cx.env.identifiers[place.identifier.0 as usize];
-        cx.temp.insert(ident.declaration_id, None);
+        let declaration_id = cx.env.identifiers[place.identifier.0 as usize].declaration_id;
+        cx.temp.set(declaration_id, None);
         cx.declare(place.identifier);
     }
 
@@ -732,9 +839,9 @@ fn convert_parameter(
 // =============================================================================
 
 fn codegen_block(cx: &mut Context, block: &ReactiveBlock) -> Result<BlockStatement, CompilerError> {
-    let temp_snapshot: Temporaries = cx.temp.clone();
+    let mark = cx.temp.mark();
     let result = codegen_block_no_reset(cx, block)?;
-    cx.temp = temp_snapshot;
+    cx.temp.rewind(mark);
     Ok(result)
 }
 
@@ -758,9 +865,9 @@ fn codegen_block_no_reset(
                 scope,
                 instructions,
             }) => {
-                let temp_snapshot = cx.temp.clone();
+                let mark = cx.temp.mark();
                 codegen_reactive_scope(cx, &mut statements, *scope, instructions)?;
-                cx.temp = temp_snapshot;
+                cx.temp.rewind(mark);
             }
             ReactiveStatement::Terminal(term_stmt) => {
                 let stmt = codegen_terminal(cx, &term_stmt.terminal)?;
@@ -1258,8 +1365,9 @@ fn codegen_terminal(
         } => {
             let catch_param = match handler_binding.as_ref() {
                 Some(binding) => {
-                    let ident = &cx.env.identifiers[binding.identifier.0 as usize];
-                    cx.temp.insert(ident.declaration_id, None);
+                    let declaration_id =
+                        cx.env.identifiers[binding.identifier.0 as usize].declaration_id;
+                    cx.temp.set(declaration_id, None);
                     Some(PatternLike::Identifier(convert_identifier(
                         binding.identifier,
                         cx.env,
@@ -1724,8 +1832,10 @@ fn codegen_store_or_declare(
             // Register temporaries for unnamed pattern operands
             for place in react_compiler_hir::visitors::each_pattern_operand(&lvalue.pattern) {
                 let ident = &cx.env.identifiers[place.identifier.0 as usize];
-                if kind != InstructionKind::Reassign && ident.name.is_none() {
-                    cx.temp.insert(ident.declaration_id, None);
+                let declaration_id = ident.declaration_id;
+                let is_unnamed = ident.name.is_none();
+                if kind != InstructionKind::Reassign && is_unnamed {
+                    cx.temp.set(declaration_id, None);
                 }
             }
             let rhs = codegen_place_to_expression(cx, val)?;
@@ -1838,11 +1948,10 @@ fn emit_store(
                     ReactiveValue::Instruction(InstructionValue::StoreContext { .. })
                 );
                 if !is_store_context {
-                    let ident = &cx.env.identifiers[lvalue_place.identifier.0 as usize];
-                    cx.temp.insert(
-                        ident.declaration_id,
-                        Some(ExpressionOrJsxText::Expression(expr)),
-                    );
+                    let declaration_id =
+                        cx.env.identifiers[lvalue_place.identifier.0 as usize].declaration_id;
+                    cx.temp
+                        .set(declaration_id, Some(ExpressionOrJsxText::Expression(expr)));
                     return Ok(None);
                 } else {
                     let stmt =
@@ -1886,9 +1995,10 @@ fn codegen_instruction(
         }));
     };
     let ident = &cx.env.identifiers[lvalue.identifier.0 as usize];
+    let declaration_id = ident.declaration_id;
     if ident.name.is_none() {
         // temporary
-        cx.temp.insert(ident.declaration_id, Some(value));
+        cx.temp.set(declaration_id, Some(value));
         return Ok(Statement::EmptyStatement(EmptyStatement {
             base: BaseNode::typed("EmptyStatement"),
         }));
@@ -2663,9 +2773,16 @@ fn codegen_function_expression(
         cx.unique_identifiers.clone(),
         cx.fbt_operands.clone(),
     );
-    inner_cx.temp = cx.temp.clone();
+    // The inner function reads the enclosing temporaries but must not leak its
+    // own back out. Lend the map to `inner_cx` and rewind its writes on the way
+    // out, rather than deep-cloning every buffered expression tree. The map is
+    // restored on the error path too, so `cx` is never left empty.
+    inner_cx.temp = cx.temp.lend();
 
-    let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut)?;
+    let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut);
+
+    cx.temp.reclaim(std::mem::take(&mut inner_cx.temp));
+    let fn_result = fn_result?;
 
     let value = match expr_type {
         FunctionExpressionType::ArrowFunctionExpression => {
@@ -2798,9 +2915,12 @@ fn codegen_object_expression(
                             cx.unique_identifiers.clone(),
                             cx.fbt_operands.clone(),
                         );
-                        inner_cx.temp = cx.temp.clone();
+                        inner_cx.temp = cx.temp.lend();
 
-                        let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut)?;
+                        let fn_result = codegen_reactive_function(&mut inner_cx, &reactive_fn_mut);
+
+                        cx.temp.reclaim(std::mem::take(&mut inner_cx.temp));
+                        let fn_result = fn_result?;
 
                         ast_properties.push(ast_expr::ObjectExpressionProperty::ObjectMethod(
                             ast_expr::ObjectMethod {
@@ -3309,14 +3429,14 @@ fn codegen_place_to_expression(
 
 fn codegen_place(cx: &mut Context, place: &Place) -> Result<ExpressionOrJsxText, CompilerError> {
     let ident = &cx.env.identifiers[place.identifier.0 as usize];
-    if let Some(tmp) = cx.temp.get(&ident.declaration_id) {
+    if let Some(tmp) = cx.temp.get(ident.declaration_id) {
         if let Some(val) = tmp {
             return Ok(val.clone());
         }
         // tmp is None — means declared but no temp value, fall through
     }
     // Check if it's an unnamed identifier without a temp
-    if ident.name.is_none() && !cx.temp.contains_key(&ident.declaration_id) {
+    if ident.name.is_none() && !cx.temp.contains_key(ident.declaration_id) {
         return Err(invariant_err(
             &format!(
                 "[Codegen] No value found for temporary, identifier id={}",
