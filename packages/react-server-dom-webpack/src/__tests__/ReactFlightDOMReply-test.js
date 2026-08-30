@@ -45,6 +45,9 @@ describe('ReactFlightDOMReply', () => {
     ReactServerDOMServer = require('react-server-dom-webpack/server.browser');
     jest.resetModules();
     __unmockReact();
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-webpack/client');
   });
 
