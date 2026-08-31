@@ -3074,18 +3074,15 @@ FragmentInstance.prototype.addEventListener = function (
       };
     }
     if (signal != null) {
-      const onAbort = function () {
-        fragmentInstance.removeEventListener(
-          type,
-          listener,
-          optionsOrUseCapture,
-        );
-      };
+      const onAbort = fragmentInstance.removeEventListener.bind(
+        fragmentInstance,
+        type,
+        listener,
+        optionsOrUseCapture,
+      );
       signal.addEventListener('abort', onAbort, {once: true});
-      cleanup = function () {
-        // $FlowFixMe[incompatible-use]
-        signal.removeEventListener('abort', onAbort);
-      };
+      // $FlowFixMe[method-unbinding]
+      cleanup = signal.removeEventListener.bind(signal, 'abort', onAbort);
     }
     const attachOptions = getAttachOptions(optionsOrUseCapture);
     listeners.push({
