@@ -2991,7 +2991,7 @@ type StoredEventListener = {
   // When once:true, a wrapper that removes the fragment listener after the
   // first fire. Otherwise the same as listener.
   attachedListener: EventListener,
-  cleanup: void | (() => void),
+  cleanup: null | (() => void),
 };
 
 export type FragmentInstanceType = {
@@ -3035,11 +3035,11 @@ FragmentInstance.prototype.addEventListener = function (
   listener: EventListener,
   optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
 ): void {
-  let signal: void | AbortSignal;
-  let cleanup: void | (() => void);
+  let signal: null | AbortSignal = null;
+  let cleanup: null | (() => void) = null;
   if (optionsOrUseCapture != null && typeof optionsOrUseCapture !== 'boolean') {
-    signal = optionsOrUseCapture.signal;
-    if (signal != null && signal.aborted) {
+    signal = optionsOrUseCapture.signal || null;
+    if (signal !== null && signal.aborted) {
       return;
     }
   }
@@ -3073,7 +3073,7 @@ FragmentInstance.prototype.addEventListener = function (
         }
       };
     }
-    if (signal != null) {
+    if (signal !== null) {
       const onAbort = fragmentInstance.removeEventListener.bind(
         fragmentInstance,
         type,
@@ -3146,7 +3146,7 @@ FragmentInstance.prototype.removeEventListener = function (
     attachOptions,
   );
   listeners.splice(index, 1);
-  if (cleanup != null) {
+  if (cleanup !== null) {
     cleanup();
   }
 };
