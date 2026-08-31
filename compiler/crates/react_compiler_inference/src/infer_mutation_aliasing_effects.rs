@@ -123,12 +123,10 @@ pub fn infer_mutation_aliasing_effects(
         block_id: BlockId,
         state: InferenceState,
     ) {
-        if let Some(queued_state) = queued_states.get(&block_id) {
-            // `merge` returns None when the queued state already subsumes `state`;
-            // the existing entry can stay as-is.
-            if let Some(new_state) = queued_state.merge(&state) {
-                queued_states.insert(block_id, new_state);
-            }
+        if let Some(queued_state) = queued_states.get_mut(&block_id) {
+            // Merge in place: same contents (and iteration order) as replacing
+            // the entry with `merge`'s result, without cloning the whole state.
+            queued_state.merge_from(&state);
         } else {
             let prev_state = states_by_block.get(&block_id);
             if let Some(prev) = prev_state {
@@ -650,6 +648,54 @@ impl InferenceState {
                 uninitialized_access: std::cell::Cell::new(None),
             })
         }
+    }
+
+    /// In-place variant of [`InferenceState::merge`] for updating an
+    /// already-queued state: applies the same per-entry updates directly to
+    /// `self` instead of building a replacement state. Because `FxHashMap`'s
+    /// `clone` preserves table layout, this leaves `self` with exactly the same
+    /// contents and iteration order as `merge` + reinsert would. Like
+    /// `merge`'s result, the access flag ends up cleared (queued states never
+    /// carry a set flag: a set flag errors out before the state is queued).
+    fn merge_from(&mut self, other: &InferenceState) {
+        for (id, other_value) in &other.values {
+            match self.values.get(id) {
+                Some(this_value) => {
+                    let merged = merge_abstract_values(this_value, other_value);
+                    if merged.kind != this_value.kind
+                        || !this_value.reason.is_superset_of(&merged.reason)
+                    {
+                        self.values.insert(*id, merged);
+                    }
+                }
+                None => {
+                    self.values.insert(*id, *other_value);
+                }
+            }
+        }
+
+        for (id, other_values) in &other.variables {
+            match self.variables.get(id) {
+                Some(this_values) => {
+                    if other_values
+                        .iter()
+                        .any(|value| !this_values.contains(value))
+                    {
+                        // Build the union as a fresh set exactly like `merge`, so
+                        // the resulting iteration order matches.
+                        let merged = this_values.union(other_values).copied().collect();
+                        self.variables.insert(*id, merged);
+                    }
+                }
+                None => {
+                    self.variables.insert(*id, other_values.clone());
+                }
+            }
+        }
+
+        // `merge` builds its result with a cleared access flag.
+        debug_assert!(self.uninitialized_access.get().is_none());
+        self.uninitialized_access.set(None);
     }
 
     fn infer_phi(
