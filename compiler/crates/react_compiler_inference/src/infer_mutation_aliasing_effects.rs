@@ -165,6 +165,30 @@ pub fn infer_mutation_aliasing_effects(
         aliasing_config_temp_cache: FxHashMap::default(),
     };
 
+    // `states_by_block` is only ever read when a block is queued again after it
+    // was already processed, which requires a CFG cycle. If every edge targets a
+    // strictly later block in the map, the graph is acyclic and one pass over the
+    // blocks suffices, so skip the per-block state snapshots. Reverse postorder
+    // (the stored order) only makes this test precise for acyclic CFGs; soundness
+    // needs no ordering assumption, and a successor missing from the map counts
+    // as a back edge to stay conservative. The scan cannot go stale: `infer_block`
+    // rewrites only terminal effects, never successor ids.
+    let has_back_edge = func
+        .body
+        .blocks
+        .iter()
+        .enumerate()
+        .any(|(index, (_, block))| {
+            terminal_successors(&block.terminal)
+                .into_iter()
+                .any(
+                    |successor| match func.body.blocks.get_index_of(&successor) {
+                        Some(successor_index) => successor_index <= index,
+                        None => true,
+                    },
+                )
+        });
+
     let mut iteration_count = 0;
 
     while !queued_states.is_empty() {
@@ -186,7 +210,9 @@ pub fn infer_mutation_aliasing_effects(
                 None => continue,
             };
 
-            states_by_block.insert(block_id, incoming_state.clone());
+            if has_back_edge {
+                states_by_block.insert(block_id, incoming_state.clone());
+            }
             let mut state = incoming_state;
 
             infer_block(&mut context, &mut state, block_id, func, env)?;
