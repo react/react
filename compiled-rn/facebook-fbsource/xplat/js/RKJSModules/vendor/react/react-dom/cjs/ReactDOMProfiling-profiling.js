@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<ca2face484cd62343d5c7d023ae95899>>
+ * @generated SignedSource<<1433167037ec31dd8546a49ba29ee4d8>>
  */
 
 /*
@@ -10451,24 +10451,8 @@ function commitFragmentInstanceInsertionEffects(fiber) {
 }
 function commitFragmentInstanceDeletionEffects(fiber) {
   for (var parent = fiber.return; null !== parent; ) {
-    if (isFragmentInstanceParent(parent)) {
-      var fragmentInstance = parent.stateNode;
-      var childInstance = fiber.stateNode,
-        eventListeners = fragmentInstance._eventListeners;
-      if (null !== eventListeners)
-        for (var i = 0; i < eventListeners.length; i++) {
-          var _eventListeners$i4 = eventListeners[i];
-          childInstance.removeEventListener(
-            _eventListeners$i4.type,
-            _eventListeners$i4.attachedListener,
-            getAttachOptions(_eventListeners$i4.optionsOrUseCapture)
-          );
-        }
-      3 !== childInstance.nodeType &&
-        enableFragmentRefsInstanceHandles &&
-        null != childInstance.reactFragments &&
-        childInstance.reactFragments.delete(fragmentInstance);
-    }
+    isFragmentInstanceParent(parent) &&
+      deleteChildFromFragmentInstance(fiber.stateNode, parent.stateNode);
     if (isFragmentInstanceHostBoundary(parent)) break;
     parent = parent.return;
   }
@@ -16655,20 +16639,20 @@ function debounceScrollEnd(targetInst, nativeEvent, nativeEventTarget) {
     (nativeEventTarget[internalScrollTimer] = targetInst));
 }
 for (
-  var i$jscomp$inline_2048 = 0;
-  i$jscomp$inline_2048 < simpleEventPluginEvents.length;
-  i$jscomp$inline_2048++
+  var i$jscomp$inline_2038 = 0;
+  i$jscomp$inline_2038 < simpleEventPluginEvents.length;
+  i$jscomp$inline_2038++
 ) {
-  var eventName$jscomp$inline_2049 =
-      simpleEventPluginEvents[i$jscomp$inline_2048],
-    domEventName$jscomp$inline_2050 =
-      eventName$jscomp$inline_2049.toLowerCase(),
-    capitalizedEvent$jscomp$inline_2051 =
-      eventName$jscomp$inline_2049[0].toUpperCase() +
-      eventName$jscomp$inline_2049.slice(1);
+  var eventName$jscomp$inline_2039 =
+      simpleEventPluginEvents[i$jscomp$inline_2038],
+    domEventName$jscomp$inline_2040 =
+      eventName$jscomp$inline_2039.toLowerCase(),
+    capitalizedEvent$jscomp$inline_2041 =
+      eventName$jscomp$inline_2039[0].toUpperCase() +
+      eventName$jscomp$inline_2039.slice(1);
   registerSimpleEvent(
-    domEventName$jscomp$inline_2050,
-    "on" + capitalizedEvent$jscomp$inline_2051
+    domEventName$jscomp$inline_2040,
+    "on" + capitalizedEvent$jscomp$inline_2041
   );
 }
 registerSimpleEvent(ANIMATION_END, "onAnimationEnd");
@@ -18607,6 +18591,10 @@ function resolveEventTimeStamp() {
 var scheduleTimeout = "function" === typeof setTimeout ? setTimeout : void 0,
   cancelTimeout = "function" === typeof clearTimeout ? clearTimeout : void 0,
   localPromise = "function" === typeof Promise ? Promise : void 0,
+  localRequestAnimationFrame =
+    "function" === typeof requestAnimationFrame
+      ? requestAnimationFrame
+      : scheduleTimeout,
   scheduleMicrotask =
     "function" === typeof queueMicrotask
       ? queueMicrotask
@@ -19306,9 +19294,8 @@ function observeChild(child, observer) {
 }
 FragmentInstance.prototype.unobserveUsing = function (observer) {
   var observers = this._observers;
-  null !== observers &&
-    observers.has(observer) &&
-    (observers.delete(observer),
+  if (null !== observers && observers.has(observer)) {
+    observers.delete(observer);
     traverseVisibleInstancesAndTextInstances(
       this._fragmentFiber.child,
       !1,
@@ -19316,13 +19303,49 @@ FragmentInstance.prototype.unobserveUsing = function (observer) {
       observer,
       void 0,
       void 0
-    ));
+    );
+    for (
+      var i = (observers = 0);
+      i < pendingIntersectionUnobserves.length;
+      i++
+    ) {
+      var pending = pendingIntersectionUnobserves[i];
+      pending.fragmentInstance === this && pending.observer === observer
+        ? observer.unobserve(pending.instance)
+        : (pendingIntersectionUnobserves[observers++] = pending);
+    }
+    pendingIntersectionUnobserves.length = observers;
+  }
 };
 function unobserveChild(child, observer) {
   if (enableFragmentRefsTextNodes && 6 === child.tag) return !1;
   child = getInstanceFromHostFiber(child);
   observer.unobserve(child);
   return !1;
+}
+var pendingIntersectionUnobserves = [],
+  intersectionUnobserveScheduled = !1;
+function schedulePendingIntersectionUnobserve(
+  fragmentInstance,
+  observer,
+  instance
+) {
+  pendingIntersectionUnobserves.push({
+    fragmentInstance: fragmentInstance,
+    observer: observer,
+    instance: instance
+  });
+  intersectionUnobserveScheduled ||
+    ((intersectionUnobserveScheduled = !0),
+    requestPostPaintCallback(function () {
+      intersectionUnobserveScheduled = !1;
+      var pending = pendingIntersectionUnobserves;
+      pendingIntersectionUnobserves = [];
+      for (var i = 0; i < pending.length; i++) {
+        var item = pending[i];
+        item.observer.unobserve(item.instance);
+      }
+    }));
 }
 FragmentInstance.prototype.getClientRects = function () {
   var rects = [];
@@ -19643,8 +19666,8 @@ function addFragmentHandleToInstance(instance, fragmentInstance) {
 function commitNewChildToFragmentInstance(childInstance, fragmentInstance) {
   var eventListeners = fragmentInstance._eventListeners;
   if (null !== eventListeners)
-    for (var i = 0; i < eventListeners.length; i++) {
-      var _eventListeners$i3 = eventListeners[i];
+    for (var i$jscomp$0 = 0; i$jscomp$0 < eventListeners.length; i$jscomp$0++) {
+      var _eventListeners$i3 = eventListeners[i$jscomp$0];
       childInstance.addEventListener(
         _eventListeners$i3.type,
         _eventListeners$i3.attachedListener,
@@ -19652,12 +19675,54 @@ function commitNewChildToFragmentInstance(childInstance, fragmentInstance) {
       );
     }
   3 !== childInstance.nodeType &&
-    (null !== fragmentInstance._observers &&
-      fragmentInstance._observers.forEach(function (observer) {
+    ((eventListeners = fragmentInstance._observers),
+    null !== eventListeners &&
+      eventListeners.forEach(function (observer) {
+        for (
+          var writeIdx = 0, i = 0;
+          i < pendingIntersectionUnobserves.length;
+          i++
+        ) {
+          var pending = pendingIntersectionUnobserves[i];
+          if (
+            pending.fragmentInstance !== fragmentInstance ||
+            pending.observer !== observer ||
+            pending.instance !== childInstance
+          )
+            pendingIntersectionUnobserves[writeIdx++] = pending;
+        }
+        pendingIntersectionUnobserves.length = writeIdx;
         observer.observe(childInstance);
       }),
     enableFragmentRefsInstanceHandles &&
       addFragmentHandleToInstance(childInstance, fragmentInstance));
+}
+function deleteChildFromFragmentInstance(childInstance, fragmentInstance) {
+  var eventListeners = fragmentInstance._eventListeners;
+  if (null !== eventListeners)
+    for (var i = 0; i < eventListeners.length; i++) {
+      var _eventListeners$i4 = eventListeners[i];
+      childInstance.removeEventListener(
+        _eventListeners$i4.type,
+        _eventListeners$i4.attachedListener,
+        getAttachOptions(_eventListeners$i4.optionsOrUseCapture)
+      );
+    }
+  3 !== childInstance.nodeType &&
+    ((eventListeners = fragmentInstance._observers),
+    null !== eventListeners &&
+      eventListeners.forEach(function (observer) {
+        "string" === typeof observer.rootMargin
+          ? schedulePendingIntersectionUnobserve(
+              fragmentInstance,
+              observer,
+              childInstance
+            )
+          : observer.unobserve(childInstance);
+      }),
+    enableFragmentRefsInstanceHandles &&
+      null != childInstance.reactFragments &&
+      childInstance.reactFragments.delete(fragmentInstance));
 }
 function clearContainerSparingly(container) {
   var nextNode = container.firstChild;
@@ -19874,6 +19939,13 @@ function setFocusIfFocusable(node, focusOptions) {
     node.ownerDocument.removeEventListener("focus", handleFocus, !0);
   }
   return didFocus;
+}
+function requestPostPaintCallback(callback) {
+  localRequestAnimationFrame(function () {
+    localRequestAnimationFrame(function (time) {
+      return callback(time);
+    });
+  });
 }
 function resolveSingletonInstance(type, props, rootContainerInstance) {
   props = getOwnerDocumentFromRootContainer(rootContainerInstance);
@@ -21583,16 +21655,16 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
     0 === i && attemptExplicitHydrationTarget(target);
   }
 };
-var isomorphicReactPackageVersion$jscomp$inline_2473 = React.version;
+var isomorphicReactPackageVersion$jscomp$inline_2476 = React.version;
 if (
-  "19.3.0-native-fb-ff7445e6-20260831" !==
-  isomorphicReactPackageVersion$jscomp$inline_2473
+  "19.3.0-native-fb-065bc84e-20260831" !==
+  isomorphicReactPackageVersion$jscomp$inline_2476
 )
   throw Error(
     formatProdErrorMessage(
       527,
-      isomorphicReactPackageVersion$jscomp$inline_2473,
-      "19.3.0-native-fb-ff7445e6-20260831"
+      isomorphicReactPackageVersion$jscomp$inline_2476,
+      "19.3.0-native-fb-065bc84e-20260831"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21612,12 +21684,12 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
     null === componentOrElement ? null : componentOrElement.stateNode;
   return componentOrElement;
 };
-var internals$jscomp$inline_2480 = {
+var internals$jscomp$inline_2483 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-ff7445e6-20260831",
+  version: "19.3.0-native-fb-065bc84e-20260831",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-ff7445e6-20260831",
+  reconcilerVersion: "19.3.0-native-fb-065bc84e-20260831",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$351 = 0;
@@ -21635,16 +21707,16 @@ var internals$jscomp$inline_2480 = {
   }
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_3056 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_3059 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_3056.isDisabled &&
-    hook$jscomp$inline_3056.supportsFiber
+    !hook$jscomp$inline_3059.isDisabled &&
+    hook$jscomp$inline_3059.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_3056.inject(
-        internals$jscomp$inline_2480
+      (rendererID = hook$jscomp$inline_3059.inject(
+        internals$jscomp$inline_2483
       )),
-        (injectedHook = hook$jscomp$inline_3056);
+        (injectedHook = hook$jscomp$inline_3059);
     } catch (err) {}
 }
 function getCrossOriginStringAs(as, input) {
@@ -21905,7 +21977,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-ff7445e6-20260831";
+exports.version = "19.3.0-native-fb-065bc84e-20260831";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&

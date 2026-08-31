@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<89a7d3dfbdcb9e37f63633036dd0ad53>>
+ * @generated SignedSource<<8fae15a2d96e1eea646ec4158dca8fb7>>
  */
 
 /*
@@ -14704,24 +14704,8 @@ __DEV__ &&
     }
     function commitFragmentInstanceDeletionEffects(fiber) {
       for (var parent = fiber.return; null !== parent; ) {
-        if (isFragmentInstanceParent(parent)) {
-          var childInstance = fiber.stateNode,
-            fragmentInstance = parent.stateNode,
-            eventListeners = fragmentInstance._eventListeners;
-          if (null !== eventListeners)
-            for (var i = 0; i < eventListeners.length; i++) {
-              var _eventListeners$i3 = eventListeners[i];
-              childInstance.removeEventListener(
-                _eventListeners$i3.type,
-                _eventListeners$i3.attachedListener,
-                getAttachOptions(_eventListeners$i3.optionsOrUseCapture)
-              );
-            }
-          3 !== childInstance.nodeType &&
-            enableFragmentRefsInstanceHandles &&
-            null != childInstance.reactFragments &&
-            childInstance.reactFragments.delete(fragmentInstance);
-        }
+        isFragmentInstanceParent(parent) &&
+          deleteChildFromFragmentInstance(fiber.stateNode, parent.stateNode);
         if (isFragmentInstanceHostBoundary(parent)) break;
         parent = parent.return;
       }
@@ -25886,6 +25870,28 @@ __DEV__ &&
       observer.unobserve(child);
       return !1;
     }
+    function schedulePendingIntersectionUnobserve(
+      fragmentInstance,
+      observer,
+      instance
+    ) {
+      pendingIntersectionUnobserves.push({
+        fragmentInstance: fragmentInstance,
+        observer: observer,
+        instance: instance
+      });
+      intersectionUnobserveScheduled ||
+        ((intersectionUnobserveScheduled = !0),
+        requestPostPaintCallback(function () {
+          intersectionUnobserveScheduled = !1;
+          var pending = pendingIntersectionUnobserves;
+          pendingIntersectionUnobserves = [];
+          for (var i = 0; i < pending.length; i++) {
+            var item = pending[i];
+            item.observer.unobserve(item.instance);
+          }
+        }));
+    }
     function collectClientRects(child, rects) {
       if (enableFragmentRefsTextNodes && 6 === child.tag) {
         child = child.stateNode;
@@ -26027,8 +26033,12 @@ __DEV__ &&
     function commitNewChildToFragmentInstance(childInstance, fragmentInstance) {
       var eventListeners = fragmentInstance._eventListeners;
       if (null !== eventListeners)
-        for (var i = 0; i < eventListeners.length; i++) {
-          var _eventListeners$i2 = eventListeners[i];
+        for (
+          var i$jscomp$0 = 0;
+          i$jscomp$0 < eventListeners.length;
+          i$jscomp$0++
+        ) {
+          var _eventListeners$i2 = eventListeners[i$jscomp$0];
           childInstance.addEventListener(
             _eventListeners$i2.type,
             _eventListeners$i2.attachedListener,
@@ -26036,12 +26046,54 @@ __DEV__ &&
           );
         }
       3 !== childInstance.nodeType &&
-        (null !== fragmentInstance._observers &&
-          fragmentInstance._observers.forEach(function (observer) {
+        ((eventListeners = fragmentInstance._observers),
+        null !== eventListeners &&
+          eventListeners.forEach(function (observer) {
+            for (
+              var writeIdx = 0, i = 0;
+              i < pendingIntersectionUnobserves.length;
+              i++
+            ) {
+              var pending = pendingIntersectionUnobserves[i];
+              if (
+                pending.fragmentInstance !== fragmentInstance ||
+                pending.observer !== observer ||
+                pending.instance !== childInstance
+              )
+                pendingIntersectionUnobserves[writeIdx++] = pending;
+            }
+            pendingIntersectionUnobserves.length = writeIdx;
             observer.observe(childInstance);
           }),
         enableFragmentRefsInstanceHandles &&
           addFragmentHandleToInstance(childInstance, fragmentInstance));
+    }
+    function deleteChildFromFragmentInstance(childInstance, fragmentInstance) {
+      var eventListeners = fragmentInstance._eventListeners;
+      if (null !== eventListeners)
+        for (var i = 0; i < eventListeners.length; i++) {
+          var _eventListeners$i3 = eventListeners[i];
+          childInstance.removeEventListener(
+            _eventListeners$i3.type,
+            _eventListeners$i3.attachedListener,
+            getAttachOptions(_eventListeners$i3.optionsOrUseCapture)
+          );
+        }
+      3 !== childInstance.nodeType &&
+        ((eventListeners = fragmentInstance._observers),
+        null !== eventListeners &&
+          eventListeners.forEach(function (observer) {
+            "string" === typeof observer.rootMargin
+              ? schedulePendingIntersectionUnobserve(
+                  fragmentInstance,
+                  observer,
+                  childInstance
+                )
+              : observer.unobserve(childInstance);
+          }),
+        enableFragmentRefsInstanceHandles &&
+          null != childInstance.reactFragments &&
+          childInstance.reactFragments.delete(fragmentInstance));
     }
     function clearContainerSparingly(container) {
       var nextNode = container.firstChild;
@@ -26325,6 +26377,13 @@ __DEV__ &&
         node.ownerDocument.removeEventListener("focus", handleFocus, !0);
       }
       return didFocus;
+    }
+    function requestPostPaintCallback(callback) {
+      localRequestAnimationFrame(function () {
+        localRequestAnimationFrame(function (time) {
+          return callback(time);
+        });
+      });
     }
     function resolveSingletonInstance(
       type,
@@ -31521,6 +31580,10 @@ __DEV__ &&
         "function" === typeof clearTimeout ? clearTimeout : void 0,
       noTimeout = -1,
       localPromise = "function" === typeof Promise ? Promise : void 0,
+      localRequestAnimationFrame =
+        "function" === typeof requestAnimationFrame
+          ? requestAnimationFrame
+          : scheduleTimeout,
       scheduleMicrotask =
         "function" === typeof queueMicrotask
           ? queueMicrotask
@@ -31750,17 +31813,31 @@ __DEV__ &&
     };
     FragmentInstance.prototype.unobserveUsing = function (observer) {
       var observers = this._observers;
-      null !== observers && observers.has(observer)
-        ? (observers.delete(observer),
-          traverseFragmentInstancesAndTextInstances(
-            this._fragmentFiber,
-            unobserveChild,
-            observer
-          ))
-        : console.error(
-            "You are calling unobserveUsing() with an observer that is not being observed with this fragment instance. First attach the observer with observeUsing()"
-          );
+      if (null !== observers && observers.has(observer)) {
+        observers.delete(observer);
+        traverseFragmentInstancesAndTextInstances(
+          this._fragmentFiber,
+          unobserveChild,
+          observer
+        );
+        for (
+          var i = (observers = 0);
+          i < pendingIntersectionUnobserves.length;
+          i++
+        ) {
+          var pending = pendingIntersectionUnobserves[i];
+          pending.fragmentInstance === this && pending.observer === observer
+            ? observer.unobserve(pending.instance)
+            : (pendingIntersectionUnobserves[observers++] = pending);
+        }
+        pendingIntersectionUnobserves.length = observers;
+      } else
+        console.error(
+          "You are calling unobserveUsing() with an observer that is not being observed with this fragment instance. First attach the observer with observeUsing()"
+        );
     };
+    var pendingIntersectionUnobserves = [],
+      intersectionUnobserveScheduled = !1;
     FragmentInstance.prototype.getClientRects = function () {
       var rects = [];
       traverseFragmentInstancesAndTextInstances(
@@ -32370,11 +32447,11 @@ __DEV__ &&
     };
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-native-fb-ff7445e6-20260831" !== isomorphicReactPackageVersion)
+      if ("19.3.0-native-fb-065bc84e-20260831" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-native-fb-ff7445e6-20260831\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-native-fb-065bc84e-20260831\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -32411,10 +32488,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-native-fb-ff7445e6-20260831",
+          version: "19.3.0-native-fb-065bc84e-20260831",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-native-fb-ff7445e6-20260831"
+          reconcilerVersion: "19.3.0-native-fb-065bc84e-20260831"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -32564,5 +32641,5 @@ __DEV__ &&
       listenToAllSupportedEvents(container);
       return new ReactDOMHydrationRoot(initialChildren);
     };
-    exports.version = "19.3.0-native-fb-ff7445e6-20260831";
+    exports.version = "19.3.0-native-fb-065bc84e-20260831";
   })();
