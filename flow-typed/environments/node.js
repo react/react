@@ -3732,6 +3732,17 @@ type HeapSpaceStatistics = {
 // Adapted from DefinitelyTyped for Node v14:
 // https://github.com/DefinitelyTyped/DefinitelyTyped/blob/dea4d99dc302a0b0a25270e46e72c1fe9b741a17/types/node/v14/v8.d.ts
 declare module 'v8' {
+  declare type PromiseHookCallbacks = {
+    init?: (promise: Promise<any>, parent: void | Promise<any>) => void,
+    before?: (promise: Promise<any>) => void,
+    after?: (promise: Promise<any>) => void,
+    settled?: (promise: Promise<any>) => void,
+  };
+  // Missing on non-V8 runtimes that otherwise polyfill this module.
+  declare var promiseHooks: void | {
+    createHook(callbacks: PromiseHookCallbacks): () => void,
+  };
+
   /**
    * Returns an integer representing a "version tag" derived from the V8 version, command line flags and detected CPU features.
    * This is useful for determining whether a vm.Script cachedData buffer is compatible with this instance of V8.
