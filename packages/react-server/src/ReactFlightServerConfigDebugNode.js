@@ -26,7 +26,13 @@ import {
   UNRESOLVED_AWAIT_NODE,
 } from './ReactFlightAsyncSequence';
 import {resolveOwner} from './flight/ReactFlightCurrentOwner';
-import {resolveRequest, isAwaitInUserspace} from './ReactFlightServer';
+import type {Request} from './ReactFlightServer';
+
+import {
+  resolveRequest,
+  isAwaitInUserspace,
+  canRequestStillEmitDebugInfo,
+} from './ReactFlightServer';
 import {createHook, executionAsyncId} from 'async_hooks';
 import {promiseHooks} from 'v8';
 import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
@@ -44,6 +50,26 @@ enableAsyncDebugInfo
 const pendingOperations: Map<number, AsyncSequence> =
   __DEV__ && enableAsyncDebugInfo ? new Map() : (null as any);
 
+// We intentionally don't use the async_hooks destroy hook to prune the map.
+// Destroy hooks are counted globally in Node.js and as soon as one exists,
+// every Promise in the process gets its own GC-tracked destroy registration,
+// which is the per-Promise overhead the V8 promise hooks otherwise avoid.
+// Instead we observe the collection of the resource object itself. Resources
+// are passed to init so this tracks the actual handle, not just an id.
+const pendingOperationsRegistry: FinalizationRegistry<number> =
+  __DEV__ && enableAsyncDebugInfo
+    ? new FinalizationRegistry(asyncId => {
+        pendingOperations.delete(asyncId);
+      })
+    : (null as any);
+
+// Pooled resources (e.g. HTTPPARSER) are inited with a new id on each reuse
+// but only collected when the pool releases them. Tracking the last id per
+// resource lets a reuse evict the previous use's entry, so a pooled resource
+// holds at most one entry at a time.
+const lastResourceId: WeakMap<any, number> =
+  __DEV__ && enableAsyncDebugInfo ? new WeakMap() : (null as any);
+
 // The stack of Promises whose continuations are currently executing.
 // The equivalent of executionAsyncId() for the V8 promise hooks.
 const executingPromises: Array<Promise<any>> =
@@ -51,6 +77,85 @@ const executingPromises: Array<Promise<any>> =
 
 // Keep the last resolved await as a workaround for async functions missing data.
 let lastRanAwait: null | AwaitNode = null;
+
+// The requests that might still consume async debug info, held weakly so one
+// that never formally closes still expires with GC.
+const liveRequests: Set<WeakRef<Request>> =
+  __DEV__ && enableAsyncDebugInfo ? new Set() : (null as any);
+
+export function markAsyncSequenceRequest(request: Request): void {
+  if (__DEV__ && enableAsyncDebugInfo) {
+    liveRequests.add(new WeakRef(request));
+  }
+}
+
+function getOldestLiveRequestTimeOrigin(): number {
+  let oldest = Infinity;
+  liveRequests.forEach(requestRef => {
+    const request = requestRef.deref();
+    if (request === undefined || !canRequestStillEmitDebugInfo(request)) {
+      liveRequests.delete(requestRef);
+    } else if (request.timeOrigin < oldest) {
+      oldest = request.timeOrigin;
+    }
+  });
+  return oldest;
+}
+
+// visitAsyncNodeImpl stops at any node that resolved at or before the
+// consuming request's time origin, so a node that resolved before every
+// possible consumer's origin contributes nothing wherever it appears and can
+// drop its own links, releasing the history behind it. Two consumers keep links
+// alive: a live request, which pins its own history from its time origin (those
+// nodes are re-enqueued, so they don't count against this budget), and a
+// request that doesn't exist yet, which may backdate itself with
+// options.startTime. Only the latter is unbounded, so it's bounded by count
+// rather than by time, which would be multiplied by the tracking rate. Measured
+// gaps between capturing a start time and creating the request stay near a
+// hundred operations even under load.
+const MAX_RETAINED_OPERATIONS = 10000;
+
+const agingOperations: Array<AsyncSequence> =
+  __DEV__ && enableAsyncDebugInfo ? [] : (null as any);
+let agingHead = 0;
+let operationsSinceSweep = 0;
+
+function trackAgingOperation(node: AsyncSequence): void {
+  agingOperations.push(node);
+  if (++operationsSinceSweep >= 128) {
+    sweepAgingOperations();
+  }
+}
+
+function sweepAgingOperations(): void {
+  operationsSinceSweep = 0;
+  const cutoff = getOldestLiveRequestTimeOrigin();
+  // A node that can't be cleared goes back on the tail, so the queue doesn't
+  // shorten and the range has to be taken up front. Capped so a backlog drains
+  // over later sweeps instead of pausing this one.
+  let remaining = agingOperations.length - agingHead - MAX_RETAINED_OPERATIONS;
+  if (remaining > 1000) {
+    remaining = 1000;
+  }
+  while (remaining-- > 0) {
+    const node = agingOperations[agingHead];
+    agingOperations[agingHead] = null as any;
+    agingHead++;
+    // Unsettled nodes (end < 0) are never cleared. The walk stops at `<=` the
+    // origin, so requiring strictly before the cutoff is conservative.
+    if (node.end >= 0 && node.end < cutoff) {
+      (node as any).awaited = null;
+      (node as any).previous = null;
+    } else if (node.awaited !== null || node.previous !== null) {
+      // Pinned by a live request or not settled yet; reconsider later.
+      agingOperations.push(node);
+    }
+  }
+  if (agingHead > 1024 && agingHead * 2 >= agingOperations.length) {
+    agingOperations.splice(0, agingHead);
+    agingHead = 0;
+  }
+}
 
 function resolvePromiseOrAwaitNode(
   unresolvedNode: UnresolvedAwaitNode | UnresolvedPromiseNode,
@@ -225,6 +330,7 @@ function promiseSettled(node: AsyncSequence, selfResolved: boolean): void {
           awaited: resolvedNode.awaited,
           previous: resolvedNode.previous,
         };
+        trackAgingOperation(clonedNode);
         // We started awaiting on the callback when the original .then() resolved.
         resolvedNode.start = resolvedNode.end;
         // It resolved now. We could use the end time of "awaited" maybe.
@@ -281,6 +387,7 @@ export function initAsyncDebugInfo(): void {
             node = createPromiseNode(promise, getCurrentOperation());
           }
           pendingPromises.set(promise, node);
+          trackAgingOperation(node);
         },
         before(promise: Promise<any>): void {
           executingPromises.push(promise);
@@ -374,6 +481,7 @@ export function initAsyncDebugInfo(): void {
               awaited: null,
               previous: null,
             } as IONode;
+            trackAgingOperation(node);
           } else if (
             trigger.tag === AWAIT_NODE ||
             trigger.tag === UNRESOLVED_AWAIT_NODE
@@ -391,11 +499,20 @@ export function initAsyncDebugInfo(): void {
               awaited: null,
               previous: trigger,
             } as IONode;
+            trackAgingOperation(node);
           } else {
             // Otherwise, this is just a continuation of the same I/O sequence.
             node = trigger;
           }
         }
+        const previousId = lastResourceId.get(resource);
+        if (previousId !== undefined) {
+          // This resource was reused from a pool. Its previous use is done.
+          pendingOperations.delete(previousId);
+          pendingOperationsRegistry.unregister(resource);
+        }
+        lastResourceId.set(resource, asyncId);
+        pendingOperationsRegistry.register(resource, asyncId, resource);
         pendingOperations.set(asyncId, node);
       },
       before(asyncId: number): void {
@@ -424,18 +541,13 @@ export function initAsyncDebugInfo(): void {
                 awaited: ioNode.awaited,
                 previous: ioNode.previous,
               };
+              trackAgingOperation(clonedNode);
               pendingOperations.set(asyncId, clonedNode);
             }
           } else {
             beforeExecution(node);
           }
         }
-      },
-
-      destroy(asyncId: number): void {
-        // If we needed the meta data from this operation we should have already
-        // extracted it or it should be part of a chain of triggers.
-        pendingOperations.delete(asyncId);
       },
     }).enable();
   }
@@ -451,6 +563,8 @@ export function markAsyncSequenceRootTask(): void {
     } else {
       pendingOperations.delete(executionAsyncId());
     }
+    // Renders are also a good time to release expired history.
+    sweepAgingOperations();
   }
 }
 

@@ -92,6 +92,7 @@ import {
   getChildFormatContext,
   initAsyncDebugInfo,
   markAsyncSequenceRootTask,
+  markAsyncSequenceRequest,
   getCurrentAsyncSequence,
   getAsyncSequenceFromPromise,
   parseStackTrace,
@@ -807,6 +808,11 @@ function RequestInstance(
         performance.timeOrigin,
     );
     this.abortTime = -0.0;
+    if (__DEV__ && enableAsyncDebugInfo) {
+      // Let the async sequence tracking know this request may consume async
+      // debug info from here on.
+      markAsyncSequenceRequest(this as any);
+    }
   } else {
     timeOrigin = 0;
   }
@@ -902,6 +908,15 @@ export function resolveRequest(): null | Request {
     if (store) return store;
   }
   return null;
+}
+
+// A closed main stream doesn't mean the request is done: a separate debug
+// channel can stay open and keep receiving debug info.
+export function canRequestStillEmitDebugInfo(request: Request): boolean {
+  return (
+    request.debugDestination !== null ||
+    (request.status !== CLOSING && request.status !== CLOSED)
+  );
 }
 
 function isTypedArray(value: any): boolean {
