@@ -626,8 +626,7 @@ impl InferenceState {
                 && contributes_new_value(this_values, other_values)
             {
                 let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                let merged: FxHashSet<ValueId> =
-                    this_values.union(other_values).copied().collect();
+                let merged: FxHashSet<ValueId> = this_values.union(other_values).copied().collect();
                 nvars.insert(*id, Rc::new(merged));
             }
         }
