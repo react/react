@@ -13,6 +13,7 @@
 
 use indexmap::IndexMap;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use std::rc::Rc;
 
 use react_compiler_diagnostics::CompilerDiagnostic;
 use react_compiler_diagnostics::CompilerDiagnosticDetail;
@@ -379,15 +380,22 @@ impl ValueReasonSet {
 // =============================================================================
 
 /// The abstract state tracked during inference.
-/// Uses interior mutability via a struct with direct fields (no Rc needed since
-/// we always have exclusive access in the pass).
+/// The pass has exclusive access to each state (interior mutability only via
+/// the `uninitialized_access` Cell); the one shared piece is the immutable
+/// per-variable value sets (see `variables`).
 #[derive(Debug, Clone)]
 struct InferenceState {
     is_function_expression: bool,
     /// The kind of each value, based on its allocation site
     values: FxHashMap<ValueId, AbstractValue>,
-    /// The set of values pointed to by each identifier
-    variables: FxHashMap<IdentifierId, FxHashSet<ValueId>>,
+    /// The set of values pointed to by each identifier. The sets are shared via
+    /// `Rc`: every write to the map replaces the whole entry (sets are never
+    /// mutated in place), so state clones and assignments bump a refcount
+    /// instead of deep-copying each set. Shared sets iterate the very table a
+    /// deep clone would have copied; freshly built union/phi/singleton sets are
+    /// constructed by the same insert sequence as before. Either way iteration
+    /// order is unchanged.
+    variables: FxHashMap<IdentifierId, Rc<FxHashSet<ValueId>>>,
     /// Tracks uninitialized identifier access errors (matches TS invariant).
     /// Uses Cell so it can be set from `&self` methods like `kind()`.
     /// Stores (IdentifierId, usage_loc) where usage_loc is the source location
@@ -424,7 +432,7 @@ impl InferenceState {
             }
         };
         let mut merged_kind: Option<AbstractValue> = None;
-        for value_id in values {
+        for value_id in values.iter() {
             let kind = match self.values.get(value_id) {
                 Some(k) => k,
                 None => continue,
@@ -447,12 +455,12 @@ impl InferenceState {
     fn define(&mut self, place_id: IdentifierId, value_id: ValueId) {
         let mut set = FxHashSet::default();
         set.insert(value_id);
-        self.variables.insert(place_id, set);
+        self.variables.insert(place_id, Rc::new(set));
     }
 
     fn assign(&mut self, into: IdentifierId, from: IdentifierId) {
         let values = match self.variables.get(&from) {
-            Some(v) => v.clone(),
+            Some(v) => Rc::clone(v),
             None => {
                 // Create a stable value for uninitialized identifiers
                 // Use a deterministic ID based on the from identifier
@@ -468,7 +476,7 @@ impl InferenceState {
                         },
                     );
                 }
-                set
+                Rc::new(set)
             }
         };
         self.variables.insert(into, values);
@@ -476,15 +484,15 @@ impl InferenceState {
 
     fn append_alias(&mut self, place: IdentifierId, value: IdentifierId) {
         let new_values = match self.variables.get(&value) {
-            Some(v) => v.clone(),
+            Some(v) => Rc::clone(v),
             None => return,
         };
         let prev_values = match self.variables.get(&place) {
-            Some(v) => v.clone(),
+            Some(v) => Rc::clone(v),
             None => return,
         };
         let merged: FxHashSet<ValueId> = prev_values.union(&new_values).copied().collect();
-        self.variables.insert(place, merged);
+        self.variables.insert(place, Rc::new(merged));
     }
 
     fn is_defined(&self, place_id: IdentifierId) -> bool {
@@ -502,7 +510,7 @@ impl InferenceState {
     fn kind_opt(&self, place_id: IdentifierId) -> Option<AbstractValue> {
         let values = self.variables.get(&place_id)?;
         let mut merged_kind: Option<AbstractValue> = None;
-        for value_id in values {
+        for value_id in values.iter() {
             let kind = self.values.get(value_id)?;
             merged_kind = Some(match merged_kind {
                 Some(prev) => merge_abstract_values(&prev, kind),
@@ -590,7 +598,7 @@ impl InferenceState {
 
     fn merge(&self, other: &InferenceState) -> Option<InferenceState> {
         let mut next_values: Option<FxHashMap<ValueId, AbstractValue>> = None;
-        let mut next_variables: Option<FxHashMap<IdentifierId, FxHashSet<ValueId>>> = None;
+        let mut next_variables: Option<FxHashMap<IdentifierId, Rc<FxHashSet<ValueId>>>> = None;
 
         // Merge values present in both
         for (id, this_value) in &self.values {
@@ -616,7 +624,7 @@ impl InferenceState {
         for (id, this_values) in &self.variables {
             if let Some(other_values) = other.variables.get(id) {
                 let mut has_new = false;
-                for ov in other_values {
+                for ov in other_values.iter() {
                     if !this_values.contains(ov) {
                         has_new = true;
                         break;
@@ -626,7 +634,7 @@ impl InferenceState {
                     let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
                     let merged: FxHashSet<ValueId> =
                         this_values.union(other_values).copied().collect();
-                    nvars.insert(*id, merged);
+                    nvars.insert(*id, Rc::new(merged));
                 }
             }
         }
@@ -634,7 +642,7 @@ impl InferenceState {
         for (id, other_values) in &other.variables {
             if !self.variables.contains_key(id) {
                 let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                nvars.insert(*id, other_values.clone());
+                nvars.insert(*id, Rc::clone(other_values));
             }
         }
 
@@ -684,11 +692,11 @@ impl InferenceState {
                         // Build the union as a fresh set exactly like `merge`, so
                         // the resulting iteration order matches.
                         let merged = this_values.union(other_values).copied().collect();
-                        self.variables.insert(*id, merged);
+                        self.variables.insert(*id, Rc::new(merged));
                     }
                 }
                 None => {
-                    self.variables.insert(*id, other_values.clone());
+                    self.variables.insert(*id, Rc::clone(other_values));
                 }
             }
         }
@@ -706,14 +714,14 @@ impl InferenceState {
         let mut values: FxHashSet<ValueId> = FxHashSet::default();
         for (_, operand) in phi_operands {
             if let Some(operand_values) = self.variables.get(&operand.identifier) {
-                for v in operand_values {
+                for v in operand_values.iter() {
                     values.insert(*v);
                 }
             }
             // If not found, it's a backedge that will be handled later by merge
         }
         if !values.is_empty() {
-            self.variables.insert(phi_place_id, values);
+            self.variables.insert(phi_place_id, Rc::new(values));
         }
     }
 }
