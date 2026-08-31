@@ -622,20 +622,13 @@ impl InferenceState {
 
         // Merge variables present in both
         for (id, this_values) in &self.variables {
-            if let Some(other_values) = other.variables.get(id) {
-                let mut has_new = false;
-                for ov in other_values.iter() {
-                    if !this_values.contains(ov) {
-                        has_new = true;
-                        break;
-                    }
-                }
-                if has_new {
-                    let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                    let merged: FxHashSet<ValueId> =
-                        this_values.union(other_values).copied().collect();
-                    nvars.insert(*id, Rc::new(merged));
-                }
+            if let Some(other_values) = other.variables.get(id)
+                && contributes_new_value(this_values, other_values)
+            {
+                let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
+                let merged: FxHashSet<ValueId> =
+                    this_values.union(other_values).copied().collect();
+                nvars.insert(*id, Rc::new(merged));
             }
         }
         // Add variables only in other
@@ -685,10 +678,7 @@ impl InferenceState {
         for (id, other_values) in &other.variables {
             match self.variables.get(id) {
                 Some(this_values) => {
-                    if other_values
-                        .iter()
-                        .any(|value| !this_values.contains(value))
-                    {
+                    if contributes_new_value(this_values, other_values) {
                         // Build the union as a fresh set exactly like `merge`, so
                         // the resulting iteration order matches.
                         let merged = this_values.union(other_values).copied().collect();
@@ -724,6 +714,12 @@ impl InferenceState {
             self.variables.insert(phi_place_id, Rc::new(values));
         }
     }
+}
+
+/// Whether `other` holds a value that `this` lacks. The sets are immutable and
+/// shared, so an identical allocation can contribute nothing new.
+fn contributes_new_value(this: &Rc<FxHashSet<ValueId>>, other: &Rc<FxHashSet<ValueId>>) -> bool {
+    !Rc::ptr_eq(this, other) && other.iter().any(|value| !this.contains(value))
 }
 
 #[derive(Debug, Clone, Copy)]
