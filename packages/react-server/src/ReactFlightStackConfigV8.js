@@ -9,7 +9,15 @@
 
 import type {ReactStackTrace} from 'shared/ReactTypes';
 
+// The dispatch frames of Node's hook infrastructure. The same module names
+// in every currently supported Node.js version. async_hooks dispatches
+// through node:internal/promise_hooks when something else in the process
+// also registered v8.promiseHooks.
+const asyncHooksModule = 'node:internal/async_hooks';
+const promiseHooksModule = 'node:internal/promise_hooks';
+
 let framesToSkip: number = 0;
+let skipHookDispatchFrames: boolean = false;
 let collectedStackTrace: null | ReactStackTrace = null;
 
 const identifierRegExp = /^[a-zA-Z_$][0-9a-zA-Z_$]*$/;
@@ -54,9 +62,24 @@ function collectStackTracePrivate(
   structuredStackTrace: CallSite[],
 ): string {
   const result: ReactStackTrace = [];
+  let firstFrame = framesToSkip;
+  if (skipHookDispatchFrames) {
+    // Skip leading frames from the hook dispatch without collecting them.
+    while (firstFrame < structuredStackTrace.length) {
+      const scriptName =
+        structuredStackTrace[firstFrame].getScriptNameOrSourceURL();
+      if (
+        scriptName !== asyncHooksModule &&
+        scriptName !== promiseHooksModule
+      ) {
+        break;
+      }
+      firstFrame++;
+    }
+  }
   // Collect structured stack traces from the callsites.
   // We mirror how V8 serializes stack frames and how we later parse them.
-  for (let i = framesToSkip; i < structuredStackTrace.length; i++) {
+  for (let i = firstFrame; i < structuredStackTrace.length; i++) {
     const callSite = structuredStackTrace[i];
     let name = callSite.getFunctionName() || '<anonymous>';
     if (name.includes('react_stack_bottom_frame')) {
@@ -156,9 +179,11 @@ const stackTraceCache: WeakMap<Error, ReactStackTrace> = __DEV__
 export function parseStackTracePrivate(
   error: Error,
   skipFrames: number,
+  skipHookDispatch?: boolean,
 ): null | ReactStackTrace {
   collectedStackTrace = null;
   framesToSkip = skipFrames;
+  skipHookDispatchFrames = skipHookDispatch === true;
   const previousPrepare = Error.prepareStackTrace;
   Error.prepareStackTrace = collectStackTracePrivate;
   try {
@@ -187,6 +212,7 @@ export function parseStackTrace(
   // and we need to ensure that we don't get the source mapped version.
   collectedStackTrace = null;
   framesToSkip = skipFrames;
+  skipHookDispatchFrames = false;
   const previousPrepare = Error.prepareStackTrace;
   Error.prepareStackTrace = collectStackTrace;
   let stack;
