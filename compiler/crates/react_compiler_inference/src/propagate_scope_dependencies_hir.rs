@@ -15,6 +15,7 @@
 use indexmap::IndexMap;
 use oxc_index::IndexVec;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use std::collections::BTreeSet;
 
 use react_compiler_hir::environment::Environment;
@@ -800,6 +801,46 @@ struct PropertyPathRegistry {
     roots: FxHashMap<IdentifierId, usize>,
 }
 
+type PropertyPathSet = SmallVec<[usize; 8]>;
+
+#[inline]
+fn insert_property_path(paths: &mut PropertyPathSet, path: usize) {
+    if let Err(index) = paths.binary_search(&path) {
+        paths.insert(index, path);
+    }
+}
+
+#[inline]
+fn remove_property_path(paths: &mut PropertyPathSet, path: usize) {
+    if let Ok(index) = paths.binary_search(&path) {
+        paths.remove(index);
+    }
+}
+
+fn union_property_paths(
+    paths: &mut PropertyPathSet,
+    original_paths: &[usize],
+    propagated_paths: &[usize],
+) {
+    paths.clear();
+    paths.reserve(original_paths.len() + propagated_paths.len());
+
+    let mut original = original_paths.iter().copied().peekable();
+    let mut propagated = propagated_paths.iter().copied().peekable();
+    while let (Some(&original_path), Some(&propagated_path)) = (original.peek(), propagated.peek())
+    {
+        paths.push(original_path.min(propagated_path));
+        if original_path <= propagated_path {
+            original.next();
+        }
+        if propagated_path <= original_path {
+            propagated.next();
+        }
+    }
+    paths.extend(original);
+    paths.extend(propagated);
+}
+
 impl PropertyPathRegistry {
     fn new() -> Self {
         Self {
@@ -897,9 +938,9 @@ impl PropertyPathRegistry {
 /// `<base>.PROPERTY`.
 ///
 /// Port of `reduceMaybeOptionalChains` from CollectHoistablePropertyLoads.ts.
-fn reduce_maybe_optional_chains(nodes: &mut BTreeSet<usize>, registry: &mut PropertyPathRegistry) {
+fn reduce_maybe_optional_chains(nodes: &mut PropertyPathSet, registry: &mut PropertyPathRegistry) {
     // Collect indices of nodes that have optional in their path
-    let mut optional_chain_nodes: BTreeSet<usize> = nodes
+    let mut optional_chain_nodes: PropertyPathSet = nodes
         .iter()
         .copied()
         .filter(|&idx| registry.nodes[idx].has_optional)
@@ -913,7 +954,7 @@ fn reduce_maybe_optional_chains(nodes: &mut BTreeSet<usize>, registry: &mut Prop
         let mut changed = false;
 
         // Collect the indices to process (snapshot to avoid borrow issues)
-        let to_process: Vec<usize> = optional_chain_nodes.iter().copied().collect();
+        let to_process = optional_chain_nodes.clone();
 
         for original_idx in to_process {
             let full_path = registry.nodes[original_idx].full_path.clone();
@@ -926,7 +967,7 @@ fn reduce_maybe_optional_chains(nodes: &mut BTreeSet<usize>, registry: &mut Prop
 
             for entry in &full_path.path {
                 // If the base is known to be non-null (in the set), replace optional with non-optional
-                let next_entry = if entry.optional && nodes.contains(&curr_node) {
+                let next_entry = if entry.optional && nodes.binary_search(&curr_node).is_ok() {
                     DependencyPathEntry {
                         property: entry.property.clone(),
                         optional: false,
@@ -940,10 +981,10 @@ fn reduce_maybe_optional_chains(nodes: &mut BTreeSet<usize>, registry: &mut Prop
 
             if curr_node != original_idx {
                 changed = true;
-                optional_chain_nodes.remove(&original_idx);
-                optional_chain_nodes.insert(curr_node);
-                nodes.remove(&original_idx);
-                nodes.insert(curr_node);
+                remove_property_path(&mut optional_chain_nodes, original_idx);
+                insert_property_path(&mut optional_chain_nodes, curr_node);
+                remove_property_path(nodes, original_idx);
+                insert_property_path(nodes, curr_node);
             }
         }
 
@@ -955,7 +996,7 @@ fn reduce_maybe_optional_chains(nodes: &mut BTreeSet<usize>, registry: &mut Prop
 
 #[derive(Debug, Clone)]
 struct BlockInfo {
-    assumed_non_null_objects: BTreeSet<usize>, // indices into PropertyPathRegistry
+    assumed_non_null_objects: PropertyPathSet, // indices into PropertyPathRegistry
 }
 
 #[allow(dead_code)]
@@ -1221,11 +1262,11 @@ fn collect_non_nulls_in_blocks(
     registry: &mut PropertyPathRegistry,
 ) -> FxHashMap<BlockId, BlockInfo> {
     // Known non-null identifiers (e.g. component props)
-    let mut known_non_null: BTreeSet<usize> = BTreeSet::new();
+    let mut known_non_null = PropertyPathSet::default();
     if func.fn_type == ReactFunctionType::Component && !func.params.is_empty() {
         if let ParamPattern::Place(place) = &func.params[0] {
             let node_idx = registry.get_or_create_identifier(place.identifier, true, place.loc);
-            known_non_null.insert(node_idx);
+            insert_property_path(&mut known_non_null, node_idx);
         }
     }
 
@@ -1237,7 +1278,7 @@ fn collect_non_nulls_in_blocks(
         // Check hoistable from optionals
         if let Some(optional_chain) = ctx.hoistable_from_optionals.get(block_id) {
             let node_idx = registry.get_or_create_property(optional_chain);
-            assumed.insert(node_idx);
+            insert_property_path(&mut assumed, node_idx);
         }
 
         for &instr_id in &block.instructions {
@@ -1246,7 +1287,7 @@ fn collect_non_nulls_in_blocks(
                 let path_ident = path.identifier;
                 if is_immutable_at_instr(path_ident, instr.id, env, ctx) {
                     let node_idx = registry.get_or_create_property(&path);
-                    assumed.insert(node_idx);
+                    insert_property_path(&mut assumed, node_idx);
                 }
             }
 
@@ -1276,7 +1317,7 @@ fn collect_non_nulls_in_blocks(
                                     loc: dep.loc,
                                 };
                                 let node_idx = registry.get_or_create_property(&sub_dep);
-                                assumed.insert(node_idx);
+                                insert_property_path(&mut assumed, node_idx);
                             }
                         }
                     }
@@ -1318,7 +1359,7 @@ fn collect_non_nulls_in_blocks(
                     let inner_entry = inner_func.body.entry;
                     if let Some(inner_set) = inner_working.get(&inner_entry) {
                         for &node_idx in inner_set {
-                            assumed.insert(node_idx);
+                            insert_property_path(&mut assumed, node_idx);
                         }
                     }
                 }
@@ -1347,7 +1388,7 @@ fn propagate_non_null(
     func: &HirFunction,
     nodes: &FxHashMap<BlockId, BlockInfo>,
     registry: &mut PropertyPathRegistry,
-) -> FxHashMap<BlockId, BTreeSet<usize>> {
+) -> FxHashMap<BlockId, PropertyPathSet> {
     // Build successor map. Use BTreeSet to iterate successors in sorted BlockId
     // order, matching the TS Set<BlockId> insertion order (blocks are created in
     // ascending BlockId order).
@@ -1359,7 +1400,7 @@ fn propagate_non_null(
     }
 
     // Clone nodes into mutable working set
-    let mut working: FxHashMap<BlockId, BTreeSet<usize>> = nodes
+    let mut working: FxHashMap<BlockId, PropertyPathSet> = nodes
         .iter()
         .map(|(k, v)| (*k, v.assumed_non_null_objects.clone()))
         .collect();
@@ -1368,37 +1409,41 @@ fn propagate_non_null(
     let mut reversed_block_ids = block_ids.clone();
     reversed_block_ids.reverse();
 
+    let mut state = NonNullPropagationState {
+        traversal_state: FxHashMap::default(),
+        neighbor_intersection: PropertyPathSet::default(),
+        previous_objects: PropertyPathSet::default(),
+    };
+
     for _ in 0..100 {
         let mut changed = false;
 
         // Forward pass (using predecessors)
-        let mut traversal_state: FxHashMap<BlockId, TraversalState> = FxHashMap::default();
+        state.traversal_state.clear();
         for &block_id in &block_ids {
-            let block_changed = recursively_propagate_non_null(
+            changed |= recursively_propagate_non_null(
                 block_id,
                 PropagationDirection::Forward,
-                &mut traversal_state,
+                &mut state,
                 &mut working,
                 func,
                 &block_successors,
                 registry,
             );
-            changed |= block_changed;
         }
 
         // Backward pass (using successors)
-        traversal_state.clear();
+        state.traversal_state.clear();
         for &block_id in &reversed_block_ids {
-            let block_changed = recursively_propagate_non_null(
+            changed |= recursively_propagate_non_null(
                 block_id,
                 PropagationDirection::Backward,
-                &mut traversal_state,
+                &mut state,
                 &mut working,
                 func,
                 &block_successors,
                 registry,
             );
-            changed |= block_changed;
         }
 
         if !changed {
@@ -1421,20 +1466,28 @@ enum PropagationDirection {
     Backward,
 }
 
+struct NonNullPropagationState {
+    traversal_state: FxHashMap<BlockId, TraversalState>,
+    neighbor_intersection: PropertyPathSet,
+    previous_objects: PropertyPathSet,
+}
+
 fn recursively_propagate_non_null(
     node_id: BlockId,
     direction: PropagationDirection,
-    traversal_state: &mut FxHashMap<BlockId, TraversalState>,
-    working: &mut FxHashMap<BlockId, BTreeSet<usize>>,
+    state: &mut NonNullPropagationState,
+    working: &mut FxHashMap<BlockId, PropertyPathSet>,
     func: &HirFunction,
     block_successors: &FxHashMap<BlockId, BTreeSet<BlockId>>,
     registry: &mut PropertyPathRegistry,
 ) -> bool {
     // Avoid re-visiting computed or currently active nodes
-    if traversal_state.contains_key(&node_id) {
+    if state.traversal_state.contains_key(&node_id) {
         return false;
     }
-    traversal_state.insert(node_id, TraversalState::Active);
+    state
+        .traversal_state
+        .insert(node_id, TraversalState::Active);
 
     let neighbors: Vec<BlockId> = match direction {
         PropagationDirection::Backward => block_successors
@@ -1451,50 +1504,57 @@ fn recursively_propagate_non_null(
 
     let mut changed = false;
     for &neighbor in &neighbors {
-        if !traversal_state.contains_key(&neighbor) {
-            let neighbor_changed = recursively_propagate_non_null(
+        if !state.traversal_state.contains_key(&neighbor) {
+            changed |= recursively_propagate_non_null(
                 neighbor,
                 direction,
-                traversal_state,
+                state,
                 working,
                 func,
                 block_successors,
                 registry,
             );
-            changed |= neighbor_changed;
         }
     }
 
     // Compute intersection of 'done' neighbors only (filter out 'active' = cycle nodes)
-    let neighbor_intersection = {
-        let done_neighbor_sets: Vec<&BTreeSet<usize>> = neighbors
-            .iter()
-            .filter(|n| traversal_state.get(n) == Some(&TraversalState::Done))
-            .filter_map(|n| working.get(n))
-            .collect();
-
-        match done_neighbor_sets.split_first() {
-            None => BTreeSet::new(),
-            Some((first, rest)) => rest.iter().fold((*first).clone(), |acc, s| {
-                acc.intersection(s).copied().collect()
-            }),
+    // Compute the intersection of 'done' neighbors only (filter out 'active' cycle nodes),
+    // reusing one scratch set for every block in the traversal.
+    state.neighbor_intersection.clear();
+    let mut has_done_neighbor = false;
+    for neighbor in &neighbors {
+        if state.traversal_state.get(neighbor) != Some(&TraversalState::Done) {
+            continue;
         }
-    };
+        let Some(neighbor_objects) = working.get(neighbor) else {
+            continue;
+        };
+        if has_done_neighbor {
+            state
+                .neighbor_intersection
+                .retain(|path| neighbor_objects.binary_search(path).is_ok());
+        } else {
+            state.neighbor_intersection.clone_from(neighbor_objects);
+            has_done_neighbor = true;
+        }
+    }
 
-    // Temporarily remove the previous set out of the map so it can be safely
-    // borrowed and compared without a heavy deep clone.
-    let prev_objects = working.remove(&node_id).unwrap_or_default();
-    let mut merged: BTreeSet<usize> = prev_objects
-        .union(&neighbor_intersection)
-        .copied()
-        .collect();
-    reduce_maybe_optional_chains(&mut merged, registry);
+    let objects = working
+        .get_mut(&node_id)
+        .expect("missing non-null propagation block");
+    state.previous_objects.clone_from(objects);
+    if has_done_neighbor {
+        union_property_paths(
+            objects,
+            &state.previous_objects,
+            &state.neighbor_intersection,
+        );
+    }
+    reduce_maybe_optional_chains(objects, registry);
 
-    // Compare with previous value — can't just check size due to reduce_maybe_optional_chains
-    changed |= prev_objects != merged;
+    state.traversal_state.insert(node_id, TraversalState::Done);
 
-    working.insert(node_id, merged);
-    traversal_state.insert(node_id, TraversalState::Done);
+    changed |= state.previous_objects != *objects;
 
     changed
 }
@@ -1504,7 +1564,7 @@ fn collect_hoistable_and_propagate(
     env: &Environment,
     temporaries: &TemporariesMap,
     hoistable_from_optionals: &FxHashMap<BlockId, ReactiveScopeDependency>,
-) -> (FxHashMap<BlockId, BTreeSet<usize>>, PropertyPathRegistry) {
+) -> (FxHashMap<BlockId, PropertyPathSet>, PropertyPathRegistry) {
     let mut registry = PropertyPathRegistry::new();
     let assumed_invoked_fns = get_assumed_invoked_functions(func, env);
     let known_immutable_identifiers: FxHashSet<IdentifierId> = if func.fn_type

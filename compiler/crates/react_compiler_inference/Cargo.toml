@@ -13,3 +13,4 @@ react_compiler_utils = { path = "../react_compiler_utils" }
 indexmap = "2"
 oxc_index = "5.0.0"
 rustc-hash = "2"
+smallvec = "1"
