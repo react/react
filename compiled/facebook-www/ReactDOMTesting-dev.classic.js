@@ -27324,9 +27324,11 @@ __DEV__ &&
       return !1;
     }
     function getAttachOptions(opts) {
-      return null == opts || "boolean" === typeof opts || !0 !== opts.once
-        ? opts
-        : { capture: opts.capture, passive: opts.passive, signal: opts.signal };
+      return null != opts &&
+        "boolean" !== typeof opts &&
+        (!0 === opts.once || opts.signal instanceof AbortSignal)
+        ? { capture: opts.capture, passive: opts.passive }
+        : opts;
     }
     function normalizeListenerOptions(opts) {
       return null == opts
@@ -33368,6 +33370,15 @@ __DEV__ &&
       listener,
       optionsOrUseCapture
     ) {
+      var signal = null,
+        cleanup = null;
+      if (
+        null != optionsOrUseCapture &&
+        "boolean" !== typeof optionsOrUseCapture &&
+        ((signal = optionsOrUseCapture.signal || null),
+        null !== signal && signal.aborted)
+      )
+        return;
       null === this._eventListeners && (this._eventListeners = []);
       var listeners = this._eventListeners;
       if (
@@ -33389,19 +33400,33 @@ __DEV__ &&
               ? listener.call(this, event)
               : listener.handleEvent(event);
           });
-        var attachOptions = getAttachOptions(optionsOrUseCapture);
+        null !== signal &&
+          ((cleanup = fragmentInstance.removeEventListener.bind(
+            fragmentInstance,
+            type,
+            listener,
+            optionsOrUseCapture
+          )),
+          signal.addEventListener("abort", cleanup, { once: !0 }),
+          (cleanup = signal.removeEventListener.bind(
+            signal,
+            "abort",
+            cleanup
+          )));
+        signal = getAttachOptions(optionsOrUseCapture);
         listeners.push({
           type: type,
           listener: listener,
           optionsOrUseCapture: optionsOrUseCapture,
-          attachedListener: attachedListener
+          attachedListener: attachedListener,
+          cleanup: cleanup
         });
         traverseFragmentInstancesAndTextInstances(
           this._fragmentFiber,
           addEventListenerToChild,
           type,
           attachedListener,
-          attachOptions
+          signal
         );
       }
       this._eventListeners = listeners;
@@ -33424,6 +33449,7 @@ __DEV__ &&
       ) {
         var _listeners$index = listeners[listener];
         optionsOrUseCapture = _listeners$index.attachedListener;
+        var cleanup = _listeners$index.cleanup;
         _listeners$index = getAttachOptions(
           _listeners$index.optionsOrUseCapture
         );
@@ -33435,6 +33461,7 @@ __DEV__ &&
           _listeners$index
         );
         listeners.splice(listener, 1);
+        null !== cleanup && cleanup();
       }
     };
     FragmentInstance.prototype.dispatchEvent = function (event) {
@@ -34053,11 +34080,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-classic-065bc84e-20260831" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-classic-21c89c9f-20260901" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-classic-065bc84e-20260831\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-classic-21c89c9f-20260901\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -34100,10 +34127,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-classic-065bc84e-20260831",
+          version: "19.3.0-www-classic-21c89c9f-20260901",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-classic-065bc84e-20260831"
+          reconcilerVersion: "19.3.0-www-classic-21c89c9f-20260901"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34894,5 +34921,5 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-classic-065bc84e-20260831";
+    exports.version = "19.3.0-www-classic-21c89c9f-20260901";
   })();
