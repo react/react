@@ -1860,9 +1860,6 @@ function subscribeToStore<T>(
   inst: StoreInstance<T>,
   subscribe: (() => void) => () => void,
 ): any {
-  // Track whether this subscription has been torn down to prevent
-  // stale closure issues where handleStoreChange fires after the
-  // component has unmounted but before the unsubscribe cleanup runs.
   let isSubscribed = true;
   const handleStoreChange = () => {
     if (!isSubscribed) {
@@ -1880,9 +1877,7 @@ function subscribeToStore<T>(
   const unsubscribe = subscribe(handleStoreChange);
   return () => {
     isSubscribed = false;
-    if (typeof unsubscribe === 'function') {
-      unsubscribe();
-    }
+    unsubscribe();
   };
 }
 
