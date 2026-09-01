@@ -152,7 +152,6 @@ pub fn infer_mutation_aliasing_effects(
     let non_mutating_spreads = find_non_mutated_destructure_spreads(func, env);
 
     let mut context = Context {
-        interned_effects: FxHashMap::default(),
         instruction_signature_cache: FxHashMap::default(),
         catch_handlers: FxHashMap::default(),
         is_function_expression,
@@ -661,7 +660,6 @@ enum MutationResult {
 // =============================================================================
 
 struct Context {
-    interned_effects: FxHashMap<EffectKey, AliasingEffect>,
     /// `Rc` lets `apply_signature` retain the signature while mutably borrowing
     /// the context without cloning the complete effect list on every visit.
     instruction_signature_cache: FxHashMap<u32, Rc<InstructionSignature>>,
@@ -684,11 +682,6 @@ struct Context {
 }
 
 impl Context {
-    fn intern_effect(&mut self, effect: AliasingEffect) -> AliasingEffect {
-        let key = effect_key(&effect);
-        self.interned_effects.entry(key).or_insert(effect).clone()
-    }
-
     /// Get or create a stable ValueId for a given effect, ensuring fixpoint convergence.
     fn get_or_create_value_id(&mut self, effect: &AliasingEffect) -> ValueId {
         let key = effect_key(effect);
@@ -707,8 +700,11 @@ struct InstructionSignature {
 // Helper: effect_key
 // =============================================================================
 
-/// Uses exactly the fields from the previous string identity. Other fields are
-/// intentionally ignored, while error-carrying variants still clone messages.
+/// Stable identity key for an `AliasingEffect`. Exactly the same fields participate
+/// as in the string key this replaces — everything else (`Apply`'s
+/// `signature`/`loc`, `Mutate`'s `reason`, `Impure`'s `error`) is ignored — but
+/// building and hashing the key no longer runs the formatting machinery and keeps
+/// the variable-length fields inline for typical effects.
 #[derive(PartialEq, Eq, Hash)]
 enum EffectKey {
     Apply {
@@ -1260,12 +1256,10 @@ fn infer_block(
                                 );
                                 let kind = state.kind(instr.lvalue.identifier).kind;
                                 if kind == ValueKind::Mutable || kind == ValueKind::Context {
-                                    terminal_effects.push(context.intern_effect(
-                                        AliasingEffect::Alias {
-                                            from: instr.lvalue.clone(),
-                                            into: handler_param.clone(),
-                                        },
-                                    ));
+                                    terminal_effects.push(AliasingEffect::Alias {
+                                        from: instr.lvalue.clone(),
+                                        into: handler_param.clone(),
+                                    });
                                 }
                             }
                             _ => {}
@@ -1295,10 +1289,10 @@ fn infer_block(
                     ..
                 } = block_mut.terminal
                 {
-                    *term_effects = Some(vec![context.intern_effect(AliasingEffect::Freeze {
+                    *term_effects = Some(vec![AliasingEffect::Freeze {
                         value: value.clone(),
                         reason: ValueReason::JsxCaptured,
-                    })]);
+                    }]);
                 }
             }
         }
@@ -1389,14 +1383,13 @@ fn apply_signature(
     let mut initialized: FxHashSet<IdentifierId> = FxHashSet::default();
 
     // Get the cached signature effects
-    let sig = context.instruction_signature_cache.get(&instr_idx).unwrap();
-    let sig_effects: Vec<AliasingEffect> = sig.effects.clone();
+    let sig = Rc::clone(context.instruction_signature_cache.get(&instr_idx).unwrap());
 
-    for effect in &sig_effects {
-        apply_effect(
+    for effect in &sig.effects {
+        apply_effect_ref(
             context,
             state,
-            effect.clone(),
+            effect,
             &mut initialized,
             &mut effects,
             env,
@@ -1484,10 +1477,21 @@ fn apply_effect(
     env: &mut Environment,
     func: &HirFunction,
 ) -> Result<(), CompilerDiagnostic> {
-    let effect = context.intern_effect(effect);
+    apply_effect_ref(context, state, &effect, initialized, effects, env, func)
+}
+
+fn apply_effect_ref(
+    context: &mut Context,
+    state: &mut InferenceState,
+    effect: &AliasingEffect,
+    initialized: &mut FxHashSet<IdentifierId>,
+    effects: &mut Vec<AliasingEffect>,
+    env: &mut Environment,
+    func: &HirFunction,
+) -> Result<(), CompilerDiagnostic> {
     match effect {
-        AliasingEffect::Freeze { ref value, reason } => {
-            let did_freeze = state.freeze(value.identifier, reason);
+        AliasingEffect::Freeze { value, reason } => {
+            let did_freeze = state.freeze(value.identifier, *reason);
             if did_freeze {
                 effects.push(effect.clone());
                 // Transitively freeze FunctionExpression captures if enabled
@@ -1501,13 +1505,13 @@ fn apply_effect(
                     // closure through arbitrarily nested function captures.
                     let value_ids: Vec<ValueId> = state.values_for(value.identifier);
                     for vid in &value_ids {
-                        freeze_function_captures_transitive(state, context, env, *vid, reason);
+                        freeze_function_captures_transitive(state, context, env, *vid, *reason);
                     }
                 }
             }
         }
         AliasingEffect::Create {
-            ref into,
+            into,
             value: kind,
             reason,
         } => {
@@ -1520,14 +1524,14 @@ fn apply_effect(
             state.initialize(
                 value_id,
                 AbstractValue {
-                    kind,
-                    reason: ValueReasonSet::single(reason),
+                    kind: *kind,
+                    reason: ValueReasonSet::single(*reason),
                 },
             );
             state.define(into.identifier, value_id);
             effects.push(effect.clone());
         }
-        AliasingEffect::ImmutableCapture { ref from, .. } => {
+        AliasingEffect::ImmutableCapture { from, .. } => {
             let kind = state.kind(from.identifier).kind;
             match kind {
                 ValueKind::Global | ValueKind::Primitive => {
@@ -1538,7 +1542,7 @@ fn apply_effect(
                 }
             }
         }
-        AliasingEffect::CreateFrom { ref from, ref into } => {
+        AliasingEffect::CreateFrom { from, into } => {
             assert!(
                 !initialized.contains(&into.identifier),
                 "[InferMutationAliasingEffects] Cannot re-initialize variable within an instruction"
@@ -1589,9 +1593,9 @@ fn apply_effect(
             }
         }
         AliasingEffect::CreateFunction {
-            ref captures,
+            captures,
             function_id,
-            ref into,
+            into,
         } => {
             assert!(
                 !initialized.contains(&into.identifier),
@@ -1658,7 +1662,7 @@ fn apply_effect(
 
             let value_id = context.get_or_create_value_id(&effect);
             // Track this value as a function expression so Apply can look it up
-            context.function_values.insert(value_id, function_id);
+            context.function_values.insert(value_id, *function_id);
             state.initialize(
                 value_id,
                 AbstractValue {
@@ -1687,9 +1691,9 @@ fn apply_effect(
                 )?;
             }
         }
-        AliasingEffect::MaybeAlias { ref from, ref into }
-        | AliasingEffect::Alias { ref from, ref into }
-        | AliasingEffect::Capture { ref from, ref into } => {
+        AliasingEffect::MaybeAlias { from, into }
+        | AliasingEffect::Alias { from, into }
+        | AliasingEffect::Capture { from, into } => {
             let is_capture = matches!(effect, AliasingEffect::Capture { .. });
             let is_maybe_alias = matches!(effect, AliasingEffect::MaybeAlias { .. });
             // For Alias, destination must already be initialized (Capture/MaybeAlias are exempt)
@@ -1748,7 +1752,7 @@ fn apply_effect(
                 )?;
             }
         }
-        AliasingEffect::Assign { ref from, ref into } => {
+        AliasingEffect::Assign { from, into } => {
             assert!(
                 !initialized.contains(&into.identifier),
                 "[InferMutationAliasingEffects] Cannot re-initialize variable within an instruction"
@@ -1811,13 +1815,13 @@ fn apply_effect(
             }
         }
         AliasingEffect::Apply {
-            ref receiver,
-            ref function,
+            receiver,
+            function,
             mutates_function,
-            ref args,
-            ref into,
-            ref signature,
-            ref loc,
+            args,
+            into,
+            signature,
+            loc,
         } => {
             // First, check if the callee is a locally-declared function expression
             // whose aliasing effects we already know (TS lines 1016-1068)
@@ -2036,7 +2040,7 @@ fn apply_effect(
                 }
             }
         }
-        ref eff @ (AliasingEffect::Mutate { .. }
+        eff @ (AliasingEffect::Mutate { .. }
         | AliasingEffect::MutateConditionally { .. }
         | AliasingEffect::MutateTransitive { .. }
         | AliasingEffect::MutateTransitiveConditionally { .. }) => {
