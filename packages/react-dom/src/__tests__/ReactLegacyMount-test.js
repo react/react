@@ -36,7 +36,7 @@ describe('ReactMount', () => {
       const nodeArray = document.getElementsByTagName('div');
       expect(() => {
         ReactDOM.unmountComponentAtNode(nodeArray);
-      }).toThrowError('Target container is not a DOM element.');
+      }).toThrow('Target container is not a DOM element.');
     });
 
     // @gate !disableLegacyMode

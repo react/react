@@ -180,6 +180,7 @@ const inScopeTags = [
   'th',
   'marquee',
   'object',
+  'select',
   'template',
 
   // https://html.spec.whatwg.org/multipage/syntax.html#html-integration-point
@@ -306,22 +307,6 @@ function isTagValidWithParent(
 ): boolean {
   // First, let's check if we're in an unusual parsing mode...
   switch (parentTag) {
-    // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inselect
-    case 'select':
-      return (
-        tag === 'hr' ||
-        tag === 'option' ||
-        tag === 'optgroup' ||
-        tag === 'script' ||
-        tag === 'template' ||
-        tag === '#text'
-      );
-    case 'optgroup':
-      return tag === 'option' || tag === '#text';
-    // Strictly speaking, seeing an <option> doesn't mean we're in a <select>
-    // but
-    case 'option':
-      return tag === '#text';
     // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-intd
     // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-incaption
     // No special behavior since these rules fall back to "in body" mode for
@@ -424,6 +409,9 @@ function isTagValidWithParent(
     case 'caption':
     case 'col':
     case 'colgroup':
+    case 'input':
+      // <input> causes open <select> tags to close.
+      return parentTag !== 'select';
     case 'frameset':
     case 'frame':
     case 'tbody':
