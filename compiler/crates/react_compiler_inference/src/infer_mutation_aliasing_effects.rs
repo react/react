@@ -69,7 +69,7 @@ pub fn infer_mutation_aliasing_effects(
             value_id,
             AbstractValue {
                 kind: ValueKind::Context,
-                reason: ValueReasonSet::single(ValueReason::Other),
+                reason: ReasonSet::single(ValueReason::Other),
             },
         );
         initial_state.define(ctx_place.identifier, value_id);
@@ -78,12 +78,12 @@ pub fn infer_mutation_aliasing_effects(
     let param_kind: AbstractValue = if is_function_expression {
         AbstractValue {
             kind: ValueKind::Mutable,
-            reason: ValueReasonSet::single(ValueReason::Other),
+            reason: ReasonSet::single(ValueReason::Other),
         }
     } else {
         AbstractValue {
             kind: ValueKind::Frozen,
-            reason: ValueReasonSet::single(ValueReason::ReactiveFunctionArgument),
+            reason: ReasonSet::single(ValueReason::ReactiveFunctionArgument),
         }
     };
 
@@ -103,7 +103,7 @@ pub fn infer_mutation_aliasing_effects(
                 value_id,
                 AbstractValue {
                     kind: ValueKind::Mutable,
-                    reason: ValueReasonSet::single(ValueReason::Other),
+                    reason: ReasonSet::single(ValueReason::Other),
                 },
             );
             initial_state.define(ref_place.identifier, value_id);
@@ -261,84 +261,59 @@ impl ValueId {
 #[derive(Debug, Clone, Copy)]
 struct AbstractValue {
     kind: ValueKind,
-    reason: ValueReasonSet,
+    reason: ReasonSet,
 }
 
-/// Capacity of [`ValueReasonSet`]. A set holds at most one of each `ValueReason`
-/// variant, of which there are currently 12; the extra slots are headroom so
-/// that adding variants upstream cannot overflow the set.
-const VALUE_REASON_CAPACITY: usize = 16;
-
-/// An insertion-ordered set of [`ValueReason`]s, stored inline.
+/// A set of [`ValueReason`]s stored as a bitmask.
 ///
-/// This is a deliberate replacement for `IndexSet`, enabling insertion-order
-/// memory while avoiding any heap allocation. At `AbstractValue`'s scale, this
-/// has a dramatic impact on heap memory and wall time.
-/// This takes advantage of the format of the data it's actually storing. A set
-/// can hold at most one of each variant, so the members fit into a fixed inline
-/// array. `ValueReason` is implemented as a single byte, so this struct is
-/// ~18 bytes on the stack.
-///
-/// Insertion order is preserved deliberately: [`primary_reason`] returns the
-/// first non-`Other` member, matching the iteration order of the `Set` used by
-/// the TypeScript implementation this is ported from.
-#[derive(Debug, Clone, Copy)]
-struct ValueReasonSet {
-    /// Members in insertion order. Only the first `len` entries are meaningful.
-    members: [ValueReason; VALUE_REASON_CAPACITY],
-    len: u8,
-}
+/// `AbstractValue`s are copied constantly during the inference fixpoint — once per
+/// entry on every `InferenceState` clone — so `reason` must be cheap to copy. There
+/// are only 12 `ValueReason` variants, so the set fits in a `u16` bitmask: it is
+/// `Copy` (no per-clone allocation or memcpy), and membership/union/superset are
+/// single bitwise ops. [`Self::iter`] yields reasons in `ValueReason` declaration
+/// order, which is the order [`primary_reason`] consumes.
+#[derive(Debug, Clone, Copy, Default)]
+struct ReasonSet(u16);
 
-impl Default for ValueReasonSet {
-    fn default() -> Self {
-        ValueReasonSet {
-            members: [ValueReason::Other; VALUE_REASON_CAPACITY],
-            len: 0,
-        }
+const _: () = assert!((ValueReason::Other as u32) < u16::BITS);
+
+impl ReasonSet {
+    /// All variants in declaration order; index matches the bit position.
+    const ALL: [ValueReason; 12] = [
+        ValueReason::KnownReturnSignature,
+        ValueReason::State,
+        ValueReason::ReducerState,
+        ValueReason::Context,
+        ValueReason::Effect,
+        ValueReason::HookCaptured,
+        ValueReason::HookReturn,
+        ValueReason::Global,
+        ValueReason::JsxCaptured,
+        ValueReason::StoreLocal,
+        ValueReason::ReactiveFunctionArgument,
+        ValueReason::Other,
+    ];
+
+    fn bit(reason: ValueReason) -> u16 {
+        1 << (reason as u16)
     }
-}
 
-impl ValueReasonSet {
     fn single(reason: ValueReason) -> Self {
-        let mut set = Self::default();
-        set.insert(reason);
-        set
+        Self(Self::bit(reason))
     }
 
     fn contains(&self, reason: ValueReason) -> bool {
-        self.members[..self.len as usize].contains(&reason)
+        self.0 & Self::bit(reason) != 0
     }
 
     fn iter(&self) -> impl Iterator<Item = ValueReason> + '_ {
-        self.members[..self.len as usize].iter().copied()
+        Self::ALL
+            .into_iter()
+            .filter(move |&reason| self.0 & Self::bit(reason) != 0)
     }
 
-    /// Appends `reason` if not already present, preserving insertion order.
-    fn insert(&mut self, reason: ValueReason) {
-        if self.contains(reason) {
-            return;
-        }
-        debug_assert!(
-            (self.len as usize) < VALUE_REASON_CAPACITY,
-            "ValueReasonSet capacity must cover every ValueReason variant"
-        );
-        if (self.len as usize) < VALUE_REASON_CAPACITY {
-            self.members[self.len as usize] = reason;
-            self.len += 1;
-        }
-    }
-
-    /// True when every member of `other` is also a member of `self`.
-    fn is_superset_of(&self, other: &ValueReasonSet) -> bool {
-        other.iter().all(|reason| self.contains(reason))
-    }
-
-    /// Adds every member of `other`, keeping `self`'s existing order and
-    /// appending newcomers in `other`'s order — matching `IndexSet::insert`.
-    fn union_with(&mut self, other: &ValueReasonSet) {
-        for reason in other.iter() {
-            self.insert(reason);
-        }
+    fn is_superset_of(&self, other: &ReasonSet) -> bool {
+        self.0 & other.0 == other.0
     }
 }
 
@@ -387,7 +362,7 @@ impl InferenceState {
                 }
                 return AbstractValue {
                     kind: ValueKind::Mutable,
-                    reason: ValueReasonSet::single(ValueReason::Other),
+                    reason: ReasonSet::single(ValueReason::Other),
                 };
             }
         };
@@ -399,12 +374,12 @@ impl InferenceState {
             };
             merged_kind = Some(match merged_kind {
                 Some(prev) => merge_abstract_values(&prev, kind),
-                None => kind.clone(),
+                None => *kind,
             });
         }
         merged_kind.unwrap_or_else(|| AbstractValue {
             kind: ValueKind::Mutable,
-            reason: ValueReasonSet::single(ValueReason::Other),
+            reason: ReasonSet::single(ValueReason::Other),
         })
     }
 
@@ -432,7 +407,7 @@ impl InferenceState {
                         vid,
                         AbstractValue {
                             kind: ValueKind::Mutable,
-                            reason: ValueReasonSet::single(ValueReason::Other),
+                            reason: ReasonSet::single(ValueReason::Other),
                         },
                     );
                 }
@@ -474,7 +449,7 @@ impl InferenceState {
             let kind = self.values.get(value_id)?;
             merged_kind = Some(match merged_kind {
                 Some(prev) => merge_abstract_values(&prev, kind),
-                None => kind.clone(),
+                None => *kind,
             });
         }
         merged_kind
@@ -510,7 +485,7 @@ impl InferenceState {
             value_id,
             AbstractValue {
                 kind: ValueKind::Frozen,
-                reason: ValueReasonSet::single(reason),
+                reason: ReasonSet::single(reason),
             },
         );
         // Note: In TS, this also transitively freezes FunctionExpression captures
@@ -576,7 +551,7 @@ impl InferenceState {
         for (id, other_value) in &other.values {
             if !self.values.contains_key(id) {
                 let nv = next_values.get_or_insert_with(|| self.values.clone());
-                nv.insert(*id, other_value.clone());
+                nv.insert(*id, *other_value);
             }
         }
 
@@ -804,10 +779,9 @@ fn hash_effect(effect: &AliasingEffect) -> String {
 fn merge_abstract_values(a: &AbstractValue, b: &AbstractValue) -> AbstractValue {
     let kind = merge_value_kinds(a.kind, b.kind);
     if kind == a.kind && kind == b.kind && a.reason.is_superset_of(&b.reason) {
-        return a.clone();
+        return *a;
     }
-    let mut reason = a.reason;
-    reason.union_with(&b.reason);
+    let reason = ReasonSet(a.reason.0 | b.reason.0);
     AbstractValue { kind, reason }
 }
 
@@ -1039,7 +1013,7 @@ fn infer_param(param: &ParamPattern, state: &mut InferenceState, param_kind: &Ab
         ParamPattern::Spread(s) => &s.place,
     };
     let value_id = ValueId::new();
-    state.initialize(value_id, param_kind.clone());
+    state.initialize(value_id, *param_kind);
     state.define(place.identifier, value_id);
 }
 
@@ -1296,7 +1270,7 @@ fn apply_signature(
             vid,
             AbstractValue {
                 kind: ValueKind::Mutable,
-                reason: ValueReasonSet::single(ValueReason::Other),
+                reason: ReasonSet::single(ValueReason::Other),
             },
         );
         state.define(instr.lvalue.identifier, vid);
@@ -1404,7 +1378,7 @@ fn apply_effect(
                 value_id,
                 AbstractValue {
                     kind,
-                    reason: ValueReasonSet::single(reason),
+                    reason: ReasonSet::single(reason),
                 },
             );
             state.define(into.identifier, value_id);
@@ -1550,7 +1524,7 @@ fn apply_effect(
                     } else {
                         ValueKind::Frozen
                     },
-                    reason: ValueReasonSet::default(),
+                    reason: ReasonSet::default(),
                 },
             );
             state.define(into.identifier, value_id);
@@ -3469,11 +3443,8 @@ fn compute_effects_for_aliasing_signature(
 // =============================================================================
 
 /// Select the primary (most specific) reason from a set of reasons.
-/// TS uses `[...set][0]` which returns the first-inserted element;
-/// since the primary reason is always inserted first, this effectively
-/// picks the most specific non-Other reason. We replicate this by
-/// preferring any non-Other reason over Other.
-fn primary_reason(reasons: &ValueReasonSet) -> ValueReason {
+/// Reasons are visited in `ValueReason` declaration order, with `Other` last.
+fn primary_reason(reasons: &ReasonSet) -> ValueReason {
     for r in reasons.iter() {
         if r != ValueReason::Other {
             return r;
