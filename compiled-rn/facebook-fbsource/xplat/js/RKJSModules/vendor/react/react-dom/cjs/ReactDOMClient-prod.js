@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<8794a0eaa1fcea10316af5f0c26d0ad5>>
+ * @generated SignedSource<<98e9e74029cd28b003829c00a33bc103>>
  */
 
 /*
@@ -16996,6 +16996,15 @@ FragmentInstance.prototype.addEventListener = function (
   listener,
   optionsOrUseCapture
 ) {
+  var signal = null,
+    cleanup = null;
+  if (
+    null != optionsOrUseCapture &&
+    "boolean" !== typeof optionsOrUseCapture &&
+    ((signal = optionsOrUseCapture.signal || null),
+    null !== signal && signal.aborted)
+  )
+    return;
   null === this._eventListeners && (this._eventListeners = []);
   var listeners = this._eventListeners;
   if (
@@ -17016,12 +17025,22 @@ FragmentInstance.prototype.addEventListener = function (
           ? listener.call(this, event)
           : listener.handleEvent(event);
       });
-    var attachOptions = getAttachOptions(optionsOrUseCapture);
+    null !== signal &&
+      ((cleanup = fragmentInstance.removeEventListener.bind(
+        fragmentInstance,
+        type,
+        listener,
+        optionsOrUseCapture
+      )),
+      signal.addEventListener("abort", cleanup, { once: !0 }),
+      (cleanup = signal.removeEventListener.bind(signal, "abort", cleanup)));
+    signal = getAttachOptions(optionsOrUseCapture);
     listeners.push({
       type: type,
       listener: listener,
       optionsOrUseCapture: optionsOrUseCapture,
-      attachedListener: attachedListener
+      attachedListener: attachedListener,
+      cleanup: cleanup
     });
     traverseVisibleInstancesAndTextInstances(
       this._fragmentFiber.child,
@@ -17029,7 +17048,7 @@ FragmentInstance.prototype.addEventListener = function (
       addEventListenerToChild,
       type,
       attachedListener,
-      attachOptions
+      signal
     );
   }
   this._eventListeners = listeners;
@@ -17060,6 +17079,7 @@ FragmentInstance.prototype.removeEventListener = function (
   ) {
     var _listeners$index = listeners[listener];
     optionsOrUseCapture = _listeners$index.attachedListener;
+    var cleanup = _listeners$index.cleanup;
     _listeners$index = getAttachOptions(_listeners$index.optionsOrUseCapture);
     traverseVisibleInstancesAndTextInstances(
       this._fragmentFiber.child,
@@ -17070,6 +17090,7 @@ FragmentInstance.prototype.removeEventListener = function (
       _listeners$index
     );
     listeners.splice(listener, 1);
+    null !== cleanup && cleanup();
   }
 };
 function removeEventListenerFromChild(
@@ -17086,9 +17107,11 @@ function removeEventListenerFromChild(
   return !1;
 }
 function getAttachOptions(opts) {
-  return null == opts || "boolean" === typeof opts || !0 !== opts.once
-    ? opts
-    : { capture: opts.capture, passive: opts.passive, signal: opts.signal };
+  return null != opts &&
+    "boolean" !== typeof opts &&
+    (!0 === opts.once || opts.signal instanceof AbortSignal)
+    ? { capture: opts.capture, passive: opts.passive }
+    : opts;
 }
 function normalizeListenerOptions(opts) {
   return null == opts
@@ -19573,14 +19596,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2128 = React.version;
 if (
-  "19.3.0-native-fb-065bc84e-20260831" !==
+  "19.3.0-native-fb-21c89c9f-20260901" !==
   isomorphicReactPackageVersion$jscomp$inline_2128
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2128,
-      "19.3.0-native-fb-065bc84e-20260831"
+      "19.3.0-native-fb-21c89c9f-20260901"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -19602,10 +19625,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2695 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-065bc84e-20260831",
+  version: "19.3.0-native-fb-21c89c9f-20260901",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-065bc84e-20260831"
+  reconcilerVersion: "19.3.0-native-fb-21c89c9f-20260901"
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
   var hook$jscomp$inline_2696 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
@@ -19712,4 +19735,4 @@ exports.hydrateRoot = function (container, initialChildren, options) {
   listenToAllSupportedEvents(container);
   return new ReactDOMHydrationRoot(initialChildren);
 };
-exports.version = "19.3.0-native-fb-065bc84e-20260831";
+exports.version = "19.3.0-native-fb-21c89c9f-20260901";
