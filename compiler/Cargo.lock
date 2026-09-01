@@ -337,6 +337,7 @@ name = "react_compiler_inference"
 version = "0.1.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "react_compiler_lowering",
@@ -376,6 +377,7 @@ name = "react_compiler_optimization"
 version = "0.1.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "react_compiler_lowering",
@@ -389,6 +391,7 @@ version = "0.1.0"
 dependencies = [
  "hmac-sha256",
  "indexmap",
+ "oxc_index",
  "react_compiler_ast",
  "react_compiler_diagnostics",
  "react_compiler_hir",
@@ -401,6 +404,7 @@ name = "react_compiler_ssa"
 version = "0.1.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "rustc-hash",
@@ -429,6 +433,7 @@ name = "react_compiler_validation"
 version = "0.1.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "rustc-hash",

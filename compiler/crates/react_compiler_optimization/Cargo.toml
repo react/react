@@ -9,4 +9,5 @@ react_compiler_hir = { path = "../react_compiler_hir" }
 react_compiler_lowering = { path = "../react_compiler_lowering" }
 react_compiler_ssa = { path = "../react_compiler_ssa" }
 indexmap = "2"
+oxc_index = "5.0.0"
 rustc-hash = "2"

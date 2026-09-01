@@ -13,6 +13,7 @@
 //! - `src/HIR/DeriveMinimalDependenciesHIR.ts`
 
 use indexmap::IndexMap;
+use oxc_index::IndexVec;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::collections::BTreeSet;
 
@@ -28,6 +29,10 @@ use react_compiler_hir::{
 // =============================================================================
 // Public entry point
 // =============================================================================
+
+/// Sidemap from temporary identifiers to the dependency they represent,
+/// indexed densely by identifier id.
+type TemporariesMap = IndexVec<IdentifierId, Option<ReactiveScopeDependency>>;
 
 /// Main entry point: propagate scope dependencies through the HIR.
 /// Corresponds to TS `propagateScopeDependenciesHIR(fn)`.
@@ -67,8 +72,10 @@ pub fn propagate_scope_dependencies_hir(func: &mut HirFunction, env: &mut Enviro
 
     // Merge temporaries + temporariesReadInOptional
     let mut merged_temporaries = temporaries;
-    for (k, v) in temporaries_read_in_optional {
-        merged_temporaries.insert(k, v);
+    for (k, v) in temporaries_read_in_optional.into_iter_enumerated() {
+        if v.is_some() {
+            merged_temporaries[k] = v;
+        }
     }
 
     let scope_deps = collect_dependencies(
@@ -130,19 +137,22 @@ fn find_temporaries_used_outside_declaring_scope(
     func: &HirFunction,
     env: &Environment,
 ) -> FxHashSet<DeclarationId> {
-    let mut declarations: FxHashMap<DeclarationId, ScopeId> = FxHashMap::default();
+    // Declaring scope per declaration, indexed densely by declaration id
+    // (declaration ids share the identifier id space).
+    let mut declarations: IndexVec<DeclarationId, Option<ScopeId>> =
+        IndexVec::from_vec(vec![None; env.identifiers.len()]);
     let mut pruned_scopes: FxHashSet<ScopeId> = FxHashSet::default();
     let mut traversal = ScopeBlockTraversal::new();
     let mut used_outside_declaring_scope: FxHashSet<DeclarationId> = FxHashSet::default();
 
     let handle_place = |place_id: IdentifierId,
-                        declarations: &FxHashMap<DeclarationId, ScopeId>,
+                        declarations: &IndexVec<DeclarationId, Option<ScopeId>>,
                         traversal: &ScopeBlockTraversal,
                         pruned_scopes: &FxHashSet<ScopeId>,
                         used_outside: &mut FxHashSet<DeclarationId>,
                         env: &Environment| {
         let decl_id = env.identifiers[place_id.0 as usize].declaration_id;
-        if let Some(&declaring_scope) = declarations.get(&decl_id) {
+        if let Some(declaring_scope) = declarations[decl_id] {
             if !traversal.is_scope_active(declaring_scope)
                 && !pruned_scopes.contains(&declaring_scope)
             {
@@ -192,7 +202,7 @@ fn find_temporaries_used_outside_declaring_scope(
                         | InstructionValue::PropertyLoad { .. } => {
                             let decl_id =
                                 env.identifiers[instr.lvalue.identifier.0 as usize].declaration_id;
-                            declarations.insert(decl_id, scope);
+                            declarations[decl_id] = Some(scope);
                         }
                         _ => {}
                     }
@@ -229,8 +239,8 @@ fn collect_temporaries_sidemap(
     func: &HirFunction,
     env: &Environment,
     used_outside_declaring_scope: &FxHashSet<DeclarationId>,
-) -> FxHashMap<IdentifierId, ReactiveScopeDependency> {
-    let mut temporaries = FxHashMap::default();
+) -> TemporariesMap {
+    let mut temporaries = IndexVec::from_vec(vec![None; env.identifiers.len()]);
     collect_temporaries_sidemap_impl(
         func,
         env,
@@ -271,7 +281,7 @@ fn collect_temporaries_sidemap_impl(
     func: &HirFunction,
     env: &Environment,
     used_outside_declaring_scope: &FxHashSet<DeclarationId>,
-    temporaries: &mut FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &mut TemporariesMap,
     inner_fn_context: Option<EvaluationOrder>,
 ) {
     for (_block_id, block) in &func.body.blocks {
@@ -292,9 +302,9 @@ fn collect_temporaries_sidemap_impl(
                     loc,
                     ..
                 } if !used_outside => {
-                    if inner_fn_context.is_none() || temporaries.contains_key(&object.identifier) {
+                    if inner_fn_context.is_none() || temporaries[object.identifier].is_some() {
                         let prop = get_property(object, property, false, *loc, temporaries, env);
-                        temporaries.insert(instr.lvalue.identifier, prop);
+                        temporaries[instr.lvalue.identifier] = Some(prop);
                     }
                 }
                 InstructionValue::LoadLocal { place, loc, .. }
@@ -310,15 +320,12 @@ fn collect_temporaries_sidemap_impl(
                             .iter()
                             .any(|ctx| ctx.identifier == place.identifier)
                     {
-                        temporaries.insert(
-                            instr.lvalue.identifier,
-                            ReactiveScopeDependency {
-                                identifier: place.identifier,
-                                reactive: place.reactive,
-                                path: vec![],
-                                loc: *loc,
-                            },
-                        );
+                        temporaries[instr.lvalue.identifier] = Some(ReactiveScopeDependency {
+                            identifier: place.identifier,
+                            reactive: place.reactive,
+                            path: vec![],
+                            loc: *loc,
+                        });
                     }
                 }
                 value @ InstructionValue::LoadContext { place, loc, .. }
@@ -335,15 +342,12 @@ fn collect_temporaries_sidemap_impl(
                             .iter()
                             .any(|ctx| ctx.identifier == place.identifier)
                     {
-                        temporaries.insert(
-                            instr.lvalue.identifier,
-                            ReactiveScopeDependency {
-                                identifier: place.identifier,
-                                reactive: place.reactive,
-                                path: vec![],
-                                loc: *loc,
-                            },
-                        );
+                        temporaries[instr.lvalue.identifier] = Some(ReactiveScopeDependency {
+                            identifier: place.identifier,
+                            reactive: place.reactive,
+                            path: vec![],
+                            loc: *loc,
+                        });
                     }
                 }
                 InstructionValue::FunctionExpression { lowered_func, .. }
@@ -370,10 +374,10 @@ fn get_property(
     property_name: &PropertyLiteral,
     optional: bool,
     loc: Option<react_compiler_hir::SourceLocation>,
-    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &TemporariesMap,
     _env: &Environment,
 ) -> ReactiveScopeDependency {
-    let resolved = temporaries.get(&object.identifier);
+    let resolved = temporaries[object.identifier].as_ref();
     if let Some(resolved) = resolved {
         let mut path = resolved.path.clone();
         path.push(DependencyPathEntry {
@@ -406,7 +410,7 @@ fn get_property(
 // =============================================================================
 
 struct OptionalChainSidemap {
-    temporaries_read_in_optional: FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries_read_in_optional: TemporariesMap,
     processed_instrs_in_optional: FxHashSet<ProcessedInstr>,
     hoistable_objects: FxHashMap<BlockId, ReactiveScopeDependency>,
 }
@@ -426,7 +430,7 @@ fn collect_optional_chain_sidemap(func: &HirFunction, env: &Environment) -> Opti
     let mut ctx = OptionalTraversalContext {
         seen_optionals: FxHashSet::default(),
         processed_instrs_in_optional: FxHashSet::default(),
-        temporaries_read_in_optional: FxHashMap::default(),
+        temporaries_read_in_optional: IndexVec::from_vec(vec![None; env.identifiers.len()]),
         hoistable_objects: FxHashMap::default(),
     };
 
@@ -442,7 +446,7 @@ fn collect_optional_chain_sidemap(func: &HirFunction, env: &Environment) -> Opti
 struct OptionalTraversalContext {
     seen_optionals: FxHashSet<BlockId>,
     processed_instrs_in_optional: FxHashSet<ProcessedInstr>,
-    temporaries_read_in_optional: FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries_read_in_optional: TemporariesMap,
     hoistable_objects: FxHashMap<BlockId, ReactiveScopeDependency>,
 }
 
@@ -672,16 +676,13 @@ fn traverse_optional_block(
 
             if !is_optional {
                 // Non-optional load: record that PropertyLoads from inner optional are hoistable
-                if let Some(inner_dep) = ctx.temporaries_read_in_optional.get(&inner_optional_id) {
-                    ctx.hoistable_objects
-                        .insert(optional_block.id, inner_dep.clone());
+                if let Some(inner_dep) = &ctx.temporaries_read_in_optional[inner_optional_id] {
+                    let inner_dep = inner_dep.clone();
+                    ctx.hoistable_objects.insert(optional_block.id, inner_dep);
                 }
             }
 
-            let base = ctx
-                .temporaries_read_in_optional
-                .get(&inner_optional_id)?
-                .clone();
+            let base = ctx.temporaries_read_in_optional[inner_optional_id].clone()?;
             (&test_block.terminal, base)
         }
         _ => return None,
@@ -772,10 +773,8 @@ fn traverse_optional_block(
             }
             _ => BlockId(0),
         }));
-    ctx.temporaries_read_in_optional
-        .insert(match_result.consequent_id, load.clone());
-    ctx.temporaries_read_in_optional
-        .insert(match_result.property_id, load);
+    ctx.temporaries_read_in_optional[match_result.consequent_id] = Some(load.clone());
+    ctx.temporaries_read_in_optional[match_result.property_id] = Some(load);
 
     Some(match_result.consequent_id)
 }
@@ -963,7 +962,7 @@ struct BlockInfo {
 fn collect_hoistable_property_loads(
     func: &HirFunction,
     env: &Environment,
-    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &TemporariesMap,
     hoistable_from_optionals: &FxHashMap<BlockId, ReactiveScopeDependency>,
 ) -> FxHashMap<BlockId, BlockInfo> {
     let mut registry = PropertyPathRegistry::new();
@@ -995,7 +994,7 @@ fn collect_hoistable_property_loads(
 }
 
 struct CollectHoistableContext<'a> {
-    temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &'a TemporariesMap,
     known_immutable_identifiers: &'a FxHashSet<IdentifierId>,
     hoistable_from_optionals: &'a FxHashMap<BlockId, ReactiveScopeDependency>,
     nested_fn_immutable_context: Option<&'a FxHashSet<IdentifierId>>,
@@ -1028,26 +1027,21 @@ fn in_range(id: EvaluationOrder, range: &MutableRange) -> bool {
 
 fn get_maybe_non_null_in_instruction(
     value: &InstructionValue,
-    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &TemporariesMap,
 ) -> Option<ReactiveScopeDependency> {
     match value {
-        InstructionValue::PropertyLoad { object, .. } => Some(
-            temporaries
-                .get(&object.identifier)
-                .cloned()
-                .unwrap_or_else(|| ReactiveScopeDependency {
+        InstructionValue::PropertyLoad { object, .. } => {
+            Some(temporaries[object.identifier].clone().unwrap_or_else(|| {
+                ReactiveScopeDependency {
                     identifier: object.identifier,
                     reactive: object.reactive,
                     path: vec![],
                     loc: object.loc,
-                }),
-        ),
-        InstructionValue::Destructure { value: val, .. } => {
-            temporaries.get(&val.identifier).cloned()
+                }
+            }))
         }
-        InstructionValue::ComputedLoad { object, .. } => {
-            temporaries.get(&object.identifier).cloned()
-        }
+        InstructionValue::Destructure { value: val, .. } => temporaries[val.identifier].clone(),
+        InstructionValue::ComputedLoad { object, .. } => temporaries[object.identifier].clone(),
         _ => None,
     }
 }
@@ -1508,7 +1502,7 @@ fn recursively_propagate_non_null(
 fn collect_hoistable_and_propagate(
     func: &HirFunction,
     env: &Environment,
-    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &TemporariesMap,
     hoistable_from_optionals: &FxHashMap<BlockId, ReactiveScopeDependency>,
 ) -> (FxHashMap<BlockId, BTreeSet<usize>>, PropertyPathRegistry) {
     let mut registry = PropertyPathRegistry::new();
@@ -1818,12 +1812,15 @@ struct Decl {
 
 /// Context for dependency collection.
 struct DependencyCollectionContext<'a> {
-    declarations: FxHashMap<DeclarationId, Decl>,
-    reassignments: FxHashMap<IdentifierId, Decl>,
+    /// Declaration record per declaration id (declaration ids share the
+    /// identifier id space).
+    declarations: IndexVec<DeclarationId, Option<Decl>>,
+    /// Latest reassignment record per identifier id.
+    reassignments: IndexVec<IdentifierId, Option<Decl>>,
     scope_stack: Vec<ScopeId>,
     dep_stack: Vec<Vec<ReactiveScopeDependency>>,
     deps: IndexMap<ScopeId, Vec<ReactiveScopeDependency>, FxBuildHasher>,
-    temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &'a TemporariesMap,
     #[allow(dead_code)]
     temporaries_used_outside_scope: &'a FxHashSet<DeclarationId>,
     processed_instrs_in_optional: &'a FxHashSet<ProcessedInstr>,
@@ -1832,13 +1829,14 @@ struct DependencyCollectionContext<'a> {
 
 impl<'a> DependencyCollectionContext<'a> {
     fn new(
+        num_identifiers: usize,
         temporaries_used_outside_scope: &'a FxHashSet<DeclarationId>,
-        temporaries: &'a FxHashMap<IdentifierId, ReactiveScopeDependency>,
+        temporaries: &'a TemporariesMap,
         processed_instrs_in_optional: &'a FxHashSet<ProcessedInstr>,
     ) -> Self {
         Self {
-            declarations: FxHashMap::default(),
-            reassignments: FxHashMap::default(),
+            declarations: IndexVec::from_vec(vec![None; num_identifiers]),
+            reassignments: IndexVec::from_vec(vec![None; num_identifiers]),
             scope_stack: Vec::new(),
             dep_stack: Vec::new(),
             deps: IndexMap::default(),
@@ -1884,15 +1882,16 @@ impl<'a> DependencyCollectionContext<'a> {
             return;
         }
         let decl_id = env.identifiers[identifier_id.0 as usize].declaration_id;
-        if !self.declarations.contains_key(&decl_id) {
-            self.declarations.insert(decl_id, decl.clone());
+        let slot = &mut self.declarations[decl_id];
+        if slot.is_none() {
+            *slot = Some(decl.clone());
         }
-        self.reassignments.insert(identifier_id, decl);
+        self.reassignments[identifier_id] = Some(decl);
     }
 
     fn has_declared(&self, identifier_id: IdentifierId, env: &Environment) -> bool {
         let decl_id = env.identifiers[identifier_id.0 as usize].declaration_id;
-        self.declarations.contains_key(&decl_id)
+        self.declarations[decl_id].is_some()
     }
 
     fn check_valid_dependency(&self, dep: &ReactiveScopeDependency, env: &Environment) -> bool {
@@ -1907,10 +1906,9 @@ impl<'a> DependencyCollectionContext<'a> {
         }
 
         let ident = &env.identifiers[dep.identifier.0 as usize];
-        let current_declaration = self
-            .reassignments
-            .get(&dep.identifier)
-            .or_else(|| self.declarations.get(&ident.declaration_id));
+        let current_declaration = self.reassignments[dep.identifier]
+            .as_ref()
+            .or(self.declarations[ident.declaration_id].as_ref());
 
         if let Some(current_scope) = self.current_scope() {
             if let Some(decl) = current_declaration {
@@ -1922,10 +1920,8 @@ impl<'a> DependencyCollectionContext<'a> {
     }
 
     fn visit_operand(&mut self, place: &Place, env: &mut Environment) {
-        let dep = self
-            .temporaries
-            .get(&place.identifier)
-            .cloned()
+        let dep = self.temporaries[place.identifier]
+            .clone()
             .unwrap_or_else(|| ReactiveScopeDependency {
                 identifier: place.identifier,
                 reactive: place.reactive,
@@ -1952,7 +1948,7 @@ impl<'a> DependencyCollectionContext<'a> {
         let decl_id = ident.declaration_id;
 
         // Record scope declarations for values used outside their declaring scope
-        if let Some(original_decl) = self.declarations.get(&decl_id) {
+        if let Some(original_decl) = &self.declarations[decl_id] {
             if !original_decl.scope_stack.is_empty() {
                 let orig_scope_stack = original_decl.scope_stack.clone();
                 for &scope_id in &orig_scope_stack {
@@ -2031,7 +2027,7 @@ impl<'a> DependencyCollectionContext<'a> {
     fn is_deferred_dependency_instr(&self, instr: &Instruction) -> bool {
         self.processed_instrs_in_optional
             .contains(&ProcessedInstr::Instruction(instr.lvalue.identifier))
-            || self.temporaries.contains_key(&instr.lvalue.identifier)
+            || self.temporaries[instr.lvalue.identifier].is_some()
     }
 
     fn is_deferred_dependency_terminal(&self, block_id: BlockId) -> bool {
@@ -2081,8 +2077,9 @@ fn visit_inner_function_blocks(
 
     for (inner_bid, inner_instr_ids, inner_phis, inner_terminal) in &inner_blocks {
         for &(_pred_id, op_id) in inner_phis {
-            if let Some(maybe_optional) = ctx.temporaries.get(&op_id) {
-                ctx.visit_dependency(maybe_optional.clone(), env);
+            if let Some(maybe_optional) = &ctx.temporaries[op_id] {
+                let maybe_optional = maybe_optional.clone();
+                ctx.visit_dependency(maybe_optional, env);
             }
         }
 
@@ -2232,10 +2229,11 @@ fn collect_dependencies(
     func: &HirFunction,
     env: &mut Environment,
     used_outside_declaring_scope: &FxHashSet<DeclarationId>,
-    temporaries: &FxHashMap<IdentifierId, ReactiveScopeDependency>,
+    temporaries: &TemporariesMap,
     processed_instrs_in_optional: &FxHashSet<ProcessedInstr>,
 ) -> IndexMap<ScopeId, Vec<ReactiveScopeDependency>, FxBuildHasher> {
     let mut ctx = DependencyCollectionContext::new(
+        env.identifiers.len(),
         used_outside_declaring_scope,
         temporaries,
         processed_instrs_in_optional,
@@ -2298,8 +2296,9 @@ fn handle_function_deps(
         // Record phi operands
         for phi in &block.phis {
             for (_pred_id, operand) in &phi.operands {
-                if let Some(maybe_optional_chain) = ctx.temporaries.get(&operand.identifier) {
-                    ctx.visit_dependency(maybe_optional_chain.clone(), env);
+                if let Some(maybe_optional_chain) = &ctx.temporaries[operand.identifier] {
+                    let maybe_optional_chain = maybe_optional_chain.clone();
+                    ctx.visit_dependency(maybe_optional_chain, env);
                 }
             }
         }

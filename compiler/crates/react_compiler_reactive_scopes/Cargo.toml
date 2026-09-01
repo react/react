@@ -8,6 +8,7 @@ react_compiler_ast = { path = "../react_compiler_ast" }
 react_compiler_diagnostics = { path = "../react_compiler_diagnostics" }
 react_compiler_hir = { path = "../react_compiler_hir" }
 indexmap = "2"
+oxc_index = "5.0.0"
 rustc-hash = "2"
 serde_json = "1"
 hmac-sha256 = "1"
