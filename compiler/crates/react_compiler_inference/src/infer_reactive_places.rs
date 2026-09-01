@@ -127,13 +127,9 @@ pub fn infer_reactive_places(
 
                 // Check if any operand is reactive
                 let mut has_reactive_input = false;
-                let operands: Vec<IdentifierId> =
-                    visitors::each_instruction_value_operand(value, env)
-                        .into_iter()
-                        .map(|p| p.identifier)
-                        .collect();
-                for &op_id in &operands {
-                    let reactive = reactive_map.is_reactive(op_id);
+                let operands = visitors::each_instruction_value_operand(value, env);
+                for op in &operands {
+                    let reactive = reactive_map.is_reactive(op.identifier);
                     has_reactive_input = has_reactive_input || reactive;
                 }
 
@@ -162,11 +158,8 @@ pub fn infer_reactive_places(
 
                 if has_reactive_input {
                     // Mark lvalues reactive (unless stable)
-                    let lvalue_ids: Vec<IdentifierId> = visitors::each_instruction_lvalue(instr)
-                        .into_iter()
-                        .map(|p| p.identifier)
-                        .collect();
-                    for lvalue_id in lvalue_ids {
+                    for lvalue in visitors::each_instruction_lvalue(instr) {
+                        let lvalue_id = lvalue.identifier;
                         if stable_sidemap.is_stable(lvalue_id) {
                             continue;
                         }
@@ -176,8 +169,7 @@ pub fn infer_reactive_places(
 
                 if has_reactive_input || has_reactive_control {
                     // Mark mutable operands reactive
-                    let operand_places = visitors::each_instruction_value_operand(value, env);
-                    for op_place in &operand_places {
+                    for op_place in &operands {
                         match op_place.effect {
                             Effect::Capture
                             | Effect::Store
@@ -335,11 +327,8 @@ impl StableSidemap {
             InstructionValue::Destructure { value: val, .. } => {
                 let source_id = val.identifier;
                 if self.map[source_id].is_some() {
-                    let lvalue_ids: Vec<IdentifierId> = visitors::each_instruction_lvalue(instr)
-                        .into_iter()
-                        .map(|p| p.identifier)
-                        .collect();
-                    for lid in lvalue_ids {
+                    for lvalue in visitors::each_instruction_lvalue(instr) {
+                        let lid = lvalue.identifier;
                         let lid_ty = &env.types[env.identifiers[lid.0 as usize].type_.0 as usize];
                         if is_stable_type_container(lid_ty) {
                             self.map[lid] = Some(false);
@@ -591,15 +580,11 @@ fn apply_reactive_flags_replay(
             let instr = &func.instructions[instr_id.0 as usize];
 
             // Compute hasReactiveInput by checking value operands
-            let value_operand_ids: Vec<IdentifierId> =
-                visitors::each_instruction_value_operand(&instr.value, env)
-                    .into_iter()
-                    .map(|p| p.identifier)
-                    .collect();
             let mut has_reactive_input = false;
-            for &op_id in &value_operand_ids {
-                if reactive_ids[op_id] {
+            for operand in visitors::each_instruction_value_operand(&instr.value, env) {
+                if reactive_ids[operand.identifier] {
                     has_reactive_input = true;
+                    break;
                 }
             }
 
