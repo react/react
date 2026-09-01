@@ -17,6 +17,9 @@ on:
       tag_version:
         required: false
         type: string
+      dry_run:
+        required: false
+        type: boolean
 
 permissions: {}
 
@@ -26,12 +29,13 @@ env:
 jobs:
   publish_prerelease_experimental:
     name: Publish to Experimental channel
-    uses: facebook/react/.github/workflows/compiler_prereleases.yml@main
+    uses: react/react/.github/workflows/compiler_prereleases.yml@main
     with:
       commit_sha: ${{ inputs.prerelease_commit_sha || github.sha }}
       release_channel: ${{ inputs.release_channel }}
       dist_tag: ${{ inputs.dist_tag }}
       version_name: ${{ inputs.version_name }}
       tag_version: ${{ inputs.tag_version }}
+      dry_run: ${{ inputs.dry_run }}
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

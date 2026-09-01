@@ -34,6 +34,7 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 function foo() {
   console.log("foo");
+
   return -6;
 }
 

@@ -120,11 +120,14 @@ describe('ReactDOMSrcObject', () => {
 
     assertConsoleErrorDev([
       'Passing Blob, MediaSource or MediaStream to <source src> is not supported. ' +
-        'Pass it directly to <img src>, <video src> or <audio src> instead.',
+        'Pass it directly to <img src>, <video src> or <audio src> instead.' +
+        '\n    in source (at **)',
       'Passing Blob, MediaSource or MediaStream to <source src> is not supported. ' +
-        'Pass it directly to <img src>, <video src> or <audio src> instead.',
+        'Pass it directly to <img src>, <video src> or <audio src> instead.' +
+        '\n    in source (at **)',
       'Passing Blob, MediaSource or MediaStream to <source src> is not supported. ' +
-        'Pass it directly to <img src>, <video src> or <audio src> instead.',
+        'Pass it directly to <img src>, <video src> or <audio src> instead.' +
+        '\n    in source (at **)',
     ]);
     expect(videoRef.current.firstChild.src).not.toMatch(/^blob:/);
     expect(videoRef.current.firstChild.src).toContain('[object%20Blob]'); // toString:ed

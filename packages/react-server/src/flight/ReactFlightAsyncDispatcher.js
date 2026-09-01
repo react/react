@@ -20,10 +20,10 @@ function resolveCache(): Map<Function, mixed> {
   return new Map();
 }
 
-export const DefaultAsyncDispatcher: AsyncDispatcher = ({
+export const DefaultAsyncDispatcher: AsyncDispatcher = {
   getCacheForType<T>(resourceType: () => T): T {
     const cache = resolveCache();
-    let entry: T | void = (cache.get(resourceType): any);
+    let entry: T | void = cache.get(resourceType) as any;
     if (entry === undefined) {
       entry = resourceType();
       // TODO: Warn if undefined?
@@ -31,7 +31,14 @@ export const DefaultAsyncDispatcher: AsyncDispatcher = ({
     }
     return entry;
   },
-}: any);
+  cacheSignal(): null | AbortSignal {
+    const request = resolveRequest();
+    if (request) {
+      return request.cacheController.signal;
+    }
+    return null;
+  },
+} as any;
 
 if (__DEV__) {
   DefaultAsyncDispatcher.getOwner = resolveOwner;

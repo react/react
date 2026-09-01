@@ -20,10 +20,17 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Dynamic gating directive is not a valid JavaScript identifier
+
+Found 'use memo if(true)'.
+
+error.dynamic-gating-invalid-identifier.ts:4:2
   2 |
   3 | function Foo() {
 > 4 |   'use memo if(true)';
-    |   ^^^^^^^^^^^^^^^^^^^^ InvalidReact: Dynamic gating directive is not a valid JavaScript identifier. Found 'use memo if(true)' (4:4)
+    |   ^^^^^^^^^^^^^^^^^^^^ Dynamic gating directive is not a valid JavaScript identifier
   5 |   return <div>hello world</div>;
   6 | }
   7 |

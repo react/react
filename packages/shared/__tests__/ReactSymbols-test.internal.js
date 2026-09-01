@@ -23,7 +23,6 @@ describe('ReactSymbols', () => {
     });
   };
 
-  // @gate renameElementSymbol
   it('Symbol values should be unique', () => {
     expectToBeUnique(Object.entries(require('shared/ReactSymbols')));
   });

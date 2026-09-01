@@ -13,13 +13,11 @@ import {
   REACT_ELEMENT_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_LAZY_TYPE,
+  REACT_OPTIMISTIC_KEY,
 } from 'shared/ReactSymbols';
 import {checkKeyStringCoercion} from 'shared/CheckStringCoercion';
 import isArray from 'shared/isArray';
-import {
-  disableDefaultPropsExceptForClasses,
-  ownerStackLimit,
-} from 'shared/ReactFeatureFlags';
+import {ownerStackLimit, enableOptimisticKey} from 'shared/ReactFeatureFlags';
 
 const createTask =
   // eslint-disable-next-line react-internal/no-production-logging
@@ -60,13 +58,21 @@ function getOwner() {
   return null;
 }
 
+// v8 (Chromium, Node.js) defaults to 10
+// SpiderMonkey (Firefox) does not support Error.stackTraceLimit
+// JSC (Safari) defaults to 100
+// The lower the limit, the more likely we'll not reach react_stack_bottom_frame
+// The higher the limit, the slower Error() is when not inspecting with a debugger.
+// When inspecting with a debugger, Error.stackTraceLimit has no impact on Error() performance (in v8).
+const ownerStackTraceLimit = 10;
+
 /** @noinline */
 function UnknownOwner() {
   /** @noinline */
   return (() => Error('react-stack-top-frame'))();
 }
 const createFakeCallStack = {
-  'react-stack-bottom-frame': function (callStackForError) {
+  react_stack_bottom_frame: function (callStackForError) {
     return callStackForError();
   },
 };
@@ -81,7 +87,7 @@ if (__DEV__) {
   didWarnAboutElementRef = {};
 
   // We use this technique to trick minifiers to preserve the function name.
-  unknownOwnerDebugStack = createFakeCallStack['react-stack-bottom-frame'].bind(
+  unknownOwnerDebugStack = createFakeCallStack.react_stack_bottom_frame.bind(
     createFakeCallStack,
     UnknownOwner,
   )();
@@ -159,30 +165,9 @@ function elementRefGetterWithDeprecationWarning() {
  * will not work. Instead test $$typeof field against Symbol.for('react.transitional.element') to check
  * if something is a React Element.
  *
- * @param {*} type
- * @param {*} props
- * @param {*} key
- * @param {string|object} ref
- * @param {*} owner
- * @param {*} self A *temporary* helper to detect places where `this` is
- * different from the `owner` when React.createElement is called, so that we
- * can warn. We want to get rid of owner and replace string `ref`s with arrow
- * functions, and as long as `this` and owner are the same, there will be no
- * change in behavior.
- * @param {*} source An annotation object (added by a transpiler or otherwise)
- * indicating filename, line number, and/or other information.
  * @internal
  */
-function ReactElement(
-  type,
-  key,
-  self,
-  source,
-  owner,
-  props,
-  debugStack,
-  debugTask,
-) {
+function ReactElement(type, key, props, owner, debugStack, debugTask) {
   // Ignore whatever was passed as the ref argument and treat `props.ref` as
   // the source of truth. The only thing we use this for is `element.ref`,
   // which will log a deprecation warning on access. In the next release, we
@@ -313,17 +298,25 @@ export function jsxProd(type, config, maybeKey) {
   // <div {...props} key="Hi" />, because we aren't currently able to tell if
   // key is explicitly declared to be undefined or not.
   if (maybeKey !== undefined) {
-    if (__DEV__) {
-      checkKeyStringCoercion(maybeKey);
+    if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+      key = REACT_OPTIMISTIC_KEY;
+    } else {
+      if (__DEV__) {
+        checkKeyStringCoercion(maybeKey);
+      }
+      key = '' + maybeKey;
     }
-    key = '' + maybeKey;
   }
 
   if (hasValidKey(config)) {
-    if (__DEV__) {
-      checkKeyStringCoercion(config.key);
+    if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+      key = REACT_OPTIMISTIC_KEY;
+    } else {
+      if (__DEV__) {
+        checkKeyStringCoercion(config.key);
+      }
+      key = '' + config.key;
     }
-    key = '' + config.key;
   }
 
   let props;
@@ -351,28 +344,7 @@ export function jsxProd(type, config, maybeKey) {
     }
   }
 
-  if (!disableDefaultPropsExceptForClasses) {
-    // Resolve default props
-    if (type && type.defaultProps) {
-      const defaultProps = type.defaultProps;
-      for (const propName in defaultProps) {
-        if (props[propName] === undefined) {
-          props[propName] = defaultProps[propName];
-        }
-      }
-    }
-  }
-
-  return ReactElement(
-    type,
-    key,
-    undefined,
-    undefined,
-    getOwner(),
-    props,
-    undefined,
-    undefined,
-  );
+  return ReactElement(type, key, props, getOwner(), undefined, undefined);
 }
 
 // While `jsxDEV` should never be called when running in production, we do
@@ -391,25 +363,30 @@ export function jsxProdSignatureRunningInDevWithDynamicChildren(
   type,
   config,
   maybeKey,
-  source,
-  self,
 ) {
   if (__DEV__) {
     const isStaticChildren = false;
     const trackActualOwner =
       __DEV__ &&
       ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+    let debugStackDEV = false;
+    if (__DEV__) {
+      if (trackActualOwner) {
+        const previousStackTraceLimit = Error.stackTraceLimit;
+        Error.stackTraceLimit = ownerStackTraceLimit;
+        debugStackDEV = Error('react-stack-top-frame');
+        Error.stackTraceLimit = previousStackTraceLimit;
+      } else {
+        debugStackDEV = unknownOwnerDebugStack;
+      }
+    }
+
     return jsxDEVImpl(
       type,
       config,
       maybeKey,
       isStaticChildren,
-      source,
-      self,
-      __DEV__ &&
-        (trackActualOwner
-          ? Error('react-stack-top-frame')
-          : unknownOwnerDebugStack),
+      debugStackDEV,
       __DEV__ &&
         (trackActualOwner
           ? createTask(getTaskName(type))
@@ -422,25 +399,29 @@ export function jsxProdSignatureRunningInDevWithStaticChildren(
   type,
   config,
   maybeKey,
-  source,
-  self,
 ) {
   if (__DEV__) {
     const isStaticChildren = true;
     const trackActualOwner =
       __DEV__ &&
       ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+    let debugStackDEV = false;
+    if (__DEV__) {
+      if (trackActualOwner) {
+        const previousStackTraceLimit = Error.stackTraceLimit;
+        Error.stackTraceLimit = ownerStackTraceLimit;
+        debugStackDEV = Error('react-stack-top-frame');
+        Error.stackTraceLimit = previousStackTraceLimit;
+      } else {
+        debugStackDEV = unknownOwnerDebugStack;
+      }
+    }
     return jsxDEVImpl(
       type,
       config,
       maybeKey,
       isStaticChildren,
-      source,
-      self,
-      __DEV__ &&
-        (trackActualOwner
-          ? Error('react-stack-top-frame')
-          : unknownOwnerDebugStack),
+      debugStackDEV,
       __DEV__ &&
         (trackActualOwner
           ? createTask(getTaskName(type))
@@ -457,21 +438,27 @@ const didWarnAboutKeySpread = {};
  * @param {object} props
  * @param {string} key
  */
-export function jsxDEV(type, config, maybeKey, isStaticChildren, source, self) {
+export function jsxDEV(type, config, maybeKey, isStaticChildren) {
   const trackActualOwner =
     __DEV__ &&
     ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+  let debugStackDEV = false;
+  if (__DEV__) {
+    if (trackActualOwner) {
+      const previousStackTraceLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = ownerStackTraceLimit;
+      debugStackDEV = Error('react-stack-top-frame');
+      Error.stackTraceLimit = previousStackTraceLimit;
+    } else {
+      debugStackDEV = unknownOwnerDebugStack;
+    }
+  }
   return jsxDEVImpl(
     type,
     config,
     maybeKey,
     isStaticChildren,
-    source,
-    self,
-    __DEV__ &&
-      (trackActualOwner
-        ? Error('react-stack-top-frame')
-        : unknownOwnerDebugStack),
+    debugStackDEV,
     __DEV__ &&
       (trackActualOwner
         ? createTask(getTaskName(type))
@@ -484,8 +471,6 @@ function jsxDEVImpl(
   config,
   maybeKey,
   isStaticChildren,
-  source,
-  self,
   debugStack,
   debugTask,
 ) {
@@ -506,7 +491,7 @@ function jsxDEVImpl(
       if (isStaticChildren) {
         if (isArray(children)) {
           for (let i = 0; i < children.length; i++) {
-            validateChildKeys(children[i], type);
+            validateChildKeys(children[i]);
           }
 
           if (Object.freeze) {
@@ -520,7 +505,7 @@ function jsxDEVImpl(
           );
         }
       } else {
-        validateChildKeys(children, type);
+        validateChildKeys(children);
       }
     }
 
@@ -560,17 +545,25 @@ function jsxDEVImpl(
     // <div {...props} key="Hi" />, because we aren't currently able to tell if
     // key is explicitly declared to be undefined or not.
     if (maybeKey !== undefined) {
-      if (__DEV__) {
-        checkKeyStringCoercion(maybeKey);
+      if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(maybeKey);
+        }
+        key = '' + maybeKey;
       }
-      key = '' + maybeKey;
     }
 
     if (hasValidKey(config)) {
-      if (__DEV__) {
-        checkKeyStringCoercion(config.key);
+      if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(config.key);
+        }
+        key = '' + config.key;
       }
-      key = '' + config.key;
     }
 
     let props;
@@ -598,18 +591,6 @@ function jsxDEVImpl(
       }
     }
 
-    if (!disableDefaultPropsExceptForClasses) {
-      // Resolve default props
-      if (type && type.defaultProps) {
-        const defaultProps = type.defaultProps;
-        for (const propName in defaultProps) {
-          if (props[propName] === undefined) {
-            props[propName] = defaultProps[propName];
-          }
-        }
-      }
-    }
-
     if (key) {
       const displayName =
         typeof type === 'function'
@@ -618,16 +599,7 @@ function jsxDEVImpl(
       defineKeyPropWarningGetter(props, displayName);
     }
 
-    return ReactElement(
-      type,
-      key,
-      self,
-      source,
-      getOwner(),
-      props,
-      debugStack,
-      debugTask,
-    );
+    return ReactElement(type, key, props, getOwner(), debugStack, debugTask);
   }
 }
 
@@ -647,7 +619,7 @@ export function createElement(type, config, children) {
     // prod. (Rendering will throw with a helpful message and as soon as the
     // type is fixed, the key warnings will appear.)
     for (let i = 2; i < arguments.length; i++) {
-      validateChildKeys(arguments[i], type);
+      validateChildKeys(arguments[i]);
     }
 
     // Unlike the jsx() runtime, createElement() doesn't warn about key spread.
@@ -682,10 +654,14 @@ export function createElement(type, config, children) {
     }
 
     if (hasValidKey(config)) {
-      if (__DEV__) {
-        checkKeyStringCoercion(config.key);
+      if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(config.key);
+        }
+        key = '' + config.key;
       }
-      key = '' + config.key;
     }
 
     // Remaining properties are added to a new props object
@@ -745,17 +721,23 @@ export function createElement(type, config, children) {
   const trackActualOwner =
     __DEV__ &&
     ReactSharedInternals.recentlyCreatedOwnerStacks++ < ownerStackLimit;
+  let debugStackDEV = false;
+  if (__DEV__) {
+    if (trackActualOwner) {
+      const previousStackTraceLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = ownerStackTraceLimit;
+      debugStackDEV = Error('react-stack-top-frame');
+      Error.stackTraceLimit = previousStackTraceLimit;
+    } else {
+      debugStackDEV = unknownOwnerDebugStack;
+    }
+  }
   return ReactElement(
     type,
     key,
-    undefined,
-    undefined,
-    getOwner(),
     props,
-    __DEV__ &&
-      (trackActualOwner
-        ? Error('react-stack-top-frame')
-        : unknownOwnerDebugStack),
+    getOwner(),
+    debugStackDEV,
     __DEV__ &&
       (trackActualOwner
         ? createTask(getTaskName(type))
@@ -767,10 +749,8 @@ export function cloneAndReplaceKey(oldElement, newKey) {
   const clonedElement = ReactElement(
     oldElement.type,
     newKey,
-    undefined,
-    undefined,
-    !__DEV__ ? undefined : oldElement._owner,
     oldElement.props,
+    !__DEV__ ? undefined : oldElement._owner,
     __DEV__ && oldElement._debugStack,
     __DEV__ && oldElement._debugTask,
   );
@@ -810,21 +790,17 @@ export function cloneElement(element, config, children) {
       owner = __DEV__ ? getOwner() : undefined;
     }
     if (hasValidKey(config)) {
-      if (__DEV__) {
-        checkKeyStringCoercion(config.key);
+      if (enableOptimisticKey && config.key === REACT_OPTIMISTIC_KEY) {
+        key = REACT_OPTIMISTIC_KEY;
+      } else {
+        if (__DEV__) {
+          checkKeyStringCoercion(config.key);
+        }
+        key = '' + config.key;
       }
-      key = '' + config.key;
     }
 
     // Remaining properties override existing props
-    let defaultProps;
-    if (
-      !disableDefaultPropsExceptForClasses &&
-      element.type &&
-      element.type.defaultProps
-    ) {
-      defaultProps = element.type.defaultProps;
-    }
     for (propName in config) {
       if (
         hasOwnProperty.call(config, propName) &&
@@ -843,16 +819,7 @@ export function cloneElement(element, config, children) {
         // backwards compatibility.
         !(propName === 'ref' && config.ref === undefined)
       ) {
-        if (
-          !disableDefaultPropsExceptForClasses &&
-          config[propName] === undefined &&
-          defaultProps !== undefined
-        ) {
-          // Resolve default props
-          props[propName] = defaultProps[propName];
-        } else {
-          props[propName] = config[propName];
-        }
+        props[propName] = config[propName];
       }
     }
   }
@@ -873,16 +840,14 @@ export function cloneElement(element, config, children) {
   const clonedElement = ReactElement(
     element.type,
     key,
-    undefined,
-    undefined,
-    owner,
     props,
+    owner,
     __DEV__ && element._debugStack,
     __DEV__ && element._debugTask,
   );
 
   for (let i = 2; i < arguments.length; i++) {
-    validateChildKeys(arguments[i], clonedElement.type);
+    validateChildKeys(arguments[i]);
   }
 
   return clonedElement;
@@ -895,15 +860,21 @@ export function cloneElement(element, config, children) {
  *
  * @internal
  * @param {ReactNode} node Statically passed child of any type.
- * @param {*} parentType node's parent's type.
  */
-function validateChildKeys(node, parentType) {
+function validateChildKeys(node) {
   if (__DEV__) {
-    // With owner stacks is, no warnings happens. All we do is
-    // mark elements as being in a valid static child position so they
+    // Mark elements as being in a valid static child position so they
     // don't need keys.
     if (isValidElement(node)) {
       if (node._store) {
+        node._store.validated = 1;
+      }
+    } else if (isLazyType(node)) {
+      if (node._payload.status === 'fulfilled') {
+        if (isValidElement(node._payload.value) && node._payload.value._store) {
+          node._payload.value._store.validated = 1;
+        }
+      } else if (node._store) {
         node._store.validated = 1;
       }
     }
@@ -922,5 +893,13 @@ export function isValidElement(object) {
     typeof object === 'object' &&
     object !== null &&
     object.$$typeof === REACT_ELEMENT_TYPE
+  );
+}
+
+export function isLazyType(object) {
+  return (
+    typeof object === 'object' &&
+    object !== null &&
+    object.$$typeof === REACT_LAZY_TYPE
   );
 }

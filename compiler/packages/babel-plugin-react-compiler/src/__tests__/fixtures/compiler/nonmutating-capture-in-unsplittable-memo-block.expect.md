@@ -89,9 +89,11 @@ function useFoo(t0) {
     y = $[2];
     z = $[3];
   }
+
   if (z[0] !== y) {
     throw new Error("oh no!");
   }
+
   return z;
 }
 

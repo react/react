@@ -10,49 +10,41 @@
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
 
 import type {HooksTree} from 'react-debug-tools/src/ReactDebugHooks';
-import type {Thenable, Wakeable} from 'shared/ReactTypes';
+import type {
+  Thenable,
+  FulfilledThenable,
+  RejectedThenable,
+} from 'shared/ReactTypes';
 import type {
   Element,
   HookNames,
-  HookSourceLocationKey,
 } from 'react-devtools-shared/src/frontend/types';
-import type {HookSource} from 'react-debug-tools/src/ReactDebugHooks';
 import type {FetchFileWithCaching} from 'react-devtools-shared/src/devtools/views/Components/FetchFileWithCachingContext';
+
+import * as React from 'react';
+
 import {withCallbackPerfMeasurements} from './PerformanceLoggingUtils';
 import {logEvent} from './Logger';
 
 const TIMEOUT = 30000;
-
-const Pending = 0;
-const Resolved = 1;
-const Rejected = 2;
-
-type PendingRecord = {
-  status: 0,
-  value: Wakeable,
-};
-
-type ResolvedRecord<T> = {
-  status: 1,
-  value: T,
-};
-
-type RejectedRecord = {
-  status: 2,
-  value: null,
-};
-
-type Record<T> = PendingRecord | ResolvedRecord<T> | RejectedRecord;
-
-function readRecord<T>(record: Record<T>): ResolvedRecord<T> | RejectedRecord {
-  if (record.status === Resolved) {
-    // This is just a type refinement.
-    return record;
-  } else if (record.status === Rejected) {
-    // This is just a type refinement.
-    return record;
+function readRecord<T>(record: Thenable<T>): T | null {
+  if (typeof React.use === 'function') {
+    try {
+      // eslint-disable-next-line react-hooks-published/rules-of-hooks
+      return React.use(record);
+    } catch (x) {
+      if (record.status === 'rejected') {
+        return null;
+      }
+      throw x;
+    }
+  }
+  if (record.status === 'fulfilled') {
+    return record.value;
+  } else if (record.status === 'rejected') {
+    return null;
   } else {
-    throw record.value;
+    throw record;
   }
 }
 
@@ -65,16 +57,16 @@ type LoadHookNamesFunction = (
 // Otherwise, refreshing the inspected element cache would also clear this cache.
 // TODO Rethink this if the React API constraints change.
 // See https://github.com/reactwg/react-18/discussions/25#discussioncomment-980435
-let map: WeakMap<Element, Record<HookNames>> = new WeakMap();
+let map: WeakMap<Element, Thenable<HookNames>> = new WeakMap();
 
 export function hasAlreadyLoadedHookNames(element: Element): boolean {
   const record = map.get(element);
-  return record != null && record.status === Resolved;
+  return record != null && record.status === 'fulfilled';
 }
 
 export function getAlreadyLoadedHookNames(element: Element): HookNames | null {
   const record = map.get(element);
-  if (record != null && record.status === Resolved) {
+  if (record != null && record.status === 'fulfilled') {
     return record.value;
   }
   return null;
@@ -88,6 +80,7 @@ export function loadHookNames(
 ): HookNames | null {
   let record = map.get(element);
 
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.groupCollapsed('loadHookNames() record:');
     console.log(record);
@@ -95,19 +88,24 @@ export function loadHookNames(
   }
 
   if (!record) {
-    const callbacks = new Set<() => mixed>();
-    const wakeable: Wakeable = {
-      then(callback: () => mixed) {
+    const callbacks = new Set<(value: any) => mixed>();
+    const rejectCallbacks = new Set<(reason: mixed) => mixed>();
+    const thenable: Thenable<HookNames> = {
+      status: 'pending',
+      value: null,
+      reason: null,
+      then(callback: (value: any) => mixed, reject: (error: mixed) => mixed) {
         callbacks.add(callback);
+        rejectCallbacks.add(reject);
       },
 
-      // Optional property used by Timeline:
+      // Optional property, read by React to name this I/O in async debug info:
       displayName: `Loading hook names for ${element.displayName || 'Unknown'}`,
     };
 
     let timeoutID: $FlowFixMe | null;
     let didTimeout = false;
-    let status = 'unknown';
+    let status: 'success' | 'error' | 'timeout' | 'unknown' = 'unknown';
     let resolvedHookNames: HookNames | null = null;
 
     const wake = () => {
@@ -117,7 +115,18 @@ export function loadHookNames(
       }
 
       // This assumes they won't throw.
-      callbacks.forEach(callback => callback());
+      callbacks.forEach(callback => callback((thenable as any).value));
+      callbacks.clear();
+      rejectCallbacks.clear();
+    };
+    const wakeRejections = () => {
+      if (timeoutID) {
+        clearTimeout(timeoutID);
+        timeoutID = null;
+      }
+      // This assumes they won't throw.
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
+      rejectCallbacks.clear();
       callbacks.clear();
     };
 
@@ -132,10 +141,7 @@ export function loadHookNames(
       });
     };
 
-    const newRecord: Record<HookNames> = (record = {
-      status: Pending,
-      value: wakeable,
-    });
+    record = thenable;
 
     withCallbackPerfMeasurements(
       'loadHookNames',
@@ -146,49 +152,57 @@ export function loadHookNames(
               return;
             }
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               console.log('[hookNamesCache] onSuccess() hookNames:', hookNames);
             }
 
             if (hookNames) {
-              const resolvedRecord =
-                ((newRecord: any): ResolvedRecord<HookNames>);
-              resolvedRecord.status = Resolved;
-              resolvedRecord.value = hookNames;
+              const fulfilledThenable: FulfilledThenable<HookNames> =
+                thenable as any;
+              fulfilledThenable.status = 'fulfilled';
+              fulfilledThenable.value = hookNames;
+              status = 'success';
+              resolvedHookNames = hookNames;
+              done();
+              wake();
             } else {
-              const notFoundRecord = ((newRecord: any): RejectedRecord);
-              notFoundRecord.status = Rejected;
-              notFoundRecord.value = null;
+              const notFoundThenable: RejectedThenable<HookNames> =
+                thenable as any;
+              notFoundThenable.status = 'rejected';
+              notFoundThenable.reason = null;
+              status = 'error';
+              resolvedHookNames = hookNames;
+              done();
+              wakeRejections();
             }
-
-            status = 'success';
-            resolvedHookNames = hookNames;
-            done();
-            wake();
           },
           function onError(error) {
             if (didTimeout) {
               return;
             }
 
+            // $FlowFixMe[constant-condition]
             if (__DEBUG__) {
               console.log('[hookNamesCache] onError()');
             }
 
             console.error(error);
 
-            const thrownRecord = ((newRecord: any): RejectedRecord);
-            thrownRecord.status = Rejected;
-            thrownRecord.value = null;
+            const rejectedThenable: RejectedThenable<HookNames> =
+              thenable as any;
+            rejectedThenable.status = 'rejected';
+            rejectedThenable.reason = null;
 
             status = 'error';
             done();
-            wake();
+            wakeRejections();
           },
         );
 
         // Eventually timeout and stop trying to load names.
         timeoutID = setTimeout(function onTimeout() {
+          // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
             console.log('[hookNamesCache] onTimeout()');
           }
@@ -197,13 +211,13 @@ export function loadHookNames(
 
           didTimeout = true;
 
-          const timedoutRecord = ((newRecord: any): RejectedRecord);
-          timedoutRecord.status = Rejected;
-          timedoutRecord.value = null;
+          const timedoutThenable: RejectedThenable<HookNames> = thenable as any;
+          timedoutThenable.status = 'rejected';
+          timedoutThenable.reason = null;
 
           status = 'timeout';
           done();
-          wake();
+          wakeRejections();
         }, TIMEOUT);
       },
       handleLoadComplete,
@@ -211,19 +225,8 @@ export function loadHookNames(
     map.set(element, record);
   }
 
-  const response = readRecord(record).value;
+  const response = readRecord(record);
   return response;
-}
-
-export function getHookSourceLocationKey({
-  fileName,
-  lineNumber,
-  columnNumber,
-}: HookSource): HookSourceLocationKey {
-  if (fileName == null || lineNumber == null || columnNumber == null) {
-    throw Error('Hook source code location not found.');
-  }
-  return `${fileName}:${lineNumber}:${columnNumber}`;
 }
 
 export function clearHookNamesCache(): void {

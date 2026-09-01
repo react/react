@@ -110,7 +110,8 @@ describe('ReactFlushSync', () => {
       assertConsoleErrorDev([
         'flushSync was called from inside a lifecycle method. React ' +
           'cannot flush when React is already rendering. Consider moving this ' +
-          'call to a scheduler task or micro task.',
+          'call to a scheduler task or micro task.' +
+          '\n    in App',
       ]);
 
       await waitForPaint([]);
@@ -336,7 +337,6 @@ describe('ReactFlushSync', () => {
     expect(getVisibleChildren(container3)).toEqual('aww');
 
     // Because there were multiple errors, React threw an AggregateError.
-    // eslint-disable-next-line no-undef
     expect(error).toBeInstanceOf(AggregateError);
     expect(error.errors.length).toBe(2);
     expect(error.errors[0]).toBe(aahh);

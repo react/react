@@ -26,7 +26,6 @@ function Component(props) {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const pattern = /foo/g;
     value = makeValue();
-
     t0 = pattern.test(value);
     $[0] = t0;
     $[1] = value;

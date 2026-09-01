@@ -31,30 +31,22 @@ import { c as _c } from "react/compiler-runtime"; // @enablePropagateDepsInHIR
 import { identity, Stringify } from "shared-runtime";
 
 function useFoo(t0) {
-  const $ = _c(4);
+  const $ = _c(2);
   const { a } = t0;
   let t1;
   if ($[0] !== a) {
-    t1 = {
+    const x = {
       fn() {
         return identity(a.b.c);
       },
     };
+    t1 = <Stringify x={x} shouldInvokeFns={true} />;
     $[0] = a;
     $[1] = t1;
   } else {
     t1 = $[1];
   }
-  const x = t1;
-  let t2;
-  if ($[2] !== x) {
-    t2 = <Stringify x={x} shouldInvokeFns={true} />;
-    $[2] = x;
-    $[3] = t2;
-  } else {
-    t2 = $[3];
-  }
-  return t2;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

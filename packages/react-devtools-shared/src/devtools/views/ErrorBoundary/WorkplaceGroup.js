@@ -25,8 +25,7 @@ export default function WorkplaceGroup(): React.Node {
         className={styles.ReportLink}
         href={REACT_DEVTOOLS_WORKPLACE_URL}
         rel="noopener noreferrer"
-        target="_blank"
-        title="Report bug">
+        target="_blank">
         Report this on Workplace
       </a>
       <div className={styles.FacebookOnly}>(Facebook employees only.)</div>

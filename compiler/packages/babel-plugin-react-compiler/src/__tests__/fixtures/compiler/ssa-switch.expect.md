@@ -41,8 +41,7 @@ function foo() {
     case 2: {
       break bb0;
     }
-    default: {
-    }
+    default:
   }
 }
 

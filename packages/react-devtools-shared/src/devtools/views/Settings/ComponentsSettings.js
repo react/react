@@ -17,11 +17,7 @@ import {
   useState,
   use,
 } from 'react';
-import {
-  LOCAL_STORAGE_OPEN_IN_EDITOR_URL,
-  LOCAL_STORAGE_OPEN_IN_EDITOR_URL_PRESET,
-} from '../../../constants';
-import {useLocalStorage, useSubscription} from '../hooks';
+import {useSubscription} from '../hooks';
 import {StoreContext} from '../context';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
@@ -33,6 +29,7 @@ import {
   ComponentFilterHOC,
   ComponentFilterLocation,
   ComponentFilterEnvironmentName,
+  ComponentFilterActivitySlice,
   ElementTypeClass,
   ElementTypeContext,
   ElementTypeFunction,
@@ -45,7 +42,6 @@ import {
   ElementTypeActivity,
   ElementTypeViewTransition,
 } from 'react-devtools-shared/src/frontend/types';
-import {getDefaultOpenInEditorURL} from 'react-devtools-shared/src/utils';
 
 import styles from './SettingsShared.css';
 
@@ -59,8 +55,6 @@ import type {
   EnvironmentNameComponentFilter,
 } from 'react-devtools-shared/src/frontend/types';
 import {isInternalFacebookBuild} from 'react-devtools-feature-flags';
-
-const vscodeFilepath = 'vscode://file/{path}:{line}';
 
 export default function ComponentsSettings({
   environmentNames,
@@ -96,15 +90,6 @@ export default function ComponentsSettings({
       setParseHookNames(currentTarget.checked);
     },
     [setParseHookNames],
-  );
-
-  const [openInEditorURLPreset, setOpenInEditorURLPreset] = useLocalStorage<
-    'vscode' | 'custom',
-  >(LOCAL_STORAGE_OPEN_IN_EDITOR_URL_PRESET, 'custom');
-
-  const [openInEditorURL, setOpenInEditorURL] = useLocalStorage<string>(
-    LOCAL_STORAGE_OPEN_IN_EDITOR_URL,
-    getDefaultOpenInEditorURL(),
   );
 
   const [componentFilters, setComponentFilters] = useState<
@@ -187,6 +172,8 @@ export default function ComponentsSettings({
               isValid: true,
               value: 'Client',
             };
+          } else if (type === ComponentFilterActivitySlice) {
+            // TODO: Allow changing type
           }
         }
         return cloned;
@@ -294,7 +281,7 @@ export default function ComponentsSettings({
         if (index >= 0) {
           if (componentFilter.type === ComponentFilterElementType) {
             cloned[index] = {
-              ...((cloned[index]: any): ElementTypeComponentFilter),
+              ...(cloned[index] as any as ElementTypeComponentFilter),
               isEnabled,
             };
           } else if (
@@ -302,17 +289,17 @@ export default function ComponentsSettings({
             componentFilter.type === ComponentFilterLocation
           ) {
             cloned[index] = {
-              ...((cloned[index]: any): RegExpComponentFilter),
+              ...(cloned[index] as any as RegExpComponentFilter),
               isEnabled,
             };
           } else if (componentFilter.type === ComponentFilterHOC) {
             cloned[index] = {
-              ...((cloned[index]: any): BooleanComponentFilter),
+              ...(cloned[index] as any as BooleanComponentFilter),
               isEnabled,
             };
           } else if (componentFilter.type === ComponentFilterEnvironmentName) {
             cloned[index] = {
-              ...((cloned[index]: any): EnvironmentNameComponentFilter),
+              ...(cloned[index] as any as EnvironmentNameComponentFilter),
               isEnabled,
             };
           }
@@ -340,55 +327,31 @@ export default function ComponentsSettings({
   );
 
   return (
-    <div className={styles.Settings}>
-      <label className={styles.Setting}>
-        <input
-          type="checkbox"
-          checked={!collapseNodesByDefault}
-          onChange={updateCollapseNodesByDefault}
-        />{' '}
-        Expand component tree by default
-      </label>
-
-      <label className={styles.Setting}>
-        <input
-          type="checkbox"
-          checked={parseHookNames}
-          onChange={updateParseHookNames}
-        />{' '}
-        Always parse hook names from source{' '}
-        <span className={styles.Warning}>(may be slow)</span>
-      </label>
-
-      <label className={styles.OpenInURLSetting}>
-        Open in Editor URL:{' '}
-        <select
-          className={styles.Select}
-          value={openInEditorURLPreset}
-          onChange={({currentTarget}) => {
-            const selectedValue = currentTarget.value;
-            setOpenInEditorURLPreset(selectedValue);
-            if (selectedValue === 'vscode') {
-              setOpenInEditorURL(vscodeFilepath);
-            } else if (selectedValue === 'custom') {
-              setOpenInEditorURL('');
-            }
-          }}>
-          <option value="vscode">VS Code</option>
-          <option value="custom">Custom</option>
-        </select>
-        {openInEditorURLPreset === 'custom' && (
+    <div className={styles.SettingList}>
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
           <input
-            className={styles.Input}
-            type="text"
-            placeholder={process.env.EDITOR_URL ? process.env.EDITOR_URL : ''}
-            value={openInEditorURL}
-            onChange={event => {
-              setOpenInEditorURL(event.target.value);
-            }}
+            type="checkbox"
+            checked={!collapseNodesByDefault}
+            onChange={updateCollapseNodesByDefault}
+            className={styles.SettingRowCheckbox}
           />
-        )}
-      </label>
+          Expand component tree by default
+        </label>
+      </div>
+
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <input
+            type="checkbox"
+            checked={parseHookNames}
+            onChange={updateParseHookNames}
+            className={styles.SettingRowCheckbox}
+          />
+          Always parse hook names from source&nbsp;
+          <span className={styles.Warning}>(may be slow)</span>
+        </label>
+      </div>
 
       <div className={styles.Header}>Hide components where...</div>
 
@@ -404,43 +367,47 @@ export default function ComponentsSettings({
           {componentFilters.map((componentFilter, index) => (
             <tr className={styles.TableRow} key={index}>
               <td className={styles.TableCell}>
-                <Toggle
-                  className={
-                    componentFilter.isValid !== false
-                      ? ''
-                      : styles.InvalidRegExp
-                  }
-                  isChecked={componentFilter.isEnabled}
-                  onChange={isEnabled =>
-                    toggleFilterIsEnabled(componentFilter, isEnabled)
-                  }
-                  title={
-                    componentFilter.isValid === false
-                      ? 'Filter invalid'
-                      : componentFilter.isEnabled
-                        ? 'Filter enabled'
-                        : 'Filter disabled'
-                  }>
-                  <ToggleIcon
-                    isEnabled={componentFilter.isEnabled}
-                    isValid={
-                      componentFilter.isValid == null ||
-                      componentFilter.isValid === true
+                {componentFilter.type !== ComponentFilterActivitySlice && (
+                  <Toggle
+                    className={
+                      componentFilter.isValid !== false
+                        ? ''
+                        : styles.InvalidRegExp
                     }
-                  />
-                </Toggle>
+                    isChecked={componentFilter.isEnabled}
+                    onChange={isEnabled =>
+                      toggleFilterIsEnabled(componentFilter, isEnabled)
+                    }
+                    title={
+                      componentFilter.isValid === false
+                        ? 'Filter invalid'
+                        : componentFilter.isEnabled
+                          ? 'Filter enabled'
+                          : 'Filter disabled'
+                    }>
+                    <ToggleIcon
+                      isEnabled={componentFilter.isEnabled}
+                      isValid={
+                        componentFilter.isValid == null ||
+                        componentFilter.isValid === true
+                      }
+                    />
+                  </Toggle>
+                )}
               </td>
               <td className={styles.TableCell}>
                 <select
-                  className={styles.Select}
+                  disabled={
+                    componentFilter.type === ComponentFilterActivitySlice
+                  }
                   value={componentFilter.type}
                   onChange={({currentTarget}) =>
                     changeFilterType(
                       componentFilter,
-                      ((parseInt(
+                      parseInt(
                         currentTarget.value,
                         10,
-                      ): any): ComponentFilterType),
+                      ) as any as ComponentFilterType,
                     )
                   }>
                   {/* TODO: currently disabled, need find a new way of doing this
@@ -454,6 +421,11 @@ export default function ComponentsSettings({
                       environment
                     </option>
                   )}
+                  {componentFilter.type === ComponentFilterActivitySlice && (
+                    <option value={ComponentFilterActivitySlice}>
+                      component
+                    </option>
+                  )}
                 </select>
               </td>
               <td className={styles.TableCell}>
@@ -463,16 +435,17 @@ export default function ComponentsSettings({
                 {(componentFilter.type === ComponentFilterLocation ||
                   componentFilter.type === ComponentFilterDisplayName) &&
                   'matches'}
+                {componentFilter.type === ComponentFilterActivitySlice &&
+                  'within'}
               </td>
               <td className={styles.TableCell}>
                 {componentFilter.type === ComponentFilterElementType && (
                   <select
-                    className={styles.Select}
                     value={componentFilter.value}
                     onChange={({currentTarget}) =>
                       updateFilterValueElementType(
                         componentFilter,
-                        ((parseInt(currentTarget.value, 10): any): ElementType),
+                        parseInt(currentTarget.value, 10) as any as ElementType,
                       )
                     }>
                     {isInternalFacebookBuild && (
@@ -515,7 +488,6 @@ export default function ComponentsSettings({
                 )}
                 {componentFilter.type === ComponentFilterEnvironmentName && (
                   <select
-                    className={styles.Select}
                     value={componentFilter.value}
                     onChange={({currentTarget}) =>
                       updateFilterValueEnvironmentName(
@@ -529,6 +501,9 @@ export default function ComponentsSettings({
                       </option>
                     ))}
                   </select>
+                )}
+                {componentFilter.type === ComponentFilterActivitySlice && (
+                  <span>Activity Slice</span>
                 )}
               </td>
               <td className={styles.TableCell}>

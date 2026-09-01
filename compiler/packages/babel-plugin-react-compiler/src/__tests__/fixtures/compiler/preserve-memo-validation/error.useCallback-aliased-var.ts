@@ -1,4 +1,4 @@
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 
 // This is technically a false positive, but source is already breaking
 // `exhaustive-deps` lint rule (and can be considered invalid).

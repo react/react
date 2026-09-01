@@ -1,7 +1,9 @@
 .Element,
+.HoveredElement,
 .InactiveSelectedElement,
-.SelectedElement,
-.HoveredElement {
+.HighlightedElement,
+.InactiveHighlightedElement,
+.SelectedElement {
   color: var(--color-component-name);
 }
 .HoveredElement {
@@ -10,8 +12,15 @@
 .InactiveSelectedElement {
   background-color: var(--color-background-inactive);
 }
+.HighlightedElement {
+  background-color: var(--color-selected-tree-highlight-active);
+}
+.InactiveHighlightedElement {
+  background-color: var(--color-selected-tree-highlight-inactive);
+}
 
 .Wrapper {
+  position: relative;
   padding: 0 0.25rem;
   white-space: pre;
   height: var(--line-height-data);

@@ -12,6 +12,7 @@ export const rendererPackageName = 'react-server-dom-parcel';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigWeb';
 export * from 'react-client/src/ReactClientConsoleConfigServer';
+export * from 'react-client/src/ReactClientDebugConfigPlain';
 export * from 'react-server-dom-parcel/src/client/ReactFlightClientConfigBundlerParcel';
 export * from 'react-server-dom-parcel/src/client/ReactFlightClientConfigTargetParcelServer';
 export * from 'react-dom-bindings/src/shared/ReactFlightClientConfigDOM';

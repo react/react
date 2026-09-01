@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @expectNothingCompiled
 import {c as useMemoCache} from 'react/compiler-runtime';
 
 function Component(props) {
@@ -26,6 +27,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
+// @expectNothingCompiled
 import { c as useMemoCache } from "react/compiler-runtime";
 
 function Component(props) {

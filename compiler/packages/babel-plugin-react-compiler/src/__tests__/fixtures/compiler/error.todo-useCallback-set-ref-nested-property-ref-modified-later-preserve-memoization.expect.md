@@ -31,10 +31,17 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+error.todo-useCallback-set-ref-nested-property-ref-modified-later-preserve-memoization.ts:14:2
   12 |
   13 |   // The ref is modified later, extending its range and preventing memoization of onChange
 > 14 |   ref.current.inner = null;
-     |   ^^^^^^^^^^^ InvalidReact: Ref values (the `current` property) may not be accessed during render. (https://react.dev/reference/react/useRef) (14:14)
+     |   ^^^^^^^^^^^ Cannot update ref during render
   15 |
   16 |   return <input onChange={onChange} />;
   17 | }

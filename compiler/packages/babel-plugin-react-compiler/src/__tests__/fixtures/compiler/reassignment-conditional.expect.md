@@ -39,9 +39,7 @@ function Component(props) {
       }
       x = t1;
     }
-
     y.push(props.p2);
-
     t0 = <Component x={x} y={y} />;
     $[0] = props.p0;
     $[1] = props.p1;

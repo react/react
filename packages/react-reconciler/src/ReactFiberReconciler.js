@@ -42,7 +42,6 @@ import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFrom
 import isArray from 'shared/isArray';
 import {
   enableSchedulingProfiler,
-  enableHydrationLaneScheduling,
   disableLegacyMode,
 } from 'shared/ReactFeatureFlags';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
@@ -57,7 +56,7 @@ import {
   processChildContext,
   emptyContextObject,
   isContextProvider as isLegacyContextProvider,
-} from './ReactFiberContext';
+} from './ReactFiberLegacyContext';
 import {createFiberRoot} from './ReactFiberRoot';
 import {isRootDehydrated} from './ReactFiberShellHydration';
 import {
@@ -98,6 +97,7 @@ import {
   getHighestPriorityPendingLanes,
   higherPriorityLane,
   getBumpedLaneForHydrationByLane,
+  claimNextRetryLane,
 } from './ReactFiberLane';
 import {
   scheduleRefresh,
@@ -134,11 +134,11 @@ let didWarnAboutFindNodeInStrictMode;
 
 if (__DEV__) {
   didWarnAboutNestedUpdates = false;
-  didWarnAboutFindNodeInStrictMode = ({}: {[string]: boolean});
+  didWarnAboutFindNodeInStrictMode = {} as {[string]: boolean};
 }
 
 function getContextForSubtree(
-  parentComponent: ?React$Component<any, any>,
+  parentComponent: ?component(...props: any),
 ): Object {
   if (!parentComponent) {
     return emptyContextObject;
@@ -248,7 +248,7 @@ export function createContainer(
     error: mixed,
     errorInfo: {
       +componentStack?: ?string,
-      +errorBoundary?: ?React$Component<any, any>,
+      +errorBoundary?: ?component(...props: any),
     },
   ) => void,
   onRecoverableError: (
@@ -298,7 +298,7 @@ export function createHydrationContainer(
     error: mixed,
     errorInfo: {
       +componentStack?: ?string,
-      +errorBoundary?: ?React$Component<any, any>,
+      +errorBoundary?: ?component(...props: any),
     },
   ) => void,
   onRecoverableError: (
@@ -339,13 +339,12 @@ export function createHydrationContainer(
   // enqueue the callback if one is provided).
   const current = root.current;
   let lane = requestUpdateLane(current);
-  if (enableHydrationLaneScheduling) {
-    lane = getBumpedLaneForHydrationByLane(lane);
-  }
+  lane = getBumpedLaneForHydrationByLane(lane);
   const update = createUpdate(lane);
   update.callback =
     callback !== undefined && callback !== null ? callback : null;
   enqueueUpdate(current, update, lane);
+  startUpdateTimerByLane(lane, 'hydrateRoot()', null);
   scheduleInitialHydrationOnRoot(root, lane);
 
   return root;
@@ -354,7 +353,7 @@ export function createHydrationContainer(
 export function updateContainer(
   element: ReactNodeList,
   container: OpaqueRoot,
-  parentComponent: ?React$Component<any, any>,
+  parentComponent: ?component(...props: any),
   callback: ?Function,
 ): Lane {
   const current = container.current;
@@ -373,7 +372,7 @@ export function updateContainer(
 export function updateContainerSync(
   element: ReactNodeList,
   container: OpaqueRoot,
-  parentComponent: ?React$Component<any, any>,
+  parentComponent: ?component(...props: any),
   callback: ?Function,
 ): Lane {
   if (!disableLegacyMode && container.tag === LegacyRoot) {
@@ -396,7 +395,7 @@ function updateContainerImpl(
   lane: Lane,
   element: ReactNodeList,
   container: OpaqueRoot,
-  parentComponent: ?React$Component<any, any>,
+  parentComponent: ?component(...props: any),
   callback: ?Function,
 ): void {
   if (__DEV__) {
@@ -452,7 +451,7 @@ function updateContainerImpl(
 
   const root = enqueueUpdate(rootFiber, update, lane);
   if (root !== null) {
-    startUpdateTimerByLane(lane, 'root.render()');
+    startUpdateTimerByLane(lane, 'root.render()', null);
     scheduleUpdateOnFiber(root, rootFiber, lane);
     entangleTransitions(root, rootFiber, lane);
   }
@@ -470,7 +469,7 @@ export {
 
 export function getPublicRootInstance(
   container: OpaqueRoot,
-): React$Component<any, any> | PublicInstance | null {
+): component(...props: any) | PublicInstance | null {
   const containerFiber = container.current;
   if (!containerFiber.child) {
     return null;
@@ -555,9 +554,7 @@ export function attemptHydrationAtCurrentPriority(fiber: Fiber): void {
     return;
   }
   let lane = requestUpdateLane(fiber);
-  if (enableHydrationLaneScheduling) {
-    lane = getBumpedLaneForHydrationByLane(lane);
-  }
+  lane = getBumpedLaneForHydrationByLane(lane);
   const root = enqueueConcurrentRenderForLane(fiber, lane);
   if (root !== null) {
     scheduleUpdateOnFiber(root, fiber, lane);
@@ -598,6 +595,7 @@ let overrideProps = null;
 let overridePropsDeletePath = null;
 let overridePropsRenamePath = null;
 let scheduleUpdate = null;
+let scheduleRetry = null;
 let setErrorHandler = null;
 let setSuspenseHandler = null;
 
@@ -611,7 +609,7 @@ if (__DEV__) {
     const updated = isArray(obj) ? obj.slice() : {...obj};
     if (index + 1 === path.length) {
       if (isArray(updated)) {
-        updated.splice(((key: any): number), 1);
+        updated.splice(key as any as number, 1);
       } else {
         delete updated[key];
       }
@@ -642,7 +640,7 @@ if (__DEV__) {
       // $FlowFixMe[incompatible-use] number or string is fine here
       updated[newKey] = updated[oldKey];
       if (isArray(updated)) {
-        updated.splice(((oldKey: any): number), 1);
+        updated.splice(oldKey as any as number, 1);
       } else {
         delete updated[oldKey];
       }
@@ -834,6 +832,14 @@ if (__DEV__) {
     }
   };
 
+  scheduleRetry = (fiber: Fiber) => {
+    const lane = claimNextRetryLane();
+    const root = enqueueConcurrentRenderForLane(fiber, lane);
+    if (root !== null) {
+      scheduleUpdateOnFiber(root, fiber, lane);
+    }
+  };
+
   setErrorHandler = (newShouldErrorImpl: Fiber => ?boolean) => {
     shouldErrorImpl = newShouldErrorImpl;
   };
@@ -853,7 +859,7 @@ function getLaneLabelMap(): Map<Lane, string> | null {
 
     let lane = 1;
     for (let index = 0; index < TotalLanes; index++) {
-      const label = ((getLabelForLane(lane): any): string);
+      const label = getLabelForLane(lane) as any as string;
       map.set(lane, label);
       lane *= 2;
     }
@@ -874,8 +880,9 @@ export function injectIntoDevTools(): boolean {
     // which may not match for third party renderers.
     reconcilerVersion: ReactVersion,
   };
+  // $FlowFixMe[invalid-compare]
   if (extraDevToolsConfig !== null) {
-    internals.rendererConfig = (extraDevToolsConfig: RendererInspectionConfig);
+    internals.rendererConfig = extraDevToolsConfig as RendererInspectionConfig;
   }
   if (__DEV__) {
     internals.overrideHookState = overrideHookState;
@@ -885,6 +892,7 @@ export function injectIntoDevTools(): boolean {
     internals.overridePropsDeletePath = overridePropsDeletePath;
     internals.overridePropsRenamePath = overridePropsRenamePath;
     internals.scheduleUpdate = scheduleUpdate;
+    internals.scheduleRetry = scheduleRetry;
     internals.setErrorHandler = setErrorHandler;
     internals.setSuspenseHandler = setSuspenseHandler;
     // React Refresh

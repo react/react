@@ -32,62 +32,44 @@ import { useMemo } from "react";
 import { useFragment } from "shared-runtime";
 
 function Component() {
-  const $ = _c(11);
+  const $ = _c(7);
   const data = useFragment();
   let t0;
   if ($[0] !== data.nodes) {
-    t0 = data.nodes ?? [];
+    const nodes = data.nodes ?? [];
+    const flatMap = nodes.flatMap(_temp);
+    t0 = flatMap.filter(_temp2);
     $[0] = data.nodes;
     $[1] = t0;
   } else {
     t0 = $[1];
   }
-  const nodes = t0;
+  const filtered = t0;
   let t1;
-  if ($[2] !== nodes) {
-    t1 = nodes.flatMap(_temp);
-    $[2] = nodes;
+  if ($[2] !== filtered) {
+    t1 = filtered.map();
+    $[2] = filtered;
     $[3] = t1;
   } else {
     t1 = $[3];
   }
-  const flatMap = t1;
-  let t2;
-  if ($[4] !== flatMap) {
-    t2 = flatMap.filter(_temp2);
-    $[4] = flatMap;
-    $[5] = t2;
-  } else {
-    t2 = $[5];
-  }
-  const filtered = t2;
-  let t3;
-  let t4;
-  if ($[6] !== filtered) {
-    t4 = filtered.map();
-    $[6] = filtered;
-    $[7] = t4;
-  } else {
-    t4 = $[7];
-  }
-  t3 = t4;
-  const map = t3;
+  const map = t1;
   const index = filtered.findIndex(_temp3);
-  let t5;
-  if ($[8] !== index || $[9] !== map) {
-    t5 = (
+  let t2;
+  if ($[4] !== index || $[5] !== map) {
+    t2 = (
       <div>
         {map}
         {index}
       </div>
     );
-    $[8] = index;
-    $[9] = map;
-    $[10] = t5;
+    $[4] = index;
+    $[5] = map;
+    $[6] = t2;
   } else {
-    t5 = $[10];
+    t2 = $[6];
   }
-  return t5;
+  return t2;
 }
 function _temp3(x) {
   return x === null;

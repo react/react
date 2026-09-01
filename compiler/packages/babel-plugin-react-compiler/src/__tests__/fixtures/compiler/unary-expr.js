@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 function component(a) {
   let t = {t: a};
   let z = +t.t;

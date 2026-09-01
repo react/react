@@ -35,15 +35,13 @@ function useFoo(t0) {
   const $ = _c(2);
   const { callback } = t0;
   let t1;
-  let t2;
   if ($[0] !== callback) {
-    t2 = new Array(callback());
+    t1 = new Array(callback());
     $[0] = callback;
-    $[1] = t2;
+    $[1] = t1;
   } else {
-    t2 = $[1];
+    t1 = $[1];
   }
-  t1 = t2;
   return t1;
 }
 

@@ -41,6 +41,7 @@ function useHook(cond) {
     bb0: switch (CONST_STRING0) {
       case CONST_STRING0: {
         log.push("@A");
+
         if (cond) {
           break bb0;
         }

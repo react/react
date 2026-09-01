@@ -291,28 +291,6 @@ describe('ReactElementClone', () => {
     );
   });
 
-  // @gate !disableDefaultPropsExceptForClasses
-  it('should normalize props with default values', () => {
-    class Component extends React.Component {
-      render() {
-        return <span />;
-      }
-    }
-    Component.defaultProps = {prop: 'testKey'};
-
-    const instance = React.createElement(Component);
-    const clonedInstance = React.cloneElement(instance, {prop: undefined});
-    expect(clonedInstance.props.prop).toBe('testKey');
-    const clonedInstance2 = React.cloneElement(instance, {prop: null});
-    expect(clonedInstance2.props.prop).toBe(null);
-
-    const instance2 = React.createElement(Component, {prop: 'newTestKey'});
-    const cloneInstance3 = React.cloneElement(instance2, {prop: undefined});
-    expect(cloneInstance3.props.prop).toBe('testKey');
-    const cloneInstance4 = React.cloneElement(instance2, {});
-    expect(cloneInstance4.props.prop).toBe('newTestKey');
-  });
-
   it('warns for keys for arrays of elements in rest args', async () => {
     const root = ReactDOMClient.createRoot(document.createElement('div'));
     await act(() => {
@@ -368,16 +346,11 @@ describe('ReactElementClone', () => {
     expect(clone.key).toBe('12');
     expect(clone.props.ref).toBe('34');
     expect(clone.ref).toBe('34');
-    assertConsoleErrorDev(
-      [
-        'Accessing element.ref was removed in React 19. ref is now a ' +
-          'regular prop. It will be removed from the JSX Element ' +
-          'type in a future release.',
-      ],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleErrorDev([
+      'Accessing element.ref was removed in React 19. ref is now a ' +
+        'regular prop. It will be removed from the JSX Element ' +
+        'type in a future release.',
+    ]);
     expect(clone.props).toEqual({foo: 'ef', ref: '34'});
     if (__DEV__) {
       expect(Object.isFrozen(element)).toBe(true);

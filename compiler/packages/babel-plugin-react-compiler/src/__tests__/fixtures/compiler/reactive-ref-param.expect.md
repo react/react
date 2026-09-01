@@ -66,25 +66,17 @@ function Parent(t0) {
 }
 
 function ChildImpl(_props, ref) {
-  const $ = _c(4);
+  const $ = _c(2);
   let t0;
   if ($[0] !== ref) {
-    t0 = () => ref.current;
+    const cb = () => ref.current;
+    t0 = <Stringify cb={cb} shouldInvokeFns={true} />;
     $[0] = ref;
     $[1] = t0;
   } else {
     t0 = $[1];
   }
-  const cb = t0;
-  let t1;
-  if ($[2] !== cb) {
-    t1 = <Stringify cb={cb} shouldInvokeFns={true} />;
-    $[2] = cb;
-    $[3] = t1;
-  } else {
-    t1 = $[3];
-  }
-  return t1;
+  return t0;
 }
 
 const Child = forwardRef(ChildImpl);

@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {SourceLocation} from 'babel-plugin-react-compiler/src';
+import {type SourceLocation} from 'babel-plugin-react-compiler';
 import {type Range} from 'vscode-languageserver';
 
 export function babelLocationToRange(loc: SourceLocation): Range | null {

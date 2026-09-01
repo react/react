@@ -50,6 +50,7 @@ function Component(props) {
   } else {
     x = $[2];
   }
+
   return x;
 }
 

@@ -13,10 +13,17 @@ function Component() {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Cannot reassign a `const` variable
+
+`x` is declared as const.
+
+error.invalid-reassign-const.ts:3:2
   1 | function Component() {
   2 |   const x = 0;
 > 3 |   x = 1;
-    |   ^ InvalidJS: Cannot reassign a `const` variable. `x` is declared as const (3:3)
+    |   ^ Cannot reassign a `const` variable
   4 | }
   5 |
 ```

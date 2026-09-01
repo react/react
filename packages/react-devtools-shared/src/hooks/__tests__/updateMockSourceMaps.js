@@ -14,7 +14,7 @@ const babel = require('@rollup/plugin-babel').babel;
 const commonjs = require('@rollup/plugin-commonjs');
 const jsx = require('acorn-jsx');
 const rollupResolve = require('@rollup/plugin-node-resolve').nodeResolve;
-const {encode, decode} = require('sourcemap-codec');
+const {encode, decode} = require('@jridgewell/sourcemap-codec');
 const {generateEncodedHookMap} = require('../generateHookMap');
 const {parse} = require('@babel/parser');
 

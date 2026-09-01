@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 import fbt from 'fbt';
 
 /**

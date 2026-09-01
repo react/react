@@ -16,21 +16,25 @@ import {
   setInObject,
 } from 'react-devtools-shared/src/utils';
 
+import {REACT_LEGACY_ELEMENT_TYPE} from 'shared/ReactSymbols';
+
 import type {
   DehydratedData,
   InspectedElementPath,
 } from 'react-devtools-shared/src/frontend/types';
 
+import noop from 'shared/noop';
+
 export const meta = {
-  inspectable: (Symbol('inspectable'): symbol),
-  inspected: (Symbol('inspected'): symbol),
-  name: (Symbol('name'): symbol),
-  preview_long: (Symbol('preview_long'): symbol),
-  preview_short: (Symbol('preview_short'): symbol),
-  readonly: (Symbol('readonly'): symbol),
-  size: (Symbol('size'): symbol),
-  type: (Symbol('type'): symbol),
-  unserializable: (Symbol('unserializable'): symbol),
+  inspectable: Symbol('inspectable') as symbol,
+  inspected: Symbol('inspected') as symbol,
+  name: Symbol('name') as symbol,
+  preview_long: Symbol('preview_long') as symbol,
+  preview_short: Symbol('preview_short') as symbol,
+  readonly: Symbol('readonly') as symbol,
+  size: Symbol('size') as symbol,
+  type: Symbol('type') as symbol,
+  unserializable: Symbol('unserializable') as symbol,
 };
 
 export type Dehydrated = {
@@ -129,7 +133,7 @@ export function dehydrate(
   path: Array<string | number>,
   isPathAllowed: (path: Array<string | number>) => boolean,
   level: number = 0,
-): $PropertyType<DehydratedData, 'data'> {
+): DehydratedData['data'] {
   const type = getDataType(data);
 
   let isPathAllowedCheck;
@@ -186,18 +190,103 @@ export function dehydrate(
         type,
       };
 
-    // React Elements aren't very inspector-friendly,
-    // and often contain private fields or circular references.
-    case 'react_element':
-      cleaned.push(path);
-      return {
-        inspectable: false,
+    case 'react_element': {
+      isPathAllowedCheck = isPathAllowed(path);
+
+      if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
+        cleaned.push(path);
+        return {
+          inspectable: true,
+          preview_short: formatDataForPreview(data, false),
+          preview_long: formatDataForPreview(data, true),
+          name: getDisplayNameForReactElement(data) || 'Unknown',
+          type,
+        };
+      }
+
+      const unserializableValue: Unserializable = {
+        unserializable: true,
+        type,
+        readonly: true,
         preview_short: formatDataForPreview(data, false),
         preview_long: formatDataForPreview(data, true),
         name: getDisplayNameForReactElement(data) || 'Unknown',
-        type,
       };
+      // TODO: We can't expose type because that name is already taken on Unserializable.
+      unserializableValue.key = dehydrate(
+        data.key,
+        cleaned,
+        unserializable,
+        path.concat(['key']),
+        isPathAllowed,
+        isPathAllowedCheck ? 1 : level + 1,
+      );
+      if (data.$$typeof === REACT_LEGACY_ELEMENT_TYPE) {
+        unserializableValue.ref = dehydrate(
+          data.ref,
+          cleaned,
+          unserializable,
+          path.concat(['ref']),
+          isPathAllowed,
+          isPathAllowedCheck ? 1 : level + 1,
+        );
+      }
+      unserializableValue.props = dehydrate(
+        data.props,
+        cleaned,
+        unserializable,
+        path.concat(['props']),
+        isPathAllowed,
+        isPathAllowedCheck ? 1 : level + 1,
+      );
 
+      unserializable.push(path);
+      return unserializableValue;
+    }
+    case 'react_lazy': {
+      isPathAllowedCheck = isPathAllowed(path);
+
+      const payload = data._payload;
+
+      if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
+        cleaned.push(path);
+        const inspectable =
+          payload !== null &&
+          typeof payload === 'object' &&
+          (payload._status === 1 ||
+            payload._status === 2 ||
+            payload.status === 'fulfilled' ||
+            payload.status === 'rejected');
+        return {
+          inspectable,
+          preview_short: formatDataForPreview(data, false),
+          preview_long: formatDataForPreview(data, true),
+          name: 'lazy()',
+          type,
+        };
+      }
+
+      const unserializableValue: Unserializable = {
+        unserializable: true,
+        type: type,
+        preview_short: formatDataForPreview(data, false),
+        preview_long: formatDataForPreview(data, true),
+        name: 'lazy()',
+      };
+      // Ideally we should alias these properties to something more readable but
+      // unfortunately because of how the hydration algorithm uses a single concept of
+      // "path" we can't alias the path.
+      unserializableValue._payload = dehydrate(
+        payload,
+        cleaned,
+        unserializable,
+        path.concat(['_payload']),
+        isPathAllowed,
+        isPathAllowedCheck ? 1 : level + 1,
+      );
+      unserializable.push(path);
+      return unserializableValue;
+    }
     // ArrayBuffers error if you try to inspect them.
     case 'array_buffer':
     case 'data_view':
@@ -307,6 +396,7 @@ export function dehydrate(
       isPathAllowedCheck = isPathAllowed(path);
 
       if (level >= LEVEL_THRESHOLD && !isPathAllowedCheck) {
+        cleaned.push(path);
         return {
           inspectable:
             data.status === 'fulfilled' || data.status === 'rejected',
@@ -315,6 +405,15 @@ export function dehydrate(
           name: data.toString(),
           type,
         };
+      }
+
+      if (
+        data.status === 'resolved_model' ||
+        data.status === 'resolve_module'
+      ) {
+        // This looks it's a lazy initialization pattern such in Flight.
+        // Since we're about to inspect it. Let's eagerly initialize it.
+        data.then(noop);
       }
 
       switch (data.status) {
@@ -380,7 +479,7 @@ export function dehydrate(
         return createDehydrated(type, true, data, cleaned, path);
       } else {
         const object: {
-          [string]: $PropertyType<DehydratedData, 'data'>,
+          [string]: DehydratedData['data'],
         } = {};
         getAllEnumerableKeys(data).forEach(key => {
           const name = key.toString();
@@ -497,6 +596,7 @@ export function dehydrate(
       return value;
     }
     case 'infinity':
+    case '-infinity':
     case 'nan':
     case 'undefined':
       // Some values are lossy when sent through a WebSocket.
@@ -517,7 +617,7 @@ function dehydrateKey(
   path: Array<string | number>,
   isPathAllowed: (path: Array<string | number>) => boolean,
   level: number = 0,
-): $PropertyType<DehydratedData, 'data'> {
+): DehydratedData['data'] {
   try {
     return dehydrate(
       parent[key],
@@ -605,6 +705,8 @@ export function hydrate(
       return;
     } else if (value.type === 'infinity') {
       parent[last] = Infinity;
+    } else if (value.type === '-infinity') {
+      parent[last] = -Infinity;
     } else if (value.type === 'nan') {
       parent[last] = NaN;
     } else if (value.type === 'undefined') {

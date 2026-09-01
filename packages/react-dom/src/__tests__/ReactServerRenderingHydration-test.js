@@ -127,9 +127,6 @@ describe('ReactDOMServerHydration', () => {
       // Now simulate a situation where the app is not idempotent. React should
       // warn but do the right thing.
       element.innerHTML = lastMarkup;
-      const favorSafetyOverHydrationPerf = gate(
-        flags => flags.favorSafetyOverHydrationPerf,
-      );
       root = await act(() => {
         return ReactDOMClient.hydrateRoot(
           element,
@@ -144,37 +141,10 @@ describe('ReactDOMServerHydration', () => {
           },
         );
       });
-      assertConsoleErrorDev(
-        favorSafetyOverHydrationPerf
-          ? []
-          : [
-              "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
-                "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
-                '\n' +
-                "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
-                "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
-                "- Date formatting in a user's locale which doesn't match the server.\n" +
-                '- External changing data without sending a snapshot of it along with the HTML.\n' +
-                '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension ' +
-                'installed which messes with the HTML before React loaded.\n' +
-                '\n' +
-                'https://react.dev/link/hydration-mismatch\n' +
-                '\n' +
-                '  <TestComponent name="y" ref={function ref}>\n' +
-                '    <span ref={{current:null}} onClick={function}>\n' +
-                '+     y\n' +
-                '-     x\n' +
-                '\n    in span (at **)' +
-                '\n    in TestComponent (at **)',
-            ],
-      );
+
       expect(mountCount).toEqual(4);
       expect(element.innerHTML.length > 0).toBe(true);
-      if (favorSafetyOverHydrationPerf) {
-        expect(element.innerHTML).not.toEqual(lastMarkup);
-      } else {
-        expect(element.innerHTML).toEqual(lastMarkup);
-      }
+      expect(element.innerHTML).not.toEqual(lastMarkup);
 
       // Ensure the events system works after markup mismatch.
       expect(numClicks).toEqual(1);
@@ -240,9 +210,6 @@ describe('ReactDOMServerHydration', () => {
     const onFocusAfterHydration = jest.fn();
     element.firstChild.focus = onFocusBeforeHydration;
 
-    const favorSafetyOverHydrationPerf = gate(
-      flags => flags.favorSafetyOverHydrationPerf,
-    );
     await act(() => {
       ReactDOMClient.hydrateRoot(
         element,
@@ -252,28 +219,6 @@ describe('ReactDOMServerHydration', () => {
         {onRecoverableError: error => {}},
       );
     });
-    assertConsoleErrorDev(
-      favorSafetyOverHydrationPerf
-        ? []
-        : [
-            "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
-              "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
-              '\n' +
-              "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
-              "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
-              "- Date formatting in a user's locale which doesn't match the server.\n" +
-              '- External changing data without sending a snapshot of it along with the HTML.\n' +
-              '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension ' +
-              'installed which messes with the HTML before React loaded.\n' +
-              '\n' +
-              'https://react.dev/link/hydration-mismatch\n' +
-              '\n' +
-              '  <button autoFocus={false} onFocus={function mockConstructor}>\n' +
-              '+   client\n' +
-              '-   server\n' +
-              '\n    in button (at **)',
-          ],
-    );
 
     expect(onFocusBeforeHydration).not.toHaveBeenCalled();
     expect(onFocusAfterHydration).not.toHaveBeenCalled();
@@ -432,24 +377,69 @@ describe('ReactDOMServerHydration', () => {
     await act(() => {
       ReactDOMClient.hydrateRoot(element, markup);
     });
-    assertConsoleWarnDev(
-      [
-        'componentWillMount has been renamed, and is not recommended for use. ' +
-          'See https://react.dev/link/unsafe-component-lifecycles for details.\n' +
-          '\n' +
-          '* Move code with side effects to componentDidMount, and set initial state in the constructor.\n' +
-          '* Rename componentWillMount to UNSAFE_componentWillMount to suppress this warning in non-strict mode. ' +
-          'In React 18.x, only the UNSAFE_ name will work. ' +
-          'To rename all deprecated lifecycles to their new names, ' +
-          'you can run `npx react-codemod rename-unsafe-lifecycles` in your project source folder.\n' +
-          '\n' +
-          'Please update the following components: ComponentWithWarning',
-      ],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleWarnDev([
+      'componentWillMount has been renamed, and is not recommended for use. ' +
+        'See https://react.dev/link/unsafe-component-lifecycles for details.\n' +
+        '\n' +
+        '* Move code with side effects to componentDidMount, and set initial state in the constructor.\n' +
+        '* Rename componentWillMount to UNSAFE_componentWillMount to suppress this warning in non-strict mode. ' +
+        'In React 18.x, only the UNSAFE_ name will work. ' +
+        'To rename all deprecated lifecycles to their new names, ' +
+        'you can run `npx react-codemod rename-unsafe-lifecycles` in your project source folder.\n' +
+        '\n' +
+        'Please update the following components: ComponentWithWarning',
+    ]);
     expect(element.textContent).toBe('Hi');
+  });
+
+  it('replays effects when hydrating a StrictMode subtree', async () => {
+    const log = [];
+    function Child() {
+      React.useLayoutEffect(() => {
+        log.push('layout mount');
+        return () => log.push('layout unmount');
+      }, []);
+      React.useEffect(() => {
+        log.push('effect mount');
+        return () => log.push('effect unmount');
+      }, []);
+      return <span>Hello</span>;
+    }
+
+    function App() {
+      return (
+        <div>
+          <Child />
+        </div>
+      );
+    }
+
+    const markup = (
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+
+    const element = document.createElement('div');
+    element.innerHTML = ReactDOMServer.renderToString(markup);
+    expect(element.textContent).toBe('Hello');
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(element, markup);
+    });
+
+    if (__DEV__) {
+      expect(log).toEqual([
+        'layout mount',
+        'effect mount',
+        'layout unmount',
+        'effect unmount',
+        'layout mount',
+        'effect mount',
+      ]);
+    } else {
+      expect(log).toEqual(['layout mount', 'effect mount']);
+    }
   });
 
   it('should be able to render and hydrate forwardRef components', async () => {
@@ -618,9 +608,6 @@ describe('ReactDOMServerHydration', () => {
     );
     domElement.innerHTML = markup;
 
-    const favorSafetyOverHydrationPerf = gate(
-      flags => flags.favorSafetyOverHydrationPerf,
-    );
     await act(() => {
       ReactDOMClient.hydrateRoot(
         domElement,
@@ -630,35 +617,8 @@ describe('ReactDOMServerHydration', () => {
         {onRecoverableError: error => {}},
       );
     });
-    assertConsoleErrorDev(
-      favorSafetyOverHydrationPerf
-        ? []
-        : [
-            "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
-              "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
-              '\n' +
-              "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
-              "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
-              "- Date formatting in a user's locale which doesn't match the server.\n" +
-              '- External changing data without sending a snapshot of it along with the HTML.\n' +
-              '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension ' +
-              'installed which messes with the HTML before React loaded.\n' +
-              '\n' +
-              'https://react.dev/link/hydration-mismatch\n' +
-              '\n' +
-              '  <div dangerouslySetInnerHTML={undefined}>\n' +
-              '    <p>\n' +
-              '+     client\n' +
-              '-     server\n' +
-              '\n    in p (at **)',
-          ],
-    );
 
-    if (favorSafetyOverHydrationPerf) {
-      expect(domElement.innerHTML).not.toEqual(markup);
-    } else {
-      expect(domElement.innerHTML).toEqual(markup);
-    }
+    expect(domElement.innerHTML).not.toEqual(markup);
   });
 
   it('should warn if innerHTML mismatches with dangerouslySetInnerHTML=undefined on the client', async () => {

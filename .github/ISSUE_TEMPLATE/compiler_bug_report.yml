@@ -11,7 +11,7 @@ body:
     options:
       - label: React Compiler core (the JS output is incorrect, or your app works incorrectly after optimization)
       - label: babel-plugin-react-compiler (build issue installing or using the Babel plugin)
-      - label: eslint-plugin-react-compiler (build issue installing or using the eslint plugin)
+      - label: eslint-plugin-react-hooks (build issue installing or using the eslint plugin)
       - label: react-compiler-healthcheck (build issue installing or using the healthcheck script)
 - type: input
   attributes:

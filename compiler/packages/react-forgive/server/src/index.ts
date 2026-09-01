@@ -7,38 +7,22 @@
 
 import {TextDocument} from 'vscode-languageserver-textdocument';
 import {
-  CodeAction,
-  CodeActionKind,
   CodeLens,
-  Command,
   createConnection,
   type InitializeParams,
   type InitializeResult,
-  Position,
   ProposedFeatures,
   TextDocuments,
   TextDocumentSyncKind,
 } from 'vscode-languageserver/node';
 import {compile, lastResult} from './compiler';
-import {type PluginOptions} from 'babel-plugin-react-compiler/src';
-import {resolveReactConfig} from './compiler/options';
 import {
   type CompileSuccessEvent,
   type LoggerEvent,
+  type PluginOptions,
   defaultOptions,
-} from 'babel-plugin-react-compiler/src/Entrypoint/Options';
+} from 'babel-plugin-react-compiler';
 import {babelLocationToRange, getRangeFirstCharacter} from './compiler/compat';
-import {
-  type AutoDepsDecorationsLSPEvent,
-  AutoDepsDecorationsRequest,
-  mapCompilerEventToLSPEvent,
-} from './requests/autodepsdecorations';
-import {
-  isPositionWithinRange,
-  isRangeWithinRange,
-  Range,
-  sourceLocationToRange,
-} from './utils/range';
 
 const SUPPORTED_LANGUAGE_IDS = new Set([
   'javascript',
@@ -52,67 +36,17 @@ const documents = new TextDocuments(TextDocument);
 
 let compilerOptions: PluginOptions | null = null;
 let compiledFns: Set<CompileSuccessEvent> = new Set();
-let autoDepsDecorations: Array<AutoDepsDecorationsLSPEvent> = [];
-let codeActionEvents: Array<CodeActionLSPEvent> = [];
-
-type CodeActionLSPEvent = {
-  title: string;
-  kind: CodeActionKind;
-  newText: string;
-  anchorRange: Range;
-  editRange: {start: Position; end: Position};
-};
 
 connection.onInitialize((_params: InitializeParams) => {
-  // TODO(@poteto) get config fr
-  compilerOptions = resolveReactConfig('.') ?? defaultOptions;
+  compilerOptions = defaultOptions;
   compilerOptions = {
     ...compilerOptions,
-    environment: {
-      ...compilerOptions.environment,
-      inferEffectDependencies: [
-        {
-          function: {
-            importSpecifierName: 'useEffect',
-            source: 'react',
-          },
-          numRequiredArgs: 1,
-        },
-        {
-          function: {
-            importSpecifierName: 'useSpecialEffect',
-            source: 'shared-runtime',
-          },
-          numRequiredArgs: 2,
-        },
-        {
-          function: {
-            importSpecifierName: 'default',
-            source: 'useEffectWrapper',
-          },
-          numRequiredArgs: 1,
-        },
-      ],
-    },
     logger: {
       logEvent(_filename: string | null, event: LoggerEvent) {
         connection.console.info(`Received event: ${event.kind}`);
         connection.console.debug(JSON.stringify(event, null, 2));
         if (event.kind === 'CompileSuccess') {
           compiledFns.add(event);
-        }
-        if (event.kind === 'AutoDepsDecorations') {
-          autoDepsDecorations.push(mapCompilerEventToLSPEvent(event));
-        }
-        if (event.kind === 'AutoDepsEligible') {
-          const depArrayLoc = sourceLocationToRange(event.depArrayLoc);
-          codeActionEvents.push({
-            title: 'Use React Compiler inferred dependency array',
-            kind: CodeActionKind.QuickFix,
-            newText: '',
-            anchorRange: sourceLocationToRange(event.fnLoc),
-            editRange: {start: depArrayLoc[0], end: depArrayLoc[1]},
-          });
         }
       },
     },
@@ -121,7 +55,6 @@ connection.onInitialize((_params: InitializeParams) => {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Full,
       codeLensProvider: {resolveProvider: true},
-      codeActionProvider: {resolveProvider: true},
     },
   };
   return result;
@@ -194,60 +127,9 @@ connection.onCodeLensResolve(lens => {
   return lens;
 });
 
-connection.onCodeAction(params => {
-  const codeActions: Array<CodeAction> = [];
-  for (const codeActionEvent of codeActionEvents) {
-    if (
-      isRangeWithinRange(
-        [params.range.start, params.range.end],
-        codeActionEvent.anchorRange,
-      )
-    ) {
-      const codeAction = CodeAction.create(
-        codeActionEvent.title,
-        {
-          changes: {
-            [params.textDocument.uri]: [
-              {
-                newText: codeActionEvent.newText,
-                range: codeActionEvent.editRange,
-              },
-            ],
-          },
-        },
-        codeActionEvent.kind,
-      );
-      // After executing a codeaction, we want to draw autodep decorations again
-      codeAction.command = Command.create(
-        'Request autodeps decorations',
-        'react.requestAutoDepsDecorations',
-        codeActionEvent.anchorRange[0],
-      );
-      codeActions.push(codeAction);
-    }
-  }
-  return codeActions;
-});
-
-/**
- * The client can request the server to compute autodeps decorations based on a currently selected
- * position if the selected position is within an autodep eligible function call.
- */
-connection.onRequest(AutoDepsDecorationsRequest.type, async params => {
-  const position = params.position;
-  for (const decoration of autoDepsDecorations) {
-    if (isPositionWithinRange(position, decoration.useEffectCallExpr)) {
-      return decoration;
-    }
-  }
-  return null;
-});
-
 function resetState() {
   connection.console.debug('Clearing state');
   compiledFns.clear();
-  autoDepsDecorations = [];
-  codeActionEvents = [];
 }
 
 documents.listen(connection);

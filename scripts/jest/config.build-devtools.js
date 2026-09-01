@@ -63,7 +63,7 @@ module.exports = Object.assign({}, baseConfig, {
   testPathIgnorePatterns: ['/node_modules/', '-test.internal.js$'],
   // Exclude the build output from transforms
   transformIgnorePatterns: [
-    '/node_modules/',
+    '/node_modules/(?!(rbush|quickselect)/)',
     '<rootDir>/build/',
     '/__compiled__/',
     '/__untransformed__/',
@@ -84,9 +84,6 @@ module.exports = Object.assign({}, baseConfig, {
     ),
     require.resolve(
       '../../packages/react-devtools-shared/src/__tests__/__serializers__/storeSerializer.js'
-    ),
-    require.resolve(
-      '../../packages/react-devtools-shared/src/__tests__/__serializers__/timelineDataSerializer.js'
     ),
     require.resolve(
       '../../packages/react-devtools-shared/src/__tests__/__serializers__/treeContextStateSerializer.js'

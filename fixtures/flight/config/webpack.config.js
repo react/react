@@ -15,6 +15,7 @@ const TerserPlugin = require('terser-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const ModuleScopePlugin = require('react-dev-utils/ModuleScopePlugin');
+const DevToolsIgnorePlugin = require('devtools-ignore-webpack-plugin');
 const getCSSModuleLocalIdent = require('react-dev-utils/getCSSModuleLocalIdent');
 const paths = require('./paths');
 const modules = require('./modules');
@@ -74,19 +75,6 @@ const cssRegex = /\.css$/;
 const cssModuleRegex = /\.module\.css$/;
 const sassRegex = /\.(scss|sass)$/;
 const sassModuleRegex = /\.module\.(scss|sass)$/;
-
-const hasJsxRuntime = (() => {
-  if (process.env.DISABLE_NEW_JSX_TRANSFORM === 'true') {
-    return false;
-  }
-
-  try {
-    require.resolve('react/jsx-runtime');
-    return true;
-  } catch (e) {
-    return false;
-  }
-})();
 
 // This is the production and development configuration.
 // It is focused on developer experience, fast rebuilds, and a minimal bundle.
@@ -424,7 +412,7 @@ module.exports = function (webpackEnv) {
                   [
                     require.resolve('babel-preset-react-app'),
                     {
-                      runtime: hasJsxRuntime ? 'automatic' : 'classic',
+                      runtime: 'automatic',
                     },
                   ],
                 ],
@@ -685,6 +673,15 @@ module.exports = function (webpackEnv) {
           },
         }),
       // Fork Start
+      new DevToolsIgnorePlugin({
+        shouldIgnorePath: function (path) {
+          return (
+            path.includes('/node_modules/') ||
+            path.includes('/webpack/') ||
+            path.endsWith('/src/index.js')
+          );
+        },
+      }),
       new ReactFlightWebpackPlugin({
         isServer: false,
         clientReferences: {

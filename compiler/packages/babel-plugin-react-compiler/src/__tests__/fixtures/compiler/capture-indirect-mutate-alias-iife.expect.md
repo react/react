@@ -40,6 +40,7 @@ function component(a) {
   } else {
     x = $[1];
   }
+
   return x;
 }
 

@@ -14,6 +14,7 @@ import type {
   RendererID,
   ProfilingSettings,
 } from 'react-devtools-shared/src/backend/types';
+import type {ComponentFilter} from 'react-devtools-shared/src/frontend/types';
 
 import {attach as attachFlight} from 'react-devtools-shared/src/backend/flight/renderer';
 import {attach as attachFiber} from 'react-devtools-shared/src/backend/fiber/renderer';
@@ -32,6 +33,9 @@ export default function attachRenderer(
   global: Object,
   shouldStartProfilingNow: boolean,
   profilingSettings: ProfilingSettings,
+  componentFiltersOrComponentFiltersPromise:
+    | Array<ComponentFilter>
+    | Promise<Array<ComponentFilter>>,
 ): RendererInterface | void {
   // only attach if the renderer is compatible with the current version of the backend
   if (!isMatchingRender(renderer.reconcilerVersion || renderer.version)) {
@@ -58,6 +62,7 @@ export default function attachRenderer(
         global,
         shouldStartProfilingNow,
         profilingSettings,
+        componentFiltersOrComponentFiltersPromise,
       );
     } else if (renderer.ComponentTree) {
       // react-dom v15

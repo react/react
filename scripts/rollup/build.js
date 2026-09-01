@@ -12,6 +12,7 @@ const stripBanner = require('rollup-plugin-strip-banner');
 const chalk = require('chalk');
 const resolve = require('@rollup/plugin-node-resolve').nodeResolve;
 const fs = require('fs');
+const {performance} = require('perf_hooks');
 const childProcess = require('child_process');
 const argv = require('minimist')(process.argv.slice(2));
 const Modules = require('./modules');
@@ -23,6 +24,7 @@ const useForks = require('./plugins/use-forks-plugin');
 const dynamicImports = require('./plugins/dynamic-imports');
 const externalRuntime = require('./plugins/external-runtime-plugin');
 const Packaging = require('./packaging');
+const {selectShard, writeShardTimings} = require('./sharding');
 const {asyncRimRaf} = require('./utils');
 const codeFrame = require('@babel/code-frame').default;
 const Wrappers = require('./wrappers');
@@ -136,7 +138,6 @@ const babelToES5Plugins = [
   '@babel/plugin-transform-arrow-functions',
   '@babel/plugin-transform-block-scoped-functions',
   '@babel/plugin-transform-shorthand-properties',
-  '@babel/plugin-transform-computed-properties',
   ['@babel/plugin-transform-block-scoping', {throwIfClosureRequired: true}],
 ];
 
@@ -144,7 +145,6 @@ function getBabelConfig(
   updateBabelOptions,
   bundleType,
   packageName,
-  externals,
   isDevelopment,
   bundle
 ) {
@@ -354,7 +354,6 @@ function forbidFBJSImports() {
 
 function getPlugins(
   entry,
-  externals,
   updateBabelOptions,
   filename,
   packageName,
@@ -382,18 +381,20 @@ function getPlugins(
     return [
       // Keep dynamic imports as externals
       dynamicImports(),
-      bundle.tsconfig != null
-        ? typescript({tsconfig: bundle.tsconfig})
-        : {
-            name: 'rollup-plugin-flow-remove-types',
-            transform(code) {
-              const transformed = flowRemoveTypes(code);
-              return {
-                code: transformed.toString(),
-                map: null,
-              };
-            },
-          },
+      bundle.tsconfig != null ? typescript({tsconfig: bundle.tsconfig}) : false,
+      {
+        name: 'rollup-plugin-flow-remove-types',
+        transform(code, id) {
+          if (bundle.tsconfig != null && !id.endsWith('.js')) {
+            return null;
+          }
+          const transformed = flowRemoveTypes(code);
+          return {
+            code: transformed.toString(),
+            map: null,
+          };
+        },
+      },
       // See https://github.com/rollup/plugins/issues/1425
       bundle.tsconfig != null ? commonjs({strictRequires: true}) : false,
       // Shim any modules that need forking in this environment.
@@ -402,7 +403,8 @@ function getPlugins(
       forbidFBJSImports(),
       // Use Node resolution mechanism.
       resolve({
-        // skip: externals, // TODO: options.skip was removed in @rollup/plugin-node-resolve 3.0.0
+        // `external` rollup config takes care of marking builtins as externals
+        preferBuiltins: false,
       }),
       // Remove license headers from individual modules
       stripBanner({
@@ -414,7 +416,6 @@ function getPlugins(
           updateBabelOptions,
           bundleType,
           packageName,
-          externals,
           !isProduction,
           bundle
         )
@@ -453,7 +454,8 @@ function getPlugins(
             globalName,
             filename,
             moduleType,
-            bundle.wrapWithModuleBoundaries
+            bundle.wrapWithModuleBoundaries,
+            bundle.wrapWithNodeDevGuard
           );
         },
       },
@@ -689,7 +691,6 @@ async function createBundle(bundle, bundleType) {
     onwarn: handleRollupWarning,
     plugins: getPlugins(
       bundle.entry,
-      externals,
       bundle.babel,
       filename,
       packageName,
@@ -867,19 +868,36 @@ async function buildEverything() {
     return !shouldSkipBundle(bundle, bundleType);
   });
 
+  // Prefixed with the channel because feature-flag forks change the cost of
+  // some heavy bundles.
+  const shardKeyOf = ([bundle, bundleType]) =>
+    process.env.RELEASE_CHANNEL +
+    '/' +
+    getFilename(bundle, bundleType) +
+    ' (' +
+    bundleType.toLowerCase() +
+    ')';
+
   if (process.env.CI_TOTAL && process.env.CI_INDEX) {
     const nodeTotal = parseInt(process.env.CI_TOTAL, 10);
     const nodeIndex = parseInt(process.env.CI_INDEX, 10);
-    bundles = bundles.filter((_, i) => i % nodeTotal === nodeIndex);
+    bundles = selectShard(bundles, shardKeyOf, nodeTotal, nodeIndex);
   }
 
+  const shardTimings = [];
   // eslint-disable-next-line no-for-of-loops/no-for-of-loops
   for (const [bundle, bundleType] of bundles) {
     if (bundle.prebuild) {
       runShellCommand(bundle.prebuild);
     }
+    const start = performance.now();
     await createBundle(bundle, bundleType);
+    shardTimings.push({
+      key: shardKeyOf([bundle, bundleType]),
+      seconds: (performance.now() - start) / 1000,
+    });
   }
+  writeShardTimings(shardTimings);
 
   await Packaging.copyAllShims();
   await Packaging.prepareNpmPackages();

@@ -9,7 +9,7 @@
     "web-vitals": "^2.1.0"
   },
   "scripts": {
-    "prestart": "cp -a ../../build/oss-experimental/. node_modules",
+    "prestart": "cp -a ../../build/oss-experimental/. node_modules && rm -rf node_modules/.cache;",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",

@@ -3,7 +3,7 @@ import Fixture from '../../Fixture';
 
 const React = window.React;
 
-const {Fragment, useEffect, useRef, useState} = React;
+const {Fragment, useRef} = React;
 
 export default function FocusCase() {
   const fragmentRef = useRef(null);

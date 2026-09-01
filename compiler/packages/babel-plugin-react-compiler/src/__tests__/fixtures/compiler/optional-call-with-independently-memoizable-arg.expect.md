@@ -27,7 +27,6 @@ function Component(props) {
   let t0;
   if ($[0] !== props) {
     const x = makeOptionalFunction(props);
-
     t0 = x?.(
       <div>
         <span>{props.text}</span>
@@ -39,6 +38,7 @@ function Component(props) {
     t0 = $[1];
   }
   const y = t0;
+
   return y;
 }
 

@@ -13,7 +13,7 @@ import type {
   HeadersDescriptor,
 } from 'react-dom-bindings/src/server/ReactFizzConfigDOM';
 import type {ImportMap} from '../shared/ReactDOMTypes';
-import type {ErrorInfo, PostponeInfo} from 'react-server/src/ReactFizzServer';
+import type {ErrorInfo} from 'react-server/src/ReactFizzServer';
 
 import ReactVersion from 'shared/ReactVersion';
 
@@ -23,6 +23,7 @@ import {
   startFlowing,
   stopFlowing,
   abort,
+  attachAbortSignal,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -37,14 +38,19 @@ ensureCorrectIsomorphicReactVersion();
 type Options = {
   identifierPrefix?: string,
   namespaceURI?: string,
-  nonce?: string,
+  nonce?:
+    | string
+    | {
+        script?: string,
+        style?: string,
+      },
   bootstrapScriptContent?: string,
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
-  onPostpone?: (reason: string, postponeInfo: PostponeInfo) => void,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   formState?: ReactFormState<any, any> | null,
@@ -70,11 +76,11 @@ function renderToReadableStream(
     });
 
     function onShellReady() {
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'direct',
           pull: (controller): ?Promise<void> => {
-            // $FlowIgnore
+            // $FlowFixMe[incompatible-type]
             startFlowing(request, controller);
           },
           cancel: (reason): ?Promise<void> => {
@@ -83,8 +89,9 @@ function renderToReadableStream(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 2048},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -126,24 +133,15 @@ function renderToReadableStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
       onFatalError,
-      options ? options.onPostpone : undefined,
       options ? options.formState : undefined,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort(request, (signal: any).reason);
-      } else {
-        const listener = () => {
-          abort(request, (signal: any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

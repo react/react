@@ -864,6 +864,7 @@ describe('ReactChildren', () => {
   });
 
   it('warns for mapped list children without keys', async () => {
+    spyOnDev(console, 'error').mockImplementation(() => {});
     function ComponentRenderingMappedChildren({children}) {
       return (
         <div>
@@ -883,13 +884,14 @@ describe('ReactChildren', () => {
         </ComponentRenderingMappedChildren>,
       );
     });
-    assertConsoleErrorDev([
-      'Each child in a list should have a unique "key" prop.\n\n' +
-        'Check the render method of `ComponentRenderingMappedChildren`.' +
-        ' See https://react.dev/link/warning-keys for more information.\n' +
-        '    in div (at **)\n' +
-        '    in **/ReactChildren-test.js:**:** (at **)',
-    ]);
+    if (__DEV__) {
+      const calls = console.error.mock.calls;
+      console.error.mockRestore();
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toEqual(
+        'Each child in a list should have a unique "key" prop.%s%s See https://react.dev/link/warning-keys for more information.',
+      );
+    }
   });
 
   it('does not warn for mapped static children without keys', async () => {
@@ -1116,7 +1118,7 @@ describe('ReactChildren', () => {
   it('should throw on object', () => {
     expect(function () {
       React.Children.forEach({a: 1, b: 2}, function () {}, null);
-    }).toThrowError(
+    }).toThrow(
       'Objects are not valid as a React child (found: object with keys ' +
         '{a, b}).' +
         (__DEV__
@@ -1163,7 +1165,7 @@ describe('ReactChildren', () => {
     // serialization (timezones) so let's test a regex instead:
     expect(function () {
       React.Children.forEach(/abc/, function () {}, null);
-    }).toThrowError(
+    }).toThrow(
       'Objects are not valid as a React child (found: /abc/).' +
         (__DEV__
           ? ' If you meant to render a collection of children, use an ' +

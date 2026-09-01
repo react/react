@@ -36,6 +36,7 @@ import {
   enableSrcObject,
   enableFizzBlockingRender,
   enableViewTransition,
+  enableViewTransitionParentEnterExit,
 } from 'shared/ReactFeatureFlags';
 
 import type {
@@ -135,6 +136,13 @@ const SentMarkShellTime /*                */ = 0b001000000;
 const NeedUpgradeToViewTransitions /*     */ = 0b010000000;
 const SentUpgradeToViewTransitions /*     */ = 0b100000000;
 
+type NonceOption =
+  | string
+  | {
+      script?: string,
+      style?: string,
+    };
+
 // Per request, global state that is not contextual to the rendering subtree.
 // This cannot be resumed and therefore should only contain things that are
 // temporary working state or are never used in the prerender pass.
@@ -146,6 +154,8 @@ export type RenderState = {
 
   // inline script streaming format, unused if using external runtime / data
   startInlineScript: PrecomputedChunk,
+
+  startInlineStyle: PrecomputedChunk,
 
   // the preamble must always flush before resuming, so all these chunks must
   // be null or empty when resuming.
@@ -207,6 +217,11 @@ export type RenderState = {
     stylesheets: Map<string, Resource>,
     scripts: Map<string, Resource>,
     moduleScripts: Map<string, Resource>,
+  },
+
+  nonce: {
+    script: string | void,
+    style: string | void,
   },
 
   // Module-global-like reference for flushing/hoisting state of style resources
@@ -295,6 +310,8 @@ export type ResumableState = {
   },
 };
 
+let currentlyFlushingRenderState: RenderState | null = null;
+
 const dataElementQuotedEnd = stringToPrecomputedChunk('"></template>');
 
 const startInlineScript = stringToPrecomputedChunk('<script');
@@ -306,6 +323,8 @@ const scriptNonce = stringToPrecomputedChunk(' nonce="');
 const scriptIntegirty = stringToPrecomputedChunk(' integrity="');
 const scriptCrossOrigin = stringToPrecomputedChunk(' crossorigin="');
 const endAsyncScript = stringToPrecomputedChunk(' async=""></script>');
+
+const startInlineStyle = stringToPrecomputedChunk('<style');
 
 /**
  * This escaping function is designed to work with with inline scripts where the entire
@@ -365,17 +384,32 @@ if (__DEV__) {
 // is set, the server will send instructions via data attributes (instead of inline scripts)
 export function createRenderState(
   resumableState: ResumableState,
-  nonce: string | void,
+  nonce:
+    | string
+    | {
+        script?: string,
+        style?: string,
+      }
+    | void,
   externalRuntimeConfig: string | BootstrapScriptDescriptor | void,
   importMap: ImportMap | void,
   onHeaders: void | ((headers: HeadersDescriptor) => void),
   maxHeadersLength: void | number,
 ): RenderState {
+  const nonceScript = typeof nonce === 'string' ? nonce : nonce && nonce.script;
   const inlineScriptWithNonce =
-    nonce === undefined
+    nonceScript === undefined
       ? startInlineScript
       : stringToPrecomputedChunk(
-          '<script nonce="' + escapeTextForBrowser(nonce) + '"',
+          '<script nonce="' + escapeTextForBrowser(nonceScript) + '"',
+        );
+  const nonceStyle =
+    typeof nonce === 'string' ? undefined : nonce && nonce.style;
+  const inlineStyleWithNonce =
+    nonceStyle === undefined
+      ? startInlineStyle
+      : stringToPrecomputedChunk(
+          '<style nonce="' + escapeTextForBrowser(nonceStyle) + '"',
         );
   const idPrefix = resumableState.idPrefix;
 
@@ -403,7 +437,7 @@ export function createRenderState(
           src: externalRuntimeConfig,
           async: true,
           integrity: undefined,
-          nonce: nonce,
+          nonce: nonceScript,
         });
       } else {
         externalRuntimeScript = {
@@ -414,7 +448,7 @@ export function createRenderState(
           src: externalRuntimeConfig.src,
           async: true,
           integrity: externalRuntimeConfig.integrity,
-          nonce: nonce,
+          nonce: nonceScript,
         });
       }
     }
@@ -459,6 +493,7 @@ export function createRenderState(
     segmentPrefix: stringToPrecomputedChunk(idPrefix + 'S:'),
     boundaryPrefix: stringToPrecomputedChunk(idPrefix + 'B:'),
     startInlineScript: inlineScriptWithNonce,
+    startInlineStyle: inlineStyleWithNonce,
     preamble: createPreambleState(),
 
     externalRuntimeScript: externalRuntimeScript,
@@ -500,7 +535,10 @@ export function createRenderState(
       moduleScripts: new Map(),
     },
 
-    nonce,
+    nonce: {
+      script: nonceScript,
+      style: nonceStyle,
+    },
     // like a module global for currently rendering boundary
     hoistableState: null,
     stylesToHoist: false,
@@ -510,12 +548,12 @@ export function createRenderState(
     for (let i = 0; i < bootstrapScripts.length; i++) {
       const scriptConfig = bootstrapScripts[i];
       let src, crossOrigin, integrity;
-      const props: PreloadAsProps = ({
+      const props: PreloadAsProps = {
         rel: 'preload',
         as: 'script',
         fetchPriority: 'low',
         nonce,
-      }: any);
+      } as any;
       if (typeof scriptConfig === 'string') {
         props.href = src = scriptConfig;
       } else {
@@ -539,10 +577,10 @@ export function createRenderState(
         stringToChunk(escapeTextForBrowser(src)),
         attributeEnd,
       );
-      if (nonce) {
+      if (nonceScript) {
         bootstrapChunks.push(
           scriptNonce,
-          stringToChunk(escapeTextForBrowser(nonce)),
+          stringToChunk(escapeTextForBrowser(nonceScript)),
           attributeEnd,
         );
       }
@@ -568,11 +606,11 @@ export function createRenderState(
     for (let i = 0; i < bootstrapModules.length; i++) {
       const scriptConfig = bootstrapModules[i];
       let src, crossOrigin, integrity;
-      const props: PreloadModuleProps = ({
+      const props: PreloadModuleProps = {
         rel: 'modulepreload',
         fetchPriority: 'low',
-        nonce,
-      }: any);
+        nonce: nonceScript,
+      } as any;
       if (typeof scriptConfig === 'string') {
         props.href = src = scriptConfig;
       } else {
@@ -596,10 +634,10 @@ export function createRenderState(
         stringToChunk(escapeTextForBrowser(src)),
         attributeEnd,
       );
-      if (nonce) {
+      if (nonceScript) {
         bootstrapChunks.push(
           scriptNonce,
-          stringToChunk(escapeTextForBrowser(nonce)),
+          stringToChunk(escapeTextForBrowser(nonceScript)),
           attributeEnd,
         );
       }
@@ -627,7 +665,7 @@ export function createRenderState(
 
 export function resumeRenderState(
   resumableState: ResumableState,
-  nonce: string | void,
+  nonce: NonceOption | void,
 ): RenderState {
   return createRenderState(
     resumableState,
@@ -745,13 +783,16 @@ const HTML_COLGROUP_MODE = 9;
 
 type InsertionMode = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
-const NO_SCOPE = /*         */ 0b000000;
-const NOSCRIPT_SCOPE = /*   */ 0b000001;
-const PICTURE_SCOPE = /*    */ 0b000010;
-const FALLBACK_SCOPE = /*   */ 0b000100;
-const EXIT_SCOPE = /*       */ 0b001000; // A direct Instance below a Suspense fallback is the only thing that can "exit"
-const ENTER_SCOPE = /*      */ 0b010000; // A direct Instance below Suspense content is the only thing that can "enter"
-const UPDATE_SCOPE = /*     */ 0b100000; // Inside a scope that applies "update" ViewTransitions if anything mutates here.
+const NO_SCOPE = /*         */ 0b0000000;
+const NOSCRIPT_SCOPE = /*   */ 0b0000001;
+const PICTURE_SCOPE = /*    */ 0b0000010;
+const FALLBACK_SCOPE = /*   */ 0b0000100;
+const EXIT_SCOPE = /*       */ 0b0001000; // A direct Instance below a Suspense fallback is the only thing that can "exit"
+const ENTER_SCOPE = /*      */ 0b0010000; // A direct Instance below Suspense content is the only thing that can "enter"
+const UPDATE_SCOPE = /*     */ 0b0100000; // Inside a scope that applies "update" ViewTransitions if anything mutates here.
+const APPEARING_SCOPE = /*  */ 0b1000000; // Below Suspense content subtree which might appear in an "enter" animation or "shared" animation.
+const PARENT_EXIT_SCOPE = /* */ 0b10000000; // Below a ViewTransition that is exiting.
+const PARENT_ENTER_SCOPE = /* */ 0b100000000; // Below a ViewTransition that is entering.
 
 // Everything not listed here are tracked for the whole subtree as opposed to just
 // until the next Instance.
@@ -762,6 +803,8 @@ type ViewTransitionContext = {
   enter: 'none' | 'auto' | string,
   exit: 'none' | 'auto' | string,
   share: 'none' | 'auto' | string,
+  parentEnter: 'none' | 'auto' | string,
+  parentExit: 'none' | 'auto' | string,
   name: 'auto' | string,
   autoName: string, // a name that can be used if an explicit one is not defined.
   nameIdx: number, // keeps track of how many duplicates of this name we've emitted.
@@ -919,6 +962,8 @@ function getSuspenseViewTransition(
     enter: 'none',
     exit: 'none',
     share: parentViewTransition.update, // For exit or enter of reveals.
+    parentEnter: 'none',
+    parentExit: 'none',
     name: parentViewTransition.autoName,
     autoName: parentViewTransition.autoName,
     // TOOD: If we have more than just this Suspense boundary as a child of the ViewTransition
@@ -950,11 +995,20 @@ export function getSuspenseContentFormatContext(
   resumableState: ResumableState,
   parentContext: FormatContext,
 ): FormatContext {
+  const viewTransition = getSuspenseViewTransition(
+    parentContext.viewTransition,
+  );
+  let subtreeScope = parentContext.tagScope | ENTER_SCOPE;
+  if (viewTransition !== null && viewTransition.share !== 'none') {
+    // If we have a ViewTransition wrapping Suspense then the appearing animation
+    // will be applied just like an "enter" below. Mark it as animating.
+    subtreeScope |= APPEARING_SCOPE;
+  }
   return createFormatContext(
     parentContext.insertionMode,
     parentContext.selectedValue,
-    parentContext.tagScope | ENTER_SCOPE,
-    getSuspenseViewTransition(parentContext.viewTransition),
+    subtreeScope,
+    viewTransition,
   );
 }
 
@@ -965,6 +1019,10 @@ export function getViewTransitionFormatContext(
   enter: ?string,
   exit: ?string,
   share: ?string,
+  parentEnter: ?string,
+  parentExit: ?string,
+  hasParentEnterHandler: boolean,
+  hasParentExitHandler: boolean,
   name: ?string,
   autoName: string, // name or an autogenerated unique name
 ): FormatContext {
@@ -1011,11 +1069,29 @@ export function getViewTransitionFormatContext(
   } else {
     resumableState.instructions |= NeedUpgradeToViewTransitions;
   }
+  let resolvedParentEnter = 'none';
+  let resolvedParentExit = 'none';
+  if (enableViewTransitionParentEnterExit) {
+    if (
+      parentEnter != null &&
+      (parentContext.tagScope & PARENT_ENTER_SCOPE) !== 0
+    ) {
+      resolvedParentEnter = parentEnter;
+    }
+    if (
+      parentExit != null &&
+      (parentContext.tagScope & PARENT_EXIT_SCOPE) !== 0
+    ) {
+      resolvedParentExit = parentExit;
+    }
+  }
   const viewTransition: ViewTransitionContext = {
     update,
     enter,
     exit,
     share,
+    parentEnter: resolvedParentEnter,
+    parentExit: resolvedParentExit,
     name,
     autoName,
     nameIdx: 0,
@@ -1025,6 +1101,36 @@ export function getViewTransitionFormatContext(
     subtreeScope |= UPDATE_SCOPE;
   } else {
     subtreeScope &= ~UPDATE_SCOPE;
+  }
+  if (enter !== 'none') {
+    subtreeScope |= APPEARING_SCOPE;
+  }
+  if (enableViewTransitionParentEnterExit) {
+    // Parent enter relay: a ViewTransition that is itself entering starts a relay
+    // for its subtree. A nested ViewTransition continues that relay as long as it
+    // opts in with a parentEnter prop that doesn't resolve to "none", or with an
+    // onParentEnter handler. A missing parentEnter (with no handler) or an
+    // explicit "none" stops the relay so descendants below it don't participate.
+    // This mirrors commitParentEnterViewTransitions.
+    if (enter !== 'none') {
+      subtreeScope |= PARENT_ENTER_SCOPE;
+    } else if (
+      (parentContext.tagScope & PARENT_ENTER_SCOPE) !== 0 &&
+      (parentEnter === 'none' ||
+        (parentEnter === undefined && !hasParentEnterHandler))
+    ) {
+      subtreeScope &= ~PARENT_ENTER_SCOPE;
+    }
+    // Parent exit relay: mirror of the enter relay above.
+    if (exit !== 'none') {
+      subtreeScope |= PARENT_EXIT_SCOPE;
+    } else if (
+      (parentContext.tagScope & PARENT_EXIT_SCOPE) !== 0 &&
+      (parentExit === 'none' ||
+        (parentExit === undefined && !hasParentExitHandler))
+    ) {
+      subtreeScope &= ~PARENT_EXIT_SCOPE;
+    }
   }
   return createFormatContext(
     parentContext.insertionMode,
@@ -1045,7 +1151,7 @@ export function makeId(
 ): string {
   const idPrefix = resumableState.idPrefix;
 
-  let id = '\u00AB' + idPrefix + 'R' + treeId;
+  let id = '_' + idPrefix + 'R_' + treeId;
 
   // Unless this is the first id at this level, append a number at the end
   // that represents the position of this useId hook among all the useId
@@ -1054,7 +1160,7 @@ export function makeId(
     id += 'H' + localId.toString(32);
   }
 
-  return id + '\u00BB';
+  return id + '_';
 }
 
 function encodeHTMLTextNode(text: string): string {
@@ -1127,6 +1233,18 @@ function pushViewTransitionAttributes(
   }
   if (viewTransition.share !== 'none') {
     pushStringAttribute(target, 'vt-share', viewTransition.share);
+  }
+  if (
+    enableViewTransitionParentEnterExit &&
+    viewTransition.parentEnter !== 'none'
+  ) {
+    pushStringAttribute(target, 'vt-parent-enter', viewTransition.parentEnter);
+  }
+  if (
+    enableViewTransitionParentEnterExit &&
+    viewTransition.parentExit !== 'none'
+  ) {
+    pushStringAttribute(target, 'vt-parent-exit', viewTransition.parentExit);
   }
 }
 
@@ -1452,15 +1570,15 @@ function pushSrcObjectAttribute(
   const suspenseCache: WeakMap<Blob, Thenable<string>> = blobCache;
   let thenable = suspenseCache.get(blob);
   if (thenable === undefined) {
-    thenable = ((readAsDataURL(blob): any): Thenable<string>);
+    thenable = readAsDataURL(blob) as any as Thenable<string>;
     thenable.then(
       result => {
-        (thenable: any).status = 'fulfilled';
-        (thenable: any).value = result;
+        (thenable as any).status = 'fulfilled';
+        (thenable as any).value = result;
       },
       error => {
-        (thenable: any).status = 'rejected';
-        (thenable: any).reason = error;
+        (thenable as any).status = 'rejected';
+        (thenable as any).reason = error;
       },
     );
     suspenseCache.set(blob, thenable);
@@ -1510,6 +1628,7 @@ function pushAttribute(
       return;
     }
     case 'src': {
+      // $FlowFixMe[invalid-compare]
       if (enableSrcObject && typeof value === 'object' && value !== null) {
         if (typeof Blob === 'function' && value instanceof Blob) {
           pushSrcObjectAttribute(target, value);
@@ -1645,6 +1764,7 @@ function pushAttribute(
     case 'async':
     case 'autoPlay':
     case 'controls':
+    case 'credentialless':
     case 'default':
     case 'defer':
     case 'disabled':
@@ -1704,7 +1824,7 @@ function pushAttribute(
         typeof value !== 'function' &&
         typeof value !== 'symbol' &&
         !isNaN(value) &&
-        (value: any) >= 1
+        (value as any) >= 1
       ) {
         target.push(
           attributeSeparator,
@@ -2053,11 +2173,11 @@ function flattenOptionChildren(children: mixed): string {
   let content = '';
   // Flatten children and warn if they aren't strings or numbers;
   // invalid types are ignored.
-  Children.forEach((children: any), function (child) {
+  Children.forEach(children as any, function (child) {
     if (child == null) {
       return;
     }
-    content += (child: any);
+    content += child as any;
     if (__DEV__) {
       if (
         !didWarnInvalidOptionChildren &&
@@ -2883,9 +3003,9 @@ function pushLink(
         if (!styleQueue) {
           styleQueue = {
             precedence: stringToChunk(escapeTextForBrowser(precedence)),
-            rules: ([]: Array<Chunk | PrecomputedChunk>),
-            hrefs: ([]: Array<Chunk | PrecomputedChunk>),
-            sheets: (new Map(): Map<string, StylesheetResource>),
+            rules: [] as Array<Chunk | PrecomputedChunk>,
+            hrefs: [] as Array<Chunk | PrecomputedChunk>,
+            sheets: new Map() as Map<string, StylesheetResource>,
           };
           renderState.styles.set(precedence, styleQueue);
         }
@@ -3046,6 +3166,7 @@ function pushStyle(
   }
   const precedence = props.precedence;
   const href = props.href;
+  const nonce = props.nonce;
 
   if (
     formatContext.insertionMode === SVG_MODE ||
@@ -3090,16 +3211,34 @@ function pushStyle(
       // to create a StyleQueue.
       styleQueue = {
         precedence: stringToChunk(escapeTextForBrowser(precedence)),
-        rules: ([]: Array<Chunk | PrecomputedChunk>),
-        hrefs: [stringToChunk(escapeTextForBrowser(href))],
-        sheets: (new Map(): Map<string, StylesheetResource>),
+        rules: [] as Array<Chunk | PrecomputedChunk>,
+        hrefs: [] as Array<Chunk | PrecomputedChunk>,
+        sheets: new Map() as Map<string, StylesheetResource>,
       };
       renderState.styles.set(precedence, styleQueue);
-    } else {
-      // We have seen this precedence before and need to track this href
-      styleQueue.hrefs.push(stringToChunk(escapeTextForBrowser(href)));
     }
-    pushStyleContents(styleQueue.rules, props);
+
+    const nonceStyle = renderState.nonce.style;
+    if (!nonceStyle || nonceStyle === nonce) {
+      if (__DEV__) {
+        if (!nonceStyle && nonce) {
+          console.error(
+            'React encountered a style tag with `precedence` "%s" and `nonce` "%s". When React manages style rules using `precedence` it will only include a nonce attributes if you also provide the same style nonce value as a render option.',
+            precedence,
+            nonce,
+          );
+        }
+      }
+      styleQueue.hrefs.push(stringToChunk(escapeTextForBrowser(href)));
+      pushStyleContents(styleQueue.rules, props);
+    } else if (__DEV__) {
+      console.error(
+        'React encountered a style tag with `precedence` "%s" and `nonce` "%s". When React manages style rules using `precedence` it will only include rules if the nonce matches the style nonce "%s" that was included with this render.',
+        precedence,
+        nonce,
+        nonceStyle,
+      );
+    }
   }
   if (styleQueue) {
     // We need to track whether this boundary should wait on this resource or not.
@@ -3233,6 +3372,7 @@ function pushImg(
   props: Object,
   resumableState: ResumableState,
   renderState: RenderState,
+  hoistableState: null | HoistableState,
   formatContext: FormatContext,
 ): null {
   const pictureOrNoScriptTagInScope =
@@ -3265,6 +3405,19 @@ function pushImg(
   ) {
     // We have a suspensey image and ought to preload it to optimize the loading of display blocking
     // resumableState.
+
+    if (hoistableState !== null) {
+      // Mark this boundary's state as having suspensey images.
+      // Only do that if we have a ViewTransition that might trigger a parent Suspense boundary
+      // to animate its appearing. Since that's the only case we'd actually apply suspensey images
+      // for SSR reveals.
+      const isInSuspenseWithEnterViewTransition =
+        formatContext.tagScope & APPEARING_SCOPE;
+      if (isInSuspenseWithEnterViewTransition) {
+        hoistableState.suspenseyImages = true;
+      }
+    }
+
     const sizes = typeof props.sizes === 'string' ? props.sizes : undefined;
     const key = getImageResourceKey(src, srcSet, sizes);
 
@@ -3283,7 +3436,7 @@ function pushImg(
         // reenter this branch in a second pass for duplicate img hrefs.
         promotablePreloads.delete(key);
 
-        // $FlowFixMe - Flow should understand that this is a Resource if the condition was true
+        // $FlowFixMe[incompatible-type] - Flow should understand that this is a Resource if the condition was true
         renderState.highImagePreloads.add(resource);
       }
     } else if (!resumableState.imageResources.hasOwnProperty(key)) {
@@ -3320,7 +3473,7 @@ function pushImg(
           nonce: props.nonce,
           type: props.type,
           fetchPriority: props.fetchPriority,
-          referrerPolicy: props.refererPolicy,
+          referrerPolicy: props.referrerPolicy,
         })),
         // We always consume the header length since once we find one header that doesn't fit
         // we assume all the rest won't as well. This is to avoid getting into a situation
@@ -3341,25 +3494,22 @@ function pushImg(
         headers.highImagePreloads += header;
       } else {
         resource = [];
-        pushLinkImpl(
-          resource,
-          ({
-            rel: 'preload',
-            as: 'image',
-            // There is a bug in Safari where imageSrcSet is not respected on preload links
-            // so we omit the href here if we have imageSrcSet b/c safari will load the wrong image.
-            // This harms older browers that do not support imageSrcSet by making their preloads not work
-            // but this population is shrinking fast and is already small so we accept this tradeoff.
-            href: srcSet ? undefined : src,
-            imageSrcSet: srcSet,
-            imageSizes: sizes,
-            crossOrigin: crossOrigin,
-            integrity: props.integrity,
-            type: props.type,
-            fetchPriority: props.fetchPriority,
-            referrerPolicy: props.referrerPolicy,
-          }: PreloadProps),
-        );
+        pushLinkImpl(resource, {
+          rel: 'preload',
+          as: 'image',
+          // There is a bug in Safari where imageSrcSet is not respected on preload links
+          // so we omit the href here if we have imageSrcSet b/c safari will load the wrong image.
+          // This harms older browers that do not support imageSrcSet by making their preloads not work
+          // but this population is shrinking fast and is already small so we accept this tradeoff.
+          href: srcSet ? undefined : src,
+          imageSrcSet: srcSet,
+          imageSizes: sizes,
+          crossOrigin: crossOrigin,
+          integrity: props.integrity,
+          type: props.type,
+          fetchPriority: props.fetchPriority,
+          referrerPolicy: props.referrerPolicy,
+        } as PreloadProps);
         if (
           props.fetchPriority === 'high' ||
           renderState.highImagePreloads.size < 10
@@ -3479,6 +3629,8 @@ function pushTitle(
             ' tags to a single string value.',
           childType,
         );
+        // $FlowFixMe[invalid-compare]
+        // $FlowFixMe[constant-condition]
       } else if (child && child.toString === {}.toString) {
         if (child.$$typeof != null) {
           console.error(
@@ -3935,8 +4087,10 @@ function pushStartCustomElement(
             typeof propValue !== 'function' &&
             typeof propValue !== 'symbol'
           ) {
+            // $FlowFixMe[invalid-compare]
             if (propValue === false) {
               continue;
+              // $FlowFixMe[invalid-compare]
             } else if (propValue === true) {
               propValue = '';
             } else if (typeof propValue === 'object') {
@@ -4199,7 +4353,14 @@ export function pushStartInstance(
       return pushStartPreformattedElement(target, props, type, formatContext);
     }
     case 'img': {
-      return pushImg(target, props, resumableState, renderState, formatContext);
+      return pushImg(
+        target,
+        props,
+        resumableState,
+        renderState,
+        hoistableState,
+        formatContext,
+      );
     }
     // Omitted close tags
     case 'base':
@@ -4521,6 +4682,7 @@ export function writeStartPendingSuspenseBoundary(
 ): boolean {
   writeChunk(destination, startPendingSuspenseBoundary1);
 
+  // $FlowFixMe[invalid-compare]
   if (id === null) {
     throw new Error(
       'An ID must have been assigned before we can complete the boundary.',
@@ -4545,7 +4707,7 @@ export function writeStartClientRenderedSuspenseBoundary(
     startClientRenderedSuspenseBoundary,
   );
   writeChunk(destination, clientRenderedSuspenseBoundaryError1);
-  if (errorDigest) {
+  if (errorDigest != null) {
     writeChunk(destination, clientRenderedSuspenseBoundaryError1A);
     writeChunk(destination, stringToChunk(escapeTextForBrowser(errorDigest)));
     writeChunk(
@@ -4804,8 +4966,9 @@ export function writeCompletedSegmentInstruction(
 const completeBoundaryScriptFunctionOnly = stringToPrecomputedChunk(
   completeBoundaryFunction,
 );
-const completeBoundaryUpgradeToViewTransitionsInstruction =
-  stringToPrecomputedChunk(upgradeToViewTransitionsInstruction);
+const completeBoundaryUpgradeToViewTransitionsInstruction = stringToChunk(
+  upgradeToViewTransitionsInstruction,
+);
 const completeBoundaryScript1Partial = stringToPrecomputedChunk('$RC("');
 
 const completeBoundaryWithStylesScript1FullPartial = stringToPrecomputedChunk(
@@ -4968,6 +5131,7 @@ const clientRenderScript1Full = stringToPrecomputedChunk(
 const clientRenderScript1Partial = stringToPrecomputedChunk('$RX("');
 const clientRenderScript1A = stringToPrecomputedChunk('"');
 const clientRenderErrorScriptArgInterstitial = stringToPrecomputedChunk(',');
+const clientRenderErrorScriptNull = stringToPrecomputedChunk('null');
 const clientRenderScriptEnd = stringToPrecomputedChunk(')</script>');
 
 const clientRenderData1 = stringToPrecomputedChunk(
@@ -5019,21 +5183,27 @@ export function writeClientRenderBoundaryInstruction(
     writeChunk(destination, clientRenderScript1A);
   }
 
-  if (errorDigest || errorMessage || errorStack || errorComponentStack) {
+  if (
+    errorDigest != null ||
+    errorMessage ||
+    errorStack ||
+    errorComponentStack
+  ) {
     if (scriptFormat) {
-      // ,"JSONString"
+      // ,null or ,"JSONString"
       writeChunk(destination, clientRenderErrorScriptArgInterstitial);
-      writeChunk(
-        destination,
-        stringToChunk(escapeJSStringsForInstructionScripts(errorDigest || '')),
-      );
-    } else {
+      if (errorDigest == null) {
+        writeChunk(destination, clientRenderErrorScriptNull);
+      } else {
+        writeChunk(
+          destination,
+          stringToChunk(escapeJSStringsForInstructionScripts(errorDigest)),
+        );
+      }
+    } else if (errorDigest != null) {
       // " data-dgst="HTMLString
       writeChunk(destination, clientRenderData2);
-      writeChunk(
-        destination,
-        stringToChunk(escapeTextForBrowser(errorDigest || '')),
-      );
+      writeChunk(destination, stringToChunk(escapeTextForBrowser(errorDigest)));
     }
   }
   if (errorMessage || errorStack || errorComponentStack) {
@@ -5148,7 +5318,7 @@ function escapeJSObjectForInstructionScripts(input: Object): string {
 }
 
 const lateStyleTagResourceOpen1 = stringToPrecomputedChunk(
-  '<style media="not all" data-precedence="',
+  ' media="not all" data-precedence="',
 );
 const lateStyleTagResourceOpen2 = stringToPrecomputedChunk('" data-href="');
 const lateStyleTagResourceOpen3 = stringToPrecomputedChunk('">');
@@ -5176,6 +5346,10 @@ function flushStyleTagsLateForBoundary(
   }
   let i = 0;
   if (hrefs.length) {
+    writeChunk(
+      this,
+      (currentlyFlushingRenderState as any as RenderState).startInlineStyle,
+    );
     writeChunk(this, lateStyleTagResourceOpen1);
     writeChunk(this, styleQueue.precedence);
     writeChunk(this, lateStyleTagResourceOpen2);
@@ -5225,13 +5399,15 @@ export function writeHoistablesForBoundary(
   destinationHasCapacity = true;
 
   // Flush style tags for each precedence this boundary depends on
+  currentlyFlushingRenderState = renderState;
   hoistableState.styles.forEach(flushStyleTagsLateForBoundary, destination);
+  currentlyFlushingRenderState = null;
 
   // Determine if this boundary has stylesheets that need to be awaited upon completion
   hoistableState.stylesheets.forEach(hasStylesToHoist);
 
   // We don't actually want to flush any hoistables until the boundary is complete so we omit
-  // any further writing here. This is becuase unlike Resources, Hoistable Elements act more like
+  // any further writing here. This is because unlike Resources, Hoistable Elements act more like
   // regular elements, each rendered element has a unique representation in the DOM. We don't want
   // these elements to appear in the DOM early, before the boundary has actually completed
 
@@ -5268,9 +5444,7 @@ function flushStyleInPreamble(
   stylesheet.state = PREAMBLE;
 }
 
-const styleTagResourceOpen1 = stringToPrecomputedChunk(
-  '<style data-precedence="',
-);
+const styleTagResourceOpen1 = stringToPrecomputedChunk(' data-precedence="');
 const styleTagResourceOpen2 = stringToPrecomputedChunk('" data-href="');
 const spaceSeparator = stringToPrecomputedChunk(' ');
 const styleTagResourceOpen3 = stringToPrecomputedChunk('">');
@@ -5292,6 +5466,10 @@ function flushStylesInPreamble(
   // order so even if there are no rules for style tags at this precedence we emit an empty style
   // tag with the data-precedence attribute
   if (!hasStylesheets || hrefs.length) {
+    writeChunk(
+      this,
+      (currentlyFlushingRenderState as any as RenderState).startInlineStyle,
+    );
     writeChunk(this, styleTagResourceOpen1);
     writeChunk(this, styleQueue.precedence);
     let i = 0;
@@ -5351,7 +5529,7 @@ function writeBlockingRenderInstruction(
 ): void {
   if (enableFizzBlockingRender) {
     const idPrefix = resumableState.idPrefix;
-    const shellId = '\u00AB' + idPrefix + 'R\u00BB';
+    const shellId = '_' + idPrefix + 'R_';
     writeChunk(destination, blockingRenderChunkStart);
     writeChunk(destination, stringToChunk(escapeTextForBrowser(shellId)));
     writeChunk(destination, blockingRenderChunkEnd);
@@ -5369,7 +5547,7 @@ function writeCompletedShellIdAttribute(
   }
   resumableState.instructions |= SentCompletedShellId;
   const idPrefix = resumableState.idPrefix;
-  const shellId = '\u00AB' + idPrefix + 'R\u00BB';
+  const shellId = '_' + idPrefix + 'R_';
   writeChunk(destination, completedShellIdAttributeStart);
   writeChunk(destination, stringToChunk(escapeTextForBrowser(shellId)));
   writeChunk(destination, attributeEnd);
@@ -5384,7 +5562,7 @@ function pushCompletedShellIdAttribute(
   }
   resumableState.instructions |= SentCompletedShellId;
   const idPrefix = resumableState.idPrefix;
-  const shellId = '\u00AB' + idPrefix + 'R\u00BB';
+  const shellId = '_' + idPrefix + 'R_';
   target.push(
     completedShellIdAttributeStart,
     stringToChunk(escapeTextForBrowser(shellId)),
@@ -5400,7 +5578,7 @@ export function writePreambleStart(
   destination: Destination,
   resumableState: ResumableState,
   renderState: RenderState,
-  skipExpect?: boolean, // Used as an override by ReactFizzConfigMarkup
+  skipBlockingShell: boolean,
 ): void {
   // This function must be called exactly once on every request
   if (enableFizzExternalRuntime && renderState.externalRuntimeScript) {
@@ -5466,7 +5644,9 @@ export function writePreambleStart(
   renderState.highImagePreloads.clear();
 
   // Flush unblocked stylesheets by precedence
+  currentlyFlushingRenderState = renderState;
   renderState.styles.forEach(flushStylesInPreamble, destination);
+  currentlyFlushingRenderState = null;
 
   const importMapChunks = renderState.importMapChunks;
   for (i = 0; i < importMapChunks.length; i++) {
@@ -5482,7 +5662,7 @@ export function writePreambleStart(
   renderState.bulkPreloads.forEach(flushResource, destination);
   renderState.bulkPreloads.clear();
 
-  if ((htmlChunks || headChunks) && !skipExpect) {
+  if ((htmlChunks || headChunks) && !skipBlockingShell) {
     // If we have any html or head chunks we know that we're rendering a full document.
     // A full document should block display until the full shell has downloaded.
     // Therefore we insert a render blocking instruction referring to the last body
@@ -5490,6 +5670,10 @@ export function writePreambleStart(
     // have already been emitted so we don't do anything to delay them but early so that
     // the browser doesn't risk painting too early.
     writeBlockingRenderInstruction(destination, resumableState, renderState);
+  } else {
+    // We don't need to add the shell id so mark it as if sent.
+    // Currently it might still be sent if it was already added to a bootstrap script.
+    resumableState.instructions |= SentCompletedShellId;
   }
 
   // Write embedding hoistableChunks
@@ -5652,7 +5836,7 @@ function writeStyleResourceDependencyHrefOnlyInJS(
   if (__DEV__) {
     checkAttributeStringCoercion(href, 'href');
   }
-  const coercedHref = '' + (href: any);
+  const coercedHref = '' + (href as any);
   writeChunk(
     destination,
     stringToChunk(escapeJSObjectForInstructionScripts(coercedHref)),
@@ -5666,7 +5850,7 @@ function writeStyleResourceDependencyInJS(
   props: Object,
 ) {
   // eslint-disable-next-line react-internal/safe-string-coercion
-  const coercedHref = sanitizeURL('' + (href: any));
+  const coercedHref = sanitizeURL('' + (href as any));
   writeChunk(
     destination,
     stringToChunk(escapeJSObjectForInstructionScripts(coercedHref)),
@@ -5675,7 +5859,7 @@ function writeStyleResourceDependencyInJS(
   if (__DEV__) {
     checkAttributeStringCoercion(precedence, 'precedence');
   }
-  const coercedPrecedence = '' + (precedence: any);
+  const coercedPrecedence = '' + (precedence as any);
   writeChunk(destination, arrayInterstitial);
   writeChunk(
     destination,
@@ -5740,7 +5924,7 @@ function writeStyleResourceAttributeInJS(
       if (__DEV__) {
         checkAttributeStringCoercion(value, attributeName);
       }
-      attributeValue = '' + (value: any);
+      attributeValue = '' + (value as any);
       break;
     }
     // Booleans
@@ -5758,7 +5942,7 @@ function writeStyleResourceAttributeInJS(
       if (__DEV__) {
         checkAttributeStringCoercion(value, attributeName);
       }
-      attributeValue = '' + (value: any);
+      attributeValue = '' + (value as any);
       break;
     }
     default: {
@@ -5777,7 +5961,7 @@ function writeStyleResourceAttributeInJS(
       if (__DEV__) {
         checkAttributeStringCoercion(value, attributeName);
       }
-      attributeValue = '' + (value: any);
+      attributeValue = '' + (value as any);
     }
   }
   writeChunk(destination, arrayInterstitial);
@@ -5846,7 +6030,7 @@ function writeStyleResourceDependencyHrefOnlyInAttr(
   if (__DEV__) {
     checkAttributeStringCoercion(href, 'href');
   }
-  const coercedHref = '' + (href: any);
+  const coercedHref = '' + (href as any);
   writeChunk(
     destination,
     stringToChunk(escapeTextForBrowser(JSON.stringify(coercedHref))),
@@ -5860,7 +6044,7 @@ function writeStyleResourceDependencyInAttr(
   props: Object,
 ) {
   // eslint-disable-next-line react-internal/safe-string-coercion
-  const coercedHref = sanitizeURL('' + (href: any));
+  const coercedHref = sanitizeURL('' + (href as any));
   writeChunk(
     destination,
     stringToChunk(escapeTextForBrowser(JSON.stringify(coercedHref))),
@@ -5869,7 +6053,7 @@ function writeStyleResourceDependencyInAttr(
   if (__DEV__) {
     checkAttributeStringCoercion(precedence, 'precedence');
   }
-  const coercedPrecedence = '' + (precedence: any);
+  const coercedPrecedence = '' + (precedence as any);
   writeChunk(destination, arrayInterstitial);
   writeChunk(
     destination,
@@ -5934,7 +6118,7 @@ function writeStyleResourceAttributeInAttr(
       if (__DEV__) {
         checkAttributeStringCoercion(value, attributeName);
       }
-      attributeValue = '' + (value: any);
+      attributeValue = '' + (value as any);
       break;
     }
 
@@ -5954,7 +6138,7 @@ function writeStyleResourceAttributeInAttr(
       if (__DEV__) {
         checkAttributeStringCoercion(value, attributeName);
       }
-      attributeValue = '' + (value: any);
+      attributeValue = '' + (value as any);
       break;
     }
     default: {
@@ -5973,7 +6157,7 @@ function writeStyleResourceAttributeInAttr(
       if (__DEV__) {
         checkAttributeStringCoercion(value, attributeName);
       }
-      attributeValue = '' + (value: any);
+      attributeValue = '' + (value as any);
     }
   }
   writeChunk(destination, arrayInterstitial);
@@ -6054,6 +6238,7 @@ type StylesheetResource = {
 export type HoistableState = {
   styles: Set<StyleQueue>,
   stylesheets: Set<StylesheetResource>,
+  suspenseyImages: boolean,
 };
 
 export type StyleQueue = {
@@ -6067,6 +6252,7 @@ export function createHoistableState(): HoistableState {
   return {
     styles: new Set(),
     stylesheets: new Set(),
+    suspenseyImages: false,
   };
 }
 
@@ -6130,7 +6316,7 @@ function prefetchDNS(href: string) {
       } else {
         // Encode as element
         const resource: Resource = [];
-        pushLinkImpl(resource, ({href, rel: 'dns-prefetch'}: PreconnectProps));
+        pushLinkImpl(resource, {href, rel: 'dns-prefetch'} as PreconnectProps);
         renderState.preconnects.add(resource);
       }
     }
@@ -6188,10 +6374,11 @@ function preconnect(href: string, crossOrigin: ?CrossOriginEnum) {
         headers.preconnects += header;
       } else {
         const resource: Resource = [];
-        pushLinkImpl(
-          resource,
-          ({rel: 'preconnect', href, crossOrigin}: PreconnectProps),
-        );
+        pushLinkImpl(resource, {
+          rel: 'preconnect',
+          href,
+          crossOrigin,
+        } as PreconnectProps);
         renderState.preconnects.add(resource);
       }
     }
@@ -6262,11 +6449,11 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
           // When we have imageSrcSet the browser probably cannot load the right version from headers
           // (this should be verified by testing). For now we assume these need to go in the head
           // as elements even if headers are available.
-          const resource = ([]: Resource);
+          const resource = [] as Resource;
           pushLinkImpl(
             resource,
             Object.assign(
-              ({
+              {
                 rel: 'preload',
                 // There is a bug in Safari where imageSrcSet is not respected on preload links
                 // so we omit the href here if we have imageSrcSet b/c safari will load the wrong image.
@@ -6274,7 +6461,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
                 // but this population is shrinking fast and is already small so we accept this tradeoff.
                 href: imageSrcSet ? undefined : href,
                 as,
-              }: PreloadAsProps),
+              } as PreloadAsProps,
               options,
             ),
           );
@@ -6295,10 +6482,10 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
           // we can return if we already have this resource
           return;
         }
-        const resource = ([]: Resource);
+        const resource = [] as Resource;
         pushLinkImpl(
           resource,
-          Object.assign(({rel: 'preload', href, as}: PreloadAsProps), options),
+          Object.assign({rel: 'preload', href, as} as PreloadAsProps, options),
         );
         resumableState.styleResources[key] =
           options &&
@@ -6316,12 +6503,12 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
           // we can return if we already have this resource
           return;
         }
-        const resource = ([]: Resource);
+        const resource = [] as Resource;
         renderState.preloads.scripts.set(key, resource);
         renderState.bulkPreloads.add(resource);
         pushLinkImpl(
           resource,
-          Object.assign(({rel: 'preload', href, as}: PreloadAsProps), options),
+          Object.assign({rel: 'preload', href, as} as PreloadAsProps, options),
         );
         resumableState.scriptResources[key] =
           options &&
@@ -6342,7 +6529,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
             return;
           }
         } else {
-          resources = ({}: ResumableState['unknownResources']['asType']);
+          resources = {} as ResumableState['unknownResources']['asType'];
           resumableState.unknownResources[as] = resources;
         }
         resources[key] = PRELOAD_NO_CREDS;
@@ -6375,13 +6562,13 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
         } else {
           // We either don't have headers or we are preloading something that does
           // not warrant elevated priority so we encode as an element.
-          const resource = ([]: Resource);
+          const resource = [] as Resource;
           const props = Object.assign(
-            ({
+            {
               rel: 'preload',
               href,
               as,
-            }: PreloadAsProps),
+            } as PreloadAsProps,
             options,
           );
           pushLinkImpl(resource, props);
@@ -6429,7 +6616,7 @@ function preloadModule(
           // we can return if we already have this resource
           return;
         }
-        resource = ([]: Resource);
+        resource = [] as Resource;
         resumableState.moduleScriptResources[key] =
           options &&
           (typeof options.crossOrigin === 'string' ||
@@ -6444,16 +6631,16 @@ function preloadModule(
           resumableState.moduleUnknownResources.hasOwnProperty(as);
         let resources;
         if (hasAsType) {
-          resources = resumableState.unknownResources[as];
+          resources = resumableState.moduleUnknownResources[as];
           if (resources.hasOwnProperty(key)) {
             // we can return if we already have this resource
             return;
           }
         } else {
-          resources = ({}: ResumableState['moduleUnknownResources']['asType']);
+          resources = {} as ResumableState['moduleUnknownResources']['asType'];
           resumableState.moduleUnknownResources[as] = resources;
         }
-        resource = ([]: Resource);
+        resource = [] as Resource;
         resources[key] = PRELOAD_NO_CREDS;
       }
     }
@@ -6461,10 +6648,10 @@ function preloadModule(
     pushLinkImpl(
       resource,
       Object.assign(
-        ({
+        {
           rel: 'modulepreload',
           href,
-        }: PreloadModuleProps),
+        } as PreloadModuleProps,
         options,
       ),
     );
@@ -6509,9 +6696,9 @@ function preinitStyle(
       if (!styleQueue) {
         styleQueue = {
           precedence: stringToChunk(escapeTextForBrowser(precedence)),
-          rules: ([]: Array<Chunk | PrecomputedChunk>),
-          hrefs: ([]: Array<Chunk | PrecomputedChunk>),
-          sheets: (new Map(): Map<string, StylesheetResource>),
+          rules: [] as Array<Chunk | PrecomputedChunk>,
+          hrefs: [] as Array<Chunk | PrecomputedChunk>,
+          sheets: new Map() as Map<string, StylesheetResource>,
         };
         renderState.styles.set(precedence, styleQueue);
       }
@@ -6519,11 +6706,11 @@ function preinitStyle(
       const resource = {
         state: PENDING,
         props: Object.assign(
-          ({
+          {
             rel: 'stylesheet',
             href,
             'data-precedence': precedence,
-          }: StylesheetProps),
+          } as StylesheetProps,
           options,
         ),
       };
@@ -6588,10 +6775,10 @@ function preinitScript(src: string, options?: ?PreinitScriptOptions): void {
       resumableState.scriptResources[key] = EXISTS;
 
       const props: ScriptProps = Object.assign(
-        ({
+        {
           src,
           async: true,
-        }: ScriptProps),
+        } as ScriptProps,
         options,
       );
       if (resourceState) {
@@ -6650,11 +6837,11 @@ function preinitModuleScript(
       resumableState.moduleScriptResources[key] = EXISTS;
 
       const props = Object.assign(
-        ({
+        {
           src,
           type: 'module',
           async: true,
-        }: ModuleScriptProps),
+        } as ModuleScriptProps,
         options,
       );
       if (resourceState) {
@@ -6924,6 +7111,28 @@ export function hoistHoistables(
 ): void {
   childState.styles.forEach(hoistStyleQueueDependency, parentState);
   childState.stylesheets.forEach(hoistStylesheetDependency, parentState);
+  if (childState.suspenseyImages) {
+    // If the child has suspensey images, the parent now does too if it's inlined.
+    // Similarly, if a SuspenseList row has a suspensey image then effectively
+    // the next row should be blocked on it as well since the next row can't show
+    // earlier. In practice, since the child will be outlined this transferring
+    // may never matter but is conceptually correct.
+    parentState.suspenseyImages = true;
+  }
+}
+
+export function hasSuspenseyContent(
+  hoistableState: HoistableState,
+  flushingInShell: boolean,
+): boolean {
+  if (flushingInShell) {
+    // When flushing the shell, stylesheets with precedence are already emitted
+    // in the <head> which blocks paint. There's no benefit to outlining for CSS
+    // alone during the shell flush. However, suspensey images (for ViewTransition
+    // animation reveals) should still trigger outlining even during the shell.
+    return hoistableState.suspenseyImages;
+  }
+  return hoistableState.stylesheets.size > 0 || hoistableState.suspenseyImages;
 }
 
 // This function is called at various times depending on whether we are rendering

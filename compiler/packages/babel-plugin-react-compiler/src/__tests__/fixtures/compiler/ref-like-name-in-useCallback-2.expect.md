@@ -14,7 +14,7 @@ function Foo() {
 
   const onClick = useCallback(() => {
     ref.current?.click();
-  }, []);
+  }, [ref]);
 
   return <button onClick={onClick} />;
 }
@@ -47,24 +47,26 @@ function useCustomRef() {
 function _temp() {}
 
 function Foo() {
-  const $ = _c(2);
+  const $ = _c(4);
   const ref = useCustomRef();
   let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[0] !== ref) {
     t0 = () => {
       ref.current?.click();
     };
-    $[0] = t0;
+    $[0] = ref;
+    $[1] = t0;
   } else {
-    t0 = $[0];
+    t0 = $[1];
   }
   const onClick = t0;
   let t1;
-  if ($[1] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[2] !== onClick) {
     t1 = <button onClick={onClick} />;
-    $[1] = t1;
+    $[2] = onClick;
+    $[3] = t1;
   } else {
-    t1 = $[1];
+    t1 = $[3];
   }
   return t1;
 }

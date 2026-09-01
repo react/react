@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enablePreserveExistingMemoizationGuarantees:false
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 import {identity, makeObject_Primitives, mutate, useHook} from 'shared-runtime';
 
@@ -36,7 +36,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @enablePreserveExistingMemoizationGuarantees:false
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import { useMemo } from "react";
 import {
   identity,
@@ -51,13 +51,11 @@ function Component(props) {
   const part = free2.part;
 
   useHook();
-  let t0;
 
   const x = makeObject_Primitives();
   x.value = props.value;
   mutate(x, free, part);
-  t0 = x;
-  const object = t0;
+  const object = x;
 
   identity(free);
   identity(part);

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enablePropagateDepsInHIR
+// @enablePropagateDepsInHIR @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function Component(props) {
@@ -30,43 +30,42 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enablePropagateDepsInHIR
+import { c as _c } from "react/compiler-runtime"; // @enablePropagateDepsInHIR @validateExhaustiveMemoizationDependencies:false
 import { useMemo } from "react";
 
 function Component(props) {
-  const $ = _c(6);
+  const $ = _c(5);
   let t0;
-  bb0: {
-    let y;
-    if (
-      $[0] !== props.a ||
-      $[1] !== props.b ||
-      $[2] !== props.cond ||
-      $[3] !== props.cond2
-    ) {
-      y = [];
+  if (
+    $[0] !== props.a ||
+    $[1] !== props.b ||
+    $[2] !== props.cond ||
+    $[3] !== props.cond2
+  ) {
+    bb0: {
+      const y = [];
       if (props.cond) {
         y.push(props.a);
       }
+
       if (props.cond2) {
         t0 = y;
         break bb0;
       }
 
       y.push(props.b);
-      $[0] = props.a;
-      $[1] = props.b;
-      $[2] = props.cond;
-      $[3] = props.cond2;
-      $[4] = y;
-      $[5] = t0;
-    } else {
-      y = $[4];
-      t0 = $[5];
+      t0 = y;
     }
-    t0 = y;
+    $[0] = props.a;
+    $[1] = props.b;
+    $[2] = props.cond;
+    $[3] = props.cond2;
+    $[4] = t0;
+  } else {
+    t0 = $[4];
   }
   const x = t0;
+
   return x;
 }
 

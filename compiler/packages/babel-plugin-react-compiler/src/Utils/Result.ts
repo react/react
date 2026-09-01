@@ -90,10 +90,13 @@ export function Ok<T>(val: T): OkImpl<T> {
 }
 
 class OkImpl<T> implements Result<T, never> {
-  constructor(private val: T) {}
+  #val: T;
+  constructor(val: T) {
+    this.#val = val;
+  }
 
   map<U>(fn: (val: T) => U): Result<U, never> {
-    return new OkImpl(fn(this.val));
+    return new OkImpl(fn(this.#val));
   }
 
   mapErr<F>(_fn: (val: never) => F): Result<T, F> {
@@ -101,15 +104,15 @@ class OkImpl<T> implements Result<T, never> {
   }
 
   mapOr<U>(_fallback: U, fn: (val: T) => U): U {
-    return fn(this.val);
+    return fn(this.#val);
   }
 
   mapOrElse<U>(_fallback: () => U, fn: (val: T) => U): U {
-    return fn(this.val);
+    return fn(this.#val);
   }
 
   andThen<U>(fn: (val: T) => Result<U, never>): Result<U, never> {
-    return fn(this.val);
+    return fn(this.#val);
   }
 
   and<U>(res: Result<U, never>): Result<U, never> {
@@ -133,30 +136,30 @@ class OkImpl<T> implements Result<T, never> {
   }
 
   expect(_msg: string): T {
-    return this.val;
+    return this.#val;
   }
 
   expectErr(msg: string): never {
-    throw new Error(`${msg}: ${this.val}`);
+    throw new Error(`${msg}: ${this.#val}`);
   }
 
   unwrap(): T {
-    return this.val;
+    return this.#val;
   }
 
   unwrapOr(_fallback: T): T {
-    return this.val;
+    return this.#val;
   }
 
   unwrapOrElse(_fallback: (val: never) => T): T {
-    return this.val;
+    return this.#val;
   }
 
   unwrapErr(): never {
-    if (this.val instanceof Error) {
-      throw this.val;
+    if (this.#val instanceof Error) {
+      throw this.#val;
     }
-    throw new Error(`Can't unwrap \`Ok\` to \`Err\`: ${this.val}`);
+    throw new Error(`Can't unwrap \`Ok\` to \`Err\`: ${this.#val}`);
   }
 }
 
@@ -165,14 +168,17 @@ export function Err<E>(val: E): ErrImpl<E> {
 }
 
 class ErrImpl<E> implements Result<never, E> {
-  constructor(private val: E) {}
+  #val: E;
+  constructor(val: E) {
+    this.#val = val;
+  }
 
   map<U>(_fn: (val: never) => U): Result<U, E> {
     return this;
   }
 
   mapErr<F>(fn: (val: E) => F): Result<never, F> {
-    return new ErrImpl(fn(this.val));
+    return new ErrImpl(fn(this.#val));
   }
 
   mapOr<U>(fallback: U, _fn: (val: never) => U): U {
@@ -196,7 +202,7 @@ class ErrImpl<E> implements Result<never, E> {
   }
 
   orElse<F>(fn: (val: E) => ErrImpl<F>): Result<never, F> {
-    return fn(this.val);
+    return fn(this.#val);
   }
 
   isOk(): this is OkImpl<never> {
@@ -208,18 +214,18 @@ class ErrImpl<E> implements Result<never, E> {
   }
 
   expect(msg: string): never {
-    throw new Error(`${msg}: ${this.val}`);
+    throw new Error(`${msg}: ${this.#val}`);
   }
 
   expectErr(_msg: string): E {
-    return this.val;
+    return this.#val;
   }
 
   unwrap(): never {
-    if (this.val instanceof Error) {
-      throw this.val;
+    if (this.#val instanceof Error) {
+      throw this.#val;
     }
-    throw new Error(`Can't unwrap \`Err\` to \`Ok\`: ${this.val}`);
+    throw new Error(`Can't unwrap \`Err\` to \`Ok\`: ${this.#val}`);
   }
 
   unwrapOr<T>(fallback: T): T {
@@ -227,10 +233,10 @@ class ErrImpl<E> implements Result<never, E> {
   }
 
   unwrapOrElse<T>(fallback: (val: E) => T): T {
-    return fallback(this.val);
+    return fallback(this.#val);
   }
 
   unwrapErr(): E {
-    return this.val;
+    return this.#val;
   }
 }

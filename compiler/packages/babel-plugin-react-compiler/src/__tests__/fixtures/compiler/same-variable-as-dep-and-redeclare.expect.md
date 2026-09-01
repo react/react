@@ -58,7 +58,6 @@ function foo(props) {
   if ($[0] !== props.a) {
     x = [];
     x.push(props.a);
-
     t0 = <div>{x}</div>;
     $[0] = props.a;
     $[1] = t0;

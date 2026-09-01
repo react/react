@@ -11,11 +11,3 @@
   position: absolute;
   right: 0.25em;
 }
-
-.ForgetToggle {
-  display: flex;
-}
-
-.ForgetToggle > span { /* targets .ToggleContent */
-  padding: 0;
-}

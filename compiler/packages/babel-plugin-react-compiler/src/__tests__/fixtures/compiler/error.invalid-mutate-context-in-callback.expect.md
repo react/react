@@ -24,13 +24,22 @@ function Component(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Error: This value cannot be modified
+
+Modifying a value returned from 'useContext()' is not allowed..
+
+error.invalid-mutate-context-in-callback.ts:12:4
   10 |   // independently
   11 |   const onClick = () => {
 > 12 |     FooContext.current = true;
-     |     ^^^^^^^^^^ InvalidReact: Mutating a value returned from 'useContext()', which should not be mutated. Found mutation of `FooContext` (12:12)
+     |     ^^^^^^^^^^ `FooContext` cannot be modified
   13 |   };
   14 |   return <div onClick={onClick} />;
   15 | }
+
+Hint: If this value is a Ref (value returned by `useRef()`), rename the variable to end in "Ref".
 ```
           
       

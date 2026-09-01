@@ -41,7 +41,6 @@ function Component() {
     const inputChanged = (e) => {
       ref.current.text.value = e.target.value;
     };
-
     t1 = <input onChange={inputChanged} />;
     $[1] = t1;
   } else {

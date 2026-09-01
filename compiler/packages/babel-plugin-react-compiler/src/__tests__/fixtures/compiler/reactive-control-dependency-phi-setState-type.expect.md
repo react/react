@@ -106,6 +106,7 @@ function Foo(t0) {
   } else {
     invariant(setState === setY, "Expected the correct setState function");
   }
+
   return "ok";
 }
 

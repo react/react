@@ -61,7 +61,6 @@ function Component(props) {
         y = x;
       }
     }
-
     t0 = <Component data={x} />;
     $[0] = props.p0;
     $[1] = props.p2;

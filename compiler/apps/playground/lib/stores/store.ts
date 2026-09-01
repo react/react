@@ -10,18 +10,20 @@ import {
   compressToEncodedURIComponent,
   decompressFromEncodedURIComponent,
 } from 'lz-string';
-import {defaultStore} from '../defaultStore';
+import {defaultStore, defaultConfig} from '../defaultStore';
 
 /**
  * Global Store for Playground
  */
 export interface Store {
   source: string;
+  config: string;
+  showInternals: boolean;
 }
 export function encodeStore(store: Store): string {
   return compressToEncodedURIComponent(JSON.stringify(store));
 }
-export function decodeStore(hash: string): Store {
+export function decodeStore(hash: string): any {
   return JSON.parse(decompressFromEncodedURIComponent(hash));
 }
 
@@ -62,8 +64,14 @@ export function initStoreFromUrlOrLocalStorage(): Store {
    */
   if (!encodedSource) return defaultStore;
 
-  const raw = decodeStore(encodedSource);
+  const raw: any = decodeStore(encodedSource);
 
   invariant(isValidStore(raw), 'Invalid Store');
-  return raw;
+
+  // Make sure all properties are populated
+  return {
+    source: raw.source,
+    config: 'config' in raw && raw['config'] ? raw.config : defaultConfig,
+    showInternals: 'showInternals' in raw ? raw.showInternals : false,
+  };
 }

@@ -10,17 +10,18 @@
 import * as Scheduler from './Scheduler';
 import type {Callback, Task} from './Scheduler';
 import type {PriorityLevel} from '../SchedulerPriorities';
+import typeof * as PriorityLevels from '../SchedulerPriorities';
 import typeof * as SchedulerExportsType from './Scheduler';
 import typeof * as SchedulerNativeExportsType from './SchedulerNative';
 
 // This type is supposed to reflect the actual methods and arguments currently supported by the C++ implementation:
 // https://github.com/facebook/react-native/blob/main/packages/react-native/ReactCommon/react/renderer/runtimescheduler/RuntimeSchedulerBinding.cpp
 type NativeSchedulerType = {
-  unstable_ImmediatePriority: PriorityLevel,
-  unstable_UserBlockingPriority: PriorityLevel,
-  unstable_NormalPriority: PriorityLevel,
-  unstable_IdlePriority: PriorityLevel,
-  unstable_LowPriority: PriorityLevel,
+  unstable_ImmediatePriority: PriorityLevels['ImmediatePriority'],
+  unstable_UserBlockingPriority: PriorityLevels['UserBlockingPriority'],
+  unstable_NormalPriority: PriorityLevels['NormalPriority'],
+  unstable_IdlePriority: PriorityLevels['IdlePriority'],
+  unstable_LowPriority: PriorityLevels['LowPriority'],
   unstable_scheduleCallback: (
     priorityLevel: PriorityLevel,
     callback: Callback,
@@ -34,27 +35,27 @@ type NativeSchedulerType = {
 
 declare const nativeRuntimeScheduler: void | NativeSchedulerType;
 
-export const unstable_UserBlockingPriority: PriorityLevel =
+export const unstable_UserBlockingPriority: PriorityLevels['UserBlockingPriority'] =
   typeof nativeRuntimeScheduler !== 'undefined'
     ? nativeRuntimeScheduler.unstable_UserBlockingPriority
     : Scheduler.unstable_UserBlockingPriority;
 
-export const unstable_NormalPriority: PriorityLevel =
+export const unstable_NormalPriority: PriorityLevels['NormalPriority'] =
   typeof nativeRuntimeScheduler !== 'undefined'
     ? nativeRuntimeScheduler.unstable_NormalPriority
     : Scheduler.unstable_NormalPriority;
 
-export const unstable_IdlePriority: PriorityLevel =
+export const unstable_IdlePriority: PriorityLevels['IdlePriority'] =
   typeof nativeRuntimeScheduler !== 'undefined'
     ? nativeRuntimeScheduler.unstable_IdlePriority
     : Scheduler.unstable_IdlePriority;
 
-export const unstable_LowPriority: PriorityLevel =
+export const unstable_LowPriority: PriorityLevels['LowPriority'] =
   typeof nativeRuntimeScheduler !== 'undefined'
     ? nativeRuntimeScheduler.unstable_LowPriority
     : Scheduler.unstable_LowPriority;
 
-export const unstable_ImmediatePriority: PriorityLevel =
+export const unstable_ImmediatePriority: PriorityLevels['ImmediatePriority'] =
   typeof nativeRuntimeScheduler !== 'undefined'
     ? nativeRuntimeScheduler.unstable_ImmediatePriority
     : Scheduler.unstable_ImmediatePriority;
@@ -106,4 +107,4 @@ function throwNotImplemented() {
 
 // Flow magic to verify the exports of this file match the original version.
 export type {Callback, Task};
-((((null: any): SchedulerExportsType): SchedulerNativeExportsType): SchedulerExportsType);
+null as any as SchedulerExportsType as SchedulerNativeExportsType as SchedulerExportsType;

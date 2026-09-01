@@ -39,7 +39,6 @@ function Component(props) {
         }
       },
     };
-
     t0 = object.foo();
     $[0] = t0;
   } else {

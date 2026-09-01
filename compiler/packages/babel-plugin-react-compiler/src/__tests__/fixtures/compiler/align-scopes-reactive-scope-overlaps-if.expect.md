@@ -46,19 +46,22 @@ function useFoo(t0) {
     t1 = $[0];
   }
   let items = t1;
-  bb0: if ($[1] !== cond) {
-    if (cond) {
-      items = [];
-    } else {
-      break bb0;
-    }
+  if ($[1] !== cond) {
+    bb0: {
+      if (cond) {
+        items = [];
+      } else {
+        break bb0;
+      }
 
-    items.push(2);
+      items.push(2);
+    }
     $[1] = cond;
     $[2] = items;
   } else {
     items = $[2];
   }
+
   return items;
 }
 

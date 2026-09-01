@@ -10,7 +10,7 @@ function Foo() {
 
   const onClick = useCallback(() => {
     ref.current?.click();
-  }, []);
+  }, [ref]);
 
   return <button onClick={onClick} />;
 }

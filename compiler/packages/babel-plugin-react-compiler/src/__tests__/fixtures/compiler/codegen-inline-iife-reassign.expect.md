@@ -34,14 +34,11 @@ function useTest() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     let w = {};
-
     const t1 = (w = 42);
     const t2 = w;
-    let t3;
 
     w = 999;
-    t3 = 2;
-    t0 = makeArray(t1, t2, t3);
+    t0 = makeArray(t1, t2, 2);
     $[0] = t0;
   } else {
     t0 = $[0];

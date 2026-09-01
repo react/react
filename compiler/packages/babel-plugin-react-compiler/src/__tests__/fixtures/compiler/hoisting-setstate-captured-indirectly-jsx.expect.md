@@ -27,7 +27,7 @@ function useFoo() {
 ```javascript
 import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMemoizationGuarantees
 function useFoo() {
-  const $ = _c(9);
+  const $ = _c(7);
   const onClick = (response) => {
     setState(DISABLED_FORM);
   };
@@ -48,31 +48,23 @@ function useFoo() {
   const handleLogout = t1;
   let t2;
   if ($[2] !== handleLogout) {
-    t2 = () => <ColumnItem onPress={() => handleLogout()} />;
+    const getComponent = () => <ColumnItem onPress={() => handleLogout()} />;
+    t2 = getComponent();
     $[2] = handleLogout;
     $[3] = t2;
   } else {
     t2 = $[3];
   }
-  const getComponent = t2;
   let t3;
-  if ($[4] !== getComponent) {
-    t3 = getComponent();
-    $[4] = getComponent;
-    $[5] = t3;
+  if ($[4] !== onClick || $[5] !== t2) {
+    t3 = [t2, onClick];
+    $[4] = onClick;
+    $[5] = t2;
+    $[6] = t3;
   } else {
-    t3 = $[5];
+    t3 = $[6];
   }
-  let t4;
-  if ($[6] !== onClick || $[7] !== t3) {
-    t4 = [t3, onClick];
-    $[6] = onClick;
-    $[7] = t3;
-    $[8] = t4;
-  } else {
-    t4 = $[8];
-  }
-  return t4;
+  return t3;
 }
 
 ```

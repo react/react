@@ -18,6 +18,7 @@ jobs:
     permissions:
       # Used to create a review and close PRs
       pull-requests: write
+      contents: write
     steps:
       - name: Close PR
         uses: actions/github-script@v7

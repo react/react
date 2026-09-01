@@ -42,6 +42,7 @@ function component(a) {
   } else {
     t = $[1];
   }
+
   return t;
 }
 

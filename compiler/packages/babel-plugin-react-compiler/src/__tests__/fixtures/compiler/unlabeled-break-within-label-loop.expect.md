@@ -35,6 +35,7 @@ function useHook(end) {
     log = [];
     for (let i = 0; i < end + 1; i++) {
       log.push(`${i} @A`);
+
       if (i === end) {
         break;
       }
@@ -48,6 +49,7 @@ function useHook(end) {
   } else {
     log = $[1];
   }
+
   return log;
 }
 

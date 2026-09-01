@@ -8,10 +8,8 @@
  */
 
 import * as React from 'react';
-import {Fragment, useCallback, useContext} from 'react';
-import {TreeDispatcherContext} from './TreeContext';
+import {Fragment, useContext, useState, use} from 'react';
 import {BridgeContext, StoreContext} from '../context';
-import Button from '../Button';
 import InspectedElementBadges from './InspectedElementBadges';
 import InspectedElementContextTree from './InspectedElementContextTree';
 import InspectedElementErrorsAndWarningsTree from './InspectedElementErrorsAndWarningsTree';
@@ -19,13 +17,19 @@ import InspectedElementHooksTree from './InspectedElementHooksTree';
 import InspectedElementPropsTree from './InspectedElementPropsTree';
 import InspectedElementStateTree from './InspectedElementStateTree';
 import InspectedElementStyleXPlugin from './InspectedElementStyleXPlugin';
-import InspectedElementSuspenseToggle from './InspectedElementSuspenseToggle';
+import InspectedElementSuspendedBy from './InspectedElementSuspendedBy';
 import NativeStyleEditor from './NativeStyleEditor';
-import ElementBadges from './ElementBadges';
-import {useHighlightHostInstance} from '../hooks';
+import FetchFileWithCachingContext from './FetchFileWithCachingContext';
 import {enableStyleXFeatures} from 'react-devtools-feature-flags';
-import {logEvent} from 'react-devtools-shared/src/Logger';
 import InspectedElementSourcePanel from './InspectedElementSourcePanel';
+import StackTraceView, {IgnoreListToggleButton} from './StackTraceView';
+import OwnerView from './OwnerView';
+import Skeleton from './Skeleton';
+import {
+  ElementTypeSuspense,
+  ElementTypeActivity,
+} from 'react-devtools-shared/src/frontend/types';
+import {symbolicateSourceWithCache} from 'react-devtools-shared/src/symbolicateSource';
 
 import styles from './InspectedElementView.css';
 
@@ -35,7 +39,84 @@ import type {
 } from 'react-devtools-shared/src/frontend/types';
 import type {HookNames} from 'react-devtools-shared/src/frontend/types';
 import type {ToggleParseHookNames} from './InspectedElementContext';
-import type {Source} from 'react-devtools-shared/src/shared/types';
+import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
+
+type StackTraceGroupProps = {
+  children: (showIgnoreList: boolean) => React.Node,
+  componentStack: InspectedElement['stack'],
+  owners: InspectedElement['owners'],
+};
+
+function StackTraceGroup({
+  children,
+  componentStack,
+  owners,
+}: StackTraceGroupProps): React.Node {
+  const [showIgnoreList, setShowIgnoreList] = useState(false);
+  const fetchFileWithCaching = useContext(FetchFileWithCachingContext);
+
+  const componentStackHasIgnoredFrames =
+    componentStack !== null &&
+    componentStack.some(callSite => {
+      const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+      // symbolicated output is cached
+      const symbolicatedCallSite: null | SourceMappedLocation =
+        fetchFileWithCaching !== null
+          ? use(
+              symbolicateSourceWithCache(
+                fetchFileWithCaching,
+                virtualURL,
+                virtualLine,
+                virtualColumn,
+              ),
+            )
+          : null;
+
+      return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+    });
+
+  const ownerStacksHaveIgnoredFrames =
+    owners !== null &&
+    owners.some(owner => {
+      return (
+        owner.stack !== null &&
+        owner.stack.some(callSite => {
+          const [, virtualURL, virtualLine, virtualColumn] = callSite;
+
+          // symbolicated output is cached
+          const symbolicatedCallSite: null | SourceMappedLocation =
+            fetchFileWithCaching !== null
+              ? use(
+                  symbolicateSourceWithCache(
+                    fetchFileWithCaching,
+                    virtualURL,
+                    virtualLine,
+                    virtualColumn,
+                  ),
+                )
+              : null;
+
+          return symbolicatedCallSite !== null && symbolicatedCallSite.ignored;
+        })
+      );
+    });
+
+  const hasIgnoredFrames =
+    componentStackHasIgnoredFrames || ownerStacksHaveIgnoredFrames;
+
+  return (
+    <>
+      {children(showIgnoreList)}
+      {hasIgnoredFrames && (
+        <IgnoreListToggleButton
+          onClick={() => setShowIgnoreList(prev => !prev)}
+          showIgnoreList={showIgnoreList}
+        />
+      )}
+    </>
+  );
+}
 
 type Props = {
   element: Element,
@@ -43,7 +124,7 @@ type Props = {
   inspectedElement: InspectedElement,
   parseHookNames: boolean,
   toggleParseHookNames: ToggleParseHookNames,
-  symbolicatedSourcePromise: Promise<Source | null>,
+  symbolicatedSourcePromise: Promise<SourceMappedLocation | null>,
 };
 
 export default function InspectedElementView({
@@ -55,12 +136,14 @@ export default function InspectedElementView({
   symbolicatedSourcePromise,
 }: Props): React.Node {
   const {
+    stack,
     owners,
     rendererPackageName,
     rendererVersion,
     rootType,
     source,
     nativeTag,
+    type,
   } = inspectedElement;
 
   const bridge = useContext(BridgeContext);
@@ -71,8 +154,20 @@ export default function InspectedElementView({
       ? `${rendererPackageName}@${rendererVersion}`
       : null;
   const showOwnersList = owners !== null && owners.length > 0;
+  const showStack = stack != null && stack.length > 0;
   const showRenderedBy =
-    showOwnersList || rendererLabel !== null || rootType !== null;
+    showStack || showOwnersList || rendererLabel !== null || rootType !== null;
+
+  const propsSection = (
+    <div className={styles.InspectedElementSection}>
+      <InspectedElementPropsTree
+        bridge={bridge}
+        element={element}
+        inspectedElement={inspectedElement}
+        store={store}
+      />
+    </div>
+  );
 
   return (
     <Fragment>
@@ -85,22 +180,12 @@ export default function InspectedElementView({
           />
         </div>
 
-        <div className={styles.InspectedElementSection}>
-          <InspectedElementPropsTree
-            bridge={bridge}
-            element={element}
-            inspectedElement={inspectedElement}
-            store={store}
-          />
-        </div>
-
-        <div className={styles.InspectedElementSection}>
-          <InspectedElementSuspenseToggle
-            bridge={bridge}
-            inspectedElement={inspectedElement}
-            store={store}
-          />
-        </div>
+        {
+          // For Suspense and Activity we show the props further down.
+          type !== ElementTypeSuspense && type !== ElementTypeActivity
+            ? propsSection
+            : null
+        }
 
         <div className={styles.InspectedElementSection}>
           <InspectedElementStateTree
@@ -156,31 +241,79 @@ export default function InspectedElementView({
           <NativeStyleEditor />
         </div>
 
+        <div className={styles.InspectedElementSection}>
+          <InspectedElementSuspendedBy
+            bridge={bridge}
+            element={element}
+            inspectedElement={inspectedElement}
+            store={store}
+          />
+        </div>
+
+        {
+          // For Suspense and Activity we show the props below suspended by to give that more priority.
+          type !== ElementTypeSuspense && type !== ElementTypeActivity
+            ? null
+            : propsSection
+        }
+
         {showRenderedBy && (
           <div
             className={styles.InspectedElementSection}
             data-testname="InspectedElementView-Owners">
             <div className={styles.OwnersHeader}>rendered by</div>
+            <React.Suspense
+              fallback={
+                <div className={styles.RenderedBySkeleton}>
+                  <Skeleton height={16} width="40%" />
+                </div>
+              }>
+              <StackTraceGroup componentStack={stack} owners={owners}>
+                {(showIgnoreList: boolean) => (
+                  <>
+                    {showStack ? (
+                      <StackTraceView
+                        stack={stack}
+                        showIgnoreList={showIgnoreList}
+                      />
+                    ) : null}
+                    {showOwnersList &&
+                      owners?.map(owner => (
+                        <Fragment key={owner.id}>
+                          <OwnerView
+                            displayName={owner.displayName || 'Anonymous'}
+                            hocDisplayNames={owner.hocDisplayNames}
+                            environmentName={
+                              inspectedElement.env === owner.env
+                                ? null
+                                : owner.env
+                            }
+                            compiledWithForget={owner.compiledWithForget}
+                            id={owner.id}
+                            isInStore={store.containsElement(owner.id)}
+                            type={owner.type}
+                          />
+                          {owner.stack != null && owner.stack.length > 0 ? (
+                            <StackTraceView
+                              stack={owner.stack}
+                              showIgnoreList={showIgnoreList}
+                            />
+                          ) : null}
+                        </Fragment>
+                      ))}
 
-            {showOwnersList &&
-              owners?.map(owner => (
-                <OwnerView
-                  key={owner.id}
-                  displayName={owner.displayName || 'Anonymous'}
-                  hocDisplayNames={owner.hocDisplayNames}
-                  compiledWithForget={owner.compiledWithForget}
-                  id={owner.id}
-                  isInStore={store.containsElement(owner.id)}
-                  type={owner.type}
-                />
-              ))}
-
-            {rootType !== null && (
-              <div className={styles.OwnersMetaField}>{rootType}</div>
-            )}
-            {rendererLabel !== null && (
-              <div className={styles.OwnersMetaField}>{rendererLabel}</div>
-            )}
+                    {rootType !== null && (
+                      <div className={styles.OwnersMetaField}>{rootType}</div>
+                    )}
+                    {rendererLabel !== null && (
+                      <div className={styles.OwnersMetaField}>
+                        {rendererLabel}
+                      </div>
+                    )}
+                  </>
+                )}
+              </StackTraceGroup>
+            </React.Suspense>
           </div>
         )}
 
@@ -194,59 +327,5 @@ export default function InspectedElementView({
         )}
       </div>
     </Fragment>
-  );
-}
-
-type OwnerViewProps = {
-  displayName: string,
-  hocDisplayNames: Array<string> | null,
-  compiledWithForget: boolean,
-  id: number,
-  isInStore: boolean,
-};
-
-function OwnerView({
-  displayName,
-  hocDisplayNames,
-  compiledWithForget,
-  id,
-  isInStore,
-}: OwnerViewProps) {
-  const dispatch = useContext(TreeDispatcherContext);
-  const {highlightHostInstance, clearHighlightHostInstance} =
-    useHighlightHostInstance();
-
-  const handleClick = useCallback(() => {
-    logEvent({
-      event_name: 'select-element',
-      metadata: {source: 'owner-view'},
-    });
-    dispatch({
-      type: 'SELECT_ELEMENT_BY_ID',
-      payload: id,
-    });
-  }, [dispatch, id]);
-
-  return (
-    <Button
-      key={id}
-      className={styles.OwnerButton}
-      disabled={!isInStore}
-      onClick={handleClick}
-      onMouseEnter={() => highlightHostInstance(id)}
-      onMouseLeave={clearHighlightHostInstance}>
-      <span className={styles.OwnerContent}>
-        <span
-          className={`${styles.Owner} ${isInStore ? '' : styles.NotInStore}`}
-          title={displayName}>
-          {displayName}
-        </span>
-
-        <ElementBadges
-          hocDisplayNames={hocDisplayNames}
-          compiledWithForget={compiledWithForget}
-        />
-      </span>
-    </Button>
   );
 }

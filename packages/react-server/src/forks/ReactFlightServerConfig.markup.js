@@ -19,16 +19,31 @@ export function createHints(): Hints {
   return null;
 }
 
+export type FormatContext = null;
+
+export function createRootFormatContext(): FormatContext {
+  return null;
+}
+
+export function getChildFormatContext(
+  parentContext: FormatContext,
+  type: string,
+  props: Object,
+): FormatContext {
+  return parentContext;
+}
+
 export const supportsRequestStorage = false;
-export const requestStorage: AsyncLocalStorage<Request | void> = (null: any);
+export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
-  (null: any);
+  null as any;
 
 export * from '../ReactFlightServerConfigDebugNoop';
 
 export * from '../ReactFlightStackConfigV8';
+export * from '../ReactServerConsoleConfigPlain';
 
 export type ClientManifest = null;
 export opaque type ClientReference<T> = null; // eslint-disable-line no-unused-vars

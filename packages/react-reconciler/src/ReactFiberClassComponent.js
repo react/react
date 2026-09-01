@@ -20,7 +20,6 @@ import {
 import {
   disableLegacyContext,
   enableSchedulingProfiler,
-  disableDefaultPropsExceptForClasses,
 } from 'shared/ReactFeatureFlags';
 import ReactStrictModeWarnings from './ReactStrictModeWarnings';
 import {get as getInstance, set as setInstance} from 'shared/ReactInstanceMap';
@@ -53,7 +52,7 @@ import {
   getUnmaskedContext,
   hasContextChanged,
   emptyContextObject,
-} from './ReactFiberContext';
+} from './ReactFiberLegacyContext';
 import {readContext, checkIfContextChanged} from './ReactFiberNewContext';
 import {requestUpdateLane, scheduleUpdateOnFiber} from './ReactFiberWorkLoop';
 import {
@@ -158,7 +157,7 @@ function applyDerivedStateFromProps(
   // base state.
   if (workInProgress.lanes === NoLanes) {
     // Queue is always non-null for classes
-    const updateQueue: UpdateQueue<any> = (workInProgress.updateQueue: any);
+    const updateQueue: UpdateQueue<any> = workInProgress.updateQueue as any;
     updateQueue.baseState = memoizedState;
   }
 }
@@ -180,7 +179,7 @@ const classComponentUpdater = {
 
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.setState()');
+      startUpdateTimerByLane(lane, 'this.setState()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -206,7 +205,7 @@ const classComponentUpdater = {
 
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.replaceState()');
+      startUpdateTimerByLane(lane, 'this.replaceState()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -232,7 +231,7 @@ const classComponentUpdater = {
 
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.forceUpdate()');
+      startUpdateTimerByLane(lane, 'this.forceUpdate()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -575,7 +574,7 @@ function constructClassInstance(
   }
 
   if (typeof contextType === 'object' && contextType !== null) {
-    context = readContext((contextType: any));
+    context = readContext(contextType as any);
   } else if (!disableLegacyContext) {
     unmaskedContext = getUnmaskedContext(workInProgress, ctor, true);
     const contextTypes = ctor.contextTypes;
@@ -695,7 +694,7 @@ function constructClassInstance(
   }
 
   // Cache unmasked context so we can avoid recreating masked context unless necessary.
-  // ReactFiberContext usually updates this cache but can't for newly-created instances.
+  // ReactFiberLegacyContext usually updates this cache but can't for newly-created instances.
   if (isLegacyContextConsumer) {
     cacheContext(workInProgress, unmaskedContext, context);
   }
@@ -859,11 +858,7 @@ function resumeMountClassInstance(
   const instance = workInProgress.stateNode;
 
   const unresolvedOldProps = workInProgress.memoizedProps;
-  const oldProps = resolveClassComponentProps(
-    ctor,
-    unresolvedOldProps,
-    workInProgress.type === workInProgress.elementType,
-  );
+  const oldProps = resolveClassComponentProps(ctor, unresolvedOldProps);
   instance.props = oldProps;
 
   const oldContext = instance.context;
@@ -1018,11 +1013,7 @@ function updateClassInstance(
   cloneUpdateQueue(current, workInProgress);
 
   const unresolvedOldProps = workInProgress.memoizedProps;
-  const oldProps = resolveClassComponentProps(
-    ctor,
-    unresolvedOldProps,
-    workInProgress.type === workInProgress.elementType,
-  );
+  const oldProps = resolveClassComponentProps(ctor, unresolvedOldProps);
   instance.props = oldProps;
   const unresolvedNewProps = workInProgress.pendingProps;
 
@@ -1079,9 +1070,11 @@ function updateClassInstance(
     !hasContextChanged() &&
     !checkHasForceUpdateAfterProcessing() &&
     !(
-      current !== null &&
-      current.dependencies !== null &&
-      checkIfContextChanged(current.dependencies)
+      // prettier-ignore
+      // $FlowFixMe[invalid-compare]
+      (current !== null &&
+        current.dependencies !== null &&
+        checkIfContextChanged(current.dependencies))
     )
   ) {
     // If an update was already in progress, we should schedule an Update
@@ -1130,6 +1123,7 @@ function updateClassInstance(
     // both before and after `shouldComponentUpdate` has been called. Not ideal,
     // but I'm loath to refactor this function. This only happens for memoized
     // components so it's not that common.
+    // $FlowFixMe[invalid-compare]
     (current !== null &&
       current.dependencies !== null &&
       checkIfContextChanged(current.dependencies));
@@ -1193,18 +1187,12 @@ function updateClassInstance(
 export function resolveClassComponentProps(
   Component: any,
   baseProps: Object,
-  // Only resolve default props if this is a lazy component. Otherwise, they
-  // would have already been resolved by the JSX runtime.
-  // TODO: We're going to remove default prop resolution from the JSX runtime
-  // and keep it only for class components. As part of that change, we should
-  // remove this extra check.
-  alreadyResolvedDefaultProps: boolean,
 ): Object {
   let newProps = baseProps;
 
   // Remove ref from the props object, if it exists.
   if ('ref' in baseProps) {
-    newProps = ({}: any);
+    newProps = {} as any;
     for (const propName in baseProps) {
       if (propName !== 'ref') {
         newProps[propName] = baseProps[propName];
@@ -1214,12 +1202,7 @@ export function resolveClassComponentProps(
 
   // Resolve default props.
   const defaultProps = Component.defaultProps;
-  if (
-    defaultProps &&
-    // If disableDefaultPropsExceptForClasses is true, we always resolve
-    // default props here in the reconciler, rather than in the JSX runtime.
-    (disableDefaultPropsExceptForClasses || !alreadyResolvedDefaultProps)
-  ) {
+  if (defaultProps) {
     // We may have already copied the props object above to remove ref. If so,
     // we can modify that. Otherwise, copy the props object with Object.assign.
     if (newProps === baseProps) {

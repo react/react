@@ -41,6 +41,7 @@ function Component(props) {
     t1 = $[1];
   }
   const onChange = t1;
+
   if (props.cond) {
   }
   let t2;

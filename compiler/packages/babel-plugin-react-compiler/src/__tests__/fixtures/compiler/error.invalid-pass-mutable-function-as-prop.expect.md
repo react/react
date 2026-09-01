@@ -17,14 +17,28 @@ function Component() {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Cannot modify local variables after render completes
+
+This argument is a function which may reassign or mutate `cache` after render, which can cause inconsistent behavior on subsequent renders. Consider using state instead.
+
+error.invalid-pass-mutable-function-as-prop.ts:7:18
   5 |     cache.set('key', 'value');
   6 |   };
 > 7 |   return <Foo fn={fn} />;
-    |                   ^^ InvalidReact: This argument is a function which modifies local variables when called, which can bypass memoization and cause the UI not to update. Functions that are returned from hooks, passed as arguments to hooks, or passed as props to components may not mutate local variables (7:7)
-
-InvalidReact: The function modifies a local variable here (5:5)
+    |                   ^^ This function may (indirectly) reassign or modify `cache` after render
   8 | }
   9 |
+
+error.invalid-pass-mutable-function-as-prop.ts:5:4
+  3 |   const cache = new Map();
+  4 |   const fn = () => {
+> 5 |     cache.set('key', 'value');
+    |     ^^^^^ This modifies `cache`
+  6 |   };
+  7 |   return <Foo fn={fn} />;
+  8 | }
 ```
           
       

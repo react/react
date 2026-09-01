@@ -37,7 +37,7 @@ function Component(props) {
   const $ = _c(16);
   let t0;
   if ($[0] !== props) {
-    t0 = idx(props, _temp);
+    t0 = idx(props, (_) => _.group.label);
     $[0] = props;
     $[1] = t0;
   } else {
@@ -46,7 +46,7 @@ function Component(props) {
   const groupName1 = t0;
   let t1;
   if ($[2] !== props) {
-    t1 = idx.a(props, _temp2);
+    t1 = idx.a(props, (__0) => __0.group.label);
     $[2] = props;
     $[3] = t1;
   } else {
@@ -73,7 +73,7 @@ function Component(props) {
   const groupName4 = t3;
   let t4;
   if ($[8] !== props) {
-    t4 = idx.hello_world.b.c(props, _temp3);
+    t4 = idx.hello_world.b.c(props, (__3) => __3.group.label);
     $[8] = props;
     $[9] = t4;
   } else {
@@ -107,15 +107,6 @@ function Component(props) {
     t5 = $[15];
   }
   return t5;
-}
-function _temp3(__3) {
-  return __3.group.label;
-}
-function _temp2(__0) {
-  return __0.group.label;
-}
-function _temp(_) {
-  return _.group.label;
 }
 
 ```

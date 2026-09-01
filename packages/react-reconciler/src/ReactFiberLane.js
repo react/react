@@ -28,6 +28,8 @@ import {
   retryLaneExpirationMs,
   disableLegacyMode,
   enableDefaultTransitionIndicator,
+  enableGestureTransition,
+  enableParallelTransitions,
 } from 'shared/ReactFeatureFlags';
 import {isDevToolsPresent} from './ReactFiberDevToolsHook';
 import {clz32} from './clz32';
@@ -73,6 +75,22 @@ const TransitionLane12: Lane = /*                       */ 0b0000000000010000000
 const TransitionLane13: Lane = /*                       */ 0b0000000000100000000000000000000;
 const TransitionLane14: Lane = /*                       */ 0b0000000001000000000000000000000;
 
+export const SomeTransitionLane: Lane = TransitionLane1;
+
+const TransitionUpdateLanes =
+  TransitionLane1 |
+  TransitionLane2 |
+  TransitionLane3 |
+  TransitionLane4 |
+  TransitionLane5 |
+  TransitionLane6 |
+  TransitionLane7 |
+  TransitionLane8 |
+  TransitionLane9 |
+  TransitionLane10;
+const TransitionDeferredLanes =
+  TransitionLane11 | TransitionLane12 | TransitionLane13 | TransitionLane14;
+
 const RetryLanes: Lanes = /*                            */ 0b0000011110000000000000000000000;
 const RetryLane1: Lane = /*                             */ 0b0000000010000000000000000000000;
 const RetryLane2: Lane = /*                             */ 0b0000000100000000000000000000000;
@@ -94,7 +112,7 @@ export const DeferredLane: Lane = /*                    */ 0b1000000000000000000
 // Any lane that might schedule an update. This is used to detect infinite
 // update loops, so it doesn't include hydration lanes or retries.
 export const UpdateLanes: Lanes =
-  SyncLane | InputContinuousLane | DefaultLane | TransitionLanes;
+  SyncLane | InputContinuousLane | DefaultLane | TransitionUpdateLanes;
 
 export const HydrationLanes =
   SyncHydrationLane |
@@ -155,7 +173,8 @@ export function getLabelForLane(lane: Lane): string | void {
 
 export const NoTimestamp = -1;
 
-let nextTransitionLane: Lane = TransitionLane1;
+let nextTransitionUpdateLane: Lane = TransitionLane1;
+let nextTransitionDeferredLane: Lane = TransitionLane11;
 let nextRetryLane: Lane = RetryLane1;
 
 function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
@@ -190,11 +209,15 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
     case TransitionLane8:
     case TransitionLane9:
     case TransitionLane10:
+      if (enableParallelTransitions) {
+        return getHighestPriorityLane(lanes);
+      }
+      return lanes & TransitionUpdateLanes;
     case TransitionLane11:
     case TransitionLane12:
     case TransitionLane13:
     case TransitionLane14:
-      return lanes & TransitionLanes;
+      return lanes & TransitionDeferredLanes;
     case RetryLane1:
     case RetryLane2:
     case RetryLane3:
@@ -593,10 +616,6 @@ export function includesSyncLane(lanes: Lanes): boolean {
   return (lanes & (SyncLane | SyncHydrationLane)) !== NoLanes;
 }
 
-export function isSyncLane(lanes: Lanes): boolean {
-  return (lanes & (SyncLane | SyncHydrationLane)) !== NoLanes;
-}
-
 export function includesNonIdleWork(lanes: Lanes): boolean {
   return (lanes & NonIdleLanes) !== NoLanes;
 }
@@ -606,7 +625,8 @@ export function includesOnlyRetries(lanes: Lanes): boolean {
 export function includesOnlyNonUrgentLanes(lanes: Lanes): boolean {
   // TODO: Should hydration lanes be included here? This function is only
   // used in `updateDeferredValueImpl`.
-  const UrgentLanes = SyncLane | InputContinuousLane | DefaultLane;
+  const UrgentLanes =
+    SyncLane | InputContinuousLane | DefaultLane | GestureLane;
   return (lanes & UrgentLanes) === NoLanes;
 }
 export function includesOnlyTransitions(lanes: Lanes): boolean {
@@ -615,6 +635,22 @@ export function includesOnlyTransitions(lanes: Lanes): boolean {
 
 export function includesTransitionLane(lanes: Lanes): boolean {
   return (lanes & TransitionLanes) !== NoLanes;
+}
+
+export function includesRetryLane(lanes: Lanes): boolean {
+  return (lanes & RetryLanes) !== NoLanes;
+}
+
+export function includesIdleGroupLanes(lanes: Lanes): boolean {
+  return (
+    (lanes &
+      (SelectiveHydrationLane |
+        IdleHydrationLane |
+        IdleLane |
+        OffscreenLane |
+        DeferredLane)) !==
+    NoLanes
+  );
 }
 
 export function includesOnlyHydrationLanes(lanes: Lanes): boolean {
@@ -647,6 +683,8 @@ export function includesLoadingIndicatorLanes(lanes: Lanes): boolean {
 
 export function includesBlockingLane(lanes: Lanes): boolean {
   const SyncDefaultLanes =
+    SyncHydrationLane |
+    SyncLane |
     InputContinuousHydrationLane |
     InputContinuousLane |
     DefaultHydrationLane |
@@ -663,10 +701,13 @@ export function includesExpiredLane(root: FiberRoot, lanes: Lanes): boolean {
 
 export function isBlockingLane(lane: Lane): boolean {
   const SyncDefaultLanes =
+    SyncHydrationLane |
+    SyncLane |
     InputContinuousHydrationLane |
     InputContinuousLane |
     DefaultHydrationLane |
-    DefaultLane;
+    DefaultLane |
+    GestureLane;
   return (lane & SyncDefaultLanes) !== NoLanes;
 }
 
@@ -675,18 +716,30 @@ export function isTransitionLane(lane: Lane): boolean {
 }
 
 export function isGestureRender(lanes: Lanes): boolean {
+  if (!enableGestureTransition) {
+    return false;
+  }
   // This should render only the one lane.
   return lanes === GestureLane;
 }
 
-export function claimNextTransitionLane(): Lane {
+export function claimNextTransitionUpdateLane(): Lane {
   // Cycle through the lanes, assigning each new transition to the next lane.
   // In most cases, this means every transition gets its own lane, until we
   // run out of lanes and cycle back to the beginning.
-  const lane = nextTransitionLane;
-  nextTransitionLane <<= 1;
-  if ((nextTransitionLane & TransitionLanes) === NoLanes) {
-    nextTransitionLane = TransitionLane1;
+  const lane = nextTransitionUpdateLane;
+  nextTransitionUpdateLane <<= 1;
+  if ((nextTransitionUpdateLane & TransitionUpdateLanes) === NoLanes) {
+    nextTransitionUpdateLane = TransitionLane1;
+  }
+  return lane;
+}
+
+export function claimNextTransitionDeferredLane(): Lane {
+  const lane = nextTransitionDeferredLane;
+  nextTransitionDeferredLane <<= 1;
+  if ((nextTransitionDeferredLane & TransitionDeferredLanes) === NoLanes) {
+    nextTransitionDeferredLane = TransitionLane11;
   }
   return lane;
 }
@@ -889,6 +942,7 @@ export function markRootFinished(
       // commits, they behave like regular updates.
       for (let i = 0; i < hiddenUpdatesForLane.length; i++) {
         const update = hiddenUpdatesForLane[i];
+        // $FlowFixMe[invalid-compare]
         if (update !== null) {
           update.lane &= ~OffscreenLane;
         }
@@ -952,6 +1006,14 @@ function markSpawnedDeferredLane(
   // Entangle the spawned lane with the DeferredLane bit so that we know it
   // was the result of another render. This lets us avoid a useDeferredValue
   // waterfall — only the first level will defer.
+  // TODO: Now that there is a reserved set of transition lanes that are used
+  // exclusively for deferred work, we should get rid of this special
+  // DeferredLane bit; the same information can be inferred by checking whether
+  // the lane is one of the TransitionDeferredLanes. The only reason this still
+  // exists is because we need to also do the same for OffscreenLane. That
+  // requires additional changes because there are more places around the
+  // codebase that treat OffscreenLane as a magic value; would need to check
+  // for a new OffscreenDeferredLane, too. Will leave this for a follow-up.
   const spawnedLaneIndex = laneToIndex(spawnedLane);
   root.entangledLanes |= spawnedLane;
   root.entanglements[spawnedLaneIndex] |=
@@ -1219,10 +1281,12 @@ export function getGroupNameOfHighestPriorityLane(lanes: Lanes): string {
       InputContinuousHydrationLane |
       InputContinuousLane |
       DefaultHydrationLane |
-      DefaultLane |
-      GestureLane)
+      DefaultLane)
   ) {
     return 'Blocking';
+  }
+  if (lanes & GestureLane) {
+    return 'Gesture';
   }
   if (lanes & (TransitionHydrationLane | TransitionLanes)) {
     return 'Transition';

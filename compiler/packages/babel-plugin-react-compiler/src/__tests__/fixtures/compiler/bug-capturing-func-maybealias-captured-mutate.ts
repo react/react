@@ -1,3 +1,4 @@
+// @enableNewMutationAliasingModel:false
 import {makeArray, mutate} from 'shared-runtime';
 
 /**

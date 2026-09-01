@@ -16,9 +16,9 @@ async function main() {
     console.log('Hint: run `yarn linc` to only lint changed files.');
   }
 
-  const {_, ...cliOptions} = minimist(process.argv.slice(2));
+  const {_: paths, ...cliOptions} = minimist(process.argv.slice(2));
 
-  if (await runESLint({onlyChanged: false, ...cliOptions})) {
+  if (await runESLint({onlyChanged: false, ...cliOptions, paths})) {
     console.log('Lint passed.');
   } else {
     console.log('Lint failed.');

@@ -50,10 +50,8 @@ function Component(props) {
       case 1: {
         break bb0;
       }
-      case 2: {
-      }
-      default: {
-      }
+      case 2:
+      default:
     }
   } else {
     if (props.cond2) {

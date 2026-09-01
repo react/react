@@ -61,11 +61,8 @@ function Component(t0) {
   let timestampLabel;
   if ($[0] !== highlightedItem || $[1] !== label || $[2] !== serverTime) {
     const highlight = new Highlight(highlightedItem);
-
     const time = serverTime.get();
-
     timestampLabel = time / 1000 || label;
-
     t1 = highlight.render();
     $[0] = highlightedItem;
     $[1] = label;

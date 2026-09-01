@@ -9,7 +9,7 @@
 
 import {
   enableCreateEventHandleAPI,
-  enableUseEffectEventHook,
+  enableEffectEventMutationPhase,
 } from 'shared/ReactFeatureFlags';
 
 export type Flags = number;
@@ -62,13 +62,13 @@ export const ShouldCapture = /*                */ 0b0000000000000010000000000000
 export const ForceUpdateForLegacySuspense = /* */ 0b0000000000000100000000000000000;
 export const DidPropagateContext = /*          */ 0b0000000000001000000000000000000;
 export const NeedsPropagation = /*             */ 0b0000000000010000000000000000000;
-export const Forked = /*                       */ 0b0000000000100000000000000000000;
 
 // Static tags describe aspects of a fiber that are not specific to a render,
 // e.g. a fiber uses a passive effect (even if there are no updates on this particular render).
 // This enables us to defer more work in the unmount case,
 // since we can defer traversing the tree during layout to look for Passive effects,
 // and instead rely on the static flag as a signal that there may be cleanup work.
+export const Forked = /*                       */ 0b0000000000100000000000000000000;
 export const SnapshotStatic = /*               */ 0b0000000001000000000000000000000;
 export const LayoutStatic = /*                 */ 0b0000000010000000000000000000000;
 export const RefStatic = LayoutStatic;
@@ -83,11 +83,17 @@ export const ViewTransitionNamedStatic =
 // ViewTransitionStatic tracks whether there are an ViewTransition components from
 // the nearest HostComponent down. It resets at every HostComponent level.
 export const ViewTransitionStatic = /*         */ 0b0000010000000000000000000000000;
+// ViewTransitionStaticParent tracks whether there are ViewTransition components
+// with parentEnter/parentExit props. Unlike ViewTransitionStatic, this is NOT
+// cleared by HostComponents so it can be used to skip subtrees in parent walks.
+export const ViewTransitionStaticParent = /*   */ 0b1000000000000000000000000000000;
+// Tracks whether a HostPortal is present in the tree.
+export const PortalStatic = /*                 */ 0b0000100000000000000000000000000;
 
 // Flag used to identify newly inserted fibers. It isn't reset after commit unlike `Placement`.
-export const PlacementDEV = /*                 */ 0b0000100000000000000000000000000;
-export const MountLayoutDev = /*               */ 0b0001000000000000000000000000000;
-export const MountPassiveDev = /*              */ 0b0010000000000000000000000000000;
+export const PlacementDEV = /*                 */ 0b0001000000000000000000000000000;
+export const MountLayoutDev = /*               */ 0b0010000000000000000000000000000;
+export const MountPassiveDev = /*              */ 0b0100000000000000000000000000000;
 
 // Groups of flags that are used in the commit phase to skip over trees that
 // don't contain effects, by checking subtreeFlags.
@@ -100,12 +106,11 @@ export const BeforeMutationMask: number =
       // TODO: Only need to visit Deletions during BeforeMutation phase if an
       // element is focused.
       Update | ChildDeletion | Visibility
-    : enableUseEffectEventHook
-      ? // TODO: The useEffectEvent hook uses the snapshot phase for clean up but it
-        // really should use the mutation phase for this or at least schedule an
-        // explicit Snapshot phase flag for this.
-        Update
-      : 0);
+    : // useEffectEvent uses the snapshot phase,
+      // but we're moving it to the mutation phase.
+      enableEffectEventMutationPhase
+      ? 0
+      : Update);
 
 // For View Transition support we use the snapshot phase to scan the tree for potentially
 // affected ViewTransition components.
@@ -139,4 +144,7 @@ export const StaticMask =
   RefStatic |
   MaySuspendCommit |
   ViewTransitionStatic |
-  ViewTransitionNamedStatic;
+  ViewTransitionStaticParent |
+  ViewTransitionNamedStatic |
+  PortalStatic |
+  Forked;

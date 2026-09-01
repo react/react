@@ -1,3 +1,4 @@
+// @compilationMode:"infer"
 import {makeArray} from 'shared-runtime';
 
 function Component() {

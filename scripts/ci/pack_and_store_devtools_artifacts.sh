@@ -20,13 +20,11 @@ cd ../react-devtools-extensions
 if [[ -n "$1" ]]; then
   yarn build:$1
   mv ./$1/build/ReactDevTools.zip ../../build/devtools/$1-extension.zip
+  mv ./$1/build/webpack-stats.*.json ../../build/devtools/
 else
   yarn build
   for browser in chrome firefox edge; do
     mv ./$browser/build/ReactDevTools.zip ../../build/devtools/$browser-extension.zip
+    mv ./$browser/build/webpack-stats.*.json ../../build/devtools/
   done
 fi
-
-# Compress all DevTools artifacts into a single tarball for easy download
-cd ../../build/devtools
-tar -zcvf ../devtools.tgz .

@@ -7,8 +7,9 @@
  * @flow
  */
 
+// Keep in sync with ReactServerConsoleConfig
 // This flips color using ANSI, then sets a color styling, then resets.
-const badgeFormat = '\x1b[0m\x1b[7m%c%s\x1b[0m%c ';
+const badgeFormat = '\x1b[0m\x1b[7m%c%s\x1b[0m%c';
 // Same badge styling as DevTools.
 const badgeStyle =
   // We use a fixed background if light-dark is not supported, otherwise
@@ -35,7 +36,7 @@ export function bindToConsole(
     case 'groupEnd':
     case 'table': {
       // These methods cannot be colorized because they don't take a formatting string.
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       return bind.apply(console[methodName], [console].concat(args)); // eslint-disable-line react-internal/no-production-logging
     }
     case 'assert': {
@@ -49,7 +50,7 @@ export function bindToConsole(
     newArgs.splice(
       offset,
       1,
-      badgeFormat + newArgs[offset],
+      badgeFormat + ' ' + newArgs[offset],
       badgeStyle,
       pad + badgeName + pad,
       resetStyle,
@@ -68,6 +69,7 @@ export function bindToConsole(
   // The "this" binding in the "bind";
   newArgs.unshift(console);
 
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
+  // $FlowFixMe[invalid-computed-prop]
   return bind.apply(console[methodName], newArgs); // eslint-disable-line react-internal/no-production-logging
 }

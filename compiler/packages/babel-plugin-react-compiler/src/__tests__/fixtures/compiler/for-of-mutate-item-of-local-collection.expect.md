@@ -38,6 +38,7 @@ function Component(props) {
   } else {
     items = $[0];
   }
+
   return items;
 }
 

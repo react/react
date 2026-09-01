@@ -37,11 +37,11 @@ export function getViewTransitionName(
   }
 
   // We assume we always call this in the commit phase.
-  const root = ((getCommittingRoot(): any): FiberRoot);
+  const root = getCommittingRoot() as any as FiberRoot;
   const identifierPrefix = root.identifierPrefix;
   const globalClientId = globalClientIdCounter++;
   const name =
-    '\u00AB' + identifierPrefix + 't' + globalClientId.toString(32) + '\u00BB';
+    '_' + identifierPrefix + 't_' + globalClientId.toString(32) + '_';
   instance.autoName = name;
   return name;
 }

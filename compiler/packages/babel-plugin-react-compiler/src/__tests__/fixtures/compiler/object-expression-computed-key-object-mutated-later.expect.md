@@ -27,34 +27,17 @@ import { c as _c } from "react/compiler-runtime";
 import { identity, mutate } from "shared-runtime";
 
 function Component(props) {
-  const $ = _c(5);
-  let t0;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t0 = {};
-    $[0] = t0;
+  const $ = _c(2);
+  let context;
+  if ($[0] !== props.value) {
+    const key = {};
+    context = { [key]: identity([props.value]) };
+    mutate(key);
+    $[0] = props.value;
+    $[1] = context;
   } else {
-    t0 = $[0];
+    context = $[1];
   }
-  const key = t0;
-  let t1;
-  if ($[1] !== props.value) {
-    t1 = identity([props.value]);
-    $[1] = props.value;
-    $[2] = t1;
-  } else {
-    t1 = $[2];
-  }
-  let t2;
-  if ($[3] !== t1) {
-    t2 = { [key]: t1 };
-    $[3] = t1;
-    $[4] = t2;
-  } else {
-    t2 = $[4];
-  }
-  const context = t2;
-
-  mutate(key);
   return context;
 }
 

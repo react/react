@@ -41,6 +41,7 @@ function Component(props) {
   } else {
     x = props.fallback;
   }
+
   return x;
 }
 

@@ -21,15 +21,13 @@ import ButtonIcon from '../ButtonIcon';
 import {InspectedElementContext} from '../Components/InspectedElementContext';
 import {StoreContext} from '../context';
 
-import {
-  getAlreadyLoadedHookNames,
-  getHookSourceLocationKey,
-} from 'react-devtools-shared/src/hookNamesCache';
+import {getAlreadyLoadedHookNames} from 'react-devtools-shared/src/hookNamesCache';
+import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookSourceLocation';
 import Toggle from '../Toggle';
 import type {HooksNode} from 'react-debug-tools/src/ReactDebugHooks';
 import type {ChangeDescription} from './types';
 
-// $FlowFixMe: Flow doesn't know about Intl.ListFormat
+// $FlowFixMe[cannot-resolve-name]: Flow doesn't know about Intl.ListFormat
 const hookListFormatter = new Intl.ListFormat('en', {
   style: 'long',
   type: 'conjunction',
@@ -40,34 +38,38 @@ type HookProps = {
   hookNames: Map<string, string> | null,
 };
 
-const Hook: React.AbstractComponent<HookProps> = memo(({hook, hookNames}) => {
-  const hookSource = hook.hookSource;
-  const hookName = useMemo(() => {
-    if (!hookSource || !hookNames) return null;
-    const key = getHookSourceLocationKey(hookSource);
-    return hookNames.get(key) || null;
-  }, [hookSource, hookNames]);
+const Hook: component(...props: HookProps) = memo(
+  ({hook, hookNames}: HookProps) => {
+    const hookSource = hook.hookSource;
+    const hookName = useMemo(() => {
+      if (!hookSource || !hookNames) return null;
+      const key = getHookSourceLocationKey(hookSource);
+      return hookNames.get(key) || null;
+    }, [hookSource, hookNames]);
 
-  return (
-    <ul className={styles.Hook}>
-      <li>
-        {hook.id !== null && (
-          <span className={styles.PrimitiveHookNumber}>
-            {String(hook.id + 1)}
+    return (
+      <ul className={styles.Hook}>
+        <li>
+          {hook.id !== null && (
+            <span className={styles.PrimitiveHookNumber}>
+              {String(hook.id + 1)}
+            </span>
+          )}
+          <span
+            className={
+              hook.id !== null ? styles.PrimitiveHookName : styles.Name
+            }>
+            {hook.name}
+            {hookName && <span className={styles.HookName}>({hookName})</span>}
           </span>
-        )}
-        <span
-          className={hook.id !== null ? styles.PrimitiveHookName : styles.Name}>
-          {hook.name}
-          {hookName && <span className={styles.HookName}>({hookName})</span>}
-        </span>
-        {hook.subHooks?.map((subHook, index) => (
-          <Hook key={hook.id} hook={subHook} hookNames={hookNames} />
-        ))}
-      </li>
-    </ul>
-  );
-});
+          {hook.subHooks?.map((subHook, index) => (
+            <Hook key={hook.id} hook={subHook} hookNames={hookNames} />
+          ))}
+        </li>
+      </ul>
+    );
+  },
+);
 
 const shouldKeepHook = (
   hook: HooksNode,
@@ -107,12 +109,12 @@ const filterHooks = (
 
 type Props = {|
   fiberID: number,
-  hooks: $PropertyType<ChangeDescription, 'hooks'>,
-  state: $PropertyType<ChangeDescription, 'state'>,
+  hooks: ChangeDescription['hooks'],
+  state: ChangeDescription['state'],
   displayMode?: 'detailed' | 'compact',
 |};
 
-const HookChangeSummary: React.AbstractComponent<Props> = memo(
+const HookChangeSummary: component(...props: Props) = memo(
   ({hooks, fiberID, state, displayMode = 'detailed'}: Props) => {
     const {parseHookNames, toggleParseHookNames, inspectedElement} = useContext(
       InspectedElementContext,
@@ -131,6 +133,7 @@ const HookChangeSummary: React.AbstractComponent<Props> = memo(
       toggleParseHookNames();
     }, [toggleParseHookNames, parseHookNames]);
 
+    // $FlowFixMe[invalid-compare]
     const element = fiberID !== null ? store.getElementByID(fiberID) : null;
     const hookNames =
       element != null ? getAlreadyLoadedHookNames(element) : null;

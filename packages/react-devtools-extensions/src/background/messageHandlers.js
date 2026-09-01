@@ -1,5 +1,6 @@
 /* global chrome */
 
+import {__DEBUG__} from 'react-devtools-shared/src/constants';
 import setExtensionIconAndPopup from './setExtensionIconAndPopup';
 import {executeScriptInMainWorld} from './executeScript';
 
@@ -25,6 +26,7 @@ export function handleBackendManagerMessage(message, sender) {
       payload.versions.forEach(version => {
         if (EXTENSION_CONTAINED_VERSIONS.includes(version)) {
           executeScriptInMainWorld({
+            injectImmediately: true,
             target: {tabId: sender.tab.id},
             files: [`/build/react_devtools_backend_${version}.js`],
           });
@@ -46,21 +48,25 @@ export function handleDevToolsPageMessage(message) {
         payload: {tabId, url},
       } = message;
 
-      if (!tabId) {
-        throw new Error("Couldn't fetch file sources: tabId not specified");
+      if (!tabId || !url) {
+        // Send a response straight away to get the Promise fulfilled.
+        chrome.runtime.sendMessage({
+          source: 'react-devtools-background',
+          payload: {
+            type: 'fetch-file-with-cache-error',
+            url,
+            value: null,
+          },
+        });
+      } else {
+        chrome.tabs.sendMessage(tabId, {
+          source: 'devtools-page',
+          payload: {
+            type: 'fetch-file-with-cache',
+            url,
+          },
+        });
       }
-
-      if (!url) {
-        throw new Error("Couldn't fetch file sources: url not specified");
-      }
-
-      chrome.tabs.sendMessage(tabId, {
-        source: 'devtools-page',
-        payload: {
-          type: 'fetch-file-with-cache',
-          url,
-        },
-      });
 
       break;
     }
@@ -75,9 +81,71 @@ export function handleDevToolsPageMessage(message) {
       }
 
       executeScriptInMainWorld({
+        injectImmediately: true,
         target: {tabId},
         files: ['/build/backendManager.js'],
-      });
+      }).then(
+        () => {
+          if (__DEBUG__) {
+            console.log('Successfully injected backend manager');
+          }
+        },
+        reason => {
+          console.error('Failed to inject backend manager:', reason);
+        },
+      );
+
+      break;
+    }
+
+    case 'eval-in-inspected-window': {
+      const {
+        payload: {tabId, requestId, scriptId, args},
+      } = message;
+
+      chrome.tabs
+        .sendMessage(tabId, {
+          source: 'devtools-page-eval',
+          payload: {
+            scriptId,
+            args,
+          },
+        })
+        .then(response => {
+          if (!response) {
+            chrome.runtime.sendMessage({
+              source: 'react-devtools-background',
+              payload: {
+                type: 'eval-in-inspected-window-response',
+                requestId,
+                result: null,
+                error: 'No response from content script',
+              },
+            });
+            return;
+          }
+          const {result, error} = response;
+          chrome.runtime.sendMessage({
+            source: 'react-devtools-background',
+            payload: {
+              type: 'eval-in-inspected-window-response',
+              requestId,
+              result,
+              error,
+            },
+          });
+        })
+        .catch(error => {
+          chrome.runtime.sendMessage({
+            source: 'react-devtools-background',
+            payload: {
+              type: 'eval-in-inspected-window-response',
+              requestId,
+              result: null,
+              error: error?.message || String(error),
+            },
+          });
+        });
 
       break;
     }

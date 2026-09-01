@@ -9,14 +9,15 @@
 
 import type {ReactScopeInstance} from 'shared/ReactTypes';
 import type {DOMEventName} from '../events/DOMEventNames';
+import typeof {SyntheticEvent} from '../events/SyntheticEvent';
 
 export type ReactDOMEventHandle = (
   target: EventTarget | ReactScopeInstance,
-  callback: (SyntheticEvent<EventTarget>) => void,
+  callback: (SyntheticEvent) => void,
 ) => () => void;
 
 export type ReactDOMEventHandleListener = {
-  callback: (SyntheticEvent<EventTarget>) => void,
+  callback: SyntheticEvent => void,
   capture: boolean,
   type: DOMEventName,
 };

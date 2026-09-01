@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 import {useCallback, useRef} from 'react';
 
 function useFoo({cond}) {
@@ -28,6 +28,13 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `ref`, but the source dependencies were []. Inferred dependency not present in source.
+
+error.preserve-use-memo-ref-missing-reactive.ts:9:21
    7 |   const ref = cond ? ref1 : ref2;
    8 |
 >  9 |   return useCallback(() => {
@@ -39,7 +46,7 @@ export const FIXTURE_ENTRYPOINT = {
 > 12 |     }
      | ^^^^^^^^^^^^^^^^^^^^^^
 > 13 |   }, []);
-     | ^^^^ CannotPreserveMemoization: React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `ref`, but the source dependencies were []. Inferred dependency not present in source (9:13)
+     | ^^^^ Could not preserve existing manual memoization
   14 | }
   15 |
   16 | export const FIXTURE_ENTRYPOINT = {

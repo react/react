@@ -14,11 +14,6 @@
 .*/__mocks__/.*
 .*/__tests__/.*
 
-# contains modern flow syntax that requires a Flow upgrade
-.*/node_modules/prettier-plugin-hermes-parser/.*
-
-# TODO: noop should get its own inlinedHostConfig entry
-.*/packages/react-noop-renderer/.*
 
 %REACT_RENDERER_FLOW_IGNORES%
 
@@ -33,6 +28,7 @@
 untyped-type-import=error
 internal-type=off
 deprecated-type=off
+unsafe-object-assign=off
 
 [options]
 munge_underscores=false

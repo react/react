@@ -172,7 +172,7 @@ test('regression (#20932): return pointer is correct before entering deleted tre
 
   function App() {
     return (
-      <SuspenseList revealOrder="forwards">
+      <SuspenseList revealOrder="forwards" tail="visible">
         <Suspense fallback={<Text text="Loading Async..." />}>
           <Async />
         </Suspense>

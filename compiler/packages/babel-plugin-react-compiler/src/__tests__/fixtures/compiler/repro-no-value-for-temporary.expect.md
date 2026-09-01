@@ -45,6 +45,7 @@ function Component(listItem, thread) {
     t3 = $[6];
   }
   const body = t1(t2, t3);
+
   return body;
 }
 

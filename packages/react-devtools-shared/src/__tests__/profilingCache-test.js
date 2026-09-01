@@ -378,6 +378,12 @@ describe('ProfilingCache', () => {
       ),
     );
 
+    // Save references to the real dispatch/setState functions.
+    // inspectHooks() re-runs the component with a mock dispatcher,
+    // which would overwrite these variables with mock functions that do nothing.
+    const realDispatch = dispatch;
+    const realSetState = setState;
+
     // Second render has no changed hooks, only changed props.
     utils.act(() =>
       render(
@@ -388,10 +394,10 @@ describe('ProfilingCache', () => {
     );
 
     // Third render has a changed reducer hook.
-    utils.act(() => dispatch({type: 'invert'}));
+    utils.act(() => realDispatch({type: 'invert'}));
 
     // Fourth render has a changed state hook.
-    utils.act(() => setState('def'));
+    utils.act(() => realSetState('def'));
 
     // Fifth render has a changed context value, but no changed hook.
     utils.act(() =>
@@ -522,6 +528,238 @@ describe('ProfilingCache', () => {
   });
 
   // @reactVersion >= 19.0
+  it('should detect what hooks changed in a render with custom and composite hooks', () => {
+    let snapshot = 0;
+    let syncExternalStoreCallback;
+
+    function subscribe(callback) {
+      syncExternalStoreCallback = callback;
+      return () => {};
+    }
+
+    function getSnapshot() {
+      return snapshot;
+    }
+
+    // Custom hook wrapping multiple primitive hooks
+    function useCustomHook() {
+      const [value, setValue] = React.useState('custom');
+      React.useEffect(() => {}, [value]);
+      return [value, setValue];
+    }
+
+    let setState = null;
+    let startTransition = null;
+    let actionStateDispatch = null;
+    let setCustomValue = null;
+    let setFinalState = null;
+
+    const Component = () => {
+      // Hook 0: useState
+      const [state, _setState] = React.useState('initial');
+      setState = _setState;
+
+      // Hook 1: useSyncExternalStore (composite hook - internally uses multiple hooks)
+      const storeValue = React.useSyncExternalStore(
+        subscribe,
+        getSnapshot,
+        getSnapshot,
+      );
+
+      // Hook 2: useTransition (composite hook - internally uses multiple hooks)
+      const [isPending, _startTransition] = React.useTransition();
+      startTransition = _startTransition;
+
+      // Hook 3: useActionState (composite hook - internally uses multiple hooks)
+      const [actionState, _actionStateDispatch] = React.useActionState(
+        (_prev, action) => action,
+        'action-initial',
+      );
+      actionStateDispatch = _actionStateDispatch;
+
+      // Hook 4: useState inside custom hook (flattened)
+      // Hook 5: useEffect inside custom hook (not stateful, won't show in changes)
+      const [customValue, _setCustomValue] = useCustomHook();
+      setCustomValue = _setCustomValue;
+
+      // Hook 6: direct useState at the end
+      const [finalState, _setFinalState] = React.useState('final');
+      setFinalState = _setFinalState;
+
+      return `${state}-${storeValue}-${isPending}-${actionState}-${customValue}-${finalState}`;
+    };
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<Component />));
+
+    // Save references before inspectHooks() overwrites them
+    const realSetState = setState;
+    const realStartTransition = startTransition;
+    const realActionStateDispatch = actionStateDispatch;
+    const realSetCustomValue = setCustomValue;
+    const realSetFinalState = setFinalState;
+
+    // 2nd render: change useState (hook 0)
+    utils.act(() => realSetState('changed'));
+
+    // 3rd render: change useSyncExternalStore (hook 1)
+    utils.act(() => {
+      snapshot = 1;
+      syncExternalStoreCallback();
+    });
+
+    // 4th render: trigger useTransition (hook 2)
+    // Note: useTransition triggers two renders - one when isPending becomes true,
+    // and another when isPending becomes false after the transition completes
+    utils.act(() => {
+      realStartTransition(() => {});
+    });
+
+    // 6th render: change useActionState (hook 3)
+    utils.act(() => realActionStateDispatch('action-changed'));
+
+    // 7th render: change custom hook's useState (hook 4)
+    utils.act(() => realSetCustomValue('custom-changed'));
+
+    // 8th render: change final useState (hook 6)
+    utils.act(() => realSetFinalState('final-changed'));
+
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+
+    const changeDescriptions = store.profilerStore
+      .getDataForRoot(rootID)
+      .commitData.map(commitData => commitData.changeDescriptions);
+    expect(changeDescriptions).toHaveLength(8);
+
+    // 1st render: Initial mount
+    expect(changeDescriptions[0]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": null,
+          "didHooksChange": false,
+          "isFirstMount": true,
+          "props": null,
+          "state": null,
+        },
+      }
+    `);
+
+    // 2nd render: Changed hook 0 (useState)
+    expect(changeDescriptions[1]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            0,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+
+    // 3rd render: Changed hook 1 (useSyncExternalStore)
+    expect(changeDescriptions[2]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            1,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+
+    // 4th render: Changed hook 2 (useTransition - isPending becomes true)
+    expect(changeDescriptions[3]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            2,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+
+    // 5th render: Changed hook 2 (useTransition - isPending becomes false)
+    expect(changeDescriptions[4]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            2,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+
+    // 6th render: Changed hook 3 (useActionState)
+    expect(changeDescriptions[5]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            3,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+
+    // 7th render: Changed hook 4 (useState inside useCustomHook)
+    expect(changeDescriptions[6]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            4,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+
+    // 8th render: Changed hook 6 (final useState)
+    expect(changeDescriptions[7]).toMatchInlineSnapshot(`
+      Map {
+        2 => {
+          "context": false,
+          "didHooksChange": true,
+          "hooks": [
+            6,
+          ],
+          "isFirstMount": false,
+          "props": [],
+          "state": null,
+        },
+      }
+    `);
+  });
+
+  // @reactVersion >= 19.0
   it('should detect context changes or lack of changes with conditional use()', () => {
     const ContextA = React.createContext(0);
     const ContextB = React.createContext(1);
@@ -553,6 +791,11 @@ describe('ProfilingCache', () => {
       ),
     );
 
+    // Save reference to the real setState function before profiling starts.
+    // inspectHooks() re-runs the component with a mock dispatcher,
+    // which would overwrite setState with a mock function that does nothing.
+    const realSetState = setState;
+
     utils.act(() => store.profilerStore.startProfiling());
 
     // First render changes Context.
@@ -567,7 +810,7 @@ describe('ProfilingCache', () => {
     );
 
     // Second render has no changed Context, only changed state.
-    utils.act(() => setState('def'));
+    utils.act(() => realSetState('def'));
 
     utils.act(() => store.profilerStore.stopProfiling());
 
@@ -682,6 +925,14 @@ describe('ProfilingCache', () => {
   it('should calculate durations correctly for suspended views', async () => {
     let data;
     const getData = () => {
+      if (React.use) {
+        if (!data) {
+          data = new Promise(resolve => {
+            resolve('abc');
+          });
+        }
+        return React.use(data);
+      }
       if (data) {
         return data;
       } else {
@@ -716,34 +967,68 @@ describe('ProfilingCache', () => {
     const rootID = store.roots[0];
     const commitData = store.profilerStore.getDataForRoot(rootID).commitData;
     expect(commitData).toHaveLength(2);
-    expect(commitData[0].fiberActualDurations).toMatchInlineSnapshot(`
-      Map {
-        1 => 15,
-        2 => 15,
-        3 => 5,
-        4 => 2,
-      }
-    `);
-    expect(commitData[0].fiberSelfDurations).toMatchInlineSnapshot(`
-      Map {
-        1 => 0,
-        2 => 10,
-        3 => 3,
-        4 => 2,
-      }
-    `);
-    expect(commitData[1].fiberActualDurations).toMatchInlineSnapshot(`
-      Map {
-        5 => 3,
-        3 => 3,
-      }
-    `);
-    expect(commitData[1].fiberSelfDurations).toMatchInlineSnapshot(`
-      Map {
-        5 => 3,
-        3 => 0,
-      }
-    `);
+
+    if (React.version.startsWith('17')) {
+      // React 17 will mount all children until it suspends in a LegacyHidden
+      // The ID gap is from the Fiber for <Async> that's in the disconnected tree.
+      expect(commitData[0].fiberActualDurations).toMatchInlineSnapshot(`
+        Map {
+          1 => 15,
+          2 => 15,
+          3 => 5,
+          5 => 2,
+        }
+      `);
+      expect(commitData[0].fiberSelfDurations).toMatchInlineSnapshot(`
+        Map {
+          1 => 0,
+          2 => 10,
+          3 => 3,
+          5 => 2,
+        }
+      `);
+      expect(commitData[1].fiberActualDurations).toMatchInlineSnapshot(`
+        Map {
+          6 => 3,
+          3 => 3,
+        }
+      `);
+      expect(commitData[1].fiberSelfDurations).toMatchInlineSnapshot(`
+        Map {
+          6 => 3,
+          3 => 0,
+        }
+      `);
+    } else {
+      expect(commitData[0].fiberActualDurations).toMatchInlineSnapshot(`
+        Map {
+          1 => 15,
+          2 => 15,
+          3 => 5,
+          4 => 2,
+        }
+      `);
+      expect(commitData[0].fiberSelfDurations).toMatchInlineSnapshot(`
+        Map {
+          1 => 0,
+          2 => 10,
+          3 => 3,
+          4 => 2,
+        }
+      `);
+      expect(commitData[1].fiberActualDurations).toMatchInlineSnapshot(`
+        Map {
+          5 => 3,
+          3 => 3,
+        }
+      `);
+      expect(commitData[1].fiberSelfDurations).toMatchInlineSnapshot(`
+        Map {
+          5 => 3,
+          3 => 0,
+        }
+      `);
+    }
   });
 
   // @reactVersion >= 16.9
@@ -854,9 +1139,11 @@ describe('ProfilingCache', () => {
             {
               "compiledWithForget": false,
               "displayName": "render()",
+              "env": null,
               "hocDisplayNames": null,
               "id": 1,
               "key": null,
+              "stack": null,
               "type": 11,
             },
           ],
@@ -895,9 +1182,11 @@ describe('ProfilingCache', () => {
             {
               "compiledWithForget": false,
               "displayName": "createRoot()",
+              "env": null,
               "hocDisplayNames": null,
               "id": 1,
               "key": null,
+              "stack": null,
               "type": 11,
             },
           ],
@@ -935,9 +1224,11 @@ describe('ProfilingCache', () => {
             {
               "compiledWithForget": false,
               "displayName": "createRoot()",
+              "env": null,
               "hocDisplayNames": null,
               "id": 1,
               "key": null,
+              "stack": null,
               "type": 11,
             },
           ],

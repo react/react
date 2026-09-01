@@ -1,0 +1,15 @@
+.InspectedElementPane, .InspectedElementPane * {
+  box-sizing: border-box;
+  -webkit-font-smoothing: var(--font-smoothing);
+}
+
+.InspectedElementPane {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-family-sans);
+}

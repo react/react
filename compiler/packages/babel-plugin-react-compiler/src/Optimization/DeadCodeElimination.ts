@@ -7,6 +7,8 @@
 
 import {
   BlockId,
+  Environment,
+  getHookKind,
   HIRFunction,
   Identifier,
   IdentifierId,
@@ -68,8 +70,13 @@ export function deadCodeElimination(fn: HIRFunction): void {
 }
 
 class State {
+  env: Environment;
   named: Set<string> = new Set();
   identifiers: Set<IdentifierId> = new Set();
+
+  constructor(env: Environment) {
+    this.env = env;
+  }
 
   // Mark the identifier as being referenced (not dead code)
   reference(identifier: Identifier): void {
@@ -112,7 +119,7 @@ function findReferencedIdentifiers(fn: HIRFunction): State {
   const hasLoop = hasBackEdge(fn);
   const reversedBlocks = [...fn.body.blocks.values()].reverse();
 
-  const state = new State();
+  const state = new State(fn.env);
   let size = state.count;
   do {
     size = state.count;
@@ -310,12 +317,27 @@ function pruneableValue(value: InstructionValue, state: State): boolean {
       // explicitly retain debugger statements to not break debugging workflows
       return false;
     }
-    case 'Await':
     case 'CallExpression':
+    case 'MethodCall': {
+      if (state.env.outputMode === 'ssr') {
+        const calleee =
+          value.kind === 'CallExpression' ? value.callee : value.property;
+        const hookKind = getHookKind(state.env, calleee.identifier);
+        switch (hookKind) {
+          case 'useState':
+          case 'useReducer':
+          case 'useRef': {
+            // unused refs can be removed
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    case 'Await':
     case 'ComputedDelete':
     case 'ComputedStore':
     case 'PropertyDelete':
-    case 'MethodCall':
     case 'PropertyStore':
     case 'StoreGlobal': {
       /*

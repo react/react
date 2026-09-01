@@ -11,6 +11,7 @@ import {
   BasicBlock,
   BlockId,
   Instruction,
+  InstructionKind,
   InstructionValue,
   makeInstructionId,
   Pattern,
@@ -30,6 +31,32 @@ export function* eachInstructionLValue(
     yield instr.lvalue;
   }
   yield* eachInstructionValueLValue(instr.value);
+}
+
+export function* eachInstructionLValueWithKind(
+  instr: ReactiveInstruction,
+): Iterable<[Place, InstructionKind]> {
+  switch (instr.value.kind) {
+    case 'DeclareContext':
+    case 'StoreContext':
+    case 'DeclareLocal':
+    case 'StoreLocal': {
+      yield [instr.value.lvalue.place, instr.value.lvalue.kind];
+      break;
+    }
+    case 'Destructure': {
+      const kind = instr.value.lvalue.kind;
+      for (const place of eachPatternOperand(instr.value.lvalue.pattern)) {
+        yield [place, kind];
+      }
+      break;
+    }
+    case 'PostfixUpdate':
+    case 'PrefixUpdate': {
+      yield [instr.value.lvalue, InstructionKind.Reassign];
+      break;
+    }
+  }
 }
 
 export function* eachInstructionValueLValue(
@@ -327,6 +354,51 @@ export function* eachPatternOperand(pattern: Pattern): Iterable<Place> {
           yield property.place;
         } else if (property.kind === 'Spread') {
           yield property.place;
+        } else {
+          assertExhaustive(
+            property,
+            `Unexpected item kind \`${(property as any).kind}\``,
+          );
+        }
+      }
+      break;
+    }
+    default: {
+      assertExhaustive(
+        pattern,
+        `Unexpected pattern kind \`${(pattern as any).kind}\``,
+      );
+    }
+  }
+}
+
+export function* eachPatternItem(
+  pattern: Pattern,
+): Iterable<Place | SpreadPattern> {
+  switch (pattern.kind) {
+    case 'ArrayPattern': {
+      for (const item of pattern.items) {
+        if (item.kind === 'Identifier') {
+          yield item;
+        } else if (item.kind === 'Spread') {
+          yield item;
+        } else if (item.kind === 'Hole') {
+          continue;
+        } else {
+          assertExhaustive(
+            item,
+            `Unexpected item kind \`${(item as any).kind}\``,
+          );
+        }
+      }
+      break;
+    }
+    case 'ObjectPattern': {
+      for (const property of pattern.properties) {
+        if (property.kind === 'ObjectProperty') {
+          yield property.place;
+        } else if (property.kind === 'Spread') {
+          yield property;
         } else {
           assertExhaustive(
             property,
@@ -732,9 +804,11 @@ export function mapTerminalSuccessors(
     case 'return': {
       return {
         kind: 'return',
+        returnVariant: terminal.returnVariant,
         loc: terminal.loc,
         value: terminal.value,
         id: makeInstructionId(0),
+        effects: terminal.effects,
       };
     }
     case 'throw': {
@@ -835,13 +909,14 @@ export function mapTerminalSuccessors(
     }
     case 'maybe-throw': {
       const continuation = fn(terminal.continuation);
-      const handler = fn(terminal.handler);
+      const handler = terminal.handler !== null ? fn(terminal.handler) : null;
       return {
         kind: 'maybe-throw',
         continuation,
         handler,
         id: makeInstructionId(0),
         loc: terminal.loc,
+        effects: terminal.effects,
       };
     }
     case 'try': {
@@ -1008,7 +1083,9 @@ export function* eachTerminalSuccessor(terminal: Terminal): Iterable<BlockId> {
     }
     case 'maybe-throw': {
       yield terminal.continuation;
-      yield terminal.handler;
+      if (terminal.handler !== null) {
+        yield terminal.handler;
+      }
       break;
     }
     case 'try': {
@@ -1185,7 +1262,7 @@ export class ScopeBlockTraversal {
       CompilerError.invariant(blockInfo.scope.id === top, {
         reason:
           'Expected traversed block fallthrough to match top-most active scope',
-        loc: block.instructions[0]?.loc ?? block.terminal.id,
+        loc: block.instructions[0]?.loc ?? block.terminal.loc,
       });
       this.#activeScopes.pop();
     }

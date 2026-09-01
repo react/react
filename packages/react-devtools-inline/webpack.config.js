@@ -65,7 +65,6 @@ module.exports = {
   plugins: [
     new Webpack.ProvidePlugin({
       process: 'process/browser',
-      Buffer: ['buffer', 'Buffer'],
     }),
     new Webpack.DefinePlugin({
       __DEV__,
@@ -93,6 +92,7 @@ module.exports = {
           {
             loader: 'workerize-loader',
             options: {
+              // Workers would have to be exposed on a public path in order to outline them.
               inline: true,
               name: '[name]',
             },

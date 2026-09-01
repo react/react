@@ -1,0 +1,110 @@
+.SuspenseRectsContainer {
+  padding: .25rem;
+  outline-color: transparent;
+  outline-style: solid;
+  outline-width: 1px;
+  border-radius: 0.25rem;
+}
+
+.SuspenseRectsRoot {
+  cursor: pointer;
+  outline-color: var(--color-transition);
+  background-color: color-mix(in srgb, var(--color-transition) 5%, transparent);
+}
+
+.SuspenseRectsRootOutline {
+  outline-width: 4px;
+  border-radius: 0.125rem;
+}
+
+.SuspenseRectsRoot[data-hovered='true'] {
+  background-color: color-mix(in srgb, var(--color-transition) 15%, transparent);
+}
+
+.SuspenseRectsViewBox {
+  position: relative;
+}
+
+.SuspenseRectsBoundary {
+  pointer-events: all;
+  border-radius: 0.125rem;
+}
+
+.SuspenseRectsBoundary[data-visible='false'] {
+  background-color: transparent;
+}
+
+.SuspenseRectsBoundaryChildren {
+  pointer-events: none;
+}
+
+.SuspenseRectsTitle {
+  pointer-events: none;
+  color: color-mix(in srgb, var(--color-suspense) 50%, var(--color-text));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sans-small);
+  line-height: var(--line-height-data);
+  padding: 0 .25rem;
+  container-type: size;
+  container-name: title;
+}
+
+@container title (width < 30px) or (height < 18px) {
+  .SuspenseRectsTitle > span {
+    display: none;
+  }
+}
+
+.SuspenseRectsScaledRect[data-visible='false'] > .SuspenseRectsBoundaryChildren {
+  overflow: initial;
+}
+
+.SuspenseRectsRect {
+  box-shadow: var(--elevation-4);
+  pointer-events: all;
+  cursor: pointer;
+  border-radius: 0.125rem;
+  background-color: color-mix(in srgb, var(--color-background) 50%, var(--color-suspense) 25%);
+  backdrop-filter: grayscale(100%);
+  transition: background-color 0.2s ease-in;
+  outline-color: var(--color-suspense);
+  outline-style: solid;
+  outline-width: 1px;
+}
+
+.SuspenseRectsScaledRect {
+  position: absolute;
+}
+
+.SuspenseRectsScaledRect[data-visible='false'] {
+  pointer-events: none;
+  outline-width: 0;
+}
+
+.SuspenseRectsBoundary[data-suspended='true'] {
+  opacity: 0.33;
+}
+
+/* highlight this boundary */
+.SuspenseRectsBoundary[data-hovered='true'] > .SuspenseRectsRect {
+  background-color: color-mix(in srgb, var(--color-background) 50%, var(--color-suspense) 50%);
+  transition: background-color 0.2s ease-out;
+}
+
+.SuspenseRectsBoundary[data-selected='true'][data-visible='true'] {
+  box-shadow: var(--elevation-4);
+}
+
+.SuspenseRectOutline {
+  outline-color: var(--color-suspense);
+  outline-style: solid;
+  outline-width: 4px;
+  border-radius: 0.125rem;
+  pointer-events: none;
+}
+
+.SuspenseRectsBoundary[data-selected='true'] > .SuspenseRectsRect {
+   box-shadow: none;
+}

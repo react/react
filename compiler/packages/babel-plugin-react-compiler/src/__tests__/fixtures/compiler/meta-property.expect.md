@@ -44,6 +44,7 @@ function b() {
   if (import.meta.url) {
     a = 1;
   }
+
   return a;
 }
 
@@ -52,6 +53,7 @@ function c() {
   if (import.meta.foo) {
     a = 1;
   }
+
   return a;
 }
 
@@ -60,6 +62,7 @@ function d() {
   if (import.meta) {
     a = 1;
   }
+
   return a;
 }
 

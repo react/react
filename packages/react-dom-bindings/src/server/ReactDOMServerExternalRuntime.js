@@ -13,8 +13,8 @@ if (document.body != null) {
   if (document.readyState === 'loading') {
     installFizzInstrObserver(document.body);
   }
-  // $FlowFixMe[incompatible-cast]
-  handleExistingNodes((document.body: HTMLElement));
+  // $FlowFixMe[incompatible-type]
+  handleExistingNodes(document.body as HTMLElement);
 } else {
   // Document must be loading -- body may not exist yet if the fizz external
   // runtime is sent in <head> (e.g. as a preinit resource)
@@ -25,8 +25,8 @@ if (document.body != null) {
       if (document.readyState === 'loading') {
         installFizzInstrObserver(document.body);
       }
-      // $FlowFixMe[incompatible-cast]
-      handleExistingNodes((document.body: HTMLElement));
+      // $FlowFixMe[incompatible-type]
+      handleExistingNodes(document.body as HTMLElement);
 
       // We can call disconnect without takeRecord here,
       // since we only expect a single document.body
@@ -69,12 +69,12 @@ function installFizzInstrObserver(target: Node) {
 }
 
 function handleNode(node_: Node) {
-  // $FlowFixMe[incompatible-cast]
-  if (node_.nodeType !== 1 || !(node_: HTMLElement).dataset) {
+  // $FlowFixMe[incompatible-type]
+  if (node_.nodeType !== 1 || !(node_ as HTMLElement).dataset) {
     return;
   }
-  // $FlowFixMe[incompatible-cast]
-  const node = (node_: HTMLElement);
+  // $FlowFixMe[incompatible-type]
+  const node = node_ as HTMLElement;
   const dataset = node.dataset;
   if (dataset['rxi'] != null) {
     window['$RX'](

@@ -11,7 +11,7 @@ import {
   injectReanimatedFlag,
   pipelineUsesReanimatedPlugin,
 } from '../Entrypoint/Reanimated';
-import validateNoUntransformedReferences from '../Entrypoint/ValidateNoUntransformedReferences';
+import {CompilerError} from '..';
 
 const ENABLE_REACT_COMPILER_TIMINGS =
   process.env['ENABLE_REACT_COMPILER_TIMINGS'] === '1';
@@ -34,51 +34,51 @@ export default function BabelPluginReactCompiler(
        */
       Program: {
         enter(prog, pass): void {
-          const filename = pass.filename ?? 'unknown';
-          if (ENABLE_REACT_COMPILER_TIMINGS === true) {
-            performance.mark(`${filename}:start`, {
-              detail: 'BabelPlugin:Program:start',
+          try {
+            const filename = pass.filename ?? 'unknown';
+            if (ENABLE_REACT_COMPILER_TIMINGS === true) {
+              performance.mark(`${filename}:start`, {
+                detail: 'BabelPlugin:Program:start',
+              });
+            }
+            let opts = parsePluginOptions(pass.opts);
+            const isDev =
+              (typeof __DEV__ !== 'undefined' && __DEV__ === true) ||
+              process.env['NODE_ENV'] === 'development';
+            if (
+              opts.enableReanimatedCheck === true &&
+              pipelineUsesReanimatedPlugin(pass.file.opts.plugins)
+            ) {
+              opts = injectReanimatedFlag(opts);
+            }
+            if (
+              opts.environment.enableResetCacheOnSourceFileChanges !== false &&
+              isDev
+            ) {
+              opts = {
+                ...opts,
+                environment: {
+                  ...opts.environment,
+                  enableResetCacheOnSourceFileChanges: true,
+                },
+              };
+            }
+            compileProgram(prog, {
+              opts,
+              filename: pass.filename ?? null,
+              comments: pass.file.ast.comments ?? [],
+              code: pass.file.code,
             });
-          }
-          let opts = parsePluginOptions(pass.opts);
-          const isDev =
-            (typeof __DEV__ !== 'undefined' && __DEV__ === true) ||
-            process.env['NODE_ENV'] === 'development';
-          if (
-            opts.enableReanimatedCheck === true &&
-            pipelineUsesReanimatedPlugin(pass.file.opts.plugins)
-          ) {
-            opts = injectReanimatedFlag(opts);
-          }
-          if (
-            opts.environment.enableResetCacheOnSourceFileChanges !== false &&
-            isDev
-          ) {
-            opts = {
-              ...opts,
-              environment: {
-                ...opts.environment,
-                enableResetCacheOnSourceFileChanges: true,
-              },
-            };
-          }
-          const result = compileProgram(prog, {
-            opts,
-            filename: pass.filename ?? null,
-            comments: pass.file.ast.comments ?? [],
-            code: pass.file.code,
-          });
-          validateNoUntransformedReferences(
-            prog,
-            pass.filename ?? null,
-            opts.logger,
-            opts.environment,
-            result,
-          );
-          if (ENABLE_REACT_COMPILER_TIMINGS === true) {
-            performance.mark(`${filename}:end`, {
-              detail: 'BabelPlugin:Program:end',
-            });
+            if (ENABLE_REACT_COMPILER_TIMINGS === true) {
+              performance.mark(`${filename}:end`, {
+                detail: 'BabelPlugin:Program:end',
+              });
+            }
+          } catch (e) {
+            if (e instanceof CompilerError) {
+              throw e.withPrintedMessage(pass.file.code, {eslint: false});
+            }
+            throw e;
           }
         },
         exit(_, pass): void {

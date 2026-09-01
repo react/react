@@ -39,7 +39,6 @@ function useHook(a) {
         return x;
       },
     };
-
     t0 = obj.method();
     $[0] = a;
     $[1] = t0;

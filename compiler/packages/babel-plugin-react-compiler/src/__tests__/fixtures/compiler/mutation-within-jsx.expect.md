@@ -112,6 +112,7 @@ function useFoo(t0) {
       myDiv = $[2];
     }
   }
+
   return myDiv;
 }
 

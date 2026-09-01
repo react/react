@@ -33,6 +33,7 @@ function Component(props) {
   const $ = _c(2);
   let x = 0;
   let y = 0;
+
   while (x === 0) {
     x = y;
     y = props.value;

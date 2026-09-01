@@ -10,12 +10,13 @@
 import type {
   AnyNativeEvent,
   EventTypes,
+  LegacyPluginModule,
 } from './legacy-events/PluginModuleType';
 import type {TopLevelType} from './legacy-events/TopLevelEventTypes';
 import SyntheticEvent from './legacy-events/SyntheticEvent';
 
 // Module provided by RN:
-import {ReactNativeViewConfigRegistry} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import {ReactNativeViewConfigRegistry} from 'react-native/react-private-interface';
 import accumulateInto from './legacy-events/accumulateInto';
 import getListener from './ReactNativeGetListener';
 import forEachAccumulated from './legacy-events/forEachAccumulated';
@@ -165,8 +166,8 @@ function accumulateDirectDispatches(events: ?(Array<Object> | Object)) {
 // End of inline
 type PropagationPhases = 'bubbled' | 'captured';
 
-const ReactNativeBridgeEventPlugin = {
-  eventTypes: ({}: EventTypes),
+const ReactNativeBridgeEventPlugin: LegacyPluginModule<AnyNativeEvent> = {
+  eventTypes: {} as EventTypes,
 
   extractEvents: function (
     topLevelType: TopLevelType,

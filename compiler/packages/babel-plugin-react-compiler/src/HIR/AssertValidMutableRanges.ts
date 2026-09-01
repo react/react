@@ -5,13 +5,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import invariant from 'invariant';
-import {HIRFunction, Identifier, MutableRange} from './HIR';
+import {HIRFunction, MutableRange, Place} from './HIR';
 import {
   eachInstructionLValue,
   eachInstructionOperand,
   eachTerminalOperand,
 } from './visitors';
+import {CompilerError} from '..';
+import {printPlace} from './PrintHIR';
 
 /*
  * Checks that all mutable ranges in the function are well-formed, with
@@ -20,38 +21,43 @@ import {
 export function assertValidMutableRanges(fn: HIRFunction): void {
   for (const [, block] of fn.body.blocks) {
     for (const phi of block.phis) {
-      visitIdentifier(phi.place.identifier);
-      for (const [, operand] of phi.operands) {
-        visitIdentifier(operand.identifier);
+      visit(phi.place, `phi for block bb${block.id}`);
+      for (const [pred, operand] of phi.operands) {
+        visit(operand, `phi predecessor bb${pred} for block bb${block.id}`);
       }
     }
     for (const instr of block.instructions) {
       for (const operand of eachInstructionLValue(instr)) {
-        visitIdentifier(operand.identifier);
+        visit(operand, `instruction [${instr.id}]`);
       }
       for (const operand of eachInstructionOperand(instr)) {
-        visitIdentifier(operand.identifier);
+        visit(operand, `instruction [${instr.id}]`);
       }
     }
     for (const operand of eachTerminalOperand(block.terminal)) {
-      visitIdentifier(operand.identifier);
+      visit(operand, `terminal [${block.terminal.id}]`);
     }
   }
 }
 
-function visitIdentifier(identifier: Identifier): void {
-  validateMutableRange(identifier.mutableRange);
-  if (identifier.scope !== null) {
-    validateMutableRange(identifier.scope.range);
+function visit(place: Place, description: string): void {
+  validateMutableRange(place, place.identifier.mutableRange, description);
+  if (place.identifier.scope !== null) {
+    validateMutableRange(place, place.identifier.scope.range, description);
   }
 }
 
-function validateMutableRange(mutableRange: MutableRange): void {
-  invariant(
-    (mutableRange.start === 0 && mutableRange.end === 0) ||
-      mutableRange.end > mutableRange.start,
-    'Identifier scope mutableRange was invalid: [%s:%s]',
-    mutableRange.start,
-    mutableRange.end,
+function validateMutableRange(
+  place: Place,
+  range: MutableRange,
+  description: string,
+): void {
+  CompilerError.invariant(
+    (range.start === 0 && range.end === 0) || range.end > range.start,
+    {
+      reason: `Invalid mutable range: [${range.start}:${range.end}]`,
+      description: `${printPlace(place)} in ${description}`,
+      loc: place.loc,
+    },
   );
 }

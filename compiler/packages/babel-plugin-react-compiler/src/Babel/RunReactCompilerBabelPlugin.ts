@@ -17,7 +17,7 @@ export function runBabelPluginReactCompiler(
   text: string,
   file: string,
   language: 'flow' | 'typescript',
-  options: Partial<PluginOptions> | null,
+  options: PluginOptions | null,
   includeAst: boolean = false,
 ): BabelCore.BabelFileResult {
   const ast = BabelParser.parse(text, {

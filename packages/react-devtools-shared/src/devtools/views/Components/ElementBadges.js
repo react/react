@@ -16,18 +16,21 @@ import styles from './ElementBadges.css';
 
 type Props = {
   hocDisplayNames: Array<string> | null,
+  environmentName: string | null,
   compiledWithForget: boolean,
   className?: string,
 };
 
 export default function ElementBadges({
   compiledWithForget,
+  environmentName,
   hocDisplayNames,
   className = '',
 }: Props): React.Node {
   if (
     !compiledWithForget &&
-    (hocDisplayNames == null || hocDisplayNames.length === 0)
+    (hocDisplayNames == null || hocDisplayNames.length === 0) &&
+    environmentName == null
   ) {
     return null;
   }
@@ -35,6 +38,8 @@ export default function ElementBadges({
   return (
     <div className={`${styles.Root} ${className}`}>
       {compiledWithForget && <ForgetBadge indexable={false} />}
+
+      {environmentName != null ? <Badge>{environmentName}</Badge> : null}
 
       {hocDisplayNames != null && hocDisplayNames.length > 0 && (
         <Badge>{hocDisplayNames[0]}</Badge>

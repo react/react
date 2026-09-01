@@ -37,23 +37,22 @@ import { useEffect } from "react";
 function someGlobal() {}
 function useFoo() {
   const $ = _c(2);
+  const fn = _temp;
   let t0;
-  t0 = _temp;
-  const fn = t0;
   let t1;
-  let t2;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = () => {
+    t0 = () => {
       fn();
     };
-    t2 = [fn];
-    $[0] = t1;
-    $[1] = t2;
+    t1 = [fn];
+    $[0] = t0;
+    $[1] = t1;
   } else {
-    t1 = $[0];
-    t2 = $[1];
+    t0 = $[0];
+    t1 = $[1];
   }
-  useEffect(t1, t2);
+  useEffect(t0, t1);
+
   return null;
 }
 function _temp() {

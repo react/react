@@ -6,22 +6,11 @@
  */
 
 import {RuleTester} from 'eslint';
-import ReactCompilerRule from '../src/rules/ReactCompilerRule';
-
-/**
- * A string template tag that removes padding from the left side of multi-line strings
- * @param {Array} strings array of code strings (only one expected)
- */
-function normalizeIndent(strings: TemplateStringsArray): string {
-  const codeLines = strings[0].split('\n');
-  const leftPadding = codeLines[1].match(/\s+/)[0];
-  return codeLines.map(line => line.slice(leftPadding.length)).join('\n');
-}
-
-type CompilerTestCases = {
-  valid: RuleTester.ValidTestCase[];
-  invalid: RuleTester.InvalidTestCase[];
-};
+import {
+  CompilerTestCases,
+  normalizeIndent,
+  TestRecommendedRules,
+} from './shared-utils';
 
 const tests: CompilerTestCases = {
   valid: [
@@ -61,8 +50,7 @@ const tests: CompilerTestCases = {
       `,
       errors: [
         {
-          message:
-            "Mutating a value returned from 'useState()', which should not be mutated. Use the setter function to update instead",
+          message: /Modifying a value returned from 'useState\(\)'/,
           line: 7,
         },
       ],
@@ -71,6 +59,7 @@ const tests: CompilerTestCases = {
 };
 
 const eslintTester = new RuleTester({
+  // @ts-ignore[2353] - outdated types
   parser: require.resolve('@typescript-eslint/parser'),
 });
-eslintTester.run('react-compiler', ReactCompilerRule, tests);
+eslintTester.run('react-compiler', TestRecommendedRules, tests);

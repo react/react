@@ -23,6 +23,7 @@ function Component() {
 }
 
 function Child({ref}) {
+  'use no memo';
   // This violates the rules of React, so we access the ref in a child
   // component
   return ref.current;

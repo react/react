@@ -39,7 +39,6 @@ export function assertConsistentIdentifiers(fn: HIRFunction): void {
         reason: `Expected all lvalues to be temporaries`,
         description: `Found named lvalue \`${instr.lvalue.identifier.name}\``,
         loc: instr.lvalue.loc,
-        suggestions: null,
       });
       CompilerError.invariant(!assignments.has(instr.lvalue.identifier.id), {
         reason: `Expected lvalues to be assigned exactly once`,
@@ -47,7 +46,6 @@ export function assertConsistentIdentifiers(fn: HIRFunction): void {
           instr.lvalue,
         )}'`,
         loc: instr.lvalue.loc,
-        suggestions: null,
       });
       assignments.add(instr.lvalue.identifier.id);
       for (const operand of eachInstructionLValue(instr)) {
@@ -78,7 +76,6 @@ function validate(
       reason: `Duplicate identifier object`,
       description: `Found duplicate identifier object for id ${identifier.id}`,
       loc: loc ?? GeneratedSource,
-      suggestions: null,
     });
   }
 }

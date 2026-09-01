@@ -8,6 +8,7 @@
 import {CompilerError} from '..';
 import {
   DeclarationId,
+  GeneratedSource,
   InstructionId,
   InstructionKind,
   Place,
@@ -119,6 +120,7 @@ class FindLastUsageVisitor extends ReactiveFunctionVisitor<void> {
 
 class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | null> {
   lastUsage: Map<DeclarationId, InstructionId>;
+  temporaries: Map<DeclarationId, DeclarationId> = new Map();
 
   constructor(lastUsage: Map<DeclarationId, InstructionId>) {
     super();
@@ -158,11 +160,9 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
     const merged: Array<MergedScope> = [];
     function reset(): void {
       CompilerError.invariant(current !== null, {
-        loc: null,
         reason:
           'MergeConsecutiveScopes: expected current scope to be non-null if reset()',
-        suggestions: null,
-        description: null,
+        loc: GeneratedSource,
       });
       if (current.to > current.from + 1) {
         merged.push(current);
@@ -215,6 +215,12 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
                 current.lvalues.add(
                   instr.instruction.lvalue.identifier.declarationId,
                 );
+                if (instr.instruction.value.kind === 'LoadLocal') {
+                  this.temporaries.set(
+                    instr.instruction.lvalue.identifier.declarationId,
+                    instr.instruction.value.place.identifier.declarationId,
+                  );
+                }
               }
               break;
             }
@@ -236,6 +242,13 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
                   )) {
                     current.lvalues.add(lvalue.identifier.declarationId);
                   }
+                  this.temporaries.set(
+                    instr.instruction.value.lvalue.place.identifier
+                      .declarationId,
+                    this.temporaries.get(
+                      instr.instruction.value.value.identifier.declarationId,
+                    ) ?? instr.instruction.value.value.identifier.declarationId,
+                  );
                 } else {
                   log(
                     `Reset scope @${current.block.scope.id} from StoreLocal in [${instr.instruction.id}]`,
@@ -260,7 +273,7 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
         case 'scope': {
           if (
             current !== null &&
-            canMergeScopes(current.block, instr) &&
+            canMergeScopes(current.block, instr, this.temporaries) &&
             areLValuesLastUsedByScope(
               instr.scope,
               current.lvalues,
@@ -361,11 +374,9 @@ class Transform extends ReactiveFunctionTransform<ReactiveScopeDependencies | nu
       }
       const mergedScope = block[entry.from]!;
       CompilerError.invariant(mergedScope.kind === 'scope', {
-        loc: null,
         reason:
           'MergeConsecutiveScopes: Expected scope starting index to be a scope',
-        description: null,
-        suggestions: null,
+        loc: GeneratedSource,
       });
       nextInstructions.push(mergedScope);
       index++;
@@ -426,6 +437,7 @@ function areLValuesLastUsedByScope(
 function canMergeScopes(
   current: ReactiveScopeBlock,
   next: ReactiveScopeBlock,
+  temporaries: Map<DeclarationId, DeclarationId>,
 ): boolean {
   // Don't merge scopes with reassignments
   if (
@@ -458,6 +470,7 @@ function canMergeScopes(
           identifier: declaration.identifier,
           reactive: true,
           path: [],
+          loc: GeneratedSource,
         })),
       ),
       next.scope.dependencies,
@@ -465,11 +478,14 @@ function canMergeScopes(
     (next.scope.dependencies.size !== 0 &&
       [...next.scope.dependencies].every(
         dep =>
+          dep.path.length === 0 &&
           isAlwaysInvalidatingType(dep.identifier.type) &&
           Iterable_some(
             current.scope.declarations.values(),
             decl =>
-              decl.identifier.declarationId === dep.identifier.declarationId,
+              decl.identifier.declarationId === dep.identifier.declarationId ||
+              decl.identifier.declarationId ===
+                temporaries.get(dep.identifier.declarationId),
           ),
       ))
   ) {
@@ -477,12 +493,16 @@ function canMergeScopes(
     return true;
   }
   log(`  cannot merge scopes:`);
-  log(`  ${printReactiveScopeSummary(current.scope)}`);
-  log(`  ${printReactiveScopeSummary(next.scope)}`);
+  log(
+    `  ${printReactiveScopeSummary(current.scope)} ${[...current.scope.declarations.values()].map(decl => decl.identifier.declarationId)}`,
+  );
+  log(
+    `  ${printReactiveScopeSummary(next.scope)} ${[...next.scope.dependencies].map(dep => `${dep.identifier.declarationId} ${temporaries.get(dep.identifier.declarationId) ?? dep.identifier.declarationId}`)}`,
+  );
   return false;
 }
 
-function isAlwaysInvalidatingType(type: Type): boolean {
+export function isAlwaysInvalidatingType(type: Type): boolean {
   switch (type.kind) {
     case 'Object': {
       switch (type.shapeId) {

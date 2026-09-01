@@ -35,15 +35,12 @@ describe('ReactDOMComponentTree', () => {
     const component = <div />;
     const node = ReactDOM.render(<div>{component}</div>, container);
     ReactDOM.unmountComponentAtNode(node);
-    assertConsoleErrorDev(
-      [
-        "unmountComponentAtNode(): The node you're attempting to unmount " +
-          'was rendered by React and is not a top-level container. You may ' +
-          'have accidentally passed in a React root node instead of its ' +
-          'container.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      "unmountComponentAtNode(): The node you're attempting to unmount " +
+        'was rendered by React and is not a top-level container. You may ' +
+        'have accidentally passed in a React root node instead of its ' +
+        'container.',
+    ]);
   });
 
   // @gate !disableLegacyMode
@@ -56,14 +53,11 @@ describe('ReactDOMComponentTree', () => {
     const anotherComponent = <div />;
     const instance = ReactDOM.render(component, container);
     ReactDOM.render(anotherComponent, instance);
-    assertConsoleErrorDev(
-      [
-        'Replacing React-rendered children with a new root ' +
-          'component. If you intended to update the children of this node, ' +
-          'you should instead have the existing children update their state ' +
-          'and render the new components instead of calling ReactDOM.render.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Replacing React-rendered children with a new root ' +
+        'component. If you intended to update the children of this node, ' +
+        'you should instead have the existing children update their state ' +
+        'and render the new components instead of calling ReactDOM.render.',
+    ]);
   });
 });

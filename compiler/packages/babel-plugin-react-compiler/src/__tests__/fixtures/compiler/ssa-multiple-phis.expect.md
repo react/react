@@ -37,6 +37,7 @@ function foo(a, b, c, d) {
   let x;
 
   x = a;
+
   return x;
 }
 

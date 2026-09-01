@@ -79,7 +79,11 @@ function preconnect(href: string, crossOrigin?: ?CrossOriginEnum) {
   }
 }
 
-function preload(href: string, as: string, options?: ?PreloadImplOptions) {
+export function preload(
+  href: string,
+  as: string,
+  options?: ?PreloadImplOptions,
+) {
   if (typeof href === 'string') {
     const request = resolveRequest();
     if (request) {
@@ -112,7 +116,10 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
   }
 }
 
-function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
+export function preloadModule(
+  href: string,
+  options?: ?PreloadModuleImplOptions,
+): void {
   if (typeof href === 'string') {
     const request = resolveRequest();
     if (request) {
@@ -236,12 +243,12 @@ function trimOptions<
 >(options: ?T): ?T {
   if (options == null) return null;
   let hasProperties = false;
-  const trimmed: T = ({}: any);
+  const trimmed: T = {} as any;
   for (const key in options) {
     // $FlowFixMe[invalid-computed-prop]
     if (options[key] != null) {
       hasProperties = true;
-      (trimmed: any)[key] = options[key];
+      (trimmed as any)[key] = options[key];
     }
   }
   return hasProperties ? trimmed : null;

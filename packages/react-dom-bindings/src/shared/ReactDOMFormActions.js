@@ -31,7 +31,7 @@ export type FormStatus = FormStatusPending | FormStatusNotPending;
 
 // Since the "not pending" value is always the same, we can reuse the
 // same object across all transitions.
-const sharedNotPendingObject = {
+const sharedNotPendingObject: FormStatusNotPending = {
   pending: false,
   data: null,
   method: null,
@@ -61,7 +61,7 @@ function resolveDispatcher() {
   // Will result in a null access error if accessed outside render phase. We
   // intentionally don't throw our own error because this is in a hot path.
   // Also helps ensure this is inlined.
-  return ((dispatcher: any): Dispatcher);
+  return dispatcher as any as Dispatcher;
 }
 
 export function useFormStatus(): FormStatus {

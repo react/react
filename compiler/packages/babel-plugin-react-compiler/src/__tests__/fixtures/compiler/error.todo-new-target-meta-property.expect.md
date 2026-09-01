@@ -15,10 +15,15 @@ function foo() {
 ## Error
 
 ```
+Found 1 error:
+
+Todo: (BuildHIR::lowerExpression) Handle MetaProperty expressions other than import.meta
+
+error.todo-new-target-meta-property.ts:4:13
   2 |
   3 | function foo() {
 > 4 |   const nt = new.target;
-    |              ^^^^^^^^^^ Todo: (BuildHIR::lowerExpression) Handle MetaProperty expressions other than import.meta (4:4)
+    |              ^^^^^^^^^^ (BuildHIR::lowerExpression) Handle MetaProperty expressions other than import.meta
   5 |   return <Stringify value={nt} />;
   6 | }
   7 |

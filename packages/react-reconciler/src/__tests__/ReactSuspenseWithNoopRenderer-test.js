@@ -4054,11 +4054,20 @@ describe('ReactSuspenseWithNoopRenderer', () => {
       // microtask). But this test shows an example where that's not the case.
       //
       // The fix was to check if we're in the render phase before calling
-      // `prepareFreshStack`.
+      // `prepareFreshStack`. The synchronous ping is instead recorded so the
+      // lane can be retried.
       await act(() => {
         startTransition(() => root.render(<App showMore={true} />));
       });
-      assertLog(['Suspend! [A]', 'Loading A...', 'Loading B...']);
+      assertLog([
+        'Suspend! [A]',
+        'Loading A...',
+        'Loading B...',
+        // The synchronous ping was recorded, so B retries and renders.
+        'Suspend! [A]',
+        'Loading A...',
+        'B',
+      ]);
       expect(root).toMatchRenderedOutput(<div />);
     },
   );
@@ -4140,5 +4149,29 @@ describe('ReactSuspenseWithNoopRenderer', () => {
         <span prop="C" />
       </>,
     );
+  });
+
+  it('can rerender after resolving a promise', async () => {
+    const promise = Promise.resolve(null);
+    const root = ReactNoop.createRoot();
+
+    await act(() => {
+      startTransition(() => {
+        root.render(<Suspense>{promise}</Suspense>);
+      });
+    });
+
+    assertLog([]);
+    expect(root).toMatchRenderedOutput(null);
+
+    await act(() => {
+      startTransition(() => {
+        root.render(
+          <Suspense>
+            <div />
+          </Suspense>,
+        );
+      });
+    });
   });
 });

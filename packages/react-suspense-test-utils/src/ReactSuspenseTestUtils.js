@@ -14,13 +14,16 @@ export function waitForSuspense<T>(fn: () => T): Promise<T> {
   const cache: Map<Function, mixed> = new Map();
   const testDispatcher: AsyncDispatcher = {
     getCacheForType<R>(resourceType: () => R): R {
-      let entry: R | void = (cache.get(resourceType): any);
+      let entry: R | void = cache.get(resourceType) as any;
       if (entry === undefined) {
         entry = resourceType();
         // TODO: Warn if undefined?
         cache.set(resourceType, entry);
       }
       return entry;
+    },
+    cacheSignal(): null {
+      return null;
     },
     getOwner(): null {
       return null;

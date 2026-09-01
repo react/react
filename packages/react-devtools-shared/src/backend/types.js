@@ -14,11 +14,7 @@
  * Be mindful of backwards compatibility when making changes.
  */
 
-import type {
-  ReactContext,
-  Wakeable,
-  ReactComponentInfo,
-} from 'shared/ReactTypes';
+import type {ReactContext, ReactComponentInfo} from 'shared/ReactTypes';
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   ComponentFilter,
@@ -30,10 +26,10 @@ import type {
   SetupNativeStyleEditor,
 } from 'react-devtools-shared/src/backend/NativeStyleEditor/setupNativeStyleEditor';
 import type {InitBackend} from 'react-devtools-shared/src/backend';
-import type {TimelineDataExport} from 'react-devtools-timeline/src/types';
 import type {BackendBridge} from 'react-devtools-shared/src/bridge';
-import type {Source} from 'react-devtools-shared/src/shared/types';
+import type {ReactFunctionLocation, ReactStackTrace} from 'shared/ReactTypes';
 import type Agent from './agent';
+import type {UnknownSuspendersReason} from '../constants';
 
 type BundleType =
   | 0 // PROD
@@ -100,6 +96,16 @@ export type FindHostInstancesForElementID = (
   id: number,
 ) => null | $ReadOnlyArray<HostInstance>;
 
+export type Rect = {
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  ...
+};
+export type FindLastKnownRectsForID = (
+  id: number,
+) => null | $ReadOnlyArray<Rect>;
 export type ReactProviderType<T> = {
   $$typeof: symbol | number,
   _context: ReactContext<T>,
@@ -154,6 +160,8 @@ export type ReactRenderer = {
   ) => void,
   // 16.9+
   scheduleUpdate?: ?(fiber: Object) => void,
+  // 19.2+
+  scheduleRetry?: ?(fiber: Object) => void,
   setSuspenseHandler?: ?(shouldSuspend: (fiber: Object) => boolean) => void,
   // Only injected by React v16.8+ in order to support hooks inspection.
   currentDispatcherRef?: LegacyDispatcherRef | CurrentDispatcherRef,
@@ -173,9 +181,6 @@ export type ReactRenderer = {
   setErrorHandler?: ?(shouldError: (fiber: Object) => ?boolean) => void,
   // Intentionally opaque type to avoid coupling DevTools to different Fast Refresh versions.
   scheduleRefresh?: Function,
-  // 18.0+
-  injectProfilingHooks?: (profilingHooks: DevToolsProfilingHooks) => void,
-  getLaneLabelMap?: () => Map<Lane, string> | null,
   ...
 };
 
@@ -218,7 +223,6 @@ export type ProfilingDataForRootBackend = {
 export type ProfilingDataBackend = {
   dataForRoots: Array<ProfilingDataForRootBackend>,
   rendererID: number,
-  timelineData: TimelineDataExport | null,
 };
 
 export type PathFrame = {
@@ -232,10 +236,33 @@ export type PathMatch = {
   isFullMatch: boolean,
 };
 
+// Serialized version of ReactIOInfo
+export type SerializedIOInfo = {
+  name: string,
+  description: string,
+  start: number,
+  end: number,
+  byteSize: null | number,
+  value: null | Promise<mixed>,
+  env: null | string,
+  owner: null | SerializedElement,
+  stack: null | ReactStackTrace,
+};
+
+// Serialized version of ReactAsyncInfo
+export type SerializedAsyncInfo = {
+  awaited: SerializedIOInfo,
+  env: null | string,
+  owner: null | SerializedElement,
+  stack: null | ReactStackTrace,
+};
+
 export type SerializedElement = {
   displayName: string | null,
   id: number,
   key: number | string | null,
+  env: null | string,
+  stack: null | ReactStackTrace,
   type: ElementType,
 };
 
@@ -263,25 +290,36 @@ export type InspectedElement = {
 
   // Is this Suspense, and can its value be overridden now?
   canToggleSuspense: boolean,
-
-  // Can view component source location.
-  canViewSource: boolean,
+  // If this Element is suspended. Currently only set on Suspense boundaries.
+  isSuspended: boolean | null,
 
   // Does the component have legacy context attached to it.
   hasLegacyContext: boolean,
 
   // Inspectable properties.
-  context: Object | null,
-  hooks: Object | null,
-  props: Object | null,
-  state: Object | null,
+  context: Object | null, // DehydratedData or {[string]: mixed}
+  hooks: Object | null, // DehydratedData or {[string]: mixed}
+  props: Object | null, // DehydratedData or {[string]: mixed}
+  state: Object | null, // DehydratedData or {[string]: mixed}
   key: number | string | null,
   errors: Array<[string, number]>,
   warnings: Array<[string, number]>,
 
+  // Things that suspended this Instances
+  suspendedBy: Object, // DehydratedData or Array<SerializedAsyncInfo>
+  suspendedByRange: null | [number, number],
+  unknownSuspenders: UnknownSuspendersReason,
+
   // List of owners
   owners: Array<SerializedElement> | null,
-  source: Source | null,
+
+  // Environment name that this component executed in or null for the client
+  env: string | null,
+
+  source: ReactFunctionLocation | null,
+
+  // The location of the JSX creation.
+  stack: ReactStackTrace | null,
 
   type: ElementType,
 
@@ -374,11 +412,13 @@ export type RendererInterface = {
     path: Array<string | number>,
   ) => void,
   findHostInstancesForElementID: FindHostInstancesForElementID,
+  findLastKnownRectsForID: FindLastKnownRectsForID,
   flushInitialOperations: () => void,
   getBestMatchForTrackedPath: () => PathMatch | null,
   getComponentStack?: GetComponentStack,
   getNearestMountedDOMNode: (component: Element) => Element | null,
   getElementIDForHostInstance: GetElementIDForHostInstance,
+  getSuspenseNodeIDForHostInstance: GetElementIDForHostInstance,
   getDisplayNameForElementID: GetDisplayNameForElementID,
   getInstanceAndStyle(id: number): InstanceAndStyle,
   getProfilingData(): ProfilingDataBackend,
@@ -402,6 +442,7 @@ export type RendererInterface = {
   onErrorOrWarning?: OnErrorOrWarning,
   overrideError: (id: number, forceError: boolean) => void,
   overrideSuspense: (id: number, forceFallback: boolean) => void,
+  overrideSuspenseMilestone: (suspendedSet: Array<number>) => void,
   overrideValueAtPath: (
     type: Type,
     id: number,
@@ -424,67 +465,21 @@ export type RendererInterface = {
   renderer: ReactRenderer | null,
   setTraceUpdatesEnabled: (enabled: boolean) => void,
   setTrackedPath: (path: Array<PathFrame> | null) => void,
-  startProfiling: (
-    recordChangeDescriptions: boolean,
-    recordTimeline: boolean,
-  ) => void,
+  startProfiling: (recordChangeDescriptions: boolean) => void,
   stopProfiling: () => void,
   storeAsGlobal: (
     id: number,
     path: Array<string | number>,
     count: number,
   ) => void,
+  supportsTogglingSuspense: boolean,
   updateComponentFilters: (componentFilters: Array<ComponentFilter>) => void,
   getEnvironmentNames: () => Array<string>,
-
-  // Timeline profiler interface
 
   ...
 };
 
 export type Handler = (data: any) => void;
-
-// Renderers use these APIs to report profiling data to DevTools at runtime.
-// They get passed from the DevTools backend to the reconciler during injection.
-export type DevToolsProfilingHooks = {
-  // Scheduling methods:
-  markRenderScheduled: (lane: Lane) => void,
-  markStateUpdateScheduled: (fiber: Fiber, lane: Lane) => void,
-  markForceUpdateScheduled: (fiber: Fiber, lane: Lane) => void,
-
-  // Work loop level methods:
-  markRenderStarted: (lanes: Lanes) => void,
-  markRenderYielded: () => void,
-  markRenderStopped: () => void,
-  markCommitStarted: (lanes: Lanes) => void,
-  markCommitStopped: () => void,
-  markLayoutEffectsStarted: (lanes: Lanes) => void,
-  markLayoutEffectsStopped: () => void,
-  markPassiveEffectsStarted: (lanes: Lanes) => void,
-  markPassiveEffectsStopped: () => void,
-
-  // Fiber level methods:
-  markComponentRenderStarted: (fiber: Fiber) => void,
-  markComponentRenderStopped: () => void,
-  markComponentErrored: (
-    fiber: Fiber,
-    thrownValue: mixed,
-    lanes: Lanes,
-  ) => void,
-  markComponentSuspended: (
-    fiber: Fiber,
-    wakeable: Wakeable,
-    lanes: Lanes,
-  ) => void,
-  markComponentLayoutEffectMountStarted: (fiber: Fiber) => void,
-  markComponentLayoutEffectMountStopped: () => void,
-  markComponentLayoutEffectUnmountStarted: (fiber: Fiber) => void,
-  markComponentLayoutEffectUnmountStopped: () => void,
-  markComponentPassiveEffectMountStarted: (fiber: Fiber) => void,
-  markComponentPassiveEffectMountStopped: () => void,
-  markComponentPassiveEffectUnmountStarted: (fiber: Fiber) => void,
-  markComponentPassiveEffectUnmountStopped: () => void,
-};
 
 export type DevToolsBackend = {
   Agent: Class<Agent>,
@@ -495,7 +490,6 @@ export type DevToolsBackend = {
 
 export type ProfilingSettings = {
   recordChangeDescriptions: boolean,
-  recordTimeline: boolean,
 };
 
 export type DevToolsHook = {
@@ -529,11 +523,6 @@ export type DevToolsHook = {
     didError?: boolean,
   ) => void,
 
-  // Timeline internal module filtering
-  getInternalModuleRanges: () => Array<[string, string]>,
-  registerInternalModuleStart: (moduleStartError: Error) => void,
-  registerInternalModuleStop: (moduleStopError: Error) => void,
-
   // Testing
   dangerous_setTargetConsoleForTesting?: (fakeConsole: Object) => void,
 
@@ -546,4 +535,16 @@ export type DevToolsHookSettings = {
   breakOnConsoleErrors: boolean,
   showInlineWarningsAndErrors: boolean,
   hideConsoleLogsInStrictMode: boolean,
+  disableSecondConsoleLogDimmingInStrictMode: boolean,
 };
+
+export type DevToolsSettings = DevToolsHookSettings & {
+  componentFilters: Array<ComponentFilter>,
+};
+
+export type ReactBuildType =
+  | 'deadcode'
+  | 'development'
+  | 'outdated'
+  | 'production'
+  | 'unminified';

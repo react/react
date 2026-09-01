@@ -48,9 +48,11 @@ function foo(a, b, c) {
   } else {
     x = $[3];
   }
+
   if (x.length) {
     return x;
   }
+
   return null;
 }
 

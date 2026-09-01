@@ -9,7 +9,7 @@ import type * as BabelCore from '@babel/core';
 import {parseAsync, transformFromAstAsync} from '@babel/core';
 import BabelPluginReactCompiler, {
   type PluginOptions,
-} from 'babel-plugin-react-compiler/src';
+} from 'babel-plugin-react-compiler';
 import * as babelParser from 'prettier/plugins/babel.js';
 import estreeParser from 'prettier/plugins/estree';
 import * as typescriptParser from 'prettier/plugins/typescript';

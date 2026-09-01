@@ -35,6 +35,7 @@ function Component() {
   for (const item of [1, 2]) {
     break;
   }
+
   return x;
 }
 

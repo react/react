@@ -7,6 +7,17 @@
  * @flow
  */
 
+import type {ReactDebugInfo} from 'shared/ReactTypes';
+
 export function loadChunk(chunkId: string, filename: string): Promise<mixed> {
   return __webpack_chunk_load__(chunkId);
+}
+
+export function addChunkDebugInfo(
+  target: ReactDebugInfo,
+  chunkId: string,
+  filename: string,
+): void {
+  // We don't emit any debug info on the server since we assume the loading
+  // of the bundle is insignificant on the server.
 }

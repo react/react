@@ -3,7 +3,6 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  border-left: 1px solid var(--color-border);
   border-top: 1px solid var(--color-border);
 }
 
@@ -69,11 +68,23 @@
   padding: 0.25rem;
   color: var(--color-dimmer);
   font-style: italic;
-  border-left: 1px solid var(--color-border);
+}
+
+.NoInspectionFallback {
+  padding: 0.25rem;
+  font-style: italic;
 }
 
 .StrictModeNonCompliant {
   display: inline-flex;
   padding: 0.25rem;
   color: var(--color-console-error-icon);
+}
+
+.VRule {
+  height: 20px;
+  width: 1px;
+  flex: 0 0 1px;
+  margin: 0 0.5rem;
+  background-color: var(--color-border);
 }

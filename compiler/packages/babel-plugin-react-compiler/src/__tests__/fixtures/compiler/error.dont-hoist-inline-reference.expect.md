@@ -19,10 +19,17 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Todo: [hoisting] EnterSSA: Expected identifier to be defined before being used
+
+Identifier x$1 is undefined.
+
+error.dont-hoist-inline-reference.ts:3:2
   1 | import {identity} from 'shared-runtime';
   2 | function useInvalid() {
 > 3 |   const x = identity(x);
-    |   ^^^^^^^^^^^^^^^^^^^^^^ Todo: [hoisting] EnterSSA: Expected identifier to be defined before being used. Identifier x$1 is undefined (3:3)
+    |   ^^^^^^^^^^^^^^^^^^^^^^ [hoisting] EnterSSA: Expected identifier to be defined before being used
   4 |   return x;
   5 | }
   6 |

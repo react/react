@@ -1,3 +1,4 @@
+// @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const x = useMemo(() => {
     label: {

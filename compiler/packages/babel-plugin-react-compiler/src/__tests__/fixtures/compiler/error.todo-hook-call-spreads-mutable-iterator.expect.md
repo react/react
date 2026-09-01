@@ -21,10 +21,15 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Todo: Support spread syntax for hook arguments
+
+error.todo-hook-call-spreads-mutable-iterator.ts:5:24
   3 | function Component() {
   4 |   const items = makeArray(0, 1, 2, null, 4, false, 6);
 > 5 |   return useIdentity(...items.values());
-    |                         ^^^^^^^^^^^^^^ Todo: Support spread syntax for hook arguments (5:5)
+    |                         ^^^^^^^^^^^^^^ Support spread syntax for hook arguments
   6 | }
   7 |
   8 | export const FIXTURE_ENTRYPOINT = {

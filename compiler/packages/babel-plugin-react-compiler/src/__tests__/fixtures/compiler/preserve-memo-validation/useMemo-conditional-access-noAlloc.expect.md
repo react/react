@@ -30,20 +30,18 @@ import { useMemo } from "react";
 function Component(t0) {
   const $ = _c(3);
   const { propA, propB } = t0;
-  let t1;
 
-  const t2 = propB?.x.y;
-  let t3;
-  if ($[0] !== propA || $[1] !== t2) {
-    t3 = { value: t2, other: propA };
+  const t1 = propB?.x.y;
+  let t2;
+  if ($[0] !== propA || $[1] !== t1) {
+    t2 = { value: t1, other: propA };
     $[0] = propA;
-    $[1] = t2;
-    $[2] = t3;
+    $[1] = t1;
+    $[2] = t2;
   } else {
-    t3 = $[2];
+    t2 = $[2];
   }
-  t1 = t3;
-  return t1;
+  return t2;
 }
 
 export const FIXTURE_ENTRYPOINT = {

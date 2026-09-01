@@ -82,7 +82,12 @@ describe('editing interface', () => {
               shallow="initial"
             />
             ,
-            <input ref={inputRef} onChange={jest.fn()} value="initial" />
+            <input
+              ref={inputRef}
+              onChange={jest.fn()}
+              value="initial"
+              data-foo="test"
+            />
           </>,
         ),
       );
@@ -258,6 +263,14 @@ describe('editing interface', () => {
           after: 'initial',
         },
         after: 'initial',
+      });
+      renamePath(hostComponentID, ['data-foo'], ['data-bar']);
+      expect({
+        foo: inputRef.current.dataset.foo,
+        bar: inputRef.current.dataset.bar,
+      }).toEqual({
+        foo: undefined,
+        bar: 'test',
       });
     });
 

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // Invalid because it's dangerous.
@@ -22,7 +22,7 @@ useCustomHook();
 ## Code
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // Invalid because it's dangerous.

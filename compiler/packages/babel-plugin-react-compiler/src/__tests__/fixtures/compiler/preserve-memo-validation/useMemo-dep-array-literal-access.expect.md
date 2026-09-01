@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 
 import {useMemo} from 'react';
 import {makeArray} from 'shared-runtime';
@@ -27,7 +27,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMemoizationGuarantees
+import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 
 import { useMemo } from "react";
 import { makeArray } from "shared-runtime";
@@ -48,15 +48,13 @@ function Foo(props) {
   }
   const x = t0;
   let t1;
-  let t2;
   if ($[2] !== x[0]) {
-    t2 = [x[0]];
+    t1 = [x[0]];
     $[2] = x[0];
-    $[3] = t2;
+    $[3] = t1;
   } else {
-    t2 = $[3];
+    t1 = $[3];
   }
-  t1 = t2;
   return t1;
 }
 

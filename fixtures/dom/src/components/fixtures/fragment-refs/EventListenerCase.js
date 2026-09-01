@@ -1,46 +1,35 @@
 import TestCase from '../../TestCase';
 import Fixture from '../../Fixture';
+import EventFragmentContainer from './EventFragmentContainer';
 
 const React = window.React;
-const {Fragment, useEffect, useRef, useState} = React;
+const {useState} = React;
 
 function WrapperComponent(props) {
   return props.children;
 }
 
-function handler(e) {
-  const text = e.currentTarget.innerText;
-  alert('You clicked: ' + text);
-}
-
 export default function EventListenerCase() {
-  const fragmentRef = useRef(null);
   const [extraChildCount, setExtraChildCount] = useState(0);
-
-  useEffect(() => {
-    fragmentRef.current.addEventListener('click', handler);
-
-    const lastFragmentRefValue = fragmentRef.current;
-    return () => {
-      lastFragmentRefValue.removeEventListener('click', handler);
-    };
-  });
 
   return (
     <TestCase title="Event Registration">
       <TestCase.Steps>
-        <li>Click one of the children, observe the alert</li>
-        <li>Add a new child, click it, observe the alert</li>
-        <li>Remove the event listeners, click a child, observe no alert</li>
-        <li>Add the event listeners back, click a child, observe the alert</li>
+        <li>
+          Click "Add event listener" to attach a click handler to the fragment
+        </li>
+        <li>Click "Dispatch click event" to dispatch a click event</li>
+        <li>Observe the event log showing the event fired</li>
+        <li>Add a new child, dispatch again to see it still works</li>
+        <li>
+          Click "Remove event listener" and dispatch again to see no event fires
+        </li>
       </TestCase.Steps>
 
       <TestCase.ExpectedResult>
         <p>
           Fragment refs can manage event listeners on the first level of host
-          children. This page loads with an effect that sets up click event
-          hanndlers on each child card. Clicking on a card will show an alert
-          with the card's text.
+          children. The event log shows when events are dispatched and handled.
         </p>
         <p>
           New child nodes will also have event listeners applied. Removed nodes
@@ -50,28 +39,17 @@ export default function EventListenerCase() {
 
       <Fixture>
         <Fixture.Controls>
-          <div>Target count: {extraChildCount + 3}</div>
-          <button
-            onClick={() => {
-              setExtraChildCount(prev => prev + 1);
-            }}>
-            Add Child
-          </button>
-          <button
-            onClick={() => {
-              fragmentRef.current.addEventListener('click', handler);
-            }}>
-            Add click event listeners
-          </button>
-          <button
-            onClick={() => {
-              fragmentRef.current.removeEventListener('click', handler);
-            }}>
-            Remove click event listeners
-          </button>
-        </Fixture.Controls>
-        <div className="card-container">
-          <Fragment ref={fragmentRef}>
+          <div style={{marginBottom: '10px'}}>
+            Target count: {extraChildCount + 3}
+            <button
+              onClick={() => {
+                setExtraChildCount(prev => prev + 1);
+              }}
+              style={{marginLeft: '10px'}}>
+              Add Child
+            </button>
+          </div>
+          <EventFragmentContainer>
             <div className="card" id="child-a">
               Child A
             </div>
@@ -88,8 +66,8 @@ export default function EventListenerCase() {
                 </div>
               ))}
             </WrapperComponent>
-          </Fragment>
-        </div>
+          </EventFragmentContainer>
+        </Fixture.Controls>
       </Fixture>
     </TestCase>
   );

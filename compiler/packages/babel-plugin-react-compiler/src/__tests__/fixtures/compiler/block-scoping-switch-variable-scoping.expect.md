@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function Component(props) {
@@ -30,32 +31,29 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @validateExhaustiveMemoizationDependencies:false
 import { useMemo } from "react";
 
 function Component(props) {
   const $ = _c(2);
   let t0;
-  let t1;
   if ($[0] !== props.value) {
-    t1 = { value: props.value };
+    t0 = { value: props.value };
     $[0] = props.value;
-    $[1] = t1;
+    $[1] = t0;
   } else {
-    t1 = $[1];
+    t0 = $[1];
   }
-  const handlers = t1;
+  const handlers = t0;
   bb0: switch (props.test) {
     case true: {
       console.log(handlers.value);
       break bb0;
     }
-    default: {
-    }
+    default:
   }
+  const outerHandlers = handlers;
 
-  t0 = handlers;
-  const outerHandlers = t0;
   return outerHandlers;
 }
 

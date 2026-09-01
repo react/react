@@ -6,7 +6,13 @@
  */
 
 import {CompilerError} from '../CompilerError';
-import {BlockId, HIRFunction, Identifier, Place} from '../HIR/HIR';
+import {
+  BlockId,
+  GeneratedSource,
+  HIRFunction,
+  Identifier,
+  Place,
+} from '../HIR/HIR';
 import {
   eachInstructionLValue,
   eachInstructionOperand,
@@ -96,9 +102,7 @@ export function eliminateRedundantPhi(
         }
         CompilerError.invariant(same !== null, {
           reason: 'Expected phis to be non-empty',
-          description: null,
-          loc: null,
-          suggestions: null,
+          loc: GeneratedSource,
         });
         rewrites.set(phi.place.identifier, same);
         block.phis.delete(phi);

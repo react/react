@@ -52,10 +52,8 @@ function Component(statusName) {
   if ($[0] !== statusName) {
     const { status, text: t1 } = foo(statusName);
     text = t1;
-
     const { color, font: t2 } = getStyles(status);
     font = t2;
-
     t0 = identity(color);
     $[0] = statusName;
     $[1] = font;

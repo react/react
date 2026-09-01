@@ -4,6 +4,7 @@ import * as React from 'react';
 import {useRef} from 'react';
 
 import styles from './Tooltip.css';
+import typeof {SyntheticMouseEvent} from 'react-dom-bindings/src/events/SyntheticEvent';
 
 const initialTooltipState = {height: 0, mouseX: 0, mouseY: 0, width: 0};
 
@@ -17,7 +18,7 @@ export default function Tooltip({
   const tooltipRef = useRef(null);
 
   // update the position of the tooltip based on current mouse position
-  const updateTooltipPosition = (event: SyntheticMouseEvent<EventTarget>) => {
+  const updateTooltipPosition = (event: SyntheticMouseEvent) => {
     const element = tooltipRef.current;
     if (element != null) {
       // first find the mouse position
@@ -30,7 +31,7 @@ export default function Tooltip({
     }
   };
 
-  const onMouseMove = (event: SyntheticMouseEvent<EventTarget>) => {
+  const onMouseMove = (event: SyntheticMouseEvent) => {
     updateTooltipPosition(event);
   };
 
@@ -63,7 +64,7 @@ function getTooltipPosition(
     mouseY: number,
     width: number,
   },
-) {
+): {left: string, top: string} {
   const {height, mouseX, mouseY, width} = mousePosition;
   let top: number | string = 0;
   let left: number | string = 0;
@@ -94,12 +95,13 @@ function getTooltipPosition(
 // method used to find the current mouse position inside the container
 function getMousePosition(
   relativeContainer: null,
-  mouseEvent: SyntheticMouseEvent<EventTarget>,
+  mouseEvent: SyntheticMouseEvent,
 ) {
   if (relativeContainer !== null) {
     // Position within the nearest position:relative container.
     let targetContainer = relativeContainer;
     while (targetContainer.parentElement != null) {
+      // $FlowFixMe[invalid-compare]
       if (targetContainer.style.position === 'relative') {
         break;
       } else {
@@ -107,7 +109,13 @@ function getMousePosition(
       }
     }
 
-    const {height, left, top, width} = targetContainer.getBoundingClientRect();
+    const {height, left, top, width} =
+      targetContainer.getBoundingClientRect() as {
+        height: number,
+        left: number,
+        top: number,
+        width: number,
+      };
 
     const mouseX = mouseEvent.clientX - left;
     const mouseY = mouseEvent.clientY - top;

@@ -53,10 +53,26 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Todo: Support duplicate fbt tags
+
+Support `<fbt>` tags with multiple `<fbt:plural>` values.
+
+error.todo-multiple-fbt-plural.ts:29:7
+  27 |   return (
+  28 |     <fbt desc="Test fbt description">
+> 29 |       <fbt:plural count={rewrites} name="number of rewrites" showCount="yes">
+     |        ^^^^^^^^^^ Multiple `<fbt:plural>` tags found
+  30 |         rewrite
+  31 |       </fbt:plural>
+  32 |       to Rust ·
+
+error.todo-multiple-fbt-plural.ts:33:7
   31 |       </fbt:plural>
   32 |       to Rust ·
 > 33 |       <fbt:plural count={months} name="number of months" showCount="yes">
-     |        ^^^^^^^^^^ Todo: Support <fbt> tags with multiple <fbt:plural> values (33:33)
+     |        ^^^^^^^^^^ Multiple `<fbt:plural>` tags found
   34 |         month
   35 |       </fbt:plural>
   36 |       traveling

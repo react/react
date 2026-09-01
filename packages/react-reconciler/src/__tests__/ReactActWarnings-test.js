@@ -219,10 +219,9 @@ describe('act warnings', () => {
     act(() => {
       setState(1);
     });
-    assertConsoleErrorDev(
-      ['The current testing environment is not configured to support act(...)'],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'The current testing environment is not configured to support act(...)',
+    ]);
     assertLog([1]);
     expect(root).toMatchRenderedOutput('1');
 
@@ -240,12 +239,9 @@ describe('act warnings', () => {
       act(() => {
         setState(1);
       });
-      assertConsoleErrorDev(
-        [
-          'The current testing environment is not configured to support act(...)',
-        ],
-        {withoutStack: true},
-      );
+      assertConsoleErrorDev([
+        'The current testing environment is not configured to support act(...)',
+      ]);
       assertLog([1]);
       expect(root).toMatchRenderedOutput('1');
     });
@@ -255,24 +251,21 @@ describe('act warnings', () => {
     await withActEnvironment(true, () => {
       const root = ReactNoop.createRoot();
       root.render('Hi');
-      assertConsoleErrorDev(
-        [
-          // TODO: Better error message that doesn't make it look like "Root" is
-          // the name of a custom component
-          'An update to Root inside a test was not wrapped in act(...).\n' +
-            '\n' +
-            'When testing, code that causes React state updates should be wrapped into act(...):\n' +
-            '\n' +
-            'act(() => {\n' +
-            '  /* fire events that update state */\n' +
-            '});\n' +
-            '/* assert on the output */\n' +
-            '\n' +
-            "This ensures that you're testing the behavior the user would see in the browser. " +
-            'Learn more at https://react.dev/link/wrap-tests-with-act',
-        ],
-        {withoutStack: true},
-      );
+      assertConsoleErrorDev([
+        // TODO: Better error message that doesn't make it look like "Root" is
+        // the name of a custom component
+        'An update to Root inside a test was not wrapped in act(...).\n' +
+          '\n' +
+          'When testing, code that causes React state updates should be wrapped into act(...):\n' +
+          '\n' +
+          'act(() => {\n' +
+          '  /* fire events that update state */\n' +
+          '});\n' +
+          '/* assert on the output */\n' +
+          '\n' +
+          "This ensures that you're testing the behavior the user would see in the browser. " +
+          'Learn more at https://react.dev/link/wrap-tests-with-act',
+      ]);
     });
   });
 
@@ -374,37 +367,33 @@ describe('act warnings', () => {
 
       // This is a retry, not a ping, because we already showed a fallback.
       resolveText('Async');
-      assertConsoleErrorDev(
-        [
-          'A suspended resource finished loading inside a test, but the event was not wrapped in act(...).\n' +
-            '\n' +
-            'When testing, code that resolves suspended data should be wrapped into act(...):\n' +
-            '\n' +
-            'act(() => {\n' +
-            '  /* finish loading suspended data */\n' +
-            '});\n' +
-            '/* assert on the output */\n' +
-            '\n' +
-            "This ensures that you're testing the behavior the user would see in the browser. " +
-            'Learn more at https://react.dev/link/wrap-tests-with-act',
+      assertConsoleErrorDev([
+        'A suspended resource finished loading inside a test, but the event was not wrapped in act(...).\n' +
+          '\n' +
+          'When testing, code that resolves suspended data should be wrapped into act(...):\n' +
+          '\n' +
+          'act(() => {\n' +
+          '  /* finish loading suspended data */\n' +
+          '});\n' +
+          '/* assert on the output */\n' +
+          '\n' +
+          "This ensures that you're testing the behavior the user would see in the browser. " +
+          'Learn more at https://react.dev/link/wrap-tests-with-act',
 
-          // pre-warming
+        // pre-warming
 
-          'A suspended resource finished loading inside a test, but the event was not wrapped in act(...).\n' +
-            '\n' +
-            'When testing, code that resolves suspended data should be wrapped into act(...):\n' +
-            '\n' +
-            'act(() => {\n' +
-            '  /* finish loading suspended data */\n' +
-            '});\n' +
-            '/* assert on the output */\n' +
-            '\n' +
-            "This ensures that you're testing the behavior the user would see in the browser. " +
-            'Learn more at https://react.dev/link/wrap-tests-with-act',
-        ],
-
-        {withoutStack: true},
-      );
+        'A suspended resource finished loading inside a test, but the event was not wrapped in act(...).\n' +
+          '\n' +
+          'When testing, code that resolves suspended data should be wrapped into act(...):\n' +
+          '\n' +
+          'act(() => {\n' +
+          '  /* finish loading suspended data */\n' +
+          '});\n' +
+          '/* assert on the output */\n' +
+          '\n' +
+          "This ensures that you're testing the behavior the user would see in the browser. " +
+          'Learn more at https://react.dev/link/wrap-tests-with-act',
+      ]);
     });
   });
 
@@ -437,22 +426,19 @@ describe('act warnings', () => {
 
       // This is a ping, not a retry, because no fallback is showing.
       resolveText('Async');
-      assertConsoleErrorDev(
-        [
-          'A suspended resource finished loading inside a test, but the event was not wrapped in act(...).\n' +
-            '\n' +
-            'When testing, code that resolves suspended data should be wrapped into act(...):\n' +
-            '\n' +
-            'act(() => {\n' +
-            '  /* finish loading suspended data */\n' +
-            '});\n' +
-            '/* assert on the output */\n' +
-            '\n' +
-            "This ensures that you're testing the behavior the user would see in the browser. " +
-            'Learn more at https://react.dev/link/wrap-tests-with-act',
-        ],
-        {withoutStack: true},
-      );
+      assertConsoleErrorDev([
+        'A suspended resource finished loading inside a test, but the event was not wrapped in act(...).\n' +
+          '\n' +
+          'When testing, code that resolves suspended data should be wrapped into act(...):\n' +
+          '\n' +
+          'act(() => {\n' +
+          '  /* finish loading suspended data */\n' +
+          '});\n' +
+          '/* assert on the output */\n' +
+          '\n' +
+          "This ensures that you're testing the behavior the user would see in the browser. " +
+          'Learn more at https://react.dev/link/wrap-tests-with-act',
+      ]);
     });
   });
 });

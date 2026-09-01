@@ -6,14 +6,30 @@
  */
 
 import {CompilerError} from '../CompilerError';
-import {Effect, ValueKind, ValueReason} from './HIR';
+import {AliasingEffect, AliasingSignature} from '../Inference/AliasingEffects';
+import {assertExhaustive} from '../Utils/utils';
+import {
+  Effect,
+  GeneratedSource,
+  Hole,
+  makeDeclarationId,
+  makeIdentifierId,
+  makeInstructionId,
+  Place,
+  SourceLocation,
+  SpreadPattern,
+  ValueKind,
+  ValueReason,
+} from './HIR';
 import {
   BuiltInType,
   FunctionType,
+  makeType,
   ObjectType,
   PolyType,
   PrimitiveType,
 } from './Types';
+import {AliasingEffectConfig, AliasingSignatureConfig} from './TypeSchema';
 
 /*
  * This file exports types and defaults for JavaScript object shapes. These are
@@ -42,13 +58,20 @@ function createAnonId(): string {
 export function addFunction(
   registry: ShapeRegistry,
   properties: Iterable<[string, BuiltInType | PolyType]>,
-  fn: Omit<FunctionSignature, 'hookKind'>,
+  fn: Omit<FunctionSignature, 'hookKind' | 'aliasing'> & {
+    aliasing?: AliasingSignatureConfig | null | undefined;
+  },
   id: string | null = null,
   isConstructor: boolean = false,
 ): FunctionType {
   const shapeId = id ?? createAnonId();
+  const aliasing =
+    fn.aliasing != null
+      ? parseAliasingSignatureConfig(fn.aliasing, '<builtin>', GeneratedSource)
+      : null;
   addShape(registry, shapeId, properties, {
     ...fn,
+    aliasing,
     hookKind: null,
   });
   return {
@@ -66,16 +89,147 @@ export function addFunction(
  */
 export function addHook(
   registry: ShapeRegistry,
-  fn: FunctionSignature & {hookKind: HookKind},
+  fn: Omit<FunctionSignature, 'aliasing'> & {
+    hookKind: HookKind;
+    aliasing?: AliasingSignatureConfig | null | undefined;
+  },
   id: string | null = null,
 ): FunctionType {
   const shapeId = id ?? createAnonId();
-  addShape(registry, shapeId, [], fn);
+  const aliasing =
+    fn.aliasing != null
+      ? parseAliasingSignatureConfig(fn.aliasing, '<builtin>', GeneratedSource)
+      : null;
+  addShape(registry, shapeId, [], {...fn, aliasing});
   return {
     kind: 'Function',
     return: fn.returnType,
     shapeId,
     isConstructor: false,
+  };
+}
+
+function parseAliasingSignatureConfig(
+  typeConfig: AliasingSignatureConfig,
+  moduleName: string,
+  loc: SourceLocation,
+): AliasingSignature {
+  const lifetimes = new Map<string, Place>();
+  function define(temp: string): Place {
+    CompilerError.invariant(!lifetimes.has(temp), {
+      reason: `Invalid type configuration for module`,
+      description: `Expected aliasing signature to have unique names for receiver, params, rest, returns, and temporaries in module '${moduleName}'`,
+      loc,
+    });
+    const place = signatureArgument(lifetimes.size);
+    lifetimes.set(temp, place);
+    return place;
+  }
+  function lookup(temp: string): Place {
+    const place = lifetimes.get(temp);
+    CompilerError.invariant(place != null, {
+      reason: `Invalid type configuration for module`,
+      description: `Expected aliasing signature effects to reference known names from receiver/params/rest/returns/temporaries, but '${temp}' is not a known name in '${moduleName}'`,
+      loc,
+    });
+    return place;
+  }
+  const receiver = define(typeConfig.receiver);
+  const params = typeConfig.params.map(define);
+  const rest = typeConfig.rest != null ? define(typeConfig.rest) : null;
+  const returns = define(typeConfig.returns);
+  const temporaries = typeConfig.temporaries.map(define);
+  const effects = typeConfig.effects.map(
+    (effect: AliasingEffectConfig): AliasingEffect => {
+      switch (effect.kind) {
+        case 'ImmutableCapture':
+        case 'CreateFrom':
+        case 'Capture':
+        case 'Alias':
+        case 'Assign': {
+          const from = lookup(effect.from);
+          const into = lookup(effect.into);
+          return {
+            kind: effect.kind,
+            from,
+            into,
+          };
+        }
+        case 'Mutate':
+        case 'MutateTransitiveConditionally': {
+          const value = lookup(effect.value);
+          return {kind: effect.kind, value};
+        }
+        case 'Create': {
+          const into = lookup(effect.into);
+          return {
+            kind: 'Create',
+            into,
+            reason: effect.reason,
+            value: effect.value,
+          };
+        }
+        case 'Freeze': {
+          const value = lookup(effect.value);
+          return {
+            kind: 'Freeze',
+            value,
+            reason: effect.reason,
+          };
+        }
+        case 'Impure': {
+          const place = lookup(effect.place);
+          return {
+            kind: 'Impure',
+            place,
+            error: CompilerError.throwTodo({
+              reason: 'Support impure effect declarations',
+              loc: GeneratedSource,
+            }),
+          };
+        }
+        case 'Apply': {
+          const receiver = lookup(effect.receiver);
+          const fn = lookup(effect.function);
+          const args: Array<Place | SpreadPattern | Hole> = effect.args.map(
+            arg => {
+              if (typeof arg === 'string') {
+                return lookup(arg);
+              } else if (arg.kind === 'Spread') {
+                return {kind: 'Spread', place: lookup(arg.place)};
+              } else {
+                return arg;
+              }
+            },
+          );
+          const into = lookup(effect.into);
+          return {
+            kind: 'Apply',
+            receiver,
+            function: fn,
+            mutatesFunction: effect.mutatesFunction,
+            args,
+            into,
+            loc,
+            signature: null,
+          };
+        }
+        default: {
+          assertExhaustive(
+            effect,
+            `Unexpected effect kind '${(effect as any).kind}'`,
+          );
+        }
+      }
+    },
+  );
+  return {
+    receiver: receiver.identifier.id,
+    params: params.map(p => p.identifier.id),
+    rest: rest != null ? rest.identifier.id : null,
+    returns: returns.identifier.id,
+    temporaries,
+    effects,
   };
 }
 
@@ -110,9 +264,7 @@ function addShape(
 
   CompilerError.invariant(!registry.has(id), {
     reason: `[ObjectShape] Could not add shape to registry: name ${id} already exists.`,
-    description: null,
-    loc: null,
-    suggestions: null,
+    loc: GeneratedSource,
   });
   registry.set(id, shape);
   return shape;
@@ -131,6 +283,8 @@ export type HookKind =
   | 'useCallback'
   | 'useTransition'
   | 'useImperativeHandle'
+  | 'useEffectEvent'
+  | 'useOptimistic'
   | 'Custom';
 
 /*
@@ -177,8 +331,11 @@ export type FunctionSignature = {
   mutableOnlyIfOperandsAreMutable?: boolean;
 
   impure?: boolean;
+  knownIncompatible?: string | null | undefined;
 
   canonicalName?: string;
+
+  aliasing?: AliasingSignature | null | undefined;
 };
 
 /*
@@ -223,9 +380,11 @@ export const BuiltInUseReducerId = 'BuiltInUseReducer';
 export const BuiltInDispatchId = 'BuiltInDispatch';
 export const BuiltInUseContextHookId = 'BuiltInUseContextHook';
 export const BuiltInUseTransitionId = 'BuiltInUseTransition';
+export const BuiltInUseOptimisticId = 'BuiltInUseOptimistic';
+export const BuiltInSetOptimisticId = 'BuiltInSetOptimistic';
 export const BuiltInStartTransitionId = 'BuiltInStartTransition';
-export const BuiltInFireId = 'BuiltInFire';
-export const BuiltInFireFunctionId = 'BuiltInFireFunction';
+export const BuiltInUseEffectEventId = 'BuiltInUseEffectEvent';
+export const BuiltInEffectEventId = 'BuiltInEffectEventFunction';
 
 // See getReanimatedModuleType() in Globals.ts — this is part of supporting Reanimated's ref-like types
 export const ReanimatedSharedValueId = 'ReanimatedSharedValueId';
@@ -302,6 +461,30 @@ addObject(BUILTIN_SHAPES, BuiltInArrayId, [
       returnType: PRIMITIVE_TYPE,
       calleeEffect: Effect.Store,
       returnValueKind: ValueKind.Primitive,
+      aliasing: {
+        receiver: '@receiver',
+        params: [],
+        rest: '@rest',
+        returns: '@returns',
+        temporaries: [],
+        effects: [
+          // Push directly mutates the array itself
+          {kind: 'Mutate', value: '@receiver'},
+          // The arguments are captured into the array
+          {
+            kind: 'Capture',
+            from: '@rest',
+            into: '@receiver',
+          },
+          // Returns the new length, a primitive
+          {
+            kind: 'Create',
+            into: '@returns',
+            value: ValueKind.Primitive,
+            reason: ValueReason.KnownReturnSignature,
+          },
+        ],
+      },
     }),
   ],
   [
@@ -332,6 +515,60 @@ addObject(BUILTIN_SHAPES, BuiltInArrayId, [
       returnValueKind: ValueKind.Mutable,
       noAlias: true,
       mutableOnlyIfOperandsAreMutable: true,
+      aliasing: {
+        receiver: '@receiver',
+        params: ['@callback'],
+        rest: null,
+        returns: '@returns',
+        temporaries: [
+          // Temporary representing captured items of the receiver
+          '@item',
+          // Temporary representing the result of the callback
+          '@callbackReturn',
+          /*
+           * Undefined `this` arg to the callback. Note the signature does not
+           * support passing an explicit thisArg second param
+           */
+          '@thisArg',
+        ],
+        effects: [
+          // Map creates a new mutable array
+          {
+            kind: 'Create',
+            into: '@returns',
+            value: ValueKind.Mutable,
+            reason: ValueReason.KnownReturnSignature,
+          },
+          // The first arg to the callback is an item extracted from the receiver array
+          {
+            kind: 'CreateFrom',
+            from: '@receiver',
+            into: '@item',
+          },
+          // The undefined this for the callback
+          {
+            kind: 'Create',
+            into: '@thisArg',
+            value: ValueKind.Primitive,
+            reason: ValueReason.KnownReturnSignature,
+          },
+          // calls the callback, returning the result into a temporary
+          {
+            kind: 'Apply',
+            receiver: '@thisArg',
+            args: ['@item', {kind: 'Hole'}, '@receiver'],
+            function: '@callback',
+            into: '@callbackReturn',
+            mutatesFunction: false,
+          },
+          // captures the result of the callback into the return array
+          {
+            kind: 'Capture',
+            from: '@callbackReturn',
+            into: '@returns',
+          },
+        ],
+      },
     }),
   ],
   [
@@ -479,6 +716,32 @@ addObject(BUILTIN_SHAPES, BuiltInSetId, [
       calleeEffect: Effect.Store,
       // returnValueKind is technically dependent on the ValueKind of the set itself
       returnValueKind: ValueKind.Mutable,
+      aliasing: {
+        receiver: '@receiver',
+        params: [],
+        rest: '@rest',
+        returns: '@returns',
+        temporaries: [],
+        effects: [
+          // Set.add returns the receiver Set
+          {
+            kind: 'Assign',
+            from: '@receiver',
+            into: '@returns',
+          },
+          // Set.add mutates the set itself
+          {
+            kind: 'Mutate',
+            value: '@receiver',
+          },
+          // Captures the rest params into the set
+          {
+            kind: 'Capture',
+            from: '@rest',
+            into: '@receiver',
+          },
+        ],
+      },
     }),
   ],
   [
@@ -902,6 +1165,25 @@ addObject(BUILTIN_SHAPES, BuiltInUseTransitionId, [
   ],
 ]);
 
+addObject(BUILTIN_SHAPES, BuiltInUseOptimisticId, [
+  ['0', {kind: 'Poly'}],
+  [
+    '1',
+    addFunction(
+      BUILTIN_SHAPES,
+      [],
+      {
+        positionalParams: [],
+        restParam: Effect.Freeze,
+        returnType: PRIMITIVE_TYPE,
+        calleeEffect: Effect.Read,
+        returnValueKind: ValueKind.Primitive,
+      },
+      BuiltInSetOptimisticId,
+    ),
+  ],
+]);
+
 addObject(BUILTIN_SHAPES, BuiltInUseActionStateId, [
   ['0', {kind: 'Poly'}],
   [
@@ -947,6 +1229,21 @@ addObject(BUILTIN_SHAPES, BuiltInUseRefId, [
 addObject(BUILTIN_SHAPES, BuiltInRefValueId, [
   ['*', {kind: 'Object', shapeId: BuiltInRefValueId}],
 ]);
+
+addObject(BUILTIN_SHAPES, ReanimatedSharedValueId, []);
+
+addFunction(
+  BUILTIN_SHAPES,
+  [],
+  {
+    positionalParams: [],
+    restParam: Effect.ConditionallyMutate,
+    returnType: {kind: 'Poly'},
+    calleeEffect: Effect.ConditionallyMutate,
+    returnValueKind: ValueKind.Mutable,
+  },
+  BuiltInEffectEventId,
+);
 
 /**
  * MixedReadOnly =
@@ -1166,6 +1463,53 @@ export const DefaultNonmutatingHook = addHook(
     calleeEffect: Effect.Read,
     hookKind: 'Custom',
     returnValueKind: ValueKind.Frozen,
+    aliasing: {
+      receiver: '@receiver',
+      params: [],
+      rest: '@rest',
+      returns: '@returns',
+      temporaries: [],
+      effects: [
+        // Freeze the arguments
+        {
+          kind: 'Freeze',
+          value: '@rest',
+          reason: ValueReason.HookCaptured,
+        },
+        // Returns a frozen value
+        {
+          kind: 'Create',
+          into: '@returns',
+          value: ValueKind.Frozen,
+          reason: ValueReason.HookReturn,
+        },
+        // May alias any arguments into the return
+        {
+          kind: 'Alias',
+          from: '@rest',
+          into: '@returns',
+        },
+      ],
+    },
   },
   'DefaultNonmutatingHook',
 );
+
+export function signatureArgument(id: number): Place {
+  const place: Place = {
+    kind: 'Identifier',
+    effect: Effect.Unknown,
+    loc: GeneratedSource,
+    reactive: false,
+    identifier: {
+      declarationId: makeDeclarationId(id),
+      id: makeIdentifierId(id),
+      loc: GeneratedSource,
+      mutableRange: {start: makeInstructionId(0), end: makeInstructionId(0)},
+      name: null,
+      scope: null,
+      type: makeType(),
+    },
+  };
+  return place;
+}

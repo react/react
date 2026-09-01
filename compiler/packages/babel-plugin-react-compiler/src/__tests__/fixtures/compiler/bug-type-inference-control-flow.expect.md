@@ -98,6 +98,7 @@ function useFoo(t0) {
     }
     result = t1;
   }
+
   return result;
 }
 

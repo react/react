@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @noEmit
+// @outputMode:"lint"
 
 function Foo() {
   'use memo';
@@ -19,7 +19,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @noEmit
+// @outputMode:"lint"
 
 function Foo() {
   "use memo";

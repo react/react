@@ -19,10 +19,17 @@ function Component(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Invariant: [InferMutationAliasingEffects] Expected value kind to be initialized
+
+<unknown> hasErrors_0$15:TFunction.
+
+error.todo-repro-named-function-with-shadowed-local-same-name.ts:9:9
    7 |     return hasErrors;
    8 |   }
 >  9 |   return hasErrors();
-     |          ^^^^^^^^^ Invariant: [hoisting] Expected value for identifier to be initialized. hasErrors_0$14 (9:9)
+     |          ^^^^^^^^^ this is uninitialized
   10 | }
   11 |
 ```

@@ -14,8 +14,17 @@ import styles from './Badge.css';
 type Props = {
   className?: string,
   children: React$Node,
+  ...
 };
 
-export default function Badge({className = '', children}: Props): React.Node {
-  return <div className={`${styles.Badge} ${className}`}>{children}</div>;
+export default function Badge({
+  className = '',
+  children,
+  ...props
+}: Props): React.Node {
+  return (
+    <div {...props} className={`${styles.Badge} ${className}`}>
+      {children}
+    </div>
+  );
 }

@@ -16,9 +16,14 @@ function getCacheForType<T>(resourceType: () => T): T {
   throw new Error('Not implemented.');
 }
 
-export const DefaultAsyncDispatcher: AsyncDispatcher = ({
+function cacheSignal(): null | AbortSignal {
+  throw new Error('Not implemented.');
+}
+
+export const DefaultAsyncDispatcher: AsyncDispatcher = {
   getCacheForType,
-}: any);
+  cacheSignal,
+} as any;
 
 if (__DEV__) {
   DefaultAsyncDispatcher.getOwner = (): ComponentStackNode | null => {

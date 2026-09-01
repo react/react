@@ -37,6 +37,7 @@ function component(a) {
   } else {
     z = $[1];
   }
+
   return z;
 }
 

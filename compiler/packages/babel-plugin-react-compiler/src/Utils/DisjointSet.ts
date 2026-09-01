@@ -6,6 +6,7 @@
  */
 
 import {CompilerError} from '../CompilerError';
+import {GeneratedSource} from '../HIR/HIR';
 
 // Represents items which form disjoint sets.
 export default class DisjointSet<T> {
@@ -20,9 +21,7 @@ export default class DisjointSet<T> {
     const first = items.shift();
     CompilerError.invariant(first != null, {
       reason: 'Expected set to be non-empty',
-      description: null,
-      loc: null,
-      suggestions: null,
+      loc: GeneratedSource,
     });
     /*
      * determine an arbitrary "root" for this set: if the first
@@ -76,6 +75,10 @@ export default class DisjointSet<T> {
     // Cache the element itself
     this.#entries.set(item, root);
     return root;
+  }
+
+  has(item: T): boolean {
+    return this.#entries.has(item);
   }
 
   /*

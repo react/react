@@ -58,7 +58,6 @@ function useFoo(t0) {
     const x = { a };
     const y = [b];
     mutate(x);
-
     z = [mutate(y)];
 
     mutate(y);
@@ -68,6 +67,7 @@ function useFoo(t0) {
   } else {
     z = $[2];
   }
+
   return z;
 }
 

@@ -13,6 +13,4 @@ exports.version = l.version;
 exports.renderToString = l.renderToString;
 exports.renderToStaticMarkup = l.renderToStaticMarkup;
 exports.renderToReadableStream = s.renderToReadableStream;
-if (s.resume) {
-  exports.resume = s.resume;
-}
+exports.resume = s.resume;

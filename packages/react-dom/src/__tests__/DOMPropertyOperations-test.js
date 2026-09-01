@@ -50,10 +50,10 @@ describe('DOMPropertyOperations', () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
-        root.render(<div role="#" />);
+        root.render(<div enterKeyHint="go" />);
       });
-      expect(container.firstChild.getAttribute('role')).toBe('#');
-      expect(container.firstChild.role).toBeUndefined();
+      expect(container.firstChild.getAttribute('enterkeyhint')).toBe('go');
+      expect(container.firstChild.enterKeyHint).toBeUndefined();
     });
 
     it('should set values as namespace attributes if necessary', async () => {
@@ -158,6 +158,34 @@ describe('DOMPropertyOperations', () => {
         root.render(<div allowFullScreen={false} />);
       });
       expect(container.firstChild.hasAttribute('allowFullScreen')).toBe(false);
+    });
+
+    it('should set credentialless boolean attribute on iframes', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<iframe credentialless={true} />);
+      });
+      expect(container.firstChild.getAttribute('credentialless')).toBe('');
+      await act(() => {
+        root.render(<iframe credentialless={false} />);
+      });
+      expect(container.firstChild.hasAttribute('credentialless')).toBe(false);
+    });
+
+    it('should set credentialless attribute when passed a string and warn', async () => {
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(<iframe credentialless="true" />);
+      });
+      assertConsoleErrorDev([
+        'Received the string `true` for the boolean attribute `credentialless`. ' +
+          'Although this works, it will not work as expected if you pass the string "false". ' +
+          'Did you mean credentialless={true}?\n' +
+          '    in iframe (at **)',
+      ]);
+      expect(container.firstChild.getAttribute('credentialless')).toBe('');
     });
 
     it('should remove when setting custom attr to null', async () => {
@@ -781,49 +809,49 @@ describe('DOMPropertyOperations', () => {
       // Custom element has no special logic for input/change.
       clearMocks();
       customElement.dispatchEvent(new Event('input', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       customElement.dispatchEvent(new Event('change', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       customElement.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
 
       // Regular input treats browser input as onChange.
       clearMocks();
       setUntrackedValue.call(regularInput, 'hello');
       regularInput.dispatchEvent(new Event('input', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       regularInput.dispatchEvent(new Event('change', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       regularInput.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
 
       // Custom input treats browser input as onChange.
       clearMocks();
       setUntrackedValue.call(customInput, 'hello');
       customInput.dispatchEvent(new Event('input', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       customInput.dispatchEvent(new Event('change', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       customInput.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
     });
 
     it('custom element onChange/onInput/onClick with event target input child', async () => {
@@ -849,18 +877,18 @@ describe('DOMPropertyOperations', () => {
       input.dispatchEvent(new Event('input', {bubbles: true}));
       // Simulated onChange from the child's input event
       // bubbles to the parent custom element.
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       // Consequently, the native change event is ignored.
       input.dispatchEvent(new Event('change', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       input.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
     });
 
     it('custom element onChange/onInput/onClick with event target div child', async () => {
@@ -883,21 +911,21 @@ describe('DOMPropertyOperations', () => {
 
       const div = container.querySelector('div');
       div.dispatchEvent(new Event('input', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
 
       div.dispatchEvent(new Event('change', {bubbles: true}));
       // React always ignores change event invoked on non-custom and non-input targets.
       // So change event emitted on a div does not propagate upwards.
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
 
       div.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
     });
 
     it('div onChange/onInput/onClick with event target div child', async () => {
@@ -920,21 +948,21 @@ describe('DOMPropertyOperations', () => {
 
       const div = container.querySelector('div > div');
       div.dispatchEvent(new Event('input', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
 
       div.dispatchEvent(new Event('change', {bubbles: true}));
       // React always ignores change event invoked on non-custom and non-input targets.
       // So change event emitted on a div does not propagate upwards.
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
 
       div.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
     });
 
     it('custom element onChange/onInput/onClick with event target custom element child', async () => {
@@ -958,18 +986,18 @@ describe('DOMPropertyOperations', () => {
       const customChild = container.querySelector('other-custom-element');
       customChild.dispatchEvent(new Event('input', {bubbles: true}));
       // There is no simulated onChange, only raw onInput is dispatched.
-      expect(onChangeHandler).toBeCalledTimes(0);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(0);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       // The native change event propagates to the parent as onChange.
       customChild.dispatchEvent(new Event('change', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(0);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(0);
       customChild.dispatchEvent(new Event('click', {bubbles: true}));
-      expect(onChangeHandler).toBeCalledTimes(1);
-      expect(onInputHandler).toBeCalledTimes(1);
-      expect(onClickHandler).toBeCalledTimes(1);
+      expect(onChangeHandler).toHaveBeenCalledTimes(1);
+      expect(onInputHandler).toHaveBeenCalledTimes(1);
+      expect(onClickHandler).toHaveBeenCalledTimes(1);
     });
 
     it('custom elements should allow custom events with capture event listeners', async () => {

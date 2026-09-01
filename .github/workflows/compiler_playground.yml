@@ -32,9 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: compiler/**/yarn.lock
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
@@ -57,8 +55,6 @@ jobs:
           key: playwright-browsers-v6-${{ runner.arch }}-${{ runner.os }}-${{ steps.playwright_version.outputs.playwright_version }}
       - run: npx playwright install --with-deps chromium
         if: steps.cache_playwright_browsers.outputs.cache-hit != 'true'
-      - run: npx playwright install-deps
-        if: steps.cache_playwright_browsers.outputs.cache-hit == 'true'
       - run: CI=true yarn test
       - run: ls -R test-results
         if: '!cancelled()'

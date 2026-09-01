@@ -15,7 +15,7 @@ const ReactDOMClient = require('react-dom/client');
 const assertConsoleErrorDev =
   require('internal-test-utils').assertConsoleErrorDev;
 
-function expectWarnings(tags, warnings = [], withoutStack = 0) {
+function expectWarnings(tags, warnings = []) {
   tags = [...tags];
   warnings = [...warnings];
 
@@ -51,6 +51,8 @@ function expectWarnings(tags, warnings = [], withoutStack = 0) {
     const Tag = tags.pop();
     if (Tag === '#text') {
       element = 'text';
+    } else if (Tag === 'option') {
+      element = <Tag value={'value'}>{element}</Tag>;
     } else {
       element = <Tag>{element}</Tag>;
     }
@@ -61,10 +63,7 @@ function expectWarnings(tags, warnings = [], withoutStack = 0) {
     root.render(element);
   });
   if (warnings.length) {
-    assertConsoleErrorDev(
-      warnings,
-      withoutStack > 0 ? {withoutStack} : undefined,
-    );
+    assertConsoleErrorDev(warnings);
   }
   root.unmount();
 }
@@ -77,6 +76,7 @@ describe('validateDOMNesting', () => {
     expectWarnings(['div', 'p', 'button', 'p']);
     expectWarnings(['p', 'svg', 'foreignObject', 'p']);
     expectWarnings(['html', 'body', 'div']);
+    expectWarnings(['select', 'div', 'optgroup', 'div', 'option', 'span']);
 
     // Invalid, but not changed by browser parsing so we allow them
     expectWarnings(['div', 'ul', 'ul', 'li']);
@@ -203,6 +203,14 @@ describe('validateDOMNesting', () => {
           '>   <body>\n' +
           '\n' +
           '    in body (at **)',
+      ],
+    );
+    expectWarnings(
+      ['select', 'input'],
+      [
+        'In HTML, <input> cannot be a child of <select>.\n' +
+          'This will cause a hydration error.\n' +
+          '    in input (at **)',
       ],
     );
   });

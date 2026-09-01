@@ -1,3 +1,4 @@
+// @expectNothingCompiled
 // Valid because they're not matching use[A-Z].
 fooState();
 _use();

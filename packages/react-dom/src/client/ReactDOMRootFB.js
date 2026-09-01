@@ -106,7 +106,7 @@ function wwwOnCaughtError(
   error: mixed,
   errorInfo: {
     +componentStack?: ?string,
-    +errorBoundary?: ?React$Component<any, any>,
+    +errorBoundary?: ?component(),
   },
 ): void {
   const errorBoundary = errorInfo.errorBoundary;
@@ -126,6 +126,7 @@ function wwwOnCaughtError(
 
   defaultOnCaughtError(error, errorInfo);
 }
+const noopOnDefaultTransitionIndicator = noop;
 
 export function createRoot(
   container: Element | Document | DocumentFragment,
@@ -134,10 +135,11 @@ export function createRoot(
   return createRootImpl(
     container,
     assign(
-      ({
+      {
         onUncaughtError: wwwOnUncaughtError,
         onCaughtError: wwwOnCaughtError,
-      }: any),
+        onDefaultTransitionIndicator: noopOnDefaultTransitionIndicator,
+      } as any,
       options,
     ),
   );
@@ -152,10 +154,11 @@ export function hydrateRoot(
     container,
     initialChildren,
     assign(
-      ({
+      {
         onUncaughtError: wwwOnUncaughtError,
         onCaughtError: wwwOnCaughtError,
-      }: any),
+        onDefaultTransitionIndicator: noopOnDefaultTransitionIndicator,
+      } as any,
       options,
     ),
   );
@@ -211,12 +214,11 @@ function getReactRootElementInContainer(container: any) {
 // This isn't reachable because onRecoverableError isn't called in the
 // legacy API.
 const noopOnRecoverableError = noop;
-const noopOnDefaultTransitionIndicator = noop;
 
 function legacyCreateRootFromDOMContainer(
   container: Container,
   initialChildren: ReactNodeList,
-  parentComponent: ?React$Component<any, any>,
+  parentComponent: ?component(...props: any),
   callback: ?Function,
   isHydrationContainer: boolean,
 ): FiberRoot {
@@ -253,7 +255,7 @@ function legacyCreateRootFromDOMContainer(
       !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
         ? container.parentNode
         : container;
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     listenToAllSupportedEvents(rootContainerElement);
 
     flushSyncWork();
@@ -290,7 +292,7 @@ function legacyCreateRootFromDOMContainer(
       !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
         ? container.parentNode
         : container;
-    // $FlowFixMe[incompatible-call]
+    // $FlowFixMe[incompatible-type]
     listenToAllSupportedEvents(rootContainerElement);
 
     // Initial mount should not be batched.
@@ -314,12 +316,12 @@ function warnOnInvalidCallback(callback: mixed): void {
 }
 
 function legacyRenderSubtreeIntoContainer(
-  parentComponent: ?React$Component<any, any>,
+  parentComponent: ?component(...props: any),
   children: ReactNodeList,
   container: Container,
   forceHydrate: boolean,
   callback: ?Function,
-): React$Component<any, any> | PublicInstance | null {
+): component(...props: any) | PublicInstance | null {
   if (__DEV__) {
     topLevelUpdateWarnings(container);
     warnOnInvalidCallback(callback === undefined ? null : callback);
@@ -352,7 +354,7 @@ function legacyRenderSubtreeIntoContainer(
 }
 
 export function findDOMNode(
-  componentOrElement: Element | ?React$Component<any, any>,
+  componentOrElement: Element | ?component(...props: any),
 ): null | Element | Text {
   if (__DEV__) {
     const owner = currentOwner;
@@ -374,8 +376,8 @@ export function findDOMNode(
   if (componentOrElement == null) {
     return null;
   }
-  if ((componentOrElement: any).nodeType === ELEMENT_NODE) {
-    return (componentOrElement: any);
+  if ((componentOrElement as any).nodeType === ELEMENT_NODE) {
+    return componentOrElement as any;
   }
   if (__DEV__) {
     return findHostInstanceWithWarning(componentOrElement, 'findDOMNode');
@@ -387,7 +389,7 @@ export function render(
   element: React$Element<any>,
   container: Container,
   callback: ?Function,
-): React$Component<any, any> | PublicInstance | null {
+): component(...props: any) | PublicInstance | null {
   if (disableLegacyMode) {
     if (__DEV__) {
       console.error(
@@ -423,6 +425,7 @@ export function render(
   }
   return legacyRenderSubtreeIntoContainer(
     null,
+    // $FlowFixMe[incompatible-type]
     element,
     container,
     false,

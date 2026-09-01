@@ -19,7 +19,7 @@ import {setCurrentOwner} from './flight/ReactFlightCurrentOwner';
 // TODO: Consider marking the whole bundle instead of these boundaries.
 
 const callComponent = {
-  'react-stack-bottom-frame': function <Props, R>(
+  react_stack_bottom_frame: function <Props, R>(
     Component: (p: Props, arg: void) => R,
     props: Props,
     componentDebugInfo: ReactComponentInfo,
@@ -41,11 +41,11 @@ export const callComponentInDEV: <Props, R>(
   componentDebugInfo: ReactComponentInfo,
 ) => R = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callComponent['react-stack-bottom-frame'].bind(callComponent): any)
-  : (null: any);
+    (callComponent.react_stack_bottom_frame.bind(callComponent) as any)
+  : (null as any);
 
 const callLazyInit = {
-  'react-stack-bottom-frame': function (lazy: LazyComponent<any, any>): any {
+  react_stack_bottom_frame: function (lazy: LazyComponent<any, any>): any {
     const payload = lazy._payload;
     const init = lazy._init;
     return init(payload);
@@ -54,11 +54,11 @@ const callLazyInit = {
 
 export const callLazyInitInDEV: (lazy: LazyComponent<any, any>) => any = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callLazyInit['react-stack-bottom-frame'].bind(callLazyInit): any)
-  : (null: any);
+    (callLazyInit.react_stack_bottom_frame.bind(callLazyInit) as any)
+  : (null as any);
 
 const callIterator = {
-  'react-stack-bottom-frame': function (
+  react_stack_bottom_frame: function (
     iterator: $AsyncIterator<ReactClientValue, ReactClientValue, void>,
     progress: (
       entry:
@@ -81,5 +81,5 @@ export const callIteratorInDEV: (
   error: (reason: mixed) => void,
 ) => void = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callIterator['react-stack-bottom-frame'].bind(callIterator): any)
-  : (null: any);
+    (callIterator.react_stack_bottom_frame.bind(callIterator) as any)
+  : (null as any);

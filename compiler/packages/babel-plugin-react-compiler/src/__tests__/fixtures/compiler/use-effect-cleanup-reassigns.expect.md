@@ -65,12 +65,17 @@ function Component(t0) {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t1 = () => {
       let cleanedUp = false;
-      setTimeout(() => {
-        if (!cleanedUp) {
-          cleanedUp = true;
-          setCleanupCount(_temp);
-        }
-      }, 0);
+      setTimeout(
+        () => {
+          if (!cleanedUp) {
+            cleanedUp = true;
+            setCleanupCount(_temp);
+          }
+        },
+
+        0,
+      );
+
       return () => {
         if (!cleanedUp) {
           cleanedUp = true;

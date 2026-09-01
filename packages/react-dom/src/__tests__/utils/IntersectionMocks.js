@@ -19,6 +19,9 @@ export function mockIntersectionObserver() {
 
   class IntersectionObserver {
     constructor() {
+      this.root = null;
+      this.rootMargin = '0px';
+      this.thresholds = [0];
       intersectionObserverMock.callback = arguments[0];
     }
 
@@ -28,7 +31,10 @@ export function mockIntersectionObserver() {
     }
 
     observe(target) {
-      intersectionObserverMock.observedTargets.push(target);
+      // Match the spec: observing an already-observed target is a no-op.
+      if (intersectionObserverMock.observedTargets.indexOf(target) === -1) {
+        intersectionObserverMock.observedTargets.push(target);
+      }
     }
 
     unobserve(target) {
@@ -91,5 +97,60 @@ export function setClientRects(target, rects) {
       x,
       y,
     }));
+  };
+}
+
+/**
+ * Mock Range.prototype.getClientRects and getBoundingClientRect since jsdom doesn't implement them.
+ * Call this in beforeEach to set up the mock.
+ */
+export function mockRangeClientRects(
+  rects = [{x: 0, y: 0, width: 100, height: 20}],
+) {
+  const originalCreateRange = document.createRange;
+  document.createRange = function () {
+    const range = originalCreateRange.call(document);
+    range.getClientRects = function () {
+      return rects.map(({x, y, width, height}) => ({
+        width,
+        height,
+        left: x,
+        right: x + width,
+        top: y,
+        bottom: y + height,
+        x,
+        y,
+      }));
+    };
+    range.getBoundingClientRect = function () {
+      // Return the bounding rect that encompasses all rects
+      if (rects.length === 0) {
+        return {
+          width: 0,
+          height: 0,
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+          x: 0,
+          y: 0,
+        };
+      }
+      const first = rects[0];
+      return {
+        width: first.width,
+        height: first.height,
+        left: first.x,
+        right: first.x + first.width,
+        top: first.y,
+        bottom: first.y + first.height,
+        x: first.x,
+        y: first.y,
+      };
+    };
+    return range;
+  };
+  return function restore() {
+    document.createRange = originalCreateRange;
   };
 }

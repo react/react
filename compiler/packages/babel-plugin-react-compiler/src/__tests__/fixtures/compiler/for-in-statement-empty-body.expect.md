@@ -23,6 +23,7 @@ function Component(props) {
   let x;
   for (const y in props.value) {
   }
+
   return x;
 }
 

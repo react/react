@@ -48,6 +48,7 @@ function component(a) {
     t1 = $[3];
   }
   x = t1;
+
   return x;
 }
 

@@ -31,7 +31,9 @@ export function outlineFunctions(
       ) {
         const loweredFunc = value.loweredFunc.func;
 
-        const id = fn.env.generateGloballyUniqueIdentifierName(loweredFunc.id);
+        const id = fn.env.generateGloballyUniqueIdentifierName(
+          loweredFunc.id ?? loweredFunc.nameHint,
+        );
         loweredFunc.id = id.value;
 
         fn.env.outlineFunction(loweredFunc, null);

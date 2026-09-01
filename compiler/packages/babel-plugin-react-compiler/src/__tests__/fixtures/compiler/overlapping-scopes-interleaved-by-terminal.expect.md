@@ -27,6 +27,7 @@ export const FIXTURE_ENTRYPOINT = {
 function foo(a, b, c) {
   const x = [];
   const y = [];
+
   if (x) {
   }
 

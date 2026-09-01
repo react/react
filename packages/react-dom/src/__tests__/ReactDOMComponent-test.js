@@ -354,7 +354,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<span style={style} />);
         });
-      }).rejects.toThrowError(new TypeError('prod message'));
+      }).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `fontSize` CSS property is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +
@@ -1283,6 +1283,41 @@ describe('ReactDOMComponent', () => {
       expect(container.textContent).toEqual('bonjour');
     });
 
+    it('should not incur unnecessary DOM mutations for equal innerHTML', async () => {
+      // Regression test for https://github.com/facebook/react/issues/30994.
+      // Reassigning equal innerHTML destroys and recreates the child nodes,
+      // which breaks in-progress gestures (e.g. swallows an in-flight click
+      // when a re-render commits between focus and click) and discards state
+      // like text selection.
+      const container = document.createElement('div');
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        root.render(
+          <div dangerouslySetInnerHTML={{__html: '<span>hi</span>'}} />,
+        );
+      });
+
+      const node = container.firstChild;
+      const child = node.firstChild;
+
+      // A new object with an equal __html string must not touch the DOM.
+      await act(() => {
+        root.render(
+          <div dangerouslySetInnerHTML={{__html: '<span>hi</span>'}} />,
+        );
+      });
+      expect(node.firstChild).toBe(child);
+
+      // A different __html string still updates.
+      await act(() => {
+        root.render(
+          <div dangerouslySetInnerHTML={{__html: '<span>bye</span>'}} />,
+        );
+      });
+      expect(node.firstChild).not.toBe(child);
+      expect(node.innerHTML).toEqual('<span>bye</span>');
+    });
+
     it('should not incur unnecessary DOM mutations for attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1798,7 +1833,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<input>children</input>);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'input is a void element tag and must neither have `children` nor ' +
           'use `dangerouslySetInnerHTML`.',
       );
@@ -1811,7 +1846,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<input dangerouslySetInnerHTML={{__html: 'content'}} />);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'input is a void element tag and must neither have `children` nor ' +
           'use `dangerouslySetInnerHTML`.',
       );
@@ -1838,7 +1873,7 @@ describe('ReactDOMComponent', () => {
             </menu>,
           );
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'menuitem is a void element tag and must neither have `children` nor use ' +
           '`dangerouslySetInnerHTML`.',
       );
@@ -1852,7 +1887,7 @@ describe('ReactDOMComponent', () => {
     it('should validate against multiple children props', async () => {
       await expect(async () => {
         await mountComponent({children: '', dangerouslySetInnerHTML: ''});
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
           'Please visit https://react.dev/link/dangerously-set-inner-html for more information.',
       );
@@ -1879,7 +1914,7 @@ describe('ReactDOMComponent', () => {
     it('should validate use of dangerouslySetInnerHTM with JSX', async () => {
       await expect(async () => {
         await mountComponent({dangerouslySetInnerHTML: '<span>Hi Jim!</span>'});
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
           'Please visit https://react.dev/link/dangerously-set-inner-html for more information.',
       );
@@ -1888,7 +1923,7 @@ describe('ReactDOMComponent', () => {
     it('should validate use of dangerouslySetInnerHTML with object', async () => {
       await expect(async () => {
         await mountComponent({dangerouslySetInnerHTML: {foo: 'bar'}});
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         '`props.dangerouslySetInnerHTML` must be in the form `{__html: ...}`. ' +
           'Please visit https://react.dev/link/dangerously-set-inner-html for more information.',
       );
@@ -1922,7 +1957,7 @@ describe('ReactDOMComponent', () => {
     it('should validate against invalid styles', async () => {
       await expect(async () => {
         await mountComponent({style: 'display: none'});
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'The `style` prop expects a mapping from style properties to values, ' +
           "not a string. For example, style={{marginRight: spacing + 'em'}} " +
           'when using JSX.',
@@ -1942,7 +1977,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<X />);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'input is a void element tag and must neither have `children` ' +
           'nor use `dangerouslySetInnerHTML`.',
       );
@@ -2044,7 +2079,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<input>children</input>);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'input is a void element tag and must neither have `children` nor use ' +
           '`dangerouslySetInnerHTML`.',
       );
@@ -2059,7 +2094,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<input dangerouslySetInnerHTML={{__html: 'content'}} />);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'input is a void element tag and must neither have `children` nor use ' +
           '`dangerouslySetInnerHTML`.',
       );
@@ -2076,7 +2111,7 @@ describe('ReactDOMComponent', () => {
             <div children="" dangerouslySetInnerHTML={{__html: ''}} />,
           );
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'Can only set one of `children` or `props.dangerouslySetInnerHTML`.',
       );
     });
@@ -2106,7 +2141,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<div style={1} />);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'The `style` prop expects a mapping from style properties to values, ' +
           "not a string. For example, style={{marginRight: spacing + 'em'}} " +
           'when using JSX.',
@@ -2124,7 +2159,7 @@ describe('ReactDOMComponent', () => {
         await act(() => {
           root.render(<Animal />);
         });
-      }).rejects.toThrowError(
+      }).rejects.toThrow(
         'The `style` prop expects a mapping from style properties to values, ' +
           "not a string. For example, style={{marginRight: spacing + 'em'}} " +
           'when using JSX.',
@@ -2187,14 +2222,14 @@ describe('ReactDOMComponent', () => {
   describe('tag sanitization', () => {
     it('should throw when an invalid tag name is used server-side', () => {
       const hackzor = React.createElement('script tag');
-      expect(() => ReactDOMServer.renderToString(hackzor)).toThrowError(
+      expect(() => ReactDOMServer.renderToString(hackzor)).toThrow(
         'Invalid tag: script tag',
       );
     });
 
     it('should throw when an attack vector is used server-side', () => {
       const hackzor = React.createElement('div><img /><div');
-      expect(() => ReactDOMServer.renderToString(hackzor)).toThrowError(
+      expect(() => ReactDOMServer.renderToString(hackzor)).toThrow(
         'Invalid tag: div><img /><div',
       );
     });
@@ -2675,6 +2710,16 @@ describe('ReactDOMComponent', () => {
       assertConsoleErrorDev([
         'Invalid DOM property `tabindex`. Did you mean `tabIndex`?\n' +
           '    in input (at **)',
+      ]);
+    });
+
+    it('should warn about incorrect casing on the credentialless property (ssr)', () => {
+      ReactDOMServer.renderToString(
+        React.createElement('iframe', {Credentialless: true}),
+      );
+      assertConsoleErrorDev([
+        'Invalid DOM property `Credentialless`. Did you mean `credentialless`?\n' +
+          '    in iframe (at **)',
       ]);
     });
 

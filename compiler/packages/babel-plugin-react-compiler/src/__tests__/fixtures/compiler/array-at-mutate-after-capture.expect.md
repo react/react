@@ -33,6 +33,7 @@ function Component(props) {
   } else {
     x = $[1];
   }
+
   return x;
 }
 

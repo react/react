@@ -53,6 +53,7 @@ function useHook(nodeID, condition) {
   } else {
     value = $[5];
   }
+
   return value;
 }
 

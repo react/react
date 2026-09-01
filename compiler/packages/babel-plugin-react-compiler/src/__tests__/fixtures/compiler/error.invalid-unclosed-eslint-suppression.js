@@ -1,4 +1,4 @@
-// Note: Everything below this is sketchy
+// Note: Everything below this is sketchy @validateExhaustiveMemoizationDependencies:false
 /* eslint-disable react-hooks/rules-of-hooks */
 function lowercasecomponent() {
   'use forget';

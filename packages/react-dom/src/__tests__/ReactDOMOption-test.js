@@ -44,23 +44,13 @@ describe('ReactDOMOption', () => {
     expect(container.firstChild.innerHTML).toBe('1 foo');
   });
 
-  it('should warn for invalid child tags', async () => {
+  it('should not warn for a child div tag', async () => {
     const el = (
       <option value="12">
         {1} <div /> {2}
       </option>
     );
     const container = await renderIntoDocument(el);
-    assertConsoleErrorDev([
-      'In HTML, <div> cannot be a child of <option>.\n' +
-        'This will cause a hydration error.\n' +
-        '\n' +
-        '> <option value="12">\n' +
-        '>   <div>\n' +
-        '    ...\n' +
-        '\n' +
-        '    in div (at **)',
-    ]);
     expect(container.firstChild.innerHTML).toBe('1 <div></div> 2');
     await renderIntoDocument(el);
   });
@@ -138,12 +128,11 @@ describe('ReactDOMOption', () => {
     }).rejects.toThrow('Objects are not valid as a React child');
   });
 
-  // @gate www && !renameElementSymbol
   it('should support element-ish child', async () => {
     // This is similar to <fbt>.
     // We don't toString it because you must instead provide a value prop.
     const obj = {
-      $$typeof: Symbol.for('react.element'),
+      $$typeof: Symbol.for('react.transitional.element'),
       type: props => props.content,
       ref: null,
       key: null,
@@ -239,7 +228,7 @@ describe('ReactDOMOption', () => {
     expect(node.selectedIndex).toEqual(2);
   });
 
-  it('generates a hydration error when an invalid nested tag is used as a child', async () => {
+  it('does not generate a hydration error when a div tag is used as a child', async () => {
     const ref = React.createRef();
     const children = (
       <select readOnly={true} value="bar">
@@ -267,17 +256,6 @@ describe('ReactDOMOption', () => {
         onRecoverableError: () => {},
       });
     });
-    assertConsoleErrorDev([
-      'In HTML, <div> cannot be a child of <option>.\n' +
-        'This will cause a hydration error.\n' +
-        '\n' +
-        '  <select readOnly={true} value="bar">\n' +
-        '>   <option value="bar">\n' +
-        '>     <div ref={{current:null}}>\n' +
-        '      ...\n' +
-        '\n' +
-        '    in div (at **)',
-    ]);
     option = container.firstChild.firstChild;
 
     expect(option.textContent).toBe('BarFooBaz');

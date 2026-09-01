@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/facebook/react.git"
+    "url": "git+https://github.com/react/react.git"
   },
   "scripts": {
     "copyright": "node scripts/copyright.js",
@@ -19,7 +19,8 @@
     "test": "yarn workspaces run test",
     "snap": "yarn workspace babel-plugin-react-compiler run snap",
     "snap:build": "yarn workspace snap run build",
-    "npm:publish": "node scripts/release/publish"
+    "npm:publish": "node scripts/release/publish",
+    "eslint-docs": "yarn workspace babel-plugin-react-compiler build && node scripts/build-eslint-docs.js"
   },
   "dependencies": {
     "fs-extra": "^4.0.2",

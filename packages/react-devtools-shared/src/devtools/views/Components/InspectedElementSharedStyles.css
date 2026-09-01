@@ -51,3 +51,100 @@
 .EditableValue {
   min-width: 1rem;
 }
+
+.InfoRow {
+  border-top: 1px solid var(--color-border);
+  padding: 0.5rem 1rem;
+}
+
+.InfoRow:last-child {
+  margin-bottom: -0.25rem;
+}
+
+.CollapsableRow {
+  border-top: 1px solid var(--color-border);
+}
+
+.CollapsableRow:last-child {
+  margin-bottom: -0.25rem;
+}
+
+.CollapsableHeader {
+  width: 100%;
+  padding: 0.25rem;
+  display: flex;
+}
+
+.CollapsableHeader[data-pending="true"] {
+  cursor: progress;
+}
+
+.CollapsableHeaderIcon {
+  flex: 0 0 1rem;
+  margin-left: -0.25rem;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  color: var(--color-expand-collapse-toggle);
+}
+
+.CollapsableHeaderTitle, .CollapsableHeaderDescription, .CollapsableHeaderSeparator, .CollapsableHeaderFiller {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  text-align: left;
+  white-space: nowrap;
+}
+.CollapsableHeaderTitle {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.CollapsableHeaderSeparator {
+  flex: 0 0 auto;
+  white-space: pre;
+}
+
+.CollapsableHeaderFiller {
+  flex: 1 0 0;
+}
+
+.CollapsableContent {
+  margin-top: -0.25rem;
+}
+
+.PreviewContainer {
+  padding: 0.25rem;
+}
+
+.TimeBarContainer {
+  position: relative;
+  flex: 0 0 20%;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+  background-color: var(--color-timebar-background);
+}
+
+.TimeBarSpan, .TimeBarSpanErrored {
+  position: absolute;
+  border-radius: 0.125rem;
+  background-color: var(--color-suspense);
+  width: 100%;
+  height: 100%;
+}
+
+.TimeBarSpanErrored {
+  background-color: var(--color-suspense-errored);
+}
+
+.SmallHeader {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  padding-left: 1.25rem;
+  margin-top: 0.25rem;
+}
+
+.SuspendedBySkeleton {
+  padding: 0.25rem;
+  padding-left: 1.25rem;
+}

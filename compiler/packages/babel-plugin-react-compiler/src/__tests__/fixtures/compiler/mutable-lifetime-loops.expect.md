@@ -102,7 +102,6 @@ function testFunction(props) {
     }
     if (d) {
     }
-
     mutate(d, null);
     t0 = { a, b, c, d };
     $[0] = t0;

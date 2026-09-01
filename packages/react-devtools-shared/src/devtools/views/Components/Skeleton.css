@@ -5,9 +5,9 @@
 
 @keyframes pulse {
   0%, 100% {
-    background-color: var(--color-dim);
+    background-color: none;
   }
   50% {
-    background-color: var(--color-dimmest)
+    background-color: var(--color-dimmest);
   }
 }

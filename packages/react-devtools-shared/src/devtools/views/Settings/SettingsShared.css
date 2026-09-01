@@ -1,4 +1,4 @@
-.Settings {
+.SettingList {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -7,15 +7,28 @@
   font-size: var(--font-size-sans-normal);
 }
 
-.Setting {
+.SettingWrapper {
   margin-bottom: 0.5rem;
 }
-.Setting:last-of-type {
+.SettingWrapper:last-of-type {
   margin-bottom: 0;
 }
 
-.OpenInURLSetting {
-  margin: 0.5rem 0;
+.SettingRow {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.SettingRowCheckbox {
+  margin: 0.125rem 0.25rem 0.125rem 0;
+}
+
+.SettingDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .OptionGroup {
@@ -153,15 +166,4 @@
   list-style: none;
   padding: 0;
   margin: 0;
-}
-
-.Setting .Setting {
-  margin-left: 1rem;
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.Setting label:has(input:disabled) {
-  opacity: 0.5;
-  cursor: default;
 }

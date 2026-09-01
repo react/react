@@ -20,9 +20,7 @@ type ReactDOMInternals = {
   p /* currentUpdatePriority */: EventPriority,
   findDOMNode:
     | null
-    | ((
-        componentOrElement: React$Component<any, any>,
-      ) => null | Element | Text),
+    | ((componentOrElement: component(...props: any)) => null | Element | Text),
 };
 
 const DefaultDispatcher: HostDispatcher = {
@@ -38,7 +36,7 @@ const DefaultDispatcher: HostDispatcher = {
 };
 
 const Internals: ReactDOMInternals = {
-  Events: (null: any),
+  Events: null as any,
   d /* ReactDOMCurrentDispatcher */: DefaultDispatcher,
   p /* currentUpdatePriority */: NoEventPriority,
   findDOMNode: null,

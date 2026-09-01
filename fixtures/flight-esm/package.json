@@ -17,8 +17,8 @@
     "webpack-sources": "^3.2.0"
   },
   "scripts": {
-    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/",
-    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
     "dev": "concurrently \"npm run dev:region\" \"npm run dev:global\"",
     "dev:global": "NODE_ENV=development BUILD_PATH=dist node server/global",
     "dev:region": "NODE_ENV=development BUILD_PATH=dist nodemon --watch src --watch dist -- --enable-source-maps --experimental-loader ./loader/region.js --conditions=react-server server/region",

@@ -44,6 +44,7 @@ function foo(a, b, c) {
   } else {
     x = $[3];
   }
+
   return x;
 }
 

@@ -13,6 +13,7 @@ import {
   useLayoutEffect,
   useReducer,
   useState,
+  useSyncExternalStore,
   useContext,
 } from 'react';
 import {
@@ -111,30 +112,38 @@ export function useEditableValue(
 }
 
 export function useIsOverflowing(
-  containerRef: {current: HTMLDivElement | null, ...},
+  containerRef: {current: HTMLDivElement | null},
   totalChildWidth: number,
 ): boolean {
   const [isOverflowing, setIsOverflowing] = useState<boolean>(false);
 
   // It's important to use a layout effect, so that we avoid showing a flash of overflowed content.
   useLayoutEffect(() => {
-    if (containerRef.current === null) {
-      return () => {};
+    const container = containerRef.current;
+    if (container === null) {
+      return;
     }
 
-    const container = ((containerRef.current: any): HTMLDivElement);
+    // ResizeObserver on the global did not fire for the extension.
+    // We need to grab the ResizeObserver from the container's window.
+    const ResizeObserver = container.ownerDocument.defaultView.ResizeObserver;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      const contentWidth = entry.contentRect.width;
+      setIsOverflowing(
+        contentWidth <=
+          // We need to treat the box as overflowing when you're just
+          // about to overflow.
+          // Otherwise you won't be able to resize panes with custom resize handles.
+          // Previously we were relying on clientWidth which is already rounded.
+          // We don't want to read that again since that would trigger another layout.
+          totalChildWidth + 1,
+      );
+    });
 
-    const handleResize = () =>
-      setIsOverflowing(container.clientWidth <= totalChildWidth);
+    observer.observe(container);
 
-    handleResize();
-
-    // It's important to listen to the ownerDocument.defaultView to support the browser extension.
-    // Here we use portals to render individual tabs (e.g. Profiler),
-    // and the root document might belong to a different window.
-    const ownerWindow = container.ownerDocument.defaultView;
-    ownerWindow.addEventListener('resize', handleResize);
-    return () => ownerWindow.removeEventListener('resize', handleResize);
+    return observer.disconnect.bind(observer);
   }, [containerRef, totalChildWidth]);
 
   return isOverflowing;
@@ -156,20 +165,30 @@ export function useLocalStorage<T>(
       console.log(error);
     }
     if (typeof initialValue === 'function') {
-      return ((initialValue: any): () => T)();
+      return (initialValue as any as () => T)();
     } else {
       return initialValue;
     }
   }, [initialValue, key]);
 
-  const [storedValue, setStoredValue] = useState<any>(getValueFromLocalStorage);
+  const storedValue = useSyncExternalStore(
+    useCallback(
+      function subscribe(callback) {
+        window.addEventListener(key, callback);
+        return function unsubscribe() {
+          window.removeEventListener(key, callback);
+        };
+      },
+      [key],
+    ),
+    getValueFromLocalStorage,
+  );
 
   const setValue = useCallback(
     (value: $FlowFixMe) => {
       try {
         const valueToStore =
-          value instanceof Function ? (value: any)(storedValue) : value;
-        setStoredValue(valueToStore);
+          value instanceof Function ? (value as any)(storedValue) : value;
         localStorageSetItem(key, JSON.stringify(valueToStore));
 
         // Notify listeners that this setting has changed.
@@ -197,7 +216,6 @@ export function useLocalStorage<T>(
     };
 
     window.addEventListener('storage', onStorage);
-
     return () => {
       window.removeEventListener('storage', onStorage);
     };
@@ -225,7 +243,7 @@ export function useModalDismissSignal(
     const handleRootNodeClick: MouseEventHandler = event => {
       if (
         modalRef.current !== null &&
-        /* $FlowExpectedError[incompatible-call] Instead of dealing with possibly multiple realms
+        /* $FlowExpectedError[incompatible-type] Instead of dealing with possibly multiple realms
          and multiple Node references to comply with Flow (e.g. checking with `event.target instanceof Node`)
          just delegate it to contains call */
         !modalRef.current.contains(event.target)
@@ -335,24 +353,52 @@ export function useSubscription<Value>({
 
 export function useHighlightHostInstance(): {
   clearHighlightHostInstance: () => void,
-  highlightHostInstance: (id: number) => void,
+  highlightHostInstance: (id: number, scrollIntoView?: boolean) => void,
 } {
   const bridge = useContext(BridgeContext);
   const store = useContext(StoreContext);
 
   const highlightHostInstance = useCallback(
-    (id: number) => {
+    (id: number, scrollIntoView?: boolean = false) => {
       const element = store.getElementByID(id);
-      const rendererID = store.getRendererIDForElement(id);
-      if (element !== null && rendererID !== null) {
-        bridge.send('highlightHostInstance', {
-          displayName: element.displayName,
-          hideAfterTimeout: false,
-          id,
-          openBuiltinElementsPanel: false,
-          rendererID,
-          scrollIntoView: false,
-        });
+      if (element !== null) {
+        const isRoot = element.parentID === 0;
+        let displayName = element.displayName;
+        if (displayName !== null && element.nameProp !== null) {
+          displayName += ` name="${element.nameProp}"`;
+        }
+        if (isRoot) {
+          // Inspect screen
+          const elements: Array<{rendererID: number, id: number}> = [];
+
+          for (let i = 0; i < store.roots.length; i++) {
+            const rootID = store.roots[i];
+            const rendererID = store.getRendererIDForElement(rootID);
+            if (rendererID === null) {
+              continue;
+            }
+            elements.push({rendererID, id: rootID});
+          }
+
+          bridge.send('highlightHostInstances', {
+            displayName,
+            hideAfterTimeout: false,
+            elements,
+            scrollIntoView: scrollIntoView,
+          });
+        } else {
+          const rendererID = store.getRendererIDForElement(id);
+          if (rendererID !== null) {
+            bridge.send('highlightHostInstance', {
+              displayName,
+              hideAfterTimeout: false,
+              id,
+              openBuiltinElementsPanel: false,
+              rendererID,
+              scrollIntoView: scrollIntoView,
+            });
+          }
+        }
       }
     },
     [store, bridge],
@@ -366,4 +412,25 @@ export function useHighlightHostInstance(): {
     highlightHostInstance,
     clearHighlightHostInstance,
   };
+}
+
+export function useScrollToHostInstance(): (id: number) => void {
+  const bridge = useContext(BridgeContext);
+  const store = useContext(StoreContext);
+
+  const scrollToHostInstance = useCallback(
+    (id: number) => {
+      const element = store.getElementByID(id);
+      const rendererID = store.getRendererIDForElement(id);
+      if (element !== null && rendererID !== null) {
+        bridge.send('scrollToHostInstance', {
+          id,
+          rendererID,
+        });
+      }
+    },
+    [store, bridge],
+  );
+
+  return scrollToHostInstance;
 }

@@ -79,7 +79,7 @@ describe('ReactSuspenseList', () => {
     });
     assertConsoleErrorDev([
       '"something" is not a supported revealOrder on ' +
-        '<SuspenseList />. Did you mean "together", "forwards" or "backwards"?' +
+        '<SuspenseList />. Did you mean "independent", "together", "forwards" or "backwards"?' +
         '\n    in SuspenseList (at **)' +
         '\n    in Foo (at **)',
     ]);
@@ -131,7 +131,11 @@ describe('ReactSuspenseList', () => {
   // @gate enableSuspenseList
   it('warns if a single element is passed to a "forwards" list', async () => {
     function Foo({children}) {
-      return <SuspenseList revealOrder="forwards">{children}</SuspenseList>;
+      return (
+        <SuspenseList revealOrder="forwards" tail="visible">
+          {children}
+        </SuspenseList>
+      );
     }
 
     ReactNoop.render(<Foo />);
@@ -166,7 +170,7 @@ describe('ReactSuspenseList', () => {
   it('warns if a single fragment is passed to a "backwards" list', async () => {
     function Foo() {
       return (
-        <SuspenseList revealOrder="backwards">
+        <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
           <>{[]}</>
         </SuspenseList>
       );
@@ -176,7 +180,7 @@ describe('ReactSuspenseList', () => {
       ReactNoop.render(<Foo />);
     });
     assertConsoleErrorDev([
-      'A single row was passed to a <SuspenseList revealOrder="backwards" />. ' +
+      'A single row was passed to a <SuspenseList revealOrder="unstable_legacy-backwards" />. ' +
         'This is not useful since it needs multiple rows. ' +
         'Did you mean to pass multiple children or an array?' +
         '\n    in SuspenseList (at **)' +
@@ -188,7 +192,7 @@ describe('ReactSuspenseList', () => {
   it('warns if a nested array is passed to a "forwards" list', async () => {
     function Foo({items}) {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           {items.map(name => (
             <Suspense key={name} fallback="Loading">
               {name}
@@ -214,7 +218,7 @@ describe('ReactSuspenseList', () => {
   });
 
   // @gate enableSuspenseList
-  it('shows content independently by default', async () => {
+  it('behaves as revealOrder=forwards by default', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
@@ -222,6 +226,68 @@ describe('ReactSuspenseList', () => {
     function Foo() {
       return (
         <SuspenseList>
+          <Suspense fallback={<Text text="Loading A" />}>
+            <A />
+          </Suspense>
+          <Suspense fallback={<Text text="Loading B" />}>
+            <B />
+          </Suspense>
+          <Suspense fallback={<Text text="Loading C" />}>
+            <C />
+          </Suspense>
+        </SuspenseList>
+      );
+    }
+
+    ReactNoop.render(<Foo />);
+
+    await waitForAll(['Suspend! [A]', 'Loading A']);
+
+    expect(ReactNoop).toMatchRenderedOutput(null);
+
+    await A.resolve();
+
+    await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
+
+    await act(() => B.resolve());
+    assertLog(['B', 'Suspend! [C]', 'Loading C']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+      </>,
+    );
+
+    await act(() => C.resolve());
+    assertLog(['C']);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+        <span>C</span>
+      </>,
+    );
+  });
+
+  // @gate enableSuspenseList
+  it('shows content independently with revealOrder="independent"', async () => {
+    const A = createAsyncText('A');
+    const B = createAsyncText('B');
+    const C = createAsyncText('C');
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="independent">
           <Suspense fallback={<Text text="Loading A" />}>
             <A />
           </Suspense>
@@ -564,7 +630,7 @@ describe('ReactSuspenseList', () => {
   });
 
   // @gate enableSuspenseList
-  it('displays all "together" in nested SuspenseLists where the inner is default', async () => {
+  it('displays all "together" in nested SuspenseLists where the inner is "independent"', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
@@ -575,7 +641,7 @@ describe('ReactSuspenseList', () => {
           <Suspense fallback={<Text text="Loading A" />}>
             <A />
           </Suspense>
-          <SuspenseList>
+          <SuspenseList revealOrder="independent">
             <Suspense fallback={<Text text="Loading B" />}>
               <B />
             </Suspense>
@@ -897,7 +963,7 @@ describe('ReactSuspenseList', () => {
 
     function Foo() {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           <Suspense fallback={<Text text="Loading A" />}>
             <A />
           </Suspense>
@@ -963,7 +1029,78 @@ describe('ReactSuspenseList', () => {
 
     function Foo() {
       return (
-        <SuspenseList revealOrder="backwards">
+        <SuspenseList revealOrder="backwards" tail="visible">
+          <Suspense fallback={<Text text="Loading C" />}>
+            <C />
+          </Suspense>
+          <Suspense fallback={<Text text="Loading B" />}>
+            <B />
+          </Suspense>
+          <Suspense fallback={<Text text="Loading A" />}>
+            <A />
+          </Suspense>
+        </SuspenseList>
+      );
+    }
+
+    await A.resolve();
+
+    ReactNoop.render(<Foo />);
+
+    await waitForAll([
+      'Suspend! [C]',
+      'Loading C',
+      'Loading B',
+      'Loading A',
+      // pre-warming
+      'Suspend! [C]',
+    ]);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>Loading A</span>
+        <span>Loading B</span>
+        <span>Loading C</span>
+      </>,
+    );
+
+    await act(() => C.resolve());
+    assertLog([
+      'C',
+      'Suspend! [B]',
+      // pre-warming
+      'Suspend! [B]',
+    ]);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>Loading A</span>
+        <span>Loading B</span>
+        <span>C</span>
+      </>,
+    );
+
+    await act(() => B.resolve());
+    assertLog(['B', 'A']);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+        <span>C</span>
+      </>,
+    );
+  });
+
+  // @gate enableSuspenseList
+  it('displays each items in "backwards" order (legacy)', async () => {
+    const A = createAsyncText('A');
+    const B = createAsyncText('B');
+    const C = createAsyncText('C');
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
           <Suspense fallback={<Text text="Loading A" />}>
             <A />
           </Suspense>
@@ -1037,7 +1174,7 @@ describe('ReactSuspenseList', () => {
 
     function Foo({items}) {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           {items.map(([key, Component]) => (
             <Suspense key={key} fallback={<Text text={'Loading ' + key} />}>
               <Component />
@@ -1222,7 +1359,7 @@ describe('ReactSuspenseList', () => {
 
     function Foo({items}) {
       return (
-        <SuspenseList revealOrder="backwards">
+        <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
           {items.map(([key, Component]) => (
             <Suspense key={key} fallback={<Text text={'Loading ' + key} />}>
               <Component />
@@ -1400,7 +1537,7 @@ describe('ReactSuspenseList', () => {
   it('switches to rendering fallbacks if the tail takes long CPU time', async () => {
     function Foo() {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           <Suspense fallback={<Text text="Loading A" />}>
             <Text text="A" />
           </Suspense>
@@ -1536,6 +1673,68 @@ describe('ReactSuspenseList', () => {
   });
 
   // @gate enableSuspenseList
+  it('behaves as tail=hidden if no tail option is specified', async () => {
+    const A = createAsyncText('A');
+    const B = createAsyncText('B');
+    const C = createAsyncText('C');
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="forwards">
+          <Suspense fallback={<Text text="Loading A" />}>
+            <A />
+          </Suspense>
+          <Suspense fallback={<Text text="Loading B" />}>
+            <B />
+          </Suspense>
+          <Suspense fallback={<Text text="Loading C" />}>
+            <C />
+          </Suspense>
+        </SuspenseList>
+      );
+    }
+
+    ReactNoop.render(<Foo />);
+
+    await waitForAll(['Suspend! [A]', 'Loading A']);
+
+    expect(ReactNoop).toMatchRenderedOutput(null);
+
+    await A.resolve();
+
+    await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
+
+    await act(() => B.resolve());
+    assertLog(['B', 'Suspend! [C]', 'Loading C']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+      </>,
+    );
+
+    await act(() => C.resolve());
+    assertLog(['C']);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+        <span>C</span>
+      </>,
+    );
+  });
+
+  // @gate enableSuspenseList
   it('warns if an unsupported tail option is used', async () => {
     function Foo() {
       return (
@@ -1551,7 +1750,7 @@ describe('ReactSuspenseList', () => {
     });
     assertConsoleErrorDev([
       '"collapse" is not a supported value for tail on ' +
-        '<SuspenseList />. Did you mean "collapsed" or "hidden"?' +
+        '<SuspenseList />. Did you mean "visible", "collapsed" or "hidden"?' +
         '\n    in SuspenseList (at **)' +
         '\n    in Foo (at **)',
     ]);
@@ -1572,7 +1771,7 @@ describe('ReactSuspenseList', () => {
     });
     assertConsoleErrorDev([
       '<SuspenseList tail="collapsed" /> is only valid if ' +
-        'revealOrder is "forwards" or "backwards". ' +
+        'revealOrder is "forwards" (default) or "backwards". ' +
         'Did you mean to specify revealOrder="forwards"?' +
         '\n    in SuspenseList (at **)' +
         '\n    in Foo (at **)',
@@ -1796,7 +1995,7 @@ describe('ReactSuspenseList', () => {
 
     function Foo({items}) {
       return (
-        <SuspenseList revealOrder="backwards" tail="collapsed">
+        <SuspenseList revealOrder="unstable_legacy-backwards" tail="collapsed">
           {items.map(([key, Component]) => (
             <Suspense key={key} fallback={<Text text={'Loading ' + key} />}>
               <Component />
@@ -2148,13 +2347,234 @@ describe('ReactSuspenseList', () => {
   });
 
   // @gate enableSuspenseList
+  it('reveals "hidden" rows one by one without suspense boundaries', async () => {
+    const A = createAsyncText('A');
+    const B = createAsyncText('B');
+    const C = createAsyncText('C');
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="forwards" tail="hidden">
+          <div>
+            <A />
+          </div>
+          <B />
+          <C />
+        </SuspenseList>
+      );
+    }
+
+    ReactNoop.render(
+      <Suspense fallback="Loading root">
+        <Foo />
+      </Suspense>,
+    );
+
+    await waitForAll(['Suspend! [A]']);
+
+    // We can commit without any rows at all leaving empty.
+    expect(ReactNoop).toMatchRenderedOutput(null);
+
+    await act(() => A.resolve());
+    assertLog(['A', 'Suspend! [B]']);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <div>
+        <span>A</span>
+      </div>,
+    );
+
+    await act(() => B.resolve());
+    assertLog(['B', 'Suspend! [C]']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <div>
+          <span>A</span>
+        </div>
+        <span>B</span>
+      </>,
+    );
+
+    await act(() => C.resolve());
+    assertLog(['C']);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <div>
+          <span>A</span>
+        </div>
+        <span>B</span>
+        <span>C</span>
+      </>,
+    );
+  });
+
+  // @gate enableSuspenseList
+  it('preserves already mounted rows when a new hidden on is inserted in the tail', async () => {
+    const B = createAsyncText('B');
+    const C = createAsyncText('C');
+
+    let count = 0;
+    function MountCount({children}) {
+      // This component should only mount once.
+      React.useLayoutEffect(() => {
+        count++;
+      }, []);
+      return children;
+    }
+
+    function Foo({insert}) {
+      return (
+        <SuspenseList
+          revealOrder="forwards"
+          tail={insert ? 'hidden' : 'visible'}>
+          <Text text="A" />
+          {insert ? <B /> : null}
+          <MountCount>
+            <Suspense fallback={<Text text="Loading C" />}>
+              <C />
+            </Suspense>
+          </MountCount>
+        </SuspenseList>
+      );
+    }
+
+    await act(() => {
+      ReactNoop.render(<Foo insert={false} />);
+    });
+    assertLog(['A', 'Suspend! [C]', 'Loading C', 'Suspend! [C]']);
+
+    expect(count).toBe(1);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>Loading C</span>
+      </>,
+    );
+
+    await act(() => {
+      ReactNoop.render(<Foo insert={true} />);
+    });
+
+    assertLog(['A', 'Suspend! [B]', 'A', 'Suspend! [B]']);
+
+    expect(count).toBe(1);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>Loading C</span>
+      </>,
+    );
+
+    await act(async () => {
+      await B.resolve();
+      await C.resolve();
+    });
+
+    assertLog(['A', 'B', 'C']);
+
+    expect(count).toBe(1);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+        <span>C</span>
+      </>,
+    );
+  });
+
+  // @gate enableSuspenseList
+  it('reveals "collapsed" rows one by one after the first without boundaries', async () => {
+    const A = createAsyncText('A');
+    const B = createAsyncText('B');
+    const C = createAsyncText('C');
+
+    function Foo() {
+      return (
+        <SuspenseList revealOrder="forwards" tail="collapsed">
+          <A />
+          <Suspense fallback={<Text text="Loading B" />}>
+            <B />
+          </Suspense>
+          <C />
+        </SuspenseList>
+      );
+    }
+
+    await act(async () => {
+      ReactNoop.render(
+        <Suspense fallback="Loading root">
+          <Foo />
+        </Suspense>,
+      );
+      await waitForAll(['Suspend! [A]', 'Suspend! [A]']);
+    });
+
+    // The root is still blocked on the first row.
+    expect(ReactNoop).toMatchRenderedOutput('Loading root');
+
+    await A.resolve();
+
+    await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    // Because we have a Suspense boundary that can commit we can now unblock the rest.
+    // If it wasn't a boundary then we couldn't make progress because it would commit
+    // without any loading state.
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>Loading B</span>
+      </>,
+    );
+
+    await act(() => B.resolve());
+    assertLog(['B', 'Suspend! [C]', 'B', 'Suspend! [C]']);
+
+    // Incremental loading is suspended.
+    jest.advanceTimersByTime(500);
+
+    // Surprisingly unsuspending B actually causes the parent to resuspend
+    // because C is now unblocked which resuspends the parent. Preventing the
+    // Retry from committing. That's because we don't want to commit into a
+    // state that doesn't have any loading indicators at all. That's what
+    // "collapsed" is for. To ensure there's always a loading indicator.
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>Loading B</span>
+      </>,
+    );
+
+    await act(() => C.resolve());
+    assertLog(['B', 'C']);
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      <>
+        <span>A</span>
+        <span>B</span>
+        <span>C</span>
+      </>,
+    );
+  });
+
+  // @gate enableSuspenseList
   it('eventually resolves a nested forwards suspense list', async () => {
     const B = createAsyncText('B');
 
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
-          <SuspenseList revealOrder="forwards">
+          <SuspenseList revealOrder="forwards" tail="visible">
             <Suspense fallback={<Text text="Loading A" />}>
               <Text text="A" />
             </Suspense>
@@ -2255,7 +2675,7 @@ describe('ReactSuspenseList', () => {
 
     function Foo({showB}) {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           <SuspenseList revealOrder="forwards" tail="hidden">
             <Suspense fallback={<Text text="Loading A" />}>
               <Text text="A" />
@@ -2321,7 +2741,7 @@ describe('ReactSuspenseList', () => {
     function Foo() {
       return (
         <div>
-          <SuspenseList revealOrder="forwards">
+          <SuspenseList revealOrder="forwards" tail="visible">
             <Text text="A" />
             <Text text="B" />
           </SuspenseList>
@@ -2673,7 +3093,7 @@ describe('ReactSuspenseList', () => {
     function App() {
       Scheduler.log('App');
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           <Suspense fallback={<Text text="Loading A" />}>
             <Sleep time={600}>
               <TwoPass text="A" />
@@ -2760,7 +3180,7 @@ describe('ReactSuspenseList', () => {
       Scheduler.log('App');
       return (
         <Profiler id="root" onRender={onRender}>
-          <SuspenseList revealOrder="forwards">
+          <SuspenseList revealOrder="forwards" tail="visible">
             <Suspense fallback={<Fallback />}>
               <Sleep time={1}>
                 <A />
@@ -2936,7 +3356,7 @@ describe('ReactSuspenseList', () => {
       // Several layers of Bailout wrappers help verify we're
       // marking updates all the way to the propagation root.
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           <Bailout>
             <Bailout>
               <Bailout>
@@ -3029,7 +3449,7 @@ describe('ReactSuspenseList', () => {
 
       function Repro({update}) {
         return (
-          <SuspenseList revealOrder="forwards">
+          <SuspenseList revealOrder="forwards" tail="visible">
             {update && (
               <Suspense fallback={<Text text="Loading A..." />}>
                 <A />
@@ -3128,7 +3548,7 @@ describe('ReactSuspenseList', () => {
     }
     function Foo() {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           <Generator />
         </SuspenseList>
       );
@@ -3184,7 +3604,11 @@ describe('ReactSuspenseList', () => {
     };
 
     function Foo() {
-      return <SuspenseList revealOrder="forwards">{iterable}</SuspenseList>;
+      return (
+        <SuspenseList revealOrder="forwards" tail="visible">
+          {iterable}
+        </SuspenseList>
+      );
     }
 
     await act(() => {
@@ -3270,7 +3694,7 @@ describe('ReactSuspenseList', () => {
   it('warns if a nested async iterable is passed to a "forwards" list', async () => {
     function Foo({items}) {
       return (
-        <SuspenseList revealOrder="forwards">
+        <SuspenseList revealOrder="forwards" tail="visible">
           {items}
           <div>Tail</div>
         </SuspenseList>

@@ -38,13 +38,11 @@ function useHook(props) {
         return props;
       },
     };
-
     const y = {
       getY() {
         return "y";
       },
     };
-
     t0 = setProperty(x, y);
     $[0] = props;
     $[1] = t0;

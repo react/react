@@ -13,7 +13,7 @@ import type {LazyComponent} from 'react/src/ReactLazy';
 // TODO: Consider marking the whole bundle instead of these boundaries.
 
 const callComponent = {
-  'react-stack-bottom-frame': function <Props, Arg, R>(
+  react_stack_bottom_frame: function <Props, Arg, R>(
     Component: (p: Props, arg: Arg) => R,
     props: Props,
     secondArg: Arg,
@@ -28,15 +28,15 @@ export const callComponentInDEV: <Props, Arg, R>(
   secondArg: Arg,
 ) => R = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callComponent['react-stack-bottom-frame'].bind(callComponent): any)
-  : (null: any);
+    (callComponent.react_stack_bottom_frame.bind(callComponent) as any)
+  : (null as any);
 
 interface ClassInstance<R> {
   render(): R;
 }
 
 const callRender = {
-  'react-stack-bottom-frame': function <R>(instance: ClassInstance<R>): R {
+  react_stack_bottom_frame: function <R>(instance: ClassInstance<R>): R {
     return instance.render();
   },
 };
@@ -44,11 +44,11 @@ const callRender = {
 export const callRenderInDEV: <R>(instance: ClassInstance<R>) => R => R =
   __DEV__
     ? // We use this technique to trick minifiers to preserve the function name.
-      (callRender['react-stack-bottom-frame'].bind(callRender): any)
-    : (null: any);
+      (callRender.react_stack_bottom_frame.bind(callRender) as any)
+    : (null as any);
 
 const callLazyInit = {
-  'react-stack-bottom-frame': function (lazy: LazyComponent<any, any>): any {
+  react_stack_bottom_frame: function (lazy: LazyComponent<any, any>): any {
     const payload = lazy._payload;
     const init = lazy._init;
     return init(payload);
@@ -57,5 +57,5 @@ const callLazyInit = {
 
 export const callLazyInitInDEV: (lazy: LazyComponent<any, any>) => any = __DEV__
   ? // We use this technique to trick minifiers to preserve the function name.
-    (callLazyInit['react-stack-bottom-frame'].bind(callLazyInit): any)
-  : (null: any);
+    (callLazyInit.react_stack_bottom_frame.bind(callLazyInit) as any)
+  : (null as any);

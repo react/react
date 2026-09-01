@@ -51,28 +51,23 @@ export function Component(t0) {
   const $ = _c(27);
   const { a, b } = t0;
   let t1;
-  let t2;
   if ($[0] !== a) {
-    t2 = { a };
+    t1 = { a };
     $[0] = a;
-    $[1] = t2;
+    $[1] = t1;
   } else {
-    t2 = $[1];
+    t1 = $[1];
   }
-  t1 = t2;
   const item1 = t1;
-  let t3;
-  let t4;
+  let t2;
   if ($[2] !== b) {
-    t4 = { b };
+    t2 = { b };
     $[2] = b;
-    $[3] = t4;
+    $[3] = t2;
   } else {
-    t4 = $[3];
+    t2 = $[3];
   }
-  t3 = t4;
-  const item2 = t3;
-  let t5;
+  const item2 = t2;
   let items;
   if ($[4] !== item1 || $[5] !== item2) {
     items = [];
@@ -84,77 +79,76 @@ export function Component(t0) {
   } else {
     items = $[6];
   }
-  t5 = items;
-  const items_0 = t5;
-  let t6;
+  const items_0 = items;
+  let t3;
   if ($[7] !== a) {
-    t6 = [a];
+    t3 = [a];
     $[7] = a;
-    $[8] = t6;
+    $[8] = t3;
   } else {
-    t6 = $[8];
+    t3 = $[8];
+  }
+  let t4;
+  if ($[9] !== items_0[0] || $[10] !== t3) {
+    t4 = <ValidateMemoization inputs={t3} output={items_0[0]} />;
+    $[9] = items_0[0];
+    $[10] = t3;
+    $[11] = t4;
+  } else {
+    t4 = $[11];
+  }
+  let t5;
+  if ($[12] !== b) {
+    t5 = [b];
+    $[12] = b;
+    $[13] = t5;
+  } else {
+    t5 = $[13];
+  }
+  let t6;
+  if ($[14] !== items_0[1] || $[15] !== t5) {
+    t6 = <ValidateMemoization inputs={t5} output={items_0[1]} />;
+    $[14] = items_0[1];
+    $[15] = t5;
+    $[16] = t6;
+  } else {
+    t6 = $[16];
   }
   let t7;
-  if ($[9] !== items_0[0] || $[10] !== t6) {
-    t7 = <ValidateMemoization inputs={t6} output={items_0[0]} />;
-    $[9] = items_0[0];
-    $[10] = t6;
-    $[11] = t7;
-  } else {
-    t7 = $[11];
-  }
-  let t8;
-  if ($[12] !== b) {
-    t8 = [b];
-    $[12] = b;
-    $[13] = t8;
-  } else {
-    t8 = $[13];
-  }
-  let t9;
-  if ($[14] !== items_0[1] || $[15] !== t8) {
-    t9 = <ValidateMemoization inputs={t8} output={items_0[1]} />;
-    $[14] = items_0[1];
-    $[15] = t8;
-    $[16] = t9;
-  } else {
-    t9 = $[16];
-  }
-  let t10;
   if ($[17] !== a || $[18] !== b) {
-    t10 = [a, b];
+    t7 = [a, b];
     $[17] = a;
     $[18] = b;
-    $[19] = t10;
+    $[19] = t7;
   } else {
-    t10 = $[19];
+    t7 = $[19];
   }
-  let t11;
-  if ($[20] !== items_0 || $[21] !== t10) {
-    t11 = <ValidateMemoization inputs={t10} output={items_0} />;
+  let t8;
+  if ($[20] !== items_0 || $[21] !== t7) {
+    t8 = <ValidateMemoization inputs={t7} output={items_0} />;
     $[20] = items_0;
-    $[21] = t10;
-    $[22] = t11;
+    $[21] = t7;
+    $[22] = t8;
   } else {
-    t11 = $[22];
+    t8 = $[22];
   }
-  let t12;
-  if ($[23] !== t11 || $[24] !== t7 || $[25] !== t9) {
-    t12 = (
+  let t9;
+  if ($[23] !== t4 || $[24] !== t6 || $[25] !== t8) {
+    t9 = (
       <>
-        {t7}
-        {t9}
-        {t11}
+        {t4}
+        {t6}
+        {t8}
       </>
     );
-    $[23] = t11;
-    $[24] = t7;
-    $[25] = t9;
-    $[26] = t12;
+    $[23] = t4;
+    $[24] = t6;
+    $[25] = t8;
+    $[26] = t9;
   } else {
-    t12 = $[26];
+    t9 = $[26];
   }
-  return t12;
+  return t9;
 }
 
 export const FIXTURE_ENTRYPOINT = {

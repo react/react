@@ -43,6 +43,7 @@ function foo(a, b, c, d) {
     }
     x = t0;
   }
+
   return x;
 }
 

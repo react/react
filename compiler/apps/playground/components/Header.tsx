@@ -10,14 +10,20 @@ import {CheckIcon} from '@heroicons/react/solid';
 import clsx from 'clsx';
 import Link from 'next/link';
 import {useSnackbar} from 'notistack';
-import {useState} from 'react';
+import {
+  useState,
+  startTransition,
+  unstable_addTransitionType as addTransitionType,
+} from 'react';
 import {defaultStore} from '../lib/defaultStore';
 import {IconGitHub} from './Icons/IconGitHub';
 import Logo from './Logo';
-import {useStoreDispatch} from './StoreContext';
+import {useStore, useStoreDispatch} from './StoreContext';
+import {TOGGLE_INTERNALS_TRANSITION} from '../lib/transitionTypes';
 
 export default function Header(): JSX.Element {
   const [showCheck, setShowCheck] = useState(false);
+  const store = useStore();
   const dispatchStore = useStoreDispatch();
   const {enqueueSnackbar, closeSnackbar} = useSnackbar();
 
@@ -56,6 +62,32 @@ export default function Header(): JSX.Element {
         <p className="hidden select-none sm:block">React Compiler Playground</p>
       </div>
       <div className="flex items-center text-[15px] gap-4">
+        <div className="flex items-center gap-2">
+          <label className="show-internals relative inline-block w-[34px] h-5">
+            <input
+              type="checkbox"
+              checked={store.showInternals}
+              onChange={() =>
+                startTransition(() => {
+                  addTransitionType(TOGGLE_INTERNALS_TRANSITION);
+                  dispatchStore({type: 'toggleInternals'});
+                })
+              }
+              className="absolute opacity-0 cursor-pointer h-full w-full m-0"
+            />
+            <span
+              className={clsx(
+                'absolute inset-0 rounded-full cursor-pointer transition-all duration-250',
+                "before:content-[''] before:absolute before:w-4 before:h-4 before:left-0.5 before:bottom-0.5",
+                'before:bg-white before:rounded-full before:transition-transform before:duration-250',
+                'focus-within:shadow-[0_0_1px_#2196F3]',
+                store.showInternals
+                  ? 'bg-link before:translate-x-3.5'
+                  : 'bg-gray-300',
+              )}></span>
+          </label>
+          <span className="text-secondary">Show Internals</span>
+        </div>
         <button
           title="Reset Playground"
           aria-label="Reset Playground"

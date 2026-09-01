@@ -11,7 +11,11 @@ import type {
   Thenable,
   FulfilledThenable,
   RejectedThenable,
+  ReactDebugInfo,
+  ReactIOInfo,
+  ReactAsyncInfo,
 } from 'shared/ReactTypes';
+
 import type {ModuleLoading} from 'react-client/src/ReactFlightClientConfig';
 
 export type ServerConsumerModuleMap = string; // Module root path
@@ -91,12 +95,12 @@ export function preloadModule<T>(
     modulePromise.then(
       value => {
         const fulfilledThenable: FulfilledThenable<mixed> =
-          (modulePromise: any);
+          modulePromise as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = value;
       },
       reason => {
-        const rejectedThenable: RejectedThenable<mixed> = (modulePromise: any);
+        const rejectedThenable: RejectedThenable<mixed> = modulePromise as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = reason;
       },
@@ -117,4 +121,94 @@ export function requireModule<T>(metadata: ClientReference<T>): T {
     throw promise.reason;
   }
   return moduleExports[metadata.name];
+}
+
+// We cache ReactIOInfo across requests so that inner refreshes can dedupe with outer.
+const moduleIOInfoCache: Map<string, ReactIOInfo> = __DEV__
+  ? new Map()
+  : (null as any);
+
+export function getModuleDebugInfo<T>(
+  metadata: ClientReference<T>,
+): null | ReactDebugInfo {
+  if (!__DEV__) {
+    return null;
+  }
+  const filename = metadata.specifier;
+  let ioInfo = moduleIOInfoCache.get(filename);
+  if (ioInfo === undefined) {
+    let href;
+    try {
+      // $FlowFixMe[incompatible-type]
+      href = new URL(filename, document.baseURI).href;
+    } catch (_) {
+      href = filename;
+    }
+    let start = -1;
+    let end = -1;
+    let byteSize = 0;
+    // $FlowFixMe[method-unbinding]
+    if (typeof performance.getEntriesByType === 'function') {
+      // We may be able to collect the start and end time of this resource from Performance Observer.
+      const resourceEntries = performance.getEntriesByType('resource');
+      for (let i = 0; i < resourceEntries.length; i++) {
+        const resourceEntry = resourceEntries[i];
+        if (resourceEntry.name === href) {
+          start = resourceEntry.startTime;
+          end = start + resourceEntry.duration;
+          // $FlowFixMe[prop-missing]
+          byteSize = (resourceEntry.transferSize as any) || 0;
+        }
+      }
+    }
+    const value = Promise.resolve(href);
+    // $FlowFixMe[prop-missing]
+    value.status = 'fulfilled';
+    // Is there some more useful representation for the chunk?
+    // $FlowFixMe[prop-missing]
+    value.value = href;
+    // Create a fake stack frame that points to the beginning of the chunk. This is
+    // probably not source mapped so will link to the compiled source rather than
+    // any individual file that goes into the chunks.
+    const fakeStack = new Error('react-stack-top-frame');
+    if (fakeStack.stack.startsWith('Error: react-stack-top-frame')) {
+      // Looks like V8
+      fakeStack.stack =
+        'Error: react-stack-top-frame\n' +
+        // Add two frames since we always trim one off the top.
+        '    at Client Component Bundle (' +
+        href +
+        ':1:1)\n' +
+        '    at Client Component Bundle (' +
+        href +
+        ':1:1)';
+    } else {
+      // Looks like Firefox or Safari.
+      // Add two frames since we always trim one off the top.
+      fakeStack.stack =
+        'Client Component Bundle@' +
+        href +
+        ':1:1\n' +
+        'Client Component Bundle@' +
+        href +
+        ':1:1';
+    }
+    ioInfo = {
+      name: 'script',
+      start: start,
+      end: end,
+      value: value,
+      debugStack: fakeStack,
+    } as ReactIOInfo;
+    if (byteSize > 0) {
+      // $FlowFixMe[cannot-write]
+      ioInfo.byteSize = byteSize;
+    }
+    moduleIOInfoCache.set(filename, ioInfo);
+  }
+  // We could dedupe the async info too but conceptually each request is its own await.
+  const asyncInfo: ReactAsyncInfo = {
+    awaited: ioInfo,
+  };
+  return [asyncInfo];
 }

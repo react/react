@@ -53,7 +53,7 @@ describe('ReactInteractionTracing', () => {
     useState = React.useState;
     startTransition = React.startTransition;
     Suspense = React.Suspense;
-    Activity = React.unstable_Activity;
+    Activity = React.Activity;
 
     getCacheForType = React.unstable_getCacheForType;
 

@@ -22,28 +22,20 @@ function Component(props) {
 ```javascript
 import { c as _c } from "react/compiler-runtime";
 function Component(props) {
-  const $ = _c(4);
+  const $ = _c(2);
   const id = useSelectedEntitytId();
   let t0;
   if ($[0] !== id) {
-    t0 = () => {
+    const onLoad = () => {
       log(id);
     };
+    t0 = <Foo onLoad={onLoad} />;
     $[0] = id;
     $[1] = t0;
   } else {
     t0 = $[1];
   }
-  const onLoad = t0;
-  let t1;
-  if ($[2] !== onLoad) {
-    t1 = <Foo onLoad={onLoad} />;
-    $[2] = onLoad;
-    $[3] = t1;
-  } else {
-    t1 = $[3];
-  }
-  return t1;
+  return t0;
 }
 
 ```

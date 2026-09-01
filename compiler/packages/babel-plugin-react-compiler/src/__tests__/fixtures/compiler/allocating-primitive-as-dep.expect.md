@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 // bar(props.b) is an allocating expression that produces a primitive, which means
 // that Forget should memoize it.
 // Correctness:
@@ -16,7 +17,8 @@ function AllocatingPrimitiveAsDep(props) {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // bar(props.b) is an allocating expression that produces a primitive, which means
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
+// bar(props.b) is an allocating expression that produces a primitive, which means
 // that Forget should memoize it.
 // Correctness:
 //   - y depends on either bar(props.b) or bar(props.b) + 1

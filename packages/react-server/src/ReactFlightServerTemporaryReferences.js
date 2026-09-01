@@ -32,7 +32,7 @@ export function resolveTemporaryReference<T>(
   return temporaryReferences.get(temporaryReference);
 }
 
-const proxyHandlers = {
+const proxyHandlers: Proxy$traps<mixed> = {
   get: function (
     target: Function,
     name: string | symbol,
@@ -52,6 +52,9 @@ const proxyHandlers = {
       // reference.
       case 'defaultProps':
         return undefined;
+      // React looks for debugInfo on thenables.
+      case '_debugInfo':
+        return undefined;
       // Avoid this attempting to be serialized.
       case 'toJSON':
         return undefined;
@@ -62,11 +65,17 @@ const proxyHandlers = {
         // $FlowFixMe[prop-missing]
         return Object.prototype[Symbol.toStringTag];
       case 'Provider':
-        throw new Error(
-          `Cannot render a Client Context Provider on the Server. ` +
-            `Instead, you can export a Client Component wrapper ` +
-            `that itself renders a Client Context Provider.`,
-        );
+        // Context.Provider === Context in React, so return the same reference.
+        // This allows server components to render <ClientContext.Provider>
+        // which will be serialized and executed on the client.
+        return receiver;
+      case 'then':
+        // Allow returning a temporary reference from an async function
+        // Unlike regular Client References, a Promise would never have been serialized as
+        // an opaque Temporary Reference, but instead would have been serialized as a
+        // Promise on the server and so doesn't hit this path. So we can assume this wasn't
+        // a Promise on the client.
+        return undefined;
     }
     throw new Error(
       // eslint-disable-next-line react-internal/safe-string-coercion
@@ -87,13 +96,13 @@ export function createTemporaryReference<T>(
   id: string,
 ): TemporaryReference<T> {
   const reference: TemporaryReference<any> = Object.defineProperties(
-    (function () {
+    function () {
       throw new Error(
         `Attempted to call a temporary Client Reference from the server but it is on the client. ` +
           `It's not possible to invoke a client function from the server, it can ` +
           `only be rendered as a Component or passed to props of a Client Component.`,
       );
-    }: any),
+    } as any,
     {
       $$typeof: {value: TEMPORARY_REFERENCE_TAG},
     },

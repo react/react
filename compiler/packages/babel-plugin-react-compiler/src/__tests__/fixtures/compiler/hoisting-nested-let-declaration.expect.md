@@ -36,13 +36,10 @@ function hoisting() {
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const qux = () => {
       let result;
-
       result = foo();
       return result;
     };
-
     let foo = () => bar + baz;
-
     let bar = 3;
     const baz = 2;
     t0 = qux();

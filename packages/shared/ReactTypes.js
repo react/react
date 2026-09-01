@@ -7,6 +7,12 @@
  * @flow
  */
 
+import type {ReactOptimisticKey} from './ReactSymbols';
+
+export type {ReactOptimisticKey};
+
+export type ReactKey = null | string | ReactOptimisticKey;
+
 export type ReactNode =
   | React$Element<any>
   | ReactPortal
@@ -26,7 +32,7 @@ export type ReactText = string | number;
 export type ReactProvider<T> = {
   $$typeof: symbol | number,
   type: ReactContext<T>,
-  key: null | string,
+  key: ReactKey,
   ref: null,
   props: {
     value: T,
@@ -42,7 +48,7 @@ export type ReactConsumerType<T> = {
 export type ReactConsumer<T> = {
   $$typeof: symbol | number,
   type: ReactConsumerType<T>,
-  key: null | string,
+  key: ReactKey,
   ref: null,
   props: {
     children: (value: T) => ReactNodeList,
@@ -66,7 +72,7 @@ export type ReactContext<T> = {
 
 export type ReactPortal = {
   $$typeof: symbol | number,
-  key: null | string,
+  key: ReactKey,
   containerInfo: any,
   children: ReactNodeList,
   // TODO: figure out the API for cross-renderer implementation.
@@ -108,6 +114,7 @@ interface ThenableImpl<T> {
     onFulfill: (value: T) => mixed,
     onReject: (error: mixed) => mixed,
   ): void | Wakeable;
+  displayName?: string;
 }
 interface UntrackedThenable<T> extends ThenableImpl<T> {
   status?: void;
@@ -116,6 +123,11 @@ interface UntrackedThenable<T> extends ThenableImpl<T> {
 
 export interface PendingThenable<T> extends ThenableImpl<T> {
   status: 'pending';
+  _debugInfo?: null | ReactDebugInfo;
+}
+
+export interface WeakPendingThenable<T> extends ThenableImpl<T> {
+  status: 'pending_weak';
   _debugInfo?: null | ReactDebugInfo;
 }
 
@@ -134,14 +146,26 @@ export interface RejectedThenable<T> extends ThenableImpl<T> {
 export type Thenable<T> =
   | UntrackedThenable<T>
   | PendingThenable<T>
+  | WeakPendingThenable<T>
   | FulfilledThenable<T>
   | RejectedThenable<T>;
+
+export type ReactRecoverableReason = string | (() => mixed);
+
+// A recoverable lets an intermediate renderer defer a subtree to a downstream
+// renderer. It does not produce a value: a renderer either continues through
+// it or interrupts the current render so that a later renderer can recover the
+// subtree. The reason is initialized only by a renderer that defers the work.
+export type ReactRecoverable = {
+  $$typeof: symbol,
+  _reason: ReactRecoverableReason | void,
+};
 
 export type StartTransitionOptions = {
   name?: string,
 };
 
-export type Usable<T> = Thenable<T> | ReactContext<T>;
+export type Usable<T> = Thenable<T> | ReactContext<T> | ReactRecoverable;
 
 export type ReactCustomFormAction = {
   name?: string,
@@ -188,6 +212,7 @@ export type ReactCallSite = [
   number, // column number
   number, // enclosing line number
   number, // enclosing column number
+  boolean, // async resume
 ];
 
 export type ReactStackTrace = Array<ReactCallSite>;
@@ -202,13 +227,14 @@ export type ReactFunctionLocation = [
 export type ReactComponentInfo = {
   +name: string,
   +env?: string,
-  +key?: null | string,
+  +key?: ReactKey,
   +owner?: null | ReactComponentInfo,
   +stack?: null | ReactStackTrace,
   +props?: null | {[name: string]: mixed},
   // Stashed Data for the Specific Execution Environment. Not part of the transport protocol
   +debugStack?: null | Error,
   +debugTask?: null | ConsoleTask,
+  debugLocation?: null | Error,
 };
 
 export type ReactEnvironmentInfo = {
@@ -219,31 +245,63 @@ export type ReactErrorInfoProd = {
   +digest: string,
 };
 
+export type JSONValue =
+  | string
+  | boolean
+  | number
+  | null
+  | {+[key: string]: JSONValue}
+  | $ReadOnlyArray<JSONValue>;
+
 export type ReactErrorInfoDev = {
   +digest?: string,
   +name: string,
   +message: string,
   +stack: ReactStackTrace,
   +env: string,
+  +owner?: null | string,
+  cause?: JSONValue,
+  errors?: JSONValue,
 };
 
 export type ReactErrorInfo = ReactErrorInfoProd | ReactErrorInfoDev;
 
-export type ReactAsyncInfo = {
-  +type: string,
+// The point where the Async Info started which might not be the same place it was awaited.
+export type ReactIOInfo = {
+  +name: string, // the name of the async function being called (e.g. "fetch")
+  +start: number, // the start time
+  +end: number, // the end time (this might be different from the time the await was unblocked)
+  +byteSize?: number, // the byte size of this resource across the network. (should only be included if affecting the client.)
+  +value?: null | Promise<mixed>, // the Promise that was awaited if any, may be rejected
+  +env?: string, // the environment where this I/O was spawned.
+  +owner?: null | ReactComponentInfo,
+  +stack?: null | ReactStackTrace,
   // Stashed Data for the Specific Execution Environment. Not part of the transport protocol
   +debugStack?: null | Error,
   +debugTask?: null | ConsoleTask,
+};
+
+export type ReactAsyncInfo = {
+  +awaited: ReactIOInfo,
+  +env?: string, // the environment where this was awaited. This might not be the same as where it was spawned.
+  +owner?: null | ReactComponentInfo,
   +stack?: null | ReactStackTrace,
+  // Stashed Data for the Specific Execution Environment. Not part of the transport protocol
+  +debugStack?: null | Error,
+  +debugTask?: null | ConsoleTask,
 };
 
 export type ReactTimeInfo = {
   +time: number, // performance.now
 };
 
-export type ReactDebugInfo = Array<
-  ReactComponentInfo | ReactEnvironmentInfo | ReactAsyncInfo | ReactTimeInfo,
->;
+export type ReactDebugInfoEntry =
+  | ReactComponentInfo
+  | ReactEnvironmentInfo
+  | ReactAsyncInfo
+  | ReactTimeInfo;
+
+export type ReactDebugInfo = Array<ReactDebugInfoEntry>;
 
 // Intrinsic ViewTransitionInstance. This type varies by Environment whether a particular
 // renderer supports it.
@@ -259,6 +317,11 @@ export type ViewTransitionClass =
   | string
   | ViewTransitionClassPerType;
 
+export type GestureOptionsRequired = {
+  rangeStart: number,
+  rangeEnd: number,
+};
+
 export type ViewTransitionProps = {
   name?: string,
   children?: ReactNodeList,
@@ -267,15 +330,74 @@ export type ViewTransitionProps = {
   exit?: ViewTransitionClass,
   share?: ViewTransitionClass,
   update?: ViewTransitionClass,
-  onEnter?: (instance: ViewTransitionInstance, types: Array<string>) => void,
-  onExit?: (instance: ViewTransitionInstance, types: Array<string>) => void,
-  onShare?: (instance: ViewTransitionInstance, types: Array<string>) => void,
-  onUpdate?: (instance: ViewTransitionInstance, types: Array<string>) => void,
+  parentEnter?: ViewTransitionClass,
+  parentExit?: ViewTransitionClass,
+  onEnter?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onExit?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentEnter?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentExit?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onShare?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onUpdate?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureEnter?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureExit?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentEnter?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentExit?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureShare?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureUpdate?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
 };
 
 export type ActivityProps = {
   mode?: 'hidden' | 'visible' | null | void,
   children?: ReactNodeList,
+  name?: string,
 };
 
 export type SuspenseProps = {
@@ -286,27 +408,39 @@ export type SuspenseProps = {
   suspenseCallback?: (Set<Wakeable> | null) => mixed,
 
   unstable_avoidThisFallback?: boolean,
-  unstable_expectedLoadTime?: number,
+  defer?: boolean,
   name?: string,
 };
 
 export type SuspenseListRevealOrder =
   | 'forwards'
   | 'backwards'
+  | 'unstable_legacy-backwards'
   | 'together'
+  | 'independent'
   | void;
 
-export type SuspenseListTailMode = 'collapsed' | 'hidden' | void;
+export type SuspenseListTailMode = 'visible' | 'collapsed' | 'hidden' | void;
+
+// A SuspenseList row cannot include a nested Array since it's an easy mistake to not realize it
+// is treated as a single row. A Fragment can be used to intentionally have multiple children as
+// a single row.
+type SuspenseListRow = Exclude<
+  ReactNodeList,
+  Iterable<React$Node> | AsyncIterable<React$Node>,
+>;
 
 type DirectionalSuspenseListProps = {
-  children?: ReactNodeList,
-  revealOrder: 'forwards' | 'backwards',
+  // Directional SuspenseList are defined by an array of children or multiple slots to JSX
+  // It does not allow a single element child.
+  children?: Iterable<SuspenseListRow> | AsyncIterable<SuspenseListRow>, // Note: AsyncIterable is experimental.
+  revealOrder: 'forwards' | 'backwards' | 'unstable_legacy-backwards',
   tail?: SuspenseListTailMode,
 };
 
 type NonDirectionalSuspenseListProps = {
   children?: ReactNodeList,
-  revealOrder?: 'together' | void,
+  revealOrder?: 'independent' | 'together' | void,
   tail?: void,
 };
 

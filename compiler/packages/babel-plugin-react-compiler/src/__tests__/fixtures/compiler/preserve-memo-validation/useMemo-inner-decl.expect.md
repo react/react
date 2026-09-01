@@ -30,25 +30,23 @@ import { identity } from "shared-runtime";
 function useFoo(data) {
   const $ = _c(4);
   let t0;
-  let t1;
   if ($[0] !== data.a) {
-    t1 = identity(data.a);
+    t0 = identity(data.a);
     $[0] = data.a;
-    $[1] = t1;
+    $[1] = t0;
   } else {
-    t1 = $[1];
+    t0 = $[1];
   }
-  const temp = t1;
-  let t2;
+  const temp = t0;
+  let t1;
   if ($[2] !== temp) {
-    t2 = { temp };
+    t1 = { temp };
     $[2] = temp;
-    $[3] = t2;
+    $[3] = t1;
   } else {
-    t2 = $[3];
+    t1 = $[3];
   }
-  t0 = t2;
-  return t0;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

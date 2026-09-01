@@ -72,3 +72,9 @@ export const SERVER_CONTEXT_DEFAULT_VALUE_NOT_LOADED_SYMBOL_STRING =
 export const REACT_MEMO_CACHE_SENTINEL: symbol = Symbol.for(
   'react.memo_cache_sentinel',
 );
+
+import type {ReactOptimisticKey} from 'shared/ReactTypes';
+
+export const REACT_OPTIMISTIC_KEY: ReactOptimisticKey = Symbol.for(
+  'react.optimistic_key',
+) as any;

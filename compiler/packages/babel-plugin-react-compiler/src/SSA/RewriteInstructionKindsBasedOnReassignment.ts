@@ -8,6 +8,7 @@
 import {CompilerError} from '../CompilerError';
 import {
   DeclarationId,
+  GeneratedSource,
   HIRFunction,
   InstructionKind,
   LValue,
@@ -102,7 +103,6 @@ export function rewriteInstructionKindsBasedOnReassignment(
                     place,
                   )}' is const`,
                   loc: place.loc,
-                  suggestions: null,
                 },
               );
               kind = InstructionKind.Const;
@@ -113,9 +113,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
               if (declaration === undefined) {
                 CompilerError.invariant(block.kind !== 'value', {
                   reason: `TODO: Handle reassignment in a value block where the original declaration was removed by dead code elimination (DCE)`,
-                  description: null,
                   loc: place.loc,
-                  suggestions: null,
                 });
                 declarations.set(place.identifier.declarationId, lvalue);
                 CompilerError.invariant(
@@ -126,7 +124,6 @@ export function rewriteInstructionKindsBasedOnReassignment(
                       place,
                     )}' is const`,
                     loc: place.loc,
-                    suggestions: null,
                   },
                 );
                 kind = InstructionKind.Const;
@@ -139,7 +136,6 @@ export function rewriteInstructionKindsBasedOnReassignment(
                       place,
                     )}' is reassigned`,
                     loc: place.loc,
-                    suggestions: null,
                   },
                 );
                 kind = InstructionKind.Reassign;
@@ -149,9 +145,7 @@ export function rewriteInstructionKindsBasedOnReassignment(
           }
           CompilerError.invariant(kind !== null, {
             reason: 'Expected at least one operand',
-            description: null,
-            loc: null,
-            suggestions: null,
+            loc: GeneratedSource,
           });
           lvalue.kind = kind;
           break;

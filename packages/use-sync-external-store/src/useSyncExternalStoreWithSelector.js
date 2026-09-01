@@ -23,8 +23,7 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
   selector: (snapshot: Snapshot) => Selection,
   isEqual?: (a: Selection, b: Selection) => boolean,
 ): Selection {
-  // Use this to track the rendered snapshot.
-  const instRef = useRef<
+  type Inst =
     | {
         hasValue: true,
         value: Selection,
@@ -32,10 +31,11 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
     | {
         hasValue: false,
         value: null,
-      }
-    | null,
-  >(null);
-  let inst;
+      };
+
+  // Use this to track the rendered snapshot.
+  const instRef = useRef<Inst | null>(null);
+  let inst: Inst;
   if (instRef.current === null) {
     inst = {
       hasValue: false,
@@ -77,8 +77,8 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(
       }
 
       // We may be able to reuse the previous invocation's result.
-      const prevSnapshot: Snapshot = (memoizedSnapshot: any);
-      const prevSelection: Selection = (memoizedSelection: any);
+      const prevSnapshot: Snapshot = memoizedSnapshot as any;
+      const prevSelection: Selection = memoizedSelection as any;
 
       if (is(prevSnapshot, nextSnapshot)) {
         // The snapshot is the same as last time. Reuse the previous selection.

@@ -18,10 +18,17 @@ function Component(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Error: This value cannot be modified
+
+Modifying a value returned from 'useState()', which should not be modified directly. Use the setter function to update instead.
+
+error.invalid-function-expression-mutates-immutable-value.ts:5:4
   3 |   const onChange = e => {
   4 |     // INVALID! should use copy-on-write and pass the new value
 > 5 |     x.value = e.target.value;
-    |     ^ InvalidReact: Mutating a value returned from 'useState()', which should not be mutated. Use the setter function to update instead. Found mutation of `x` (5:5)
+    |     ^ `x` cannot be modified
   6 |     setX(x);
   7 |   };
   8 |   return <input value={x.value} onChange={onChange} />;

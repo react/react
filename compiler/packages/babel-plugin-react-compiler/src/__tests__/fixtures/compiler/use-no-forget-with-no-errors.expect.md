@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @expectNothingCompiled
 function Component() {
   'use no forget';
   return <div>Hello World</div>;
@@ -18,6 +19,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
+// @expectNothingCompiled
 function Component() {
   "use no forget";
   return <div>Hello World</div>;

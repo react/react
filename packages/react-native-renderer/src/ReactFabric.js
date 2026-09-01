@@ -45,8 +45,11 @@ import {
   ReactFiberErrorDialog,
   createPublicRootInstance,
   type PublicRootInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
-import {disableLegacyMode} from 'shared/ReactFeatureFlags';
+} from 'react-native/react-private-interface';
+import {
+  disableLegacyMode,
+  enableDefaultTransitionIndicator,
+} from 'shared/ReactFeatureFlags';
 
 if (typeof ReactFiberErrorDialog.showErrorDialog !== 'function') {
   throw new Error(
@@ -78,7 +81,7 @@ function nativeOnCaughtError(
   error: mixed,
   errorInfo: {
     +componentStack?: ?string,
-    +errorBoundary?: ?React$Component<any, any>,
+    +errorBoundary?: ?component(...props: any),
   },
 ): void {
   const errorBoundary = errorInfo.errorBoundary;
@@ -132,6 +135,12 @@ function render(
     if (options && options.onRecoverableError !== undefined) {
       onRecoverableError = options.onRecoverableError;
     }
+    let onDefaultTransitionIndicator = nativeOnDefaultTransitionIndicator;
+    if (enableDefaultTransitionIndicator) {
+      if (options && options.onDefaultTransitionIndicator !== undefined) {
+        onDefaultTransitionIndicator = options.onDefaultTransitionIndicator;
+      }
+    }
 
     const publicRootInstance = createPublicRootInstance(containerTag);
     const rootInstance = {
@@ -142,6 +151,7 @@ function render(
     // TODO (bvaughn): If we decide to keep the wrapper component,
     // We could create a wrapper for containerTag as well to reduce special casing.
     root = createContainer(
+      // $FlowFixMe[incompatible-type]
       rootInstance,
       concurrentRoot ? ConcurrentRoot : LegacyRoot,
       null,
@@ -151,12 +161,13 @@ function render(
       onUncaughtError,
       onCaughtError,
       onRecoverableError,
-      nativeOnDefaultTransitionIndicator,
+      onDefaultTransitionIndicator,
       null,
     );
 
     roots.set(containerTag, root);
   }
+  // $FlowFixMe[incompatible-type]
   updateContainer(element, root, null, callback);
 
   return getPublicRootInstance(root);

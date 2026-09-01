@@ -14,7 +14,7 @@ function Component(props) {
     a.property = true;
     b.push(false);
   };
-  return <div onClick={f()} />;
+  return <div onClick={f} />;
 }
 
 export const FIXTURE_ENTRYPOINT = {

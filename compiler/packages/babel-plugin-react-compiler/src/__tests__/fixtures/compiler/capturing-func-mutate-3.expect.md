@@ -35,6 +35,7 @@ function component(a, b) {
     t0 = $[1];
   }
   const z = t0;
+
   return z;
 }
 

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enableForest
+// @enablePreserveExistingMemoizationGuarantees
 function Component({base, start, increment, test}) {
   let value = base;
   for (let i = start; i < test; i += increment) {
@@ -27,25 +27,23 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enableForest
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees
 function Component(t0) {
-  const $ = _c(5);
+  const $ = _c(2);
   const { base, start, increment, test } = t0;
-  let value;
-  if ($[0] !== base || $[1] !== increment || $[2] !== start || $[3] !== test) {
-    value = base;
-    for (let i = start; i < test; i = i + increment, i) {
-      value = value + i;
-    }
-    $[0] = base;
-    $[1] = increment;
-    $[2] = start;
-    $[3] = test;
-    $[4] = value;
-  } else {
-    value = $[4];
+  let value = base;
+  for (let i = start; i < test; i = i + increment, i) {
+    value = value + i;
   }
-  return <div>{value}</div>;
+  let t1;
+  if ($[0] !== value) {
+    t1 = <div>{value}</div>;
+    $[0] = value;
+    $[1] = t1;
+  } else {
+    t1 = $[1];
+  }
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

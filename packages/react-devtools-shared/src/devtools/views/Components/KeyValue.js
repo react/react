@@ -210,6 +210,13 @@ export default function KeyValue({
     canRenameTheCurrentPath = canRenamePathsAtDepth(depth);
   }
 
+  const hasChildren =
+    typeof value === 'object' &&
+    value !== null &&
+    (canEditValues ||
+      (isArray(value) && value.length > 0) ||
+      Object.entries(value).length > 0);
+
   let renderedName;
   if (isDirectChildOfAnArray) {
     if (canDeletePaths) {
@@ -218,27 +225,37 @@ export default function KeyValue({
       );
     } else {
       renderedName = (
-        <span className={styles.Name}>
+        <span
+          className={styles.Name}
+          onClick={isInspectable || hasChildren ? toggleIsOpen : null}>
           {name}
           {!!hookName && <span className={styles.HookName}>({hookName})</span>}
+          <span className={styles.AfterName}>:</span>
         </span>
       );
     }
   } else if (canRenameTheCurrentPath) {
     renderedName = (
-      <EditableName
-        allowEmpty={canDeletePaths}
-        className={styles.EditableName}
-        initialValue={name}
-        overrideName={renamePath}
-        path={path}
-      />
+      <>
+        <EditableName
+          allowEmpty={canDeletePaths}
+          className={styles.EditableName}
+          initialValue={name}
+          overrideName={renamePath}
+          path={path}
+        />
+        <span className={styles.AfterName}>:</span>
+      </>
     );
   } else {
     renderedName = (
-      <span className={styles.Name} data-testname="NonEditableName">
+      <span
+        className={styles.Name}
+        data-testname="NonEditableName"
+        onClick={isInspectable || hasChildren ? toggleIsOpen : null}>
         {name}
         {!!hookName && <span className={styles.HookName}>({hookName})</span>}
+        <span className={styles.AfterName}>:</span>
       </span>
     );
   }
@@ -286,7 +303,6 @@ export default function KeyValue({
           style={style}>
           <div className={styles.ExpandCollapseToggleSpacer} />
           {renderedName}
-          <div className={styles.AfterName}>:</div>
           {canEditValues ? (
             <EditableValue
               overrideValue={overrideValue}
@@ -328,7 +344,6 @@ export default function KeyValue({
           style={style}>
           <div className={styles.ExpandCollapseToggleSpacer} />
           {renderedName}
-          <div className={styles.AfterName}>:</div>
           <span
             className={styles.Link}
             onClick={() => {
@@ -365,7 +380,6 @@ export default function KeyValue({
             <div className={styles.ExpandCollapseToggleSpacer} />
           )}
           {renderedName}
-          <div className={styles.AfterName}>:</div>
           <span
             className={styles.Value}
             onClick={isInspectable ? toggleIsOpen : undefined}>
@@ -388,7 +402,6 @@ export default function KeyValue({
     }
   } else {
     if (isArray(value)) {
-      const hasChildren = value.length > 0 || canEditValues;
       const displayName = getMetaValueLabel(value);
 
       children = value.map((innerValue, index) => (
@@ -449,12 +462,11 @@ export default function KeyValue({
             ref={contextMenuTriggerRef}
             style={style}>
             {hasChildren ? (
-              <ExpandCollapseToggle isOpen={isOpen} setIsOpen={setIsOpen} />
+              <ExpandCollapseToggle isOpen={isOpen} setIsOpen={toggleIsOpen} />
             ) : (
               <div className={styles.ExpandCollapseToggleSpacer} />
             )}
             {renderedName}
-            <div className={styles.AfterName}>:</div>
             <span
               className={styles.Value}
               onClick={hasChildren ? toggleIsOpen : undefined}>
@@ -472,7 +484,6 @@ export default function KeyValue({
         entries.sort(alphaSortEntries);
       }
 
-      const hasChildren = entries.length > 0 || canEditValues;
       const displayName = getMetaValueLabel(value);
 
       children = entries.map(([key, keyValue]): ReactElement<any> => (
@@ -531,12 +542,11 @@ export default function KeyValue({
             ref={contextMenuTriggerRef}
             style={style}>
             {hasChildren ? (
-              <ExpandCollapseToggle isOpen={isOpen} setIsOpen={setIsOpen} />
+              <ExpandCollapseToggle isOpen={isOpen} setIsOpen={toggleIsOpen} />
             ) : (
               <div className={styles.ExpandCollapseToggleSpacer} />
             )}
             {renderedName}
-            <div className={styles.AfterName}>:</div>
             <span
               className={styles.Value}
               onClick={hasChildren ? toggleIsOpen : undefined}>
@@ -548,6 +558,7 @@ export default function KeyValue({
     }
   }
 
+  // $FlowFixMe[incompatible-type]
   return children;
 }
 
@@ -567,7 +578,10 @@ function DeleteToggle({deletePath, name, path}) {
         title="Delete entry">
         <ButtonIcon type="delete" />
       </Button>
-      <span className={styles.Name}>{name}</span>
+      <span className={styles.Name}>
+        {name}
+        <span className={styles.AfterName}>:</span>
+      </span>
     </>
   );
 }

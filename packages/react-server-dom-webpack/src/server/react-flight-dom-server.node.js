@@ -8,10 +8,13 @@
  */
 
 export {
+  renderToReadableStream,
   renderToPipeableStream,
-  prerenderToNodeStream as unstable_prerenderToNodeStream,
-  decodeReplyFromBusboy,
+  prerender,
+  prerenderToNodeStream,
   decodeReply,
+  decodeReplyFromBusboy,
+  decodeReplyFromAsyncIterable,
   decodeAction,
   decodeFormState,
   registerServerReference,

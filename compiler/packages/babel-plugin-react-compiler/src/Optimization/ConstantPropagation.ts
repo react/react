@@ -8,6 +8,7 @@
 import {isValidIdentifier} from '@babel/types';
 import {CompilerError} from '../CompilerError';
 import {
+  GeneratedSource,
   GotoVariant,
   HIRFunction,
   IdentifierId,
@@ -191,8 +192,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
       case 'Primitive': {
         CompilerError.invariant(value.kind === 'Primitive', {
           reason: 'value kind expected to be Primitive',
-          loc: null,
-          suggestions: null,
+          loc: GeneratedSource,
         });
 
         // different constant values, can't constant propogate
@@ -204,8 +204,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
       case 'LoadGlobal': {
         CompilerError.invariant(value.kind === 'LoadGlobal', {
           reason: 'value kind expected to be LoadGlobal',
-          loc: null,
-          suggestions: null,
+          loc: GeneratedSource,
         });
 
         // different global values, can't constant propogate
@@ -593,6 +592,19 @@ function evaluateInstruction(
     case 'ObjectMethod':
     case 'FunctionExpression': {
       constantPropagationImpl(value.loweredFunc.func, constants);
+      return null;
+    }
+    case 'StartMemoize': {
+      if (value.deps != null) {
+        for (const dep of value.deps) {
+          if (dep.root.kind === 'NamedLocal') {
+            const placeValue = read(constants, dep.root.value);
+            if (placeValue != null && placeValue.kind === 'Primitive') {
+              dep.root.constant = true;
+            }
+          }
+        }
+      }
       return null;
     }
     default: {

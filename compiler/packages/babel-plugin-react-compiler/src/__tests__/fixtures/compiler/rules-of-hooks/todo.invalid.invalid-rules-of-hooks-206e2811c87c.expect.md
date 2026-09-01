@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // This is a false positive (it's valid) that unfortunately
@@ -20,7 +20,7 @@ class Foo extends Component {
 ## Code
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // This is a false positive (it's valid) that unfortunately

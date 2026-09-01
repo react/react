@@ -1,4 +1,4 @@
-// @enablePreserveExistingMemoizationGuarantees:false
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useCallback} from 'react';
 import {identity, makeObject_Primitives, mutate, useHook} from 'shared-runtime';
 

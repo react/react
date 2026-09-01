@@ -28,6 +28,7 @@
     "@babel/plugin-transform-modules-commonjs": "^7.10.4",
     "@babel/plugin-transform-react-jsx-source": "^7.10.5",
     "@babel/preset-react": "^7.10.4",
+    "@jridgewell/sourcemap-codec": "1.5.5",
     "acorn-jsx": "^5.2.0",
     "archiver": "^3.0.0",
     "babel-core": "^7.0.0-bridge",
@@ -60,11 +61,11 @@
     "raw-loader": "^3.1.0",
     "rimraf": "^5.0.1",
     "source-map-js": "^0.6.2",
-    "sourcemap-codec": "^1.4.8",
     "style-loader": "^0.23.1",
     "webpack": "^5.82.1",
     "webpack-cli": "^5.1.1",
     "webpack-dev-server": "^4.15.0",
+    "webpack-stats-plugin": "^1.1.3",
     "workerize-loader": "^2.0.2"
   },
   "dependencies": {

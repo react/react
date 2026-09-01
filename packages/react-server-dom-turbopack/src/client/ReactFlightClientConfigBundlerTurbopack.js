@@ -11,6 +11,7 @@ import type {
   Thenable,
   FulfilledThenable,
   RejectedThenable,
+  ReactDebugInfo,
 } from 'shared/ReactTypes';
 
 import type {
@@ -28,7 +29,12 @@ import {
 
 import {prepareDestinationWithChunks} from 'react-client/src/ReactFlightClientConfig';
 
-import {loadChunk} from 'react-client/src/ReactFlightClientConfig';
+import {
+  loadChunk,
+  addChunkDebugInfo,
+} from 'react-client/src/ReactFlightClientConfig';
+
+import hasOwnProperty from 'shared/hasOwnProperty';
 
 export type ServerConsumerModuleMap = null | {
   [clientId: string]: {
@@ -128,15 +134,21 @@ export function resolveServerReference<T>(
       );
     }
   }
-  // TODO: This needs to return async: true if it's an async module.
+  if (resolvedModuleData.async) {
+    // If the module is marked as async in a Client Reference, we don't actually care.
+    // What matters is whether the consumer wants to unwrap it or not.
+    // For Server References, it is different because the consumer is completely internal
+    // to the bundler. So instead of passing it to each reference we can mark it in the
+    // manifest.
+    return [
+      resolvedModuleData.id,
+      resolvedModuleData.chunks,
+      name,
+      1 /* async */,
+    ];
+  }
   return [resolvedModuleData.id, resolvedModuleData.chunks, name];
 }
-
-// The chunk cache contains all the chunks we've preloaded so far.
-// If they're still pending they're a thenable. This map also exists
-// in Turbopack but unfortunately it's not exposed so we have to
-// replicate it in user space. null means that it has already loaded.
-const chunkCache: Map<string, null | Promise<any>> = new Map();
 
 function requireAsyncModule(id: string): null | Thenable<any> {
   // We've already loaded all the chunks. We can require the module.
@@ -151,12 +163,12 @@ function requireAsyncModule(id: string): null | Thenable<any> {
     // Instrument the Promise to stash the result.
     promise.then(
       value => {
-        const fulfilledThenable: FulfilledThenable<mixed> = (promise: any);
+        const fulfilledThenable: FulfilledThenable<mixed> = promise as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = value;
       },
       reason => {
-        const rejectedThenable: RejectedThenable<mixed> = (promise: any);
+        const rejectedThenable: RejectedThenable<mixed> = promise as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = reason;
       },
@@ -164,6 +176,13 @@ function requireAsyncModule(id: string): null | Thenable<any> {
     return promise;
   }
 }
+
+// Turbopack will return cached promises for the same chunk.
+// We still want to keep track of which chunks we have already instrumented
+// and which chunks have already been loaded until Turbopack returns instrumented
+// thenables directly.
+const instrumentedChunks: WeakSet<Thenable<any>> = new WeakSet();
+const loadedChunks: WeakSet<Thenable<any>> = new WeakSet();
 
 function ignoreReject() {
   // We rely on rejected promises to be handled by another listener.
@@ -174,19 +193,19 @@ export function preloadModule<T>(
   metadata: ClientReference<T>,
 ): null | Thenable<any> {
   const chunks = metadata[CHUNKS];
-  const promises = [];
+  const promises: Promise<any>[] = [];
   for (let i = 0; i < chunks.length; i++) {
     const chunkFilename = chunks[i];
-    const entry = chunkCache.get(chunkFilename);
-    if (entry === undefined) {
-      const thenable = loadChunk(chunkFilename);
+    const thenable = loadChunk(chunkFilename);
+    if (!loadedChunks.has(thenable)) {
       promises.push(thenable);
+    }
+
+    if (!instrumentedChunks.has(thenable)) {
       // $FlowFixMe[method-unbinding]
-      const resolve = chunkCache.set.bind(chunkCache, chunkFilename, null);
+      const resolve = loadedChunks.add.bind(loadedChunks, thenable);
       thenable.then(resolve, ignoreReject);
-      chunkCache.set(chunkFilename, thenable);
-    } else if (entry !== null) {
-      promises.push(entry);
+      instrumentedChunks.add(thenable);
     }
   }
   if (isAsyncImport(metadata)) {
@@ -228,5 +247,25 @@ export function requireModule<T>(metadata: ClientReference<T>): T {
     // default property of this if it was an ESM interop module.
     return moduleExports.__esModule ? moduleExports.default : moduleExports;
   }
-  return moduleExports[metadata[NAME]];
+  if (hasOwnProperty.call(moduleExports, metadata[NAME])) {
+    return moduleExports[metadata[NAME]];
+  }
+  return undefined as any;
+}
+
+export function getModuleDebugInfo<T>(
+  metadata: ClientReference<T>,
+): null | ReactDebugInfo {
+  if (!__DEV__) {
+    return null;
+  }
+  const chunks = metadata[CHUNKS];
+  const debugInfo: ReactDebugInfo = [];
+  let i = 0;
+  while (i < chunks.length) {
+    const chunk = chunks[i++];
+    // A merged chunk is `[mergedChunkFilename, ...]`; use its own filename.
+    addChunkDebugInfo(debugInfo, typeof chunk === 'string' ? chunk : chunk[0]);
+  }
+  return debugInfo;
 }

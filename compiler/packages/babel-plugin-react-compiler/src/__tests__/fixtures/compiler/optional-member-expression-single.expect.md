@@ -38,7 +38,6 @@ function Component(t0) {
   const { arg } = t0;
 
   arg?.items;
-  let t1;
   let x;
   if ($[0] !== arg?.items) {
     x = [];
@@ -48,27 +47,26 @@ function Component(t0) {
   } else {
     x = $[1];
   }
-  t1 = x;
-  const data = t1;
-  const t2 = arg?.items;
+  const data = x;
+  const t1 = arg?.items;
+  let t2;
+  if ($[2] !== t1) {
+    t2 = [t1];
+    $[2] = t1;
+    $[3] = t2;
+  } else {
+    t2 = $[3];
+  }
   let t3;
-  if ($[2] !== t2) {
-    t3 = [t2];
-    $[2] = t2;
-    $[3] = t3;
-  } else {
-    t3 = $[3];
-  }
-  let t4;
-  if ($[4] !== data || $[5] !== t3) {
-    t4 = <ValidateMemoization inputs={t3} output={data} />;
+  if ($[4] !== data || $[5] !== t2) {
+    t3 = <ValidateMemoization inputs={t2} output={data} />;
     $[4] = data;
-    $[5] = t3;
-    $[6] = t4;
+    $[5] = t2;
+    $[6] = t3;
   } else {
-    t4 = $[6];
+    t3 = $[6];
   }
-  return t4;
+  return t3;
 }
 
 export const FIXTURE_ENTRYPOINT = {

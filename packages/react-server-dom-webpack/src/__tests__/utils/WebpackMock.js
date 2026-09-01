@@ -27,6 +27,9 @@ global.__webpack_require__ = function (id) {
   }
   return webpackClientModules[id] || webpackServerModules[id];
 };
+global.__webpack_get_script_filename__ = function (id) {
+  return id;
+};
 
 const previousCompile = Module.prototype._compile;
 

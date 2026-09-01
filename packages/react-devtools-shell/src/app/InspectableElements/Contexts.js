@@ -28,7 +28,7 @@ const contextData = {
   bool: true,
   func: someNamedFunction,
   number: 123,
-  object: {outer: {inner: {}}},
+  object: {outer: {inner: {} as {...}}},
   string: 'abc',
   symbol: Symbol.for('symbol'),
   null: null,

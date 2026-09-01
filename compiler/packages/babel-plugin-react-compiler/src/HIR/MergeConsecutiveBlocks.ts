@@ -12,6 +12,7 @@ import {
   GeneratedSource,
   HIRFunction,
   Instruction,
+  Place,
 } from './HIR';
 import {markPredecessors} from './HIRBuilder';
 import {terminalFallthrough, terminalHasFallthrough} from './visitors';
@@ -59,9 +60,7 @@ export function mergeConsecutiveBlocks(fn: HIRFunction): void {
     const predecessor = fn.body.blocks.get(predecessorId);
     CompilerError.invariant(predecessor !== undefined, {
       reason: `Expected predecessor ${predecessorId} to exist`,
-      description: null,
-      loc: null,
-      suggestions: null,
+      loc: GeneratedSource,
     });
     if (predecessor.terminal.kind !== 'goto' || predecessor.kind !== 'block') {
       /*
@@ -75,25 +74,25 @@ export function mergeConsecutiveBlocks(fn: HIRFunction): void {
     for (const phi of block.phis) {
       CompilerError.invariant(phi.operands.size === 1, {
         reason: `Found a block with a single predecessor but where a phi has multiple (${phi.operands.size}) operands`,
-        description: null,
-        loc: null,
-        suggestions: null,
+        loc: GeneratedSource,
       });
       const operand = Array.from(phi.operands.values())[0]!;
+      const lvalue: Place = {
+        kind: 'Identifier',
+        identifier: phi.place.identifier,
+        effect: Effect.ConditionallyMutate,
+        reactive: false,
+        loc: GeneratedSource,
+      };
       const instr: Instruction = {
         id: predecessor.terminal.id,
-        lvalue: {
-          kind: 'Identifier',
-          identifier: phi.place.identifier,
-          effect: Effect.ConditionallyMutate,
-          reactive: false,
-          loc: GeneratedSource,
-        },
+        lvalue: {...lvalue},
         value: {
           kind: 'LoadLocal',
           place: {...operand},
           loc: GeneratedSource,
         },
+        effects: [{kind: 'Alias', from: {...operand}, into: {...lvalue}}],
         loc: GeneratedSource,
       };
       predecessor.instructions.push(instr);
@@ -103,6 +102,17 @@ export function mergeConsecutiveBlocks(fn: HIRFunction): void {
     predecessor.terminal = block.terminal;
     merged.merge(block.id, predecessorId);
     fn.body.blocks.delete(block.id);
+  }
+  for (const [, block] of fn.body.blocks) {
+    for (const phi of block.phis) {
+      for (const [predecessorId, operand] of phi.operands) {
+        const mapped = merged.get(predecessorId);
+        if (mapped !== predecessorId) {
+          phi.operands.delete(predecessorId);
+          phi.operands.set(mapped, operand);
+        }
+      }
+    }
   }
   markPredecessors(fn.body);
   for (const [, {terminal}] of fn.body.blocks) {

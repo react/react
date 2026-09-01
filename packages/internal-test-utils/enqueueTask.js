@@ -11,6 +11,7 @@ const {MessageChannel} = require('node:worker_threads');
 
 export default function enqueueTask(task: () => void): void {
   const channel = new MessageChannel();
+  // $FlowFixMe[prop-missing]
   channel.port1.onmessage = () => {
     channel.port1.close();
     task();

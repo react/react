@@ -30,6 +30,7 @@ function foo(a, b, c) {
     if (c) {
       x = c;
     }
+
     return x;
   }
 }

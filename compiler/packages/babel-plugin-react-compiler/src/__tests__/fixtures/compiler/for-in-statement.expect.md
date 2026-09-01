@@ -33,7 +33,6 @@ function Component(props) {
     for (const key in props) {
       items.push(<div key={key}>{key}</div>);
     }
-
     t0 = <div>{items}</div>;
     $[0] = props;
     $[1] = t0;

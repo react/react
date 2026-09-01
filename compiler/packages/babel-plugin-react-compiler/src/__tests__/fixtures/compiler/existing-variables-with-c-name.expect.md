@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useMemo, useState} from 'react';
 import {ValidateMemoization} from 'shared-runtime';
 
@@ -28,7 +29,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c2 } from "react/compiler-runtime";
+import { c as _c2 } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import { useMemo, useState } from "react";
 import { ValidateMemoization } from "shared-runtime";
 
@@ -42,34 +43,32 @@ function Component(props) {
   const c1 = __c;
   const $c = c1;
   let t0;
-  let t1;
   if ($[0] !== $c) {
-    t1 = [$c];
+    t0 = [$c];
     $[0] = $c;
-    $[1] = t1;
+    $[1] = t0;
   } else {
-    t1 = $[1];
+    t0 = $[1];
   }
-  t0 = t1;
   const array = t0;
-  let t2;
+  let t1;
   if ($[2] !== state) {
-    t2 = [state];
+    t1 = [state];
     $[2] = state;
-    $[3] = t2;
+    $[3] = t1;
   } else {
-    t2 = $[3];
+    t1 = $[3];
   }
-  let t3;
-  if ($[4] !== array || $[5] !== t2) {
-    t3 = <ValidateMemoization inputs={t2} output={array} />;
+  let t2;
+  if ($[4] !== array || $[5] !== t1) {
+    t2 = <ValidateMemoization inputs={t1} output={array} />;
     $[4] = array;
-    $[5] = t2;
-    $[6] = t3;
+    $[5] = t1;
+    $[6] = t2;
   } else {
-    t3 = $[6];
+    t2 = $[6];
   }
-  return t3;
+  return t2;
 }
 
 export const FIXTURE_ENTRYPOINT = {

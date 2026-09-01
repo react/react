@@ -1,4 +1,4 @@
-// @enablePropagateDepsInHIR
+// @enablePropagateDepsInHIR @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function Component(props) {

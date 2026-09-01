@@ -6,22 +6,31 @@
  */
 
 import MonacoEditor, {loader, type Monaco} from '@monaco-editor/react';
-import {CompilerErrorDetail} from 'babel-plugin-react-compiler';
+import {
+  CompilerErrorDetail,
+  CompilerDiagnostic,
+} from 'babel-plugin-react-compiler';
 import invariant from 'invariant';
 import type {editor} from 'monaco-editor';
 import * as monaco from 'monaco-editor';
-import {Resizable} from 're-resizable';
-import {useEffect, useState} from 'react';
+import {
+  useEffect,
+  useState,
+  unstable_ViewTransition as ViewTransition,
+} from 'react';
 import {renderReactCompilerMarkers} from '../../lib/reactCompilerMonacoDiagnostics';
 import {useStore, useStoreDispatch} from '../StoreContext';
+import TabbedWindow from '../TabbedWindow';
 import {monacoOptions} from './monacoOptions';
+import {CONFIG_PANEL_TRANSITION} from '../../lib/transitionTypes';
+
 // @ts-expect-error TODO: Make TS recognize .d.ts files, in addition to loading them with webpack.
 import React$Types from '../../node_modules/@types/react/index.d.ts';
 
 loader.config({monaco});
 
 type Props = {
-  errors: Array<CompilerErrorDetail>;
+  errors: Array<CompilerErrorDetail | CompilerDiagnostic>;
   language: 'flow' | 'typescript';
 };
 
@@ -36,13 +45,13 @@ export default function Input({errors, language}: Props): JSX.Element {
     const uri = monaco.Uri.parse(`file:///index.js`);
     const model = monaco.editor.getModel(uri);
     invariant(model, 'Model must exist for the selected input file.');
-    renderReactCompilerMarkers({monaco, model, details: errors});
-    /**
-     * N.B. that `tabSize` is a model property, not an editor property.
-     * So, the tab size has to be set per model.
-     */
-    model.updateOptions({tabSize: 2});
-  }, [monaco, errors]);
+    renderReactCompilerMarkers({
+      monaco,
+      model,
+      details: errors,
+      source: store.source,
+    });
+  }, [monaco, errors, store.source]);
 
   useEffect(() => {
     /**
@@ -74,11 +83,11 @@ export default function Input({errors, language}: Props): JSX.Element {
     });
   }, [monaco, language]);
 
-  const handleChange: (value: string | undefined) => void = value => {
+  const handleChange: (value: string | undefined) => void = async value => {
     if (!value) return;
 
     dispatchStore({
-      type: 'updateFile',
+      type: 'updateSource',
       payload: {
         source: value,
       },
@@ -130,30 +139,42 @@ export default function Input({errors, language}: Props): JSX.Element {
     });
   };
 
+  const editorContent = (
+    <MonacoEditor
+      path={'index.js'}
+      /**
+       * .js and .jsx files are specified to be TS so that Monaco can actually
+       * check their syntax using its TS language service. They are still JS files
+       * due to their extensions, so TS language features don't work.
+       */
+      language={'javascript'}
+      value={store.source}
+      onMount={handleMount}
+      onChange={handleChange}
+      className="monaco-editor-input"
+      options={monacoOptions}
+      loading={''}
+    />
+  );
+
+  const tabs = new Map([['Input', editorContent]]);
+  const [activeTab, setActiveTab] = useState('Input');
+
   return (
-    <div className="relative flex flex-col flex-none border-r border-gray-200">
-      <Resizable
-        minWidth={650}
-        enable={{right: true}}
-        /**
-         * Restrict MonacoEditor's height, since the config autoLayout:true
-         * will grow the editor to fit within parent element
-         */
-        className="!h-[calc(100vh_-_3.5rem)]">
-        <MonacoEditor
-          path={'index.js'}
-          /**
-           * .js and .jsx files are specified to be TS so that Monaco can actually
-           * check their syntax using its TS language service. They are still JS files
-           * due to their extensions, so TS language features don't work.
-           */
-          language={'javascript'}
-          value={store.source}
-          onMount={handleMount}
-          onChange={handleChange}
-          options={monacoOptions}
-        />
-      </Resizable>
-    </div>
+    <ViewTransition
+      update={{
+        [CONFIG_PANEL_TRANSITION]: 'container',
+        default: 'none',
+      }}>
+      <div className="flex-1 min-w-[550px] sm:min-w-0">
+        <div className="flex flex-col h-full !h-[calc(100vh_-_3.5rem)] border-r border-gray-200">
+          <TabbedWindow
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+          />
+        </div>
+      </div>
+    </ViewTransition>
   );
 }

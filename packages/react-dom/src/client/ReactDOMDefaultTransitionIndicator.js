@@ -38,15 +38,16 @@ export function defaultOnDefaultTransitionIndicator(): void | (() => void) {
     if (!isCancelled) {
       // Some other navigation completed but we should still be running.
       // Start another fake one to keep the loading indicator going.
-      startFakeNavigation();
+      // There needs to be an async gap to work around https://issues.chromium.org/u/1/issues/419746417.
+      setTimeout(startFakeNavigation, 20);
     }
   }
 
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   navigation.addEventListener('navigate', handleNavigate);
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   navigation.addEventListener('navigatesuccess', handleNavigateComplete);
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   navigation.addEventListener('navigateerror', handleNavigateComplete);
 
   function startFakeNavigation() {
@@ -70,16 +71,16 @@ export function defaultOnDefaultTransitionIndicator(): void | (() => void) {
     }
   }
 
-  // Delay the start a bit in case this is a fast navigation.
+  // Delay the start a bit in case this is a fast Transition.
   setTimeout(startFakeNavigation, 100);
 
   return function () {
     isCancelled = true;
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-type]
     navigation.removeEventListener('navigate', handleNavigate);
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-type]
     navigation.removeEventListener('navigatesuccess', handleNavigateComplete);
-    // $FlowFixMe
+    // $FlowFixMe[incompatible-type]
     navigation.removeEventListener('navigateerror', handleNavigateComplete);
     if (pendingResolve !== null) {
       pendingResolve();

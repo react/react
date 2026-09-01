@@ -39,7 +39,7 @@ export type CreateRootOptions = {
     error: mixed,
     errorInfo: {
       +componentStack?: ?string,
-      +errorBoundary?: ?React$Component<any, any>,
+      +errorBoundary?: ?component(...props: any),
     },
   ) => void,
   onRecoverableError?: (
@@ -65,7 +65,7 @@ export type HydrateRootOptions = {
     error: mixed,
     errorInfo: {
       +componentStack?: ?string,
-      +errorBoundary?: ?React$Component<any, any>,
+      +errorBoundary?: ?component(...props: any),
     },
   ) => void,
   onRecoverableError?: (
@@ -187,17 +187,19 @@ export function createRoot(
   let onDefaultTransitionIndicator = defaultOnDefaultTransitionIndicator;
   let transitionCallbacks = null;
 
+  // $FlowFixMe[invalid-compare]
   if (options !== null && options !== undefined) {
     if (__DEV__) {
-      if ((options: any).hydrate) {
+      if ((options as any).hydrate) {
         console.warn(
           'hydrate through createRoot is deprecated. Use ReactDOMClient.hydrateRoot(container, <App />) instead.',
         );
       } else {
         if (
           typeof options === 'object' &&
+          // $FlowFixMe[invalid-compare]
           options !== null &&
-          (options: any).$$typeof === REACT_ELEMENT_TYPE
+          (options as any).$$typeof === REACT_ELEMENT_TYPE
         ) {
           console.error(
             'You passed a JSX element to createRoot. You probably meant to ' +
@@ -251,7 +253,7 @@ export function createRoot(
 
   const rootContainerElement: Document | Element | DocumentFragment =
     !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
-      ? (container.parentNode: any)
+      ? (container.parentNode as any)
       : container;
   listenToAllSupportedEvents(rootContainerElement);
 
@@ -304,6 +306,7 @@ export function hydrateRoot(
   let onDefaultTransitionIndicator = defaultOnDefaultTransitionIndicator;
   let transitionCallbacks = null;
   let formState = null;
+  // $FlowFixMe[invalid-compare]
   if (options !== null && options !== undefined) {
     if (options.unstable_strictMode === true) {
       isStrictMode = true;

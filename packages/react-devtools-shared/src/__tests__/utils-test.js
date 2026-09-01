@@ -11,16 +11,18 @@ import {
   getDisplayName,
   getDisplayNameForReactElement,
   isPlainObject,
+  printOperationsArray,
 } from 'react-devtools-shared/src/utils';
-import {stackToComponentSources} from 'react-devtools-shared/src/devtools/utils';
+import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
+import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
 import {
   formatConsoleArguments,
   formatConsoleArgumentsToSingleString,
   formatWithStyles,
   gt,
   gte,
-  parseSourceFromComponentStack,
 } from 'react-devtools-shared/src/backend/utils';
+import {extractLocationFromComponentStack} from 'react-devtools-shared/src/backend/utils/parseStackTrace';
 import {
   REACT_SUSPENSE_LIST_TYPE as SuspenseList,
   REACT_STRICT_MODE_TYPE as StrictMode,
@@ -63,14 +65,17 @@ describe('utils', () => {
 
     it('should parse a component stack trace', () => {
       expect(
-        stackToComponentSources(`
+        stackToComponentLocations(`
     at Foobar (http://localhost:3000/static/js/bundle.js:103:74)
     at a
     at header
     at div
     at App`),
       ).toEqual([
-        ['Foobar', ['http://localhost:3000/static/js/bundle.js', 103, 74]],
+        [
+          'Foobar',
+          ['Foobar', 'http://localhost:3000/static/js/bundle.js', 103, 74],
+        ],
         ['a', null],
         ['header', null],
         ['div', null],
@@ -142,6 +147,20 @@ describe('utils', () => {
       expect(
         formatConsoleArgumentsToSingleString('a %s b %s c', 123, true),
       ).toEqual('a 123 b true c');
+    });
+
+    it('should support integer substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%i', 3.14)).toEqual('3');
+    });
+
+    it('should support float substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('%f', 3.5)).toEqual('3.5');
+    });
+
+    it('should keep argument alignment across mixed substitutions', () => {
+      expect(formatConsoleArgumentsToSingleString('a %i b %s', 7, 'x')).toEqual(
+        'a 7 b x',
+      );
     });
 
     it('should gracefully handle Symbol types', () => {
@@ -303,29 +322,29 @@ describe('utils', () => {
     });
   });
 
-  describe('parseSourceFromComponentStack', () => {
+  describe('extractLocationFromComponentStack', () => {
     it('should return null if passed empty string', () => {
-      expect(parseSourceFromComponentStack('')).toEqual(null);
+      expect(extractLocationFromComponentStack('')).toEqual(null);
     });
 
     it('should construct the source from the first frame if available', () => {
       expect(
-        parseSourceFromComponentStack(
+        extractLocationFromComponentStack(
           'at l (https://react.dev/_next/static/chunks/main-78a3b4c2aa4e4850.js:1:10389)\n' +
             'at f (https://react.dev/_next/static/chunks/pages/%5B%5B...markdownPath%5D%5D-af2ed613aedf1d57.js:1:8519)\n' +
             'at r (https://react.dev/_next/static/chunks/pages/_app-dd0b77ea7bd5b246.js:1:498)\n',
         ),
-      ).toEqual({
-        sourceURL:
-          'https://react.dev/_next/static/chunks/main-78a3b4c2aa4e4850.js',
-        line: 1,
-        column: 10389,
-      });
+      ).toEqual([
+        'l',
+        'https://react.dev/_next/static/chunks/main-78a3b4c2aa4e4850.js',
+        1,
+        10389,
+      ]);
     });
 
     it('should construct the source from highest available frame', () => {
       expect(
-        parseSourceFromComponentStack(
+        extractLocationFromComponentStack(
           '    at Q\n' +
             '    at a\n' +
             '    at m (https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236)\n' +
@@ -338,57 +357,57 @@ describe('utils', () => {
             '    at tt (https://react.dev/_next/static/chunks/363-3c5f1b553b6be118.js:1:165520)\n' +
             '    at f (https://react.dev/_next/static/chunks/pages/%5B%5B...markdownPath%5D%5D-af2ed613aedf1d57.js:1:8519)',
         ),
-      ).toEqual({
-        sourceURL:
-          'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
-        line: 5,
-        column: 9236,
-      });
+      ).toEqual([
+        'm',
+        'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+        5,
+        9236,
+      ]);
     });
 
     it('should construct the source from frame, which has only url specified', () => {
       expect(
-        parseSourceFromComponentStack(
+        extractLocationFromComponentStack(
           '    at Q\n' +
             '    at a\n' +
             '    at https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js:5:9236\n',
         ),
-      ).toEqual({
-        sourceURL:
-          'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
-        line: 5,
-        column: 9236,
-      });
+      ).toEqual([
+        '',
+        'https://react.dev/_next/static/chunks/848-122f91e9565d9ffa.js',
+        5,
+        9236,
+      ]);
     });
 
     it('should parse sourceURL correctly if it includes parentheses', () => {
       expect(
-        parseSourceFromComponentStack(
+        extractLocationFromComponentStack(
           'at HotReload (webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/react-dev-overlay/hot-reloader-client.js:307:11)\n' +
             '    at Router (webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/app-router.js:181:11)\n' +
             '    at ErrorBoundaryHandler (webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/error-boundary.js:114:9)',
         ),
-      ).toEqual({
-        sourceURL:
-          'webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/react-dev-overlay/hot-reloader-client.js',
-        line: 307,
-        column: 11,
-      });
+      ).toEqual([
+        'HotReload',
+        'webpack-internal:///(app-pages-browser)/./node_modules/next/dist/client/components/react-dev-overlay/hot-reloader-client.js',
+        307,
+        11,
+      ]);
     });
 
     it('should support Firefox stack', () => {
       expect(
-        parseSourceFromComponentStack(
+        extractLocationFromComponentStack(
           'tt@https://react.dev/_next/static/chunks/363-3c5f1b553b6be118.js:1:165558\n' +
             'f@https://react.dev/_next/static/chunks/pages/%5B%5B...markdownPath%5D%5D-af2ed613aedf1d57.js:1:8535\n' +
             'r@https://react.dev/_next/static/chunks/pages/_app-dd0b77ea7bd5b246.js:1:513',
         ),
-      ).toEqual({
-        sourceURL:
-          'https://react.dev/_next/static/chunks/363-3c5f1b553b6be118.js',
-        line: 1,
-        column: 165558,
-      });
+      ).toEqual([
+        'tt',
+        'https://react.dev/_next/static/chunks/363-3c5f1b553b6be118.js',
+        1,
+        165558,
+      ]);
     });
   });
 
@@ -399,9 +418,8 @@ exports.f = f;
 function f() { }
 //# sourceMappingURL=`;
     const result = {
-      column: 16,
-      line: 1,
-      sourceURL: 'http://test/a.mts',
+      location: ['', 'http://test/a.mts', 1, 17],
+      ignored: false,
     };
     const fs = {
       'http://test/a.mts': `export function f() {}`,
@@ -418,6 +436,26 @@ function f() { }
       await expect(run('http://test/b.mjs')).resolves.toStrictEqual(result);
       await expect(run('http://test/c.mjs')).resolves.toStrictEqual(result);
       await expect(run('http://test/d.mjs')).resolves.toStrictEqual(result);
+    });
+
+    it('should not throw for invalid base URL with relative source map', async () => {
+      const fs2 = {
+        'bundle.js': `${source}bundle.js.map`,
+      };
+      const fetch2 = async url => fs2[url] || null;
+      const run = url => symbolicateSource(fetch2, url, 1, 1);
+      await expect(run('bundle.js')).resolves.toBe(null);
+    });
+
+    it('should resolve absolute source map even if base URL is invalid', async () => {
+      const fs3 = {
+        'invalid-base.js': `${source}http://test/a.mjs.map`,
+        'http://test/a.mts': `export function f() {}`,
+        'http://test/a.mjs.map': `{"version":3,"file":"a.mjs","sourceRoot":"","sources":["a.mts"],"names":[],"mappings":";;AAAA,cAAsB;AAAtB,SAAgB,CAAC,KAAI,CAAC"}`,
+      };
+      const fetch3 = async url => fs3[url] || null;
+      const run = url => symbolicateSource(fetch3, url, 4, 10);
+      await expect(run('invalid-base.js')).resolves.toStrictEqual(result);
     });
   });
 
@@ -478,6 +516,57 @@ function f() { }
       expect(
         formatConsoleArguments('This is the %s template', undefined),
       ).toEqual(['This is the undefined template']);
+    });
+
+    it('keeps a trailing percent sign', () => {
+      expect(formatConsoleArguments('Progress 100%', 'extra')).toEqual([
+        'Progress 100%',
+        'extra',
+      ]);
+      expect(formatConsoleArguments('%s 100%', 'done')).toEqual(['done 100%']);
+    });
+
+    it('keeps specifiers literal when no argument is supplied', () => {
+      expect(formatConsoleArguments('%s %s', 'the')).toEqual(['the %s']);
+      expect(formatConsoleArguments('%s %d', 'value')).toEqual(['value %d']);
+      expect(formatConsoleArguments('%s %i', 'value')).toEqual(['value %i']);
+      expect(formatConsoleArguments('%s %f', 'value')).toEqual(['value %f']);
+    });
+  });
+
+  describe('printOperationsArray', () => {
+    let log;
+    beforeEach(() => {
+      log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      log.mockRestore();
+    });
+
+    // The operation is [opcode, activitySliceID] (2 slots). A trailing operation
+    // after it verifies that the reader advances past the value slot instead of
+    // re-reading it as the next opcode.
+    it('should log an applied activity slice change and advance past its value', () => {
+      const rendererID = 1;
+      const rootID = 1;
+      const stringTableSize = 0;
+      const operations = [
+        rendererID,
+        rootID,
+        stringTableSize,
+        TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+        42,
+        TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+        0,
+      ];
+
+      expect(() => printOperationsArray(operations)).not.toThrow();
+
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain(
+        'Applied activity slice change to 42',
+      );
+      expect(log.mock.calls[0][0]).toContain('Reset applied activity slice');
     });
   });
 });

@@ -8,20 +8,20 @@
  */
 
 import type {Thenable, ReactCustomFormAction} from 'shared/ReactTypes.js';
-import type {Response} from 'react-client/src/ReactFlightClient';
+import type {DebugChannel, Response} from 'react-client/src/ReactFlightClient';
 import type {Readable} from 'stream';
 
 import {
   createResponse,
+  createStreamState,
   getRoot,
   reportGlobalError,
+  processStringChunk,
   processBinaryChunk,
   close,
 } from 'react-client/src/ReactFlightClient';
 
-import {createServerReference as createServerReferenceImpl} from 'react-client/src/ReactFlightReplyClient';
-
-export {registerServerReference} from 'react-client/src/ReactFlightReplyClient';
+export * from './ReactFlightDOMClientEdge';
 
 function findSourceMapURL(filename: string, environmentName: string) {
   const devServer = parcelRequire.meta.devServer;
@@ -42,19 +42,6 @@ function noServerCall() {
   );
 }
 
-export function createServerReference<A: Iterable<any>, T>(
-  id: string,
-  exportName: string,
-): (...A) => Promise<T> {
-  return createServerReferenceImpl(
-    id + '#' + exportName,
-    noServerCall,
-    undefined,
-    findSourceMapURL,
-    exportName,
-  );
-}
-
 type EncodeFormActionCallback = <A>(
   id: any,
   args: Promise<A>,
@@ -63,14 +50,46 @@ type EncodeFormActionCallback = <A>(
 export type Options = {
   nonce?: string,
   encodeFormAction?: EncodeFormActionCallback,
+  unstable_allowPartialStream?: boolean,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  startTime?: number,
+  endTime?: number,
+  // For the Node.js client we only support a single-direction debug channel.
+  debugChannel?: Readable,
 };
+
+function startReadingFromStream(
+  response: Response,
+  stream: Readable,
+  onEnd: () => void,
+): void {
+  const streamState = createStreamState(response, stream);
+
+  stream.on('data', chunk => {
+    if (typeof chunk === 'string') {
+      processStringChunk(response, streamState, chunk);
+    } else {
+      processBinaryChunk(response, streamState, chunk);
+    }
+  });
+
+  stream.on('error', error => {
+    reportGlobalError(response, error);
+  });
+
+  stream.on('end', onEnd);
+}
 
 export function createFromNodeStream<T>(
   stream: Readable,
   options?: Options,
 ): Thenable<T> {
+  const debugChannel: void | DebugChannel =
+    __DEV__ && options && options.debugChannel !== undefined
+      ? {hasReadable: true, callback: null}
+      : undefined;
+
   const response: Response = createResponse(
     null, // bundlerConfig
     null, // serverReferenceConfig
@@ -79,18 +98,33 @@ export function createFromNodeStream<T>(
     options ? options.encodeFormAction : undefined,
     options && typeof options.nonce === 'string' ? options.nonce : undefined,
     undefined, // TODO: If encodeReply is supported, this should support temporaryReferences
+    options && options.unstable_allowPartialStream
+      ? options.unstable_allowPartialStream
+      : false,
     __DEV__ ? findSourceMapURL : undefined,
     __DEV__ && options ? options.replayConsoleLogs === true : false, // defaults to false
     __DEV__ && options && options.environmentName
       ? options.environmentName
       : undefined,
+    __DEV__ && options && options.startTime != null
+      ? options.startTime
+      : undefined,
+    __DEV__ && options && options.endTime != null ? options.endTime : undefined,
+    debugChannel,
   );
-  stream.on('data', chunk => {
-    processBinaryChunk(response, chunk);
-  });
-  stream.on('error', error => {
-    reportGlobalError(response, error);
-  });
-  stream.on('end', () => close(response));
+
+  if (__DEV__ && options && options.debugChannel) {
+    let streamEndedCount = 0;
+    const handleEnd = () => {
+      if (++streamEndedCount === 2) {
+        close(response);
+      }
+    };
+    startReadingFromStream(response, options.debugChannel, handleEnd);
+    startReadingFromStream(response, stream, handleEnd);
+  } else {
+    startReadingFromStream(response, stream, close.bind(null, response));
+  }
+
   return getRoot(response);
 }

@@ -2427,6 +2427,11 @@ ajv@^8.0.0, ajv@^8.6.0, ajv@^8.9.0:
     json-schema-traverse "^1.0.0"
     require-from-string "^2.0.2"
 
+animation-timelines@^0.0.4:
+  version "0.0.4"
+  resolved "https://registry.yarnpkg.com/animation-timelines/-/animation-timelines-0.0.4.tgz#7ac4614bae73c4d1ea2ff18d5d87a518793258af"
+  integrity sha512-HwCE3m1nM8ZdLbwDwD1j5ZNKmY+3J2CliXJNIsf3y1Si927SIaWpfxkycTg5nWLJSHgjsYxrmOy2Jbo4JR1e9A==
+
 ansi-escapes@^4.2.1, ansi-escapes@^4.3.1:
   version "4.3.2"
   resolved "https://registry.yarnpkg.com/ansi-escapes/-/ansi-escapes-4.3.2.tgz#6b2291d1db7d98b6521d5f1efa42d0f3a9feb65e"

@@ -37,7 +37,6 @@ function useHook(t0) {
         return value;
       },
     };
-
     mutate(x);
     $[0] = value;
     $[1] = obj;

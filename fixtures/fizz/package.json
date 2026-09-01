@@ -28,8 +28,8 @@
     "prettier": "1.19.1"
   },
   "scripts": {
-    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/",
-    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/",
+    "predev": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
+    "prestart": "cp -r ../../build/oss-experimental/* ./node_modules/ && rm -rf node_modules/.cache;",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:bundler\"",
     "start": "concurrently \"npm run start:server\" \"npm run start:bundler\"",
     "dev:server": "cross-env NODE_ENV=development nodemon -- --inspect server/server.js",

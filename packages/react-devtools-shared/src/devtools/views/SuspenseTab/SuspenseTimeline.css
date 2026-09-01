@@ -1,0 +1,21 @@
+.SuspenseTimelineContainer {
+  display: flex;
+  flex-direction: row;
+  padding: 0.25rem;
+  align-items: center;
+}
+
+.SuspenseTimelineInput {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.SuspenseTimelineRootSwitcher {
+  height: fit-content;
+  max-width: 3rem;
+}
+
+.SuspenseTimelineProgressIndicator {
+  align-self: center;
+}

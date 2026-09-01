@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 class C {
@@ -17,7 +17,7 @@ class C {
 ## Code
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 class C {

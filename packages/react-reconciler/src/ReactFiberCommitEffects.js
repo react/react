@@ -144,7 +144,7 @@ export function commitHookEffectListMount(
 ) {
   try {
     const updateQueue: FunctionComponentUpdateQueue | null =
-      (finishedWork.updateQueue: any);
+      finishedWork.updateQueue as any;
     const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
     if (lastEffect !== null) {
       const firstEffect = lastEffect.next;
@@ -195,11 +195,12 @@ export function commitHookEffectListMount(
                 hookName = 'useEffect';
               }
               let addendum;
+              // $FlowFixMe[invalid-compare]
               if (destroy === null) {
                 addendum =
                   ' You returned null. If your effect does not require clean ' +
                   'up, return undefined (or nothing).';
-                // $FlowFixMe (@poteto) this check is safe on arbitrary non-null/void objects
+                // $FlowFixMe[incompatible-type] (@poteto) this check is safe on arbitrary non-null/void objects
               } else if (typeof destroy.then === 'function') {
                 addendum =
                   '\n\nIt looks like you wrote ' +
@@ -252,7 +253,7 @@ export function commitHookEffectListUnmount(
 ) {
   try {
     const updateQueue: FunctionComponentUpdateQueue | null =
-      (finishedWork.updateQueue: any);
+      finishedWork.updateQueue as any;
     const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
     if (lastEffect !== null) {
       const firstEffect = lastEffect.next;
@@ -410,7 +411,6 @@ export function commitClassLayoutLifecycles(
     const prevProps = resolveClassComponentProps(
       finishedWork.type,
       current.memoizedProps,
-      finishedWork.elementType === finishedWork.type,
     );
     const prevState = current.memoizedState;
     // We could update instance props and state here,
@@ -519,7 +519,7 @@ export function commitClassCallbacks(finishedWork: Fiber) {
   // TODO: I think this is now always non-null by the time it reaches the
   // commit phase. Consider removing the type check.
   const updateQueue: UpdateQueue<mixed> | null =
-    (finishedWork.updateQueue: any);
+    finishedWork.updateQueue as any;
   if (updateQueue !== null) {
     const instance = finishedWork.stateNode;
     if (__DEV__) {
@@ -569,7 +569,7 @@ export function commitClassHiddenCallbacks(finishedWork: Fiber) {
   // Commit any callbacks that would have fired while the component
   // was hidden.
   const updateQueue: UpdateQueue<mixed> | null =
-    (finishedWork.updateQueue: any);
+    finishedWork.updateQueue as any;
   if (updateQueue !== null) {
     const instance = finishedWork.stateNode;
     try {
@@ -593,7 +593,7 @@ export function commitRootCallbacks(finishedWork: Fiber) {
   // TODO: I think this is now always non-null by the time it reaches the
   // commit phase. Consider removing the type check.
   const updateQueue: UpdateQueue<mixed> | null =
-    (finishedWork.updateQueue: any);
+    finishedWork.updateQueue as any;
   if (updateQueue !== null) {
     let instance = null;
     if (finishedWork.child !== null) {
@@ -671,7 +671,6 @@ export function commitClassSnapshot(finishedWork: Fiber, current: Fiber) {
     const resolvedPrevProps = resolveClassComponentProps(
       finishedWork.type,
       prevProps,
-      finishedWork.elementType === finishedWork.type,
     );
     let snapshot;
     if (__DEV__) {
@@ -683,7 +682,7 @@ export function commitClassSnapshot(finishedWork: Fiber, current: Fiber) {
         prevState,
       );
       const didWarnSet =
-        ((didWarnAboutUndefinedSnapshotBeforeUpdate: any): Set<mixed>);
+        didWarnAboutUndefinedSnapshotBeforeUpdate as any as Set<mixed>;
       if (snapshot === undefined && !didWarnSet.has(finishedWork.type)) {
         didWarnSet.add(finishedWork.type);
         runWithFiberInDEV(finishedWork, () => {
@@ -716,7 +715,6 @@ export function safelyCallComponentWillUnmount(
   instance.props = resolveClassComponentProps(
     current.type,
     current.memoizedProps,
-    current.elementType === current.type,
   );
   instance.state = current.memoizedState;
   if (shouldProfile(current)) {
@@ -885,7 +883,7 @@ export function safelyDetachRef(
           try {
             startEffectTimer();
             if (__DEV__) {
-              (runWithFiberInDEV(current, ref, null): void);
+              runWithFiberInDEV(current, ref, null) as void;
             } else {
               ref(null);
             }
@@ -894,7 +892,7 @@ export function safelyDetachRef(
           }
         } else {
           if (__DEV__) {
-            (runWithFiberInDEV(current, ref, null): void);
+            runWithFiberInDEV(current, ref, null) as void;
           } else {
             ref(null);
           }
@@ -927,7 +925,7 @@ function safelyCallDestroy(
     );
   } else {
     try {
-      // $FlowFixMe(incompatible-call) Already bound to resource
+      // $FlowFixMe[incompatible-type](incompatible-call) Already bound to resource
       destroy_();
     } catch (error) {
       captureCommitPhaseError(current, nearestMountedAncestor, error);
@@ -941,7 +939,7 @@ function commitProfiler(
   commitStartTime: number,
   effectDuration: number,
 ) {
-  const {id, onCommit, onRender} = (finishedWork.memoizedProps: ProfilerProps);
+  const {id, onCommit, onRender} = finishedWork.memoizedProps as ProfilerProps;
 
   let phase: ProfilerPhase = current === null ? 'mount' : 'update';
   if (enableProfilerNestedUpdatePhase) {
@@ -954,11 +952,11 @@ function commitProfiler(
     onRender(
       id,
       phase,
-      // $FlowFixMe: This should be always a number in profiling mode
+      // $FlowFixMe[incompatible-type]: This should be always a number in profiling mode
       finishedWork.actualDuration,
-      // $FlowFixMe: This should be always a number in profiling mode
+      // $FlowFixMe[incompatible-type]: This should be always a number in profiling mode
       finishedWork.treeBaseDuration,
-      // $FlowFixMe: This should be always a number in profiling mode
+      // $FlowFixMe[incompatible-type]: This should be always a number in profiling mode
       finishedWork.actualStartTime,
       commitStartTime,
     );

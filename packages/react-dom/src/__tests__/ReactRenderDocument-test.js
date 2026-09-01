@@ -16,7 +16,6 @@ let ReactDOMServer;
 let act;
 let Scheduler;
 let assertLog;
-let assertConsoleErrorDev;
 
 function getTestDocument(markup) {
   const doc = document.implementation.createHTMLDocument('');
@@ -49,8 +48,6 @@ describe('rendering React components at document', () => {
     act = require('internal-test-utils').act;
     assertLog = require('internal-test-utils').assertLog;
     Scheduler = require('scheduler');
-    assertConsoleErrorDev =
-      require('internal-test-utils').assertConsoleErrorDev;
   });
 
   describe('with new explicit hydration API', () => {
@@ -70,6 +67,7 @@ describe('rendering React components at document', () => {
 
       const markup = ReactDOMServer.renderToString(<Root hello="world" />);
       expect(markup).not.toContain('DOCTYPE');
+      expect(markup).not.toContain('rel="expect"');
       const testDocument = getTestDocument(markup);
       const body = testDocument.body;
 
@@ -77,22 +75,12 @@ describe('rendering React components at document', () => {
       await act(() => {
         root = ReactDOMClient.hydrateRoot(testDocument, <Root hello="world" />);
       });
-      expect(testDocument.body.innerHTML).toBe(
-        'Hello world' +
-          (gate(flags => flags.enableFizzBlockingRender)
-            ? '<template id="«R»"></template>'
-            : ''),
-      );
+      expect(testDocument.body.innerHTML).toBe('Hello world');
 
       await act(() => {
         root.render(<Root hello="moon" />);
       });
-      expect(testDocument.body.innerHTML).toBe(
-        'Hello moon' +
-          (gate(flags => flags.enableFizzBlockingRender)
-            ? '<template id="«R»"></template>'
-            : ''),
-      );
+      expect(testDocument.body.innerHTML).toBe('Hello moon');
 
       expect(body === testDocument.body).toBe(true);
     });
@@ -117,12 +105,7 @@ describe('rendering React components at document', () => {
       await act(() => {
         root = ReactDOMClient.hydrateRoot(testDocument, <Root />);
       });
-      expect(testDocument.body.innerHTML).toBe(
-        'Hello world' +
-          (gate(flags => flags.enableFizzBlockingRender)
-            ? '<template id="«R»"></template>'
-            : ''),
-      );
+      expect(testDocument.body.innerHTML).toBe('Hello world');
 
       const originalDocEl = testDocument.documentElement;
       const originalHead = testDocument.head;
@@ -133,16 +116,8 @@ describe('rendering React components at document', () => {
       expect(testDocument.firstChild).toBe(originalDocEl);
       expect(testDocument.head).toBe(originalHead);
       expect(testDocument.body).toBe(originalBody);
-      expect(originalBody.innerHTML).toBe(
-        gate(flags => flags.enableFizzBlockingRender)
-          ? '<template id="«R»"></template>'
-          : '',
-      );
-      expect(originalHead.innerHTML).toBe(
-        gate(flags => flags.enableFizzBlockingRender)
-          ? '<link rel="expect" href="#«R»" blocking="render">'
-          : '',
-      );
+      expect(originalBody.innerHTML).toBe('');
+      expect(originalHead.innerHTML).toBe('');
     });
 
     it('should not be able to switch root constructors', async () => {
@@ -180,22 +155,13 @@ describe('rendering React components at document', () => {
         root = ReactDOMClient.hydrateRoot(testDocument, <Component />);
       });
 
-      expect(testDocument.body.innerHTML).toBe(
-        'Hello world' +
-          (gate(flags => flags.enableFizzBlockingRender)
-            ? '<template id="«R»"></template>'
-            : ''),
-      );
+      expect(testDocument.body.innerHTML).toBe('Hello world');
 
       await act(() => {
         root.render(<Component2 />);
       });
 
-      expect(testDocument.body.innerHTML).toBe(
-        (gate(flags => flags.enableFizzBlockingRender)
-          ? '<template id="«R»"></template>'
-          : '') + 'Goodbye world',
-      );
+      expect(testDocument.body.innerHTML).toBe('Goodbye world');
     });
 
     it('should be able to mount into document', async () => {
@@ -224,12 +190,7 @@ describe('rendering React components at document', () => {
         );
       });
 
-      expect(testDocument.body.innerHTML).toBe(
-        'Hello world' +
-          (gate(flags => flags.enableFizzBlockingRender)
-            ? '<template id="«R»"></template>'
-            : ''),
-      );
+      expect(testDocument.body.innerHTML).toBe('Hello world');
     });
 
     it('cannot render over an existing text child at the root', async () => {
@@ -287,6 +248,93 @@ describe('rendering React components at document', () => {
       expect(container.textContent).toBe('parsnip');
     });
 
+    it('removes hoisted <title> when hiding an Activity boundary', async () => {
+      const Activity = React.Activity;
+
+      function App({mode, titleText}) {
+        return (
+          <html>
+            <head>
+              <Activity mode={mode}>
+                <title>{titleText}</title>
+              </Activity>
+            </head>
+            <body>Hello</body>
+          </html>
+        );
+      }
+
+      const testDocument = getTestDocument(
+        '<!doctype html><html><head></head><body></body></html>',
+      );
+      const root = ReactDOMClient.createRoot(testDocument);
+
+      await act(() => root.render(<App mode="visible" titleText="A" />));
+      expect(testDocument.head.querySelector('title').textContent).toBe('A');
+
+      await act(() => root.render(<App mode="hidden" titleText="A" />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+
+      await act(() => root.render(<App mode="visible" titleText="B" />));
+      expect(testDocument.head.querySelector('title').textContent).toBe('B');
+    });
+
+    it('does not unmount a hoistable that was never mounted when reappearing', async () => {
+      const Activity = React.Activity;
+
+      function App({mode, showTitle}) {
+        return (
+          <html>
+            <head>
+              <Activity mode={mode}>
+                {showTitle ? <title>Title</title> : null}
+              </Activity>
+            </head>
+            <body>Hello</body>
+          </html>
+        );
+      }
+
+      const testDocument = getTestDocument(
+        '<!doctype html><html><head></head><body></body></html>',
+      );
+      const root = ReactDOMClient.createRoot(testDocument);
+
+      await act(() => root.render(<App mode="hidden" showTitle={true} />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+
+      await act(() => root.render(<App mode="visible" showTitle={false} />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+    });
+
+    it('removes hoistables deleted in the same commit that hides an Activity', async () => {
+      const Activity = React.Activity;
+
+      function App({mode, showTitle}) {
+        return (
+          <html>
+            <head>
+              <Activity mode={mode}>
+                {showTitle ? <title>Title</title> : null}
+              </Activity>
+            </head>
+            <body>Hello</body>
+          </html>
+        );
+      }
+
+      const testDocument = getTestDocument(
+        '<!doctype html><html><head></head><body></body></html>',
+      );
+      const root = ReactDOMClient.createRoot(testDocument);
+
+      await act(() => root.render(<App mode="visible" showTitle={true} />));
+      expect(testDocument.head.querySelector('title')).not.toBe(null);
+
+      await act(() => root.render(<App mode="hidden" showTitle={false} />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+    });
+
     it('should give helpful errors on state desync', async () => {
       class Component extends React.Component {
         render() {
@@ -306,9 +354,6 @@ describe('rendering React components at document', () => {
       );
       const testDocument = getTestDocument(markup);
 
-      const favorSafetyOverHydrationPerf = gate(
-        flags => flags.favorSafetyOverHydrationPerf,
-      );
       ReactDOM.flushSync(() => {
         ReactDOMClient.hydrateRoot(
           testDocument,
@@ -325,50 +370,11 @@ describe('rendering React components at document', () => {
           },
         );
       });
-      assertConsoleErrorDev(
-        favorSafetyOverHydrationPerf
-          ? []
-          : [
-              "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
-                "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
-                '\n' +
-                "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
-                "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
-                "- Date formatting in a user's locale which doesn't match the server.\n" +
-                '- External changing data without sending a snapshot of it along with the HTML.\n' +
-                '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension ' +
-                'installed which messes with the HTML before React loaded.\n' +
-                '\n' +
-                'https://react.dev/link/hydration-mismatch\n' +
-                '\n' +
-                '  <Component text="Hello world">\n' +
-                '    <html>\n' +
-                '      <head>\n' +
-                '      <body>\n' +
-                '+       Hello world\n' +
-                '-       Goodbye world\n' +
-                '+       Hello world\n' +
-                '-       Goodbye world\n' +
-                '\n    in body (at **)' +
-                '\n    in Component (at **)',
-            ],
-      );
 
-      assertLog(
-        favorSafetyOverHydrationPerf
-          ? [
-              "onRecoverableError: Hydration failed because the server rendered text didn't match the client.",
-            ]
-          : [],
-      );
-      expect(testDocument.body.innerHTML).toBe(
-        favorSafetyOverHydrationPerf
-          ? 'Hello world'
-          : 'Goodbye world' +
-              (gate(flags => flags.enableFizzBlockingRender)
-                ? '<template id="«R»"></template>'
-                : ''),
-      );
+      assertLog([
+        "onRecoverableError: Hydration failed because the server rendered text didn't match the client.",
+      ]);
+      expect(testDocument.body.innerHTML).toBe('Hello world');
     });
 
     it('should render w/ no markup to full document', async () => {

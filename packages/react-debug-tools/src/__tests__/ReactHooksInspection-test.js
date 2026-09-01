@@ -720,6 +720,58 @@ describe('ReactHooksInspection', () => {
     );
   });
 
+  it('should inspect use() calls in anonymous loops', () => {
+    function Foo({entries}) {
+      const values = Object.fromEntries(
+        Object.entries(entries).map(([key, value]) => {
+          return [key, React.use(value)];
+        }),
+      );
+      return <div>{values}</div>;
+    }
+    const tree = ReactDebugTools.inspectHooks(Foo, {
+      entries: {one: Promise.resolve('one'), two: Promise.resolve('two')},
+    });
+    const results = normalizeSourceLoc(tree);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchInlineSnapshot(
+      {
+        subHooks: [{value: expect.any(Promise)}],
+      },
+      `
+      {
+        "debugInfo": null,
+        "hookSource": {
+          "columnNumber": 0,
+          "fileName": "**",
+          "functionName": "Foo",
+          "lineNumber": 0,
+        },
+        "id": null,
+        "isStateEditable": false,
+        "name": "",
+        "subHooks": [
+          {
+            "debugInfo": null,
+            "hookSource": {
+              "columnNumber": 0,
+              "fileName": "**",
+              "functionName": null,
+              "lineNumber": 0,
+            },
+            "id": null,
+            "isStateEditable": false,
+            "name": "Use",
+            "subHooks": [],
+            "value": Any<Promise>,
+          },
+        ],
+        "value": undefined,
+      }
+    `,
+    );
+  });
+
   describe('useDebugValue', () => {
     it('should be ignored when called outside of a custom hook', () => {
       function Foo(props) {

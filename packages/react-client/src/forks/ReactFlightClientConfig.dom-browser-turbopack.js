@@ -12,6 +12,7 @@ export const rendererPackageName = 'react-server-dom-turbopack';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigWeb';
 export * from 'react-client/src/ReactClientConsoleConfigBrowser';
+export * from 'react-client/src/ReactClientDebugConfigBrowser';
 export * from 'react-server-dom-turbopack/src/client/ReactFlightClientConfigBundlerTurbopack';
 export * from 'react-server-dom-turbopack/src/client/ReactFlightClientConfigBundlerTurbopackBrowser';
 export * from 'react-server-dom-turbopack/src/client/ReactFlightClientConfigTargetTurbopackBrowser';

@@ -3,11 +3,11 @@ import React, {
   useLayoutEffect,
   useEffect,
   useState,
-  unstable_addTransitionType as addTransitionType,
+  addTransitionType,
 } from 'react';
 
-import Chrome from './Chrome';
-import Page from './Page';
+import Chrome from './Chrome.js';
+import Page from './Page.js';
 
 const enableNavigationAPI = typeof navigation === 'object';
 

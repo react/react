@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 import {Stringify, identity} from 'shared-runtime';
 
 function foo() {

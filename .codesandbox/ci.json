@@ -1,7 +1,7 @@
 {
   "packages": ["packages/react", "packages/react-dom", "packages/react-server-dom-webpack", "packages/scheduler"],
   "buildCommand": "download-build-in-codesandbox-ci",
-  "node": "18",
+  "node": "20",
   "publishDirectory": {
     "react": "build/oss-experimental/react",
     "react-dom": "build/oss-experimental/react-dom",

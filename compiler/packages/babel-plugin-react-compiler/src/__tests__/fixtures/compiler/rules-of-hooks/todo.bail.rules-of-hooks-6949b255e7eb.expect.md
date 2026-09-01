@@ -97,6 +97,7 @@ const SomeName = () => {
   (FILLER ?? FILLER, FILLER) ?? FILLER;
 
   useSomeHook();
+
   if (anyConditionCanEvenBeFalse) {
     return null;
   }

@@ -36,11 +36,10 @@ import { useMemo } from "react";
 // (i.e. inferred non-mutable or non-escaping values don't get memoized)
 function useFoo(t0) {
   const { minWidth, styles, setStyles } = t0;
-  let t1;
+
   if (styles.width > minWidth) {
     setStyles(styles);
   }
-  t1 = undefined;
 }
 
 export const FIXTURE_ENTRYPOINT = {

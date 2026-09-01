@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false
 import {useMemo} from 'react';
 import {identity} from 'shared-runtime';
 
@@ -29,10 +29,17 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly.
+
+error.false-positive-useMemo-infer-mutate-deps.ts:14:6
   12 |   return useMemo(() => {
   13 |     return identity(val);
 > 14 |   }, [val]);
-     |       ^^^ CannotPreserveMemoization: React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. This dependency may be mutated later, which could cause the value to change unexpectedly (14:14)
+     |       ^^^ This dependency may be modified later
   15 | }
   16 |
   17 | export const FIXTURE_ENTRYPOINT = {

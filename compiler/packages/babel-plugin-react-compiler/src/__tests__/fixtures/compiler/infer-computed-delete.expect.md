@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @debug
+// @debug @enablePreserveExistingMemoizationGuarantees:false
 function Component(props) {
   const x = makeObject();
   const y = delete x[props.value];
@@ -14,7 +14,7 @@ function Component(props) {
 ## Code
 
 ```javascript
-// @debug
+// @debug @enablePreserveExistingMemoizationGuarantees:false
 function Component(props) {
   const x = makeObject();
   const y = delete x[props.value];

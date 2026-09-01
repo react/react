@@ -34,6 +34,7 @@ module.exports = api => {
     }
   }
   const plugins = [
+    ['babel-plugin-syntax-hermes-parser'],
     ['@babel/plugin-transform-flow-strip-types'],
     ['@babel/plugin-proposal-class-properties', {loose: false}],
   ];

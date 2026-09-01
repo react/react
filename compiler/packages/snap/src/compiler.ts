@@ -18,7 +18,11 @@ import type {
   CompilerReactTarget,
   CompilerPipelineValue,
 } from 'babel-plugin-react-compiler/src/Entrypoint';
-import type {Effect, ValueKind} from 'babel-plugin-react-compiler/src/HIR';
+import type {
+  Effect,
+  ValueKind,
+  ValueReason,
+} from 'babel-plugin-react-compiler/src/HIR';
 import type {parseConfigPragmaForTests as ParseConfigPragma} from 'babel-plugin-react-compiler/src/Utils/TestUtils';
 import * as HermesParser from 'hermes-parser';
 import invariant from 'invariant';
@@ -27,8 +31,13 @@ import prettier from 'prettier';
 import SproutTodoFilter from './SproutTodoFilter';
 import {isExpectError} from './fixture-utils';
 import {makeSharedRuntimeTypeProvider} from './sprout/shared-runtime-type-provider';
+
 export function parseLanguage(source: string): 'flow' | 'typescript' {
   return source.indexOf('@flow') !== -1 ? 'flow' : 'typescript';
+}
+
+export function parseSourceType(source: string): 'script' | 'module' {
+  return source.indexOf('@script') !== -1 ? 'script' : 'module';
 }
 
 /**
@@ -42,7 +51,12 @@ function makePluginOptions(
   debugIRLogger: (value: CompilerPipelineValue) => void,
   EffectEnum: typeof Effect,
   ValueKindEnum: typeof ValueKind,
-): [PluginOptions, Array<{filename: string | null; event: LoggerEvent}>] {
+  ValueReasonEnum: typeof ValueReason,
+): {
+  options: PluginOptions;
+  loggerTestOnly: boolean;
+  logs: Array<{filename: string | null; event: LoggerEvent}>;
+} {
   // TODO(@mofeiZ) rewrite snap fixtures to @validatePreserveExistingMemo:false
   let validatePreserveExistingMemoizationGuarantees = false;
   let target: CompilerReactTarget = '19';
@@ -59,13 +73,12 @@ function makePluginOptions(
     validatePreserveExistingMemoizationGuarantees = true;
   }
 
+  const loggerTestOnly = firstLine.includes('@loggerTestOnly');
   const logs: Array<{filename: string | null; event: LoggerEvent}> = [];
   const logger: Logger = {
-    logEvent: firstLine.includes('@loggerTestOnly')
-      ? (filename, event) => {
-          logs.push({filename, event});
-        }
-      : () => {},
+    logEvent: (filename, event) => {
+      logs.push({filename, event});
+    },
     debugLogIRs: debugIRLogger,
   };
 
@@ -77,6 +90,7 @@ function makePluginOptions(
       moduleTypeProvider: makeSharedRuntimeTypeProvider({
         EffectEnum,
         ValueKindEnum,
+        ValueReasonEnum,
       }),
       assertValidMutableRanges: true,
       validatePreserveExistingMemoizationGuarantees,
@@ -85,13 +99,14 @@ function makePluginOptions(
     enableReanimatedCheck: false,
     target,
   };
-  return [options, logs];
+  return {options, loggerTestOnly, logs};
 }
 
 export function parseInput(
   input: string,
   filename: string,
   language: 'flow' | 'typescript',
+  sourceType: 'module' | 'script',
 ): BabelCore.types.File {
   // Extract the first line to quickly check for custom test directives
   if (language === 'flow') {
@@ -99,14 +114,15 @@ export function parseInput(
       babel: true,
       flow: 'all',
       sourceFilename: filename,
-      sourceType: 'module',
+      sourceType,
       enableExperimentalComponentSyntax: true,
+      enableExperimentalFlowMatchSyntax: true,
     });
   } else {
     return BabelParser.parse(input, {
       sourceFilename: filename,
-      plugins: ['typescript', 'jsx'],
-      sourceType: 'module',
+      plugins: ['typescript', 'jsx', 'explicitResourceManagement'],
+      sourceType,
     });
   }
 }
@@ -209,16 +225,18 @@ export async function transformFixtureInput(
   debugIRLogger: (value: CompilerPipelineValue) => void,
   EffectEnum: typeof Effect,
   ValueKindEnum: typeof ValueKind,
+  ValueReasonEnum: typeof ValueReason,
 ): Promise<{kind: 'ok'; value: TransformResult} | {kind: 'err'; msg: string}> {
   // Extract the first line to quickly check for custom test directives
   const firstLine = input.substring(0, input.indexOf('\n'));
 
   const language = parseLanguage(firstLine);
+  const sourceType = parseSourceType(firstLine);
   // Preserve file extension as it determines typescript's babel transform
   // mode (e.g. stripping types, parsing rules for brackets)
   const filename =
     path.basename(fixturePath) + (language === 'typescript' ? '.ts' : '');
-  const inputAst = parseInput(input, filename, language);
+  const inputAst = parseInput(input, filename, language, sourceType);
   // Give babel transforms an absolute path as relative paths get prefixed
   // with `cwd`, which is different across machines
   const virtualFilepath = '/' + filename;
@@ -231,17 +249,19 @@ export async function transformFixtureInput(
   /**
    * Get Forget compiled code
    */
-  const [options, logs] = makePluginOptions(
+  const {options, loggerTestOnly, logs} = makePluginOptions(
     firstLine,
     parseConfigPragmaFn,
     debugIRLogger,
     EffectEnum,
     ValueKindEnum,
+    ValueReasonEnum,
   );
   const forgetResult = transformFromAstSync(inputAst, input, {
     filename: virtualFilepath,
     highlightCode: false,
     retainLines: true,
+    compact: true,
     plugins: [
       [plugin, options],
       'babel-plugin-fbt',
@@ -326,12 +346,49 @@ export async function transformFixtureInput(
   }
   const forgetOutput = await format(forgetCode, language);
   let formattedLogs = null;
-  if (logs.length !== 0) {
+  if (loggerTestOnly && logs.length !== 0) {
     formattedLogs = logs
       .map(({event}) => {
-        return JSON.stringify(event);
+        return JSON.stringify(event, (key, value) => {
+          if (
+            key === 'detail' &&
+            value != null &&
+            typeof value.serialize === 'function'
+          ) {
+            return value.serialize();
+          }
+          return value;
+        });
       })
       .join('\n');
+  }
+  const expectNothingCompiled =
+    firstLine.indexOf('@expectNothingCompiled') !== -1;
+  const successFailures = logs.filter(
+    log =>
+      log.event.kind === 'CompileSuccess' || log.event.kind === 'CompileError',
+  );
+  if (successFailures.length === 0 && !expectNothingCompiled) {
+    return {
+      kind: 'err',
+      msg: 'No success/failure events, add `// @expectNothingCompiled` to the first line if this is expected',
+    };
+  } else if (successFailures.length !== 0 && expectNothingCompiled) {
+    return {
+      kind: 'err',
+      msg: 'Expected nothing to be compiled (from `// @expectNothingCompiled`), but some functions compiled or errored',
+    };
+  }
+  const unexpectedThrows = logs.filter(
+    log => log.event.kind === 'CompileUnexpectedThrow',
+  );
+  if (unexpectedThrows.length > 0) {
+    return {
+      kind: 'err',
+      msg:
+        `Compiler pass(es) threw instead of recording errors:\n` +
+        unexpectedThrows.map(l => (l.event as any).data).join('\n'),
+    };
   }
   return {
     kind: 'ok',

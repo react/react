@@ -21,13 +21,20 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
-  3 | const SCALE = 2;
+Found 1 error:
+
+Invariant: [InferMutationAliasingEffects] Expected value kind to be initialized
+
+<unknown> value$3.
+
+todo.error.object-pattern-computed-key.ts:6:9
   4 | function Component(props) {
-> 5 |   const {[props.name]: value} = props;
-    |          ^^^^^^^^^^^^^^^^^^^ Todo: (BuildHIR::lowerAssignment) Handle computed properties in ObjectPattern (5:5)
-  6 |   return value;
+  5 |   const {[props.name]: value} = props;
+> 6 |   return value;
+    |          ^^^^^ this is uninitialized
   7 | }
   8 |
+  9 | export const FIXTURE_ENTRYPOINT = {
 ```
           
       

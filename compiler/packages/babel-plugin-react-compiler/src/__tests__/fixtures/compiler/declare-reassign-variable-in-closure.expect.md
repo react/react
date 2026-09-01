@@ -37,6 +37,7 @@ function Component(p) {
   } else {
     x = $[0];
   }
+
   return x;
 }
 

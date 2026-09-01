@@ -78,7 +78,6 @@ function Component(t0) {
           setState(5);
         }
       };
-
       t3 = [state];
       $[1] = state;
       $[2] = t2;

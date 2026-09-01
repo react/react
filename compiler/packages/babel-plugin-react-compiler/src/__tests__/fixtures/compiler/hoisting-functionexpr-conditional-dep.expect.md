@@ -55,33 +55,25 @@ import { Stringify } from "shared-runtime";
  *  (kind: exception) Cannot read properties of null (reading 'prop')
  */
 function Component(t0) {
-  const $ = _c(5);
+  const $ = _c(3);
   const { obj, isObjNull } = t0;
   let t1;
   if ($[0] !== isObjNull || $[1] !== obj) {
-    t1 = () => {
+    const callback = () => {
       if (!isObjNull) {
         return obj.prop;
       } else {
         return null;
       }
     };
+    t1 = <Stringify shouldInvokeFns={true} callback={callback} />;
     $[0] = isObjNull;
     $[1] = obj;
     $[2] = t1;
   } else {
     t1 = $[2];
   }
-  const callback = t1;
-  let t2;
-  if ($[3] !== callback) {
-    t2 = <Stringify shouldInvokeFns={true} callback={callback} />;
-    $[3] = callback;
-    $[4] = t2;
-  } else {
-    t2 = $[4];
-  }
-  return t2;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

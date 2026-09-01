@@ -12,7 +12,10 @@ import type {Lane, Lanes} from './ReactFiberLane';
 import type {CapturedValue} from './ReactCapturedValue';
 import type {Update} from './ReactFiberClassUpdateQueue';
 import type {Wakeable} from 'shared/ReactTypes';
-import type {OffscreenQueue} from './ReactFiberOffscreenComponent';
+import type {
+  OffscreenQueue,
+  OffscreenState,
+} from './ReactFiberOffscreenComponent';
 import type {RetryQueue} from './ReactFiberSuspenseComponent';
 
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -27,6 +30,7 @@ import {
   ActivityComponent,
   SuspenseComponent,
   OffscreenComponent,
+  SuspenseListComponent,
 } from './ReactWorkTags';
 import {
   DidCapture,
@@ -41,7 +45,6 @@ import {
 import {NoMode, ConcurrentMode} from './ReactTypeOfMode';
 import {
   enableUpdaterTracking,
-  enablePostpone,
   disableLegacyMode,
 } from 'shared/ReactFeatureFlags';
 import {createCapturedValueAtFiber} from './ReactCapturedValue';
@@ -84,7 +87,6 @@ import {
 } from './ReactFiberHydrationContext';
 import {ConcurrentRoot} from './ReactRootTags';
 import {noopSuspenseyCommitThenable} from './ReactFiberThenable';
-import {REACT_POSTPONE_TYPE} from 'shared/ReactSymbols';
 import {runWithFiberInDEV} from './ReactCurrentFiber';
 import {callComponentDidCatchInDEV} from './ReactFiberCallUserSpace';
 
@@ -185,7 +187,7 @@ function initializeClassErrorUpdate(
           // If componentDidCatch is the only error boundary method defined,
           // then it needs to call setState to recover from errors.
           // If no state update is scheduled then the boundary will swallow the error.
-          if (!includesSomeLane(fiber.lanes, (SyncLane: Lane))) {
+          if (!includesSomeLane(fiber.lanes, SyncLane as Lane)) {
             console.error(
               '%s: Error boundaries should implement getDerivedStateFromError(). ' +
                 'In that method, return a state update to display an error message or fallback UI.',
@@ -377,13 +379,9 @@ function throwException(
   }
 
   if (value !== null && typeof value === 'object') {
-    if (enablePostpone && value.$$typeof === REACT_POSTPONE_TYPE) {
-      // Act as if this is an infinitely suspending promise.
-      value = {then: function () {}};
-    }
     if (typeof value.then === 'function') {
       // This is a wakeable. The component suspended.
-      const wakeable: Wakeable = (value: any);
+      const wakeable: Wakeable = value as any;
       resetSuspendedComponent(sourceFiber, rootRenderLanes);
 
       if (__DEV__) {
@@ -400,7 +398,8 @@ function throwException(
       if (suspenseBoundary !== null) {
         switch (suspenseBoundary.tag) {
           case ActivityComponent:
-          case SuspenseComponent: {
+          case SuspenseComponent:
+          case SuspenseListComponent: {
             // If this suspense/activity boundary is not already showing a fallback, mark
             // the in-progress render as suspended. We try to perform this logic
             // as soon as soon as possible during the render phase, so the work
@@ -469,7 +468,7 @@ function throwException(
               suspenseBoundary.flags |= ScheduleRetry;
             } else {
               const retryQueue: RetryQueue | null =
-                (suspenseBoundary.updateQueue: any);
+                suspenseBoundary.updateQueue as any;
               if (retryQueue === null) {
                 suspenseBoundary.updateQueue = new Set([wakeable]);
               } else {
@@ -494,7 +493,7 @@ function throwException(
                 suspenseBoundary.flags |= ScheduleRetry;
               } else {
                 const offscreenQueue: OffscreenQueue | null =
-                  (suspenseBoundary.updateQueue: any);
+                  suspenseBoundary.updateQueue as any;
                 if (offscreenQueue === null) {
                   const newOffscreenQueue: OffscreenQueue = {
                     transitions: null,
@@ -561,6 +560,13 @@ function throwException(
     // Instead of surfacing the error, find the nearest Suspense boundary
     // and render it again without hydration.
     if (hydrationBoundary !== null) {
+      if (__DEV__) {
+        if (hydrationBoundary.tag === SuspenseListComponent) {
+          console.error(
+            'SuspenseList should never catch while hydrating. This is a bug in React.',
+          );
+        }
+      }
       if ((hydrationBoundary.flags & ShouldCapture) === NoFlags) {
         // Set a flag to indicate that we should try rendering the normal
         // children again, not the fallback.
@@ -598,7 +604,7 @@ function throwException(
           createCapturedValueAtFiber(wrapperError, sourceFiber),
         );
       }
-      const workInProgress: Fiber = (root.current: any).alternate;
+      const workInProgress: Fiber = (root.current as any).alternate;
       // Schedule an update at the root to log the error but this shouldn't
       // actually happen because we should recover.
       workInProgress.flags |= ShouldCapture;
@@ -673,6 +679,21 @@ function throwException(
           return false;
         }
         break;
+      case OffscreenComponent: {
+        const offscreenState: OffscreenState | null =
+          workInProgress.memoizedState as any;
+        if (offscreenState !== null) {
+          // An error was thrown inside a hidden Offscreen boundary. This should
+          // not be allowed to escape into the visible part of the UI. Mark the
+          // boundary with ShouldCapture to abort the ongoing prerendering
+          // attempt. This is the same flag would be set if something were to
+          // suspend. It will be cleared the next time the boundary
+          // is attempted.
+          workInProgress.flags |= ShouldCapture;
+          return false;
+        }
+        break;
+      }
       default:
         break;
     }

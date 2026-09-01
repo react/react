@@ -13,9 +13,16 @@ function Foo(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Error: This value cannot be modified
+
+Modifying component props or hook arguments is not allowed. Consider using a local variable instead.
+
+error.mutate-props.ts:2:2
   1 | function Foo(props) {
 > 2 |   props.test = 1;
-    |   ^^^^^ InvalidReact: Mutating component props or hook arguments is not allowed. Consider using a local variable instead (2:2)
+    |   ^^^^^ value cannot be modified
   3 |   return null;
   4 | }
   5 |

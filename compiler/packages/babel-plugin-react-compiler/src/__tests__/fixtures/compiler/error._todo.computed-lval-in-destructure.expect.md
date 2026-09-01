@@ -15,13 +15,19 @@ function Component(props) {
 ## Error
 
 ```
-  1 | function Component(props) {
-  2 |   const computedKey = props.key;
-> 3 |   const {[computedKey]: x} = props.val;
-    |          ^^^^^^^^^^^^^^^^ Todo: (BuildHIR::lowerAssignment) Handle computed properties in ObjectPattern (3:3)
+Found 1 error:
+
+Invariant: [InferMutationAliasingEffects] Expected value kind to be initialized
+
+<unknown> x$8.
+
+error._todo.computed-lval-in-destructure.ts:5:9
+  3 |   const {[computedKey]: x} = props.val;
   4 |
-  5 |   return x;
+> 5 |   return x;
+    |          ^ this is uninitialized
   6 | }
+  7 |
 ```
           
       

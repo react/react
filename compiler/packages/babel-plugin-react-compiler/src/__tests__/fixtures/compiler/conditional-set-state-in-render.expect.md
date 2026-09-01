@@ -34,10 +34,12 @@ function Component(props) {
   const foo = () => {
     setX(1);
   };
+
   if (props.cond) {
     setX(2);
     foo();
   }
+
   return x;
 }
 

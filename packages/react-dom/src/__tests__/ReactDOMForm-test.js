@@ -14,8 +14,8 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 // Our current version of JSDOM doesn't implement the event dispatching
 // so we polyfill it.
 const NativeFormData = global.FormData;
-const FormDataPolyfill = function FormData(form) {
-  const formData = new NativeFormData(form);
+const FormDataPolyfill = function FormData(form, submitter) {
+  const formData = new NativeFormData(form, submitter);
   const formDataEvent = new Event('formdata', {
     bubbles: true,
     cancelable: false,
@@ -489,11 +489,16 @@ describe('ReactDOMForm', () => {
     const inputRef = React.createRef();
     const buttonRef = React.createRef();
     const outsideButtonRef = React.createRef();
+    const imageButtonRef = React.createRef();
     let button;
+    let buttonX;
+    let buttonY;
     let title;
 
     function action(formData) {
       button = formData.get('button');
+      buttonX = formData.get('button.x');
+      buttonY = formData.get('button.y');
       title = formData.get('title');
     }
 
@@ -508,6 +513,12 @@ describe('ReactDOMForm', () => {
             <button name="button" value="edit" ref={buttonRef}>
               Edit
             </button>
+            <input
+              type="image"
+              name="button"
+              href="/some/image.png"
+              ref={imageButtonRef}
+            />
           </form>
           <form id="form" action={action}>
             <input type="text" name="title" defaultValue="hello" />
@@ -546,9 +557,12 @@ describe('ReactDOMForm', () => {
     expect(button).toBe('outside');
     expect(title).toBe('hello');
 
-    // Ensure that the type field got correctly restored
-    expect(inputRef.current.getAttribute('type')).toBe('submit');
-    expect(buttonRef.current.getAttribute('type')).toBe(null);
+    await submit(imageButtonRef.current);
+
+    expect(button).toBe(null);
+    expect(buttonX).toBe('0');
+    expect(buttonY).toBe('0');
+    expect(title).toBe('hello');
   });
 
   it('excludes the submitter name when the submitter is a function action', async () => {
@@ -1078,7 +1092,7 @@ describe('ReactDOMForm', () => {
     const root = ReactDOMClient.createRoot(container);
     await act(async () => {
       root.render(<App />);
-      await waitForThrow('Cannot update form state while rendering.');
+      await waitForThrow('Cannot update action state while rendering.');
     });
   });
 
@@ -1491,13 +1505,10 @@ describe('ReactDOMForm', () => {
     // Dispatch outside of a transition.
     await act(() => dispatch());
     assertConsoleErrorDev([
-      [
-        'An async function with useActionState was called outside of a transition. ' +
-          'This is likely not what you intended (for example, isPending will not update ' +
-          'correctly). Either call the returned function inside startTransition, or pass it ' +
-          'to an `action` or `formAction` prop.',
-        {withoutStack: true},
-      ],
+      'An async function with useActionState was called outside of a transition. ' +
+        'This is likely not what you intended (for example, isPending will not update ' +
+        'correctly). Either call the returned function inside startTransition, or pass it ' +
+        'to an `action` or `formAction` prop.',
     ]);
     assertLog([
       'Suspend! [Count: 1]',
@@ -1583,6 +1594,57 @@ describe('ReactDOMForm', () => {
     // The form was reset to the new value from the server.
     expect(inputRef.current.value).toBe('acdlite');
     expect(divRef.current.textContent).toEqual('Current username: acdlite');
+  });
+
+  it('should fire onReset on automatic form reset', async () => {
+    const formRef = React.createRef();
+    const inputRef = React.createRef();
+
+    let setValue;
+    const defaultValue = 0;
+    function App({promiseForUsername}) {
+      const [value, _setValue] = useState(defaultValue);
+      setValue = _setValue;
+
+      return (
+        <form
+          ref={formRef}
+          action={async formData => {
+            Scheduler.log(`Async action started`);
+            await getText('Wait');
+          }}
+          onReset={() => {
+            setValue(defaultValue);
+          }}>
+          <input
+            ref={inputRef}
+            text="text"
+            name="amount"
+            value={value}
+            onChange={event => setValue(event.currentTarget.value)}
+          />
+        </form>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    // Dirty the controlled input
+    await act(() => setValue('3'));
+    expect(inputRef.current.value).toEqual('3');
+
+    // Submit the form. This will trigger an async action.
+    await submit(formRef.current);
+    assertLog(['Async action started']);
+
+    // We haven't reset yet.
+    expect(inputRef.current.value).toEqual('3');
+
+    // Action completes. onReset has been fired and values reset manually.
+    await act(() => resolveText('Wait'));
+    assertLog([]);
+    expect(inputRef.current.value).toEqual('0');
   });
 
   it('requestFormReset schedules a form reset after transition completes', async () => {
@@ -1953,15 +2015,10 @@ describe('ReactDOMForm', () => {
 
     // This triggers a synchronous requestFormReset, and a warning
     await act(() => resolveText('Wait 1'));
-    assertConsoleErrorDev(
-      [
-        'requestFormReset was called outside a transition or action. ' +
-          'To fix, move to an action, or wrap with startTransition.',
-      ],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleErrorDev([
+      'requestFormReset was called outside a transition or action. ' +
+        'To fix, move to an action, or wrap with startTransition.',
+    ]);
     assertLog(['Request form reset']);
 
     // The form was reset even though the action didn't finish.
@@ -2271,14 +2328,80 @@ describe('ReactDOMForm', () => {
     await submit(formRef.current);
     assertLog([actionFn]);
 
-    // Everything else is toString-ed
+    // Everything else is toString-ed, unless trusted types are enabled.
     class MyAction {
       toString() {
         return 'stringified action';
       }
     }
-    await act(() => root.render(<Form action={new MyAction()} />));
+    const instance = new MyAction();
+
+    await act(() => root.render(<Form action={instance} />));
     await submit(formRef.current);
-    assertLog(['stringified action']);
+    assertLog(
+      gate('enableTrustedTypesIntegration')
+        ? [instance]
+        : ['stringified action'],
+    );
+  });
+
+  it('form actions should retain status when nested state changes', async () => {
+    const formRef = React.createRef();
+
+    let rerenderUnrelatedStatus;
+    function UnrelatedStatus() {
+      const {pending} = useFormStatus();
+      const [counter, setCounter] = useState(0);
+      rerenderUnrelatedStatus = () => setCounter(n => n + 1);
+      Scheduler.log(`[unrelated form] pending: ${pending}, state: ${counter}`);
+    }
+
+    let rerenderTargetStatus;
+    function TargetStatus() {
+      const {pending} = useFormStatus();
+      const [counter, setCounter] = useState(0);
+      Scheduler.log(`[target form] pending: ${pending}, state: ${counter}`);
+      rerenderTargetStatus = () => setCounter(n => n + 1);
+    }
+
+    function App() {
+      async function action() {
+        return new Promise(resolve => {
+          // never resolves
+        });
+      }
+
+      return (
+        <>
+          <form action={action} ref={formRef}>
+            <input type="submit" />
+            <TargetStatus />
+          </form>
+          <form>
+            <UnrelatedStatus />
+          </form>
+        </>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    assertLog([
+      '[target form] pending: false, state: 0',
+      '[unrelated form] pending: false, state: 0',
+    ]);
+
+    await submit(formRef.current);
+
+    assertLog(['[target form] pending: true, state: 0']);
+
+    await act(() => rerenderTargetStatus());
+
+    assertLog(['[target form] pending: true, state: 1']);
+
+    await act(() => rerenderUnrelatedStatus());
+
+    assertLog(['[unrelated form] pending: false, state: 1']);
   });
 });

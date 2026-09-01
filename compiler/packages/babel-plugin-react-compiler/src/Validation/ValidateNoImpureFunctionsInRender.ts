@@ -5,10 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {CompilerError, ErrorSeverity} from '..';
+import {CompilerDiagnostic} from '..';
+import {ErrorCategory} from '../CompilerError';
 import {HIRFunction} from '../HIR';
-import {getFunctionCallSignature} from '../Inference/InferReferenceEffects';
-import {Result} from '../Utils/Result';
+import {getFunctionCallSignature} from '../Inference/InferMutationAliasingEffects';
 
 /**
  * Checks that known-impure functions are not called during render. Examples of invalid functions to
@@ -19,10 +19,7 @@ import {Result} from '../Utils/Result';
  * this in several of our validation passes and should unify those analyses into a reusable helper
  * and use it here.
  */
-export function validateNoImpureFunctionsInRender(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
-  const errors = new CompilerError();
+export function validateNoImpureFunctionsInRender(fn: HIRFunction): void {
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       const value = instr.value;
@@ -34,20 +31,24 @@ export function validateNoImpureFunctionsInRender(
           callee.identifier.type,
         );
         if (signature != null && signature.impure === true) {
-          errors.push({
-            reason:
-              'Calling an impure function can produce unstable results. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent)',
-            description:
-              signature.canonicalName != null
-                ? `\`${signature.canonicalName}\` is an impure function whose results may change on every call`
-                : null,
-            severity: ErrorSeverity.InvalidReact,
-            loc: callee.loc,
-            suggestions: null,
-          });
+          fn.env.recordError(
+            CompilerDiagnostic.create({
+              category: ErrorCategory.Purity,
+              reason: 'Cannot call impure function during render',
+              description:
+                (signature.canonicalName != null
+                  ? `\`${signature.canonicalName}\` is an impure function. `
+                  : '') +
+                'Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent)',
+              suggestions: null,
+            }).withDetails({
+              kind: 'error',
+              loc: callee.loc,
+              message: 'Cannot call impure function',
+            }),
+          );
         }
       }
     }
   }
-  return errors.asResult();
 }

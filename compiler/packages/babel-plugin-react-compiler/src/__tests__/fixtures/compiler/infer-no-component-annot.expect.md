@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 import {useIdentity, identity} from 'shared-runtime';
 
 function Component(fakeProps: number) {
@@ -20,7 +20,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 import { useIdentity, identity } from "shared-runtime";
 
 function Component(fakeProps: number) {

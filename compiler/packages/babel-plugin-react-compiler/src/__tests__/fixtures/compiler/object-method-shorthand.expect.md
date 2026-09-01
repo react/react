@@ -31,7 +31,6 @@ function Component() {
         return 1;
       },
     };
-
     t0 = obj.method();
     $[0] = t0;
   } else {

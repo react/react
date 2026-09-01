@@ -175,6 +175,41 @@ export function alignReactiveScopesToBlockScopesHIR(fn: HIRFunction): void {
       if (node != null) {
         valueBlockNodes.set(fallthrough, node);
       }
+    } else if (terminal.kind === 'goto') {
+      /**
+       * If we encounter a goto that is not to the natural fallthrough of the current
+       * block (not the topmost fallthrough on the stack), then this is a goto to a
+       * label. Any scopes that extend beyond the goto must be extended to include
+       * the labeled range, so that the break statement doesn't accidentally jump
+       * out of the scope. We do this by extending the start and end of the scope's
+       * range to the label and its fallthrough respectively.
+       */
+      const start = activeBlockFallthroughRanges.find(
+        range => range.fallthrough === terminal.block,
+      );
+      if (start != null && start !== activeBlockFallthroughRanges.at(-1)) {
+        const fallthroughBlock = fn.body.blocks.get(start.fallthrough)!;
+        const firstId =
+          fallthroughBlock.instructions[0]?.id ?? fallthroughBlock.terminal.id;
+        for (const scope of activeScopes) {
+          /**
+           * activeScopes is only filtered at block start points, so some of the
+           * scopes may not actually be active anymore, ie we've past their end
+           * instruction. Only extend ranges for scopes that are actually active.
+           *
+           * TODO: consider pruning activeScopes per instruction
+           */
+          if (scope.range.end <= terminal.id) {
+            continue;
+          }
+          scope.range.start = makeInstructionId(
+            Math.min(start.range.start, scope.range.start),
+          );
+          scope.range.end = makeInstructionId(
+            Math.max(firstId, scope.range.end),
+          );
+        }
+      }
     }
 
     /*

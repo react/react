@@ -7,7 +7,7 @@
  * @flow
  */
 
-import {emptyContextObject} from './ReactFizzContext';
+import {emptyContextObject} from './ReactFizzLegacyContext';
 import {readContext} from './ReactFizzNewContext';
 
 import {disableLegacyContext} from 'shared/ReactFeatureFlags';
@@ -79,7 +79,7 @@ function warnOnUndefinedDerivedState(type: any, partialState: any) {
 }
 
 function warnNoop(
-  publicInstance: React$Component<any, any>,
+  publicInstance: component(...props: any),
   callerName: string,
 ) {
   if (__DEV__) {
@@ -214,7 +214,7 @@ export function constructClassInstance(
   }
 
   if (typeof contextType === 'object' && contextType !== null) {
-    context = readContext((contextType: any));
+    context = readContext(contextType as any);
   } else if (!disableLegacyContext) {
     context = maskedLegacyContext;
   }

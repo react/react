@@ -11,7 +11,10 @@ import type {ReactContext} from 'shared/ReactTypes';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 import type {Lanes} from './ReactFiberLane';
 import type {ActivityState} from './ReactFiberActivityComponent';
-import type {SuspenseState} from './ReactFiberSuspenseComponent';
+import type {
+  SuspenseState,
+  SuspenseListRenderState,
+} from './ReactFiberSuspenseComponent';
 import type {Cache} from './ReactFiberCacheComponent';
 import type {TracingMarkerInstance} from './ReactFiberTracingMarkerComponent';
 
@@ -31,12 +34,11 @@ import {
   CacheComponent,
   TracingMarkerComponent,
 } from './ReactWorkTags';
-import {DidCapture, NoFlags, ShouldCapture} from './ReactFiberFlags';
+import {DidCapture, NoFlags, ShouldCapture, Update} from './ReactFiberFlags';
 import {NoMode, ProfileMode} from './ReactTypeOfMode';
 import {
   enableProfilerTimer,
   enableTransitionTracing,
-  enableRenderableContext,
 } from 'shared/ReactFeatureFlags';
 
 import {popHostContainer, popHostContext} from './ReactFiberHostContext';
@@ -50,7 +52,7 @@ import {
   isContextProvider as isLegacyContextProvider,
   popContext as popLegacyContext,
   popTopLevelContextObject as popTopLevelLegacyContextObject,
-} from './ReactFiberContext';
+} from './ReactFiberLegacyContext';
 import {popProvider} from './ReactFiberNewContext';
 import {popCacheProvider} from './ReactFiberCacheComponent';
 import {transferActualDuration} from './ReactProfilerTimer';
@@ -181,20 +183,34 @@ function unwindWork(
     }
     case SuspenseListComponent: {
       popSuspenseListContext(workInProgress);
-      // SuspenseList doesn't actually catch anything. It should've been
+      // SuspenseList doesn't normally catch anything. It should've been
       // caught by a nested boundary. If not, it should bubble through.
+      const flags = workInProgress.flags;
+      if (flags & ShouldCapture) {
+        workInProgress.flags = (flags & ~ShouldCapture) | DidCapture;
+        // If we caught something on the SuspenseList itself it's because
+        // we want to ignore something. Re-enter the cycle and handle it
+        // in the complete phase.
+        const renderState: null | SuspenseListRenderState =
+          workInProgress.memoizedState;
+        if (renderState !== null) {
+          // Cut off any remaining tail work and don't commit the rendering one.
+          // This assumes that we have already confirmed that none of these are
+          // already mounted.
+          renderState.rendering = null;
+          renderState.tail = null;
+        }
+        // Schedule the commit phase to attach retry listeners.
+        workInProgress.flags |= Update;
+        return workInProgress;
+      }
       return null;
     }
     case HostPortal:
       popHostContainer(workInProgress);
       return null;
     case ContextProvider:
-      let context: ReactContext<any>;
-      if (enableRenderableContext) {
-        context = workInProgress.type;
-      } else {
-        context = workInProgress.type._context;
-      }
+      const context: ReactContext<any> = workInProgress.type;
       popProvider(context, workInProgress);
       return null;
     case OffscreenComponent:
@@ -286,12 +302,7 @@ function unwindInterruptedWork(
       popSuspenseListContext(interruptedWork);
       break;
     case ContextProvider:
-      let context: ReactContext<any>;
-      if (enableRenderableContext) {
-        context = interruptedWork.type;
-      } else {
-        context = interruptedWork.type._context;
-      }
+      const context: ReactContext<any> = interruptedWork.type;
       popProvider(context, interruptedWork);
       break;
     case OffscreenComponent:

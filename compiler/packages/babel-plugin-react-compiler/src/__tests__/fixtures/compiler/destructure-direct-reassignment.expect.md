@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 function foo(props) {
   let x, y;
   ({x, y} = {x: props.a, y: props.b});
@@ -21,6 +22,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 function foo(props) {
   let x;
   let y;

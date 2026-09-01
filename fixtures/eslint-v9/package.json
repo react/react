@@ -2,12 +2,15 @@
   "private": true,
   "name": "eslint-v9",
   "dependencies": {
-    "eslint": "^9.18.0",
+    "eslint": "^9.33.0",
     "eslint-plugin-react-hooks": "link:../../build/oss-stable/eslint-plugin-react-hooks",
     "jiti": "^2.4.2"
   },
   "scripts": {
     "build": "node build.mjs && yarn",
-    "lint": "eslint index.js --report-unused-disable-directives"
+    "lint": "tsc --noEmit && eslint index.js --report-unused-disable-directives"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.3"
   }
 }

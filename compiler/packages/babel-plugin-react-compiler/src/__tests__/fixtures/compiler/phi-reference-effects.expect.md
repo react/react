@@ -45,6 +45,7 @@ function Foo(cond) {
   } else {
     x = $[1];
   }
+
   return x;
 }
 

@@ -15,10 +15,17 @@ function Foo() {
 ## Error
 
 ```
+Found 1 error:
+
+Error: This value cannot be modified
+
+Modifying a variable defined outside a component or hook is not allowed. Consider using an effect.
+
+error.mutate-property-from-global.ts:4:9
   2 |
   3 | function Foo() {
 > 4 |   delete wat.foo;
-    |          ^^^ InvalidReact: Writing to a variable defined outside a component or hook is not allowed. Consider using an effect (4:4)
+    |          ^^^ value cannot be modified
   5 |   return wat;
   6 | }
   7 |

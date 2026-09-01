@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {CompilerError} from '..';
+import {CompilerError, SourceLocation} from '..';
 import {assertNonNull} from './CollectHoistablePropertyLoads';
 import {
   BlockId,
@@ -169,6 +169,7 @@ function matchOptionalTestBlock(
   propertyId: IdentifierId;
   storeLocalInstr: Instruction;
   consequentGoto: BlockId;
+  propertyLoadLoc: SourceLocation;
 } | null {
   const consequentBlock = assertNonNull(blocks.get(terminal.consequent));
   if (
@@ -221,6 +222,7 @@ function matchOptionalTestBlock(
       propertyId: propertyLoad.lvalue.identifier.id,
       storeLocalInstr,
       consequentGoto: consequentBlock.terminal.block,
+      propertyLoadLoc: propertyLoad.loc,
     };
   }
   return null;
@@ -275,7 +277,11 @@ function traverseOptionalBlock(
         instrVal.kind === 'PropertyLoad' &&
         instrVal.object.identifier.id === prevInstr.lvalue.identifier.id
       ) {
-        path.push({property: instrVal.property, optional: false});
+        path.push({
+          property: instrVal.property,
+          optional: false,
+          loc: instrVal.loc,
+        });
       } else {
         return null;
       }
@@ -292,6 +298,7 @@ function traverseOptionalBlock(
       identifier: maybeTest.instructions[0].value.place.identifier,
       reactive: maybeTest.instructions[0].value.place.reactive,
       path,
+      loc: maybeTest.instructions[0].value.place.loc,
     };
     test = maybeTest.terminal;
   } else if (maybeTest.terminal.kind === 'optional') {
@@ -303,16 +310,13 @@ function traverseOptionalBlock(
      * - a optional base block with a separate nested optional-chain (e.g. a(c?.d)?.d)
      */
     const testBlock = context.blocks.get(maybeTest.terminal.fallthrough)!;
-    if (testBlock!.terminal.kind !== 'branch') {
-      /**
-       * Fallthrough of the inner optional should be a block with no
-       * instructions, terminating with Test($<temporary written to from
-       * StoreLocal>)
-       */
-      CompilerError.throwTodo({
-        reason: `Unexpected terminal kind \`${testBlock.terminal.kind}\` for optional fallthrough block`,
-        loc: maybeTest.terminal.loc,
-      });
+    /**
+     * Fallthrough of the inner optional should be a block with no
+     * instructions, terminating with Test($<temporary written to from
+     * StoreLocal>)
+     */
+    if (testBlock.terminal.kind !== 'branch') {
+      return null;
     }
     /**
      * Recurse into inner optional blocks to collect inner optional-chain
@@ -390,7 +394,7 @@ function traverseOptionalBlock(
       loc: optional.terminal.loc,
     },
   );
-  const load = {
+  const load: ReactiveScopeDependency = {
     identifier: baseObject.identifier,
     reactive: baseObject.reactive,
     path: [
@@ -398,8 +402,10 @@ function traverseOptionalBlock(
       {
         property: matchConsequentResult.property,
         optional: optional.terminal.optional,
+        loc: matchConsequentResult.propertyLoadLoc,
       },
     ],
+    loc: matchConsequentResult.propertyLoadLoc,
   };
   context.processedInstrsInOptional.add(matchConsequentResult.storeLocalInstr);
   context.processedInstrsInOptional.add(test);

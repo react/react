@@ -624,27 +624,24 @@ describe('Concurrent Mode', () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
     await act(() => root.render(<StrictRoot />));
-    assertConsoleErrorDev(
-      [
-        `Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
+    assertConsoleErrorDev([
+      `Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move code with side effects to componentDidMount, and set initial state in the constructor.
 
 Please update the following components: App`,
-        `Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
+      `Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 * If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://react.dev/link/derived-state
 
 Please update the following components: Bar, Foo`,
-        `Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
+      `Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 
 Please update the following components: App`,
-      ],
-      {withoutStack: true},
-    );
+    ]);
 
     // Dedupe
     await act(() => root.render(<App />));
@@ -684,51 +681,45 @@ Please update the following components: App`,
     const root = ReactDOMClient.createRoot(container);
 
     await act(() => root.render(<StrictRoot />));
-    assertConsoleErrorDev(
-      [
-        `Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
+    assertConsoleErrorDev([
+      `Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move code with side effects to componentDidMount, and set initial state in the constructor.
 
 Please update the following components: App`,
-        `Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
+      `Using UNSAFE_componentWillReceiveProps in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 * If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://react.dev/link/derived-state
 
 Please update the following components: Child`,
-        `Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
+      `Using UNSAFE_componentWillUpdate in strict mode is not recommended and may indicate bugs in your code. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 
 Please update the following components: App`,
-      ],
-      {withoutStack: true},
-    );
-    assertConsoleWarnDev(
-      [
-        `componentWillMount has been renamed, and is not recommended for use. See https://react.dev/link/unsafe-component-lifecycles for details.
+    ]);
+    assertConsoleWarnDev([
+      `componentWillMount has been renamed, and is not recommended for use. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move code with side effects to componentDidMount, and set initial state in the constructor.
 * Rename componentWillMount to UNSAFE_componentWillMount to suppress this warning in non-strict mode. In React 18.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
 
 Please update the following components: Parent`,
-        `componentWillReceiveProps has been renamed, and is not recommended for use. See https://react.dev/link/unsafe-component-lifecycles for details.
+      `componentWillReceiveProps has been renamed, and is not recommended for use. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 * If you're updating state whenever props change, refactor your code to use memoization techniques or move it to static getDerivedStateFromProps. Learn more at: https://react.dev/link/derived-state
 * Rename componentWillReceiveProps to UNSAFE_componentWillReceiveProps to suppress this warning in non-strict mode. In React 18.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
 
 Please update the following components: Parent`,
-        `componentWillUpdate has been renamed, and is not recommended for use. See https://react.dev/link/unsafe-component-lifecycles for details.
+      `componentWillUpdate has been renamed, and is not recommended for use. See https://react.dev/link/unsafe-component-lifecycles for details.
 
 * Move data fetching code or side effects to componentDidUpdate.
 * Rename componentWillUpdate to UNSAFE_componentWillUpdate to suppress this warning in non-strict mode. In React 18.x, only the UNSAFE_ name will work. To rename all deprecated lifecycles to their new names, you can run \`npx react-codemod rename-unsafe-lifecycles\` in your project source folder.
 
 Please update the following components: Parent`,
-      ],
-      {withoutStack: true},
-    );
+    ]);
     // Dedupe
     await act(() => root.render(<StrictRoot />));
   });
@@ -753,26 +744,20 @@ Please update the following components: Parent`,
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
     await act(() => root.render(<StrictRoot foo={true} />));
-    assertConsoleErrorDev(
-      [
-        'Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. ' +
-          'See https://react.dev/link/unsafe-component-lifecycles for details.\n\n' +
-          '* Move code with side effects to componentDidMount, and set initial state in the constructor.\n\n' +
-          'Please update the following components: Foo',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. ' +
+        'See https://react.dev/link/unsafe-component-lifecycles for details.\n\n' +
+        '* Move code with side effects to componentDidMount, and set initial state in the constructor.\n\n' +
+        'Please update the following components: Foo',
+    ]);
 
     await act(() => root.render(<StrictRoot foo={false} />));
-    assertConsoleErrorDev(
-      [
-        'Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. ' +
-          'See https://react.dev/link/unsafe-component-lifecycles for details.\n\n' +
-          '* Move code with side effects to componentDidMount, and set initial state in the constructor.\n\n' +
-          'Please update the following components: Bar',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Using UNSAFE_componentWillMount in strict mode is not recommended and may indicate bugs in your code. ' +
+        'See https://react.dev/link/unsafe-component-lifecycles for details.\n\n' +
+        '* Move code with side effects to componentDidMount, and set initial state in the constructor.\n\n' +
+        'Please update the following components: Bar',
+    ]);
 
     // Dedupe
     await act(() => root.render(<StrictRoot foo={true} />));
@@ -821,19 +806,16 @@ Please update the following components: Parent`,
     await act(() => {
       root.render(<SyncRoot />);
     });
-    assertConsoleErrorDev(
-      [
-        'Using UNSAFE_componentWillReceiveProps in strict mode is not recommended ' +
-          'and may indicate bugs in your code. ' +
-          'See https://react.dev/link/unsafe-component-lifecycles for details.\n\n' +
-          '* Move data fetching code or side effects to componentDidUpdate.\n' +
-          "* If you're updating state whenever props change, " +
-          'refactor your code to use memoization techniques or move it to ' +
-          'static getDerivedStateFromProps. Learn more at: https://react.dev/link/derived-state\n\n' +
-          'Please update the following components: Bar, Foo',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Using UNSAFE_componentWillReceiveProps in strict mode is not recommended ' +
+        'and may indicate bugs in your code. ' +
+        'See https://react.dev/link/unsafe-component-lifecycles for details.\n\n' +
+        '* Move data fetching code or side effects to componentDidUpdate.\n' +
+        "* If you're updating state whenever props change, " +
+        'refactor your code to use memoization techniques or move it to ' +
+        'static getDerivedStateFromProps. Learn more at: https://react.dev/link/derived-state\n\n' +
+        'Please update the following components: Bar, Foo',
+    ]);
 
     // Dedupe
     await act(() => {
@@ -1108,11 +1090,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class double ctor', async () => {
@@ -1138,11 +1120,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class double getDerivedStateFromProps', async () => {
@@ -1169,11 +1151,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class double shouldComponentUpdate', async () => {
@@ -1208,11 +1190,11 @@ describe('context legacy', () => {
       });
 
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class state updaters', async () => {
@@ -1244,11 +1226,11 @@ describe('context legacy', () => {
       });
 
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for function double render', async () => {
@@ -1269,11 +1251,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for effect double invoke', async () => {
@@ -1302,13 +1284,13 @@ describe('context legacy', () => {
       });
       expect(create).toBe(__DEV__ ? 2 : 1);
       expect(cleanup).toBe(__DEV__ ? 1 : 0);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 3 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 3 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo create 1');
+      expect(console.log).toHaveBeenCalledWith('foo create 1');
       if (__DEV__) {
-        expect(console.log).toBeCalledWith('foo cleanup 1');
+        expect(console.log).toHaveBeenCalledWith('foo cleanup 1');
       }
     });
   });

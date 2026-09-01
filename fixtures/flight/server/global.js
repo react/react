@@ -36,7 +36,7 @@ const http = require('http');
 const React = require('react');
 
 const {renderToPipeableStream} = require('react-dom/server');
-const {createFromNodeStream} = require('react-server-dom-webpack/client');
+const {createFromNodeStream} = require('react-server-dom-unbundled/client');
 const {PassThrough} = require('stream');
 
 const app = express();
@@ -100,6 +100,12 @@ async function renderApp(req, res, next) {
     proxiedHeaders['rsc-action'] = req.get('rsc-action');
   } else if (req.get('Content-type')) {
     proxiedHeaders['Content-type'] = req.get('Content-type');
+  }
+  if (req.headers['cache-control']) {
+    proxiedHeaders['Cache-Control'] = req.get('cache-control');
+  }
+  if (req.get('rsc-request-id')) {
+    proxiedHeaders['rsc-request-id'] = req.get('rsc-request-id');
   }
 
   const requestsPrerender = req.path === '/prerender';

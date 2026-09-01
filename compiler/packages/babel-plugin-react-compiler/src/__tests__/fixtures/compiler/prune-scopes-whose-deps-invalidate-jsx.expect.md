@@ -29,7 +29,7 @@ import { c as _c } from "react/compiler-runtime";
 import { useHook } from "shared-runtime";
 
 function Component(props) {
-  const $ = _c(6);
+  const $ = _c(4);
   const o = {};
   let t0;
   if ($[0] !== props.value) {
@@ -44,22 +44,14 @@ function Component(props) {
   o.value = props.value;
   let t1;
   if ($[2] !== x) {
-    t1 = <div>{x}</div>;
+    const y = <div>{x}</div>;
+    t1 = <div>{y}</div>;
     $[2] = x;
     $[3] = t1;
   } else {
     t1 = $[3];
   }
-  const y = t1;
-  let t2;
-  if ($[4] !== y) {
-    t2 = <div>{y}</div>;
-    $[4] = y;
-    $[5] = t2;
-  } else {
-    t2 = $[5];
-  }
-  return t2;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

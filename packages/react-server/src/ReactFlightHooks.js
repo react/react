@@ -17,7 +17,6 @@ import {
 } from 'shared/ReactSymbols';
 import {createThenableState, trackUsedThenable} from './ReactFlightThenable';
 import {isClientReference} from './ReactFlightServerConfig';
-import {enableUseEffectEventHook} from 'shared/ReactFeatureFlags';
 
 let currentRequest = null;
 let thenableIndexCounter = 0;
@@ -51,40 +50,46 @@ export function getThenableStateAfterSuspending(): ThenableState {
   if (__DEV__) {
     // This is a hack but we stash the debug info here so that we don't need a completely
     // different data structure just for this in DEV. Not too happy about it.
-    (state: any)._componentDebugInfo = currentComponentDebugInfo;
+    (state as any)._componentDebugInfo = currentComponentDebugInfo;
     currentComponentDebugInfo = null;
   }
   thenableState = null;
   return state;
 }
 
+export function getTrackedThenablesAfterRendering(): null | Array<
+  Thenable<any>,
+> {
+  return thenableState;
+}
+
 export const HooksDispatcher: Dispatcher = {
-  readContext: (unsupportedContext: any),
+  readContext: unsupportedContext as any,
 
   use,
   useCallback<T>(callback: T): T {
     return callback;
   },
-  useContext: (unsupportedContext: any),
-  useEffect: (unsupportedHook: any),
-  useImperativeHandle: (unsupportedHook: any),
-  useLayoutEffect: (unsupportedHook: any),
-  useInsertionEffect: (unsupportedHook: any),
+  useContext: unsupportedContext as any,
+  useEffect: unsupportedHook as any,
+  useImperativeHandle: unsupportedHook as any,
+  useLayoutEffect: unsupportedHook as any,
+  useInsertionEffect: unsupportedHook as any,
   useMemo<T>(nextCreate: () => T): T {
     return nextCreate();
   },
-  useReducer: (unsupportedHook: any),
-  useRef: (unsupportedHook: any),
-  useState: (unsupportedHook: any),
+  useReducer: unsupportedHook as any,
+  useRef: unsupportedHook as any,
+  useState: unsupportedHook as any,
   useDebugValue(): void {},
-  useDeferredValue: (unsupportedHook: any),
-  useTransition: (unsupportedHook: any),
-  useSyncExternalStore: (unsupportedHook: any),
+  useDeferredValue: unsupportedHook as any,
+  useTransition: unsupportedHook as any,
+  useSyncExternalStore: unsupportedHook as any,
   useId,
-  useHostTransitionStatus: (unsupportedHook: any),
-  useFormState: (unsupportedHook: any),
-  useActionState: (unsupportedHook: any),
-  useOptimistic: (unsupportedHook: any),
+  useHostTransitionStatus: unsupportedHook as any,
+  useFormState: unsupportedHook as any,
+  useActionState: unsupportedHook as any,
+  useOptimistic: unsupportedHook as any,
   useMemoCache(size: number): Array<any> {
     const data = new Array<any>(size);
     for (let i = 0; i < size; i++) {
@@ -95,10 +100,8 @@ export const HooksDispatcher: Dispatcher = {
   useCacheRefresh(): <T>(?() => T, ?T) => void {
     return unsupportedRefresh;
   },
+  useEffectEvent: unsupportedHook as any,
 };
-if (enableUseEffectEventHook) {
-  HooksDispatcher.useEffectEvent = (unsupportedHook: any);
-}
 
 function unsupportedHook(): void {
   throw new Error('This Hook is not supported in Server Components.');
@@ -120,24 +123,19 @@ function useId(): string {
   }
   const id = currentRequest.identifierCount++;
   // use 'S' for Flight components to distinguish from 'R' and 'r' in Fizz/Client
-  return (
-    '\u00AB' +
-    currentRequest.identifierPrefix +
-    'S' +
-    id.toString(32) +
-    '\u00BB'
-  );
+  return '_' + currentRequest.identifierPrefix + 'S_' + id.toString(32) + '_';
 }
 
 function use<T>(usable: Usable<T>): T {
   if (
+    // $FlowFixMe[invalid-compare]
     (usable !== null && typeof usable === 'object') ||
     typeof usable === 'function'
   ) {
     // $FlowFixMe[method-unbinding]
     if (typeof usable.then === 'function') {
       // This is a thenable.
-      const thenable: Thenable<T> = (usable: any);
+      const thenable: Thenable<T> = usable as any;
 
       // Track the position of the thenable within this fiber.
       const index = thenableIndexCounter;
@@ -153,7 +151,11 @@ function use<T>(usable: Usable<T>): T {
   }
 
   if (isClientReference(usable)) {
-    if (usable.value != null && usable.value.$$typeof === REACT_CONTEXT_TYPE) {
+    const clientReference: any = usable;
+    if (
+      clientReference.value != null &&
+      clientReference.value.$$typeof === REACT_CONTEXT_TYPE
+    ) {
       // Show a more specific message since it's a common mistake.
       throw new Error('Cannot read a Client Context from a Server Component.');
     } else {

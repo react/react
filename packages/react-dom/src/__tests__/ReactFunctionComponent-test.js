@@ -183,7 +183,7 @@ describe('ReactFunctionComponent', () => {
           </div>,
         );
       }),
-    ).resolves.not.toThrowError();
+    ).resolves.not.toThrow();
   });
 
   it('should use correct name in key warning', async () => {
@@ -201,27 +201,6 @@ describe('ReactFunctionComponent', () => {
         '\n' +
         'Check the render method of `Child`. See https://react.dev/link/warning-keys for more information.\n' +
         '    in span (at **)\n' +
-        '    in Child (at **)',
-    ]);
-  });
-
-  // @gate !disableDefaultPropsExceptForClasses
-  it('should support default props', async () => {
-    function Child(props) {
-      return <div>{props.test}</div>;
-    }
-    Child.defaultProps = {test: 2};
-
-    const container = document.createElement('div');
-    const root = ReactDOMClient.createRoot(container);
-
-    await act(() => {
-      root.render(<Child />);
-    });
-    expect(container.textContent).toBe('2');
-    assertConsoleErrorDev([
-      'Child: Support for defaultProps will be removed from function components in a future major release. ' +
-        'Use JavaScript default parameters instead.\n' +
         '    in Child (at **)',
     ]);
   });

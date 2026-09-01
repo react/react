@@ -7,11 +7,8 @@
  * @flow
  */
 
-// Corresponds to ReactFiberWakeable and ReactFlightWakeable modules. Generally,
+// Corresponds to ReactFiberThenable and ReactFlightThenable modules. Generally,
 // changes to one module should be reflected in the others.
-
-// TODO: Rename this module and the corresponding Fiber one to "Thenable"
-// instead of "Wakeable". Or some other more appropriate name.
 
 import type {
   Thenable,
@@ -19,8 +16,10 @@ import type {
   FulfilledThenable,
   RejectedThenable,
 } from 'shared/ReactTypes';
+import type {ComponentStackNode} from './ReactFizzComponentStack';
 
 import noop from 'shared/noop';
+import {currentTaskInDEV} from './ReactFizzCurrentTask';
 
 export opaque type ThenableState = Array<Thenable<any>>;
 
@@ -70,11 +69,29 @@ export function trackUsedThenable<T>(
   // a listener that will update its status and result when it resolves.
   switch (thenable.status) {
     case 'fulfilled': {
+      // This could be a bad instrumentation that doesn't set .value.
+      // We're not type-checking since this is a hot path where you can
+      // track down easily when something becomes `undefined` unexpectedly.
       const fulfilledValue: T = thenable.value;
       return fulfilledValue;
     }
     case 'rejected': {
       const rejectedError = thenable.reason;
+
+      // Rejected Promises are rarer so we're doing an extra type-check in
+      // case of a bad instrumentation that doesn't set .reason
+      // If we end up throwing `undefined` it becomes hard to track down
+      // where that throw originated because no callstack would exist.
+      // React would still have a Component stack but that could only be used
+      // as an approximation.
+      if (rejectedError === undefined && !('reason' in thenable)) {
+        throw new Error(
+          'A rejected Promise was passed to React without a `reason` property. ' +
+            'React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. ' +
+            "Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`.",
+        );
+      }
+
       throw rejectedError;
     }
     default: {
@@ -86,19 +103,19 @@ export function trackUsedThenable<T>(
         // happen. Flight lazily parses JSON when the value is actually awaited.
         thenable.then(noop, noop);
       } else {
-        const pendingThenable: PendingThenable<T> = (thenable: any);
+        const pendingThenable: PendingThenable<T> = thenable as any;
         pendingThenable.status = 'pending';
         pendingThenable.then(
           fulfilledValue => {
             if (thenable.status === 'pending') {
-              const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+              const fulfilledThenable: FulfilledThenable<T> = thenable as any;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = fulfilledValue;
             }
           },
           (error: mixed) => {
             if (thenable.status === 'pending') {
-              const rejectedThenable: RejectedThenable<T> = (thenable: any);
+              const rejectedThenable: RejectedThenable<T> = thenable as any;
               rejectedThenable.status = 'rejected';
               rejectedThenable.reason = error;
             }
@@ -107,13 +124,13 @@ export function trackUsedThenable<T>(
       }
 
       // Check one more time in case the thenable resolved synchronously
-      switch ((thenable: Thenable<T>).status) {
+      switch ((thenable as Thenable<T>).status) {
         case 'fulfilled': {
-          const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+          const fulfilledThenable: FulfilledThenable<T> = thenable as any;
           return fulfilledThenable.value;
         }
         case 'rejected': {
-          const rejectedThenable: RejectedThenable<T> = (thenable: any);
+          const rejectedThenable: RejectedThenable<T> = thenable as any;
           throw rejectedThenable.reason;
         }
       }
@@ -126,6 +143,9 @@ export function trackUsedThenable<T>(
       // get captured by the work loop, log a warning, because that means
       // something in userspace must have caught it.
       suspendedThenable = thenable;
+      if (__DEV__ && shouldCaptureSuspendedCallSite) {
+        captureSuspendedCallSite();
+      }
       throw SuspenseException;
     }
   }
@@ -140,7 +160,7 @@ export function readPreviousThenable<T>(
     return undefined;
   } else {
     // We assume this has been resolved already.
-    return (previous: any).value;
+    return (previous as any).value;
   }
 }
 
@@ -162,4 +182,142 @@ export function getSuspendedThenable(): Thenable<mixed> {
   const thenable = suspendedThenable;
   suspendedThenable = null;
   return thenable;
+}
+
+let shouldCaptureSuspendedCallSite: boolean = false;
+export function setCaptureSuspendedCallSiteDEV(capture: boolean): void {
+  if (!__DEV__) {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'setCaptureSuspendedCallSiteDEV was called in a production environment. ' +
+        'This is a bug in React.',
+    );
+  }
+  shouldCaptureSuspendedCallSite = capture;
+}
+
+// DEV-only
+let suspendedCallSiteStack: ComponentStackNode | null = null;
+let suspendedCallSiteDebugTask: ConsoleTask | null = null;
+function captureSuspendedCallSite(): void {
+  // This is currently only used when aborting in Fizz.
+  // You can only abort the render in Fizz and Flight.
+  // In Fiber we only track suspended use via DevTools.
+  // In Flight, we track suspended use via async debug info.
+  const currentTask = currentTaskInDEV;
+  if (currentTask === null) {
+    // eslint-disable-next-line react-internal/prod-error-codes -- not a prod error
+    throw new Error(
+      'Expected to have a current task when tracking a suspend call site. ' +
+        'This is a bug in React.',
+    );
+  }
+  const currentComponentStack = currentTask.componentStack;
+  if (currentComponentStack === null) {
+    // eslint-disable-next-line react-internal/prod-error-codes -- not a prod error
+    throw new Error(
+      'Expected to have a component stack on the current task when ' +
+        'tracking a suspended call site. This is a bug in React.',
+    );
+  }
+  suspendedCallSiteStack = {
+    parent: currentComponentStack.parent,
+    type: currentComponentStack.type,
+    owner: currentComponentStack.owner,
+    stack: Error('react-stack-top-frame'),
+  };
+  // TODO: If this is used in error handlers, the ConsoleTask stack
+  // will just be this debugTask + the stack of the abort() call which usually means
+  // it's just this debugTask.
+  // Ideally we'd be able to reconstruct the owner ConsoleTask as well.
+  // The stack of the debugTask would not point to the suspend location anyway.
+  // The focus is really on callsite which should be used in captureOwnerStack().
+  suspendedCallSiteDebugTask = currentTask.debugTask;
+}
+export function getSuspendedCallSiteStackDEV(): ComponentStackNode | null {
+  if (__DEV__) {
+    if (suspendedCallSiteStack === null) {
+      return null;
+    }
+    const callSite = suspendedCallSiteStack;
+    suspendedCallSiteStack = null;
+    return callSite;
+  } else {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'getSuspendedCallSiteDEV was called in a production environment. ' +
+        'This is a bug in React.',
+    );
+  }
+}
+
+export function getSuspendedCallSiteDebugTaskDEV(): ConsoleTask | null {
+  if (__DEV__) {
+    if (suspendedCallSiteDebugTask === null) {
+      return null;
+    }
+    const debugTask = suspendedCallSiteDebugTask;
+    suspendedCallSiteDebugTask = null;
+    return debugTask;
+  } else {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'getSuspendedCallSiteDebugTaskDEV was called in a production environment. ' +
+        'This is a bug in React.',
+    );
+  }
+}
+
+export function ensureSuspendableThenableStateDEV(
+  thenableState: ThenableState,
+): () => void {
+  if (__DEV__) {
+    const lastThenable = thenableState[thenableState.length - 1];
+    // Reset the last thenable back to pending.
+    switch (lastThenable.status) {
+      case 'fulfilled': {
+        const previousThenableValue = lastThenable.value;
+        // $FlowFixMe[method-unbinding] We rebind .then immediately.
+        const previousThenableThen = lastThenable.then.bind(lastThenable);
+        delete lastThenable.value;
+        delete (lastThenable as any).status;
+        // We'll call .then again if we resuspend. Since we potentially corrupted
+        // the internal state of unknown classes, we need to diffuse the potential
+        // crash by replacing the .then method with a noop.
+        // $FlowFixMe[cannot-write] Custom userspace Thenables may not be but native Promises are.
+        lastThenable.then = noop;
+        return () => {
+          // $FlowFixMe[cannot-write] Custom userspace Thenables may not be but native Promises are.
+          lastThenable.then = previousThenableThen;
+          lastThenable.value = previousThenableValue;
+          lastThenable.status = 'fulfilled';
+        };
+      }
+      case 'rejected': {
+        const previousThenableReason = lastThenable.reason;
+        // $FlowFixMe[method-unbinding] We rebind .then immediately.
+        const previousThenableThen = lastThenable.then.bind(lastThenable);
+        delete lastThenable.reason;
+        delete (lastThenable as any).status;
+        // We'll call .then again if we resuspend. Since we potentially corrupted
+        // the internal state of unknown classes, we need to diffuse the potential
+        // crash by replacing the .then method with a noop.
+        // $FlowFixMe[cannot-write] Custom userspace Thenables may not be but native Promises are.
+        lastThenable.then = noop;
+        return () => {
+          // $FlowFixMe[cannot-write] Custom userspace Thenables may not be but native Promises are.
+          lastThenable.then = previousThenableThen;
+          lastThenable.reason = previousThenableReason;
+          lastThenable.status = 'rejected';
+        };
+      }
+    }
+    return noop;
+  } else {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      'ensureSuspendableThenableStateDEV was called in a production environment. ' +
+        'This is a bug in React.',
+    );
+  }
 }

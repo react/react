@@ -31,6 +31,7 @@ function Component(props) {
   const x = [];
   useNoAlias();
   mutate(x);
+
   return <div>{x}</div>;
 }
 

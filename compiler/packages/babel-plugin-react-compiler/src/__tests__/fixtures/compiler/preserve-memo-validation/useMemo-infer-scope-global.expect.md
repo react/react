@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @validatePreserveExistingMemoizationGuarantees
+// @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 
 import {useMemo} from 'react';
 import {CONST_STRING0} from 'shared-runtime';
@@ -22,7 +22,7 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMemoizationGuarantees
+import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMemoizationGuarantees @validateExhaustiveMemoizationDependencies:false
 
 import { useMemo } from "react";
 import { CONST_STRING0 } from "shared-runtime";
@@ -31,14 +31,12 @@ import { CONST_STRING0 } from "shared-runtime";
 function useFoo() {
   const $ = _c(1);
   let t0;
-  let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = [CONST_STRING0];
-    $[0] = t1;
+    t0 = [CONST_STRING0];
+    $[0] = t0;
   } else {
-    t1 = $[0];
+    t0 = $[0];
   }
-  t0 = t1;
   return t0;
 }
 

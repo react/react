@@ -17,6 +17,7 @@ describe('React hooks DevTools integration', () => {
   let act;
   let overrideHookState;
   let scheduleUpdate;
+  let scheduleRetry;
   let setSuspenseHandler;
   let waitForAll;
 
@@ -27,6 +28,7 @@ describe('React hooks DevTools integration', () => {
       inject: injected => {
         overrideHookState = injected.overrideHookState;
         scheduleUpdate = injected.scheduleUpdate;
+        scheduleRetry = injected.scheduleRetry;
         setSuspenseHandler = injected.setSuspenseHandler;
       },
       supportsFiber: true,
@@ -310,6 +312,18 @@ describe('React hooks DevTools integration', () => {
       await act(() => scheduleUpdate(fiber)); // Re-render
       expect(renderer.toJSON().children).toEqual(['Done']);
     } else {
+      expect(renderer.toJSON().children).toEqual(['Done']);
+    }
+
+    if (scheduleRetry) {
+      // Lock again, synchronously
+      setSuspenseHandler(() => true);
+      await act(() => scheduleUpdate(fiber)); // Re-render
+      expect(renderer.toJSON().children).toEqual(['Loading']);
+
+      // Release the lock again but this time using retry lane
+      setSuspenseHandler(() => false);
+      await act(() => scheduleRetry(fiber)); // Re-render
       expect(renderer.toJSON().children).toEqual(['Done']);
     }
   });

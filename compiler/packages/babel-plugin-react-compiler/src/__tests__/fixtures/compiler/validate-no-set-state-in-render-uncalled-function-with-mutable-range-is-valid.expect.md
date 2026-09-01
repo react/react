@@ -50,6 +50,7 @@ function Component(props) {
     t0 = $[1];
   }
   const onSubmit = t0;
+
   switch (currentStep) {
     case 0: {
       let t1;

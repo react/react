@@ -16,28 +16,27 @@ const dynamicFeatureFlags: DynamicFeatureFlags = require('ReactFeatureFlags');
 
 export const {
   alwaysThrottleRetries,
-  disableDefaultPropsExceptForClasses,
   disableLegacyContextForFunctionComponents,
   disableSchedulerTimeoutInWorkLoop,
-  enableDO_NOT_USE_disableStrictPassiveEffect,
-  enableHiddenSubtreeInsertionEffectCleanup,
   enableInfiniteRenderLoopDetection,
+  enableInfiniteRenderLoopDetectionForceThrow,
+  enableConditionalUseWarning,
   enableNoCloningMemoCache,
   enableObjectFiber,
-  enableRenderableContext,
   enableRetryLaneExpiration,
   enableTransitionTracing,
-  enableTrustedTypesIntegration,
-  favorSafetyOverHydrationPerf,
-  renameElementSymbol,
   retryLaneExpirationMs,
   syncLaneExpirationMs,
   transitionLaneExpirationMs,
-  enableFastAddPropertiesInDiffing,
+  enableSuspenseyImages,
   enableViewTransition,
-  enableComponentPerformanceTrack,
   enableScrollEndPolyfill,
   enableFragmentRefs,
+  enableFragmentRefsScrollIntoView,
+  enableFragmentRefsTextNodes,
+  enableInternalInstanceMap,
+  enableParallelTransitions,
+  enableViewTransitionParentEnterExit,
 } = dynamicFeatureFlags;
 
 // On WWW, __EXPERIMENTAL__ is used for a new modern build.
@@ -47,20 +46,22 @@ export const enableProfilerTimer = __PROFILE__;
 export const enableProfilerCommitHooks = __PROFILE__;
 export const enableProfilerNestedUpdatePhase = __PROFILE__;
 export const enableUpdaterTracking = __PROFILE__;
+export const enableTrustedTypesIntegration: boolean = true;
+export const enableSuspenseAvoidThisFallback: boolean = true;
 
-export const enableSuspenseAvoidThisFallback = true;
+export const enableAsyncDebugInfo: boolean = true;
+export const enableCPUSuspense: boolean = true;
+export const enableMoveBefore: boolean = false;
+export const disableInputAttributeSyncing: boolean = false;
+export const enableLegacyFBSupport: boolean = true;
 
-export const enableCPUSuspense = true;
-export const enableUseEffectEventHook = true;
-export const enableMoveBefore = false;
-export const disableInputAttributeSyncing = false;
-export const enableLegacyFBSupport = true;
+export const enableYieldingBeforePassive: boolean = false;
 
-export const enableYieldingBeforePassive = false;
+export const enableThrottledScheduling: boolean = false;
 
-export const enableThrottledScheduling = false;
+export const enableComponentPerformanceTrack: boolean = true;
 
-export const enableHydrationLaneScheduling = true;
+export const enablePerformanceIssueReporting: boolean = false;
 
 // Logs additional User Timing API marks for use with an experimental profiling tool.
 export const enableSchedulingProfiler: boolean =
@@ -68,58 +69,66 @@ export const enableSchedulingProfiler: boolean =
 
 export const disableLegacyContext = __EXPERIMENTAL__;
 
-export const enableLegacyCache = true;
+export const enableLegacyCache: boolean = true;
 
-export const enableAsyncIterableChildren = false;
+export const enableAsyncIterableChildren: boolean = false;
+export const enableFlightWeakThenables: boolean = false;
 
-export const enableTaint = false;
-
-export const enablePostpone = false;
-
-export const enableHalt = false;
+export const enableTaint: boolean = false;
 
 // TODO: www currently relies on this feature. It's disabled in open source.
 // Need to remove it.
-export const disableCommentsAsDOMContainers = false;
+export const disableCommentsAsDOMContainers: boolean = false;
 
-export const enableCreateEventHandleAPI = true;
+export const enableCreateEventHandleAPI: boolean = true;
 
-export const enableScopeAPI = true;
+export const enableBrowserAPI: boolean = true;
 
-export const enableSuspenseCallback = true;
+export const enableEffectEventMutationPhase: boolean = true;
 
-export const enableLegacyHidden = true;
+export const enableScopeAPI: boolean = true;
+
+export const enableSuspenseCallback: boolean = true;
+
+export const enableLegacyHidden: boolean = true;
 
 export const disableTextareaChildren = __EXPERIMENTAL__;
 
-export const enableFizzExternalRuntime = true;
+export const enableFizzExternalRuntime: boolean = true;
 
-export const passChildrenWhenCloningPersistedNodes = false;
+export const passChildrenWhenCloningPersistedNodes: boolean = false;
 
-export const enablePersistedModeClonedFlag = false;
+export const disableClientCache: boolean = true;
 
-export const enableAsyncDebugInfo = false;
-export const disableClientCache = true;
+export const enableReactTestRendererWarning: boolean = false;
 
-export const enableReactTestRendererWarning = false;
+export const disableLegacyMode: boolean = true;
 
-export const disableLegacyMode = true;
+export const enableViewTransitionForPersistenceMode: boolean = false;
 
-export const enableShallowPropDiffing = false;
+export const enableGestureTransition: boolean = false;
 
-export const enableEagerAlternateStateNodeCleanup = false;
-
-export const enableLazyPublicInstanceInFabric = false;
-
-export const enableGestureTransition = false;
-
-export const enableSuspenseyImages = false;
-export const enableFizzBlockingRender = true;
-export const enableSrcObject = false;
-export const enableHydrationChangeEvent = false;
-export const enableDefaultTransitionIndicator = false;
+export const enableFizzBlockingRender: boolean = true;
+export const enableSrcObject: boolean = false;
+export const enableHydrationChangeEvent: boolean = false;
+export const enableDefaultTransitionIndicator: boolean = true;
 
 export const ownerStackLimit = 1e4;
 
+export const enableFragmentRefsInstanceHandles: boolean = true;
+
+export const enableOptimisticKey: boolean = false;
+
+// These flags are only used by eslint-plugin-react-hooks, which has its own
+// fork at ReactFeatureFlags.eslint-plugin.www.js with the www-specific values.
+// Edit that file to change the www values for these flags.
+export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
+export const eprh_enableVerboseNoSetStateInEffectCompilerLint: boolean = false;
+export const eprh_enableExhaustiveEffectDependenciesCompilerLint:
+  | 'off'
+  | 'all'
+  | 'extra-only'
+  | 'missing-only' = 'off';
+
 // Flow magic to verify the exports of this file match the original version.
-((((null: any): ExportsType): FeatureFlagsType): ExportsType);
+null as any as ExportsType as FeatureFlagsType as ExportsType;

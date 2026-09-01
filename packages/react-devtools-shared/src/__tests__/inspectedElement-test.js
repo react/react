@@ -582,6 +582,7 @@ describe('InspectedElement', () => {
           boolean_false={false}
           boolean_true={true}
           infinity={Infinity}
+          minus_infinity={-Infinity}
           integer_zero={0}
           integer_one={1}
           float={1.23}
@@ -604,6 +605,7 @@ describe('InspectedElement', () => {
         "infinity": Infinity,
         "integer_one": 1,
         "integer_zero": 0,
+        "minus_infinity": -Infinity,
         "nan": NaN,
         "string": "abc",
         "string_empty": "",
@@ -682,6 +684,7 @@ describe('InspectedElement', () => {
           object_with_symbol={objectWithSymbol}
           proxy={proxyInstance}
           react_element={<span />}
+          react_lazy={React.lazy(async () => ({default: 'foo'}))}
           regexp={/abc/giu}
           set={setShallow}
           set_of_sets={setOfSets}
@@ -780,9 +783,18 @@ describe('InspectedElement', () => {
           "preview_short": () => {},
           "preview_long": () => {},
         },
-        "react_element": Dehydrated {
-          "preview_short": <span />,
-          "preview_long": <span />,
+        "react_element": {
+          "key": null,
+          "props": Dehydrated {
+            "preview_short": {…},
+            "preview_long": {},
+          },
+        },
+        "react_lazy": {
+          "_payload": Dehydrated {
+            "preview_short": {…},
+            "preview_long": {_ioInfo: {…}, _result: () => {}, _status: -1},
+          },
         },
         "regexp": Dehydrated {
           "preview_short": /abc/giu,
@@ -930,13 +942,13 @@ describe('InspectedElement', () => {
     const inspectedElement = await inspectElementAtIndex(0);
 
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-    {
-      "unusedPromise": Dehydrated {
-        "preview_short": Promise,
-        "preview_long": Promise,
-      },
-    }
-  `);
+          {
+            "unusedPromise": Dehydrated {
+              "preview_short": Promise,
+              "preview_long": Promise,
+            },
+          }
+      `);
   });
 
   it('should not consume iterables while inspecting', async () => {

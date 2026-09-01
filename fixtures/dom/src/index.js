@@ -2,14 +2,23 @@ import './polyfills';
 import loadReact, {isLocal} from './react-loader';
 
 if (isLocal()) {
-  Promise.all([import('react'), import('react-dom/client')])
-    .then(([React, ReactDOMClient]) => {
-      if (React === undefined || ReactDOMClient === undefined) {
+  Promise.all([
+    import('react'),
+    import('react-dom'),
+    import('react-dom/client'),
+  ])
+    .then(([React, ReactDOM, ReactDOMClient]) => {
+      if (
+        React === undefined ||
+        ReactDOM === undefined ||
+        ReactDOMClient === undefined
+      ) {
         throw new Error(
           'Unable to load React. Build experimental and then run `yarn dev` again'
         );
       }
       window.React = React;
+      window.ReactDOM = ReactDOM;
       window.ReactDOMClient = ReactDOMClient;
     })
     .then(() => import('./components/App'))

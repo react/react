@@ -36,7 +36,6 @@ function Component(props) {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const object = {};
-
     t0 = () => {
       mutate(object);
     };

@@ -121,17 +121,7 @@ describe('ReactFlightDOMForm', () => {
       const method = (submitter && submitter.formMethod) || form.method;
       const encType = (submitter && submitter.formEnctype) || form.enctype;
       if (method === 'post' && encType === 'multipart/form-data') {
-        let formData;
-        if (submitter) {
-          const temp = document.createElement('input');
-          temp.name = submitter.name;
-          temp.value = submitter.value;
-          submitter.parentNode.insertBefore(temp, submitter);
-          formData = new FormData(form);
-          temp.parentNode.removeChild(temp);
-        } else {
-          formData = new FormData(form);
-        }
+        const formData = new FormData(form, submitter);
         return POST(formData);
       }
       throw new Error('Navigate to: ' + action);
@@ -967,7 +957,8 @@ describe('ReactFlightDOMForm', () => {
       'Failed to serialize an action for progressive enhancement:\n' +
         'Error: React Element cannot be passed to Server Functions from the Client without a temporary reference set. Pass a TemporaryReferenceSet to the options.\n' +
         '  [<div/>]\n' +
-        '   ^^^^^^',
+        '   ^^^^^^' +
+        '\n    in <stack>',
     ]);
 
     // The error message was returned as JSX.
@@ -1042,7 +1033,8 @@ describe('ReactFlightDOMForm', () => {
     await submitTheForm();
     assertConsoleErrorDev([
       'Failed to serialize an action for progressive enhancement:\n' +
-        'Error: File/Blob fields are not yet supported in progressive forms. Will fallback to client hydration.',
+        'Error: File/Blob fields are not yet supported in progressive forms. Will fallback to client hydration.' +
+        '\n    in <stack>',
     ]);
 
     expect(blob instanceof Blob).toBe(true);

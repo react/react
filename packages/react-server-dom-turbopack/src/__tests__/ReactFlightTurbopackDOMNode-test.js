@@ -17,11 +17,16 @@ let turbopackModules;
 let turbopackModuleLoading;
 let React;
 let ReactDOMServer;
+let ReactServer;
 let ReactServerDOMServer;
 let ReactServerDOMClient;
 let Stream;
 let use;
 let serverAct;
+
+const streamOptions = {
+  objectMode: true,
+};
 
 describe('ReactFlightTurbopackDOMNode', () => {
   beforeEach(() => {
@@ -35,6 +40,7 @@ describe('ReactFlightTurbopackDOMNode', () => {
     jest.mock('react-server-dom-turbopack/server', () =>
       require('react-server-dom-turbopack/server.node'),
     );
+    ReactServer = require('react');
     ReactServerDOMServer = require('react-server-dom-turbopack/server');
 
     const TurbopackMock = require('./utils/TurbopackMock');
@@ -47,7 +53,7 @@ describe('ReactFlightTurbopackDOMNode', () => {
     __unmockReact();
     jest.unmock('react-server-dom-turbopack/server');
     jest.mock('react-server-dom-turbopack/client', () =>
-      require('react-server-dom-turbopack/client.node'),
+      jest.requireActual('react-server-dom-turbopack/client.node'),
     );
 
     React = require('react');
@@ -73,6 +79,31 @@ describe('ReactFlightTurbopackDOMNode', () => {
       });
       stream.pipe(writable);
     });
+  }
+
+  function normalizeCodeLocInfo(str) {
+    return (
+      str &&
+      str.replace(/^ +(?:at|in) ([\S]+)[^\n]*/gm, function (m, name) {
+        return '    in ' + name + (/\d/.test(m) ? ' (at **)' : '');
+      })
+    );
+  }
+
+  function createDelayedStream() {
+    let resolveDelayedStream;
+    const promise = new Promise(resolve => (resolveDelayedStream = resolve));
+    const delayedStream = new Stream.Transform({
+      ...streamOptions,
+      transform(chunk, encoding, callback) {
+        // Artificially delay pushing the chunk.
+        promise.then(() => {
+          this.push(chunk);
+          callback();
+        });
+      },
+    });
+    return {delayedStream, resolveDelayedStream};
   }
 
   it('should allow an alternative module mapping to be used for SSR', async () => {
@@ -128,6 +159,194 @@ describe('ReactFlightTurbopackDOMNode', () => {
     const result = await readResult(ssrStream);
     expect(result).toEqual(
       '<script src="/prefix/path/to/chunk.js" async=""></script><span>Client Component</span>',
+    );
+  });
+
+  // @gate __DEV__
+  it('can transport debug info through a separate debug channel', async () => {
+    function Thrower() {
+      throw new Error('ssr-throw');
+    }
+
+    const ClientComponentOnTheClient = clientExports(
+      Thrower,
+      123,
+      'path/to/chunk.js',
+    );
+
+    const ClientComponentOnTheServer = clientExports(Thrower);
+
+    function App() {
+      return ReactServer.createElement(
+        ReactServer.Suspense,
+        null,
+        ReactServer.createElement(ClientComponentOnTheClient, null),
+      );
+    }
+
+    const debugReadable = new Stream.PassThrough(streamOptions);
+
+    const rscStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(App, null),
+        turbopackMap,
+        {
+          debugChannel: new Stream.Writable({
+            write(chunk, encoding, callback) {
+              debugReadable.write(chunk, encoding);
+              callback();
+            },
+            final() {
+              debugReadable.end();
+            },
+          }),
+        },
+      ),
+    );
+
+    // Create a delayed stream to simulate that the RSC stream might be
+    // transported slower than the debug channel, which must not lead to a
+    // `Connection closed` error in the Flight client.
+    const {delayedStream, resolveDelayedStream} = createDelayedStream();
+
+    rscStream.pipe(delayedStream);
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const serverConsumerManifest = {
+      moduleMap: {
+        [turbopackMap[ClientComponentOnTheClient.$$id].id]: {
+          '*': turbopackMap[ClientComponentOnTheServer.$$id],
+        },
+      },
+      moduleLoading: null,
+    };
+
+    const response = ReactServerDOMClient.createFromNodeStream(
+      delayedStream,
+      serverConsumerManifest,
+      {debugChannel: debugReadable},
+    );
+
+    setTimeout(resolveDelayedStream);
+
+    let ownerStack;
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToPipeableStream(
+        <ClientRoot response={response} />,
+        {
+          onError(err, errorInfo) {
+            ownerStack = React.captureOwnerStack
+              ? React.captureOwnerStack()
+              : null;
+          },
+        },
+      ),
+    );
+
+    const result = await readResult(ssrStream);
+
+    expect(normalizeCodeLocInfo(ownerStack)).toBe('\n    in App (at **)');
+
+    expect(result).toContain(
+      'Switched to client rendering because the server rendering errored:\n\nssr-throw',
+    );
+  });
+
+  // @gate __DEV__
+  it('can transport debug info through a slow debug channel', async () => {
+    function Thrower() {
+      throw new Error('ssr-throw');
+    }
+
+    const ClientComponentOnTheClient = clientExports(
+      Thrower,
+      123,
+      'path/to/chunk.js',
+    );
+
+    const ClientComponentOnTheServer = clientExports(Thrower);
+
+    function App() {
+      return ReactServer.createElement(
+        ReactServer.Suspense,
+        null,
+        ReactServer.createElement(ClientComponentOnTheClient, null),
+      );
+    }
+
+    // Create a delayed stream to simulate that the debug stream might be
+    // transported slower than the RSC stream, which must not lead to missing
+    // debug info.
+    const {delayedStream, resolveDelayedStream} = createDelayedStream();
+
+    const rscStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(App, null),
+        turbopackMap,
+        {
+          debugChannel: new Stream.Writable({
+            write(chunk, encoding, callback) {
+              delayedStream.write(chunk, encoding);
+              callback();
+            },
+            final() {
+              delayedStream.end();
+            },
+          }),
+        },
+      ),
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+
+    rscStream.pipe(readable);
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const serverConsumerManifest = {
+      moduleMap: {
+        [turbopackMap[ClientComponentOnTheClient.$$id].id]: {
+          '*': turbopackMap[ClientComponentOnTheServer.$$id],
+        },
+      },
+      moduleLoading: null,
+    };
+
+    const response = ReactServerDOMClient.createFromNodeStream(
+      readable,
+      serverConsumerManifest,
+      {debugChannel: delayedStream},
+    );
+
+    setTimeout(resolveDelayedStream);
+
+    let ownerStack;
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToPipeableStream(
+        <ClientRoot response={response} />,
+        {
+          onError(err, errorInfo) {
+            ownerStack = React.captureOwnerStack
+              ? React.captureOwnerStack()
+              : null;
+          },
+        },
+      ),
+    );
+
+    const result = await readResult(ssrStream);
+
+    expect(normalizeCodeLocInfo(ownerStack)).toBe('\n    in App (at **)');
+
+    expect(result).toContain(
+      'Switched to client rendering because the server rendering errored:\n\nssr-throw',
     );
   });
 });

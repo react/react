@@ -1,0 +1,102 @@
+.SuspenseBreadcrumbsContainer {
+  flex: 1;
+  display: flex;
+}
+
+.SuspenseBreadcrumbsList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+}
+
+.SuspenseBreadcrumbsListItem {
+  display: inline;
+}
+
+.SuspenseBreadcrumbsListItemSeparator {
+  user-select: none;
+}
+
+.SuspenseBreadcrumbsListItem[aria-current="true"] .SuspenseBreadcrumbsButton {
+  color: var(--color-button-active);
+}
+
+.SuspenseBreadcrumbsButton {
+  background: var(--color-button-background);
+  border: none;
+  border-radius: 0.25rem;
+  color: var(--color-button);
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+  padding: 0.25rem;
+  white-space: nowrap;
+}
+
+.SuspenseBreadcrumbsButton:hover {
+  background-color: var(--color-button-background-hover);
+  color: var(--color-button-hover);
+}
+
+.SuspenseBreadcrumbsButton:focus-visible {
+  background: var(--color-button-background-focus);
+}
+
+.SuspenseBreadcrumbsMenuButton {
+  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  flex: 0 0 auto;
+  border: none;
+  background: var(--color-button-background);
+  color: var(--color-button);
+}
+
+.SuspenseBreadcrumbsMenuButtonContent {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.25rem;
+  padding: 0.25rem;
+}
+
+.SuspenseBreadcrumbsMenuButton:hover {
+  color: var(--color-button-hover);
+}
+.SuspenseBreadcrumbsMenuButton[aria-expanded="true"],
+.SuspenseBreadcrumbsMenuButton[aria-expanded="true"]:active {
+  color: var(--color-button-active);
+  outline: none;
+}
+
+.SuspenseBreadcrumbsMenuButton:focus,
+.SuspenseBreadcrumbsMenuButtonContent:focus {
+  outline: none;
+}
+.SuspenseBreadcrumbsMenuButton:focus > .SuspenseBreadcrumbsMenuButtonContent {
+  background: var(--color-button-background-focus);
+}
+
+.SuspenseBreadcrumbsModal[data-reach-menu-list] {
+  display: inline-flex;
+  flex-direction: column;
+  background-color: var(--color-background);
+  color: var(--color-button);
+  padding: 0.25rem 0;
+  padding-right: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  max-height: 10rem;
+  overflow: auto;
+
+  /* Make sure this is above the DevTools, which are above the Overlay */
+  z-index: 10000002;
+  position: relative;
+
+  /* Reach UI tries to set its own :( */
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+}

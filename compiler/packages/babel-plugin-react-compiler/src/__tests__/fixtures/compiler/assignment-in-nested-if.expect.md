@@ -23,6 +23,7 @@ import { c as _c } from "react/compiler-runtime";
 function useBar(props) {
   const $ = _c(1);
   let z;
+
   if (props.a) {
     if (props.b) {
       let t0;
@@ -35,6 +36,7 @@ function useBar(props) {
       z = t0;
     }
   }
+
   return z;
 }
 

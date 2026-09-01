@@ -70,34 +70,32 @@ function Inner(props) {
   const $ = _c(7);
   const input = use(FooContext);
   let t0;
-  let t1;
   if ($[0] !== input) {
-    t1 = [input];
+    t0 = [input];
     $[0] = input;
-    $[1] = t1;
+    $[1] = t0;
   } else {
-    t1 = $[1];
+    t0 = $[1];
   }
-  t0 = t1;
   const output = t0;
-  let t2;
+  let t1;
   if ($[2] !== input) {
-    t2 = [input];
+    t1 = [input];
     $[2] = input;
-    $[3] = t2;
+    $[3] = t1;
   } else {
-    t2 = $[3];
+    t1 = $[3];
   }
-  let t3;
-  if ($[4] !== output || $[5] !== t2) {
-    t3 = <ValidateMemoization inputs={t2} output={output} />;
+  let t2;
+  if ($[4] !== output || $[5] !== t1) {
+    t2 = <ValidateMemoization inputs={t1} output={output} />;
     $[4] = output;
-    $[5] = t2;
-    $[6] = t3;
+    $[5] = t1;
+    $[6] = t2;
   } else {
-    t3 = $[6];
+    t2 = $[6];
   }
-  return t3;
+  return t2;
 }
 
 export const FIXTURE_ENTRYPOINT = {

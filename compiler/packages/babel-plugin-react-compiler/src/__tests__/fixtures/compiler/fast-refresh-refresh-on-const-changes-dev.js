@@ -1,4 +1,4 @@
-// @compilationMode:"infer" @enableResetCacheOnSourceFileChanges
+// @compilationMode:"infer" @enableResetCacheOnSourceFileChanges @validateExhaustiveMemoizationDependencies:false
 import {useEffect, useMemo, useState} from 'react';
 import {ValidateMemoization} from 'shared-runtime';
 

@@ -75,7 +75,6 @@ function Component() {
   if ($[0] !== state) {
     t0 = [
       React,
-
       state,
       CONST,
       NON_REASSIGNED_LET,

@@ -60,7 +60,6 @@ function useFoo(t0) {
   if ($[3] !== propArr[1] || $[4] !== propArr[2]) {
     s2 = new Set(MODULE_LOCAL.values());
     s2.add(propArr[1]);
-
     s3 = new Set(s2.values());
     s3.add(propArr[2]);
     $[3] = propArr[1];

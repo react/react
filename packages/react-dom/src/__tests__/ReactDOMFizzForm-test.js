@@ -23,6 +23,7 @@ let container;
 let React;
 let ReactDOMServer;
 let ReactDOMClient;
+let Suspense;
 let useFormStatus;
 let useOptimistic;
 let useActionState;
@@ -35,6 +36,7 @@ describe('ReactDOMFizzForm', () => {
     React = require('react');
     ReactDOMServer = require('react-dom/server.browser');
     ReactDOMClient = require('react-dom/client');
+    Suspense = React.Suspense;
     useFormStatus = require('react-dom').useFormStatus;
     useOptimistic = require('react').useOptimistic;
     act = require('internal-test-utils').act;
@@ -588,6 +590,7 @@ describe('ReactDOMFizzForm', () => {
     function App() {
       return (
         <form action={action} ref={ref} method={null}>
+          <Suspense />
           <input type="text" name="foo" defaultValue="bar" />
         </form>
       );

@@ -9,30 +9,15 @@
 
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
 
-import type {Thenable, Wakeable} from 'shared/ReactTypes';
+import type {
+  Thenable,
+  FulfilledThenable,
+  RejectedThenable,
+} from 'shared/ReactTypes';
+
+import * as React from 'react';
 
 const TIMEOUT = 30000;
-
-const Pending = 0;
-const Resolved = 1;
-const Rejected = 2;
-
-type PendingRecord = {
-  status: 0,
-  value: Wakeable,
-};
-
-type ResolvedRecord<T> = {
-  status: 1,
-  value: T,
-};
-
-type RejectedRecord = {
-  status: 2,
-  value: null,
-};
-
-type Record<T> = PendingRecord | ResolvedRecord<T> | RejectedRecord;
 
 type Module = any;
 type ModuleLoaderFunction = () => Thenable<Module>;
@@ -42,16 +27,24 @@ type ModuleLoaderFunction = () => Thenable<Module>;
 // Modules are static anyway.
 const moduleLoaderFunctionToModuleMap: Map<ModuleLoaderFunction, Module> =
   new Map();
-
-function readRecord<T>(record: Record<T>): ResolvedRecord<T> | RejectedRecord {
-  if (record.status === Resolved) {
-    // This is just a type refinement.
-    return record;
-  } else if (record.status === Rejected) {
-    // This is just a type refinement.
-    return record;
+function readRecord<T>(record: Thenable<T>): T | null {
+  if (typeof React.use === 'function') {
+    try {
+      // eslint-disable-next-line react-hooks-published/rules-of-hooks
+      return React.use(record);
+    } catch (x) {
+      if (x === null) {
+        return null;
+      }
+      throw x;
+    }
+  }
+  if (record.status === 'fulfilled') {
+    return record.value;
+  } else if (record.status === 'rejected') {
+    return null;
   } else {
-    throw record.value;
+    throw record;
   }
 }
 
@@ -59,6 +52,7 @@ function readRecord<T>(record: Record<T>): ResolvedRecord<T> | RejectedRecord {
 export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
   let record = moduleLoaderFunctionToModuleMap.get(moduleLoaderFunction);
 
+  // $FlowFixMe[constant-condition]
   if (__DEBUG__) {
     console.log(
       `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}")`,
@@ -66,13 +60,18 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
   }
 
   if (!record) {
-    const callbacks = new Set<() => mixed>();
-    const wakeable: Wakeable = {
-      then(callback: () => mixed) {
+    const callbacks = new Set<(value: any) => mixed>();
+    const rejectCallbacks = new Set<(reason: mixed) => mixed>();
+    const thenable: Thenable<Module> = {
+      status: 'pending',
+      value: null,
+      reason: null,
+      then(callback: (value: any) => mixed, reject: (error: mixed) => mixed) {
         callbacks.add(callback);
+        rejectCallbacks.add(reject);
       },
 
-      // Optional property used by Timeline:
+      // Optional property, read by React to name this I/O in async debug info:
       displayName: `Loading module "${moduleLoaderFunction.name}"`,
     };
 
@@ -85,17 +84,27 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
       // This assumes they won't throw.
       callbacks.forEach(callback => callback());
       callbacks.clear();
+      rejectCallbacks.clear();
+    };
+    const wakeRejections = () => {
+      if (timeoutID) {
+        clearTimeout(timeoutID);
+        timeoutID = null;
+      }
+
+      // This assumes they won't throw.
+      rejectCallbacks.forEach(callback => callback((thenable as any).reason));
+      rejectCallbacks.clear();
+      callbacks.clear();
     };
 
-    const newRecord: Record<Module> = (record = {
-      status: Pending,
-      value: wakeable,
-    });
+    record = thenable;
 
     let didTimeout = false;
 
     moduleLoaderFunction().then(
       module => {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.log(
             `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}") then()`,
@@ -106,13 +115,14 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
           return;
         }
 
-        const resolvedRecord = ((newRecord: any): ResolvedRecord<Module>);
-        resolvedRecord.status = Resolved;
-        resolvedRecord.value = module;
+        const fulfilledThenable: FulfilledThenable<Module> = thenable as any;
+        fulfilledThenable.status = 'fulfilled';
+        fulfilledThenable.value = module;
 
         wake();
       },
       error => {
+        // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
           console.log(
             `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}") catch()`,
@@ -125,16 +135,17 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
         console.log(error);
 
-        const thrownRecord = ((newRecord: any): RejectedRecord);
-        thrownRecord.status = Rejected;
-        thrownRecord.value = null;
+        const rejectedThenable: RejectedThenable<Module> = thenable as any;
+        rejectedThenable.status = 'rejected';
+        rejectedThenable.reason = error;
 
-        wake();
+        wakeRejections();
       },
     );
 
     // Eventually timeout and stop trying to load the module.
     let timeoutID: null | TimeoutID = setTimeout(function onTimeout() {
+      // $FlowFixMe[constant-condition]
       if (__DEBUG__) {
         console.log(
           `[dynamicImportCache] loadModule("${moduleLoaderFunction.name}") onTimeout()`,
@@ -145,17 +156,17 @@ export function loadModule(moduleLoaderFunction: ModuleLoaderFunction): Module {
 
       didTimeout = true;
 
-      const timedoutRecord = ((newRecord: any): RejectedRecord);
-      timedoutRecord.status = Rejected;
-      timedoutRecord.value = null;
+      const rejectedThenable: RejectedThenable<Module> = thenable as any;
+      rejectedThenable.status = 'rejected';
+      rejectedThenable.reason = null;
 
-      wake();
+      wakeRejections();
     }, TIMEOUT);
 
     moduleLoaderFunctionToModuleMap.set(moduleLoaderFunction, record);
   }
 
   // $FlowFixMe[underconstrained-implicit-instantiation]
-  const response = readRecord(record).value;
+  const response = readRecord(record);
   return response;
 }

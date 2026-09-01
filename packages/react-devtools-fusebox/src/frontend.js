@@ -11,6 +11,7 @@ import * as React from 'react';
 import {createRoot} from 'react-dom/client';
 import Bridge from 'react-devtools-shared/src/bridge';
 import Store from 'react-devtools-shared/src/devtools/store';
+import {subscribeToStoreErrors} from 'react-devtools-shared/src/devtools/storeErrorLogger';
 import DevTools from 'react-devtools-shared/src/devtools/views/DevTools';
 
 import type {
@@ -24,6 +25,7 @@ import type {
   ViewAttributeSource,
   ViewElementSource,
 } from 'react-devtools-shared/src/devtools/views/DevTools';
+import type {FetchFileWithCaching} from 'react-devtools-shared/src/devtools/views/Components/FetchFileWithCachingContext';
 import type {Config} from 'react-devtools-shared/src/devtools/store';
 
 export function createBridge(wall?: Wall): FrontendBridge {
@@ -31,16 +33,18 @@ export function createBridge(wall?: Wall): FrontendBridge {
     return new Bridge(wall);
   }
 
-  return new Bridge({listen: () => {}, send: () => {}});
+  return new Bridge({listen: () => () => {}, send: () => {}});
 }
 
 export function createStore(bridge: FrontendBridge, config?: Config): Store {
-  return new Store(bridge, {
+  const store = new Store(bridge, {
     checkBridgeProtocolCompatibility: true,
     supportsTraceUpdates: true,
     supportsClickToInspect: true,
     ...config,
   });
+  subscribeToStoreErrors(store, bridge);
+  return store;
 }
 
 type InitializationOptions = {
@@ -50,6 +54,7 @@ type InitializationOptions = {
   viewAttributeSourceFunction?: ViewAttributeSource,
   viewElementSourceFunction?: ViewElementSource,
   canViewElementSourceFunction?: CanViewElementSource,
+  fetchFileWithCaching?: FetchFileWithCaching,
 };
 
 function initializeTab(
@@ -64,6 +69,7 @@ function initializeTab(
     viewAttributeSourceFunction,
     viewElementSourceFunction,
     canViewElementSourceFunction,
+    fetchFileWithCaching,
   } = options;
   const root = createRoot(contentWindow);
 
@@ -79,6 +85,7 @@ function initializeTab(
       viewAttributeSourceFunction={viewAttributeSourceFunction}
       viewElementSourceFunction={viewElementSourceFunction}
       canViewElementSourceFunction={canViewElementSourceFunction}
+      fetchFileWithCaching={fetchFileWithCaching}
     />,
   );
 }

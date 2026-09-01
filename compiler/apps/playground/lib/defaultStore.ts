@@ -13,10 +13,19 @@ export default function MyApp() {
 }
 `;
 
+export const defaultConfig = `\
+{
+  //compilationMode: "all"
+}`;
+
 export const defaultStore: Store = {
   source: index,
+  config: defaultConfig,
+  showInternals: false,
 };
 
 export const emptyStore: Store = {
   source: '',
+  config: '',
+  showInternals: false,
 };

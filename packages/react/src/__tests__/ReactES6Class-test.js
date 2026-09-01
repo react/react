@@ -589,22 +589,16 @@ describe('ReactES6Class', () => {
     runTest(<Inner name="foo" ref={ref} />, 'DIV', 'foo');
 
     expect(() => ref.current.replaceState({})).toThrow();
-    assertConsoleWarnDev(
-      [
-        'replaceState(...) is deprecated in plain JavaScript React classes. ' +
-          'Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236).',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleWarnDev([
+      'replaceState(...) is deprecated in plain JavaScript React classes. ' +
+        'Refactor your code to use setState instead (see https://github.com/facebook/react/issues/3236).',
+    ]);
     expect(() => ref.current.isMounted()).toThrow();
-    assertConsoleWarnDev(
-      [
-        'isMounted(...) is deprecated in plain JavaScript React classes. ' +
-          'Instead, make sure to clean up subscriptions and pending requests in ' +
-          'componentWillUnmount to prevent memory leaks.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleWarnDev([
+      'isMounted(...) is deprecated in plain JavaScript React classes. ' +
+        'Instead, make sure to clean up subscriptions and pending requests in ' +
+        'componentWillUnmount to prevent memory leaks.',
+    ]);
   });
 
   if (!require('shared/ReactFeatureFlags').disableLegacyContext) {

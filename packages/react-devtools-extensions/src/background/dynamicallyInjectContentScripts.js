@@ -6,7 +6,7 @@ const contentScriptsToInject = [
     js: ['build/proxy.js'],
     matches: ['<all_urls>'],
     persistAcrossSessions: true,
-    runAt: 'document_end',
+    runAt: 'document_start',
     world: chrome.scripting.ExecutionWorld.ISOLATED,
   },
   {
@@ -16,6 +16,14 @@ const contentScriptsToInject = [
     persistAcrossSessions: true,
     runAt: 'document_end',
     world: chrome.scripting.ExecutionWorld.ISOLATED,
+  },
+  {
+    id: '@react-devtools/fallback-eval-context',
+    js: ['build/fallbackEvalContext.js'],
+    matches: ['<all_urls>'],
+    persistAcrossSessions: true,
+    runAt: 'document_start',
+    world: chrome.scripting.ExecutionWorld.MAIN,
   },
   {
     id: '@react-devtools/hook',

@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 class ClassComponentWithHook extends React.Component {
@@ -16,7 +16,7 @@ class ClassComponentWithHook extends React.Component {
 ## Code
 
 ```javascript
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 class ClassComponentWithHook extends React.Component {

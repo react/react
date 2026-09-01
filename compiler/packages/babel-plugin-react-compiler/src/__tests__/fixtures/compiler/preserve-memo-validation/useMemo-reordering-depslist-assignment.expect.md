@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useMemo} from 'react';
 
 function useFoo(arr1, arr2) {
@@ -26,33 +27,38 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import { useMemo } from "react";
 
 function useFoo(arr1, arr2) {
-  const $ = _c(5);
-  let y;
-  if ($[0] !== arr1 || $[1] !== arr2) {
-    const x = [arr1];
-
-    (y = x.concat(arr2)), y;
-    $[0] = arr1;
-    $[1] = arr2;
-    $[2] = y;
-  } else {
-    y = $[2];
-  }
+  const $ = _c(7);
   let t0;
-  let t1;
-  if ($[3] !== y) {
-    t1 = { y };
-    $[3] = y;
-    $[4] = t1;
+  if ($[0] !== arr1) {
+    t0 = [arr1];
+    $[0] = arr1;
+    $[1] = t0;
   } else {
-    t1 = $[4];
+    t0 = $[1];
   }
-  t0 = t1;
-  return t0;
+  const x = t0;
+  let y;
+  if ($[2] !== arr2 || $[3] !== x) {
+    (y = x.concat(arr2)), y;
+    $[2] = arr2;
+    $[3] = x;
+    $[4] = y;
+  } else {
+    y = $[4];
+  }
+  let t1;
+  if ($[5] !== y) {
+    t1 = { y };
+    $[5] = y;
+    $[6] = t1;
+  } else {
+    t1 = $[6];
+  }
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

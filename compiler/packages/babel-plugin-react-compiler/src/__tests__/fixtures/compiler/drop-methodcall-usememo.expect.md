@@ -28,7 +28,6 @@ import * as React from "react";
 
 function Component(props) {
   const $ = _c(2);
-  let t0;
   let x;
   if ($[0] !== props.value) {
     x = [];
@@ -38,8 +37,8 @@ function Component(props) {
   } else {
     x = $[1];
   }
-  t0 = x;
-  const x_0 = t0;
+  const x_0 = x;
+
   return x_0;
 }
 

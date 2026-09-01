@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 // bar(props.b) is an allocating expression that produces a primitive, which means
 // that Forget should memoize it.
 // Correctness:

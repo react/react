@@ -30,6 +30,7 @@ const { getNumber } = require("shared-runtime");
 function Component(props) {
   const $ = _c(1);
   let x;
+
   if (props.cond) {
     let t0;
     if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -40,6 +41,7 @@ function Component(props) {
     }
     x = t0;
   }
+
   return x;
 }
 

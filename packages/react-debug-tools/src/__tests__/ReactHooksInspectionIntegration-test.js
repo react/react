@@ -14,7 +14,6 @@ let React;
 let ReactTestRenderer;
 let ReactDebugTools;
 let act;
-let assertConsoleErrorDev;
 let useMemoCache;
 
 function normalizeSourceLoc(tree) {
@@ -34,7 +33,7 @@ describe('ReactHooksInspectionIntegration', () => {
     jest.resetModules();
     React = require('react');
     ReactTestRenderer = require('react-test-renderer');
-    ({act, assertConsoleErrorDev} = require('internal-test-utils'));
+    ({act} = require('internal-test-utils'));
     ReactDebugTools = require('react-debug-tools');
     useMemoCache = require('react/compiler-runtime').c;
   });
@@ -886,7 +885,7 @@ describe('ReactHooksInspectionIntegration', () => {
           "hookSource": {
             "columnNumber": 0,
             "fileName": "**",
-            "functionName": undefined,
+            "functionName": null,
             "lineNumber": 0,
           },
           "id": 0,
@@ -1553,7 +1552,7 @@ describe('ReactHooksInspectionIntegration', () => {
     expect(tree[0].id).toEqual(0);
     expect(tree[0].isStateEditable).toEqual(false);
     expect(tree[0].name).toEqual('Id');
-    expect(String(tree[0].value).startsWith('\u00ABr')).toBe(true);
+    expect(String(tree[0].value).startsWith('_r_')).toBe(true);
 
     expect(normalizeSourceLoc(tree)[1]).toMatchInlineSnapshot(`
       {
@@ -2319,57 +2318,6 @@ describe('ReactHooksInspectionIntegration', () => {
           ]
         `);
     });
-  });
-
-  // @gate !disableDefaultPropsExceptForClasses
-  it('should support defaultProps and lazy', async () => {
-    const Suspense = React.Suspense;
-
-    function Foo(props) {
-      const [value] = React.useState(props.defaultValue.slice(0, 3));
-      return <div>{value}</div>;
-    }
-    Foo.defaultProps = {
-      defaultValue: 'default',
-    };
-
-    async function fakeImport(result) {
-      return {default: result};
-    }
-
-    const LazyFoo = React.lazy(() => fakeImport(Foo));
-
-    const renderer = ReactTestRenderer.create(
-      <Suspense fallback="Loading...">
-        <LazyFoo />
-      </Suspense>,
-    );
-
-    await act(async () => await LazyFoo);
-    assertConsoleErrorDev([
-      'Foo: Support for defaultProps will be removed from function components in a future major release. Use JavaScript default parameters instead.',
-    ]);
-
-    const childFiber = renderer.root._currentFiber();
-    const tree = ReactDebugTools.inspectHooksOfFiber(childFiber);
-    expect(normalizeSourceLoc(tree)).toMatchInlineSnapshot(`
-      [
-        {
-          "debugInfo": null,
-          "hookSource": {
-            "columnNumber": 0,
-            "fileName": "**",
-            "functionName": "Foo",
-            "lineNumber": 0,
-          },
-          "id": 0,
-          "isStateEditable": true,
-          "name": "State",
-          "subHooks": [],
-          "value": "def",
-        },
-      ]
-    `);
   });
 
   // This test case is based on an open source bug report:

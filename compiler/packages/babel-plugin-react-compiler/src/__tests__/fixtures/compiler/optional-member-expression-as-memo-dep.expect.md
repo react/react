@@ -42,36 +42,34 @@ function Component(t0) {
 
   arg?.items.edges?.nodes;
   let t1;
-  let t2;
   if ($[0] !== arg?.items.edges?.nodes) {
-    t2 = arg?.items.edges?.nodes.map(identity);
+    t1 = arg?.items.edges?.nodes.map(identity);
     $[0] = arg?.items.edges?.nodes;
-    $[1] = t2;
+    $[1] = t1;
   } else {
-    t2 = $[1];
+    t1 = $[1];
   }
-  t1 = t2;
   const data = t1;
 
-  const t3 = arg?.items.edges?.nodes;
+  const t2 = arg?.items.edges?.nodes;
+  let t3;
+  if ($[2] !== t2) {
+    t3 = [t2];
+    $[2] = t2;
+    $[3] = t3;
+  } else {
+    t3 = $[3];
+  }
   let t4;
-  if ($[2] !== t3) {
-    t4 = [t3];
-    $[2] = t3;
-    $[3] = t4;
-  } else {
-    t4 = $[3];
-  }
-  let t5;
-  if ($[4] !== data || $[5] !== t4) {
-    t5 = <ValidateMemoization inputs={t4} output={data} />;
+  if ($[4] !== data || $[5] !== t3) {
+    t4 = <ValidateMemoization inputs={t3} output={data} />;
     $[4] = data;
-    $[5] = t4;
-    $[6] = t5;
+    $[5] = t3;
+    $[6] = t4;
   } else {
-    t5 = $[6];
+    t4 = $[6];
   }
-  return t5;
+  return t4;
 }
 
 export const FIXTURE_ENTRYPOINT = {

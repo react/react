@@ -34,7 +34,6 @@ import { ValidateMemoization } from "shared-runtime";
 
 function Component(props) {
   const $ = _c(7);
-  let t0;
   let a;
   if ($[0] !== props.name) {
     a = [];
@@ -48,26 +47,25 @@ function Component(props) {
   } else {
     a = $[1];
   }
-  t0 = a;
-  const a_0 = t0;
-  let t1;
+  const a_0 = a;
+  let t0;
   if ($[2] !== props.name) {
-    t1 = [props.name];
+    t0 = [props.name];
     $[2] = props.name;
-    $[3] = t1;
+    $[3] = t0;
   } else {
-    t1 = $[3];
+    t0 = $[3];
   }
-  let t2;
-  if ($[4] !== a_0 || $[5] !== t1) {
-    t2 = <ValidateMemoization inputs={t1} output={a_0} />;
+  let t1;
+  if ($[4] !== a_0 || $[5] !== t0) {
+    t1 = <ValidateMemoization inputs={t0} output={a_0} />;
     $[4] = a_0;
-    $[5] = t1;
-    $[6] = t2;
+    $[5] = t0;
+    $[6] = t1;
   } else {
-    t2 = $[6];
+    t1 = $[6];
   }
-  return t2;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

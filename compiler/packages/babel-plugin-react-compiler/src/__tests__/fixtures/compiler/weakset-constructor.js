@@ -1,3 +1,4 @@
+import {useMemo} from 'react';
 import {ValidateMemoization} from 'shared-runtime';
 
 function Component({a, b, c}) {
@@ -9,9 +10,21 @@ function Component({a, b, c}) {
 
   return (
     <>
-      <ValidateMemoization inputs={[a, c]} output={set} />
-      <ValidateMemoization inputs={[a, c]} output={setAlias} />
-      <ValidateMemoization inputs={[b]} output={[hasB]} />
+      <ValidateMemoization
+        inputs={[a, c]}
+        output={set}
+        onlyCheckCompiled={true}
+      />
+      <ValidateMemoization
+        inputs={[a, c]}
+        output={setAlias}
+        onlyCheckCompiled={true}
+      />
+      <ValidateMemoization
+        inputs={[b]}
+        output={[hasB]}
+        onlyCheckCompiled={true}
+      />
     </>
   );
 }

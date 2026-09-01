@@ -59,48 +59,46 @@ function Component(t0) {
   const $ = _c(9);
   const { config } = t0;
   let t1;
-  let t2;
   if ($[0] !== config) {
-    t2 = (event) => {
+    t1 = (event) => {
       config?.onA?.(event);
     };
     $[0] = config;
-    $[1] = t2;
+    $[1] = t1;
   } else {
-    t2 = $[1];
+    t1 = $[1];
   }
-  const a = t2;
-  let t3;
+  const a = t1;
+  let t2;
   if ($[2] !== config) {
-    t3 = (event_0) => {
+    t2 = (event_0) => {
       config?.onB?.(event_0);
     };
     $[2] = config;
-    $[3] = t3;
+    $[3] = t2;
   } else {
-    t3 = $[3];
+    t2 = $[3];
   }
-  const b = t3;
-  let t4;
+  const b = t2;
+  let t3;
   if ($[4] !== a || $[5] !== b) {
-    t4 = { b, a };
+    t3 = { b, a };
     $[4] = a;
     $[5] = b;
-    $[6] = t4;
+    $[6] = t3;
   } else {
-    t4 = $[6];
+    t3 = $[6];
   }
-  t1 = t4;
-  const object = t1;
-  let t5;
+  const object = t3;
+  let t4;
   if ($[7] !== object) {
-    t5 = <Stringify value={object} />;
+    t4 = <Stringify value={object} />;
     $[7] = object;
-    $[8] = t5;
+    $[8] = t4;
   } else {
-    t5 = $[8];
+    t4 = $[8];
   }
-  return t5;
+  return t4;
 }
 
 ```

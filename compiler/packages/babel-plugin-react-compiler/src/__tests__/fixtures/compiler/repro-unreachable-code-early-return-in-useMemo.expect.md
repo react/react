@@ -53,6 +53,7 @@ function Component(t0) {
       t1 = null;
       break bb0;
     }
+
     try {
       let t3;
       if ($[0] !== value) {

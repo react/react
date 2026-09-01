@@ -46,6 +46,7 @@ function foo(props) {
       x = $[3];
     }
   }
+
   return x;
 }
 

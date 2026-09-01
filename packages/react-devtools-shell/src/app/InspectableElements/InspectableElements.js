@@ -20,6 +20,7 @@ import SimpleValues from './SimpleValues';
 import SymbolKeys from './SymbolKeys';
 import UseMemoCache from './UseMemoCache';
 import UseEffectEvent from './UseEffectEvent';
+import UseSyncExternalStore from './UseSyncExternalStore';
 
 // TODO Add Immutable JS example
 
@@ -38,6 +39,7 @@ export default function InspectableElements(): React.Node {
       <SymbolKeys />
       <UseMemoCache />
       <UseEffectEvent />
+      <UseSyncExternalStore />
     </Fragment>
   );
 }

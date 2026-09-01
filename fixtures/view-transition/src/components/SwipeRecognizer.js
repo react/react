@@ -5,6 +5,16 @@ import React, {
   unstable_startGestureTransition as startGestureTransition,
 } from 'react';
 
+import ScrollTimelinePolyfill from 'animation-timelines/scroll-timeline';
+import TouchPanTimeline from 'animation-timelines/touch-pan-timeline';
+
+const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+const isSafariMobile =
+  ua.indexOf('Safari') !== -1 &&
+  (ua.indexOf('iPhone') !== -1 ||
+    ua.indexOf('iPad') !== -1 ||
+    ua.indexOf('iPod') !== -1);
+
 // Example of a Component that can recognize swipe gestures using a ScrollTimeline
 // without scrolling its own content. Allowing it to be used as an inert gesture
 // recognizer to drive a View Transition.
@@ -21,18 +31,72 @@ export default function SwipeRecognizer({
 
   const scrollRef = useRef(null);
   const activeGesture = useRef(null);
+  const touchTimeline = useRef(null);
+
+  function onTouchStart(event) {
+    if (!isSafariMobile && typeof ScrollTimeline === 'function') {
+      // If not Safari and native ScrollTimeline is supported, then we use that.
+      return;
+    }
+    if (touchTimeline.current) {
+      // We can catch the gesture before it settles.
+      return;
+    }
+    const scrollElement = scrollRef.current;
+    const bounds =
+      axis === 'x' ? scrollElement.clientWidth : scrollElement.clientHeight;
+    const range =
+      direction === 'left' || direction === 'up' ? [bounds, 0] : [0, -bounds];
+    const timeline = new TouchPanTimeline({
+      touch: event,
+      source: scrollElement,
+      axis: axis,
+      range: range,
+      snap: range,
+    });
+    touchTimeline.current = timeline;
+    timeline.settled.then(() => {
+      if (touchTimeline.current !== timeline) {
+        return;
+      }
+      touchTimeline.current = null;
+      const changed =
+        direction === 'left' || direction === 'up'
+          ? timeline.currentTime < 50
+          : timeline.currentTime > 50;
+      onGestureEnd(changed);
+    });
+  }
+
+  function onTouchEnd() {
+    if (activeGesture.current === null) {
+      // If we didn't start a gesture before we release, we can release our
+      // timeline.
+      touchTimeline.current = null;
+    }
+  }
+
   function onScroll() {
     if (activeGesture.current !== null) {
       return;
     }
-    if (typeof ScrollTimeline !== 'function') {
-      return;
+
+    let scrollTimeline;
+    if (touchTimeline.current) {
+      // We're in a polyfilled touch gesture. Let's use that timeline instead.
+      scrollTimeline = touchTimeline.current;
+    } else if (typeof ScrollTimeline === 'function') {
+      // eslint-disable-next-line no-undef
+      scrollTimeline = new ScrollTimeline({
+        source: scrollRef.current,
+        axis: axis,
+      });
+    } else {
+      scrollTimeline = new ScrollTimelinePolyfill({
+        source: scrollRef.current,
+        axis: axis,
+      });
     }
-    // eslint-disable-next-line no-undef
-    const scrollTimeline = new ScrollTimeline({
-      source: scrollRef.current,
-      axis: axis,
-    });
     activeGesture.current = startGestureTransition(
       scrollTimeline,
       () => {
@@ -49,7 +113,24 @@ export default function SwipeRecognizer({
           }
     );
   }
+  function onGestureEnd(changed) {
+    // We cancel the gesture before invoking side-effects to allow the gesture lane to fully commit
+    // before scheduling new updates.
+    if (activeGesture.current !== null) {
+      const cancelGesture = activeGesture.current;
+      activeGesture.current = null;
+      cancelGesture();
+    }
+    if (changed) {
+      // Trigger side-effects
+      startTransition(action);
+    }
+  }
   function onScrollEnd() {
+    if (touchTimeline.current) {
+      // We have a touch gesture controlling the swipe.
+      return;
+    }
     let changed;
     const scrollElement = scrollRef.current;
     if (axis === 'x') {
@@ -67,16 +148,7 @@ export default function SwipeRecognizer({
           ? scrollElement.scrollTop < halfway
           : scrollElement.scrollTop > halfway;
     }
-    // Reset scroll
-    if (changed) {
-      // Trigger side-effects
-      startTransition(action);
-    }
-    if (activeGesture.current !== null) {
-      const cancelGesture = activeGesture.current;
-      activeGesture.current = null;
-      cancelGesture();
-    }
+    onGestureEnd(changed);
   }
 
   useEffect(() => {
@@ -168,6 +240,9 @@ export default function SwipeRecognizer({
   return (
     <div
       style={scrollStyle}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
       onScroll={onScroll}
       onScrollEnd={onScrollEnd}
       ref={scrollRef}>

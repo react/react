@@ -30,6 +30,7 @@ export const FIXTURE_ENTRYPOINT = {
 function foo(a, b, c) {
   if (a) {
   }
+
   return b;
 }
 

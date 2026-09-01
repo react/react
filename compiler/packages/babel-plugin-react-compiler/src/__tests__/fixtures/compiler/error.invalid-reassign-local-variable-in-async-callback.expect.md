@@ -25,10 +25,17 @@ function Component() {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Cannot reassign variable in async function
+
+Reassigning a variable in an async function can cause inconsistent behavior on subsequent renders. Consider using state instead.
+
+error.invalid-reassign-local-variable-in-async-callback.ts:8:6
    6 |       // after render, so this should error regardless of where this ends up
    7 |       // getting called
 >  8 |       value = result;
-     |       ^^^^^ InvalidReact: Reassigning a variable in an async function can cause inconsistent behavior on subsequent renders. Consider using state instead. Variable `value` cannot be reassigned after render (8:8)
+     |       ^^^^^ Cannot reassign `value`
    9 |     });
   10 |   };
   11 |

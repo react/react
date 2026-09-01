@@ -9,7 +9,11 @@
 
 import type {Fiber} from './ReactInternalTypes';
 import type {StackCursor} from './ReactFiberStack';
-import type {Container, HostContext} from './ReactFiberConfig';
+import type {
+  Container,
+  HostContext,
+  TransitionStatus,
+} from './ReactFiberConfig';
 import type {Hook} from './ReactFiberHooks';
 
 import {
@@ -42,7 +46,7 @@ function requiredContext<Value>(c: Value | null): Value {
       );
     }
   }
-  return (c: any);
+  return c as any;
 }
 
 function getCurrentRootHostContainer(): null | Container {
@@ -92,6 +96,22 @@ function getHostContext(): HostContext {
 function pushHostContext(fiber: Fiber): void {
   const stateHook: Hook | null = fiber.memoizedState;
   if (stateHook !== null) {
+    // Propagate the current state to all the descendents.
+    // We use Context as an implementation detail for this.
+    //
+    // NOTE: This assumes that there cannot be nested transition providers,
+    // because the only renderer that implements this feature is React DOM,
+    // and forms cannot be nested. If we did support nested providers, then
+    // we would need to push a context value even for host fibers that
+    // haven't been upgraded yet.
+    const transitionStatus: TransitionStatus = stateHook.memoizedState;
+    // $FlowFixMe[constant-condition]
+    if (isPrimaryRenderer) {
+      HostTransitionContext._currentValue = transitionStatus;
+    } else {
+      HostTransitionContext._currentValue2 = transitionStatus;
+    }
+
     // Only provide context if this fiber has been upgraded by a host
     // transition. We use the same optimization for regular host context below.
     push(hostTransitionProviderCursor, fiber, fiber);
@@ -130,6 +150,7 @@ function popHostContext(fiber: Fiber): void {
     // to `NotPendingTransition`. We can do this because you're not allowed to nest forms. If
     // we allowed for multiple nested host transition providers, then we'd
     // need to reset this to the parent provider's status.
+    // $FlowFixMe[constant-condition]
     if (isPrimaryRenderer) {
       HostTransitionContext._currentValue = NotPendingTransition;
     } else {

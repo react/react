@@ -30,13 +30,19 @@ export default function RecordToggle({disabled}: Props): React.Node {
     className = styles.ActiveRecordToggle;
   }
 
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const shortcut = isMac ? '⌘E' : 'Ctrl+E';
+  const title = `${isProfiling ? 'Stop' : 'Start'} profiling - ${shortcut}`;
+
   return (
     <Button
       className={className}
       disabled={disabled}
       onClick={isProfiling ? stopProfiling : startProfiling}
       testName="ProfilerToggleButton"
-      title={isProfiling ? 'Stop profiling' : 'Start profiling'}>
+      title={title}>
       <ButtonIcon type="record" />
     </Button>
   );

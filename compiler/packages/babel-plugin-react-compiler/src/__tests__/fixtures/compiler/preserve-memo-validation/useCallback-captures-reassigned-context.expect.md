@@ -55,6 +55,7 @@ function Foo(props) {
   }
   x;
   const cb = t0;
+
   return cb;
 }
 

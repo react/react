@@ -26,6 +26,7 @@ function Component(props) {
   let x;
   if ($[0] !== props.a || $[1] !== props.b) {
     x = { a: props.a, b: props.b };
+
     delete x["b"];
     $[0] = props.a;
     $[1] = props.b;

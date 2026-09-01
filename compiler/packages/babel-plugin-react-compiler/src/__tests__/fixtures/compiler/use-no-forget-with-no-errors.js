@@ -1,3 +1,4 @@
+// @expectNothingCompiled
 function Component() {
   'use no forget';
   return <div>Hello World</div>;

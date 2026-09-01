@@ -72,6 +72,7 @@ function Component(t0) {
     t2 = $[6];
   }
   y = t2;
+
   return y;
 }
 

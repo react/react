@@ -19,10 +19,17 @@ function Component(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Error: This value cannot be modified
+
+Modifying a variable defined outside a component or hook is not allowed. Consider using an effect.
+
+error.invalid-mutation-of-possible-props-phi-indirect.ts:4:4
   2 |   let x = cond ? someGlobal : props.foo;
   3 |   const mutatePhiThatCouldBeProps = () => {
 > 4 |     x.y = true;
-    |     ^ InvalidReact: Writing to a variable defined outside a component or hook is not allowed. Consider using an effect. Found mutation of `x` (4:4)
+    |     ^ `x` cannot be modified
   5 |   };
   6 |   const indirectMutateProps = () => {
   7 |     mutatePhiThatCouldBeProps();

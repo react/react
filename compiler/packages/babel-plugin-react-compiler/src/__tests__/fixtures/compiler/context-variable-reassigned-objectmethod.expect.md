@@ -43,7 +43,6 @@ function Component(t0) {
         }
       },
     };
-
     invoke(obj.method, cond);
     $[0] = cond;
     $[1] = x;

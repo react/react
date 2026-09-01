@@ -11,7 +11,7 @@ import * as React from 'react';
 
 import Badge from './Badge';
 import IndexableDisplayName from './IndexableDisplayName';
-import Toggle from '../Toggle';
+import Tooltip from './reach-ui/tooltip';
 
 import styles from './ForgetBadge.css';
 
@@ -40,12 +40,11 @@ export default function ForgetBadge(props: Props): React.Node {
     'Memo'
   );
 
-  const onChange = () => {};
   const title =
     '✨ This component has been auto-memoized by the React Compiler.';
   return (
-    <Toggle onChange={onChange} className={styles.ForgetToggle} title={title}>
+    <Tooltip label={title}>
       <Badge className={`${styles.Root} ${className}`}>{innerView}</Badge>
-    </Toggle>
+    </Tooltip>
   );
 }

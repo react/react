@@ -32,19 +32,33 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 2 errors:
+
+Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+error.capture-ref-for-mutation.ts:12:13
   10 |   };
   11 |   const moveLeft = {
 > 12 |     handler: handleKey('left')(),
-     |              ^^^^^^^^^^^^^^^^^ InvalidReact: This function accesses a ref value (the `current` property), which may not be accessed during render. (https://react.dev/reference/react/useRef) (12:12)
-
-InvalidReact: Ref values (the `current` property) may not be accessed during render. (https://react.dev/reference/react/useRef) (12:12)
-
-InvalidReact: This function accesses a ref value (the `current` property), which may not be accessed during render. (https://react.dev/reference/react/useRef) (15:15)
-
-InvalidReact: Ref values (the `current` property) may not be accessed during render. (https://react.dev/reference/react/useRef) (15:15)
+     |              ^^^^^^^^^^^^^^^^^ This function accesses a ref value
   13 |   };
   14 |   const moveRight = {
   15 |     handler: handleKey('right')(),
+
+Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+error.capture-ref-for-mutation.ts:15:13
+  13 |   };
+  14 |   const moveRight = {
+> 15 |     handler: handleKey('right')(),
+     |              ^^^^^^^^^^^^^^^^^^ This function accesses a ref value
+  16 |   };
+  17 |   return [moveLeft, moveRight];
+  18 | }
 ```
           
       

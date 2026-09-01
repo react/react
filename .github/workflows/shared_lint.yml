@@ -25,15 +25,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: yarn.lock
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
           path: |
             **/node_modules
-          key: shared-lint-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          key: shared-lint-node_modules-v7-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
@@ -48,15 +46,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: yarn.lock
       - name: Restore cached node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
           path: |
             **/node_modules
-          key: shared-lint-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          key: shared-lint-node_modules-v7-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
@@ -71,15 +67,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: yarn.lock
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
           path: |
             **/node_modules
-          key: shared-lint-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          key: shared-lint-node_modules-v7-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile
@@ -94,15 +88,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
-          cache: yarn
-          cache-dependency-path: yarn.lock
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
           path: |
             **/node_modules
-          key: shared-lint-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          key: shared-lint-node_modules-v7-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
       - name: Ensure clean build directory
         run: rm -rf build
       - run: yarn install --frozen-lockfile

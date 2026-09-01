@@ -328,6 +328,19 @@ export function createLocationFilter(
   };
 }
 
+export function createActivitySliceFilter(
+  activityID: Element['id'],
+  isEnabled: boolean = true,
+) {
+  const Types = require('react-devtools-shared/src/frontend/types');
+  return {
+    type: Types.ComponentFilterActivitySlice,
+    isEnabled,
+    isValid: true,
+    activityID: activityID,
+  };
+}
+
 export function getRendererID(): number {
   if (global.agent == null) {
     throw Error('Agent unavailable.');
@@ -411,9 +424,6 @@ export function exportImportHelper(bridge: FrontendBridge, store: Store): void {
   // Sanity check that profiling snapshots are serialized correctly.
   expect(profilingDataFrontendInitial.dataForRoots).toEqual(
     profilingDataFrontend.dataForRoots,
-  );
-  expect(profilingDataFrontendInitial.timelineData).toEqual(
-    profilingDataFrontend.timelineData,
   );
 
   // Snapshot the JSON-parsed object, rather than the raw string, because Jest formats the diff nicer.

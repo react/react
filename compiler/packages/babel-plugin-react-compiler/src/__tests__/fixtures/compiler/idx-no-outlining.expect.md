@@ -24,12 +24,10 @@ export const FIXTURE_ENTRYPOINT = {
 import { c as _c } from "react/compiler-runtime"; // @customMacros:"idx"
 
 function Component(props) {
-  var _ref2;
   const $ = _c(4);
   let t0;
   if ($[0] !== props) {
     var _ref;
-
     t0 =
       (_ref = props) != null
         ? (_ref = _ref.group) != null

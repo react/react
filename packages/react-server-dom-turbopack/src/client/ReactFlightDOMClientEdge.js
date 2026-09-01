@@ -10,6 +10,7 @@
 import type {Thenable, ReactCustomFormAction} from 'shared/ReactTypes.js';
 
 import type {
+  DebugChannel,
   Response as FlightResponse,
   FindSourceMapURLCallback,
 } from 'react-client/src/ReactFlightClient';
@@ -30,6 +31,7 @@ type ServerConsumerManifest = {
 
 import {
   createResponse,
+  createStreamState,
   getRoot,
   reportGlobalError,
   processBinaryChunk,
@@ -74,12 +76,25 @@ export type Options = {
   nonce?: string,
   encodeFormAction?: EncodeFormActionCallback,
   temporaryReferences?: TemporaryReferenceSet,
+  unstable_allowPartialStream?: boolean,
   findSourceMapURL?: FindSourceMapURLCallback,
   replayConsoleLogs?: boolean,
   environmentName?: string,
+  startTime?: number,
+  endTime?: number,
+  // For the Edge client we only support a single-direction debug channel.
+  debugChannel?: {readable?: ReadableStream, ...},
 };
 
 function createResponseFromOptions(options: Options) {
+  const debugChannel: void | DebugChannel =
+    __DEV__ && options && options.debugChannel !== undefined
+      ? {
+          hasReadable: options.debugChannel.readable !== undefined,
+          callback: null,
+        }
+      : undefined;
+
   return createResponse(
     options.serverConsumerManifest.moduleMap,
     options.serverConsumerManifest.serverModuleMap,
@@ -90,6 +105,9 @@ function createResponseFromOptions(options: Options) {
     options && options.temporaryReferences
       ? options.temporaryReferences
       : undefined,
+    options && options.unstable_allowPartialStream
+      ? options.unstable_allowPartialStream
+      : false,
     __DEV__ && options && options.findSourceMapURL
       ? options.findSourceMapURL
       : undefined,
@@ -97,13 +115,21 @@ function createResponseFromOptions(options: Options) {
     __DEV__ && options && options.environmentName
       ? options.environmentName
       : undefined,
+    __DEV__ && options && options.startTime != null
+      ? options.startTime
+      : undefined,
+    __DEV__ && options && options.endTime != null ? options.endTime : undefined,
+    debugChannel,
   );
 }
 
 function startReadingFromStream(
   response: FlightResponse,
   stream: ReadableStream,
+  onDone: () => void,
+  debugValue: mixed,
 ): void {
+  const streamState = createStreamState(response, debugValue);
   const reader = stream.getReader();
   function progress({
     done,
@@ -114,11 +140,10 @@ function startReadingFromStream(
     ...
   }): void | Promise<void> {
     if (done) {
-      close(response);
-      return;
+      return onDone();
     }
-    const buffer: Uint8Array = (value: any);
-    processBinaryChunk(response, buffer);
+    const buffer: Uint8Array = value as any;
+    processBinaryChunk(response, streamState, buffer);
     return reader.read().then(progress).catch(error);
   }
   function error(e: any) {
@@ -132,7 +157,30 @@ function createFromReadableStream<T>(
   options: Options,
 ): Thenable<T> {
   const response: FlightResponse = createResponseFromOptions(options);
-  startReadingFromStream(response, stream);
+
+  if (
+    __DEV__ &&
+    options &&
+    options.debugChannel &&
+    options.debugChannel.readable
+  ) {
+    let streamDoneCount = 0;
+    const handleDone = () => {
+      if (++streamDoneCount === 2) {
+        close(response);
+      }
+    };
+    startReadingFromStream(response, options.debugChannel.readable, handleDone);
+    startReadingFromStream(response, stream, handleDone, stream);
+  } else {
+    startReadingFromStream(
+      response,
+      stream,
+      close.bind(null, response),
+      stream,
+    );
+  }
+
   return getRoot(response);
 }
 
@@ -143,7 +191,32 @@ function createFromFetch<T>(
   const response: FlightResponse = createResponseFromOptions(options);
   promiseForResponse.then(
     function (r) {
-      startReadingFromStream(response, (r.body: any));
+      if (
+        __DEV__ &&
+        options &&
+        options.debugChannel &&
+        options.debugChannel.readable
+      ) {
+        let streamDoneCount = 0;
+        const handleDone = () => {
+          if (++streamDoneCount === 2) {
+            close(response);
+          }
+        };
+        startReadingFromStream(
+          response,
+          options.debugChannel.readable,
+          handleDone,
+        );
+        startReadingFromStream(response, r.body as any, handleDone, r);
+      } else {
+        startReadingFromStream(
+          response,
+          r.body as any,
+          close.bind(null, response),
+          r,
+        );
+      }
     },
     function (e) {
       reportGlobalError(response, e);
@@ -159,7 +232,7 @@ function encodeReply(
   string | URLSearchParams | FormData,
 > /* We don't use URLSearchParams yet but maybe */ {
   return new Promise((resolve, reject) => {
-    const abort = processReply(
+    processReply(
       value,
       '',
       options && options.temporaryReferences
@@ -167,19 +240,8 @@ function encodeReply(
         : undefined,
       resolve,
       reject,
+      options ? options.signal : undefined,
     );
-    if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort((signal: any).reason);
-      } else {
-        const listener = () => {
-          abort((signal: any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
-    }
   });
 }
 

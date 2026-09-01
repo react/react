@@ -14,8 +14,7 @@ if (process.env.GH_TOKEN == null) {
   process.exit(1);
 }
 
-const OWNER = 'facebook';
-const REPO = 'react';
+const REPO = process.env.GITHUB_REPOSITORY || 'facebook/react';
 const WORKFLOW_ID = 'runtime_build_and_test.yml';
 const GITHUB_HEADERS = `
   -H "Accept: application/vnd.github+json" \
@@ -49,7 +48,7 @@ function getWorkflowId() {
 
 async function getWorkflowRun(commit) {
   const res = await exec(
-    `curl -L ${GITHUB_HEADERS} https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${getWorkflowId()}/runs?head_sha=${commit}`
+    `curl -L ${GITHUB_HEADERS} https://api.github.com/repos/${REPO}/actions/workflows/${getWorkflowId()}/runs?head_sha=${commit}`
   );
 
   const json = JSON.parse(res.stdout);
@@ -67,7 +66,7 @@ async function getWorkflowRun(commit) {
 
 async function getArtifact(workflowRunId, artifactName) {
   const res = await exec(
-    `curl -L ${GITHUB_HEADERS} https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${workflowRunId}/artifacts?per_page=100&name=${artifactName}`
+    `curl -L ${GITHUB_HEADERS} https://api.github.com/repos/${REPO}/actions/runs/${workflowRunId}/artifacts?per_page=100&name=${artifactName}`
   );
 
   const json = JSON.parse(res.stdout);
@@ -103,7 +102,7 @@ async function processArtifact(artifact, opts) {
     // Use https://cli.github.com/manual/gh_attestation_verify to verify artifact
     if (executableIsAvailable('gh')) {
       await exec(
-        `gh attestation verify artifacts_combined.zip --repo=${OWNER}/${REPO}`,
+        `gh attestation verify artifacts_combined.zip --repo=${REPO}`,
         {
           cwd: tmpDir,
         }

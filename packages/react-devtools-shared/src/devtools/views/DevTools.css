@@ -5,6 +5,8 @@
   flex-direction: column;
   background-color: var(--color-background);
   color: var(--color-text);
+  container-name: devtools;
+  container-type: inline-size;
 }
 
 .TabBar {

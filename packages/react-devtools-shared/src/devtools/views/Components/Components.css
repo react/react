@@ -16,13 +16,13 @@
 
 .TreeWrapper {
   flex: 0 0 var(--horizontal-resize-percentage);
-  overflow: auto;
 }
 
 .InspectedElementWrapper {
   flex: 1 1 35%;
   overflow-x: hidden;
   overflow-y: auto;
+  border-left: 1px solid var(--color-border);
 }
 
 .ResizeBarWrapper {
@@ -32,13 +32,20 @@
 
 .ResizeBar {
   position: absolute;
-  left: -2px;
+  /*
+   * moving the bar out of its bounding box might cause its hitbox to overlap
+   * with another scrollbar creating disorienting UX where you both resize and scroll
+   * at the same time.
+   * If you adjust this value, double check that starting resize right on this edge
+   * doesn't also cause scroll
+   */
+  left: 1px;
   width: 5px;
   height: 100%;
   cursor: ew-resize;
 }
 
-@media screen and (max-width: 600px) {
+@container devtools (width < 600px) {
   .Components {
     flex-direction: column;
   }
@@ -49,10 +56,11 @@
 
   .InspectedElementWrapper {
     flex: 1 1 50%;
+    border-left: none;
   }
 
   .ResizeBar {
-    top: -2px;
+    top: 1px;
     left: 0;
     width: 100%;
     height: 5px;

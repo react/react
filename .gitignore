@@ -8,6 +8,12 @@ scripts/flow/*/.flowconfig
 _SpecRunner.html
 __benchmarks__
 build/
+base-build/
+sizebot-comment.md
+sizebot-context.json
+sizebot-message.md
+sizebot-problem.txt
+sizebot-results.json
 remote-repo/
 coverage/
 .module-cache
@@ -21,8 +27,13 @@ chrome-user-data
 .idea
 *.iml
 .vscode
+.zed
 *.swp
 *.swo
+/tmp
+/.worktrees
+.claude/*.local.*
+.claude/worktrees
 
 packages/react-devtools-core/dist
 packages/react-devtools-extensions/chrome/build
@@ -36,5 +47,4 @@ packages/react-devtools-extensions/.tempUserDataDir
 packages/react-devtools-fusebox/dist
 packages/react-devtools-inline/dist
 packages/react-devtools-shell/dist
-packages/react-devtools-timeline/dist
-
+packages/react-devtools-cdt-mcp/dist

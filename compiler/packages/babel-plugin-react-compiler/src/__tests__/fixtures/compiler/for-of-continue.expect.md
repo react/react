@@ -43,6 +43,7 @@ function Component() {
   } else {
     ret = $[0];
   }
+
   return ret;
 }
 

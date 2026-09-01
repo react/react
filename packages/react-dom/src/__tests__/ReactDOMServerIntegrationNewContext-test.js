@@ -295,12 +295,6 @@ describe('ReactDOMServerIntegration', () => {
     });
 
     itRenders('should treat Context as Context.Provider', async render => {
-      // The `itRenders` helpers don't work with the gate pragma, so we have to do
-      // this instead.
-      if (gate(flags => !flags.enableRenderableContext)) {
-        return;
-      }
-
       const Theme = React.createContext('dark');
       const Language = React.createContext('french');
 

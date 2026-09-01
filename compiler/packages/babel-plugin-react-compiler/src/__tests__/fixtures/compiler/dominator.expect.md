@@ -67,8 +67,7 @@ function Component(props) {
     case "b": {
       break bb1;
     }
-    case "c": {
-    }
+    case "c":
     default: {
       x = 6;
     }
@@ -76,6 +75,7 @@ function Component(props) {
   if (props.d) {
     return null;
   }
+
   return x;
 }
 

@@ -43,6 +43,7 @@ function useFoo(t0) {
   if ($[0] !== cond || $[1] !== value) {
     bb0: {
       items = [];
+
       if (cond) {
         break bb0;
       }

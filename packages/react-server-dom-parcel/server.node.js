@@ -9,8 +9,10 @@
 
 export {
   renderToPipeableStream,
-  decodeReplyFromBusboy,
+  renderToReadableStream,
   decodeReply,
+  decodeReplyFromBusboy,
+  decodeReplyFromAsyncIterable,
   decodeAction,
   decodeFormState,
   createClientReference,

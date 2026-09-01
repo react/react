@@ -9,6 +9,7 @@ import {ProgramContext} from '..';
 import {CompilerError} from '../CompilerError';
 import {
   DeclarationId,
+  GeneratedSource,
   Identifier,
   IdentifierName,
   InstructionId,
@@ -185,9 +186,7 @@ class Scopes {
     const last = this.#stack.pop();
     CompilerError.invariant(last === next, {
       reason: 'Mismatch push/pop calls',
-      description: null,
-      loc: null,
-      suggestions: null,
+      loc: GeneratedSource,
     });
   }
 }

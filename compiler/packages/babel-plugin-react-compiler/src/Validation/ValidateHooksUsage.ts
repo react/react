@@ -6,13 +6,9 @@
  */
 
 import * as t from '@babel/types';
-import {
-  CompilerError,
-  CompilerErrorDetail,
-  ErrorSeverity,
-} from '../CompilerError';
+import {CompilerErrorDetail, ErrorCategory} from '../CompilerError';
 import {computeUnconditionalBlocks} from '../HIR/ComputeUnconditionalBlocks';
-import {isHookName} from '../HIR/Environment';
+import {Environment, isHookName} from '../HIR/Environment';
 import {
   HIRFunction,
   IdentifierId,
@@ -26,7 +22,6 @@ import {
   eachTerminalOperand,
 } from '../HIR/visitors';
 import {assertExhaustive} from '../Utils/utils';
-import {Result} from '../Utils/Result';
 
 /**
  * Represents the possible kinds of value which may be stored at a given Place during
@@ -88,20 +83,17 @@ function joinKinds(a: Kind, b: Kind): Kind {
  *   may not appear as the callee of a conditional call.
  *   See the note for Kind.PotentialHook for sources of potential hooks
  */
-export function validateHooksUsage(
-  fn: HIRFunction,
-): Result<void, CompilerError> {
+export function validateHooksUsage(fn: HIRFunction): void {
   const unconditionalBlocks = computeUnconditionalBlocks(fn);
 
-  const errors = new CompilerError();
   const errorsByPlace = new Map<t.SourceLocation, CompilerErrorDetail>();
 
-  function recordError(
+  function trackError(
     loc: SourceLocation,
     errorDetail: CompilerErrorDetail,
   ): void {
     if (typeof loc === 'symbol') {
-      errors.pushErrorDetail(errorDetail);
+      fn.env.recordError(errorDetail);
     } else {
       errorsByPlace.set(loc, errorDetail);
     }
@@ -121,13 +113,13 @@ export function validateHooksUsage(
      * If that same place is also used as a conditional call, upgrade the error to a conditonal hook error
      */
     if (previousError === undefined || previousError.reason !== reason) {
-      recordError(
+      trackError(
         place.loc,
         new CompilerErrorDetail({
+          category: ErrorCategory.Hooks,
           description: null,
           reason,
           loc: place.loc,
-          severity: ErrorSeverity.InvalidReact,
           suggestions: null,
         }),
       );
@@ -137,14 +129,14 @@ export function validateHooksUsage(
     const previousError =
       typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
     if (previousError === undefined) {
-      recordError(
+      trackError(
         place.loc,
         new CompilerErrorDetail({
+          category: ErrorCategory.Hooks,
           description: null,
           reason:
             'Hooks may not be referenced as normal values, they must be called. See https://react.dev/reference/rules/react-calls-components-and-hooks#never-pass-around-hooks-as-regular-values',
           loc: place.loc,
-          severity: ErrorSeverity.InvalidReact,
           suggestions: null,
         }),
       );
@@ -154,14 +146,14 @@ export function validateHooksUsage(
     const previousError =
       typeof place.loc !== 'symbol' ? errorsByPlace.get(place.loc) : undefined;
     if (previousError === undefined) {
-      recordError(
+      trackError(
         place.loc,
         new CompilerErrorDetail({
+          category: ErrorCategory.Hooks,
           description: null,
           reason:
             'Hooks must be the same function on every render, but this value may change over time to a different function. See https://react.dev/reference/rules/react-calls-components-and-hooks#dont-dynamically-use-hooks',
           loc: place.loc,
-          severity: ErrorSeverity.InvalidReact,
           suggestions: null,
         }),
       );
@@ -399,7 +391,7 @@ export function validateHooksUsage(
         }
         case 'ObjectMethod':
         case 'FunctionExpression': {
-          visitFunctionExpression(errors, instr.value.loweredFunc.func);
+          visitFunctionExpression(fn.env, instr.value.loweredFunc.func);
           break;
         }
         default: {
@@ -424,18 +416,17 @@ export function validateHooksUsage(
   }
 
   for (const [, error] of errorsByPlace) {
-    errors.push(error);
+    fn.env.recordError(error);
   }
-  return errors.asResult();
 }
 
-function visitFunctionExpression(errors: CompilerError, fn: HIRFunction): void {
+function visitFunctionExpression(env: Environment, fn: HIRFunction): void {
   for (const [, block] of fn.body.blocks) {
     for (const instr of block.instructions) {
       switch (instr.value.kind) {
         case 'ObjectMethod':
         case 'FunctionExpression': {
-          visitFunctionExpression(errors, instr.value.loweredFunc.func);
+          visitFunctionExpression(env, instr.value.loweredFunc.func);
           break;
         }
         case 'MethodCall':
@@ -446,9 +437,9 @@ function visitFunctionExpression(errors: CompilerError, fn: HIRFunction): void {
               : instr.value.property;
           const hookKind = getHookKind(fn.env, callee.identifier);
           if (hookKind != null) {
-            errors.pushErrorDetail(
+            env.recordError(
               new CompilerErrorDetail({
-                severity: ErrorSeverity.InvalidReact,
+                category: ErrorCategory.Hooks,
                 reason:
                   'Hooks must be called at the top level in the body of a function component or custom hook, and may not be called within function expressions. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)',
                 loc: callee.loc,

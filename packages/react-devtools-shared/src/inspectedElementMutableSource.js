@@ -12,6 +12,7 @@ import {
   convertInspectedElementBackendToFrontend,
   hydrateHelper,
   inspectElement as inspectElementAPI,
+  inspectScreen as inspectScreenAPI,
 } from 'react-devtools-shared/src/backendAPI';
 import {fillInPath} from 'react-devtools-shared/src/hydration';
 
@@ -57,27 +58,37 @@ export function inspectElement(
   rendererID: number,
   shouldListenToPauseEvents: boolean = false,
 ): Promise<InspectElementReturnType> {
-  const {id} = element;
+  const {id, parentID} = element;
 
   // This could indicate that the DevTools UI has been closed and reopened.
   // The in-memory cache will be clear but the backend still thinks we have cached data.
   // In this case, we need to tell it to resend the full data.
   const forceFullData = !inspectedElementCache.has(id);
+  const isRoot = parentID === 0;
+  const promisedElement = isRoot
+    ? inspectScreenAPI(
+        bridge,
+        forceFullData,
+        id,
+        path,
+        shouldListenToPauseEvents,
+      )
+    : inspectElementAPI(
+        bridge,
+        forceFullData,
+        id,
+        path,
+        rendererID,
+        shouldListenToPauseEvents,
+      );
 
-  return inspectElementAPI(
-    bridge,
-    forceFullData,
-    id,
-    path,
-    rendererID,
-    shouldListenToPauseEvents,
-  ).then((data: any) => {
+  return promisedElement.then((data: any) => {
     const {type} = data;
 
     let inspectedElement;
     switch (type) {
       case 'error': {
-        const {message, stack, errorType} = ((data: any): InspectElementError);
+        const {message, stack, errorType} = data as any as InspectElementError;
 
         // create a different error class for each error type
         // and keep useful information from backend.
@@ -113,7 +124,7 @@ export function inspectElement(
         throw Error(`Element "${id}" not found`);
 
       case 'full-data':
-        const fullData = ((data: any): InspectElementFullData);
+        const fullData = data as any as InspectElementFullData;
 
         // New data has come in.
         // We should replace the data in our local mutable copy.
@@ -126,12 +137,13 @@ export function inspectElement(
         return [inspectedElement, type];
 
       case 'hydrated-path':
-        const hydratedPathData = ((data: any): InspectElementHydratedPath);
+        const hydratedPathData = data as any as InspectElementHydratedPath;
         const {value} = hydratedPathData;
 
         // A path has been hydrated.
         // Merge it with the latest copy we have locally and resolve with the merged value.
         inspectedElement = inspectedElementCache.get(id) || null;
+        // $FlowFixMe[invalid-compare]
         if (inspectedElement !== null) {
           // Clone element
           inspectedElement = {...inspectedElement};

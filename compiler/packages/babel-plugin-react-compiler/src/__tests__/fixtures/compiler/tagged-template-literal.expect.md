@@ -32,6 +32,7 @@ function component() {
     t0 = $[0];
   }
   const t = t0;
+
   return t;
 }
 

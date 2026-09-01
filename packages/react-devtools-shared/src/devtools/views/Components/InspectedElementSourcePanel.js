@@ -9,19 +9,23 @@
 
 import * as React from 'react';
 import {copy} from 'clipboard-js';
-import {toNormalUrl} from 'jsc-safe-url';
 
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
 import Skeleton from './Skeleton';
 import {withPermissionsCheck} from 'react-devtools-shared/src/frontend/utils/withPermissionsCheck';
 
-import type {Source as InspectedElementSource} from 'react-devtools-shared/src/shared/types';
+import useOpenResource from '../useOpenResource';
+
+import type {SourceMappedLocation} from 'react-devtools-shared/src/symbolicateSource';
+import type {ReactFunctionLocation} from 'shared/ReactTypes';
 import styles from './InspectedElementSourcePanel.css';
 
+import formatLocationForDisplay from './formatLocationForDisplay';
+
 type Props = {
-  source: InspectedElementSource,
-  symbolicatedSourcePromise: Promise<InspectedElementSource | null>,
+  source: ReactFunctionLocation,
+  symbolicatedSourcePromise: Promise<SourceMappedLocation | null>,
 };
 
 function InspectedElementSourcePanel({
@@ -33,7 +37,12 @@ function InspectedElementSourcePanel({
       <div className={styles.SourceHeaderRow}>
         <div className={styles.SourceHeader}>source</div>
 
-        <React.Suspense fallback={<Skeleton height={16} width={16} />}>
+        <React.Suspense
+          fallback={
+            <Button disabled={true} title="Loading source maps...">
+              <ButtonIcon type="copy" />
+            </Button>
+          }>
           <CopySourceButton
             source={source}
             symbolicatedSourcePromise={symbolicatedSourcePromise}
@@ -59,7 +68,7 @@ function InspectedElementSourcePanel({
 function CopySourceButton({source, symbolicatedSourcePromise}: Props) {
   const symbolicatedSource = React.use(symbolicatedSourcePromise);
   if (symbolicatedSource == null) {
-    const {sourceURL, line, column} = source;
+    const [, sourceURL, line, column] = source;
     const handleCopy = withPermissionsCheck(
       {permissions: ['clipboardWrite']},
       () => copy(`${sourceURL}:${line}:${column}`),
@@ -72,7 +81,7 @@ function CopySourceButton({source, symbolicatedSourcePromise}: Props) {
     );
   }
 
-  const {sourceURL, line, column} = symbolicatedSource;
+  const [, sourceURL, line, column] = symbolicatedSource.location;
   const handleCopy = withPermissionsCheck(
     {permissions: ['clipboardWrite']},
     () => copy(`${sourceURL}:${line}:${column}`),
@@ -87,57 +96,27 @@ function CopySourceButton({source, symbolicatedSourcePromise}: Props) {
 
 function FormattedSourceString({source, symbolicatedSourcePromise}: Props) {
   const symbolicatedSource = React.use(symbolicatedSourcePromise);
-  if (symbolicatedSource == null) {
-    const {sourceURL, line} = source;
 
-    return (
-      <div
-        className={styles.SourceOneLiner}
-        data-testname="InspectedElementView-FormattedSourceString">
-        {formatSourceForDisplay(sourceURL, line)}
-      </div>
-    );
-  }
+  const [linkIsEnabled, viewSource] = useOpenResource(
+    source,
+    symbolicatedSource == null ? null : symbolicatedSource.location,
+  );
 
-  const {sourceURL, line} = symbolicatedSource;
+  const [, sourceURL, line, column] =
+    symbolicatedSource == null ? source : symbolicatedSource.location;
 
   return (
     <div
       className={styles.SourceOneLiner}
       data-testname="InspectedElementView-FormattedSourceString">
-      {formatSourceForDisplay(sourceURL, line)}
+      <span
+        className={linkIsEnabled ? styles.Link : null}
+        title={sourceURL + ':' + line}
+        onClick={viewSource}>
+        {formatLocationForDisplay(sourceURL, line, column)}
+      </span>
     </div>
   );
-}
-
-// This function is based on describeComponentFrame() in packages/shared/ReactComponentStackFrame
-function formatSourceForDisplay(sourceURL: string, line: number) {
-  // Metro can return JSC-safe URLs, which have `//&` as a delimiter
-  // https://www.npmjs.com/package/jsc-safe-url
-  const sanitizedSourceURL = sourceURL.includes('//&')
-    ? toNormalUrl(sourceURL)
-    : sourceURL;
-
-  // Note: this RegExp doesn't work well with URLs from Metro,
-  // which provides bundle URL with query parameters prefixed with /&
-  const BEFORE_SLASH_RE = /^(.*)[\\\/]/;
-
-  let nameOnly = sanitizedSourceURL.replace(BEFORE_SLASH_RE, '');
-
-  // In DEV, include code for a common special case:
-  // prefer "folder/index.js" instead of just "index.js".
-  if (/^index\./.test(nameOnly)) {
-    const match = sanitizedSourceURL.match(BEFORE_SLASH_RE);
-    if (match) {
-      const pathBeforeSlash = match[1];
-      if (pathBeforeSlash) {
-        const folderName = pathBeforeSlash.replace(BEFORE_SLASH_RE, '');
-        nameOnly = folderName + '/' + nameOnly;
-      }
-    }
-  }
-
-  return `${nameOnly}:${line}`;
 }
 
 export default InspectedElementSourcePanel;

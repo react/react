@@ -61,7 +61,7 @@ export function defaultOnCaughtError(
   error: mixed,
   errorInfo: {
     +componentStack?: ?string,
-    +errorBoundary?: ?React$Component<any, any>,
+    +errorBoundary?: ?component(...props: any),
   },
 ): void {
   // Overriding this can silence these warnings e.g. for tests.
@@ -138,7 +138,7 @@ export function logUncaughtError(
         : null;
       errorBoundaryName = null;
     }
-    const error = (errorInfo.value: any);
+    const error = errorInfo.value as any;
     if (__DEV__ && ReactSharedInternals.actQueue !== null) {
       // For uncaught errors inside act, we track them on the act and then
       // rethrow them into the test.
@@ -172,7 +172,7 @@ export function logCaughtError(
         : null;
       errorBoundaryName = getComponentNameFromFiber(boundary);
     }
-    const error = (errorInfo.value: any);
+    const error = errorInfo.value as any;
     const onCaughtError = root.onCaughtError;
     onCaughtError(error, {
       componentStack: errorInfo.stack,

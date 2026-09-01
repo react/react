@@ -41,6 +41,7 @@ function Foo() {
     t0 = $[0];
   }
   const s = t0;
+
   return s;
 }
 

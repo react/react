@@ -63,6 +63,7 @@ const Foo = isForgetEnabled_Fixtures()
   ? function Foo(props) {
       "use forget";
       const $ = _c(3);
+
       if (props.bar < 0) {
         return props.children;
       }

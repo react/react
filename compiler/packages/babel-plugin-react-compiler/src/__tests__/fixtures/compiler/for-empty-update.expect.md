@@ -32,6 +32,7 @@ function Component(props) {
       break;
     }
   }
+
   return x;
 }
 

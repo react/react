@@ -20,9 +20,11 @@ import type {
   RejectedThenable,
 } from 'shared/ReactTypes';
 
+import {enableAsyncDebugInfo} from 'shared/ReactFeatureFlags';
+
 import noop from 'shared/noop';
 
-export opaque type ThenableState = Array<Thenable<any>>;
+export type ThenableState = Array<Thenable<any>>;
 
 // An error that is thrown (e.g. by `use`) to trigger Suspense. If we
 // detect this is caught by userspace, we'll log a warning in development.
@@ -50,6 +52,11 @@ export function trackUsedThenable<T>(
   const previous = thenableState[index];
   if (previous === undefined) {
     thenableState.push(thenable);
+    if (__DEV__ && enableAsyncDebugInfo) {
+      const stacks: Array<Error> =
+        (thenableState as any)._stacks || ((thenableState as any)._stacks = []);
+      stacks.push(new Error());
+    }
   } else {
     if (previous !== thenable) {
       // Reuse the previous thenable, and drop the new one. We can assume
@@ -70,11 +77,29 @@ export function trackUsedThenable<T>(
   // a listener that will update its status and result when it resolves.
   switch (thenable.status) {
     case 'fulfilled': {
+      // This could be a bad instrumentation that doesn't set .value.
+      // We're not type-checking since this is a hot path where you can
+      // track down easily when something becomes `undefined` unexpectedly.
       const fulfilledValue: T = thenable.value;
       return fulfilledValue;
     }
     case 'rejected': {
       const rejectedError = thenable.reason;
+
+      // Rejected Promises are rarer so we're doing an extra type-check in
+      // case of a bad instrumentation that doesn't set .reason
+      // If we end up throwing `undefined` it becomes hard to track down
+      // where that throw originated because no callstack would exist.
+      // React would still have a Component stack but that could only be used
+      // as an approximation.
+      if (rejectedError === undefined && !('reason' in thenable)) {
+        throw new Error(
+          'A rejected Promise was passed to React without a `reason` property. ' +
+            'React threw a generic error from where the Promise was used to assist in identifying the problematic Promise. ' +
+            "Make sure that instrumented Promises correctly set the `reason` property when setting `status` to `'rejected'`.",
+        );
+      }
+
       throw rejectedError;
     }
     default: {
@@ -86,19 +111,19 @@ export function trackUsedThenable<T>(
         // happen. Flight lazily parses JSON when the value is actually awaited.
         thenable.then(noop, noop);
       } else {
-        const pendingThenable: PendingThenable<T> = (thenable: any);
+        const pendingThenable: PendingThenable<T> = thenable as any;
         pendingThenable.status = 'pending';
         pendingThenable.then(
           fulfilledValue => {
             if (thenable.status === 'pending') {
-              const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+              const fulfilledThenable: FulfilledThenable<T> = thenable as any;
               fulfilledThenable.status = 'fulfilled';
               fulfilledThenable.value = fulfilledValue;
             }
           },
           (error: mixed) => {
             if (thenable.status === 'pending') {
-              const rejectedThenable: RejectedThenable<T> = (thenable: any);
+              const rejectedThenable: RejectedThenable<T> = thenable as any;
               rejectedThenable.status = 'rejected';
               rejectedThenable.reason = error;
             }
@@ -107,13 +132,13 @@ export function trackUsedThenable<T>(
       }
 
       // Check one more time in case the thenable resolved synchronously
-      switch ((thenable: Thenable<T>).status) {
+      switch ((thenable as Thenable<T>).status) {
         case 'fulfilled': {
-          const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
+          const fulfilledThenable: FulfilledThenable<T> = thenable as any;
           return fulfilledThenable.value;
         }
         case 'rejected': {
-          const rejectedThenable: RejectedThenable<T> = (thenable: any);
+          const rejectedThenable: RejectedThenable<T> = thenable as any;
           throw rejectedThenable.reason;
         }
       }

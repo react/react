@@ -6,7 +6,11 @@
  */
 
 import {Monaco} from '@monaco-editor/react';
-import {CompilerErrorDetail, ErrorSeverity} from 'babel-plugin-react-compiler';
+import {
+  CompilerDiagnostic,
+  CompilerErrorDetail,
+  ErrorSeverity,
+} from 'babel-plugin-react-compiler';
 import {MarkerSeverity, type editor} from 'monaco-editor';
 
 function mapReactCompilerSeverityToMonaco(
@@ -22,38 +26,46 @@ function mapReactCompilerSeverityToMonaco(
 }
 
 function mapReactCompilerDiagnosticToMonacoMarker(
-  detail: CompilerErrorDetail,
+  detail: CompilerErrorDetail | CompilerDiagnostic,
   monaco: Monaco,
+  source: string,
 ): editor.IMarkerData | null {
-  if (detail.loc == null || typeof detail.loc === 'symbol') {
+  const loc = detail.primaryLocation();
+  if (loc == null || typeof loc === 'symbol') {
     return null;
   }
   const severity = mapReactCompilerSeverityToMonaco(detail.severity, monaco);
-  let message = detail.printErrorMessage();
+  let message = detail.printErrorMessage(source, {eslint: true});
   return {
     severity,
     message,
-    startLineNumber: detail.loc.start.line,
-    startColumn: detail.loc.start.column + 1,
-    endLineNumber: detail.loc.end.line,
-    endColumn: detail.loc.end.column + 1,
+    startLineNumber: loc.start.line,
+    startColumn: loc.start.column + 1,
+    endLineNumber: loc.end.line,
+    endColumn: loc.end.column + 1,
   };
 }
 
 type ReactCompilerMarkerConfig = {
   monaco: Monaco;
   model: editor.ITextModel;
-  details: Array<CompilerErrorDetail>;
+  details: Array<CompilerErrorDetail | CompilerDiagnostic>;
+  source: string;
 };
 let decorations: Array<string> = [];
 export function renderReactCompilerMarkers({
   monaco,
   model,
   details,
+  source,
 }: ReactCompilerMarkerConfig): void {
   const markers: Array<editor.IMarkerData> = [];
   for (const detail of details) {
-    const marker = mapReactCompilerDiagnosticToMonacoMarker(detail, monaco);
+    const marker = mapReactCompilerDiagnosticToMonacoMarker(
+      detail,
+      monaco,
+      source,
+    );
     if (marker == null) {
       continue;
     }

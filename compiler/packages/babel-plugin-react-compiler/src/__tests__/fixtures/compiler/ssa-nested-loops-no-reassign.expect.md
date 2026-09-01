@@ -33,6 +33,7 @@ function foo(a, b, c) {
       while (c) {}
     }
   }
+
   return 0;
 }
 

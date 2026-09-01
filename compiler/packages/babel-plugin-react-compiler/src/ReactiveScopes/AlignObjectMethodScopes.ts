@@ -41,7 +41,6 @@ function findScopesToMerge(fn: HIRFunction): DisjointSet<ReactiveScope> {
               {
                 reason:
                   'Internal error: Expected all ObjectExpressions and ObjectMethods to have non-null scope.',
-                suggestions: null,
                 loc: GeneratedSource,
               },
             );

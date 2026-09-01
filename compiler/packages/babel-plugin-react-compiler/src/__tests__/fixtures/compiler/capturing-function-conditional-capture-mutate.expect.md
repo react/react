@@ -48,6 +48,7 @@ function useHook(a, b) {
     t1 = $[4];
   }
   const x = t1;
+
   return x;
 }
 

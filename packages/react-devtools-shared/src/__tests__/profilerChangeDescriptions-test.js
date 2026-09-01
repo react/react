@@ -90,7 +90,7 @@ describe('Profiler change descriptions', () => {
       {
         "context": true,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
         "props": [],
         "state": null,
@@ -110,7 +110,7 @@ describe('Profiler change descriptions', () => {
       {
         "context": true,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
         "props": [],
         "state": null,
@@ -125,7 +125,7 @@ describe('Profiler change descriptions', () => {
       {
         "context": false,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
         "props": [],
         "state": null,
@@ -140,7 +140,7 @@ describe('Profiler change descriptions', () => {
       {
         "context": true,
         "didHooksChange": false,
-        "hooks": null,
+        "hooks": [],
         "isFirstMount": false,
         "props": [],
         "state": null,

@@ -69,7 +69,6 @@ function useJoinCondDepsInUncondScopes(props) {
     if (CONST_TRUE) {
       setProperty(x, props.a.b);
     }
-
     setProperty(y, props.a.b);
     t0 = [x, y];
     $[0] = props.a.b;

@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+import {useMemo} from 'react';
 import {ValidateMemoization} from 'shared-runtime';
 
 function Component({a, b, c}) {
@@ -13,9 +14,21 @@ function Component({a, b, c}) {
 
   return (
     <>
-      <ValidateMemoization inputs={[a, c]} output={map} />
-      <ValidateMemoization inputs={[a, c]} output={mapAlias} />
-      <ValidateMemoization inputs={[b]} output={[hasB]} />
+      <ValidateMemoization
+        inputs={[a, c]}
+        output={map}
+        onlyCheckCompiled={true}
+      />
+      <ValidateMemoization
+        inputs={[a, c]}
+        output={mapAlias}
+        onlyCheckCompiled={true}
+      />
+      <ValidateMemoization
+        inputs={[b]}
+        output={[hasB]}
+        onlyCheckCompiled={true}
+      />
     </>
   );
 }
@@ -44,6 +57,7 @@ export const FIXTURE_ENTRYPOINT = {
 
 ```javascript
 import { c as _c } from "react/compiler-runtime";
+import { useMemo } from "react";
 import { ValidateMemoization } from "shared-runtime";
 
 function Component(t0) {
@@ -76,7 +90,9 @@ function Component(t0) {
   }
   let t2;
   if ($[7] !== map || $[8] !== t1) {
-    t2 = <ValidateMemoization inputs={t1} output={map} />;
+    t2 = (
+      <ValidateMemoization inputs={t1} output={map} onlyCheckCompiled={true} />
+    );
     $[7] = map;
     $[8] = t1;
     $[9] = t2;
@@ -94,7 +110,13 @@ function Component(t0) {
   }
   let t4;
   if ($[13] !== mapAlias || $[14] !== t3) {
-    t4 = <ValidateMemoization inputs={t3} output={mapAlias} />;
+    t4 = (
+      <ValidateMemoization
+        inputs={t3}
+        output={mapAlias}
+        onlyCheckCompiled={true}
+      />
+    );
     $[13] = mapAlias;
     $[14] = t3;
     $[15] = t4;
@@ -119,7 +141,9 @@ function Component(t0) {
   }
   let t7;
   if ($[20] !== t5 || $[21] !== t6) {
-    t7 = <ValidateMemoization inputs={t5} output={t6} />;
+    t7 = (
+      <ValidateMemoization inputs={t5} output={t6} onlyCheckCompiled={true} />
+    );
     $[20] = t5;
     $[21] = t6;
     $[22] = t7;

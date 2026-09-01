@@ -23,7 +23,6 @@ import { c as _c } from "react/compiler-runtime"; // @validatePreserveExistingMe
 import { ValidateMemoization } from "shared-runtime";
 function Component(props) {
   const $ = _c(7);
-  let t0;
   let x;
   if ($[0] !== props.items) {
     x = [];
@@ -34,26 +33,25 @@ function Component(props) {
   } else {
     x = $[1];
   }
-  t0 = x;
-  const data = t0;
-  let t1;
+  const data = x;
+  let t0;
   if ($[2] !== props.items) {
-    t1 = [props.items];
+    t0 = [props.items];
     $[2] = props.items;
-    $[3] = t1;
+    $[3] = t0;
   } else {
-    t1 = $[3];
+    t0 = $[3];
   }
-  let t2;
-  if ($[4] !== data || $[5] !== t1) {
-    t2 = <ValidateMemoization inputs={t1} output={data} />;
+  let t1;
+  if ($[4] !== data || $[5] !== t0) {
+    t1 = <ValidateMemoization inputs={t0} output={data} />;
     $[4] = data;
-    $[5] = t1;
-    $[6] = t2;
+    $[5] = t0;
+    $[6] = t1;
   } else {
-    t2 = $[6];
+    t1 = $[6];
   }
-  return t2;
+  return t1;
 }
 
 ```

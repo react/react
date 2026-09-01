@@ -20,7 +20,7 @@ import {getMetaValueLabel, serializeHooksForCopy} from '../utils';
 import Store from '../../store';
 import styles from './InspectedElementHooksTree.css';
 import {meta} from '../../../hydration';
-import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookNamesCache';
+import {getHookSourceLocationKey} from 'react-devtools-shared/src/hookSourceLocation';
 import HookNamesModuleLoaderContext from 'react-devtools-shared/src/devtools/views/Components/HookNamesModuleLoaderContext';
 import isArray from 'react-devtools-shared/src/isArray';
 
@@ -223,7 +223,10 @@ function HookView({
   const hookDisplayName = hookName ? (
     <>
       {name}
-      {!!hookName && <span className={styles.HookName}>({hookName})</span>}
+      {
+        // $FlowFixMe[constant-condition]
+        !!hookName && <span className={styles.HookName}>({hookName})</span>
+      }
     </>
   ) : (
     name
@@ -231,7 +234,7 @@ function HookView({
 
   // Format data for display to mimic the props/state/context for now.
   if (type === 'string') {
-    displayValue = `"${((value: any): string)}"`;
+    displayValue = `"${value as any as string}"`;
   } else if (type === 'boolean') {
     displayValue = value ? 'true' : 'false';
   } else if (type === 'number') {
@@ -386,6 +389,6 @@ function HookView({
   }
 }
 
-export default (React.memo(
-  InspectedElementHooksTree,
-): React.ComponentType<HookViewProps>);
+export default React.memo(InspectedElementHooksTree) as component(
+  ...props: HookViewProps
+);

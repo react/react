@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {Thenable, ReactFormState} from 'shared/ReactTypes';
+import type {ReactFormState} from 'shared/ReactTypes';
 
 import type {
   ServerManifest,
@@ -20,27 +20,49 @@ import {
   requireModule,
 } from 'react-client/src/ReactFlightClientConfig';
 
-import {createResponse, close, getRoot} from './ReactFlightReplyServer';
+import {
+  createResponse,
+  close,
+  getRoot,
+  MAX_BOUND_ARGS,
+} from './ReactFlightReplyServer';
 
 type ServerReferenceId = any;
 
 function bindArgs(fn: any, args: any) {
+  if (args.length > MAX_BOUND_ARGS) {
+    throw new Error(
+      'Server Function has too many bound arguments. Received ' +
+        args.length +
+        ' but the limit is ' +
+        MAX_BOUND_ARGS +
+        '.',
+    );
+  }
+
   return fn.bind.apply(fn, [null].concat(args));
 }
 
 function loadServerReference<T>(
   bundlerConfig: ServerManifest,
-  id: ServerReferenceId,
-  bound: null | Thenable<Array<any>>,
+  metaData: {
+    id: ServerReferenceId,
+    bound: null | Promise<Array<any>>,
+  },
 ): Promise<T> {
+  const id: ServerReferenceId = metaData.id;
+  if (typeof id !== 'string') {
+    return null as any;
+  }
   const serverReference: ServerReference<T> =
     resolveServerReference<$FlowFixMe>(bundlerConfig, id);
   // We expect most servers to not really need this because you'd just have all
   // the relevant modules already loaded but it allows for lazy loading of code
   // if needed.
   const preloadPromise = preloadModule(serverReference);
-  if (bound) {
-    return Promise.all([(bound: any), preloadPromise]).then(
+  const bound = metaData.bound;
+  if (bound instanceof Promise) {
+    return Promise.all([bound as any, preloadPromise]).then(
       ([args]: Array<any>) => bindArgs(requireModule(serverReference), args),
     );
   } else if (preloadPromise) {
@@ -57,6 +79,7 @@ function decodeBoundActionMetaData(
   body: FormData,
   serverManifest: ServerManifest,
   formFieldPrefix: string,
+  arraySizeLimit: void | number,
 ): {id: ServerReferenceId, bound: null | Promise<Array<any>>} {
   // The data for this reference is encoded in multiple fields under this prefix.
   const actionResponse = createResponse(
@@ -64,6 +87,7 @@ function decodeBoundActionMetaData(
     formFieldPrefix,
     undefined,
     body,
+    arraySizeLimit,
   );
   close(actionResponse);
   const refPromise = getRoot<{
@@ -71,10 +95,10 @@ function decodeBoundActionMetaData(
     bound: null | Promise<Array<any>>,
   }>(actionResponse);
   // Force it to initialize
-  // $FlowFixMe
+  // $FlowFixMe[incompatible-type]
   refPromise.then(() => {});
   if (refPromise.status !== 'fulfilled') {
-    // $FlowFixMe
+    // $FlowFixMe[prop-missing]
     throw refPromise.reason;
   }
   return refPromise.value;
@@ -88,37 +112,50 @@ export function decodeAction<T>(
   // the implementation details of the action data.
   const formData = new FormData();
 
-  let action: Promise<(formData: FormData) => T> | null = null;
+  let maybeActionKey: null | string = null;
 
   // $FlowFixMe[prop-missing]
   body.forEach((value: string | File, key: string) => {
     if (!key.startsWith('$ACTION_')) {
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       formData.append(key, value);
-      return;
-    }
-    // Later actions may override earlier actions if a button is used to override the default
-    // form action.
-    if (key.startsWith('$ACTION_REF_')) {
-      const formFieldPrefix = '$ACTION_' + key.slice(12) + ':';
-      const metaData = decodeBoundActionMetaData(
-        body,
-        serverManifest,
-        formFieldPrefix,
-      );
-      action = loadServerReference(serverManifest, metaData.id, metaData.bound);
-      return;
-    }
-    if (key.startsWith('$ACTION_ID_')) {
-      const id = key.slice(11);
-      action = loadServerReference(serverManifest, id, null);
-      return;
+    } else if (key.startsWith('$ACTION_REF_')) {
+      // Later actions may override earlier actions if a button is used to
+      // override the default form action. However, we don't expect the same
+      // action ref field to be sent multiple times in legitimate form data.
+      maybeActionKey = key;
+    } else if (key.startsWith('$ACTION_ID_')) {
+      // A simple action with no bound arguments may appear twice in the form data
+      // if a button specifies the same action as the default form action.
+      maybeActionKey = key;
     }
   });
 
-  if (action === null) {
+  if (maybeActionKey === null) {
     return null;
   }
+  const actionKey = maybeActionKey;
+
+  let action: Promise<(formData: FormData) => T> | null = null;
+  if (actionKey.startsWith('$ACTION_REF_')) {
+    const formFieldPrefix =
+      '$ACTION_' + actionKey.slice('$ACTION_REF_'.length) + ':';
+    const metaData = decodeBoundActionMetaData(
+      body,
+      serverManifest,
+      formFieldPrefix,
+    );
+    action = loadServerReference(serverManifest, metaData);
+  } else if (actionKey.startsWith('$ACTION_ID_')) {
+    const id = actionKey.slice('$ACTION_ID_'.length);
+    action = loadServerReference(serverManifest, {
+      id,
+      bound: null,
+    });
+  } else {
+    throw new Error('Cannot handle action key. This is a bug in React.');
+  }
+
   // Return the action with the remaining FormData bound to the first argument.
   return action.then(fn => fn.bind(null, formData));
 }
@@ -135,24 +172,28 @@ export function decodeFormState<S>(
   }
   // Search through the form data object to get the reference id and the number
   // of bound arguments. This repeats some of the work done in decodeAction.
-  let metaData = null;
+  let actionKey: null | string = null;
   // $FlowFixMe[prop-missing]
   body.forEach((value: string | File, key: string) => {
     if (key.startsWith('$ACTION_REF_')) {
-      const formFieldPrefix = '$ACTION_' + key.slice(12) + ':';
-      metaData = decodeBoundActionMetaData(
-        body,
-        serverManifest,
-        formFieldPrefix,
-      );
+      actionKey = key;
     }
     // We don't check for the simple $ACTION_ID_ case because form state actions
     // are always bound to the state argument.
   });
-  if (metaData === null) {
+  if (actionKey === null) {
     // Should be unreachable.
     return Promise.resolve(null);
   }
+
+  const formFieldPrefix =
+    '$ACTION_' + actionKey.slice('$ACTION_REF_'.length) + ':';
+  const metaData = decodeBoundActionMetaData(
+    body,
+    serverManifest,
+    formFieldPrefix,
+  );
+
   const referenceId = metaData.id;
   return Promise.resolve(metaData.bound).then(bound => {
     if (bound === null) {

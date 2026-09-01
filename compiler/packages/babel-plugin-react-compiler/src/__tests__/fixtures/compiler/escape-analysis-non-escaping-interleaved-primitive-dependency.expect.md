@@ -48,6 +48,7 @@ function Component(props) {
   } else {
     b = $[2];
   }
+
   return b;
 }
 

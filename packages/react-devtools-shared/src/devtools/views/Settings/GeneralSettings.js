@@ -16,6 +16,11 @@ import {isInternalFacebookBuild} from 'react-devtools-feature-flags';
 
 import styles from './SettingsShared.css';
 
+import CodeEditorOptions from './CodeEditorOptions';
+import CodeEditorByDefault from './CodeEditorByDefault';
+import {LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR} from '../../../constants';
+import {useLocalStorage} from '../hooks';
+
 function getChangeLogUrl(version: ?string): string | null {
   if (!version) {
     return null;
@@ -45,18 +50,22 @@ export default function GeneralSettings(_: {}): React.Node {
   const showBackendVersion =
     backendVersion && backendVersion !== frontendVersion;
 
+  const [alwaysOpenInEditor] = useLocalStorage<boolean>(
+    LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR,
+    false,
+  );
+
   return (
-    <div className={styles.Settings}>
+    <div className={styles.SettingList}>
       {isInternalFacebookBuild && (
-        <div className={styles.Setting}>
+        <div className={styles.SettingWrapper}>
           This is an internal build of React DevTools for Meta
         </div>
       )}
 
-      <div className={styles.Setting}>
+      <div className={styles.SettingWrapper}>
         <div className={styles.RadioLabel}>Theme</div>
         <select
-          className={styles.Select}
           value={theme}
           onChange={({currentTarget}) => setTheme(currentTarget.value)}>
           <option value="auto">Auto</option>
@@ -65,10 +74,9 @@ export default function GeneralSettings(_: {}): React.Node {
         </select>
       </div>
 
-      <div className={styles.Setting}>
+      <div className={styles.SettingWrapper}>
         <div className={styles.RadioLabel}>Display density</div>
         <select
-          className={styles.Select}
           value={displayDensity}
           onChange={({currentTarget}) =>
             setDisplayDensity(currentTarget.value)
@@ -78,17 +86,36 @@ export default function GeneralSettings(_: {}): React.Node {
         </select>
       </div>
 
+      <div className={styles.SettingWrapper}>
+        <label className={styles.SettingRow}>
+          <div className={styles.RadioLabel}>Open in Editor URL</div>
+          <CodeEditorOptions />
+        </label>
+      </div>
+
+      <div className={styles.SettingWrapper}>
+        <CodeEditorByDefault />
+        {alwaysOpenInEditor && (__IS_CHROME__ || __IS_EDGE__) ? (
+          <div>
+            To enable link handling in your browser's DevTools settings, look
+            for the option Extension -> Link Handling. Select "React Developer
+            Tools".
+          </div>
+        ) : null}
+      </div>
+
       {supportsTraceUpdates && (
-        <div className={styles.Setting}>
-          <label>
+        <div className={styles.SettingWrapper}>
+          <label className={styles.SettingRow}>
             <input
               type="checkbox"
               checked={traceUpdatesEnabled}
               onChange={({currentTarget}) =>
                 setTraceUpdatesEnabled(currentTarget.checked)
               }
-            />{' '}
-            Highlight updates when components render.
+              className={styles.SettingRowCheckbox}
+            />
+            Highlight updates when components render
           </label>
         </div>
       )}

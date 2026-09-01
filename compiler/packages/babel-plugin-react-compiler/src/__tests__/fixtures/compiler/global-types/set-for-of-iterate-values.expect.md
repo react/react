@@ -44,6 +44,7 @@ function useFoo(t0) {
   for (const el of s1.values()) {
     s2.add(el);
   }
+
   return [s1, s2];
 }
 

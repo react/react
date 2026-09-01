@@ -43,7 +43,6 @@ function Component(t0) {
       const precomputed = prop + ref2.current;
       return { foo: () => prop + ref2.current + precomputed };
     };
-
     t2 = [prop];
     $[0] = prop;
     $[1] = t1;

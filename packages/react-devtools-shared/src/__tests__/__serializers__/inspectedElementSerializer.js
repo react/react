@@ -15,8 +15,7 @@ export function test(maybeInspectedElement) {
     hasOwnProperty('canEditFunctionProps') &&
     hasOwnProperty('canEditHooks') &&
     hasOwnProperty('canToggleSuspense') &&
-    hasOwnProperty('canToggleError') &&
-    hasOwnProperty('canViewSource')
+    hasOwnProperty('canToggleError')
   );
 }
 

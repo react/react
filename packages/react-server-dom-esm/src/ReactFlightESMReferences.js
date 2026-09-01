@@ -49,7 +49,7 @@ const FunctionBind = Function.prototype.bind;
 // $FlowFixMe[method-unbinding]
 const ArraySlice = Array.prototype.slice;
 function bind(this: ServerReference<any>): any {
-  // $FlowFixMe[prop-missing]
+  // $FlowFixMe[incompatible-type]
   const newFn = FunctionBind.apply(this, arguments);
   if (this.$$typeof === SERVER_REFERENCE_TAG) {
     if (__DEV__) {
@@ -65,8 +65,8 @@ function bind(this: ServerReference<any>): any {
     const $$id = {value: this.$$id};
     const $$bound = {value: this.$$bound ? this.$$bound.concat(args) : args};
     return Object.defineProperties(
-      (newFn: any),
-      __DEV__
+      newFn as any,
+      (__DEV__
         ? {
             $$typeof,
             $$id,
@@ -82,11 +82,17 @@ function bind(this: ServerReference<any>): any {
             $$id,
             $$bound,
             bind: {value: bind, configurable: true},
-          },
+          }) as PropertyDescriptorMap,
     );
   }
   return newFn;
 }
+
+const serverReferenceToString = {
+  value: () => 'function () { [omitted code] }',
+  configurable: true,
+  writable: true,
+};
 
 export function registerServerReference<T: Function>(
   reference: T,
@@ -100,8 +106,8 @@ export function registerServerReference<T: Function>(
   };
   const $$bound = {value: null, configurable: true};
   return Object.defineProperties(
-    (reference: any),
-    __DEV__
+    reference as any,
+    (__DEV__
       ? {
           $$typeof,
           $$id,
@@ -111,12 +117,14 @@ export function registerServerReference<T: Function>(
             configurable: true,
           },
           bind: {value: bind, configurable: true},
+          toString: serverReferenceToString,
         }
       : {
           $$typeof,
           $$id,
           $$bound,
           bind: {value: bind, configurable: true},
-        },
+          toString: serverReferenceToString,
+        }) as PropertyDescriptorMap,
   );
 }

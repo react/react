@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 import {Stringify, identity, makeArray, toJSON} from 'shared-runtime';
 import {useMemo} from 'react';
 
@@ -40,92 +41,79 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
 import { Stringify, identity, makeArray, toJSON } from "shared-runtime";
 import { useMemo } from "react";
 
 function Component(props) {
-  const $ = _c(13);
+  const $ = _c(10);
   let t0;
   let t1;
-  let t2;
   if ($[0] !== props) {
-    t2 = Symbol.for("react.early_return_sentinel");
+    t1 = Symbol.for("react.early_return_sentinel");
     bb0: {
-      t0 = toJSON(props);
-      const propsString = t0;
+      const propsString = toJSON(props);
       if (propsString.length <= 2) {
-        t2 = null;
+        t1 = null;
         break bb0;
       }
-
-      t1 = identity(propsString);
+      t0 = identity(propsString);
     }
     $[0] = props;
-    $[1] = t1;
-    $[2] = t2;
-    $[3] = t0;
+    $[1] = t0;
+    $[2] = t1;
   } else {
-    t1 = $[1];
-    t2 = $[2];
-    t0 = $[3];
+    t0 = $[1];
+    t1 = $[2];
   }
-  if (t2 !== Symbol.for("react.early_return_sentinel")) {
-    return t2;
+  if (t1 !== Symbol.for("react.early_return_sentinel")) {
+    return t1;
   }
-  let t3;
-  if ($[4] !== t1) {
-    t3 = { url: t1 };
-    $[4] = t1;
-    $[5] = t3;
-  } else {
-    t3 = $[5];
-  }
-  const linkProps = t3;
-  let t4;
-  if ($[6] !== linkProps) {
+  let t2;
+  if ($[3] !== t0) {
+    const linkProps = { url: t0 };
     const x = {};
+    let t3;
+    let t4;
     let t5;
     let t6;
     let t7;
-    let t8;
-    let t9;
-    if ($[8] === Symbol.for("react.memo_cache_sentinel")) {
-      t5 = [1];
-      t6 = [2];
-      t7 = [3];
-      t8 = [4];
-      t9 = [5];
-      $[8] = t5;
-      $[9] = t6;
-      $[10] = t7;
-      $[11] = t8;
-      $[12] = t9;
+    if ($[5] === Symbol.for("react.memo_cache_sentinel")) {
+      t3 = [1];
+      t4 = [2];
+      t5 = [3];
+      t6 = [4];
+      t7 = [5];
+      $[5] = t3;
+      $[6] = t4;
+      $[7] = t5;
+      $[8] = t6;
+      $[9] = t7;
     } else {
-      t5 = $[8];
-      t6 = $[9];
-      t7 = $[10];
-      t8 = $[11];
-      t9 = $[12];
+      t3 = $[5];
+      t4 = $[6];
+      t5 = $[7];
+      t6 = $[8];
+      t7 = $[9];
     }
-    t4 = (
+    t2 = (
       <Stringify
         link={linkProps}
-        val1={t5}
-        val2={t6}
-        val3={t7}
-        val4={t8}
-        val5={t9}
+        val1={t3}
+        val2={t4}
+        val3={t5}
+        val4={t6}
+        val5={t7}
       >
         {makeArray(x, 2)}
       </Stringify>
     );
-    $[6] = linkProps;
-    $[7] = t4;
+    $[3] = t0;
+    $[4] = t2;
   } else {
-    t4 = $[7];
+    t2 = $[4];
   }
-  return t4;
+  return t2;
 }
 
 export const FIXTURE_ENTRYPOINT = {

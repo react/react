@@ -47,28 +47,32 @@ function useCustomRef() {
 function _temp() {}
 
 function Foo() {
-  const $ = _c(3);
+  const $ = _c(4);
   const ref = useCustomRef();
   let t0;
-  let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[0] !== ref) {
     t0 = () => {
       ref.current?.click();
     };
-    t1 = [];
-    $[0] = t0;
-    $[1] = t1;
+    $[0] = ref;
+    $[1] = t0;
   } else {
-    t0 = $[0];
-    t1 = $[1];
+    t0 = $[1];
+  }
+  let t1;
+  if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
+    t1 = [];
+    $[2] = t1;
+  } else {
+    t1 = $[2];
   }
   useEffect(t0, t1);
   let t2;
-  if ($[2] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[3] === Symbol.for("react.memo_cache_sentinel")) {
     t2 = <div>foo</div>;
-    $[2] = t2;
+    $[3] = t2;
   } else {
-    t2 = $[2];
+    t2 = $[3];
   }
   return t2;
 }

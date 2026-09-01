@@ -215,7 +215,11 @@ describe('ProfilerStore', () => {
   it('should not throw while initializing context values for Fibers within a not-yet-mounted subtree', () => {
     const promise = new Promise(resolve => {});
     const SuspendingView = () => {
-      throw promise;
+      if (React.use) {
+        React.use(promise);
+      } else {
+        throw promise;
+      }
     };
 
     const App = () => {

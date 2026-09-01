@@ -14,6 +14,7 @@ let waitForPaint;
 let waitFor;
 let assertLog;
 let assertConsoleErrorDev;
+let Suspense;
 
 describe('Activity', () => {
   beforeEach(() => {
@@ -24,7 +25,8 @@ describe('Activity', () => {
     Scheduler = require('scheduler');
     act = require('internal-test-utils').act;
     LegacyHidden = React.unstable_LegacyHidden;
-    Activity = React.unstable_Activity;
+    Activity = React.Activity;
+    Suspense = React.Suspense;
     useState = React.useState;
     useInsertionEffect = React.useInsertionEffect;
     useLayoutEffect = React.useLayoutEffect;
@@ -194,7 +196,6 @@ describe('Activity', () => {
     );
   });
 
-  // @gate enableActivity
   it('mounts without layout effects when hidden', async () => {
     function Child({text}) {
       useLayoutEffect(() => {
@@ -232,7 +233,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span prop="Child" />);
   });
 
-  // @gate enableActivity
   it('mounts/unmounts layout effects when visibility changes (starting visible)', async () => {
     function Child({text}) {
       useLayoutEffect(() => {
@@ -278,9 +278,8 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span prop="Child" />);
   });
 
-  // @gate enableActivity
   it('nested offscreen does not call componentWillUnmount when hidden', async () => {
-    // This is a bug that appeared during production test of <unstable_Activity />.
+    // This is a bug that appeared during production test of <Activity />.
     // It is a very specific scenario with nested Offscreens. The inner offscreen
     // goes from visible to hidden in synchronous update.
     class ClassComponent extends React.Component {
@@ -382,7 +381,6 @@ describe('Activity', () => {
     assertLog(['child']);
   });
 
-  // @gate enableActivity
   it('mounts/unmounts layout effects when visibility changes (starting hidden)', async () => {
     function Child({text}) {
       useLayoutEffect(() => {
@@ -429,7 +427,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span hidden={true} prop="Child" />);
   });
 
-  // @gate enableActivity
   it('hides children of offscreen after layout effects are destroyed', async () => {
     const root = ReactNoop.createRoot();
     function Child({text}) {
@@ -516,7 +513,6 @@ describe('Activity', () => {
     assertLog(['Unmount layout']);
   });
 
-  // @gate enableActivity
   it('hides new insertions into an already hidden tree', async () => {
     const root = ReactNoop.createRoot();
     await act(() => {
@@ -546,7 +542,6 @@ describe('Activity', () => {
     );
   });
 
-  // @gate enableActivity
   it('hides updated nodes inside an already hidden tree', async () => {
     const root = ReactNoop.createRoot();
     await act(() => {
@@ -592,7 +587,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span>Hi</span>);
   });
 
-  // @gate enableActivity
   it('revealing a hidden tree at high priority does not cause tearing', async () => {
     // When revealing an offscreen tree, we need to include updates that were
     // previously deferred because the tree was hidden, even if they are lower
@@ -721,7 +715,6 @@ describe('Activity', () => {
     expect(areOuterAndInnerConsistent()).toBe(true);
   });
 
-  // @gate enableActivity
   it('regression: Activity instance is sometimes null during setState', async () => {
     let setState;
     function Child() {
@@ -772,7 +765,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(null);
   });
 
-  // @gate enableActivity
   it('class component setState callbacks do not fire until tree is visible', async () => {
     const root = ReactNoop.createRoot();
 
@@ -824,7 +816,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span prop="C" />);
   });
 
-  // @gate enableActivity
   it('does not call componentDidUpdate when reappearing a hidden class component', async () => {
     class Child extends React.Component {
       componentDidMount() {
@@ -874,7 +865,6 @@ describe('Activity', () => {
     assertLog(['componentDidMount']);
   });
 
-  // @gate enableActivity
   it(
     'when reusing old components (hidden -> visible), layout effects fire ' +
       'with same timing as if it were brand new',
@@ -927,7 +917,6 @@ describe('Activity', () => {
     },
   );
 
-  // @gate enableActivity
   it(
     'when reusing old components (hidden -> visible), layout effects fire ' +
       'with same timing as if it were brand new (includes setState callback)',
@@ -990,7 +979,6 @@ describe('Activity', () => {
     },
   );
 
-  // @gate enableActivity
   it('defer passive effects when prerendering a new Activity tree', async () => {
     function Child({label}) {
       useEffect(() => {
@@ -1108,7 +1096,6 @@ describe('Activity', () => {
     assertLog(['Shell', 'More']);
   });
 
-  // @gate enableActivity
   it('passive effects are connected and disconnected when the visibility changes', async () => {
     function Child({step}) {
       useEffect(() => {
@@ -1165,7 +1152,6 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span prop={2} />);
   });
 
-  // @gate enableActivity
   it('passive effects are unmounted on hide in the same order as during a deletion: parent before child', async () => {
     function Child({label}) {
       useEffect(() => {
@@ -1223,7 +1209,6 @@ describe('Activity', () => {
   // Re-enable this test once we add this ability. For example, we'll likely add
   // either an option or a heuristic to mount passive effects inside a hidden
   // tree after a delay.
-  // @gate enableActivity
   // eslint-disable-next-line jest/no-disabled-tests
   it.skip("don't defer passive effects when prerendering in a tree whose effects are already connected", async () => {
     function Child({label}) {
@@ -1280,7 +1265,6 @@ describe('Activity', () => {
     ]);
   });
 
-  // @gate enableActivity
   it('does not mount effects when prerendering a nested Activity boundary', async () => {
     function Child({label}) {
       useEffect(() => {
@@ -1358,7 +1342,6 @@ describe('Activity', () => {
     );
   });
 
-  // @gate enableActivity
   it('reveal an outer Activity boundary without revealing an inner one', async () => {
     function Child({label}) {
       useEffect(() => {
@@ -1424,7 +1407,70 @@ describe('Activity', () => {
     );
   });
 
-  // @gate enableActivity
+  it('reveal an inner Activity boundary without revealing an outer one on the same host child', async () => {
+    // This ensures that no update is scheduled, which would cover up the bug if the parent
+    // then re-hides the child on the way up.
+    const memoizedElement = <div />;
+    function App({showOuter, showInner}) {
+      return (
+        <Activity mode={showOuter ? 'visible' : 'hidden'} name="Outer">
+          <Activity mode={showInner ? 'visible' : 'hidden'} name="Inner">
+            {memoizedElement}
+          </Activity>
+        </Activity>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+
+    // Prerender the whole tree.
+    await act(() => {
+      root.render(<App showOuter={false} showInner={false} />);
+    });
+    expect(root).toMatchRenderedOutput(<div hidden={true} />);
+
+    await act(() => {
+      root.render(<App showOuter={false} showInner={true} />);
+    });
+    expect(root).toMatchRenderedOutput(<div hidden={true} />);
+  });
+
+  it('reveal an inner Suspense boundary without revealing an outer Activity on the same host child', async () => {
+    // This ensures that no update is scheduled, which would cover up the bug if the parent
+    // then re-hides the child on the way up.
+    const memoizedElement = <div />;
+    const promise = new Promise(() => {});
+    function App({showOuter, showInner}) {
+      return (
+        <Activity mode={showOuter ? 'visible' : 'hidden'} name="Outer">
+          <Suspense name="Inner">
+            {memoizedElement}
+            {showInner ? null : promise}
+          </Suspense>
+        </Activity>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+
+    // Prerender the whole tree.
+    await act(() => {
+      root.render(<App showOuter={false} showInner={true} />);
+    });
+    expect(root).toMatchRenderedOutput(<div hidden={true} />);
+
+    // Resuspend the inner.
+    await act(() => {
+      root.render(<App showOuter={false} showInner={false} />);
+    });
+    expect(root).toMatchRenderedOutput(<div hidden={true} />);
+
+    await act(() => {
+      root.render(<App showOuter={false} showInner={true} />);
+    });
+    expect(root).toMatchRenderedOutput(<div hidden={true} />);
+  });
+
   it('insertion effects are not disconnected when the visibility changes', async () => {
     function Child({step}) {
       useInsertionEffect(() => {
@@ -1481,7 +1527,85 @@ describe('Activity', () => {
     expect(root).toMatchRenderedOutput(<span prop={2} />);
   });
 
-  // @gate enableActivity
+  it('getSnapshotBeforeUpdate does not run in hidden trees', async () => {
+    let setState;
+
+    class Child extends React.Component {
+      getSnapshotBeforeUpdate(prevProps) {
+        const snapshot = `snapshot-${prevProps.value}-to-${this.props.value}`;
+        Scheduler.log(`getSnapshotBeforeUpdate: ${snapshot}`);
+        return snapshot;
+      }
+      componentDidUpdate(prevProps, prevState, snapshot) {
+        Scheduler.log(`componentDidUpdate: ${snapshot}`);
+      }
+      componentDidMount() {
+        Scheduler.log('componentDidMount');
+      }
+      componentWillUnmount() {
+        Scheduler.log('componentWillUnmount');
+      }
+      render() {
+        Scheduler.log(`render: ${this.props.value}`);
+        return <span prop={this.props.value} />;
+      }
+    }
+
+    function Wrapper({show}) {
+      const [value, _setState] = useState(1);
+      setState = _setState;
+      return (
+        <Activity mode={show ? 'visible' : 'hidden'}>
+          <Child value={value} />
+        </Activity>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+
+    // Initial render
+    await act(() => {
+      root.render(<Wrapper show={true} />);
+    });
+    assertLog(['render: 1', 'componentDidMount']);
+
+    // Hide the Activity
+    await act(() => {
+      root.render(<Wrapper show={false} />);
+    });
+    assertLog([
+      'componentWillUnmount',
+      'render: 1',
+      // Bugfix: snapshots for hidden trees should not need to be read.
+      ...(gate('enableViewTransition')
+        ? []
+        : ['getSnapshotBeforeUpdate: snapshot-1-to-1']),
+    ]);
+
+    // Trigger an update while hidden by calling setState
+    await act(() => {
+      setState(2);
+    });
+    assertLog([
+      'render: 2',
+      ...(gate('enableViewTransition')
+        ? []
+        : ['getSnapshotBeforeUpdate: snapshot-1-to-2']),
+    ]);
+
+    // This is treated as a new mount so the snapshot also shouldn't be read.
+    await act(() => {
+      root.render(<Wrapper show={true} />);
+    });
+    assertLog([
+      'render: 2',
+      ...(gate('enableViewTransition')
+        ? []
+        : ['getSnapshotBeforeUpdate: snapshot-2-to-2']),
+      'componentDidMount',
+    ]);
+  });
+
   it('warns if you pass a hidden prop', async () => {
     function App() {
       return (

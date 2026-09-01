@@ -32,28 +32,26 @@ import { identity } from "shared-runtime";
 function Component(t0) {
   const $ = _c(5);
   const { propA, propB } = t0;
-  let t1;
 
-  const t2 = propB?.x.y;
+  const t1 = propB?.x.y;
+  let t2;
+  if ($[0] !== t1) {
+    t2 = identity(t1);
+    $[0] = t1;
+    $[1] = t2;
+  } else {
+    t2 = $[1];
+  }
   let t3;
-  if ($[0] !== t2) {
-    t3 = identity(t2);
-    $[0] = t2;
-    $[1] = t3;
-  } else {
-    t3 = $[1];
-  }
-  let t4;
-  if ($[2] !== propA || $[3] !== t3) {
-    t4 = { value: t3, other: propA };
+  if ($[2] !== propA || $[3] !== t2) {
+    t3 = { value: t2, other: propA };
     $[2] = propA;
-    $[3] = t3;
-    $[4] = t4;
+    $[3] = t2;
+    $[4] = t3;
   } else {
-    t4 = $[4];
+    t3 = $[4];
   }
-  t1 = t4;
-  return t1;
+  return t3;
 }
 
 export const FIXTURE_ENTRYPOINT = {

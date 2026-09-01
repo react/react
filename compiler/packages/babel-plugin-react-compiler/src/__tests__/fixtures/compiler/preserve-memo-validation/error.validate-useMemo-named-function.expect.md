@@ -20,10 +20,17 @@ function Component(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Expected the first argument to be an inline function expression
+
+Expected the first argument to be an inline function expression.
+
+error.validate-useMemo-named-function.ts:9:20
    7 | // for now.
    8 | function Component(props) {
 >  9 |   const x = useMemo(someHelper, []);
-     |                     ^^^^^^^^^^ InvalidReact: Expected the first argument to be an inline function expression (9:9)
+     |                     ^^^^^^^^^^ Expected the first argument to be an inline function expression
   10 |   return x;
   11 | }
   12 |

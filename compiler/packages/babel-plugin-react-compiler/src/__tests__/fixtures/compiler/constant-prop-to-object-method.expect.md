@@ -36,7 +36,6 @@ function Foo() {
         return identity(1);
       },
     };
-
     t0 = x.foo();
     $[0] = t0;
   } else {

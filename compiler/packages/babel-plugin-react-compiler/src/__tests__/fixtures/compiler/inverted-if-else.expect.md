@@ -35,6 +35,7 @@ function foo(a, b, c) {
 
     x = c;
   }
+
   return x;
 }
 

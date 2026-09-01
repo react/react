@@ -8,7 +8,7 @@
  */
 
 import {getHookNamesMappingFromAST} from './astUtils';
-import {encode, decode} from 'sourcemap-codec';
+import {encode, decode} from '@jridgewell/sourcemap-codec';
 
 // Missing types in @babel/types
 type File = any;

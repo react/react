@@ -21,7 +21,6 @@ import {
   makeBlockId,
   makeIdentifierName,
   makeInstructionId,
-  makeType,
   ObjectProperty,
   Place,
   promoteTemporary,
@@ -297,6 +296,7 @@ function emitOutlinedJsx(
       },
       loc: GeneratedSource,
     },
+    effects: null,
   };
   promoteTemporaryJsxTag(loadJsx.lvalue.identifier);
   const jsxExpr: Instruction = {
@@ -312,6 +312,7 @@ function emitOutlinedJsx(
       openingLoc: GeneratedSource,
       closingLoc: GeneratedSource,
     },
+    effects: null,
   };
 
   return [loadJsx, jsxExpr];
@@ -351,8 +352,10 @@ function emitOutlinedFn(
     terminal: {
       id: makeInstructionId(0),
       kind: 'return',
+      returnVariant: 'Explicit',
       loc: GeneratedSource,
       value: instructions.at(-1)!.lvalue,
+      effects: null,
     },
     preds: new Set(),
     phis: new Set(),
@@ -361,13 +364,13 @@ function emitOutlinedFn(
   const fn: HIRFunction = {
     loc: GeneratedSource,
     id: null,
+    nameHint: null,
     fnType: 'Other',
     env,
     params: [propsObj],
     returnTypeAnnotation: null,
-    returnType: makeType(),
+    returns: createTemporaryPlace(env, GeneratedSource),
     context: [],
-    effects: null,
     body: {
       entry: block.id,
       blocks: new Map([[block.id, block]]),
@@ -375,6 +378,7 @@ function emitOutlinedFn(
     generator: false,
     async: false,
     directives: [],
+    aliasingEffects: [],
   };
   return fn;
 }
@@ -511,12 +515,14 @@ function emitDestructureProps(
         pattern: {
           kind: 'ObjectPattern',
           properties,
+          loc: GeneratedSource,
         },
         kind: InstructionKind.Let,
       },
       loc: GeneratedSource,
       value: propsObj,
     },
+    effects: null,
   };
   return destructurePropsInstr;
 }

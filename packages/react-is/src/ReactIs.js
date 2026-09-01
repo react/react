@@ -18,7 +18,6 @@ import {
   REACT_MEMO_TYPE,
   REACT_PORTAL_TYPE,
   REACT_PROFILER_TYPE,
-  REACT_PROVIDER_TYPE,
   REACT_CONSUMER_TYPE,
   REACT_STRICT_MODE_TYPE,
   REACT_SUSPENSE_TYPE,
@@ -30,7 +29,6 @@ import {
 } from 'shared/ReactSymbols';
 
 import {
-  enableRenderableContext,
   enableScopeAPI,
   enableTransitionTracing,
   enableLegacyHidden,
@@ -64,14 +62,7 @@ export function typeOf(object: any): mixed {
               case REACT_MEMO_TYPE:
                 return $$typeofType;
               case REACT_CONSUMER_TYPE:
-                if (enableRenderableContext) {
-                  return $$typeofType;
-                }
-              // Fall through
-              case REACT_PROVIDER_TYPE:
-                if (!enableRenderableContext) {
-                  return $$typeofType;
-                }
+                return $$typeofType;
               // Fall through
               default:
                 return $$typeof;
@@ -85,12 +76,8 @@ export function typeOf(object: any): mixed {
   return undefined;
 }
 
-export const ContextConsumer: symbol = enableRenderableContext
-  ? REACT_CONSUMER_TYPE
-  : REACT_CONTEXT_TYPE;
-export const ContextProvider: symbol = enableRenderableContext
-  ? REACT_CONTEXT_TYPE
-  : REACT_PROVIDER_TYPE;
+export const ContextConsumer: symbol = REACT_CONSUMER_TYPE;
+export const ContextProvider: symbol = REACT_CONTEXT_TYPE;
 export const Element = REACT_ELEMENT_TYPE;
 export const ForwardRef = REACT_FORWARD_REF_TYPE;
 export const Fragment = REACT_FRAGMENT_TYPE;
@@ -127,8 +114,7 @@ export function isValidElementType(type: mixed): boolean {
       type.$$typeof === REACT_LAZY_TYPE ||
       type.$$typeof === REACT_MEMO_TYPE ||
       type.$$typeof === REACT_CONTEXT_TYPE ||
-      (!enableRenderableContext && type.$$typeof === REACT_PROVIDER_TYPE) ||
-      (enableRenderableContext && type.$$typeof === REACT_CONSUMER_TYPE) ||
+      type.$$typeof === REACT_CONSUMER_TYPE ||
       type.$$typeof === REACT_FORWARD_REF_TYPE ||
       // This needs to include all possible module reference object
       // types supported by any Flight configuration anywhere since
@@ -145,18 +131,10 @@ export function isValidElementType(type: mixed): boolean {
 }
 
 export function isContextConsumer(object: any): boolean {
-  if (enableRenderableContext) {
-    return typeOf(object) === REACT_CONSUMER_TYPE;
-  } else {
-    return typeOf(object) === REACT_CONTEXT_TYPE;
-  }
+  return typeOf(object) === REACT_CONSUMER_TYPE;
 }
 export function isContextProvider(object: any): boolean {
-  if (enableRenderableContext) {
-    return typeOf(object) === REACT_CONTEXT_TYPE;
-  } else {
-    return typeOf(object) === REACT_PROVIDER_TYPE;
-  }
+  return typeOf(object) === REACT_CONTEXT_TYPE;
 }
 export function isElement(object: any): boolean {
   return (

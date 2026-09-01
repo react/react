@@ -68,7 +68,7 @@ async function main() {
     .option('tag', {
       description: 'Tag to publish to npm',
       type: 'choices',
-      choices: ['experimental', 'beta', 'rc'],
+      choices: ['experimental', 'beta', 'rc', 'latest'],
       default: 'experimental',
     })
     .option('tag-version', {
@@ -145,10 +145,15 @@ async function main() {
       files: {exclude: ['.DS_Store']},
     });
     const truncatedHash = hash.slice(0, 7);
-    let newVersion =
-      argv.tagVersion == null || argv.tagVersion === ''
-        ? `${argv.versionName}-${argv.tag}`
-        : `${argv.versionName}-${argv.tag}.${argv.tagVersion}`;
+    let newVersion;
+    if (argv.tag === 'latest') {
+      newVersion = argv.versionName;
+    } else {
+      newVersion =
+        argv.tagVersion == null || argv.tagVersion === ''
+          ? `${argv.versionName}-${argv.tag}`
+          : `${argv.versionName}-${argv.tag}.${argv.tagVersion}`;
+    }
     if (argv.tag === 'experimental' || argv.tag === 'beta') {
       newVersion = `${newVersion}-${truncatedHash}-${dateString}`;
     }
@@ -181,21 +186,9 @@ async function main() {
       if (otp != null) {
         opts.push(`--otp=${otp}`);
       }
-      /**
-       * Typically, the `latest` tag is reserved for stable package versions. Since the the compiler
-       * is still pre-release, until we have a stable release let's only add the
-       * `latest` tag to non-experimental releases.
-       *
-       * `latest` is added by default, so we only override it for experimental releases so that
-       * those don't get the `latest` tag.
-       *
-       * TODO: Update this when we have a stable release.
-       */
-      if (argv.tag === 'experimental') {
-        opts.push('--tag=experimental');
-      } else {
-        opts.push('--tag=latest');
-      }
+
+      opts.push(`--tag=${argv.tag}`);
+
       try {
         await spawnHelper(
           'npm',

@@ -8,3 +8,14 @@
  */
 
 export {renderToReadableStream, version} from './ReactDOMFizzServerBun.js';
+export {
+  renderToPipeableStream,
+  resume,
+  resumeToPipeableStream,
+} from './ReactDOMFizzServerNode.js';
+export {
+  prerenderToNodeStream,
+  prerender,
+  resumeAndPrerenderToNodeStream,
+  resumeAndPrerender,
+} from './ReactDOMFizzStaticNode.js';

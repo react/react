@@ -25,6 +25,7 @@ function Component() {
 }
 
 function Child({ref}) {
+  'use no memo';
   // This violates the rules of React, so we access the ref in a child
   // component
   return ref.current;
@@ -83,8 +84,10 @@ function Component() {
 }
 function _temp() {}
 
-function Child(t0) {
-  const { ref } = t0;
+function Child({ ref }) {
+  "use no memo";
+  // This violates the rules of React, so we access the ref in a child
+  // component
   return ref.current;
 }
 

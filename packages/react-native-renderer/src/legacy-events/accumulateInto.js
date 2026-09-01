@@ -38,12 +38,12 @@ function accumulateInto<T>(
   // certain that x is an Array (x could be a string with concat method).
   if (isArray(current)) {
     if (isArray(next)) {
-      // $FlowFixMe[prop-missing] `isArray` does not ensure array is mutable
+      // $FlowFixMe[incompatible-use] `isArray` does not ensure array is mutable
       // $FlowFixMe[method-unbinding]
       current.push.apply(current, next);
       return current;
     }
-    // $FlowFixMe[prop-missing] `isArray` does not ensure array is mutable
+    // $FlowFixMe[incompatible-use] `isArray` does not ensure array is mutable
     current.push(next);
     return current;
   }

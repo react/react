@@ -762,7 +762,7 @@ describe('ReactDOMInput', () => {
       await act(() => {
         root.render(<input defaultValue={new TemporalLike()} type="date" />);
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -788,7 +788,7 @@ describe('ReactDOMInput', () => {
       await act(() => {
         root.render(<input defaultValue={new TemporalLike()} type="text" />);
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -816,7 +816,7 @@ describe('ReactDOMInput', () => {
           <input value={new TemporalLike()} type="date" onChange={() => {}} />,
         );
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -844,7 +844,7 @@ describe('ReactDOMInput', () => {
           <input value={new TemporalLike()} type="text" onChange={() => {}} />,
         );
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -1035,9 +1035,6 @@ describe('ReactDOMInput', () => {
       expect(node.value).toBe('0.0');
       expect(node.hasAttribute('value')).toBe(false);
     } else {
-      dispatchEventOnNode(node, 'blur');
-      dispatchEventOnNode(node, 'focusout');
-
       expect(node.value).toBe('0.0');
       expect(node.getAttribute('value')).toBe('0.0');
     }
@@ -2664,7 +2661,7 @@ describe('ReactDOMInput', () => {
       }
     });
 
-    it('does not set the value attribute on number inputs if focused', async () => {
+    it('sets the value attribute on number inputs even when focused', async () => {
       const Input = getTestInput();
       await act(() => {
         root.render(<Input type="number" value="1" />);
@@ -2681,7 +2678,7 @@ describe('ReactDOMInput', () => {
       if (disableInputAttributeSyncing) {
         expect(node.hasAttribute('value')).toBe(false);
       } else {
-        expect(node.getAttribute('value')).toBe('1');
+        expect(node.getAttribute('value')).toBe('2');
       }
     });
 

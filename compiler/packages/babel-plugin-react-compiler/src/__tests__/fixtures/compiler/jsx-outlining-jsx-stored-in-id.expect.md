@@ -58,6 +58,7 @@ function Component(t0) {
       t2 = (i, id) => {
         const T0 = _temp;
         const jsx = <T0 i={i} key={id} x={x} />;
+
         return jsx;
       };
       $[3] = x;

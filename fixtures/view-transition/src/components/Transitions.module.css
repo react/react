@@ -56,10 +56,10 @@
 }
 
 ::view-transition-new(.enter-slide-right):only-child {
-  animation: enter-slide-right ease-in 0.25s;
+  animation: enter-slide-right ease-in 0.25s forwards;
 }
 ::view-transition-old(.exit-slide-left):only-child {
-  animation: exit-slide-left ease-in 0.25s;
+  animation: exit-slide-left ease-in 0.25s forwards;
 }
 
 :root:active-view-transition-type(navigation-back) {

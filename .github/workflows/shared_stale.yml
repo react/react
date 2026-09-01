@@ -6,7 +6,10 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  # https://github.com/actions/stale/tree/v9/?tab=readme-ov-file#recommended-permissions
+  issues: write
+  pull-requests: write
 
 env:
   TZ: /usr/share/zoneinfo/America/Los_Angeles

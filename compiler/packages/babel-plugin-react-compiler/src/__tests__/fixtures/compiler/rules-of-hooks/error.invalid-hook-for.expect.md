@@ -16,15 +16,24 @@ function Component(props) {
 ## Error
 
 ```
-  2 |   let i = 0;
-  3 |   for (let x = 0; useHook(x) < 10; useHook(i), x++) {
-> 4 |     i += useHook(x);
-    |          ^^^^^^^ InvalidReact: Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning) (4:4)
+Found 1 error:
 
-InvalidReact: Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning) (3:3)
-  5 |   }
+Invariant: Unexpected empty block with `goto` terminal
+
+Block bb5 is empty.
+
+error.invalid-hook-for.ts:3:2
+  1 | function Component(props) {
+  2 |   let i = 0;
+> 3 |   for (let x = 0; useHook(x) < 10; useHook(i), x++) {
+    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 4 |     i += useHook(x);
+    | ^^^^^^^^^^^^^^^^^^^^
+> 5 |   }
+    | ^^^^ Unexpected empty block with `goto` terminal
   6 |   return i;
   7 | }
+  8 |
 ```
           
       

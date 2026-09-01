@@ -10,7 +10,7 @@
 import * as React from 'react';
 
 import Badge from './Badge';
-import Toggle from '../Toggle';
+import Tooltip from './reach-ui/tooltip';
 
 import styles from './NativeTagBadge.css';
 
@@ -18,14 +18,13 @@ type Props = {
   nativeTag: number,
 };
 
-const noop = () => {};
 const title =
   'Unique identifier for the corresponding native component. React Native only.';
 
 export default function NativeTagBadge({nativeTag}: Props): React.Node {
   return (
-    <Toggle onChange={noop} className={styles.Toggle} title={title}>
+    <Tooltip label={title}>
       <Badge className={styles.Badge}>Tag {nativeTag}</Badge>
-    </Toggle>
+    </Tooltip>
   );
 }

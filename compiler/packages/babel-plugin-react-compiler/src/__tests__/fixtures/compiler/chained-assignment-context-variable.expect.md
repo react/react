@@ -33,7 +33,6 @@ function Component() {
   let y;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     y = x = {};
-
     const foo = () => {
       x = makeArray();
     };

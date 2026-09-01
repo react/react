@@ -79,31 +79,24 @@ let moduleLocal = false;
 ## Error
 
 ```
-  1 | function foo([a, b], {c, d, e = 'e'}, f = 'f', ...args) {
-  2 |   let i = 0;
-> 3 |   var x = [];
-    |   ^^^^^^^^^^^ Todo: (BuildHIR::lowerStatement) Handle var kinds in VariableDeclaration (3:3)
+Found 1 error:
 
-Todo: (BuildHIR::lowerStatement) Handle ClassDeclaration statements (5:10)
+Invariant: Expected a variable declaration
 
-Todo: (BuildHIR::lowerStatement) Handle non-variable initialization in ForStatement (20:22)
+Got ExpressionStatement.
 
-Todo: (BuildHIR::lowerStatement) Handle non-variable initialization in ForStatement (23:25)
-
-Todo: (BuildHIR::lowerStatement) Handle non-variable initialization in ForStatement (26:28)
-
-Todo: (BuildHIR::lowerStatement) Handle empty test in ForStatement (26:28)
-
-Todo: (BuildHIR::lowerExpression) Handle tagged template with interpolations (30:32)
-
-Todo: (BuildHIR::lowerExpression) Handle tagged template where cooked value is different from raw value (34:34)
-
-Todo: (BuildHIR::node.lowerReorderableExpression) Expression type `MemberExpression` cannot be safely reordered (57:57)
-
-Todo: (BuildHIR::node.lowerReorderableExpression) Expression type `BinaryExpression` cannot be safely reordered (53:53)
-  4 |
-  5 |   class Bar {
-  6 |     #secretSauce = 42;
+error.todo-kitchensink.ts:20:2
+  18 |   const j = function bar([quz, qux], ...args) {};
+  19 |
+> 20 |   for (; i < 3; i += 1) {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^
+> 21 |     x.push(i);
+     | ^^^^^^^^^^^^^^
+> 22 |   }
+     | ^^^^ Expected a variable declaration
+  23 |   for (; i < 3; ) {
+  24 |     break;
+  25 |   }
 ```
           
       

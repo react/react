@@ -2,7 +2,7 @@
 ## Input
 
 ```javascript
-// @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions
+// @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 function Component() {
   const items = useItems();
   const filteredItems = useMemo(
@@ -37,57 +37,52 @@ function Component() {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime"; // @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions
+import { c as _c } from "react/compiler-runtime"; // @enableAssumeHooksFollowRulesOfReact @enableTransitivelyFreezeFunctionExpressions @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 function Component() {
-  const $ = _c(7);
+  const $ = _c(6);
   const items = useItems();
   let t0;
   let t1;
-  let t2;
   if ($[0] !== items) {
-    t2 = Symbol.for("react.early_return_sentinel");
+    t1 = Symbol.for("react.early_return_sentinel");
     bb0: {
-      t0 = items.filter(_temp);
-      const filteredItems = t0;
+      const filteredItems = items.filter(_temp);
       if (filteredItems.length === 0) {
-        let t3;
-        if ($[4] === Symbol.for("react.memo_cache_sentinel")) {
-          t3 = (
+        let t2;
+        if ($[3] === Symbol.for("react.memo_cache_sentinel")) {
+          t2 = (
             <div>
               <span />
             </div>
           );
-          $[4] = t3;
+          $[3] = t2;
         } else {
-          t3 = $[4];
+          t2 = $[3];
         }
-        t2 = t3;
+        t1 = t2;
         break bb0;
       }
-
-      t1 = filteredItems.map(_temp2);
+      t0 = filteredItems.map(_temp2);
     }
     $[0] = items;
-    $[1] = t1;
-    $[2] = t2;
-    $[3] = t0;
+    $[1] = t0;
+    $[2] = t1;
   } else {
-    t1 = $[1];
-    t2 = $[2];
-    t0 = $[3];
+    t0 = $[1];
+    t1 = $[2];
   }
-  if (t2 !== Symbol.for("react.early_return_sentinel")) {
-    return t2;
+  if (t1 !== Symbol.for("react.early_return_sentinel")) {
+    return t1;
   }
-  let t3;
-  if ($[5] !== t1) {
-    t3 = <>{t1}</>;
-    $[5] = t1;
-    $[6] = t3;
+  let t2;
+  if ($[4] !== t0) {
+    t2 = <>{t0}</>;
+    $[4] = t0;
+    $[5] = t2;
   } else {
-    t3 = $[6];
+    t2 = $[5];
   }
-  return t3;
+  return t2;
 }
 function _temp2(t0) {
   const [item_0] = t0;

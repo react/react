@@ -7,7 +7,7 @@
 
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
-import {z} from 'zod';
+import {z} from 'zod/v4';
 import {compile, type PrintedCompilerPipelineValue} from './compiler';
 import {
   CompilerPipelineValue,
@@ -21,6 +21,7 @@ import {queryAlgolia} from './utils/algolia';
 import assertExhaustive from './utils/assertExhaustive';
 import {convert} from 'html-to-text';
 import {measurePerformance} from './tools/runtimePerf';
+import {parseReactComponentTree} from './tools/componentTree';
 
 function calculateMean(values: number[]): string {
   return values.length > 0
@@ -144,7 +145,7 @@ server.tool(
       }
     };
     const errors: Array<{message: string; loc: SourceLocation | null}> = [];
-    const compilerOptions: Partial<PluginOptions> = {
+    const compilerOptions: PluginOptions = {
       panicThreshold: 'none',
       logger: {
         debugLogIRs: logIR,
@@ -361,6 +362,45 @@ ${calculateMean(results.renderTime)}
             text: `Error measuring performance: ${error.message}\n\n${error.stack}`,
           },
         ],
+      };
+    }
+  },
+);
+
+server.tool(
+  'parse-react-component-tree',
+  `
+  This tool gets the component tree of a React App.
+  passing in a url will attempt to connect to the browser and get the current state of the component tree. If no url is passed in,
+  the default url will be used (http://localhost:3000).
+
+  <requirements>
+  - The url should be a full url with the protocol (http:// or https://) and the domain name (e.g. localhost:3000).
+  - Also the user should be running a Chrome browser running on debug mode on port 9222. If you receive an error message, advise the user to run
+  the following comand in the terminal:
+  MacOS: "/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome"
+  Windows: "chrome.exe --remote-debugging-port=9222 --user-data-dir=C:\temp\chrome"
+  </requirements>
+  `,
+  {
+    url: z.string().optional().default('http://localhost:3000'),
+  },
+  async ({url}) => {
+    try {
+      const componentTree = await parseReactComponentTree(url);
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: componentTree,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        isError: true,
+        content: [{type: 'text' as const, text: `Error: ${err.stack}`}],
       };
     }
   },

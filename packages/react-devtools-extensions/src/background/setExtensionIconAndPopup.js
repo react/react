@@ -1,8 +1,20 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
+ */
 /* global chrome */
 
 'use strict';
+import type {ReactBuildType} from 'react-devtools-shared/src/backend/types';
 
-function setExtensionIconAndPopup(reactBuildType, tabId) {
+function setExtensionIconAndPopup(
+  reactBuildType: ReactBuildType,
+  tabId: number,
+) {
   chrome.action.setIcon({
     tabId,
     path: {

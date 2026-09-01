@@ -10,7 +10,7 @@ function Foo() {
 
   const onClick = useCallback(() => {
     customRef.current?.click();
-  }, []);
+  }, [customRef]);
 
   return <button onClick={onClick} />;
 }

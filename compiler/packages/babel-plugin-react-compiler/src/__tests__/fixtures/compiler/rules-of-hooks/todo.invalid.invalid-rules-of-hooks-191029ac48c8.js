@@ -1,4 +1,4 @@
-// @skip
+// @expectNothingCompiled @skip
 // Passed but should have failed
 
 // Invalid because it's dangerous.

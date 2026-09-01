@@ -1,4 +1,4 @@
-// @compilationMode:"infer"
+// @expectNothingCompiled @compilationMode:"infer"
 class Component {
   _renderMessage = () => {
     const Message = () => {

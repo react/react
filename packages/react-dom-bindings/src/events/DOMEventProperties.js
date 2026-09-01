@@ -62,6 +62,8 @@ const simpleEventPluginEvents = [
   'encrypted',
   'ended',
   'error',
+  'fullscreenChange',
+  'fullscreenError',
   'gotPointerCapture',
   'input',
   'invalid',
@@ -127,8 +129,8 @@ function registerSimpleEvent(domEventName: DOMEventName, reactName: string) {
 
 export function registerSimpleEvents() {
   for (let i = 0; i < simpleEventPluginEvents.length; i++) {
-    const eventName = ((simpleEventPluginEvents[i]: any): string);
-    const domEventName = ((eventName.toLowerCase(): any): DOMEventName);
+    const eventName = simpleEventPluginEvents[i] as any as string;
+    const domEventName = eventName.toLowerCase() as any as DOMEventName;
     const capitalizedEvent = eventName[0].toUpperCase() + eventName.slice(1);
     registerSimpleEvent(domEventName, 'on' + capitalizedEvent);
   }

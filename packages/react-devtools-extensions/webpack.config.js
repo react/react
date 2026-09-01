@@ -6,6 +6,7 @@ const TerserPlugin = require('terser-webpack-plugin');
 const {GITHUB_URL, getVersionString} = require('./utils');
 const {resolveFeatureFlags} = require('react-devtools-shared/buildUtils');
 const SourceMapIgnoreListPlugin = require('react-devtools-shared/SourceMapIgnoreListPlugin');
+const {StatsWriterPlugin} = require('webpack-stats-plugin');
 
 const NODE_ENV = process.env.NODE_ENV;
 if (!NODE_ENV) {
@@ -35,6 +36,18 @@ const IS_INTERNAL_VERSION = process.env.FEATURE_FLAG_TARGET === 'extension-fb';
 
 const featureFlagTarget = process.env.FEATURE_FLAG_TARGET || 'extension-oss';
 
+let statsFileName = `webpack-stats.${featureFlagTarget}.${__DEV__ ? 'development' : 'production'}`;
+if (IS_CHROME) {
+  statsFileName += `.chrome`;
+}
+if (IS_FIREFOX) {
+  statsFileName += `.firefox`;
+}
+if (IS_EDGE) {
+  statsFileName += `.edge`;
+}
+statsFileName += '.json';
+
 const babelOptions = {
   configFile: resolve(
     __dirname,
@@ -48,8 +61,10 @@ module.exports = {
   mode: __DEV__ ? 'development' : 'production',
   devtool: false,
   entry: {
+    backend: './src/backend.js',
     background: './src/background/index.js',
     backendManager: './src/contentScripts/backendManager.js',
+    fallbackEvalContext: './src/contentScripts/fallbackEvalContext.js',
     fileFetcher: './src/contentScripts/fileFetcher.js',
     main: './src/main/index.js',
     panel: './src/panel.js',
@@ -61,7 +76,14 @@ module.exports = {
   output: {
     path: __dirname + '/build',
     publicPath: '/build/',
-    filename: '[name].js',
+    filename: chunkData => {
+      switch (chunkData.chunk.name) {
+        case 'backend':
+          return 'react_devtools_backend_compact.js';
+        default:
+          return '[name].js';
+      }
+    },
     chunkFilename: '[name].chunk.js',
   },
   node: {
@@ -101,7 +123,6 @@ module.exports = {
   plugins: [
     new Webpack.ProvidePlugin({
       process: 'process/browser',
-      Buffer: ['buffer', 'Buffer'],
     }),
     new Webpack.DefinePlugin({
       __DEV__,
@@ -123,7 +144,7 @@ module.exports = {
     }),
     new Webpack.SourceMapDevToolPlugin({
       filename: '[file].map',
-      include: 'installHook.js',
+      include: ['installHook.js', 'react_devtools_backend_compact.js'],
       noSources: !__DEV__,
       // https://github.com/webpack/webpack/issues/3603#issuecomment-1743147144
       moduleFilenameTemplate(info) {
@@ -145,6 +166,7 @@ module.exports = {
         }
 
         const contentScriptNamesToIgnoreList = [
+          'react_devtools_backend_compact',
           // This is where we override console
           'installHook',
         ];
@@ -210,6 +232,10 @@ module.exports = {
         );
       },
     },
+    new StatsWriterPlugin({
+      stats: 'verbose',
+      filename: statsFileName,
+    }),
   ],
   module: {
     defaultRules: [
@@ -230,7 +256,7 @@ module.exports = {
           {
             loader: 'workerize-loader',
             options: {
-              inline: true,
+              inline: false,
               name: '[name]',
             },
           },
@@ -254,7 +280,7 @@ module.exports = {
           {
             loader: 'css-loader',
             options: {
-              sourceMap: true,
+              sourceMap: __DEV__,
               modules: true,
               localIdentName: '[local]___[hash:base64:5]',
             },

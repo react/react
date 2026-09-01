@@ -24,6 +24,7 @@ function Component() {
 ```javascript
 function Component() {
   const get4 = _temp2;
+
   return get4;
 }
 function _temp2() {

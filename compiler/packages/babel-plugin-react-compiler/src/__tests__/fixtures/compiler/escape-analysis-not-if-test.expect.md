@@ -32,6 +32,7 @@ function Component(props) {
   } else {
     y = props.c;
   }
+
   return y;
 }
 

@@ -289,7 +289,7 @@ function getHookVariableName(
   const nodeType = hook.node.id.type;
   switch (nodeType) {
     case AST_NODE_TYPES.ARRAY_PATTERN:
-      return !isCustomHook ? hook.node.id.elements[0]?.name ?? null : null;
+      return !isCustomHook ? (hook.node.id.elements[0]?.name ?? null) : null;
 
     case AST_NODE_TYPES.IDENTIFIER:
       return hook.node.id.name;

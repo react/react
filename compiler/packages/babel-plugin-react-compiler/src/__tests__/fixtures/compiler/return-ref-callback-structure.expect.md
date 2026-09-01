@@ -44,6 +44,7 @@ function Foo(t0) {
     t1 = $[0];
   }
   const s = t1;
+
   if (cond) {
     let t2;
     if ($[1] === Symbol.for("react.memo_cache_sentinel")) {

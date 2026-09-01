@@ -147,7 +147,7 @@ describe('ReactDOMServer', () => {
     it('should throw with silly args', () => {
       expect(
         ReactDOMServer.renderToString.bind(ReactDOMServer, {x: 123}),
-      ).toThrowError(
+      ).toThrow(
         'Objects are not valid as a React child (found: object with keys {x})',
       );
     });
@@ -155,7 +155,7 @@ describe('ReactDOMServer', () => {
     it('should throw prop mapping error for an <iframe /> with invalid props', () => {
       expect(() => {
         ReactDOMServer.renderToString(<iframe style="border:none;" />);
-      }).toThrowError(
+      }).toThrow(
         'The `style` prop expects a mapping from style properties to values, not ' +
           "a string. For example, style={{marginRight: spacing + 'em'}} when using JSX.",
       );
@@ -290,7 +290,7 @@ describe('ReactDOMServer', () => {
     it('should throw with silly args', () => {
       expect(
         ReactDOMServer.renderToStaticMarkup.bind(ReactDOMServer, {x: 123}),
-      ).toThrowError(
+      ).toThrow(
         'Objects are not valid as a React child (found: object with keys {x})',
       );
     });
@@ -606,16 +606,13 @@ describe('ReactDOMServer', () => {
 
     ReactDOMServer.renderToString(<Foo />);
     jest.runOnlyPendingTimers();
-    assertConsoleErrorDev(
-      [
-        'Can only update a mounting component. ' +
-          'This usually means you called setState() outside componentWillMount() on the server. ' +
-          'This is a no-op.\n' +
-          '\n' +
-          'Please check the code for the Foo component.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Can only update a mounting component. ' +
+        'This usually means you called setState() outside componentWillMount() on the server. ' +
+        'This is a no-op.\n' +
+        '\n' +
+        'Please check the code for the Foo component.',
+    ]);
 
     const markup = ReactDOMServer.renderToStaticMarkup(<Foo />);
     expect(markup).toBe('<div>hello</div>');
@@ -639,16 +636,13 @@ describe('ReactDOMServer', () => {
 
     ReactDOMServer.renderToString(<Baz />);
     jest.runOnlyPendingTimers();
-    assertConsoleErrorDev(
-      [
-        'Can only update a mounting component. ' +
-          'This usually means you called forceUpdate() outside componentWillMount() on the server. ' +
-          'This is a no-op.\n' +
-          '\n' +
-          'Please check the code for the Baz component.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'Can only update a mounting component. ' +
+        'This usually means you called forceUpdate() outside componentWillMount() on the server. ' +
+        'This is a no-op.\n' +
+        '\n' +
+        'Please check the code for the Baz component.',
+    ]);
     const markup = ReactDOMServer.renderToStaticMarkup(<Baz />);
     expect(markup).toBe('<div></div>');
   });
@@ -721,7 +715,7 @@ describe('ReactDOMServer', () => {
             <span key={2} />
           </Wrapper>,
         );
-      }).toThrowError(/Cannot assign to read only property.*/);
+      }).toThrow(/Cannot assign to read only property.*/);
     } else {
       expect(
         ReactDOMServer.renderToStaticMarkup(
@@ -932,7 +926,6 @@ describe('ReactDOMServer', () => {
     ]);
   });
 
-  // @gate enableRenderableContext || !__DEV__
   it('should warn if an invalid contextType is defined', () => {
     const Context = React.createContext();
     class ComponentA extends React.Component {
@@ -973,7 +966,7 @@ describe('ReactDOMServer', () => {
 
     expect(() => {
       ReactDOMServer.renderToString(<Foo />);
-    }).toThrow("Cannot read property 'world' of undefined");
+    }).toThrow("Cannot read properties of undefined (reading 'world')");
   });
 
   it('should warn when class contextType is undefined', () => {
@@ -988,7 +981,7 @@ describe('ReactDOMServer', () => {
 
     expect(() => {
       ReactDOMServer.renderToString(<Foo />);
-    }).toThrow("Cannot read property 'world' of undefined");
+    }).toThrow("Cannot read properties of undefined (reading 'world')");
     assertConsoleErrorDev([
       'Foo defines an invalid contextType. ' +
         'contextType should point to the Context object returned by React.createContext(). ' +
@@ -1014,7 +1007,7 @@ describe('ReactDOMServer', () => {
 
     expect(() => {
       ReactDOMServer.renderToString(<Foo />);
-    }).toThrow("Cannot read property 'hello' of undefined");
+    }).toThrow("Cannot read properties of undefined (reading 'hello')");
     assertConsoleErrorDev([
       'Foo defines an invalid contextType. ' +
         'contextType should point to the Context object returned by React.createContext(). ' +
@@ -1033,7 +1026,7 @@ describe('ReactDOMServer', () => {
 
     expect(() => {
       ReactDOMServer.renderToString(<Foo />);
-    }).toThrow("Cannot read property 'world' of undefined");
+    }).toThrow("Cannot read properties of undefined (reading 'world')");
     assertConsoleErrorDev([
       'Foo defines an invalid contextType. ' +
         'contextType should point to the Context object returned by React.createContext(). ' +

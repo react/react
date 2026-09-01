@@ -1,3 +1,4 @@
+// @enablePreserveExistingMemoizationGuarantees:false
 import {Stringify, identity, makeArray, toJSON} from 'shared-runtime';
 import {useMemo} from 'react';
 

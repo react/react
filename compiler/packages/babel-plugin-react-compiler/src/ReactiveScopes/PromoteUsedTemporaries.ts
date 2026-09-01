@@ -453,9 +453,7 @@ function promoteIdentifier(identifier: Identifier, state: State): void {
   CompilerError.invariant(identifier.name === null, {
     reason:
       'promoteTemporary: Expected to be called only for temporary variables',
-    description: null,
     loc: GeneratedSource,
-    suggestions: null,
   });
   if (state.tags.has(identifier.declarationId)) {
     promoteTemporaryJsxTag(identifier);

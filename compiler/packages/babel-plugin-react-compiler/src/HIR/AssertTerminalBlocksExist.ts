@@ -19,7 +19,6 @@ export function assertTerminalSuccessorsExist(fn: HIRFunction): void {
           block.terminal,
         )}'`,
         loc: (block.terminal as any).loc ?? GeneratedSource,
-        suggestions: null,
       });
       return successor;
     });

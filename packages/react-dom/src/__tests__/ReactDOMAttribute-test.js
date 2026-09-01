@@ -9,6 +9,13 @@
 
 'use strict';
 
+// Fix JSDOM. setAttribute is supposed to throw on things that can't be implicitly toStringed.
+const setAttribute = Element.prototype.setAttribute;
+Element.prototype.setAttribute = function (name, value) {
+  // eslint-disable-next-line react-internal/safe-string-coercion
+  return setAttribute.call(this, name, '' + value);
+};
+
 describe('ReactDOM unknown attribute', () => {
   let React;
   let ReactDOMClient;
@@ -171,7 +178,7 @@ describe('ReactDOM unknown attribute', () => {
       const test = () =>
         testUnknownAttributeAssignment(new TemporalLike(), null);
 
-      await expect(test).rejects.toThrowError(new TypeError('prod message'));
+      await expect(test).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `unknown` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +

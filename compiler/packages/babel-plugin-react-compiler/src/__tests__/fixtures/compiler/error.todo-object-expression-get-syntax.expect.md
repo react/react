@@ -23,6 +23,11 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Todo: (BuildHIR::lowerExpression) Handle get functions in ObjectExpression
+
+error.todo-object-expression-get-syntax.ts:3:4
   1 | function Component({value}) {
   2 |   const object = {
 > 3 |     get value() {
@@ -30,7 +35,7 @@ export const FIXTURE_ENTRYPOINT = {
 > 4 |       return value;
     | ^^^^^^^^^^^^^^^^^^^
 > 5 |     },
-    | ^^^^^^ Todo: (BuildHIR::lowerExpression) Handle get functions in ObjectExpression (3:5)
+    | ^^^^^^ (BuildHIR::lowerExpression) Handle get functions in ObjectExpression
   6 |   };
   7 |   return <div>{object.value}</div>;
   8 | }

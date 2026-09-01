@@ -40,36 +40,34 @@ function Component(t0) {
   const $ = _c(7);
   const { data } = t0;
   let t1;
-  let t2;
   if ($[0] !== data.name) {
-    t2 = fbt._("{name}", [fbt._param("name", data.name ?? "")], {
+    t1 = fbt._("{name}", [fbt._param("name", data.name ?? "")], {
       hk: "csQUH",
     });
     $[0] = data.name;
-    $[1] = t2;
+    $[1] = t1;
   } else {
-    t2 = $[1];
+    t1 = $[1];
   }
-  t1 = t2;
   const el = t1;
-  let t3;
+  let t2;
   if ($[2] !== data.name) {
-    t3 = [data.name];
+    t2 = [data.name];
     $[2] = data.name;
-    $[3] = t3;
+    $[3] = t2;
   } else {
-    t3 = $[3];
+    t2 = $[3];
   }
-  let t4;
-  if ($[4] !== el || $[5] !== t3) {
-    t4 = <ValidateMemoization inputs={t3} output={el} />;
+  let t3;
+  if ($[4] !== el || $[5] !== t2) {
+    t3 = <ValidateMemoization inputs={t2} output={el} />;
     $[4] = el;
-    $[5] = t3;
-    $[6] = t4;
+    $[5] = t2;
+    $[6] = t3;
   } else {
-    t4 = $[6];
+    t3 = $[6];
   }
-  return t4;
+  return t3;
 }
 
 const props1 = { data: { name: "Mike" } };

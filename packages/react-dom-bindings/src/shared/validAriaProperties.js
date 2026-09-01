@@ -59,6 +59,11 @@ const ariaProperties = {
   'aria-rowindex': 0,
   'aria-rowspan': 0,
   'aria-setsize': 0,
+  // ARIA 1.3 Attributes
+  'aria-braillelabel': 0,
+  'aria-brailleroledescription': 0,
+  'aria-colindextext': 0,
+  'aria-rowindextext': 0,
 };
 
 export default ariaProperties;

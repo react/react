@@ -5,7 +5,7 @@ const babelOptions = {
   ignore: [/\/(build|node_modules)\//],
   plugins: [
     '@babel/plugin-syntax-import-meta',
-    '@babel/plugin-transform-react-jsx',
+    ['@babel/plugin-transform-react-jsx', {runtime: 'automatic'}],
   ],
 };
 

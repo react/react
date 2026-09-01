@@ -64,11 +64,22 @@ async function selectElement(
           createTestNameSelector('InspectedElementView-Owners'),
         ])[0];
 
+        if (!ownersList) {
+          return false;
+        }
+
+        const owners = findAllNodes(ownersList, [
+          createTestNameSelector('OwnerView'),
+        ]);
+
         return (
           title &&
           title.innerText.includes(titleText) &&
-          ownersList &&
-          ownersList.innerText.includes(ownersListText)
+          owners &&
+          owners
+            .map(node => node.innerText)
+            .join('\n')
+            .includes(ownersListText)
         );
       },
       {titleText: displayName, ownersListText: waitForOwnersText}

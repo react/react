@@ -25,12 +25,13 @@ export function createCapturedValueAtFiber<T>(
 ): CapturedValue<T> {
   // If the value is an error, call this function immediately after it is thrown
   // so the stack is accurate.
+  // $FlowFixMe[invalid-compare]
   if (typeof value === 'object' && value !== null) {
     const existing = CapturedStacks.get(value);
     if (existing !== undefined) {
       return existing;
     }
-    const captured = {
+    const captured: CapturedValue<T> = {
       value,
       source,
       stack: getStackByFiberInDevAndProd(source),
@@ -50,7 +51,7 @@ export function createCapturedValueFromError(
   value: Error,
   stack: null | string,
 ): CapturedValue<Error> {
-  const captured = {
+  const captured: CapturedValue<Error> = {
     value,
     source: null,
     stack: stack,

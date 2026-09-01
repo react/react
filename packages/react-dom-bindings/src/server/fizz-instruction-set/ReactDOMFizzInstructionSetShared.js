@@ -13,7 +13,15 @@ const SUSPENSE_PENDING_START_DATA = '$?';
 const SUSPENSE_QUEUED_START_DATA = '$~';
 const SUSPENSE_FALLBACK_START_DATA = '$!';
 
-const SUSPENSEY_FONT_TIMEOUT = 500;
+const FALLBACK_THROTTLE_MS = 300;
+
+const SUSPENSEY_FONT_AND_IMAGE_TIMEOUT = 500;
+
+// If you have a target goal in mind for a metric to hit, you don't want the
+// only reason you miss it by a little bit to be throttling heuristics.
+// This tries to avoid throttling if avoiding it would let you hit this metric.
+// This is derived from trying to hit an LCP of 2.5 seconds with some head room.
+const TARGET_VANITY_METRIC = 2300;
 
 // TODO: Symbols that are referenced outside this module use dynamic accessor
 // notation instead of dot notation to prevent Closure's advanced compilation
@@ -26,7 +34,16 @@ export function revealCompletedBoundaries(batch) {
   for (let i = 0; i < batch.length; i += 2) {
     const suspenseIdNode = batch[i];
     const contentNode = batch[i + 1];
-
+    if (contentNode.parentNode === null) {
+      // If the client has failed hydration we may have already deleted the streaming
+      // segments. The server may also have emitted a complete instruction but cancelled
+      // the segment. Regardless we can ignore this case.
+    } else {
+      // We can detach the content now.
+      // Completions of boundaries within this contentNode will now find the boundary
+      // in its designated place.
+      contentNode.parentNode.removeChild(contentNode);
+    }
     // Clear all the existing children. This is complicated because
     // there can be embedded Suspense boundaries in the fallback.
     // This is similar to clearSuspenseBoundary in ReactFiberConfigDOM.
@@ -77,7 +94,7 @@ export function revealCompletedBoundaries(batch) {
 
     suspenseNode.data = SUSPENSE_START_DATA;
     if (suspenseNode['_reactRetry']) {
-      suspenseNode['_reactRetry']();
+      requestAnimationFrame(suspenseNode['_reactRetry']);
     }
   }
   batch.length = 0;
@@ -111,9 +128,14 @@ export function revealCompletedBoundariesWithViewTransitions(
       // TODO: We don't have a prefix to pick from here but maybe we don't need it
       // since it's only applicable temporarily during this specific animation.
       const idPrefix = '';
-      name = '\u00AB' + idPrefix + 'T' + autoNameIdx++ + '\u00BB';
+      name = '_' + idPrefix + 'T_' + autoNameIdx++ + '_';
     }
-    elementStyle['viewTransitionName'] = name;
+    // If the name isn't valid CSS identifier, base64 encode the name instead.
+    // This doesn't let you select it in custom CSS selectors but it does work in current
+    // browsers.
+    const escapedName =
+      CSS.escape(name) !== name ? 'r-' + btoa(name).replace(/=/g, '') : name;
+    elementStyle['viewTransitionName'] = escapedName;
     shouldStartViewTransition = true;
   }
   try {
@@ -136,6 +158,7 @@ export function revealCompletedBoundariesWithViewTransitions(
         );
       }
     }
+    const suspenseyImages = [];
     // Next we'll find the nodes that we're going to animate and apply names to them..
     for (let i = 0; i < batch.length; i += 2) {
       const suspenseIdNode = batch[i];
@@ -209,6 +232,12 @@ export function revealCompletedBoundariesWithViewTransitions(
               appearingViewTransitions.set(name, null); // mark claimed
             }
           }
+          // Relay the exit to nested ViewTransitions that opted in
+          const relayExitElements =
+            exitElement.querySelectorAll('[vt-parent-exit]');
+          for (let j = 0; j < relayExitElements.length; j++) {
+            applyViewTransitionName(relayExitElements[j], 'vt-parent-exit');
+          }
         }
         node = node.nextSibling;
       }
@@ -222,6 +251,12 @@ export function revealCompletedBoundariesWithViewTransitions(
           null;
         if (!paired) {
           applyViewTransitionName(enterElement, 'vt-enter');
+        }
+        // Relay the enter to nested ViewTransitions that opted in
+        const relayEnterElements =
+          enterElement.querySelectorAll('[vt-parent-enter]');
+        for (let j = 0; j < relayEnterElements.length; j++) {
+          applyViewTransitionName(relayEnterElements[j], 'vt-parent-enter');
         }
         enterElement = enterElement.nextElementSibling;
       }
@@ -248,21 +283,61 @@ export function revealCompletedBoundariesWithViewTransitions(
         ancestorElement.nodeType === ELEMENT_NODE &&
         ancestorElement.getAttribute('vt-update') !== 'none'
       );
+
+      // Find the appearing Suspensey Images inside the new content.
+      const appearingImages = contentNode.querySelectorAll(
+        'img[src]:not([loading="lazy"])',
+      );
+      // TODO: Consider marking shouldStartViewTransition if we found any images.
+      // But only once we can disable the root animation for that case.
+      suspenseyImages.push.apply(suspenseyImages, appearingImages);
     }
     if (shouldStartViewTransition) {
       const transition = (document['__reactViewTransition'] = document[
         'startViewTransition'
       ]({
         update: () => {
-          revealBoundaries(
-            batch,
-            // Force layout to trigger font loading, we pass the actual value to trick minifiers.
+          revealBoundaries(batch);
+          const blockingPromises = [
+            // Force layout to trigger font loading, we stash the actual value to trick minifiers.
             document.documentElement.clientHeight,
-          );
-          return Promise.race([
             // Block on fonts finishing loading before revealing these boundaries.
             document.fonts.ready,
-            new Promise(resolve => setTimeout(resolve, SUSPENSEY_FONT_TIMEOUT)),
+          ];
+          for (let i = 0; i < suspenseyImages.length; i++) {
+            const suspenseyImage = suspenseyImages[i];
+            if (!suspenseyImage.complete) {
+              const rect = suspenseyImage.getBoundingClientRect();
+              const inViewport =
+                rect.bottom > 0 &&
+                rect.right > 0 &&
+                rect.top < window.innerHeight &&
+                rect.left < window.innerWidth;
+              if (inViewport) {
+                // TODO: Use decode() instead of the load event here once the fix in
+                // https://issues.chromium.org/issues/420748301 has propagated fully.
+                const loadingImage = new Promise(resolve => {
+                  suspenseyImage.addEventListener('load', resolve);
+                  suspenseyImage.addEventListener('error', resolve);
+                });
+                blockingPromises.push(loadingImage);
+              }
+            }
+          }
+          return Promise.race([
+            Promise.all(blockingPromises),
+            new Promise(resolve => {
+              const currentTime = performance.now();
+              const msUntilTimeout =
+                // If the throttle would make us miss the target metric, then shorten the throttle.
+                // performance.now()'s zero value is assumed to be the start time of the metric.
+                currentTime < TARGET_VANITY_METRIC &&
+                currentTime > TARGET_VANITY_METRIC - FALLBACK_THROTTLE_MS
+                  ? TARGET_VANITY_METRIC - currentTime
+                  : // Otherwise it's throttled starting from last commit time.
+                    SUSPENSEY_FONT_AND_IMAGE_TIMEOUT;
+              setTimeout(resolve, msUntilTimeout);
+            }),
           ]);
         },
         types: [], // TODO: Add a hard coded type for Suspense reveals.
@@ -320,7 +395,7 @@ export function clientRenderBoundary(
   suspenseNode.data = SUSPENSE_FALLBACK_START_DATA;
   // assign error metadata to first sibling
   const dataset = suspenseIdNode.dataset;
-  if (errorDigest) dataset['dgst'] = errorDigest;
+  if (errorDigest != null) dataset['dgst'] = errorDigest;
   if (errorMsg) dataset['msg'] = errorMsg;
   if (errorStack) dataset['stck'] = errorStack;
   if (errorComponentStack) dataset['cstck'] = errorComponentStack;
@@ -330,8 +405,6 @@ export function clientRenderBoundary(
   }
 }
 
-const FALLBACK_THROTTLE_MS = 300;
-
 export function completeBoundary(suspenseBoundaryID, contentID) {
   const contentNodeOuter = document.getElementById(contentID);
   if (!contentNodeOuter) {
@@ -340,13 +413,16 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
     // the segment. Regardless we can ignore this case.
     return;
   }
-  // We'll detach the content node so that regardless of what happens next we don't leave in the tree.
-  // This might also help by not causing recalcing each time we move a child from here to the target.
-  contentNodeOuter.parentNode.removeChild(contentNodeOuter);
 
   // Find the fallback's first element.
   const suspenseIdNodeOuter = document.getElementById(suspenseBoundaryID);
   if (!suspenseIdNodeOuter) {
+    // We'll never reveal this boundary so we can remove its content immediately.
+    // Otherwise we'll leave it in until we reveal it.
+    // This is important in case this specific boundary contains other boundaries
+    // that may get completed before we reveal this one.
+    contentNodeOuter.parentNode.removeChild(contentNodeOuter);
+
     // The user must have already navigated away from this tree.
     // E.g. because the parent was hydrated. That's fine there's nothing to do
     // but we have to make sure that we already deleted the container node.
@@ -363,14 +439,24 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
   if (window['$RB'].length === 2) {
     // This is the first time we've pushed to the batch. We need to schedule a callback
     // to flush the batch. This is delayed by the throttle heuristic.
-    const globalMostRecentFallbackTime =
-      typeof window['$RT'] !== 'number' ? 0 : window['$RT'];
-    const msUntilTimeout =
-      globalMostRecentFallbackTime + FALLBACK_THROTTLE_MS - performance.now();
-    // We always schedule the flush in a timer even if it's very low or negative to allow
-    // for multiple completeBoundary calls that are already queued to have a chance to
-    // make the batch.
-    setTimeout(window['$RV'].bind(null, window['$RB']), msUntilTimeout);
+    if (typeof window['$RT'] !== 'number') {
+      // If we haven't had our rAF callback yet, schedule everything for the first paint.
+      requestAnimationFrame(window['$RV'].bind(null, window['$RB']));
+    } else {
+      const currentTime = performance.now();
+      const msUntilTimeout =
+        // If the throttle would make us miss the target metric, then shorten the throttle.
+        // performance.now()'s zero value is assumed to be the start time of the metric.
+        currentTime < TARGET_VANITY_METRIC &&
+        currentTime > TARGET_VANITY_METRIC - FALLBACK_THROTTLE_MS
+          ? TARGET_VANITY_METRIC - currentTime
+          : // Otherwise it's throttled starting from last commit time.
+            window['$RT'] + FALLBACK_THROTTLE_MS - currentTime;
+      // We always schedule the flush in a timer even if it's very low or negative to allow
+      // for multiple completeBoundary calls that are already queued to have a chance to
+      // make the batch.
+      setTimeout(window['$RV'].bind(null, window['$RB']), msUntilTimeout);
+    }
   }
 }
 
@@ -560,25 +646,7 @@ export function listenToFormSubmissionsForReplaying() {
     event.preventDefault();
 
     // Take a snapshot of the FormData at the time of the event.
-    let formData;
-    if (formDataSubmitter) {
-      // The submitter's value should be included in the FormData.
-      // It should be in the document order in the form.
-      // Since the FormData constructor invokes the formdata event it also
-      // needs to be available before that happens so after construction it's too
-      // late. We use a temporary fake node for the duration of this event.
-      // TODO: FormData takes a second argument that it's the submitter but this
-      // is fairly new so not all browsers support it yet. Switch to that technique
-      // when available.
-      const temp = document.createElement('input');
-      temp.name = formDataSubmitter.name;
-      temp.value = formDataSubmitter.value;
-      formDataSubmitter.parentNode.insertBefore(temp, formDataSubmitter);
-      formData = new FormData(form);
-      temp.parentNode.removeChild(temp);
-    } else {
-      formData = new FormData(form);
-    }
+    const formData = new FormData(form, formDataSubmitter);
 
     // Queue for replaying later. This field could potentially be shared with multiple
     // Reacts on the same page since each one will preventDefault for the next one.

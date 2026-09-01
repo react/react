@@ -1,4 +1,4 @@
-// @flow @validatePreserveExistingMemoizationGuarantees
+// @flow @validatePreserveExistingMemoizationGuarantees @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useFragment} from 'react-relay';
 import LogEvent from 'LogEvent';
 import {useCallback, useMemo} from 'react';

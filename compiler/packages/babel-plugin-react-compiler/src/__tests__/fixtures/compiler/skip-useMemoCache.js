@@ -1,3 +1,4 @@
+// @expectNothingCompiled
 import {c as useMemoCache} from 'react/compiler-runtime';
 
 function Component(props) {

@@ -15,6 +15,7 @@ class ToggleEvent extends Event {
     super(type, eventInit);
     this.newState = eventInit.newState;
     this.oldState = eventInit.oldState;
+    this.source = eventInit.source;
   }
 }
 
@@ -590,5 +591,72 @@ describe('SimpleEventPlugin', function () {
         }),
       );
     });
+  });
+
+  it('includes the submitter in submit events', async function () {
+    container = document.createElement('div');
+
+    const onSubmit = jest.fn(event => {
+      event.preventDefault();
+    });
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <form onSubmit={onSubmit}>
+          <button type="submit" id="submitter">
+            Submit
+          </button>
+        </form>,
+      );
+    });
+
+    const submitter = container.querySelector('#submitter');
+    const submitEvent = new SubmitEvent('submit', {
+      bubbles: true,
+      cancelable: true,
+      submitter: submitter,
+    });
+    await act(() => {
+      submitter.dispatchEvent(submitEvent);
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const event = onSubmit.mock.calls[0][0];
+    expect(event.submitter).toBe(submitter);
+  });
+
+  it('includes the source in toggle events', async function () {
+    container = document.createElement('div');
+
+    const onToggle = jest.fn();
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(
+        <>
+          <button popoverTarget="popover">Toggle popover</button>
+          <div id="popover" popover="" onToggle={onToggle}>
+            popover content
+          </div>
+        </>,
+      );
+    });
+
+    const source = container.querySelector('button');
+    const target = container.querySelector('#popover');
+    await act(() => {
+      target.dispatchEvent(
+        new ToggleEvent('toggle', {
+          bubbles: false,
+          cancelable: true,
+          oldState: 'closed',
+          newState: 'open',
+          source: source,
+        }),
+      );
+    });
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    const event = onToggle.mock.calls[0][0];
+    expect(event.source).toBe(source);
   });
 });

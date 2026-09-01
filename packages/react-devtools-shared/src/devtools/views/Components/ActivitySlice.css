@@ -1,0 +1,28 @@
+.ActivitySlice {
+  max-width: 100%;
+  overflow-x: auto;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.ActivitySliceButton {
+  color: var(--color-button-active);
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-monospace-normal);
+}
+
+.Bar {
+  display: flex;
+  flex: 1 1 auto;
+  overflow-x: auto;
+}
+
+.VRule {
+  flex: 0 0 auto;
+  height: 20px;
+  width: 1px;
+  background-color: var(--color-border);
+  margin: 0 0.5rem;
+}

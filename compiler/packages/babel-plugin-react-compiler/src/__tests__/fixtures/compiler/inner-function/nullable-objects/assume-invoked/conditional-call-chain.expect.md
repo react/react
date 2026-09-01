@@ -42,7 +42,7 @@ import { useRef } from "react";
 import { Stringify } from "shared-runtime";
 
 function Component(t0) {
-  const $ = _c(9);
+  const $ = _c(7);
   const { a, b } = t0;
   let t1;
   if ($[0] !== a.value) {
@@ -70,29 +70,21 @@ function Component(t0) {
   const hasLogged = useRef(false);
   let t3;
   if ($[4] !== logA || $[5] !== logB) {
-    t3 = () => {
+    const log = () => {
       if (!hasLogged.current) {
         logA();
         logB();
         hasLogged.current = true;
       }
     };
+    t3 = <Stringify log={log} shouldInvokeFns={true} />;
     $[4] = logA;
     $[5] = logB;
     $[6] = t3;
   } else {
     t3 = $[6];
   }
-  const log = t3;
-  let t4;
-  if ($[7] !== log) {
-    t4 = <Stringify log={log} shouldInvokeFns={true} />;
-    $[7] = log;
-    $[8] = t4;
-  } else {
-    t4 = $[8];
-  }
-  return t4;
+  return t3;
 }
 
 export const FIXTURE_ENTRYPOINT = {

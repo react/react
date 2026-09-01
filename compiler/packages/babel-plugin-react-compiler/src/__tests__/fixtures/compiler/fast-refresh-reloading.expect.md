@@ -38,36 +38,34 @@ function Component(props) {
     $[0] = "20945b0193e529df490847c66111b38d7b02485d5b53d0829ff3b23af87b105c";
   }
   const [state] = useState(0);
-  let t0;
-  const t1 = state * 2;
+  const t0 = state * 2;
+  let t1;
+  if ($[1] !== t0) {
+    t1 = [t0];
+    $[1] = t0;
+    $[2] = t1;
+  } else {
+    t1 = $[2];
+  }
+  const doubled = t1;
   let t2;
-  if ($[1] !== t1) {
-    t2 = [t1];
-    $[1] = t1;
-    $[2] = t2;
-  } else {
-    t2 = $[2];
-  }
-  t0 = t2;
-  const doubled = t0;
-  let t3;
   if ($[3] !== state) {
-    t3 = [state];
+    t2 = [state];
     $[3] = state;
-    $[4] = t3;
+    $[4] = t2;
   } else {
-    t3 = $[4];
+    t2 = $[4];
   }
-  let t4;
-  if ($[5] !== doubled || $[6] !== t3) {
-    t4 = <ValidateMemoization inputs={t3} output={doubled} />;
+  let t3;
+  if ($[5] !== doubled || $[6] !== t2) {
+    t3 = <ValidateMemoization inputs={t2} output={doubled} />;
     $[5] = doubled;
-    $[6] = t3;
-    $[7] = t4;
+    $[6] = t2;
+    $[7] = t3;
   } else {
-    t4 = $[7];
+    t3 = $[7];
   }
-  return t4;
+  return t3;
 }
 
 export const FIXTURE_ENTRYPOINT = {

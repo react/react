@@ -69,3 +69,75 @@
     scrollbar-width: none; /* Firefox */
   }
 }
+
+::view-transition-old(.slide-in) {
+  animation-name: slideOutLeft;
+}
+::view-transition-new(.slide-in) {
+  animation-name: slideInLeft;
+}
+::view-transition-group(.slide-in) {
+  z-index: 1;
+}
+::view-transition-old(.slide-out) {
+  animation-name: slideOutLeft;
+}
+::view-transition-new(.slide-out) {
+  animation-name: slideInLeft;
+}
+::view-transition-group(.slide-out) {
+  z-index: 1;
+}
+
+@keyframes slideOutLeft {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+::view-transition-old(.container),
+::view-transition-new(.container) {
+  height: 100%;
+}
+
+::view-transition-old(.accordion-container),
+::view-transition-new(.accordion-container) {
+  height: 100%;
+  object-fit: none;
+  object-position: left;
+}
+
+::view-transition-old(.tab-highlight),
+::view-transition-new(.tab-highlight) {
+  height: 100%;
+}
+::view-transition-group(.tab-text) {
+	z-index: 1;
+}
+
+::view-transition-old(.expand-accordion),
+::view-transition-new(.expand-accordion) {
+  width: auto;
+}
+::view-transition-group(.expand-accordion) {
+  overflow: clip;
+}
+
+/**
+ * For some reason, the original Monaco editor is still visible to the
+ * left of the DiffEditor. This is a workaround for better visual clarity.
+ */
+.monaco-diff-editor .editor.original{
+  visibility: hidden !important;
+}

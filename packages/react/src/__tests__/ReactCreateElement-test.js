@@ -84,15 +84,12 @@ describe('ReactCreateElement', () => {
   it('should warn when `key` is being accessed on a host element', () => {
     const element = React.createElement('div', {key: '3'});
     void element.props.key;
-    assertConsoleErrorDev(
-      [
-        'div: `key` is not a prop. Trying to access it will result ' +
-          'in `undefined` being returned. If you need to access the same ' +
-          'value within the child component, you should pass it as a different ' +
-          'prop. (https://react.dev/link/special-props)',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'div: `key` is not a prop. Trying to access it will result ' +
+        'in `undefined` being returned. If you need to access the same ' +
+        'value within the child component, you should pass it as a different ' +
+        'prop. (https://react.dev/link/special-props)',
+    ]);
   });
 
   it('allows a string to be passed as the type', () => {
@@ -151,16 +148,11 @@ describe('ReactCreateElement', () => {
     });
     expect(element.type).toBe(ComponentClass);
     expect(element.ref).toBe(ref);
-    assertConsoleErrorDev(
-      [
-        'Accessing element.ref was removed in React 19. ref is now a ' +
-          'regular prop. It will be removed from the JSX Element ' +
-          'type in a future release.',
-      ],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleErrorDev([
+      'Accessing element.ref was removed in React 19. ref is now a ' +
+        'regular prop. It will be removed from the JSX Element ' +
+        'type in a future release.',
+    ]);
     const expectation = {foo: '56', ref};
     Object.freeze(expectation);
     expect(element.props).toEqual(expectation);
@@ -429,16 +421,11 @@ describe('ReactCreateElement', () => {
   it('warns if outdated JSX transform is detected', async () => {
     // Warns if __self is detected, because that's only passed by a compiler
     React.createElement('div', {className: 'foo', __self: this});
-    assertConsoleWarnDev(
-      [
-        'Your app (or one of its dependencies) is using an outdated JSX ' +
-          'transform. Update to the modern JSX transform for ' +
-          'faster performance: https://react.dev/link/new-jsx-transform',
-      ],
-      {
-        withoutStack: true,
-      },
-    );
+    assertConsoleWarnDev([
+      'Your app (or one of its dependencies) is using an outdated JSX ' +
+        'transform. Update to the modern JSX transform for ' +
+        'faster performance: https://react.dev/link/new-jsx-transform',
+    ]);
 
     // Only warns the first time. Subsequent elements don't warn.
     React.createElement('div', {className: 'foo', __self: this});

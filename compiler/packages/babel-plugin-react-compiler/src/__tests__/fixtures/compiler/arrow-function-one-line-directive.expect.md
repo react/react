@@ -23,6 +23,7 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 function useFoo() {
   const update = _temp;
+
   return update;
 }
 function _temp() {

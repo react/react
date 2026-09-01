@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false
 const {identity, mutate} = require('shared-runtime');
 
 function Component(props) {
@@ -24,13 +25,21 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false
 const { identity, mutate } = require("shared-runtime");
 
 function Component(props) {
+  const $ = _c(2);
   let x;
-  const object = { ...props.value };
-  for (const y in object) {
-    x = y;
+  if ($[0] !== props.value) {
+    const object = { ...props.value };
+    for (const y in object) {
+      x = y;
+    }
+    $[0] = props.value;
+    $[1] = x;
+  } else {
+    x = $[1];
   }
 
   mutate(x);

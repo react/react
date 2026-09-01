@@ -2,9 +2,11 @@
 
 module.exports = {
   globalSetup: require.resolve('./setupGlobal.js'),
+  testSequencer: require.resolve('./sizeBalancedSequencer.js'),
   modulePathIgnorePatterns: [
     '<rootDir>/scripts/rollup/shims/',
     '<rootDir>/scripts/bench/',
+    '<rootDir>/packages/eslint-plugin-react-hooks/',
   ],
   transform: {
     '^.+babel-plugin-react-compiler/dist/index.js$': [
@@ -19,7 +21,6 @@ module.exports = {
     ],
     '.(?!ts$)': require.resolve('./preprocessor.js'),
   },
-  prettierPath: require.resolve('prettier-2'),
   setupFiles: [require.resolve('./setupEnvironment.js')],
   setupFilesAfterEnv: [require.resolve('./setupTests.js')],
   // Only include files directly in __tests__, not in nested folders.
@@ -35,6 +36,12 @@ module.exports = {
   snapshotSerializers: [require.resolve('jest-snapshot-serializer-raw')],
 
   testEnvironment: '<rootDir>/scripts/jest/ReactJSDOMEnvironment',
+  testEnvironmentOptions: {
+    // pre Jest 30 behavior.
+    // Triggered by JSDOM's resource queue that isn't cancelled.
+    // TODO: get that fixed and remove this option.
+    globalsCleanup: 'off',
+  },
 
   testRunner: 'jest-circus/runner',
 };

@@ -1237,14 +1237,11 @@ describe('ReactAsyncActions', () => {
       setLoadingProgress('25%');
       startTransition(() => setText('B'));
     });
-    assertConsoleErrorDev(
-      [
-        'An optimistic state update occurred outside a transition or ' +
-          'action. To fix, move the update to an action, or wrap ' +
-          'with startTransition.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      'An optimistic state update occurred outside a transition or ' +
+        'action. To fix, move the update to an action, or wrap ' +
+        'with startTransition.',
+    ]);
     assertLog(['Loading... (25%)', 'A', 'B']);
     expect(root).toMatchRenderedOutput(<div>B</div>);
   });
@@ -1703,7 +1700,7 @@ describe('ReactAsyncActions', () => {
     'regression: updates in an action passed to React.startTransition are batched ' +
       'even if there were no updates before the first await',
     async () => {
-      // Regression for a bug that occured in an older, too-clever-by-half
+      // Regression for a bug that occurred in an older, too-clever-by-half
       // implementation of the isomorphic startTransition API. Now, the
       // isomorphic startTransition is literally the composition of every
       // reconciler instance's startTransition, so the behavior is less likely
@@ -1788,5 +1785,84 @@ describe('ReactAsyncActions', () => {
       }
     });
     assertLog(['reportError: Oops']);
+  });
+
+  // @gate enableOptimisticKey
+  it('reconciles against new items when optimisticKey is used', async () => {
+    const startTransition = React.startTransition;
+
+    function Item({text}) {
+      const [initialText] = React.useState(text);
+      return <span>{initialText + '-' + text}</span>;
+    }
+
+    let addOptimisticItem;
+    function App({items}) {
+      const [optimisticItems, _addOptimisticItem] = useOptimistic(
+        items,
+        (canonicalItems, optimisticText) =>
+          canonicalItems.concat({
+            id: React.optimisticKey,
+            text: optimisticText,
+          }),
+      );
+      addOptimisticItem = _addOptimisticItem;
+      return (
+        <div>
+          {optimisticItems.map(item => (
+            <Item key={item.id} text={item.text} />
+          ))}
+        </div>
+      );
+    }
+
+    const A = {
+      id: 'a',
+      text: 'A',
+    };
+
+    const B = {
+      id: 'b',
+      text: 'B',
+    };
+
+    const root = ReactNoop.createRoot();
+    await act(() => {
+      root.render(<App items={[A]} />);
+    });
+    expect(root).toMatchRenderedOutput(
+      <div>
+        <span>A-A</span>
+      </div>,
+    );
+
+    // Start an async action using the non-hook form of startTransition. The
+    // action includes an optimistic update.
+    await act(() => {
+      startTransition(async () => {
+        addOptimisticItem('b');
+        await getText('Yield before updating');
+        startTransition(() => root.render(<App items={[A, B]} />));
+      });
+    });
+    // Because the action hasn't finished yet, the optimistic UI is shown.
+    expect(root).toMatchRenderedOutput(
+      <div>
+        <span>A-A</span>
+        <span>b-b</span>
+      </div>,
+    );
+
+    // Finish the async action. The optimistic state is reverted and replaced by
+    // the canonical state. The state is transferred to the new row.
+    await act(() => {
+      resolveText('Yield before updating');
+    });
+    expect(root).toMatchRenderedOutput(
+      <div>
+        <span>A-A</span>
+        <span>b-B</span>
+      </div>,
+    );
   });
 });

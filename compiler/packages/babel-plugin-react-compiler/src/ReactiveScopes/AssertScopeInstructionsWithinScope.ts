@@ -81,11 +81,10 @@ class CheckInstructionsAgainstScopesVisitor extends ReactiveFunctionVisitor<
       !this.activeScopes.has(scope.id)
     ) {
       CompilerError.invariant(false, {
-        description: `Instruction [${id}] is part of scope @${scope.id}, but that scope has already completed.`,
-        loc: place.loc,
         reason:
           'Encountered an instruction that should be part of a scope, but where that scope has already completed',
-        suggestions: null,
+        description: `Instruction [${id}] is part of scope @${scope.id}, but that scope has already completed`,
+        loc: place.loc,
       });
     }
   }

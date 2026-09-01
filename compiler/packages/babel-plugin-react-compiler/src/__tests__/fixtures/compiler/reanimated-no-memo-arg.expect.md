@@ -3,7 +3,7 @@
 
 ```javascript
 // @enableCustomTypeDefinitionForReanimated
-import {useAnimatedProps} from 'react-native-reanimated';
+import {useAnimatedProps, useSharedValue} from 'react-native-reanimated';
 function Component() {
   const radius = useSharedValue(50);
 
@@ -39,7 +39,7 @@ export const FIXTURE_ENTRYPOINT = {
 
 ```javascript
 import { c as _c } from "react/compiler-runtime"; // @enableCustomTypeDefinitionForReanimated
-import { useAnimatedProps } from "react-native-reanimated";
+import { useAnimatedProps, useSharedValue } from "react-native-reanimated";
 function Component() {
   const $ = _c(2);
   const radius = useSharedValue(50);

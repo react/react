@@ -41,6 +41,7 @@ function Component(t0) {
   const { entity, children } = t0;
 
   const showMessage = () => entity != null;
+
   if (!showMessage()) {
     return children;
   }

@@ -25,7 +25,8 @@ export type ContextMenuHandle = {
   hide(): void,
 };
 
-/*::
-export type ContextMenuComponent = component(ref: React$RefSetter<ContextMenuHandle>);
-*/
+export type ContextMenuComponent = component(
+  // eslint-disable-next-line no-undef
+  ref: React.RefSetter<ContextMenuHandle>,
+);
 export type ContextMenuRef = {current: ContextMenuHandle | null};

@@ -1,11 +1,11 @@
 {
   "name": "react-test-renderer",
-  "version": "19.1.0",
+  "version": "19.3.0",
   "description": "React package for snapshot testing.",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-test-renderer"
   },
   "keywords": [
@@ -15,15 +15,15 @@
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/facebook/react/issues"
+    "url": "https://github.com/react/react/issues"
   },
   "homepage": "https://react.dev/",
   "dependencies": {
-    "react-is": "^19.1.0",
-    "scheduler": "^0.26.0"
+    "react-is": "^19.3.0",
+    "scheduler": "^0.28.0"
   },
   "peerDependencies": {
-    "react": "^19.1.0"
+    "react": "^19.3.0"
   },
   "files": [
     "LICENSE",

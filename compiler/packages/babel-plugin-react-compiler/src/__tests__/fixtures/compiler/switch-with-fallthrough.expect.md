@@ -43,22 +43,17 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 function foo(x) {
   bb0: switch (x) {
-    case 0: {
-    }
-    case 1: {
-    }
+    case 0:
+    case 1:
     case 2: {
       break bb0;
     }
     case 3: {
       break bb0;
     }
-    case 4: {
-    }
-    case 5: {
-    }
-    default: {
-    }
+    case 4:
+    case 5:
+    default:
   }
 }
 

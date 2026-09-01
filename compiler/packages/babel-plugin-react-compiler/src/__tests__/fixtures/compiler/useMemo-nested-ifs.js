@@ -1,7 +1,9 @@
+// @validateExhaustiveMemoizationDependencies:false
 function Component(props) {
   const x = useMemo(() => {
     if (props.cond) {
       if (props.cond) {
+        return props.value;
       }
     }
   }, [props.cond]);

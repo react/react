@@ -29,9 +29,7 @@ import { useMemo } from "react";
 // It's correct to infer a useMemo value is non-allocating
 // and not provide it with a reactive scope
 function useFoo(num1, num2) {
-  let t0;
-  t0 = Math.min(num1, num2);
-  return t0;
+  return Math.min(num1, num2);
 }
 
 export const FIXTURE_ENTRYPOINT = {

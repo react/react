@@ -29,7 +29,7 @@ import { c as _c } from "react/compiler-runtime"; // @enablePropagateDepsInHIR
 import { mutate, shallowCopy, Stringify } from "shared-runtime";
 
 function useFoo(t0) {
-  const $ = _c(6);
+  const $ = _c(4);
   const { a } = t0;
   let local;
   if ($[0] !== a) {
@@ -42,22 +42,14 @@ function useFoo(t0) {
   }
   let t1;
   if ($[2] !== local.b.c) {
-    t1 = () => local.b.c;
+    const fn = () => local.b.c;
+    t1 = <Stringify fn={fn} shouldInvokeFns={true} />;
     $[2] = local.b.c;
     $[3] = t1;
   } else {
     t1 = $[3];
   }
-  const fn = t1;
-  let t2;
-  if ($[4] !== fn) {
-    t2 = <Stringify fn={fn} shouldInvokeFns={true} />;
-    $[4] = fn;
-    $[5] = t2;
-  } else {
-    t2 = $[5];
-  }
-  return t2;
+  return t1;
 }
 
 export const FIXTURE_ENTRYPOINT = {

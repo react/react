@@ -61,6 +61,7 @@ function useFoo(maybeNullObject) {
   } else {
     y = $[1];
   }
+
   return y;
 }
 

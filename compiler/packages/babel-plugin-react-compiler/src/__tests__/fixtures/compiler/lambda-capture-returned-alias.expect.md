@@ -46,12 +46,10 @@ function CaptureNotMutate(props) {
   let aliasedElement;
   if ($[2] !== idx || $[3] !== props.el) {
     const element = bar(props.el);
-
     const fn = function () {
       const arr = { element };
       return arr[idx];
     };
-
     aliasedElement = fn();
     mutate(aliasedElement);
     $[2] = idx;

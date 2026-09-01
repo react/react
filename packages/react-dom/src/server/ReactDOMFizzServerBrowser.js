@@ -7,11 +7,7 @@
  * @flow
  */
 
-import type {
-  PostponedState,
-  ErrorInfo,
-  PostponeInfo,
-} from 'react-server/src/ReactFizzServer';
+import type {PostponedState, ErrorInfo} from 'react-server/src/ReactFizzServer';
 import type {ReactNodeList, ReactFormState} from 'shared/ReactTypes';
 import type {
   BootstrapScriptDescriptor,
@@ -28,6 +24,7 @@ import {
   startFlowing,
   stopFlowing,
   abort,
+  attachAbortSignal,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -40,17 +37,24 @@ import {
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
 ensureCorrectIsomorphicReactVersion();
 
+type NonceOption =
+  | string
+  | {
+      script?: string,
+      style?: string,
+    };
+
 type Options = {
   identifierPrefix?: string,
   namespaceURI?: string,
-  nonce?: string,
+  nonce?: NonceOption,
   bootstrapScriptContent?: string,
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
   progressiveChunkSize?: number,
   signal?: AbortSignal,
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
-  onPostpone?: (reason: string, postponeInfo: PostponeInfo) => void,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
   importMap?: ImportMap,
   formState?: ReactFormState<any, any> | null,
@@ -59,10 +63,10 @@ type Options = {
 };
 
 type ResumeOptions = {
-  nonce?: string,
+  nonce?: NonceOption,
   signal?: AbortSignal,
   onError?: (error: mixed) => ?string,
-  onPostpone?: (reason: string) => void,
+  onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
 };
 
@@ -84,7 +88,7 @@ function renderToReadableStream(
     });
 
     function onShellReady() {
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'bytes',
           pull: (controller): ?Promise<void> => {
@@ -96,8 +100,9 @@ function renderToReadableStream(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -139,24 +144,15 @@ function renderToReadableStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
       onFatalError,
-      options ? options.onPostpone : undefined,
       options ? options.formState : undefined,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort(request, (signal: any).reason);
-      } else {
-        const listener = () => {
-          abort(request, (signal: any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });
@@ -176,7 +172,7 @@ function resume(
     });
 
     function onShellReady() {
-      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+      const stream: ReactDOMServerReadableStream = new ReadableStream(
         {
           type: 'bytes',
           pull: (controller): ?Promise<void> => {
@@ -188,8 +184,9 @@ function resume(
           },
         },
         // $FlowFixMe[prop-missing] size() methods are not allowed on byte streams.
+        // $FlowFixMe[incompatible-type]
         {highWaterMark: 0},
-      ): any);
+      ) as any;
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
@@ -209,23 +206,14 @@ function resume(
         options ? options.nonce : undefined,
       ),
       options ? options.onError : undefined,
+      options ? options.onBrowserBailout : undefined,
       onAllReady,
       onShellReady,
       onShellError,
       onFatalError,
-      options ? options.onPostpone : undefined,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort(request, (signal: any).reason);
-      } else {
-        const listener = () => {
-          abort(request, (signal: any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachAbortSignal(request, options.signal);
     }
     startWork(request);
   });

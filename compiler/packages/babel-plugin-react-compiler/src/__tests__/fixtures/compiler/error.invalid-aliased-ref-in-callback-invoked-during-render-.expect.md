@@ -19,10 +19,17 @@ function Component(props) {
 ## Error
 
 ```
+Found 1 error:
+
+Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+error.invalid-aliased-ref-in-callback-invoked-during-render-.ts:9:33
    7 |     return <Foo item={item} current={current} />;
    8 |   };
 >  9 |   return <Items>{props.items.map(item => renderItem(item))}</Items>;
-     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^ InvalidReact: Ref values (the `current` property) may not be accessed during render. (https://react.dev/reference/react/useRef) (9:9)
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
   10 | }
   11 |
 ```

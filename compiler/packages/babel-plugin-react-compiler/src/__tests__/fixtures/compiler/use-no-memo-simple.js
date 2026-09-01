@@ -1,3 +1,4 @@
+// @expectNothingCompiled
 function Component(props) {
   'use no memo';
   let x = [props.foo];

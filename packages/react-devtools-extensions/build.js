@@ -6,7 +6,7 @@ const archiver = require('archiver');
 const {execSync} = require('child_process');
 const {readFileSync, writeFileSync, createWriteStream} = require('fs');
 const {copy, ensureDir, move, remove, pathExistsSync} = require('fs-extra');
-const {join, resolve} = require('path');
+const {join, resolve, basename} = require('path');
 const {getGitCommit} = require('./utils');
 
 // These files are copied along with Webpack-bundled files
@@ -66,22 +66,31 @@ const build = async (tempPath, manifestPath, envExtension = {}) => {
       stdio: 'inherit',
     },
   );
-  execSync(
-    `${webpackPath} --config webpack.backend.js --output-path ${binPath}`,
-    {
-      cwd: __dirname,
-      env: mergedEnv,
-      stdio: 'inherit',
-    },
-  );
 
   // Make temp dir
   await ensureDir(zipPath);
 
   const copiedManifestPath = join(zipPath, 'manifest.json');
 
+  let webpackStatsFilePath = null;
   // Copy unbuilt source files to zip dir to be packaged:
-  await copy(binPath, join(zipPath, 'build'));
+  await copy(binPath, join(zipPath, 'build'), {
+    filter: filePath => {
+      if (basename(filePath).startsWith('webpack-stats.')) {
+        webpackStatsFilePath = filePath;
+        // The ZIP is the actual extension and doesn't need this metadata.
+        return false;
+      }
+      return true;
+    },
+  });
+  if (webpackStatsFilePath !== null) {
+    await copy(
+      webpackStatsFilePath,
+      join(tempPath, basename(webpackStatsFilePath)),
+    );
+    webpackStatsFilePath = join(tempPath, basename(webpackStatsFilePath));
+  }
   await copy(manifestPath, copiedManifestPath);
   await Promise.all(
     STATIC_FILES.map(file => copy(join(__dirname, file), join(zipPath, file))),
@@ -120,9 +129,11 @@ const build = async (tempPath, manifestPath, envExtension = {}) => {
     archive.finalize();
     zipStream.on('close', () => resolvePromise());
   });
+
+  return webpackStatsFilePath;
 };
 
-const postProcess = async (tempPath, destinationPath) => {
+const postProcess = async (tempPath, destinationPath, webpackStatsFilePath) => {
   const unpackedSourcePath = join(tempPath, 'zip');
   const packedSourcePath = join(tempPath, 'ReactDevTools.zip');
   const packedDestPath = join(destinationPath, 'ReactDevTools.zip');
@@ -130,6 +141,14 @@ const postProcess = async (tempPath, destinationPath) => {
 
   await move(unpackedSourcePath, unpackedDestPath); // Copy built files to destination
   await move(packedSourcePath, packedDestPath); // Copy built files to destination
+  if (webpackStatsFilePath !== null) {
+    await move(
+      webpackStatsFilePath,
+      join(destinationPath, basename(webpackStatsFilePath)),
+    );
+  } else {
+    console.log('No webpack-stats.json file was generated.');
+  }
   await remove(tempPath); // Clean up temp directory and files
 };
 
@@ -158,10 +177,14 @@ const main = async buildId => {
     const tempPath = join(__dirname, 'build', buildId);
     await ensureLocalBuild();
     await preProcess(destinationPath, tempPath);
-    await build(tempPath, manifestPath, envExtension);
+    const webpackStatsFilePath = await build(
+      tempPath,
+      manifestPath,
+      envExtension,
+    );
 
     const builtUnpackedPath = join(destinationPath, 'unpacked');
-    await postProcess(tempPath, destinationPath);
+    await postProcess(tempPath, destinationPath, webpackStatsFilePath);
 
     return builtUnpackedPath;
   } catch (error) {

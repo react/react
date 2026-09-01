@@ -57,7 +57,7 @@ type ModalDialogContextType = {
 };
 
 const ModalDialogContext: ReactContext<ModalDialogContextType> =
-  createContext<ModalDialogContextType>(((null: any): ModalDialogContextType));
+  createContext<ModalDialogContextType>(null as any as ModalDialogContextType);
 ModalDialogContext.displayName = 'ModalDialogContext';
 
 function dialogReducer(state: State, action: Action) {
@@ -75,7 +75,7 @@ function dialogReducer(state: State, action: Action) {
             content: action.content,
             id: action.id,
             title: action.title || null,
-          },
+          } as Dialog,
         ],
       };
     default:

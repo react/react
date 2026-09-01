@@ -16,6 +16,35 @@ describe('StoreStress (Legacy Mode)', () => {
   let store;
   let print;
 
+  function readValue(promise) {
+    if (typeof React.use === 'function') {
+      return React.use(promise);
+    }
+
+    // Support for React < 19.0
+    switch (promise.status) {
+      case 'fulfilled':
+        return promise.value;
+      case 'rejected':
+        throw promise.reason;
+      case 'pending':
+        throw promise;
+      default:
+        promise.status = 'pending';
+        promise.then(
+          value => {
+            promise.status = 'fulfilled';
+            promise.value = value;
+          },
+          reason => {
+            promise.status = 'rejected';
+            promise.reason = reason;
+          },
+        );
+        throw promise;
+    }
+  }
+
   beforeEach(() => {
     bridge = global.bridge;
     store = global.store;
@@ -415,114 +444,116 @@ describe('StoreStress (Legacy Mode)', () => {
       a,
     ];
 
+    // Excluding Suspense tree here due to different measurement semantics for fallbacks
     const stepsSnapshot = [
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+              <Y>"
       `,
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+              <Y>"
       `,
       `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <A key="a">
-                <B key="b">
-                <C key="c">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <B key="b">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
                 <B key="b">
-              <Y>
+                <C key="c">
+              <Y>"
       `,
       `
-        [root]
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <B key="b">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+                <B key="b">
+              <Y>"
       `,
       `
-        [root]
+        "[root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <A key="a">
+              <Y>"
+      `,
+      `
+        "[root]
           ▾ <Root>
               <X>
               <Suspense>
-              <Y>
+              <Y>"
       `,
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <B key="b">
-              <Y>
+              <Y>"
       `,
       `
-        [root]
+        "[root]
           ▾ <Root>
               <X>
             ▾ <Suspense>
                 <A key="a">
-              <Y>
+              <Y>"
       `,
     ];
 
+    const never = new Promise(() => {});
     const Never = () => {
-      throw new Promise(() => {});
+      readValue(never);
     };
 
     const Root = ({children}) => {
@@ -545,8 +576,10 @@ describe('StoreStress (Legacy Mode)', () => {
         ),
       );
       // We snapshot each step once so it doesn't regress.
-      expect(store).toMatchInlineSnapshot(stepsSnapshot[i]);
-      snapshots.push(print(store));
+      expect(print(store, undefined, undefined, false)).toMatchInlineSnapshot(
+        stepsSnapshot[i],
+      );
+      snapshots.push(print(store, undefined, undefined, false));
       act(() => unmount());
       expect(print(store)).toBe('');
     }
@@ -568,7 +601,7 @@ describe('StoreStress (Legacy Mode)', () => {
           </Root>,
         ),
       );
-      expect(print(store)).toEqual(snapshots[i]);
+      expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
       act(() => unmount());
       expect(print(store)).toBe('');
     }
@@ -588,7 +621,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
           render(
@@ -600,7 +633,7 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
           render(
@@ -611,7 +644,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
         act(() => unmount());
         expect(print(store)).toBe('');
@@ -637,7 +670,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
           render(
@@ -653,7 +686,7 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
           render(
@@ -668,7 +701,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
         act(() => unmount());
         expect(print(store)).toBe('');
@@ -690,7 +723,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
           render(
@@ -706,7 +739,7 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
           render(
@@ -717,7 +750,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
         act(() => unmount());
         expect(print(store)).toBe('');
@@ -743,7 +776,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Re-render with steps[j].
         act(() =>
           render(
@@ -755,7 +788,7 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
         // Check that we can transition back again.
         act(() =>
           render(
@@ -770,7 +803,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         // Clean up after every iteration.
         act(() => unmount());
         expect(print(store)).toBe('');
@@ -799,7 +832,7 @@ describe('StoreStress (Legacy Mode)', () => {
         const suspenseID = store.getElementIDAtIndex(2);
 
         // Force fallback.
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
         act(() => {
           bridge.send('overrideSuspense', {
             id: suspenseID,
@@ -807,7 +840,7 @@ describe('StoreStress (Legacy Mode)', () => {
             forceFallback: true,
           });
         });
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Stop forcing fallback.
         act(() => {
@@ -817,7 +850,7 @@ describe('StoreStress (Legacy Mode)', () => {
             forceFallback: false,
           });
         });
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
 
         // Trigger actual fallback.
         act(() =>
@@ -833,7 +866,7 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Force fallback while we're in fallback mode.
         act(() => {
@@ -844,7 +877,7 @@ describe('StoreStress (Legacy Mode)', () => {
           });
         });
         // Keep seeing fallback content.
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Switch to primary mode.
         act(() =>
@@ -857,7 +890,7 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Fallback is still forced though.
-        expect(print(store)).toEqual(snapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[j]);
 
         // Stop forcing fallback. This reverts to primary content.
         act(() => {
@@ -868,7 +901,7 @@ describe('StoreStress (Legacy Mode)', () => {
           });
         });
         // Now we see primary content.
-        expect(print(store)).toEqual(snapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(snapshots[i]);
 
         // Clean up after every iteration.
         act(() => unmount());
@@ -917,6 +950,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -927,63 +962,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <A key="a">
-                  <B key="b">
-                  <C key="c">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <B key="b">
-                  <A key="a">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <A key="a">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <A key="a">
-                  <Z>
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-              ▾ <MaybeSuspend>
-                  <C key="c">
-                  <A key="a">
-                  <Z>
-              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -993,8 +973,77 @@ describe('StoreStress (Legacy Mode)', () => {
               ▾ <MaybeSuspend>
                   <A key="a">
                   <B key="b">
+                  <C key="c">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <B key="b">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <C key="c">
+                  <A key="a">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+              ▾ <MaybeSuspend>
+                  <A key="a">
+                  <B key="b">
+                  <Z>
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1005,6 +1054,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1014,6 +1065,8 @@ describe('StoreStress (Legacy Mode)', () => {
               ▾ <MaybeSuspend>
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1024,6 +1077,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <B key="b">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
       `
         [root]
@@ -1034,6 +1089,8 @@ describe('StoreStress (Legacy Mode)', () => {
                   <A key="a">
                   <Z>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={[]}>
       `,
     ];
 
@@ -1045,6 +1102,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1053,53 +1112,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <A key="a">
-                <B key="b">
-                <C key="c">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <B key="b">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
-      `,
-      `
-        [root]
-          ▾ <Root>
-              <X>
-            ▾ <Suspense>
-                <C key="c">
-                <A key="a">
-              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1108,7 +1122,66 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
                 <B key="b">
+                <C key="c">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <B key="b">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <C key="c">
+                <A key="a">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
+      `,
+      `
+        [root]
+          ▾ <Root>
+              <X>
+            ▾ <Suspense>
+                <A key="a">
+                <B key="b">
+              <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1117,6 +1190,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1124,6 +1199,8 @@ describe('StoreStress (Legacy Mode)', () => {
               <X>
               <Suspense>
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1132,6 +1209,8 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <B key="b">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
       `
         [root]
@@ -1140,11 +1219,14 @@ describe('StoreStress (Legacy Mode)', () => {
             ▾ <Suspense>
                 <A key="a">
               <Y>
+        [suspense-root]  rects={[]}
+          <Suspense name="Unknown" rects={null}>
       `,
     ];
 
+    const never = new Promise(() => {});
     const Never = () => {
-      throw new Promise(() => {});
+      readValue(never);
     };
 
     const MaybeSuspend = ({children, suspend}) => {
@@ -1216,7 +1298,7 @@ describe('StoreStress (Legacy Mode)', () => {
       );
       // We snapshot each step once so it doesn't regress.
       expect(store).toMatchInlineSnapshot(stepsSnapshotTwo[i]);
-      fallbackSnapshots.push(print(store));
+      fallbackSnapshots.push(print(store, undefined, undefined, false));
       act(() => unmount());
       expect(print(store)).toBe('');
     }
@@ -1294,7 +1376,9 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Re-render with steps[j].
         act(() =>
           render(
@@ -1313,7 +1397,9 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
         // Check that we can transition back again.
         act(() =>
           render(
@@ -1331,7 +1417,9 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Clean up after every iteration.
         act(() => unmount());
         expect(print(store)).toBe('');
@@ -1369,7 +1457,9 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Verify the successful transition to steps[j].
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
         // Check that we can transition back again.
         act(() =>
           render(
@@ -1406,7 +1496,9 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Re-render with steps[j].
         act(() =>
           render(
@@ -1433,7 +1525,9 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[i]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[i],
+        );
         // Clean up after every iteration.
         act(() => unmount());
         expect(print(store)).toBe('');
@@ -1472,7 +1566,9 @@ describe('StoreStress (Legacy Mode)', () => {
             forceFallback: true,
           });
         });
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Stop forcing fallback.
         act(() => {
@@ -1496,7 +1592,9 @@ describe('StoreStress (Legacy Mode)', () => {
             </Root>,
           ),
         );
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Force fallback while we're in fallback mode.
         act(() => {
@@ -1507,7 +1605,9 @@ describe('StoreStress (Legacy Mode)', () => {
           });
         });
         // Keep seeing fallback content.
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Switch to primary mode.
         act(() =>
@@ -1522,7 +1622,9 @@ describe('StoreStress (Legacy Mode)', () => {
           ),
         );
         // Fallback is still forced though.
-        expect(print(store)).toEqual(fallbackSnapshots[j]);
+        expect(print(store, undefined, undefined, false)).toEqual(
+          fallbackSnapshots[j],
+        );
 
         // Stop forcing fallback. This reverts to primary content.
         act(() => {

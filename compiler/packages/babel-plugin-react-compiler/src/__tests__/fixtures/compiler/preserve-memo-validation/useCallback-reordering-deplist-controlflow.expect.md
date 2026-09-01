@@ -2,6 +2,7 @@
 ## Input
 
 ```javascript
+// @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import {useCallback} from 'react';
 import {Stringify} from 'shared-runtime';
 
@@ -35,44 +36,49 @@ export const FIXTURE_ENTRYPOINT = {
 ## Code
 
 ```javascript
-import { c as _c } from "react/compiler-runtime";
+import { c as _c } from "react/compiler-runtime"; // @enablePreserveExistingMemoizationGuarantees:false @validateExhaustiveMemoizationDependencies:false
 import { useCallback } from "react";
 import { Stringify } from "shared-runtime";
 
 function Foo(t0) {
-  const $ = _c(8);
+  const $ = _c(10);
   const { arr1, arr2, foo } = t0;
-  let getVal1;
   let t1;
-  if ($[0] !== arr1 || $[1] !== arr2 || $[2] !== foo) {
-    const x = [arr1];
-
-    let y = [];
-
-    getVal1 = _temp;
-
-    t1 = () => [y];
-    foo ? (y = x.concat(arr2)) : y;
+  if ($[0] !== arr1) {
+    t1 = [arr1];
     $[0] = arr1;
-    $[1] = arr2;
-    $[2] = foo;
-    $[3] = getVal1;
-    $[4] = t1;
+    $[1] = t1;
   } else {
-    getVal1 = $[3];
-    t1 = $[4];
+    t1 = $[1];
   }
-  const getVal2 = t1;
+  const x = t1;
+  let getVal1;
   let t2;
-  if ($[5] !== getVal1 || $[6] !== getVal2) {
-    t2 = <Stringify val1={getVal1} val2={getVal2} shouldInvokeFns={true} />;
+  if ($[2] !== arr2 || $[3] !== foo || $[4] !== x) {
+    let y = [];
+    getVal1 = _temp;
+    t2 = () => [y];
+    foo ? (y = x.concat(arr2)) : y;
+    $[2] = arr2;
+    $[3] = foo;
+    $[4] = x;
     $[5] = getVal1;
-    $[6] = getVal2;
-    $[7] = t2;
+    $[6] = t2;
   } else {
-    t2 = $[7];
+    getVal1 = $[5];
+    t2 = $[6];
   }
-  return t2;
+  const getVal2 = t2;
+  let t3;
+  if ($[7] !== getVal1 || $[8] !== getVal2) {
+    t3 = <Stringify val1={getVal1} val2={getVal2} shouldInvokeFns={true} />;
+    $[7] = getVal1;
+    $[8] = getVal2;
+    $[9] = t3;
+  } else {
+    t3 = $[9];
+  }
+  return t3;
 }
 function _temp() {
   return { x: 2 };

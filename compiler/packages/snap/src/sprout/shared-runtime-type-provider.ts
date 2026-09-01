@@ -5,15 +5,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import type {Effect, ValueKind} from 'babel-plugin-react-compiler/src';
+import type {
+  Effect,
+  ValueKind,
+  ValueReason,
+} from 'babel-plugin-react-compiler/src';
 import type {TypeConfig} from 'babel-plugin-react-compiler/src/HIR/TypeSchema';
 
 export function makeSharedRuntimeTypeProvider({
   EffectEnum,
   ValueKindEnum,
+  ValueReasonEnum,
 }: {
   EffectEnum: typeof Effect;
   ValueKindEnum: typeof ValueKind;
+  ValueReasonEnum: typeof ValueReason;
 }) {
   return function sharedRuntimeTypeProvider(
     moduleName: string,
@@ -68,6 +74,210 @@ export function makeSharedRuntimeTypeProvider({
             returnType: {kind: 'type', name: 'Any'},
             returnValueKind: ValueKindEnum.Mutable,
             noAlias: true,
+          },
+          typedIdentity: {
+            kind: 'function',
+            positionalParams: [EffectEnum.Read],
+            restParam: null,
+            calleeEffect: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            returnValueKind: ValueKindEnum.Mutable,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@value'],
+              rest: null,
+              returns: '@return',
+              temporaries: [],
+              effects: [{kind: 'Assign', from: '@value', into: '@return'}],
+            },
+          },
+          typedAssign: {
+            kind: 'function',
+            positionalParams: [EffectEnum.Read],
+            restParam: null,
+            calleeEffect: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            returnValueKind: ValueKindEnum.Mutable,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@value'],
+              rest: null,
+              returns: '@return',
+              temporaries: [],
+              effects: [{kind: 'Assign', from: '@value', into: '@return'}],
+            },
+          },
+          typedAlias: {
+            kind: 'function',
+            positionalParams: [EffectEnum.Read],
+            restParam: null,
+            calleeEffect: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            returnValueKind: ValueKindEnum.Mutable,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@value'],
+              rest: null,
+              returns: '@return',
+              temporaries: [],
+              effects: [
+                {
+                  kind: 'Create',
+                  into: '@return',
+                  value: ValueKindEnum.Mutable,
+                  reason: ValueReasonEnum.KnownReturnSignature,
+                },
+                {kind: 'Alias', from: '@value', into: '@return'},
+              ],
+            },
+          },
+          typedCapture: {
+            kind: 'function',
+            positionalParams: [EffectEnum.Read],
+            restParam: null,
+            calleeEffect: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Array'},
+            returnValueKind: ValueKindEnum.Mutable,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@value'],
+              rest: null,
+              returns: '@return',
+              temporaries: [],
+              effects: [
+                {
+                  kind: 'Create',
+                  into: '@return',
+                  value: ValueKindEnum.Mutable,
+                  reason: ValueReasonEnum.KnownReturnSignature,
+                },
+                {kind: 'Capture', from: '@value', into: '@return'},
+              ],
+            },
+          },
+          typedCreateFrom: {
+            kind: 'function',
+            positionalParams: [EffectEnum.Read],
+            restParam: null,
+            calleeEffect: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            returnValueKind: ValueKindEnum.Mutable,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@value'],
+              rest: null,
+              returns: '@return',
+              temporaries: [],
+              effects: [{kind: 'CreateFrom', from: '@value', into: '@return'}],
+            },
+          },
+          typedMutate: {
+            kind: 'function',
+            positionalParams: [EffectEnum.Read, EffectEnum.Capture],
+            restParam: null,
+            calleeEffect: EffectEnum.Store,
+            returnType: {kind: 'type', name: 'Primitive'},
+            returnValueKind: ValueKindEnum.Primitive,
+            aliasing: {
+              receiver: '@receiver',
+              params: ['@object', '@value'],
+              rest: null,
+              returns: '@return',
+              temporaries: [],
+              effects: [
+                {
+                  kind: 'Create',
+                  into: '@return',
+                  value: ValueKindEnum.Primitive,
+                  reason: ValueReasonEnum.KnownReturnSignature,
+                },
+                {kind: 'Mutate', value: '@object'},
+                {kind: 'Capture', from: '@value', into: '@object'},
+              ],
+            },
+          },
+          PanResponder: {
+            kind: 'object',
+            properties: {
+              create: {
+                kind: 'function',
+                positionalParams: [EffectEnum.Freeze],
+                restParam: null,
+                calleeEffect: EffectEnum.Read,
+                returnType: {kind: 'type', name: 'Any'},
+                returnValueKind: ValueKindEnum.Frozen,
+                aliasing: {
+                  receiver: '@receiver',
+                  params: ['@config'],
+                  rest: null,
+                  returns: '@returns',
+                  temporaries: [],
+                  effects: [
+                    {
+                      kind: 'Freeze',
+                      value: '@config',
+                      reason: ValueReasonEnum.KnownReturnSignature,
+                    },
+                    {
+                      kind: 'Create',
+                      into: '@returns',
+                      value: ValueKindEnum.Frozen,
+                      reason: ValueReasonEnum.KnownReturnSignature,
+                    },
+                    {
+                      kind: 'ImmutableCapture',
+                      from: '@config',
+                      into: '@returns',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      };
+    } else if (moduleName === 'ReactCompilerKnownIncompatibleTest') {
+      /**
+       * Fake module used for testing validation of known incompatible
+       * API validation
+       */
+      return {
+        kind: 'object',
+        properties: {
+          useKnownIncompatible: {
+            kind: 'hook',
+            positionalParams: [],
+            restParam: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            knownIncompatible: `useKnownIncompatible is known to be incompatible`,
+          },
+          useKnownIncompatibleIndirect: {
+            kind: 'hook',
+            positionalParams: [],
+            restParam: EffectEnum.Read,
+            returnType: {
+              kind: 'object',
+              properties: {
+                incompatible: {
+                  kind: 'function',
+                  positionalParams: [],
+                  restParam: EffectEnum.Read,
+                  calleeEffect: EffectEnum.Read,
+                  returnType: {kind: 'type', name: 'Any'},
+                  returnValueKind: ValueKindEnum.Mutable,
+                  knownIncompatible: `useKnownIncompatibleIndirect returns an incompatible() function that is known incompatible`,
+                },
+              },
+            },
+          },
+          knownIncompatible: {
+            kind: 'function',
+            positionalParams: [],
+            restParam: EffectEnum.Read,
+            calleeEffect: EffectEnum.Read,
+            returnType: {kind: 'type', name: 'Any'},
+            returnValueKind: ValueKindEnum.Mutable,
+            knownIncompatible: `useKnownIncompatible is known to be incompatible`,
           },
         },
       };

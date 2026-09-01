@@ -51,6 +51,18 @@ function isObjectPrototype(object: any): boolean {
   return true;
 }
 
+export function isGetter(object: any, name: string): boolean {
+  const ObjectPrototype = Object.prototype;
+  if (object === ObjectPrototype || object === null) {
+    return false;
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(object, name);
+  if (descriptor === undefined) {
+    return isGetter(getPrototypeOf(object), name);
+  }
+  return typeof descriptor.get === 'function';
+}
+
 export function isSimpleObject(object: any): boolean {
   if (!isObjectPrototype(getPrototypeOf(object))) {
     return false;
@@ -80,9 +92,8 @@ export function isSimpleObject(object: any): boolean {
 export function objectName(object: mixed): string {
   // $FlowFixMe[method-unbinding]
   const name = Object.prototype.toString.call(object);
-  return name.replace(/^\[object (.*)\]$/, function (m, p0) {
-    return p0;
-  });
+  // Extract 'Object' from '[object Object]':
+  return name.slice(8, name.length - 1);
 }
 
 function describeKeyForErrorMessage(key: string): string {
@@ -111,10 +122,10 @@ export function describeValueForErrorMessage(value: mixed): string {
       return name;
     }
     case 'function': {
-      if ((value: any).$$typeof === CLIENT_REFERENCE_TAG) {
+      if ((value as any).$$typeof === CLIENT_REFERENCE_TAG) {
         return describeClientReference(value);
       }
-      const name = (value: any).displayName || value.name;
+      const name = (value as any).displayName || value.name;
       return name ? 'function ' + name : 'function';
     }
     default:
@@ -144,7 +155,7 @@ function describeElementType(type: any): string {
       case REACT_MEMO_TYPE:
         return describeElementType(type.type);
       case REACT_LAZY_TYPE: {
-        const lazyComponent: LazyComponent<any, any> = (type: any);
+        const lazyComponent: LazyComponent<any, any> = type as any;
         const payload = lazyComponent._payload;
         const init = lazyComponent._init;
         try {

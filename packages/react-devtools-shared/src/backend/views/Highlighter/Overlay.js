@@ -187,10 +187,13 @@ export default class Overlay {
     }
   }
 
-  inspect(nodes: $ReadOnlyArray<HTMLElement>, name?: ?string) {
+  inspect(nodes: $ReadOnlyArray<HTMLElement | Text>, name?: ?string) {
     // We can't get the size of text nodes or comment nodes. React as of v15
     // heavily uses comment nodes to delimit text.
-    const elements = nodes.filter(node => node.nodeType === Node.ELEMENT_NODE);
+    // TODO: We actually can measure text nodes. We should.
+    const elements: $ReadOnlyArray<HTMLElement> = nodes.filter(
+      node => node.nodeType === Node.ELEMENT_NODE,
+    ) as any;
 
     while (this.rects.length > elements.length) {
       const rect = this.rects.pop();

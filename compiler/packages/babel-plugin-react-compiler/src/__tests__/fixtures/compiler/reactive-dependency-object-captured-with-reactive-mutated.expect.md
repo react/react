@@ -34,7 +34,6 @@ function Component(props) {
     const y = props.y;
     const z = [x, y];
     mutate(z);
-
     t0 = [x];
     $[0] = props.y;
     $[1] = t0;

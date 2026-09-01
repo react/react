@@ -54,12 +54,15 @@ export type SuspenseListRenderState = {
   tail: null | Fiber,
   // Tail insertions setting.
   tailMode: SuspenseListTailMode,
+  // Keep track of total number of forks during multiple passes
+  treeForkCount: number,
 };
 
 export type RetryQueue = Set<Wakeable>;
 
 export function findFirstSuspended(row: Fiber): null | Fiber {
   let node = row;
+  // $FlowFixMe[invalid-compare]
   while (node !== null) {
     if (node.tag === SuspenseComponent) {
       const state: SuspenseState | null = node.memoizedState;
@@ -75,9 +78,9 @@ export function findFirstSuspended(row: Fiber): null | Fiber {
       }
     } else if (
       node.tag === SuspenseListComponent &&
-      // revealOrder undefined can't be trusted because it don't
+      // Independent revealOrder can't be trusted because it doesn't
       // keep track of whether it suspended or not.
-      node.memoizedProps.revealOrder !== undefined
+      node.memoizedProps.revealOrder !== 'independent'
     ) {
       const didSuspend = (node.flags & DidCapture) !== NoFlags;
       if (didSuspend) {

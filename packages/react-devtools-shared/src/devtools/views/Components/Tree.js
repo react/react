@@ -11,6 +11,7 @@ import * as React from 'react';
 import {
   Fragment,
   Suspense,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -24,12 +25,11 @@ import {TreeDispatcherContext, TreeStateContext} from './TreeContext';
 import Icon from '../Icon';
 import {SettingsContext} from '../Settings/SettingsContext';
 import {BridgeContext, StoreContext, OptionsContext} from '../context';
-import Element from './Element';
+import ComponentsTreeElement from './Element';
 import InspectHostNodesToggle from './InspectHostNodesToggle';
 import OwnersStack from './OwnersStack';
 import ComponentSearchInput from './ComponentSearchInput';
 import SettingsModalContextToggle from 'react-devtools-shared/src/devtools/views/Settings/SettingsModalContextToggle';
-import SelectedTreeHighlight from './SelectedTreeHighlight';
 import TreeFocusedContext from './TreeFocusedContext';
 import {useHighlightHostInstance, useSubscription} from '../hooks';
 import {clearErrorsAndWarnings as clearErrorsAndWarningsAPI} from 'react-devtools-shared/src/backendAPI';
@@ -38,15 +38,23 @@ import ButtonIcon from '../ButtonIcon';
 import Button from '../Button';
 import {logEvent} from 'react-devtools-shared/src/Logger';
 import {useExtensionComponentsPanelVisibility} from 'react-devtools-shared/src/frontend/hooks/useExtensionComponentsPanelVisibility';
+import {ElementTypeActivity} from 'react-devtools-shared/src/frontend/types';
 import {useChangeOwnerAction} from './OwnersListContext';
+import {useChangeActivitySliceAction} from '../SuspenseTab/ActivityList';
+import ActivitySlice from './ActivitySlice';
 
-// Never indent more than this number of pixels (even if we have the room).
-const DEFAULT_INDENTATION_SIZE = 12;
+// Indent for each node at level N, compared to node at level N - 1.
+const INDENTATION_SIZE = 10;
+
+function calculateElementOffset(elementDepth: number): number {
+  return elementDepth * INDENTATION_SIZE;
+}
 
 export type ItemData = {
   isNavigatingWithKeyboard: boolean,
   onElementMouseEnter: (id: number) => void,
   treeFocused: boolean,
+  calculateElementOffset: (depth: number) => number,
 };
 
 function calculateInitialScrollOffset(
@@ -68,6 +76,7 @@ function calculateInitialScrollOffset(
 export default function Tree(): React.Node {
   const dispatch = useContext(TreeDispatcherContext);
   const {
+    activityID,
     numElements,
     ownerID,
     searchIndex,
@@ -89,17 +98,97 @@ export default function Tree(): React.Node {
 
   const treeRef = useRef<HTMLDivElement | null>(null);
   const focusTargetRef = useRef<HTMLDivElement | null>(null);
-  const listRef = useRef(null);
+  const listDOMElementRef = useRef<Element | null>(null);
+  const setListDOMElementRef = useCallback((listDOMElement: Element) => {
+    listDOMElementRef.current = listDOMElement;
 
-  useEffect(() => {
-    if (!componentsPanelVisible) {
+    // Controls the initial horizontal offset of the Tree if the element was pre-selected. For example, via Elements panel in browser DevTools.
+    // Initial vertical offset is controlled via initialScrollOffset prop of the FixedSizeList component.
+    if (
+      !componentsPanelVisible ||
+      inspectedElementIndex == null ||
+      listDOMElement == null
+    ) {
       return;
     }
 
-    if (listRef.current != null && inspectedElementIndex !== null) {
-      listRef.current.scrollToItem(inspectedElementIndex, 'smart');
+    const element = store.getElementAtIndex(inspectedElementIndex);
+    if (element == null) {
+      return;
     }
-  }, [inspectedElementIndex, componentsPanelVisible]);
+
+    const viewportLeft = listDOMElement.scrollLeft;
+    const viewportRight = viewportLeft + listDOMElement.clientWidth;
+    const elementLeft = calculateElementOffset(element.depth);
+    // Because of virtualization, this element might not be rendered yet; we can't look up its width.
+    // Assuming that it may take up to the half of the viewport.
+    const elementRight = elementLeft + listDOMElement.clientWidth / 2;
+
+    const isElementFullyVisible =
+      elementLeft >= viewportLeft && elementRight <= viewportRight;
+
+    if (!isElementFullyVisible) {
+      const horizontalDelta =
+        Math.min(0, elementLeft - viewportLeft) +
+        Math.max(0, elementRight - viewportRight);
+
+      // $FlowExpectedError[incompatible-type] Flow doesn't support instant as an option for behavior.
+      listDOMElement.scrollBy({
+        left: horizontalDelta,
+        behavior: 'instant',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!componentsPanelVisible || inspectedElementIndex == null) {
+      return;
+    }
+
+    const listDOMElement = listDOMElementRef.current;
+    if (listDOMElement == null) {
+      return;
+    }
+
+    const viewportHeight = listDOMElement.clientHeight;
+    const viewportLeft = listDOMElement.scrollLeft;
+    const viewportRight = viewportLeft + listDOMElement.clientWidth;
+    const viewportTop = listDOMElement.scrollTop;
+    const viewportBottom = viewportTop + viewportHeight;
+
+    const element = store.getElementAtIndex(inspectedElementIndex);
+    if (element == null) {
+      return;
+    }
+    const elementLeft = calculateElementOffset(element.depth);
+    // Because of virtualization, this element might not be rendered yet; we can't look up its width.
+    // Assuming that it may take up to the half of the viewport.
+    const elementRight = elementLeft + listDOMElement.clientWidth / 2;
+    const elementTop = inspectedElementIndex * lineHeight;
+    const elementBottom = elementTop + lineHeight;
+
+    const isElementFullyVisible =
+      elementTop >= viewportTop &&
+      elementBottom <= viewportBottom &&
+      elementLeft >= viewportLeft &&
+      elementRight <= viewportRight;
+
+    if (!isElementFullyVisible) {
+      const verticalDelta =
+        Math.min(0, elementTop - viewportTop) +
+        Math.max(0, elementBottom - viewportBottom);
+      const horizontalDelta =
+        Math.min(0, elementLeft - viewportLeft) +
+        Math.max(0, elementRight - viewportRight);
+
+      // $FlowExpectedError[incompatible-type] Flow doesn't support instant as an option for behavior.
+      listDOMElement.scrollBy({
+        top: verticalDelta,
+        left: horizontalDelta,
+        behavior: treeFocused && ownerID == null ? 'smooth' : 'instant',
+      });
+    }
+  }, [inspectedElementIndex, componentsPanelVisible, lineHeight]);
 
   // Picking an element in the inspector should put focus into the tree.
   // If possible, navigation works right after picking a node.
@@ -126,7 +215,7 @@ export default function Tree(): React.Node {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event: any).target.tagName === 'INPUT' || event.defaultPrevented) {
+      if ((event as any).target.tagName === 'INPUT' || event.defaultPrevented) {
         return;
       }
 
@@ -148,6 +237,7 @@ export default function Tree(): React.Node {
               : null;
           if (element !== null) {
             if (event.altKey) {
+              // $FlowFixMe[invalid-compare]
               if (element.ownerID !== null) {
                 dispatch({type: 'SELECT_OWNER_LIST_PREVIOUS_ELEMENT_IN_TREE'});
               }
@@ -218,6 +308,7 @@ export default function Tree(): React.Node {
   const handleBlur = useCallback(() => setTreeFocused(false), []);
   const handleFocus = useCallback(() => setTreeFocused(true), []);
 
+  const changeActivitySliceAction = useChangeActivitySliceAction();
   const changeOwnerAction = useChangeOwnerAction();
   const handleKeyPress = useCallback(
     (event: $FlowFixMe) => {
@@ -225,7 +316,17 @@ export default function Tree(): React.Node {
         case 'Enter':
         case ' ':
           if (inspectedElementID !== null) {
-            changeOwnerAction(inspectedElementID);
+            const inspectedElement = store.getElementByID(inspectedElementID);
+            startTransition(() => {
+              if (
+                inspectedElement !== null &&
+                inspectedElement.type === ElementTypeActivity
+              ) {
+                changeActivitySliceAction(inspectedElementID);
+              } else {
+                changeOwnerAction(inspectedElementID);
+              }
+            });
           }
           break;
         default:
@@ -284,6 +385,23 @@ export default function Tree(): React.Node {
 
   const handleMouseLeave = clearHighlightHostInstance;
 
+  // The synthetic onMouseLeave on the tree div only fires within the document,
+  // so we need a native listener on the document itself.
+  useEffect(() => {
+    const container = focusTargetRef.current;
+    if (container == null) {
+      return;
+    }
+    const ownerDocument = container.ownerDocument;
+    ownerDocument.addEventListener('mouseleave', clearHighlightHostInstance);
+    return () => {
+      ownerDocument.removeEventListener(
+        'mouseleave',
+        clearHighlightHostInstance,
+      );
+    };
+  }, [clearHighlightHostInstance]);
+
   // Let react-window know to re-render any time the underlying tree data changes.
   // This includes the owner context, since it controls a filtered view of the tree.
   const itemData = useMemo<ItemData>(
@@ -291,8 +409,14 @@ export default function Tree(): React.Node {
       isNavigatingWithKeyboard,
       onElementMouseEnter: handleElementMouseEnter,
       treeFocused,
+      calculateElementOffset,
     }),
-    [isNavigatingWithKeyboard, handleElementMouseEnter, treeFocused],
+    [
+      isNavigatingWithKeyboard,
+      handleElementMouseEnter,
+      treeFocused,
+      calculateElementOffset,
+    ],
   );
 
   const itemKey = useCallback(
@@ -354,7 +478,13 @@ export default function Tree(): React.Node {
             </Fragment>
           )}
           <Suspense fallback={<Loading />}>
-            {ownerID !== null ? <OwnersStack /> : <ComponentSearchInput />}
+            {ownerID !== null ? (
+              <OwnersStack />
+            ) : activityID !== null ? (
+              <ActivitySlice />
+            ) : (
+              <ComponentSearchInput />
+            )}
           </Suspense>
           {ownerID === null && (errors > 0 || warnings > 0) && (
             <React.Fragment>
@@ -421,9 +551,10 @@ export default function Tree(): React.Node {
                   itemData={itemData}
                   itemKey={itemKey}
                   itemSize={lineHeight}
-                  ref={listRef}
+                  outerRef={setListDOMElementRef}
+                  overscanCount={10}
                   width={width}>
-                  {Element}
+                  {ComponentsTreeElement}
                 </FixedSizeList>
               )}
             </AutoSizer>
@@ -434,153 +565,57 @@ export default function Tree(): React.Node {
   );
 }
 
-// Indentation size can be adjusted but child width is fixed.
-// We need to adjust indentations so the widest child can fit without overflowing.
-// Sometimes the widest child is also the deepest in the tree:
-//   ┏----------------------┓
-//   ┆ <Foo>                ┆
-//   ┆ ••••<Foobar>         ┆
-//   ┆ ••••••••<Baz>        ┆
-//   ┗----------------------┛
-//
-// But this is not always the case.
-// Even with the above example, a change in indentation may change the overall widest child:
-//   ┏----------------------┓
-//   ┆ <Foo>                ┆
-//   ┆ ••<Foobar>           ┆
-//   ┆ ••••<Baz>            ┆
-//   ┗----------------------┛
-//
-// In extreme cases this difference can be important:
-//   ┏----------------------┓
-//   ┆ <ReallyLongName>     ┆
-//   ┆ ••<Foo>              ┆
-//   ┆ ••••<Bar>            ┆
-//   ┆ ••••••<Baz>          ┆
-//   ┆ ••••••••<Qux>        ┆
-//   ┗----------------------┛
-//
-// In the above example, the current indentation is fine,
-// but if we naively assumed that the widest element is also the deepest element,
-// we would end up compressing the indentation unnecessarily:
-//   ┏----------------------┓
-//   ┆ <ReallyLongName>     ┆
-//   ┆ •<Foo>               ┆
-//   ┆ ••<Bar>              ┆
-//   ┆ •••<Baz>             ┆
-//   ┆ ••••<Qux>            ┆
-//   ┗----------------------┛
-//
-// The way we deal with this is to compute the max indentation size that can fit each child,
-// given the child's fixed width and depth within the tree.
-// Then we take the smallest of these indentation sizes...
-function updateIndentationSizeVar(
-  innerDiv: HTMLDivElement,
-  cachedChildWidths: WeakMap<HTMLElement, number>,
-  indentationSizeRef: {current: number},
-  prevListWidthRef: {current: number},
-): void {
-  const list = ((innerDiv.parentElement: any): HTMLDivElement);
-  const listWidth = list.clientWidth;
-
-  // Skip measurements when the Components panel is hidden.
-  if (listWidth === 0) {
-    return;
-  }
-
-  // Reset the max indentation size if the width of the tree has increased.
-  if (listWidth > prevListWidthRef.current) {
-    indentationSizeRef.current = DEFAULT_INDENTATION_SIZE;
-  }
-  prevListWidthRef.current = listWidth;
-
-  let maxIndentationSize: number = indentationSizeRef.current;
-
-  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
-  for (const child of innerDiv.children) {
-    const depth = parseInt(child.getAttribute('data-depth'), 10) || 0;
-
-    let childWidth: number = 0;
-
-    const cachedChildWidth = cachedChildWidths.get(child);
-    if (cachedChildWidth != null) {
-      childWidth = cachedChildWidth;
-    } else {
-      const {firstElementChild} = child;
-
-      // Skip over e.g. the guideline element
-      if (firstElementChild != null) {
-        childWidth = firstElementChild.clientWidth;
-        cachedChildWidths.set(child, childWidth);
-      }
-    }
-
-    const remainingWidth = Math.max(0, listWidth - childWidth);
-
-    maxIndentationSize = Math.min(maxIndentationSize, remainingWidth / depth);
-  }
-
-  indentationSizeRef.current = maxIndentationSize;
-
-  list.style.setProperty('--indentation-size', `${maxIndentationSize}px`);
-}
-
 // $FlowFixMe[missing-local-annot]
 function InnerElementType({children, style}) {
-  const {ownerID} = useContext(TreeStateContext);
+  const store = useContext(StoreContext);
 
-  const cachedChildWidths = useMemo<WeakMap<HTMLElement, number>>(
-    () => new WeakMap(),
-    [],
+  const {height} = style;
+  const maxDepth = store.getMaximumRecordedDepth();
+  // Maximum possible indentation plus some arbitrary offset for the node content.
+  const width = calculateElementOffset(maxDepth) + 500;
+
+  return (
+    <div className={styles.InnerElementType} style={{height, width}}>
+      {children}
+
+      <VerticalDelimiter />
+    </div>
   );
+}
 
-  // This ref tracks the current indentation size.
-  // We decrease indentation to fit wider/deeper trees.
-  // We intentionally do not increase it again afterward, to avoid the perception of content "jumping"
-  // e.g. clicking to toggle/collapse a row might otherwise jump horizontally beneath your cursor,
-  // e.g. scrolling a wide row off screen could cause narrower rows to jump to the right some.
-  //
-  // There are two exceptions for this:
-  // 1. The first is when the width of the tree increases.
-  // The user may have resized the window specifically to make more room for DevTools.
-  // In either case, this should reset our max indentation size logic.
-  // 2. The second is when the user enters or exits an owner tree.
-  const indentationSizeRef = useRef<number>(DEFAULT_INDENTATION_SIZE);
-  const prevListWidthRef = useRef<number>(0);
-  const prevOwnerIDRef = useRef<number | null>(ownerID);
-  const divRef = useRef<HTMLDivElement | null>(null);
+function VerticalDelimiter() {
+  const store = useContext(StoreContext);
+  const {ownerID, inspectedElementIndex} = useContext(TreeStateContext);
+  const {lineHeight} = useContext(SettingsContext);
 
-  // We shouldn't retain this width across different conceptual trees though,
-  // so when the user opens the "owners tree" view, we should discard the previous width.
-  if (ownerID !== prevOwnerIDRef.current) {
-    prevOwnerIDRef.current = ownerID;
-    indentationSizeRef.current = DEFAULT_INDENTATION_SIZE;
+  if (ownerID != null || inspectedElementIndex == null) {
+    return null;
   }
 
-  // When we render new content, measure to see if we need to shrink indentation to fit it.
-  useEffect(() => {
-    if (divRef.current !== null) {
-      updateIndentationSizeVar(
-        divRef.current,
-        cachedChildWidths,
-        indentationSizeRef,
-        prevListWidthRef,
-      );
-    }
-  });
+  const element = store.getElementAtIndex(inspectedElementIndex);
+  if (element == null) {
+    return null;
+  }
+  const indexOfLowestDescendant =
+    store.getIndexOfLowestDescendantElement(element);
+  if (indexOfLowestDescendant == null) {
+    return null;
+  }
 
-  // This style override enables the background color to fill the full visible width,
-  // when combined with the CSS tweaks in Element.
-  // A lot of options were considered; this seemed the one that requires the least code.
-  // See https://github.com/bvaughn/react-devtools-experimental/issues/9
+  const delimiterLeft = calculateElementOffset(element.depth) + 12;
+  const delimiterTop = (inspectedElementIndex + 1) * lineHeight;
+  const delimiterHeight =
+    (indexOfLowestDescendant + 1) * lineHeight - delimiterTop;
+
   return (
     <div
-      className={styles.InnerElementType}
-      ref={divRef}
-      style={{...style, pointerEvents: null}}>
-      <SelectedTreeHighlight />
-      {children}
-    </div>
+      className={styles.VerticalDelimiter}
+      style={{
+        left: delimiterLeft,
+        top: delimiterTop,
+        height: delimiterHeight,
+      }}
+    />
   );
 }
 

@@ -30,7 +30,7 @@ export function injectInternals(internals: Object): boolean {
   } catch (err) {
     // Catch all errors because it is unsafe to throw during initialization.
     if (__DEV__) {
-      console.error('React instrumentation encountered an error: %s.', err);
+      console.error('React instrumentation encountered an error: %o.', err);
     }
   }
   if (hook.checkDCE) {

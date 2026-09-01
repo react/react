@@ -22,6 +22,11 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Todo: (BuildHIR::node.lowerReorderableExpression) Expression type `ArrowFunctionExpression` cannot be safely reordered
+
+error.default-param-accesses-local.ts:3:6
   1 | function Component(
   2 |   x,
 > 3 |   y = () => {
@@ -29,7 +34,7 @@ export const FIXTURE_ENTRYPOINT = {
 > 4 |     return x;
     | ^^^^^^^^^^^^^
 > 5 |   }
-    | ^^^^ Todo: (BuildHIR::node.lowerReorderableExpression) Expression type `ArrowFunctionExpression` cannot be safely reordered (3:5)
+    | ^^^^ (BuildHIR::node.lowerReorderableExpression) Expression type `ArrowFunctionExpression` cannot be safely reordered
   6 | ) {
   7 |   return y();
   8 | }

@@ -1275,16 +1275,13 @@ describe('ReactDOMLegacyFiber', () => {
         ReactDOM.render(<div key="2">baz</div>, container);
       });
     }).rejects.toThrow('The node to be removed is not a child of this node.');
-    assertConsoleErrorDev(
-      [
-        '' +
-          'It looks like the React-rendered content of this container was ' +
-          'removed without using React. This is not supported and will ' +
-          'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
-          'to empty a container.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      '' +
+        'It looks like the React-rendered content of this container was ' +
+        'removed without using React. This is not supported and will ' +
+        'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
+        'to empty a container.',
+    ]);
   });
 
   // @gate !disableLegacyMode
@@ -1296,16 +1293,13 @@ describe('ReactDOMLegacyFiber', () => {
     // then we mess with the DOM before an update
     container.innerHTML = '<div>MEOW.</div>';
     ReactDOM.render(<div>baz</div>, container);
-    assertConsoleErrorDev(
-      [
-        '' +
-          'It looks like the React-rendered content of this container was ' +
-          'removed without using React. This is not supported and will ' +
-          'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
-          'to empty a container.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      '' +
+        'It looks like the React-rendered content of this container was ' +
+        'removed without using React. This is not supported and will ' +
+        'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
+        'to empty a container.',
+    ]);
   });
 
   // @gate !disableLegacyMode
@@ -1317,16 +1311,13 @@ describe('ReactDOMLegacyFiber', () => {
     // then we mess with the DOM before an update
     container.innerHTML = '';
     ReactDOM.render(<div>baz</div>, container);
-    assertConsoleErrorDev(
-      [
-        '' +
-          'It looks like the React-rendered content of this container was ' +
-          'removed without using React. This is not supported and will ' +
-          'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
-          'to empty a container.',
-      ],
-      {withoutStack: true},
-    );
+    assertConsoleErrorDev([
+      '' +
+        'It looks like the React-rendered content of this container was ' +
+        'removed without using React. This is not supported and will ' +
+        'cause errors. Instead, call ReactDOM.unmountComponentAtNode ' +
+        'to empty a container.',
+    ]);
   });
 
   // @gate !disableLegacyMode

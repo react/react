@@ -12,13 +12,10 @@ import {compareVersions} from 'compare-versions';
 import {dehydrate} from 'react-devtools-shared/src/hydration';
 import isArray from 'shared/isArray';
 
-import type {Source} from 'react-devtools-shared/src/shared/types';
 import type {DehydratedData} from 'react-devtools-shared/src/frontend/types';
 
 export {default as formatWithStyles} from './formatWithStyles';
 export {default as formatConsoleArguments} from './formatConsoleArguments';
-
-import {formatOwnerStackString} from '../shared/DevToolsOwnerStack';
 
 // TODO: update this to the first React version that has a corresponding DevTools backend
 const FIRST_DEVTOOLS_BACKEND_LOCKSTEP_VER = '999.9.9';
@@ -64,7 +61,7 @@ export function copyWithDelete(
   const updated = isArray(obj) ? obj.slice() : {...obj};
   if (index + 1 === path.length) {
     if (isArray(updated)) {
-      updated.splice(((key: any): number), 1);
+      updated.splice(key as any as number, 1);
     } else {
       delete updated[key];
     }
@@ -90,7 +87,7 @@ export function copyWithRename(
     // $FlowFixMe[incompatible-use] number or string is fine here
     updated[newKey] = updated[oldKey];
     if (isArray(updated)) {
-      updated.splice(((oldKey: any): number), 1);
+      updated.splice(oldKey as any as number, 1);
     } else {
       delete updated[oldKey];
     }
@@ -196,9 +193,9 @@ export function formatConsoleArgumentsToSingleString(
   // If the first argument is a string, check for substitutions.
   if (typeof maybeMessage === 'string') {
     if (args.length) {
-      const REGEXP = /(%?)(%([jds]))/g;
+      const REGEXP = /(%?)(%([jdisf]))/g;
 
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       formatted = formatted.replace(REGEXP, (match, escaped, ptn, flag) => {
         let arg = args.shift();
         switch (flag) {
@@ -257,166 +254,6 @@ export const isReactNativeEnvironment = (): boolean => {
   // We should probably define the client for DevTools on the backend side and share it with the frontend
   return window.document == null;
 };
-
-function extractLocation(
-  url: string,
-): null | {sourceURL: string, line?: string, column?: string} {
-  if (url.indexOf(':') === -1) {
-    return null;
-  }
-
-  // remove any parentheses from start and end
-  const withoutParentheses = url.replace(/^\(+/, '').replace(/\)+$/, '');
-  const locationParts = /(at )?(.+?)(?::(\d+))?(?::(\d+))?$/.exec(
-    withoutParentheses,
-  );
-
-  if (locationParts == null) {
-    return null;
-  }
-
-  const [, , sourceURL, line, column] = locationParts;
-  return {sourceURL, line, column};
-}
-
-const CHROME_STACK_REGEXP = /^\s*at .*(\S+:\d+|\(native\))/m;
-function parseSourceFromChromeStack(stack: string): Source | null {
-  const frames = stack.split('\n');
-  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
-  for (const frame of frames) {
-    const sanitizedFrame = frame.trim();
-
-    const locationInParenthesesMatch = sanitizedFrame.match(/ (\(.+\)$)/);
-    const possibleLocation = locationInParenthesesMatch
-      ? locationInParenthesesMatch[1]
-      : sanitizedFrame;
-
-    const location = extractLocation(possibleLocation);
-    // Continue the search until at least sourceURL is found
-    if (location == null) {
-      continue;
-    }
-
-    const {sourceURL, line = '1', column = '1'} = location;
-
-    return {
-      sourceURL,
-      line: parseInt(line, 10),
-      column: parseInt(column, 10),
-    };
-  }
-
-  return null;
-}
-
-function parseSourceFromFirefoxStack(stack: string): Source | null {
-  const frames = stack.split('\n');
-  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
-  for (const frame of frames) {
-    const sanitizedFrame = frame.trim();
-    const frameWithoutFunctionName = sanitizedFrame.replace(
-      /((.*".+"[^@]*)?[^@]*)(?:@)/,
-      '',
-    );
-
-    const location = extractLocation(frameWithoutFunctionName);
-    // Continue the search until at least sourceURL is found
-    if (location == null) {
-      continue;
-    }
-
-    const {sourceURL, line = '1', column = '1'} = location;
-
-    return {
-      sourceURL,
-      line: parseInt(line, 10),
-      column: parseInt(column, 10),
-    };
-  }
-
-  return null;
-}
-
-export function parseSourceFromComponentStack(
-  componentStack: string,
-): Source | null {
-  if (componentStack.match(CHROME_STACK_REGEXP)) {
-    return parseSourceFromChromeStack(componentStack);
-  }
-
-  return parseSourceFromFirefoxStack(componentStack);
-}
-
-let collectedLocation: Source | null = null;
-
-function collectStackTrace(
-  error: Error,
-  structuredStackTrace: CallSite[],
-): string {
-  let result: null | Source = null;
-  // Collect structured stack traces from the callsites.
-  // We mirror how V8 serializes stack frames and how we later parse them.
-  for (let i = 0; i < structuredStackTrace.length; i++) {
-    const callSite = structuredStackTrace[i];
-    if (callSite.getFunctionName() === 'react-stack-bottom-frame') {
-      // We pick the last frame that matches before the bottom frame since
-      // that will be immediately inside the component as opposed to some helper.
-      // If we don't find a bottom frame then we bail to string parsing.
-      collectedLocation = result;
-      // Skip everything after the bottom frame since it'll be internals.
-      break;
-    } else {
-      const sourceURL = callSite.getScriptNameOrSourceURL();
-      const line =
-        // $FlowFixMe[prop-missing]
-        typeof callSite.getEnclosingLineNumber === 'function'
-          ? (callSite: any).getEnclosingLineNumber()
-          : callSite.getLineNumber();
-      const col =
-        // $FlowFixMe[prop-missing]
-        typeof callSite.getEnclosingColumnNumber === 'function'
-          ? (callSite: any).getEnclosingColumnNumber()
-          : callSite.getLineNumber();
-      if (!sourceURL || !line || !col) {
-        // Skip eval etc. without source url. They don't have location.
-        continue;
-      }
-      result = {
-        sourceURL,
-        line: line,
-        column: col,
-      };
-    }
-  }
-  // At the same time we generate a string stack trace just in case someone
-  // else reads it.
-  const name = error.name || 'Error';
-  const message = error.message || '';
-  let stack = name + ': ' + message;
-  for (let i = 0; i < structuredStackTrace.length; i++) {
-    stack += '\n    at ' + structuredStackTrace[i].toString();
-  }
-  return stack;
-}
-
-export function parseSourceFromOwnerStack(error: Error): Source | null {
-  // First attempt to collected the structured data using prepareStackTrace.
-  collectedLocation = null;
-  const previousPrepare = Error.prepareStackTrace;
-  Error.prepareStackTrace = collectStackTrace;
-  let stack;
-  try {
-    stack = error.stack;
-  } finally {
-    Error.prepareStackTrace = previousPrepare;
-  }
-  if (collectedLocation !== null) {
-    return collectedLocation;
-  }
-  // Fallback to parsing the string form.
-  const componentStack = formatOwnerStackString(stack);
-  return parseSourceFromComponentStack(componentStack);
-}
 
 // 0.123456789 => 0.123
 // Expects high-resolution timestamp in milliseconds, like from performance.now()

@@ -49,7 +49,6 @@ function Component() {
         ref.current = "";
       }
     };
-
     t0 = () => {
       setRef();
     };

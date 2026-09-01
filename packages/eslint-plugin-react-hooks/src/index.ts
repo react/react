@@ -4,63 +4,114 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-import type {ESLint, Linter, Rule} from 'eslint';
+import type {Linter, Rule} from 'eslint';
 
 import ExhaustiveDeps from './rules/ExhaustiveDeps';
-import ReactCompiler from './rules/ReactCompiler';
+import {
+  allRules,
+  mapErrorSeverityToESlint,
+  recommendedRules,
+  recommendedLatestRules,
+} from './shared/ReactCompiler';
 import RulesOfHooks from './rules/RulesOfHooks';
 
-// All rules
+function makeDeprecatedRule(version: string): Rule.RuleModule {
+  return {
+    meta: {
+      type: 'suggestion',
+      docs: {
+        description: `Deprecated: this rule has been removed in ${version}.`,
+      },
+      schema: [],
+      deprecated: true,
+    },
+    create() {
+      return {};
+    },
+  };
+}
+
 const rules = {
   'exhaustive-deps': ExhaustiveDeps,
-  'react-compiler': ReactCompiler,
   'rules-of-hooks': RulesOfHooks,
+  ...Object.fromEntries(
+    Object.entries(allRules).map(([name, config]) => [name, config.rule]),
+  ),
+  'component-hook-factories': makeDeprecatedRule('7.1.0'),
 } satisfies Record<string, Rule.RuleModule>;
 
-// Config rules
-const configRules = {
+const basicRuleConfigs = {
   'react-hooks/rules-of-hooks': 'error',
   'react-hooks/exhaustive-deps': 'warn',
-} satisfies Linter.RulesRecord;
+} as const satisfies Linter.RulesRecord;
 
-// Flat config
-const recommendedConfig = {
-  name: 'react-hooks/recommended',
-  plugins: {
-    get 'react-hooks'(): ESLint.Plugin {
-      return plugin;
-    },
-  },
-  rules: configRules,
+const recommendedCompilerRuleConfigs = Object.fromEntries(
+  Object.entries(recommendedRules).map(([name, ruleConfig]) => {
+    return [
+      `react-hooks/${name}` as const,
+      mapErrorSeverityToESlint(ruleConfig.severity),
+    ] as const;
+  }),
+) as Record<`react-hooks/${string}`, Linter.RuleEntry>;
+
+const recommendedLatestCompilerRuleConfigs = Object.fromEntries(
+  Object.entries(recommendedLatestRules).map(([name, ruleConfig]) => {
+    return [
+      `react-hooks/${name}` as const,
+      mapErrorSeverityToESlint(ruleConfig.severity),
+    ] as const;
+  }),
+) as Record<`react-hooks/${string}`, Linter.RuleEntry>;
+
+const recommendedRuleConfigs: Linter.RulesRecord = {
+  ...basicRuleConfigs,
+  ...recommendedCompilerRuleConfigs,
+};
+const recommendedLatestRuleConfigs: Linter.RulesRecord = {
+  ...basicRuleConfigs,
+  ...recommendedLatestCompilerRuleConfigs,
 };
 
-// Plugin object
-const plugin = {
-  // TODO: Make this more dynamic to populate version from package.json.
-  // This can be done by injecting at build time, since importing the package.json isn't an option in Meta
-  meta: {name: 'eslint-plugin-react-hooks'},
-  rules,
-  configs: {
-    /** Legacy recommended config, to be used with rc-based configurations */
-    'recommended-legacy': {
-      plugins: ['react-hooks'],
-      rules: configRules,
-    },
+const plugins = ['react-hooks'];
 
-    /**
-     * Recommended config, to be used with flat configs.
-     */
-    recommended: recommendedConfig,
+type ReactHooksFlatConfig = {
+  plugins: {react: any};
+  rules: Linter.RulesRecord;
+};
 
-    /** @deprecated please use `recommended`; will be removed in v7  */
-    'recommended-latest': recommendedConfig,
+const configs = {
+  recommended: {
+    plugins,
+    rules: recommendedRuleConfigs,
   },
-} satisfies ESLint.Plugin;
+  'recommended-latest': {
+    plugins,
+    rules: recommendedLatestRuleConfigs,
+  },
+  flat: {} as {
+    recommended: ReactHooksFlatConfig;
+    'recommended-latest': ReactHooksFlatConfig;
+  },
+};
 
-const configs = plugin.configs;
-const meta = plugin.meta;
-export {configs, meta, rules};
+const plugin = {
+  meta: {
+    name: 'eslint-plugin-react-hooks',
+    version: '7.0.0',
+  },
+  rules,
+  configs,
+};
 
-// TODO: If the plugin is ever updated to be pure ESM and drops support for rc-based configs, then it should be exporting the plugin as default
-// instead of individual named exports.
-// export default plugin;
+Object.assign(configs.flat, {
+  'recommended-latest': {
+    plugins: {'react-hooks': plugin},
+    rules: configs['recommended-latest'].rules,
+  },
+  recommended: {
+    plugins: {'react-hooks': plugin},
+    rules: configs.recommended.rules,
+  },
+});
+
+export default plugin;

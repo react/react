@@ -38,3 +38,17 @@ export function resume() {
     arguments,
   );
 }
+
+export function renderToPipeableStream() {
+  return require('./src/server/react-dom-server.bun').renderToPipeableStream.apply(
+    this,
+    arguments,
+  );
+}
+
+export function resumeToPipeableStream() {
+  return require('./src/server/react-dom-server.bun').resumeToPipeableStream.apply(
+    this,
+    arguments,
+  );
+}

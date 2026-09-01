@@ -27,6 +27,7 @@ import * as SharedRuntime from "shared-runtime";
 function useFoo(t0) {
   const $ = _c(1);
   const { cond } = t0;
+
   if (cond) {
     let t1;
     if ($[0] === Symbol.for("react.memo_cache_sentinel")) {

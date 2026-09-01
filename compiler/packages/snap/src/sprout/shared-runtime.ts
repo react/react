@@ -272,7 +272,7 @@ export function ValidateMemoization({
 }: {
   inputs: Array<any>;
   output: any;
-  onlyCheckCompiled: boolean;
+  onlyCheckCompiled?: boolean;
 }): React.ReactElement {
   'use no forget';
   // Wrap rawOutput as it might be a function, which useState would invoke.
@@ -280,8 +280,9 @@ export function ValidateMemoization({
   const [previousInputs, setPreviousInputs] = React.useState(inputs);
   const [previousOutput, setPreviousOutput] = React.useState(output);
   if (
-    onlyCheckCompiled &&
-    (globalThis as any).__SNAP_EVALUATOR_MODE === 'forget'
+    !onlyCheckCompiled ||
+    (onlyCheckCompiled &&
+      (globalThis as any).__SNAP_EVALUATOR_MODE === 'forget')
   ) {
     if (
       inputs.length !== previousInputs.length ||
@@ -395,5 +396,35 @@ export function typedArrayPush<T>(array: Array<T>, item: T): void {
 export function typedLog(...values: Array<any>): void {
   console.log(...values);
 }
+
+export function typedIdentity<T>(value: T): T {
+  return value;
+}
+
+export function typedAssign<T>(x: T): T {
+  return x;
+}
+
+export function typedAlias<T>(x: T): T {
+  return x;
+}
+
+export function typedCapture<T>(x: T): Array<T> {
+  return [x];
+}
+
+export function typedCreateFrom<T>(array: Array<T>): T {
+  return array[0];
+}
+
+export function typedMutate(x: any, v: any = null): void {
+  x.property = v;
+}
+
+export const PanResponder = {
+  create(obj: any): any {
+    return obj;
+  },
+};
 
 export default typedLog;

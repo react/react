@@ -69,6 +69,7 @@ const Foo = isForgetEnabled_Fixtures()
       if (DEV && shouldInstrument)
         useRenderCounter("Foo", "/codegen-instrument-forget-gating-test.ts");
       const $ = _c(3);
+
       if (props.bar < 0) {
         return props.children;
       }

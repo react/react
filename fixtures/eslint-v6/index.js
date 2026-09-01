@@ -141,3 +141,27 @@ function useHookInLoops() {
     useHook4();
   }
 }
+
+/**
+ * Compiler Rules
+ */
+// Invalid: component factory
+function InvalidComponentFactory() {
+  const DynamicComponent = () => <div>Hello</div>;
+  // eslint-disable-next-line react-hooks/static-components
+  return <DynamicComponent />;
+}
+
+// Invalid: mutating globals
+function InvalidGlobals() {
+  // eslint-disable-next-line react-hooks/immutability
+  window.myGlobal = 42;
+  return <div>Done</div>;
+}
+
+// Invalid: useMemo with wrong deps
+function InvalidUseMemo({items}) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sorted = useMemo(() => [...items].sort(), []);
+  return <div>{sorted.length}</div>;
+}

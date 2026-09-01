@@ -129,6 +129,7 @@ function useFoo(t0) {
         t1 = null;
         break bb0;
       }
+
       if (cond2) {
         mutate(s);
       }
@@ -144,6 +145,7 @@ function useFoo(t0) {
   if (t1 !== Symbol.for("react.early_return_sentinel")) {
     return t1;
   }
+
   return s;
 }
 

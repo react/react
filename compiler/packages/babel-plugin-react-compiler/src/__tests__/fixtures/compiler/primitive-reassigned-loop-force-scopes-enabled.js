@@ -1,4 +1,4 @@
-// @enableForest
+// @enablePreserveExistingMemoizationGuarantees
 function Component({base, start, increment, test}) {
   let value = base;
   for (let i = start; i < test; i += increment) {

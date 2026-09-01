@@ -12,6 +12,7 @@ export const rendererPackageName = 'react-server-dom-esm';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigWeb';
 export * from 'react-client/src/ReactClientConsoleConfigBrowser';
+export * from 'react-client/src/ReactClientDebugConfigBrowser';
 export * from 'react-server-dom-esm/src/client/ReactFlightClientConfigBundlerESM';
 export * from 'react-server-dom-esm/src/client/ReactFlightClientConfigTargetESMBrowser';
 export * from 'react-dom-bindings/src/shared/ReactFlightClientConfigDOM';

@@ -27,10 +27,6 @@ function createCursor<T>(defaultValue: T): StackCursor<T> {
   };
 }
 
-function isEmpty(): boolean {
-  return index === -1;
-}
-
 function pop<T>(cursor: StackCursor<T>, fiber: Fiber): void {
   if (index < 0) {
     if (__DEV__) {
@@ -67,31 +63,4 @@ function push<T>(cursor: StackCursor<T>, value: T, fiber: Fiber): void {
 
   cursor.current = value;
 }
-
-function checkThatStackIsEmpty() {
-  if (__DEV__) {
-    if (index !== -1) {
-      console.error(
-        'Expected an empty stack. Something was not reset properly.',
-      );
-    }
-  }
-}
-
-function resetStackAfterFatalErrorInDev() {
-  if (__DEV__) {
-    index = -1;
-    valueStack.length = 0;
-    fiberStack.length = 0;
-  }
-}
-
-export {
-  createCursor,
-  isEmpty,
-  pop,
-  push,
-  // DEV only:
-  checkThatStackIsEmpty,
-  resetStackAfterFatalErrorInDev,
-};
+export {createCursor, pop, push};

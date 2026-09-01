@@ -36,12 +36,10 @@ function useHook(t0) {
   let t1;
   if ($[0] !== cond) {
     const getX = () => x;
-
     let x;
     if (cond) {
       x = CONST_NUMBER1;
     }
-
     t1 = <Stringify getX={getX} shouldInvokeFns={true} />;
     $[0] = cond;
     $[1] = t1;

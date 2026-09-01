@@ -14,6 +14,18 @@ import type {
   FrontendBridge,
 } from 'react-devtools-shared/src/bridge';
 
+type TestBridgeMessage = {event: string, payload: mixed};
+type TestBridgeWall = {
+  disconnect: () => void,
+  reconnect: () => void,
+  listen: (callback: (message: mixed) => void) => () => void,
+  send: (
+    event: string,
+    payload: mixed,
+    transferable?: $ReadOnlyArray<mixed>,
+  ) => void,
+};
+
 const {getTestFlags} = require('../../../../scripts/jest/TestFlags');
 
 // Argument is serialized when passed from jest-cli script through to setupTests.
@@ -116,6 +128,16 @@ function shouldIgnoreConsoleErrorOrWarn(args) {
     return false;
   }
 
+  const maybeError = args[1];
+  if (
+    maybeError !== null &&
+    typeof maybeError === 'object' &&
+    maybeError.message === 'Simulated error coming from DevTools'
+  ) {
+    // Error from forcing an error boundary.
+    return true;
+  }
+
   return global._ignoredErrorOrWarningMessages.some(errorOrWarningMessage => {
     return firstArg.indexOf(errorOrWarningMessage) !== -1;
   });
@@ -141,7 +163,7 @@ function patchConsoleForTestingBeforeHookInstallation() {
       // if they use this code path.
       firstArg = firstArg.slice(9);
     }
-    if (firstArg === 'React instrumentation encountered an error: %s') {
+    if (firstArg === 'React instrumentation encountered an error: %o') {
       // Rethrow errors from React.
       throw args[1];
     } else if (
@@ -228,37 +250,69 @@ beforeEach(() => {
 
   // Initialize filters to a known good state.
   setSavedComponentFilters(getDefaultComponentFilters());
-  global.__REACT_DEVTOOLS_COMPONENT_FILTERS__ = getDefaultComponentFilters();
 
-  // Also initialize inline warnings so that we can test them.
-  global.__REACT_DEVTOOLS_SHOW_INLINE_WARNINGS_AND_ERRORS__ = true;
-
-  installHook(global, {
+  installHook(global, getDefaultComponentFilters(), {
     appendComponentStack: true,
     breakOnConsoleErrors: false,
     showInlineWarningsAndErrors: true,
     hideConsoleLogsInStrictMode: false,
+    disableSecondConsoleLogDimmingInStrictMode: false,
   });
 
-  const bridgeListeners = [];
-  const bridge = new Bridge({
+  let bridgeListeners: Array<(message: mixed) => void> = [];
+  let disconnectedBridgeListeners: Array<(message: mixed) => void> | null =
+    null;
+  let pendingBridgeMessages: Array<TestBridgeMessage> = [];
+  const bridgeWall: TestBridgeWall = {
+    disconnect() {
+      if (disconnectedBridgeListeners === null) {
+        disconnectedBridgeListeners = bridgeListeners;
+        bridgeListeners = [];
+      }
+    },
+    reconnect() {
+      if (disconnectedBridgeListeners !== null) {
+        bridgeListeners = disconnectedBridgeListeners;
+        disconnectedBridgeListeners = null;
+
+        const messages = pendingBridgeMessages;
+        pendingBridgeMessages = [];
+        messages.forEach(message => {
+          bridgeListeners.forEach(callback => callback(message));
+        });
+      }
+    },
     listen(callback) {
-      bridgeListeners.push(callback);
+      const listeners =
+        disconnectedBridgeListeners !== null
+          ? disconnectedBridgeListeners
+          : bridgeListeners;
+      listeners.push(callback);
       return () => {
-        const index = bridgeListeners.indexOf(callback);
+        let index = bridgeListeners.indexOf(callback);
         if (index >= 0) {
           bridgeListeners.splice(index, 1);
         }
+        if (disconnectedBridgeListeners !== null) {
+          index = disconnectedBridgeListeners.indexOf(callback);
+          if (index >= 0) {
+            disconnectedBridgeListeners.splice(index, 1);
+          }
+        }
       };
     },
-    send(event: string, payload: any, transferable?: Array<any>) {
-      bridgeListeners.forEach(callback => callback({event, payload}));
+    send(event: string, payload: mixed, transferable?: $ReadOnlyArray<mixed>) {
+      const message = {event, payload};
+      if (disconnectedBridgeListeners === null) {
+        bridgeListeners.forEach(callback => callback(message));
+      } else {
+        pendingBridgeMessages.push(message);
+      }
     },
-  });
+  };
+  const bridge = new Bridge(bridgeWall);
 
-  const store = new Store(((bridge: any): FrontendBridge), {
-    supportsTimeline: true,
-  });
+  const store = new Store(((bridge: any): FrontendBridge));
 
   const agent = new Agent(((bridge: any): BackendBridge));
   const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;

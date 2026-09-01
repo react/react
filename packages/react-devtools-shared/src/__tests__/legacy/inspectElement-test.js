@@ -98,6 +98,7 @@ describe('InspectedElementContext', () => {
           boolean_false: false,
           boolean_true: true,
           infinity: Infinity,
+          minus_infinity: -Infinity,
           integer_zero: 0,
           integer_one: 1,
           float: 1.23,
@@ -128,6 +129,7 @@ describe('InspectedElementContext', () => {
           "infinity": Infinity,
           "integer_one": 1,
           "integer_zero": 0,
+          "minus_infinity": -Infinity,
           "nan": NaN,
           "string": "abc",
           "string_empty": "",
@@ -289,9 +291,13 @@ describe('InspectedElementContext', () => {
             "preview_long": {boolean: true, number: 123, string: "abc"},
           },
         },
-        "react_element": Dehydrated {
-          "preview_short": <span />,
-          "preview_long": <span />,
+        "react_element": {
+          "key": null,
+          "props": Dehydrated {
+            "preview_short": {…},
+            "preview_long": {},
+          },
+          "ref": null,
         },
         "regexp": Dehydrated {
           "preview_short": /abc/giu,

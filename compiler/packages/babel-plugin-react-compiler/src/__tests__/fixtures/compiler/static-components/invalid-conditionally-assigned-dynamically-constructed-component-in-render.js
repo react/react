@@ -1,4 +1,4 @@
-// @loggerTestOnly @validateStaticComponents
+// @loggerTestOnly @validateStaticComponents @outputMode:"lint"
 function Example(props) {
   let Component;
   if (props.cond) {

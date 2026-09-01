@@ -97,6 +97,7 @@ function useFoo(t0) {
   if (t1 !== Symbol.for("react.early_return_sentinel")) {
     return t1;
   }
+
   return x;
 }
 

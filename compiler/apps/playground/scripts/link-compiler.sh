@@ -8,8 +8,8 @@ set -eo pipefail
 
 HERE=$(pwd)
 
-cd ../../packages/react-compiler-runtime && yarn --silent link && cd $HERE
-cd ../../packages/babel-plugin-react-compiler && yarn --silent link && cd $HERE
+cd ../../packages/react-compiler-runtime && yarn --silent link && cd "$HERE"
+cd ../../packages/babel-plugin-react-compiler && yarn --silent link && cd "$HERE"
 
 yarn --silent link babel-plugin-react-compiler
 yarn --silent link react-compiler-runtime

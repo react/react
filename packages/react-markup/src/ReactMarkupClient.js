@@ -16,7 +16,7 @@ import {
   createRequest as createFizzRequest,
   startWork as startFizzWork,
   startFlowing as startFizzFlowing,
-  abort as abortFizz,
+  attachAbortSignal as attachFizzAbortSignal,
 } from 'react-server/src/ReactFizzServer';
 
 import {
@@ -88,16 +88,7 @@ export function experimental_renderToHTML(
       undefined,
     );
     if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abortFizz(fizzRequest, (signal: any).reason);
-      } else {
-        const listener = () => {
-          abortFizz(fizzRequest, (signal: any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
+      attachFizzAbortSignal(fizzRequest, options.signal);
     }
     startFizzWork(fizzRequest);
     startFizzFlowing(fizzRequest, fizzDestination);

@@ -25,18 +25,27 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 import { c as _c } from "react/compiler-runtime";
 function bar(a) {
-  const $ = _c(2);
-  let y;
+  const $ = _c(4);
+  let t0;
   if ($[0] !== a) {
-    const x = [a];
+    t0 = [a];
+    $[0] = a;
+    $[1] = t0;
+  } else {
+    t0 = $[1];
+  }
+  const x = t0;
+  let y;
+  if ($[2] !== x[0][1]) {
     y = {};
 
     y = x[0][1];
-    $[0] = a;
-    $[1] = y;
+    $[2] = x[0][1];
+    $[3] = y;
   } else {
-    y = $[1];
+    y = $[3];
   }
+
   return y;
 }
 

@@ -42,6 +42,7 @@ function Component(props) {
   } catch {
     x = null;
   }
+
   return x;
 }
 

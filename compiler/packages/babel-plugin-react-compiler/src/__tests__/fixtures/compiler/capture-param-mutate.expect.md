@@ -67,6 +67,7 @@ function getNativeLogFunction(level) {
       ) {
         logLevel = LOG_LEVELS.warn;
       }
+
       if (global.__inspectorLog) {
         global.__inspectorLog(
           INSPECTOR_LEVELS[logLevel],
@@ -75,6 +76,7 @@ function getNativeLogFunction(level) {
           INSPECTOR_FRAMES_TO_SKIP,
         );
       }
+
       if (groupStack.length) {
         str = groupFormat("", str);
       }

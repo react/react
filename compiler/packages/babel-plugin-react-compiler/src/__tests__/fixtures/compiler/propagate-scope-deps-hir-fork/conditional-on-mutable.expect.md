@@ -48,7 +48,6 @@ function ComponentA(props) {
     if (props.p1) {
       b.push(props.p2);
     }
-
     t0 = <Foo a={a} b={b} />;
     $[0] = props.p0;
     $[1] = props.p1;
@@ -72,7 +71,6 @@ function ComponentB(props) {
     if (props.p1) {
       b.push(props.p2);
     }
-
     t0 = <Foo a={a} b={b} />;
     $[0] = props.p0;
     $[1] = props.p1;

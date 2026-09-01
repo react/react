@@ -29,10 +29,10 @@ import { c as _c } from "react/compiler-runtime";
 import { throwInput } from "shared-runtime";
 
 function Component(props) {
-  const $ = _c(4);
+  const $ = _c(2);
   let t0;
   if ($[0] !== props) {
-    t0 = () => {
+    const callback = () => {
       try {
         throwInput([props.value]);
       } catch (t1) {
@@ -40,21 +40,13 @@ function Component(props) {
         return e;
       }
     };
+    t0 = callback();
     $[0] = props;
     $[1] = t0;
   } else {
     t0 = $[1];
   }
-  const callback = t0;
-  let t1;
-  if ($[2] !== callback) {
-    t1 = callback();
-    $[2] = callback;
-    $[3] = t1;
-  } else {
-    t1 = $[3];
-  }
-  return t1;
+  return t0;
 }
 
 export const FIXTURE_ENTRYPOINT = {

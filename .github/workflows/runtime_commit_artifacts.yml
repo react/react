@@ -37,7 +37,7 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
-      - name: Restore cached node_modules
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: node_modules
         with:
@@ -116,11 +116,13 @@ jobs:
         run: |
           sed -i -e 's/ @license React*//' \
             build/oss-experimental/eslint-plugin-react-hooks/cjs/eslint-plugin-react-hooks.development.js \
+            build/facebook-www/ESLintPluginReactHooks-dev.modern.js \
             build/oss-experimental/react-refresh/cjs/react-refresh-babel.development.js
       - name: Insert @headers into eslint plugin and react-refresh
         run: |
           sed -i -e 's/ LICENSE file in the root directory of this source tree./ LICENSE file in the root directory of this source tree.\n *\n * @noformat\n * @nolint\n * @lightSyntaxTransform\n * @preventMunge\n * @oncall react_core/' \
             build/oss-experimental/eslint-plugin-react-hooks/cjs/eslint-plugin-react-hooks.development.js \
+            build/facebook-www/ESLintPluginReactHooks-dev.modern.js \
             build/oss-experimental/react-refresh/cjs/react-refresh-babel.development.js
       - name: Move relevant files for React in www into compiled
         run: |
@@ -132,9 +134,9 @@ jobs:
           mkdir ./compiled/facebook-www/__test_utils__
           mv build/__test_utils__/ReactAllWarnings.js ./compiled/facebook-www/__test_utils__/ReactAllWarnings.js
 
-          # Copy eslint-plugin-react-hooks
+          # Copy eslint-plugin-react-hooks (www build with feature flags)
           mkdir ./compiled/eslint-plugin-react-hooks
-          cp build/oss-experimental/eslint-plugin-react-hooks/cjs/eslint-plugin-react-hooks.development.js \
+          cp ./compiled/facebook-www/ESLintPluginReactHooks-dev.modern.js \
             ./compiled/eslint-plugin-react-hooks/index.js
 
           # Move unstable_server-external-runtime.js into facebook-www
@@ -162,10 +164,9 @@ jobs:
           mv build/facebook-react-native/react-is/cjs/ $BASE_FOLDER/RKJSModules/vendor/react/react-is/
           mv build/facebook-react-native/react-test-renderer/cjs/ $BASE_FOLDER/RKJSModules/vendor/react/react-test-renderer/
 
-          # Delete OSS renderer. OSS renderer is synced through internal script.
+          # Delete the OSS renderers, these are sync'd to RN separately.
           RENDERER_FOLDER=$BASE_FOLDER/react-native-github/Libraries/Renderer/implementations/
           rm $RENDERER_FOLDER/ReactFabric-{dev,prod,profiling}.js
-          rm $RENDERER_FOLDER/ReactNativeRenderer-{dev,prod,profiling}.js
 
           # Copy eslint-plugin-react-hooks
           # NOTE: This is different from www, here we include the full package
@@ -291,7 +292,7 @@ jobs:
           git config --global user.name "${{ github.triggering_actor }}"
 
           git fetch origin --quiet
-          git commit -m "$(git show ${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }} --no-patch --pretty=format:'%B%n%nDiffTrain build for [${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }}](https://github.com/facebook/react/commit/${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha}})')" || echo "No changes to commit"
+          git commit -m "$(git show ${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }} --no-patch --pretty=format:'%B%n%nDiffTrain build for [${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }}](https://github.com/react/react/commit/${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha}})')" || echo "No changes to commit"
       - name: Push changes to branch
         if: inputs.dry_run == false && (inputs.force == true || steps.check_should_commit.outputs.should_commit == 'true')
         run: git push
@@ -465,7 +466,7 @@ jobs:
           git config --global user.name "${{ github.triggering_actor }}"
 
           git fetch origin --quiet
-          git commit -m "$(git show ${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }} --no-patch --pretty=format:'%B%n%nDiffTrain build for [${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }}](https://github.com/facebook/react/commit/${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha}})')" || echo "No changes to commit"
+          git commit -m "$(git show ${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }} --no-patch --pretty=format:'%B%n%nDiffTrain build for [${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha }}](https://github.com/react/react/commit/${{ inputs.commit_sha || github.event.workflow_run.head_sha || github.sha}})')" || echo "No changes to commit"
       - name: Push changes to branch
         if: inputs.dry_run == false && (inputs.force == true || steps.check_should_commit.outputs.should_commit == 'true')
         run: git push

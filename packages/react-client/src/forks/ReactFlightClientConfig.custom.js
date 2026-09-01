@@ -35,6 +35,7 @@ export const resolveClientReference = $$$config.resolveClientReference;
 export const resolveServerReference = $$$config.resolveServerReference;
 export const preloadModule = $$$config.preloadModule;
 export const requireModule = $$$config.requireModule;
+export const getModuleDebugInfo = $$$config.getModuleDebugInfo;
 export const dispatchHint = $$$config.dispatchHint;
 export const prepareDestinationForModule =
   $$$config.prepareDestinationForModule;
@@ -52,3 +53,6 @@ export const bindToConsole = $$$config.bindToConsole;
 
 export const rendererVersion = $$$config.rendererVersion;
 export const rendererPackageName = $$$config.rendererPackageName;
+
+export const checkEvalAvailabilityOnceDev =
+  $$$config.checkEvalAvailabilityOnceDev;

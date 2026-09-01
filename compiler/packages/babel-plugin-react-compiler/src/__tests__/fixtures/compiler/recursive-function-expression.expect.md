@@ -43,12 +43,14 @@ function Component1() {
       if (x_0 == 0) {
         return null;
       }
+
       return callback(x_0 - 1);
     }
     $[0] = x;
   } else {
     x = $[0];
   }
+
   return x;
 }
 
@@ -62,7 +64,6 @@ function Component() {
       }
       return callback(x - 1);
     }
-
     t0 = callback(10);
     $[0] = t0;
   } else {

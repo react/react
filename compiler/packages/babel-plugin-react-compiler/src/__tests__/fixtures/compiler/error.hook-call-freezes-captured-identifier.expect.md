@@ -29,10 +29,17 @@ export const FIXTURE_ENTRYPOINT = {
 ## Error
 
 ```
+Found 1 error:
+
+Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+error.hook-call-freezes-captured-identifier.ts:13:2
   11 |   });
   12 |
 > 13 |   x.value += count;
-     |   ^ InvalidReact: This mutates a variable that React considers immutable (13:13)
+     |   ^ value cannot be modified
   14 |   return <Stringify x={x} cb={cb} />;
   15 | }
   16 |

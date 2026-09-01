@@ -59,7 +59,6 @@ function Component(props) {
       if (isLoadingNext) {
         return;
       }
-
       loadMoreWithTiming();
     };
     t2 = [isLoadingNext, loadMoreWithTiming];
@@ -81,6 +80,7 @@ function Component(props) {
     t3 = $[8];
   }
   const items = t3;
+
   return items;
 }
 function _temp(x) {

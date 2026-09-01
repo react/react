@@ -24,6 +24,7 @@ export const FIXTURE_ENTRYPOINT = {
 ```javascript
 function foo() {
   while (true) {}
+
   return 1;
 }
 

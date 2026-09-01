@@ -37,15 +37,13 @@ import { useMemo } from "react";
 function useHook(x) {
   const $ = _c(2);
   let t0;
-  let t1;
   if ($[0] !== x.y.z) {
-    t1 = [x.y.z];
+    t0 = [x.y.z];
     $[0] = x.y.z;
-    $[1] = t1;
+    $[1] = t0;
   } else {
-    t1 = $[1];
+    t0 = $[1];
   }
-  t0 = t1;
   return t0;
 }
 

@@ -12,6 +12,7 @@ export const rendererPackageName = 'react-server-dom-turbopack';
 
 export * from 'react-client/src/ReactFlightClientStreamConfigNode';
 export * from 'react-client/src/ReactClientConsoleConfigServer';
+export * from 'react-client/src/ReactClientDebugConfigNode';
 export * from 'react-server-dom-turbopack/src/client/ReactFlightClientConfigBundlerTurbopack';
 export * from 'react-server-dom-turbopack/src/client/ReactFlightClientConfigBundlerTurbopackServer';
 export * from 'react-server-dom-turbopack/src/client/ReactFlightClientConfigTargetTurbopackServer';

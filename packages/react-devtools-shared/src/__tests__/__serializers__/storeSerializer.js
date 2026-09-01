@@ -12,8 +12,8 @@ export function test(maybeStore) {
 }
 
 // print() is part of Jest's serializer API
-export function print(store, serialize, indent) {
-  return printStore(store);
+export function print(store, serialize, indent, includeSuspense = true) {
+  return printStore(store, false, null, includeSuspense);
 }
 
 // Used for Jest snapshot testing.

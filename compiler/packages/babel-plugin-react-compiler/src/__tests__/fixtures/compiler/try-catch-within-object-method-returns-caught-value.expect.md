@@ -44,7 +44,6 @@ function Component(props) {
         }
       },
     };
-
     t0 = object.foo();
     $[0] = props;
     $[1] = t0;

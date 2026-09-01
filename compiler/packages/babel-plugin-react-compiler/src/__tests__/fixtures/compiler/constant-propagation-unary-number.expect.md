@@ -48,7 +48,6 @@ function foo() {
           true,
           -Infinity,
           -NaN,
-
           -1 * NaN,
           -1 * Infinity,
           -1 * -Infinity,

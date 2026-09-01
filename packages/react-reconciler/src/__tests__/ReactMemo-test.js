@@ -373,137 +373,20 @@ describe('memo', () => {
         expect(ReactNoop).toMatchRenderedOutput(<span prop="1!" />);
       });
 
-      // @gate !disableDefaultPropsExceptForClasses
-      it('supports defaultProps defined on the memo() return value', async () => {
-        function Counter({a, b, c, d, e}) {
-          return <Text text={a + b + c + d + e} />;
-        }
-        Counter.defaultProps = {
-          a: 1,
-        };
-        // Note! We intentionally use React.memo() rather than the injected memo().
-        // This tests a synchronous chain of React.memo() without lazy() in the middle.
-        Counter = React.memo(Counter);
-        Counter.defaultProps = {
-          b: 2,
-        };
-        Counter = React.memo(Counter);
-        Counter = React.memo(Counter); // Layer without defaultProps
-        Counter.defaultProps = {
-          c: 3,
-        };
-        Counter = React.memo(Counter);
-        Counter.defaultProps = {
-          d: 4,
-        };
-        // The final layer uses memo() from test fixture (which might be lazy).
-        Counter = memo(Counter);
-
-        await act(() => {
-          ReactNoop.render(
-            <Suspense fallback={<Text text="Loading..." />}>
-              <Counter e={5} />
-            </Suspense>,
-          );
-        });
-        assertLog(['Loading...', 15]);
-        if (label === 'lazy') {
-          assertConsoleErrorDev(
-            [
-              'Counter: Support for defaultProps will be removed from memo components in a future major release. ' +
-                'Use JavaScript default parameters instead.',
-            ],
-            {withoutStack: true},
-          );
-        } else {
-          assertConsoleErrorDev([
-            'Counter: Support for defaultProps will be removed from memo components in a future major release. ' +
-              'Use JavaScript default parameters instead.\n' +
-              '    in Indirection (at **)',
-          ]);
-        }
-
-        expect(ReactNoop).toMatchRenderedOutput(<span prop={15} />);
-
-        // Should bail out because props have not changed
-        ReactNoop.render(
-          <Suspense>
-            <Counter e={5} />
-          </Suspense>,
-        );
-        await waitForAll([]);
-        expect(ReactNoop).toMatchRenderedOutput(<span prop={15} />);
-
-        // Should update because count prop changed
-        ReactNoop.render(
-          <Suspense>
-            <Counter e={10} />
-          </Suspense>,
-        );
-        await waitForAll([20]);
-        expect(ReactNoop).toMatchRenderedOutput(<span prop={20} />);
-      });
-
       it('warns if the first argument is undefined', () => {
         memo();
-        assertConsoleErrorDev(
-          [
-            'memo: The first argument must be a component. Instead ' +
-              'received: undefined',
-          ],
-          {withoutStack: true},
-        );
+        assertConsoleErrorDev([
+          'memo: The first argument must be a component. Instead ' +
+            'received: undefined',
+        ]);
       });
 
       it('warns if the first argument is null', () => {
         memo(null);
-        assertConsoleErrorDev(
-          [
-            'memo: The first argument must be a component. Instead ' +
-              'received: null',
-          ],
-          {withoutStack: true},
-        );
-      });
-
-      // @gate !disableDefaultPropsExceptForClasses
-      it('handles nested defaultProps declarations', async () => {
-        function Inner(props) {
-          return props.inner + props.middle + props.outer;
-        }
-        Inner.defaultProps = {inner: 1};
-        const Middle = React.memo(Inner);
-        Middle.defaultProps = {middle: 10};
-        const Outer = React.memo(Middle);
-        Outer.defaultProps = {outer: 100};
-
-        const root = ReactNoop.createRoot();
-        await act(() => {
-          root.render(
-            <div>
-              <Outer />
-            </div>,
-          );
-        });
-        assertConsoleErrorDev(
-          [
-            'Inner: ' +
-              'Support for defaultProps will be removed from memo components in a future major release. ' +
-              'Use JavaScript default parameters instead.',
-          ],
-          {withoutStack: true},
-        );
-        expect(root).toMatchRenderedOutput(<div>111</div>);
-
-        await act(async () => {
-          root.render(
-            <div>
-              <Outer inner="2" middle="3" outer="4" />
-            </div>,
-          );
-          await waitForAll([]);
-        });
-        expect(root).toMatchRenderedOutput(<div>234</div>);
+        assertConsoleErrorDev([
+          'memo: The first argument must be a component. Instead ' +
+            'received: null',
+        ]);
       });
 
       it('does not drop lower priority state updates when bailing out at higher pri (simple)', async () => {

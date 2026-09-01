@@ -51,6 +51,7 @@ function usePromoteUnconditionalAccessToDependency(props, other) {
   } else {
     x = $[3];
   }
+
   return x;
 }
 

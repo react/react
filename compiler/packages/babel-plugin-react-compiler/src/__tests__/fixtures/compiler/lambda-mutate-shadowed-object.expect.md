@@ -37,6 +37,7 @@ function Component() {
   };
 
   fn();
+
   return x;
 }
 

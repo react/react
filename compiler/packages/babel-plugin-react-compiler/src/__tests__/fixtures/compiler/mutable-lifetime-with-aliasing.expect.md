@@ -74,18 +74,22 @@ function Component(props) {
     const b = [a];
     const c = {};
     const d = { c };
-
     x = {};
     x.b = b;
     const y = mutate(x, d);
+
     if (a) {
     }
+
     if (b) {
     }
+
     if (c) {
     }
+
     if (d) {
     }
+
     if (y) {
     }
 
