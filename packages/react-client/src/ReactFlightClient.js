@@ -197,6 +197,7 @@ type BlockedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _receivedDebugInfo: null | Set<ReactDebugInfoEntry>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type ResolvedModelChunk<T> = {
@@ -276,6 +277,7 @@ function ReactPromise(status: any, value: any, reason: any) {
   if (__DEV__) {
     this._debugChunk = null;
     this._debugInfo = [];
+    this._receivedDebugInfo = null;
   }
 }
 // We subclass Promise.prototype so that we get other methods like .catch
@@ -1170,6 +1172,10 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
         return;
       }
     }
+    if (__DEV__) {
+      // Only a blocked chunk receives debug info, so release the set here.
+      cyclicChunk._receivedDebugInfo = null;
+    }
     const initializedChunk: InitializedChunk<T> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = value;
@@ -1771,7 +1777,7 @@ function fulfillReference(
       const element: any = handler.value;
       switch (key) {
         case '3':
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           element.props = mappedValue;
@@ -1789,7 +1795,7 @@ function fulfillReference(
           }
           break;
         default:
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           break;
@@ -1810,6 +1816,10 @@ function fulfillReference(
       return;
     }
     const resolveListeners = chunk.value;
+    if (__DEV__) {
+      // Only a blocked chunk receives debug info, so release the set here.
+      chunk._receivedDebugInfo = null;
+    }
     const initializedChunk: InitializedChunk<any> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = handler.value;
@@ -2148,25 +2158,37 @@ function resolveLazy(value: any): mixed {
 }
 
 function transferReferencedDebugInfo(
-  parentChunk: null | SomeChunk<any>,
+  receivingChunk: null | BlockedChunk<any>,
   referencedChunk: SomeChunk<any>,
 ): void {
   if (__DEV__) {
-    // We add the debug info to the initializing chunk since the resolution of
-    // that promise is also blocked by the referenced debug info. By adding it
-    // to both we can track it even if the array/element/lazy is extracted, or
-    // if the root is rendered as is.
-    if (parentChunk !== null) {
+    // We add the debug info to the receiving chunk since the resolution of that
+    // promise is also blocked by the referenced debug info. By adding it to
+    // both we can track it even if the array/element/lazy is extracted, or if
+    // the root is rendered as is.
+    if (receivingChunk !== null) {
       const referencedDebugInfo = referencedChunk._debugInfo;
-      const parentDebugInfo = parentChunk._debugInfo;
+      const receivingDebugInfo = receivingChunk._debugInfo;
+      // The receiving chunk takes each entry only once. A repeated entry
+      // carries no information. An entry repeats in two ways:
+      //
+      // - the receiving chunk references the same chunk more than once
+      // - two referenced chunks carry the same entry
+      //
+      // Without the set, the entries multiply along a chain of references.
+      let receivedDebugInfo = receivingChunk._receivedDebugInfo;
+      if (receivedDebugInfo === null) {
+        receivedDebugInfo = receivingChunk._receivedDebugInfo = new Set();
+      }
       for (let i = 0; i < referencedDebugInfo.length; ++i) {
         const debugInfoEntry = referencedDebugInfo[i];
         if (debugInfoEntry.name != null) {
           debugInfoEntry as ReactComponentInfo;
           // We're not transferring Component info since we use Component info
           // in Debug info to fill in gaps between Fibers for the parent stack.
-        } else {
-          parentDebugInfo.push(debugInfoEntry);
+        } else if (!receivedDebugInfo.has(debugInfoEntry)) {
+          receivedDebugInfo.add(debugInfoEntry);
+          receivingDebugInfo.push(debugInfoEntry);
         }
       }
     }
