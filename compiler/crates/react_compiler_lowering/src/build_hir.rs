@@ -6422,74 +6422,82 @@ fn lower_jsx_element(
     }
 }
 
-/// Split a string on line endings, handling \r\n, \n, and \r.
-fn split_line_endings(s: &str) -> Vec<&str> {
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\r' {
-            lines.push(&s[start..i]);
-            if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                i += 2;
+/// Split a string on line endings, handling \r\n, \n, and \r without allocating.
+/// The second tuple element is the byte length of the line ending.
+fn split_line_endings(s: &str) -> impl Iterator<Item = (&str, usize)> {
+    let mut remaining = Some(s);
+    std::iter::from_fn(move || {
+        let line = remaining.take()?;
+        let bytes = line.as_bytes();
+        let end = bytes.iter().position(|byte| matches!(byte, b'\r' | b'\n'));
+        if let Some(end) = end {
+            let line_ending_len = if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+                2
             } else {
-                i += 1;
-            }
-            start = i;
-        } else if bytes[i] == b'\n' {
-            lines.push(&s[start..i]);
-            i += 1;
-            start = i;
+                1
+            };
+            remaining = Some(&line[end + line_ending_len..]);
+            Some((&line[..end], line_ending_len))
         } else {
-            i += 1;
+            Some((line, 0))
         }
-    }
-    lines.push(&s[start..]);
-    lines
+    })
 }
 
 /// Trims whitespace according to the JSX spec.
 /// Implementation ported from Babel's cleanJSXElementLiteralChild.
 fn trim_jsx_text(original: &str) -> Option<String> {
-    // Split on \r\n, \n, or \r to handle all line ending styles (matching TS split(/\r\n|\n|\r/))
-    let lines: Vec<&str> = split_line_endings(original);
+    if !original
+        .bytes()
+        .any(|byte| matches!(byte, b'\r' | b'\n' | b'\t'))
+    {
+        return (!original.is_empty()).then(|| original.to_string());
+    }
+
+    // Split on \r\n, \n, or \r to handle all line ending styles (matching TS split(/\r\n|\n|\r/)).
+    let mut line_count = 0;
+    let mut last_non_empty_line = None;
+    for (i, (line, _)) in split_line_endings(original).enumerate() {
+        line_count += 1;
+        if line.bytes().any(|byte| !matches!(byte, b' ' | b'\t')) {
+            last_non_empty_line = Some(i);
+        }
+    }
+    let last_non_empty_line = match last_non_empty_line {
+        Some(line) => line,
+        None if line_count == 1 => 0,
+        None => return None,
+    };
 
     // NOTE: when builder.fbt_depth > 0, the TS skips whitespace trimming entirely.
     // That check is handled by the caller (lower_jsx_element) before calling this function.
 
-    let mut last_non_empty_line = 0;
-    for (i, line) in lines.iter().enumerate() {
-        if line.contains(|c: char| c != ' ' && c != '\t') {
-            last_non_empty_line = i;
-        }
-    }
-
     let mut str = String::new();
 
-    for (i, line) in lines.iter().enumerate() {
+    for (i, (line, _)) in split_line_endings(original).enumerate() {
         let is_first_line = i == 0;
-        let is_last_line = i == lines.len() - 1;
+        let is_last_line = i == line_count - 1;
         let is_last_non_empty_line = i == last_non_empty_line;
 
-        // Replace rendered whitespace tabs with spaces
-        let mut trimmed_line = line.replace('\t', " ");
+        let mut trimmed_line = line;
 
         // Trim whitespace touching a newline (leading whitespace on non-first lines)
         if !is_first_line {
-            trimmed_line = trimmed_line.trim_start_matches(' ').to_string();
+            trimmed_line = trimmed_line.trim_start_matches([' ', '\t']);
         }
 
         // Trim whitespace touching an endline (trailing whitespace on non-last lines)
         if !is_last_line {
-            trimmed_line = trimmed_line.trim_end_matches(' ').to_string();
+            trimmed_line = trimmed_line.trim_end_matches([' ', '\t']);
         }
 
         if !trimmed_line.is_empty() {
-            if !is_last_non_empty_line {
-                trimmed_line.push(' ');
+            for c in trimmed_line.chars() {
+                str.push(if c == '\t' { ' ' } else { c });
             }
-            str.push_str(&trimmed_line);
+            if !is_last_non_empty_line {
+                str.push(' ');
+            }
         }
     }
 

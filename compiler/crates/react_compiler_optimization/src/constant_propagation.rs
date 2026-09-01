@@ -560,14 +560,22 @@ fn evaluate_instruction(
             loc,
         } => {
             if subexprs.is_empty() {
-                // No subexpressions: join all cooked quasis
-                let mut result_string = String::new();
-                for q in quasis {
-                    match &q.cooked {
-                        Some(cooked) => result_string.push_str(cooked),
-                        None => return None,
+                // A template without substitutions normally has one quasi.
+                let result_string = match quasis.as_slice() {
+                    [] => String::new(),
+                    [quasi] => quasi.cooked.clone()?,
+                    quasis => {
+                        let capacity = quasis
+                            .iter()
+                            .map(|quasi| quasi.cooked.as_ref().map(String::len))
+                            .sum::<Option<usize>>()?;
+                        let mut result = String::with_capacity(capacity);
+                        for quasi in quasis {
+                            result.push_str(quasi.cooked.as_ref().unwrap());
+                        }
+                        result
                     }
-                }
+                };
                 let loc = *loc;
                 let result = Constant::Primitive {
                     value: PrimitiveValue::String(JsString::from_marker_string(&result_string)),
@@ -589,33 +597,33 @@ fn evaluate_instruction(
             }
 
             let mut quasi_index = 0usize;
-            let mut result_string = quasis[quasi_index].cooked.as_ref().unwrap().clone();
+            let mut result_string = String::new();
+            result_string.push_str(quasis[quasi_index].cooked.as_ref().unwrap());
             quasi_index += 1;
 
             for sub_expr in subexprs {
-                let sub_expr_value = read(constants, sub_expr);
-                let sub_prim = match sub_expr_value {
-                    Some(Constant::Primitive { ref value, .. }) => value,
-                    _ => return None,
+                let Some(Constant::Primitive { value, .. }) = constants.get(&sub_expr.identifier)
+                else {
+                    return None;
                 };
-
-                let expression_str = match sub_prim {
-                    PrimitiveValue::Null => "null".to_string(),
-                    PrimitiveValue::Boolean(b) => b.to_string(),
-                    PrimitiveValue::Number(n) => format_js_number(n.value()),
-                    PrimitiveValue::String(s) => s.to_marker_string(),
-                    // TS rejects undefined subexpression values
+                match value {
+                    PrimitiveValue::Null => result_string.push_str("null"),
+                    PrimitiveValue::Boolean(value) => {
+                        result_string.push_str(if *value { "true" } else { "false" });
+                    }
+                    PrimitiveValue::Number(value) => {
+                        result_string.push_str(&format_js_number(value.value()));
+                    }
+                    PrimitiveValue::String(value) => {
+                        result_string.push_str(&value.to_marker_string());
+                    }
                     PrimitiveValue::Undefined => return None,
-                };
+                }
 
-                let suffix = match &quasis[quasi_index].cooked {
-                    Some(s) => s.clone(),
-                    None => return None,
-                };
+                let suffix = quasis[quasi_index].cooked.as_ref().unwrap();
                 quasi_index += 1;
 
-                result_string.push_str(&expression_str);
-                result_string.push_str(&suffix);
+                result_string.push_str(suffix);
             }
 
             let loc = *loc;
