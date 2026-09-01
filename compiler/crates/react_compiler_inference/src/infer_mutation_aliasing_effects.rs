@@ -13,6 +13,7 @@
 
 use indexmap::IndexMap;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use std::rc::Rc;
 
 use react_compiler_diagnostics::CompilerDiagnostic;
 use react_compiler_diagnostics::CompilerDiagnosticDetail;
@@ -123,10 +124,10 @@ pub fn infer_mutation_aliasing_effects(
         block_id: BlockId,
         state: InferenceState,
     ) {
-        if let Some(queued_state) = queued_states.get(&block_id) {
-            let merged = queued_state.merge(&state);
-            let new_state = merged.unwrap_or_else(|| queued_state.clone());
-            queued_states.insert(block_id, new_state);
+        if let Some(queued_state) = queued_states.get_mut(&block_id) {
+            // Merge in place: same contents (and iteration order) as replacing
+            // the entry with `merge`'s result, without cloning the whole state.
+            queued_state.merge_from(&state);
         } else {
             let prev_state = states_by_block.get(&block_id);
             if let Some(prev) = prev_state {
@@ -163,6 +164,30 @@ pub fn infer_mutation_aliasing_effects(
         aliasing_config_temp_cache: FxHashMap::default(),
     };
 
+    // `states_by_block` is only ever read when a block is queued again after it
+    // was already processed, which requires a CFG cycle. If every edge targets a
+    // strictly later block in the map, the graph is acyclic and one pass over the
+    // blocks suffices, so skip the per-block state snapshots. Reverse postorder
+    // (the stored order) only makes this test precise for acyclic CFGs; soundness
+    // needs no ordering assumption, and a successor missing from the map counts
+    // as a back edge to stay conservative. The scan cannot go stale: `infer_block`
+    // rewrites only terminal effects, never successor ids.
+    let has_back_edge = func
+        .body
+        .blocks
+        .iter()
+        .enumerate()
+        .any(|(index, (_, block))| {
+            terminal_successors(&block.terminal)
+                .into_iter()
+                .any(
+                    |successor| match func.body.blocks.get_index_of(&successor) {
+                        Some(successor_index) => successor_index <= index,
+                        None => true,
+                    },
+                )
+        });
+
     let mut iteration_count = 0;
 
     while !queued_states.is_empty() {
@@ -184,7 +209,9 @@ pub fn infer_mutation_aliasing_effects(
                 None => continue,
             };
 
-            states_by_block.insert(block_id, incoming_state.clone());
+            if has_back_edge {
+                states_by_block.insert(block_id, incoming_state.clone());
+            }
             let mut state = incoming_state;
 
             infer_block(&mut context, &mut state, block_id, func, env)?;
@@ -220,15 +247,21 @@ pub fn infer_mutation_aliasing_effects(
                 return Err(diag);
             }
 
-            // Queue successors
+            // Queue successors. Every successor receives the same post-block state;
+            // the last one takes it by move instead of by clone.
             let successors = terminal_successors(&func.body.blocks[&block_id].terminal);
-            for next_block_id in successors {
-                queue(
-                    &mut queued_states,
-                    &states_by_block,
-                    next_block_id,
-                    state.clone(),
-                );
+            let mut successors = successors.into_iter();
+            if let Some(mut next_block_id) = successors.next() {
+                for later_block_id in successors {
+                    queue(
+                        &mut queued_states,
+                        &states_by_block,
+                        next_block_id,
+                        state.clone(),
+                    );
+                    next_block_id = later_block_id;
+                }
+                queue(&mut queued_states, &states_by_block, next_block_id, state);
             }
         }
     }
@@ -347,15 +380,22 @@ impl ValueReasonSet {
 // =============================================================================
 
 /// The abstract state tracked during inference.
-/// Uses interior mutability via a struct with direct fields (no Rc needed since
-/// we always have exclusive access in the pass).
+/// The pass has exclusive access to each state (interior mutability only via
+/// the `uninitialized_access` Cell); the one shared piece is the immutable
+/// per-variable value sets (see `variables`).
 #[derive(Debug, Clone)]
 struct InferenceState {
     is_function_expression: bool,
     /// The kind of each value, based on its allocation site
     values: FxHashMap<ValueId, AbstractValue>,
-    /// The set of values pointed to by each identifier
-    variables: FxHashMap<IdentifierId, FxHashSet<ValueId>>,
+    /// The set of values pointed to by each identifier. The sets are shared via
+    /// `Rc`: every write to the map replaces the whole entry (sets are never
+    /// mutated in place), so state clones and assignments bump a refcount
+    /// instead of deep-copying each set. Shared sets iterate the very table a
+    /// deep clone would have copied; freshly built union/phi/singleton sets are
+    /// constructed by the same insert sequence as before. Either way iteration
+    /// order is unchanged.
+    variables: FxHashMap<IdentifierId, Rc<FxHashSet<ValueId>>>,
     /// Tracks uninitialized identifier access errors (matches TS invariant).
     /// Uses Cell so it can be set from `&self` methods like `kind()`.
     /// Stores (IdentifierId, usage_loc) where usage_loc is the source location
@@ -392,7 +432,7 @@ impl InferenceState {
             }
         };
         let mut merged_kind: Option<AbstractValue> = None;
-        for value_id in values {
+        for value_id in values.iter() {
             let kind = match self.values.get(value_id) {
                 Some(k) => k,
                 None => continue,
@@ -415,12 +455,12 @@ impl InferenceState {
     fn define(&mut self, place_id: IdentifierId, value_id: ValueId) {
         let mut set = FxHashSet::default();
         set.insert(value_id);
-        self.variables.insert(place_id, set);
+        self.variables.insert(place_id, Rc::new(set));
     }
 
     fn assign(&mut self, into: IdentifierId, from: IdentifierId) {
         let values = match self.variables.get(&from) {
-            Some(v) => v.clone(),
+            Some(v) => Rc::clone(v),
             None => {
                 // Create a stable value for uninitialized identifiers
                 // Use a deterministic ID based on the from identifier
@@ -436,7 +476,7 @@ impl InferenceState {
                         },
                     );
                 }
-                set
+                Rc::new(set)
             }
         };
         self.variables.insert(into, values);
@@ -444,15 +484,15 @@ impl InferenceState {
 
     fn append_alias(&mut self, place: IdentifierId, value: IdentifierId) {
         let new_values = match self.variables.get(&value) {
-            Some(v) => v.clone(),
+            Some(v) => Rc::clone(v),
             None => return,
         };
         let prev_values = match self.variables.get(&place) {
-            Some(v) => v.clone(),
+            Some(v) => Rc::clone(v),
             None => return,
         };
         let merged: FxHashSet<ValueId> = prev_values.union(&new_values).copied().collect();
-        self.variables.insert(place, merged);
+        self.variables.insert(place, Rc::new(merged));
     }
 
     fn is_defined(&self, place_id: IdentifierId) -> bool {
@@ -470,7 +510,7 @@ impl InferenceState {
     fn kind_opt(&self, place_id: IdentifierId) -> Option<AbstractValue> {
         let values = self.variables.get(&place_id)?;
         let mut merged_kind: Option<AbstractValue> = None;
-        for value_id in values {
+        for value_id in values.iter() {
             let kind = self.values.get(value_id)?;
             merged_kind = Some(match merged_kind {
                 Some(prev) => merge_abstract_values(&prev, kind),
@@ -558,7 +598,7 @@ impl InferenceState {
 
     fn merge(&self, other: &InferenceState) -> Option<InferenceState> {
         let mut next_values: Option<FxHashMap<ValueId, AbstractValue>> = None;
-        let mut next_variables: Option<FxHashMap<IdentifierId, FxHashSet<ValueId>>> = None;
+        let mut next_variables: Option<FxHashMap<IdentifierId, Rc<FxHashSet<ValueId>>>> = None;
 
         // Merge values present in both
         for (id, this_value) in &self.values {
@@ -582,27 +622,19 @@ impl InferenceState {
 
         // Merge variables present in both
         for (id, this_values) in &self.variables {
-            if let Some(other_values) = other.variables.get(id) {
-                let mut has_new = false;
-                for ov in other_values {
-                    if !this_values.contains(ov) {
-                        has_new = true;
-                        break;
-                    }
-                }
-                if has_new {
-                    let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                    let merged: FxHashSet<ValueId> =
-                        this_values.union(other_values).copied().collect();
-                    nvars.insert(*id, merged);
-                }
+            if let Some(other_values) = other.variables.get(id)
+                && contributes_new_value(this_values, other_values)
+            {
+                let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
+                let merged: FxHashSet<ValueId> = this_values.union(other_values).copied().collect();
+                nvars.insert(*id, Rc::new(merged));
             }
         }
         // Add variables only in other
         for (id, other_values) in &other.variables {
             if !self.variables.contains_key(id) {
                 let nvars = next_variables.get_or_insert_with(|| self.variables.clone());
-                nvars.insert(*id, other_values.clone());
+                nvars.insert(*id, Rc::clone(other_values));
             }
         }
 
@@ -618,6 +650,51 @@ impl InferenceState {
         }
     }
 
+    /// In-place variant of [`InferenceState::merge`] for updating an
+    /// already-queued state: applies the same per-entry updates directly to
+    /// `self` instead of building a replacement state. Because `FxHashMap`'s
+    /// `clone` preserves table layout, this leaves `self` with exactly the same
+    /// contents and iteration order as `merge` + reinsert would. Like
+    /// `merge`'s result, the access flag ends up cleared (queued states never
+    /// carry a set flag: a set flag errors out before the state is queued).
+    fn merge_from(&mut self, other: &InferenceState) {
+        for (id, other_value) in &other.values {
+            match self.values.get(id) {
+                Some(this_value) => {
+                    let merged = merge_abstract_values(this_value, other_value);
+                    if merged.kind != this_value.kind
+                        || !this_value.reason.is_superset_of(&merged.reason)
+                    {
+                        self.values.insert(*id, merged);
+                    }
+                }
+                None => {
+                    self.values.insert(*id, *other_value);
+                }
+            }
+        }
+
+        for (id, other_values) in &other.variables {
+            match self.variables.get(id) {
+                Some(this_values) => {
+                    if contributes_new_value(this_values, other_values) {
+                        // Build the union as a fresh set exactly like `merge`, so
+                        // the resulting iteration order matches.
+                        let merged = this_values.union(other_values).copied().collect();
+                        self.variables.insert(*id, Rc::new(merged));
+                    }
+                }
+                None => {
+                    self.variables.insert(*id, Rc::clone(other_values));
+                }
+            }
+        }
+
+        // `merge` builds its result with a cleared access flag.
+        debug_assert!(self.uninitialized_access.get().is_none());
+        self.uninitialized_access.set(None);
+    }
+
     fn infer_phi(
         &mut self,
         phi_place_id: IdentifierId,
@@ -626,16 +703,22 @@ impl InferenceState {
         let mut values: FxHashSet<ValueId> = FxHashSet::default();
         for (_, operand) in phi_operands {
             if let Some(operand_values) = self.variables.get(&operand.identifier) {
-                for v in operand_values {
+                for v in operand_values.iter() {
                     values.insert(*v);
                 }
             }
             // If not found, it's a backedge that will be handled later by merge
         }
         if !values.is_empty() {
-            self.variables.insert(phi_place_id, values);
+            self.variables.insert(phi_place_id, Rc::new(values));
         }
     }
+}
+
+/// Whether `other` holds a value that `this` lacks. The sets are immutable and
+/// shared, so an identical allocation can contribute nothing new.
+fn contributes_new_value(this: &Rc<FxHashSet<ValueId>>, other: &Rc<FxHashSet<ValueId>>) -> bool {
+    !Rc::ptr_eq(this, other) && other.iter().any(|value| !this.contains(value))
 }
 
 #[derive(Debug, Clone, Copy)]
