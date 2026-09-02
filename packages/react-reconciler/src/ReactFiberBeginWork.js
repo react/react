@@ -180,6 +180,7 @@ import {
   getResource,
   createHoistableInstance,
   HostTransitionContext,
+  NotPendingTransition,
 } from './ReactFiberConfig';
 import type {ActivityInstance, SuspenseInstance} from './ReactFiberConfig';
 import {shouldError, shouldSuspend} from './ReactFiberReconciler';
@@ -224,6 +225,8 @@ import {
   bailoutHooks,
   replaySuspendedComponentWithHooks,
   renderTransitionAwareHostComponentWithHooks,
+  bindOwnedHostTransitionStatusDependencies,
+  warnIfOwnedHostTransitionStatusIsAmbiguous,
 } from './ReactFiberHooks';
 import {stopProfilerTimerIfRunning} from './ReactProfilerTimer';
 import {
@@ -1558,7 +1561,25 @@ function updateFunctionComponent(
   // React DevTools reads this flag.
   workInProgress.flags |= PerformedWork;
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  bindOwnedHostTransitionStatusToDirectForms(
+    workInProgress,
+    workInProgress.child,
+  );
   return workInProgress.child;
+}
+
+function bindOwnedHostTransitionStatusToDirectForms(
+  owner: Fiber,
+  child: Fiber | null,
+): void {
+  let node = child;
+  while (node !== null) {
+    if (node.tag === HostComponent && node.type === 'form') {
+      bindOwnedHostTransitionStatusDependencies(owner, node);
+    }
+    node = node.sibling;
+  }
+  warnIfOwnedHostTransitionStatusIsAmbiguous(owner);
 }
 
 export function replayFunctionComponent(
@@ -2006,6 +2027,23 @@ function updateHostComponent(
       workInProgress,
       renderLanes,
     );
+
+    // If the transition state changed compared to what was last committed,
+    // schedule a commit-phase notification for function components that
+    // observe this form's status through an owned host status dependency,
+    // i.e. components that returned this form directly. They live above this
+    // fiber, so context propagation doesn't reach them, and they cannot be
+    // notified during render because this render attempt may never commit.
+    // Callback is otherwise unused on host components and is part of the
+    // layout effect mask, which guarantees the commit phase visits this
+    // fiber even when nothing else in the subtree changed.
+    const oldState =
+      current !== null && current.memoizedState !== null
+        ? current.memoizedState.memoizedState
+        : NotPendingTransition;
+    if (oldState !== newState) {
+      workInProgress.flags |= Callback;
+    }
 
     // If the transition state changed, propagate the change to all the
     // descendents. We use Context as an implementation detail for this.
