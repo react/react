@@ -320,8 +320,9 @@ pub fn each_instruction_value_operand_with_functions(
                 result.push(ctx_place.clone());
             }
         }
-        InstructionValue::TaggedTemplateExpression { tag, .. } => {
+        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
             result.push(tag.clone());
+            result.extend(subexprs.iter().cloned());
         }
         InstructionValue::TypeCastExpression { value: val, .. } => {
             result.push(val.clone());
@@ -760,8 +761,9 @@ pub fn map_instruction_value_operands(
             let func = &mut env.functions[lowered_func.func.0 as usize];
             func.context = func.context.iter().map(|d| f(d.clone())).collect();
         }
-        InstructionValue::TaggedTemplateExpression { tag, .. } => {
+        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
             *tag = f(tag.clone());
+            *subexprs = subexprs.iter().map(|subexpr| f(subexpr.clone())).collect();
         }
         InstructionValue::TypeCastExpression { value: val, .. } => {
             *val = f(val.clone());
@@ -1597,8 +1599,11 @@ pub fn for_each_instruction_value_operand_mut(
         InstructionValue::FunctionExpression { .. } | InstructionValue::ObjectMethod { .. } => {
             // Context places require env access — callers handle separately.
         }
-        InstructionValue::TaggedTemplateExpression { tag, .. } => {
+        InstructionValue::TaggedTemplateExpression { tag, subexprs, .. } => {
             f(tag);
+            for subexpr in subexprs {
+                f(subexpr);
+            }
         }
         InstructionValue::TypeCastExpression { value: val, .. } => {
             f(val);

@@ -2280,7 +2280,18 @@ function computeSignatureForInstruction(
       });
       break;
     }
-    case 'TaggedTemplateExpression':
+    case 'TaggedTemplateExpression': {
+      for (const operand of eachInstructionValueOperand(value)) {
+        operand.effect = Effect.Read;
+      }
+      effects.push({
+        kind: 'Create',
+        into: lvalue,
+        value: ValueKind.Primitive,
+        reason: ValueReason.Other,
+      });
+      break;
+    }
     case 'BinaryExpression':
     case 'Debugger':
     case 'JSXText':

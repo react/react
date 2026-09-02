@@ -1765,48 +1765,28 @@ fn lower_expression(
         }
         Expression::TaggedTemplateExpression(tagged) => {
             let loc = convert_opt_loc(&tagged.base.loc);
-            if !tagged.quasi.expressions.is_empty() {
-                builder.record_error(CompilerErrorDetail {
-                    category: ErrorCategory::Todo,
-                    reason:
-                        "(BuildHIR::lowerExpression) Handle tagged template with interpolations"
-                            .to_string(),
-                    description: None,
-                    loc: loc.clone(),
-                    suggestions: None,
-                })?;
-                return Ok(InstructionValue::UnsupportedNode {
-                    node_type: Some("TaggedTemplateExpression".to_string()),
-                    original_node: serialize_expression(expr),
-                    loc,
-                });
-            }
-            assert!(
-                tagged.quasi.quasis.len() == 1,
-                "there should be only one quasi as we don't support interpolations yet"
-            );
-            let quasi = &tagged.quasi.quasis[0];
-            // Check if raw and cooked values differ (e.g., graphql tagged templates)
-            if quasi.value.raw != quasi.value.cooked.clone().unwrap_or_default() {
-                builder.record_error(CompilerErrorDetail {
-                    category: ErrorCategory::Todo,
-                    reason: "(BuildHIR::lowerExpression) Handle tagged template where cooked value is different from raw value".to_string(),
-                    description: None,
-                    loc: loc.clone(),
-                    suggestions: None,
-                })?;
-                return Ok(InstructionValue::UnsupportedNode {
-                    node_type: Some("TaggedTemplateExpression".to_string()),
-                    original_node: serialize_expression(expr),
-                    loc,
-                });
-            }
-            let value = TemplateQuasi {
-                raw: quasi.value.raw.clone(),
-                cooked: quasi.value.cooked.clone(),
-            };
             let tag = lower_expression_to_temporary(builder, &tagged.tag)?;
-            Ok(InstructionValue::TaggedTemplateExpression { tag, value, loc })
+            let subexprs = tagged
+                .quasi
+                .expressions
+                .iter()
+                .map(|expression| lower_expression_to_temporary(builder, expression))
+                .collect::<Result<Vec<_>, _>>()?;
+            let quasis = tagged
+                .quasi
+                .quasis
+                .iter()
+                .map(|quasi| TemplateQuasi {
+                    raw: quasi.value.raw.clone(),
+                    cooked: quasi.value.cooked.clone(),
+                })
+                .collect();
+            Ok(InstructionValue::TaggedTemplateExpression {
+                tag,
+                subexprs,
+                quasis,
+                loc,
+            })
         }
         Expression::AwaitExpression(await_expr) => {
             let loc = convert_opt_loc(&await_expr.base.loc);
