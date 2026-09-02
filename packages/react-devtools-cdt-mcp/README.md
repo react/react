@@ -1,24 +1,32 @@
 # react-devtools-cdt-mcp
 
-Integrates React tools with
+Browser library that registers React inspection and profiling tools with
 [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp).
 
-Importing `react-devtools-cdt-mcp/register` **before React** installs the
-DevTools hook and registers a React tool group via chrome-devtools-mcp's
-`devtoolstooldiscovery` / `__dtmcp` third-party-tool protocol. The React tools
-then become discoverable and callable inside a chrome-devtools-mcp session — no
-separate server.
+This is **not** an MCP server and does not go in your MCP client config.
+Import it in the page under test; chrome-devtools-mcp discovers the React
+tools from the page.
+
+Third-party tools are experimental. They require **chrome-devtools-mcp 1.3.0+**
+and `--categoryExperimentalThirdParty=true`.
+
+## Install
+
+```sh
+npm install react-devtools-cdt-mcp
+```
 
 ## Usage
 
-Import the register entry **before** React so the hook is installed before
-React initializes:
+Import the register entry **before** React so the DevTools hook is installed
+before React initializes:
 
 ```js
 import 'react-devtools-cdt-mcp/register';
 import React from 'react';
 ```
 
+`react-devtools-cdt-mcp/register` throws outside a browser-like environment.
 The package root is side-effect-free and exports the lower-level API for custom
 targets:
 
@@ -26,10 +34,32 @@ targets:
 import {register, buildToolGroup} from 'react-devtools-cdt-mcp';
 ```
 
+## chrome-devtools-mcp setup
+
+Add the experimental third-party category to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--categoryExperimentalThirdParty=true"
+      ]
+    }
+  }
+}
+```
+
 When the page runs under chrome-devtools-mcp, the React tools are listed by
 `list_3p_developer_tools` and callable either via
 `execute_3p_developer_tool({toolName, params})` or directly via `evaluate_script`
 (`window.__dtmcp.executeTool(toolName, params)`).
+
+These tools can expose component props and hook values to the MCP client. Use
+them in local or otherwise trusted debugging sessions.
 
 ## Conventions
 
@@ -61,16 +91,18 @@ Detailed info for a single component.
 - **Output:** `{uid, type, name, key?, props?, hooks?}`. `props` excludes
   children and is normalized to a serialization-safe shape; when `includeHooks`
   is true, `hooks` (function, forwardRef, and memo components) is an array of
-  `{id, name, value, subHooks}`.
+  `{id, name, value, subHooks}`. Inspecting hooks re-renders the component's
+  render function; effects are not run.
 
 ### `react_get_component_by_dom_element`
 
-Detailed info for the React DOM component corresponding to a DOM element.
+Detailed info for the React host component corresponding to a DOM element
+(the host node itself, not the function component that rendered it).
 
 - **Input:** `element` (object, required). This is an opaque page-side DOM
   element reference. Chrome DevTools MCP clients pass this as
   `{uid: string}`, using an element uid from the page snapshot.
-- **Output:** `{uid, type, name, key?, props?, hooks?}`.
+- **Output:** `{uid, type, name, key?, props?}`.
 
 ### `react_find_components`
 
