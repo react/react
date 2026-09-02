@@ -2281,14 +2281,15 @@ function computeSignatureForInstruction(
       break;
     }
     case 'TaggedTemplateExpression': {
-      for (const operand of eachInstructionValueOperand(value)) {
-        operand.effect = Effect.Read;
-      }
       effects.push({
-        kind: 'Create',
+        kind: 'Apply',
+        receiver: value.tag,
+        function: value.tag,
+        mutatesFunction: true,
+        args: [{kind: 'Hole'}, ...value.subexprs],
         into: lvalue,
-        value: ValueKind.Primitive,
-        reason: ValueReason.Other,
+        signature: getFunctionCallSignature(env, value.tag.identifier.type),
+        loc: value.loc,
       });
       break;
     }
