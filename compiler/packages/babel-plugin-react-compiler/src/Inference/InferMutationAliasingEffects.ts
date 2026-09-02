@@ -120,6 +120,19 @@ export function inferMutationAliasingEffects(
     initialState.define(ref, value);
   }
 
+  if (fn.selfBinding !== null) {
+    const value: InstructionValue = {
+      kind: 'ObjectExpression',
+      properties: [],
+      loc: fn.selfBinding.loc,
+    };
+    initialState.initialize(value, {
+      kind: ValueKind.Mutable,
+      reason: new Set([ValueReason.Other]),
+    });
+    initialState.define(fn.selfBinding, value);
+  }
+
   const paramKind: AbstractValue = isFunctionExpression
     ? {
         kind: ValueKind.Mutable,
