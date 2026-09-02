@@ -49,6 +49,7 @@ import {CompilerError} from '../CompilerError';
 import {Iterable_some} from '../Utils/utils';
 import {ReactiveScopeDependencyTreeHIR} from './DeriveMinimalDependenciesHIR';
 import {collectOptionalChainSidemap} from './CollectOptionalChainDependencies';
+import {findSemanticOnlyCaughtInstructions} from '../Optimization/DeadCodeElimination';
 
 export function propagateScopeDependenciesHIR(fn: HIRFunction): void {
   const usedOutsideDeclaringScope =
@@ -551,6 +552,20 @@ export class DependencyCollectionContext {
     );
   }
 
+  visitOperandRoot(place: Place): void {
+    const dependency = this.#temporaries.get(place.identifier.id);
+    this.visitDependency(
+      dependency === undefined
+        ? {
+            identifier: place.identifier,
+            reactive: place.reactive,
+            path: [],
+            loc: place.loc,
+          }
+        : {...dependency, path: []},
+    );
+  }
+
   visitProperty(
     object: Place,
     property: PropertyLiteral,
@@ -681,12 +696,19 @@ enum HIRValue {
 export function handleInstruction(
   instr: Instruction,
   context: DependencyCollectionContext,
+  semanticOnlyCaughtInstruction: boolean = false,
 ): void {
   const {id, value, lvalue} = instr;
   context.declare(lvalue.identifier, {
     id,
     scope: context.currentScope,
   });
+  if (semanticOnlyCaughtInstruction) {
+    for (const operand of eachInstructionValueOperand(value)) {
+      context.visitOperandRoot(operand);
+    }
+    return;
+  }
   if (
     context.isDeferredDependency({kind: HIRValue.Instruction, value: instr})
   ) {
@@ -787,6 +809,8 @@ function collectDependencies(
   const scopeTraversal = new ScopeBlockTraversal();
 
   const handleFunction = (fn: HIRFunction): void => {
+    const semanticOnlyCaughtInstructions =
+      findSemanticOnlyCaughtInstructions(fn);
     for (const [blockId, block] of fn.body.blocks) {
       scopeTraversal.recordScopes(block);
       const scopeBlockInfo = scopeTraversal.blockInfos.get(blockId);
@@ -826,7 +850,11 @@ function collectDependencies(
             },
           );
         } else {
-          handleInstruction(instr, context);
+          handleInstruction(
+            instr,
+            context,
+            semanticOnlyCaughtInstructions?.has(instr) === true,
+          );
         }
       }
 
