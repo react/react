@@ -2629,7 +2629,22 @@ fn apply_compiled_functions(
     //   (matching TS pushContainer behavior)
     let mut outlined_decls: Vec<(Option<u32>, OriginalFnKind, FunctionDeclaration)> = Vec::new(); // (node_id, kind, decl)
 
-    // Replace each compiled function in the AST
+    // Direct replacements only edit function fields, so they can share one AST walk.
+    // Gated replacements remain in the loop below because they restructure the AST.
+    let replacement_map: FxHashMap<u32, &CompiledFnForReplacement> = compiled_fns
+        .iter()
+        .filter(|compiled| compiled.gating.is_none())
+        .filter_map(|compiled| compiled.fn_node_id.map(|node_id| (node_id, compiled)))
+        .collect();
+    if !replacement_map.is_empty() {
+        let mut visitor = ReplaceFnVisitor {
+            remaining: replacement_map.len(),
+            replacements: replacement_map,
+        };
+        walk_program_mut(&mut visitor, program);
+    }
+
+    // Collect outlined functions and apply gated replacements.
     for (idx, compiled) in compiled_fns.iter().enumerate() {
         // Collect outlined functions for this compiled function
         for outlined in &compiled.codegen_fn.outlined {
@@ -2668,12 +2683,6 @@ fn apply_compiled_functions(
                     original_expr,
                     context,
                 );
-            }
-        } else {
-            // No gating: replace the function directly (original behavior)
-            if let Some(node_id) = compiled.fn_node_id {
-                let mut visitor = ReplaceFnVisitor { node_id, compiled };
-                walk_program_mut(&mut visitor, program);
             }
         }
     }
@@ -3612,57 +3621,69 @@ fn expr_has_fn_with_node_id(expr: &Expression, node_id: u32) -> bool {
     }
 }
 
-/// Visitor that replaces a compiled function in the AST by matching `base.node_id`.
+/// Visitor that replaces compiled functions in one AST walk by matching `base.node_id`.
 struct ReplaceFnVisitor<'a> {
-    node_id: u32,
-    compiled: &'a CompiledFnForReplacement,
+    replacements: FxHashMap<u32, &'a CompiledFnForReplacement>,
+    remaining: usize,
+}
+
+impl ReplaceFnVisitor<'_> {
+    fn replace_function(function: &mut FunctionDeclaration, compiled: &CompiledFnForReplacement) {
+        function.id = compiled.codegen_fn.id.clone();
+        function.params = compiled.codegen_fn.params.clone();
+        function.body = compiled.codegen_fn.body.clone();
+        function.generator = compiled.codegen_fn.generator;
+        function.is_async = compiled.codegen_fn.is_async;
+        function.return_type = None;
+        function.type_parameters = None;
+        function.predicate = None;
+        function.declare = None;
+    }
 }
 
 impl MutVisitor for ReplaceFnVisitor<'_> {
     fn visit_statement(&mut self, stmt: &mut Statement) -> VisitResult {
+        if self.remaining == 0 {
+            return VisitResult::Stop;
+        }
         match stmt {
-            Statement::FunctionDeclaration(f) if f.base.node_id == Some(self.node_id) => {
-                f.id = self.compiled.codegen_fn.id.clone();
-                f.params = self.compiled.codegen_fn.params.clone();
-                f.body = self.compiled.codegen_fn.body.clone();
-                f.generator = self.compiled.codegen_fn.generator;
-                f.is_async = self.compiled.codegen_fn.is_async;
-                f.return_type = None;
-                f.type_parameters = None;
-                f.predicate = None;
-                f.declare = None;
-                return VisitResult::Stop;
+            Statement::FunctionDeclaration(function) => {
+                if let Some(compiled) = function
+                    .base
+                    .node_id
+                    .and_then(|node_id| self.replacements.get(&node_id))
+                {
+                    Self::replace_function(function, compiled);
+                    self.remaining -= 1;
+                    return VisitResult::Continue;
+                }
             }
             Statement::ExportDefaultDeclaration(export) => {
-                if let ExportDefaultDecl::FunctionDeclaration(f) = export.declaration.as_mut() {
-                    if f.base.node_id == Some(self.node_id) {
-                        f.id = self.compiled.codegen_fn.id.clone();
-                        f.params = self.compiled.codegen_fn.params.clone();
-                        f.body = self.compiled.codegen_fn.body.clone();
-                        f.generator = self.compiled.codegen_fn.generator;
-                        f.is_async = self.compiled.codegen_fn.is_async;
-                        f.return_type = None;
-                        f.type_parameters = None;
-                        f.predicate = None;
-                        f.declare = None;
-                        return VisitResult::Stop;
+                if let ExportDefaultDecl::FunctionDeclaration(function) =
+                    export.declaration.as_mut()
+                {
+                    if let Some(compiled) = function
+                        .base
+                        .node_id
+                        .and_then(|node_id| self.replacements.get(&node_id))
+                    {
+                        Self::replace_function(function, compiled);
+                        self.remaining -= 1;
+                        return VisitResult::Continue;
                     }
                 }
             }
             Statement::ExportNamedDeclaration(export) => {
                 if let Some(ref mut decl) = export.declaration {
-                    if let Declaration::FunctionDeclaration(f) = decl.as_mut() {
-                        if f.base.node_id == Some(self.node_id) {
-                            f.id = self.compiled.codegen_fn.id.clone();
-                            f.params = self.compiled.codegen_fn.params.clone();
-                            f.body = self.compiled.codegen_fn.body.clone();
-                            f.generator = self.compiled.codegen_fn.generator;
-                            f.is_async = self.compiled.codegen_fn.is_async;
-                            f.return_type = None;
-                            f.type_parameters = None;
-                            f.predicate = None;
-                            f.declare = None;
-                            return VisitResult::Stop;
+                    if let Declaration::FunctionDeclaration(function) = decl.as_mut() {
+                        if let Some(compiled) = function
+                            .base
+                            .node_id
+                            .and_then(|node_id| self.replacements.get(&node_id))
+                        {
+                            Self::replace_function(function, compiled);
+                            self.remaining -= 1;
+                            return VisitResult::Continue;
                         }
                     }
                 }
@@ -3673,29 +3694,50 @@ impl MutVisitor for ReplaceFnVisitor<'_> {
     }
 
     fn visit_expression(&mut self, expr: &mut Expression) -> VisitResult {
+        if self.remaining == 0 {
+            return VisitResult::Stop;
+        }
         match expr {
-            Expression::FunctionExpression(f) if f.base.node_id == Some(self.node_id) => {
-                f.id = self.compiled.codegen_fn.id.clone();
-                f.params = self.compiled.codegen_fn.params.clone();
-                f.body = self.compiled.codegen_fn.body.clone();
-                f.generator = self.compiled.codegen_fn.generator;
-                f.is_async = self.compiled.codegen_fn.is_async;
-                f.return_type = None;
-                f.type_parameters = None;
-                VisitResult::Stop
+            Expression::FunctionExpression(function) => {
+                if let Some(compiled) = function
+                    .base
+                    .node_id
+                    .and_then(|node_id| self.replacements.get(&node_id))
+                {
+                    function.id = compiled.codegen_fn.id.clone();
+                    function.params = compiled.codegen_fn.params.clone();
+                    function.body = compiled.codegen_fn.body.clone();
+                    function.generator = compiled.codegen_fn.generator;
+                    function.is_async = compiled.codegen_fn.is_async;
+                    function.return_type = None;
+                    function.type_parameters = None;
+                    self.remaining -= 1;
+                    VisitResult::Continue
+                } else {
+                    VisitResult::Continue
+                }
             }
-            Expression::ArrowFunctionExpression(f) if f.base.node_id == Some(self.node_id) => {
-                f.params = self.compiled.codegen_fn.params.clone();
-                f.body = Box::new(ArrowFunctionBody::BlockStatement(
-                    self.compiled.codegen_fn.body.clone(),
-                ));
-                f.generator = self.compiled.codegen_fn.generator;
-                f.is_async = self.compiled.codegen_fn.is_async;
-                f.expression = Some(false);
-                f.return_type = None;
-                f.type_parameters = None;
-                f.predicate = None;
-                VisitResult::Stop
+            Expression::ArrowFunctionExpression(function) => {
+                if let Some(compiled) = function
+                    .base
+                    .node_id
+                    .and_then(|node_id| self.replacements.get(&node_id))
+                {
+                    function.params = compiled.codegen_fn.params.clone();
+                    function.body = Box::new(ArrowFunctionBody::BlockStatement(
+                        compiled.codegen_fn.body.clone(),
+                    ));
+                    function.generator = compiled.codegen_fn.generator;
+                    function.is_async = compiled.codegen_fn.is_async;
+                    function.expression = Some(false);
+                    function.return_type = None;
+                    function.type_parameters = None;
+                    function.predicate = None;
+                    self.remaining -= 1;
+                    VisitResult::Continue
+                } else {
+                    VisitResult::Continue
+                }
             }
             _ => VisitResult::Continue,
         }
