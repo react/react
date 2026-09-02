@@ -3094,13 +3094,14 @@ fn lower_statement(
                 let stmt_loc = convert_opt_loc(&var_decl.base.loc);
                 if let Some(init) = &declarator.init {
                     let value = lower_expression_to_temporary(builder, init)?;
-                    let assign_style = match &declarator.id {
-                        PatternLike::ObjectPattern(_) | PatternLike::ArrayPattern(_) => {
-                            AssignmentStyle::Destructure
-                        }
-                        _ => AssignmentStyle::Assignment,
-                    };
-                    lower_assignment(builder, stmt_loc, kind, &declarator.id, value, assign_style)?;
+                    lower_assignment(
+                        builder,
+                        stmt_loc,
+                        kind,
+                        &declarator.id,
+                        value,
+                        AssignmentStyle::for_binding_pattern(&declarator.id),
+                    )?;
                 } else if let PatternLike::Identifier(id) = &declarator.id {
                     // No init: emit DeclareLocal or DeclareContext
                     let id_loc = convert_opt_loc(&id.base.loc);
@@ -6156,7 +6157,7 @@ fn lower_inner(
                     InstructionKind::Let,
                     &rest.argument,
                     place,
-                    AssignmentStyle::Assignment,
+                    AssignmentStyle::for_binding_pattern(&rest.argument),
                 )?;
             }
             react_compiler_ast::patterns::PatternLike::ObjectPattern(_)
@@ -6172,7 +6173,7 @@ fn lower_inner(
                     InstructionKind::Let,
                     param,
                     place,
-                    AssignmentStyle::Assignment,
+                    AssignmentStyle::for_binding_pattern(param),
                 )?;
             }
             react_compiler_ast::patterns::PatternLike::MemberExpression(member) => {
@@ -6935,6 +6936,16 @@ pub enum AssignmentStyle {
     Assignment,
     /// Destructuring assignment
     Destructure,
+}
+
+impl AssignmentStyle {
+    fn for_binding_pattern(pattern: &react_compiler_ast::patterns::PatternLike) -> Self {
+        match pattern {
+            react_compiler_ast::patterns::PatternLike::ObjectPattern(_)
+            | react_compiler_ast::patterns::PatternLike::ArrayPattern(_) => Self::Destructure,
+            _ => Self::Assignment,
+        }
+    }
 }
 
 /// Collect locations of fbt:enum, fbt:plural, fbt:pronoun sub-tags

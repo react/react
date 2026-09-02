@@ -147,7 +147,7 @@ export function lower(
         InstructionKind.Let,
         param,
         place,
-        'Assignment',
+        assignmentKindForBindingPattern(param),
       );
     } else if (param.isRestElement()) {
       const place: Place = {
@@ -167,7 +167,7 @@ export function lower(
         InstructionKind.Let,
         param.get('argument'),
         place,
-        'Assignment',
+        assignmentKindForBindingPattern(param.get('argument')),
       );
     } else {
       builder.recordError(
@@ -936,9 +936,7 @@ function lowerStatement(
             kind,
             id,
             value,
-            id.isObjectPattern() || id.isArrayPattern()
-              ? 'Destructure'
-              : 'Assignment',
+            assignmentKindForBindingPattern(id),
           );
         } else if (id.isIdentifier()) {
           const binding = builder.resolveIdentifier(id);
@@ -4408,6 +4406,14 @@ function lowerAssignment(
       return {kind: 'UnsupportedNode', node: lvalueNode, loc};
     }
   }
+}
+
+function assignmentKindForBindingPattern(
+  pattern: NodePath<t.LVal>,
+): 'Destructure' | 'Assignment' {
+  return pattern.isObjectPattern() || pattern.isArrayPattern()
+    ? 'Destructure'
+    : 'Assignment';
 }
 
 function captureScopes({from, to}: {from: Scope; to: Scope}): Set<Scope> {
