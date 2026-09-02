@@ -18,6 +18,7 @@ use react_compiler_ast::visitor::Visitor;
 use react_compiler_hir::SourceLocation;
 
 use crate::FunctionNode;
+use crate::source_location::convert_base_loc;
 
 /// Source location and whether the identifier is a JSXIdentifier.
 pub struct IdentifierLocEntry {
@@ -53,31 +54,18 @@ struct IdentifierLocVisitor {
     current_opening_element_loc: Option<SourceLocation>,
 }
 
-fn convert_loc(loc: &react_compiler_ast::common::SourceLocation) -> SourceLocation {
-    SourceLocation {
-        start: react_compiler_hir::Position {
-            line: loc.start.line,
-            column: loc.start.column,
-            index: loc.start.index,
-        },
-        end: react_compiler_hir::Position {
-            line: loc.end.line,
-            column: loc.end.column,
-            index: loc.end.index,
-        },
-    }
-}
-
 impl IdentifierLocVisitor {
     fn insert_identifier(&mut self, node: &Identifier, is_declaration_name: bool) {
-        if let (Some(nid), Some(start), Some(loc)) =
-            (node.base.node_id, node.base.start, &node.base.loc)
-        {
+        if let (Some(nid), Some(start), Some(loc)) = (
+            node.base.node_id,
+            node.base.start,
+            convert_base_loc(&node.base),
+        ) {
             self.index.insert(
                 nid,
                 IdentifierLocEntry {
                     start,
-                    loc: convert_loc(loc),
+                    loc,
                     is_jsx: false,
                     opening_element_loc: None,
                     is_declaration_name,
@@ -161,6 +149,8 @@ impl IdentifierLocVisitor {
                 column: end.get("column")?.as_u64()? as u32,
                 index: end.get("index").and_then(|i| i.as_u64()).map(|i| i as u32),
             },
+            start_offset: obj.get("start").and_then(|i| i.as_u64()).map(|i| i as u32),
+            end_offset: obj.get("end").and_then(|i| i.as_u64()).map(|i| i as u32),
         })
     }
 }
@@ -171,14 +161,16 @@ impl<'ast> Visitor<'ast> for IdentifierLocVisitor {
     }
 
     fn enter_jsx_identifier(&mut self, node: &'ast JSXIdentifier, _scope_stack: &[ScopeId]) {
-        if let (Some(nid), Some(start), Some(loc)) =
-            (node.base.node_id, node.base.start, &node.base.loc)
-        {
+        if let (Some(nid), Some(start), Some(loc)) = (
+            node.base.node_id,
+            node.base.start,
+            convert_base_loc(&node.base),
+        ) {
             self.index.insert(
                 nid,
                 IdentifierLocEntry {
                     start,
-                    loc: convert_loc(loc),
+                    loc,
                     is_jsx: true,
                     opening_element_loc: self.current_opening_element_loc.clone(),
                     is_declaration_name: false,
@@ -193,7 +185,7 @@ impl<'ast> Visitor<'ast> for IdentifierLocVisitor {
         node: &'ast JSXOpeningElement,
         _scope_stack: &[ScopeId],
     ) {
-        self.current_opening_element_loc = node.base.loc.as_ref().map(|loc| convert_loc(loc));
+        self.current_opening_element_loc = convert_base_loc(&node.base);
     }
 
     fn leave_jsx_opening_element(
