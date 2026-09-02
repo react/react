@@ -6559,6 +6559,9 @@ fn lower_object_property_key(
         Expression::NumericLiteral(lit) if !computed => Ok(Some(ObjectPropertyKey::Identifier {
             name: lit.value.to_string(),
         })),
+        Expression::BigIntLiteral(lit) if !computed => Ok(Some(ObjectPropertyKey::String {
+            name: canonicalize_bigint_property_key(&lit.value),
+        })),
         _ if computed => {
             let place = lower_expression_to_temporary(builder, key)?;
             Ok(Some(ObjectPropertyKey::Computed { name: place }))
@@ -6578,6 +6581,45 @@ fn lower_object_property_key(
             Ok(None)
         }
     }
+}
+
+fn canonicalize_bigint_property_key(value: &str) -> String {
+    let (digits, radix) = if let Some(digits) = value.strip_prefix("0x") {
+        (digits, 16)
+    } else if let Some(digits) = value.strip_prefix("0X") {
+        (digits, 16)
+    } else if let Some(digits) = value.strip_prefix("0o") {
+        (digits, 8)
+    } else if let Some(digits) = value.strip_prefix("0O") {
+        (digits, 8)
+    } else if let Some(digits) = value.strip_prefix("0b") {
+        (digits, 2)
+    } else if let Some(digits) = value.strip_prefix("0B") {
+        (digits, 2)
+    } else {
+        return value.to_string();
+    };
+
+    let mut decimal = vec![0_u8];
+    for digit in digits.bytes() {
+        let digit = (digit as char)
+            .to_digit(radix)
+            .expect("valid BigInt literal") as u8;
+        let mut carry = digit;
+        for decimal_digit in decimal.iter_mut().rev() {
+            let value = *decimal_digit * radix as u8 + carry;
+            *decimal_digit = value % 10;
+            carry = value / 10;
+        }
+        while carry != 0 {
+            decimal.insert(0, carry % 10);
+            carry /= 10;
+        }
+    }
+    decimal
+        .into_iter()
+        .map(|digit| char::from(b'0' + digit))
+        .collect()
 }
 
 fn lower_reorderable_expression(
