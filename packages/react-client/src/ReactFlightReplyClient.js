@@ -65,6 +65,7 @@ export type CallServerCallback = <A, T>(id: any, args: A) => Promise<T>;
 export type EncodeFormActionCallback = <A>(
   id: any,
   args: Promise<A>,
+  encodeDefault: () => ReactCustomFormAction,
 ) => ReactCustomFormAction;
 
 export type ServerReferenceId = any;
@@ -1092,7 +1093,9 @@ function customEncodeFormAction(
   if (boundPromise === null) {
     boundPromise = Promise.resolve([]);
   }
-  return encodeFormAction(referenceClosure.id, boundPromise);
+  return encodeFormAction(referenceClosure.id, boundPromise, () =>
+    defaultEncodeFormAction.call(reference, identifierPrefix),
+  );
 }
 
 function isSignatureEqual(
