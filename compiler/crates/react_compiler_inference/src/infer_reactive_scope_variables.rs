@@ -212,9 +212,11 @@ fn may_allocate(value: &InstructionValue, lvalue_type_is_primitive: bool) -> boo
         | InstructionValue::PropertyLoad { .. }
         | InstructionValue::StoreGlobal { .. } => false,
 
-        InstructionValue::TaggedTemplateExpression { .. }
-        | InstructionValue::CallExpression { .. }
-        | InstructionValue::MethodCall { .. } => !lvalue_type_is_primitive,
+        InstructionValue::TaggedTemplateExpression { .. } => true,
+
+        InstructionValue::CallExpression { .. } | InstructionValue::MethodCall { .. } => {
+            !lvalue_type_is_primitive
+        }
 
         InstructionValue::RegExpLiteral { .. }
         | InstructionValue::PropertyStore { .. }

@@ -1275,7 +1275,23 @@ impl<'a> PrintFormatter<'a> {
                 self.line("TaggedTemplateExpression {");
                 self.indent();
                 self.format_place_field("tag", tag);
-                self.line(&format!("quasis: {quasis:?}"));
+                let quasis = quasis
+                    .iter()
+                    .map(|quasi| {
+                        format!(
+                            "{{\"raw\":{},\"cooked\":{}}}",
+                            format_js_string(&quasi.raw),
+                            quasi
+                                .cooked
+                                .as_ref()
+                                .map_or_else(|| "null".to_string(), |cooked| {
+                                    format_js_string(cooked)
+                                }),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                self.line(&format!("quasis: [{quasis}]"));
                 for subexpr in subexprs {
                     self.format_place_field("subexpr", subexpr);
                 }

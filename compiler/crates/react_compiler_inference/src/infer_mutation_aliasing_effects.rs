@@ -1182,15 +1182,6 @@ fn infer_block(
             env,
             func,
         )?;
-        if matches!(
-            func.instructions[instr_index].value,
-            InstructionValue::TaggedTemplateExpression { .. }
-        ) {
-            visitors::for_each_instruction_value_operand_mut(
-                &mut func.instructions[instr_index].value,
-                &mut |place| place.effect = Effect::Read,
-            );
-        }
         func.instructions[instr_index].effects = effects;
     }
 

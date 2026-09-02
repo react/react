@@ -1765,7 +1765,6 @@ fn lower_expression(
         }
         Expression::TaggedTemplateExpression(tagged) => {
             let loc = convert_opt_loc(&tagged.base.loc);
-            let tag = lower_expression_to_temporary(builder, &tagged.tag)?;
             let subexprs = tagged
                 .quasi
                 .expressions
@@ -1781,6 +1780,7 @@ fn lower_expression(
                     cooked: quasi.value.cooked.clone(),
                 })
                 .collect();
+            let tag = lower_expression_to_temporary(builder, &tagged.tag)?;
             Ok(InstructionValue::TaggedTemplateExpression {
                 tag,
                 subexprs,
