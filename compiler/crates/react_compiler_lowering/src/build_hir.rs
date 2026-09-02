@@ -3386,15 +3386,7 @@ fn lower_statement(
                     continuation_block,
                 );
             } else {
-                builder.record_error(CompilerErrorDetail {
-                    category: ErrorCategory::Todo,
-                    reason: "(BuildHIR::lowerStatement) Handle empty test in ForStatement"
-                        .to_string(),
-                    description: None,
-                    loc: loc.clone(),
-                    suggestions: None,
-                })?;
-                // Treat `for(;;)` as `while(true)` to keep the builder state consistent
+                // Treat `for(;;)` as `while(true)`.
                 let true_val = InstructionValue::Primitive {
                     value: PrimitiveValue::Boolean(true),
                     loc: loc.clone(),
