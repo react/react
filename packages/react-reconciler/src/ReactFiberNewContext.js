@@ -25,7 +25,7 @@ import {
   DehydratedFragment,
   SuspenseComponent,
 } from './ReactWorkTags';
-import {NoLanes, isSubsetOfLanes, mergeLanes} from './ReactFiberLane';
+import {isSubsetOfLanes, mergeLanes} from './ReactFiberLane';
 import {
   NoFlags,
   DidPropagateContext,
@@ -33,6 +33,7 @@ import {
 } from './ReactFiberFlags';
 
 import is from 'shared/objectIs';
+import {enableMemoizedContextPropagation} from 'shared/ReactFeatureFlags';
 import {getHostTransitionProvider} from './ReactFiberHostContext';
 
 const valueCursor: StackCursor<mixed> = createCursor(null);
@@ -57,11 +58,68 @@ let lastContextDependency: ContextDependency<mixed> | null = null;
 
 let isDisallowedContextReadInDEV: boolean = false;
 
+// A set of contexts whose provider value changed, as an immutable linked list
+// so that results for nested fibers can share structure.
+type ChangedContexts = {
+  context: ReactContext<mixed>,
+  next: ChangedContexts | null,
+};
+
+// Memoized results of `propagateParentContextChanges` walking the return path.
+// An entry for fiber F is the list of changed providers found by walking from
+// F (inclusive) towards the root, following the same NeedsPropagation /
+// DidPropagateContext rules as the walk itself, or `null` if there are none.
+// Because those rules depend on whether the walk had already passed a
+// NeedsPropagation fiber by the time it reached F, there is one map for each
+// of the two states. Only (possible) provider fibers get entries: they are
+// what makes return paths long in practice, and skipping everything else
+// keeps the maps small and means trees without providers never touch them.
+//
+// Entries are only ever created for strict ancestors of the fiber currently
+// being begun. Within a single uninterrupted begin sequence such a fiber's
+// pendingProps, its alternate's memoizedProps and its NeedsPropagation /
+// DidPropagateContext flags no longer change, so neither does the entry. The
+// memo is dropped whenever that stops being true: when the work loop yields,
+// finishes, or unwinds (resetContextDependencies), and when it re-enters the
+// begin phase for a fiber that was already begun (resetContextPropagationMemo
+// from the work loop). Missing entries only cost a longer walk.
+let propagationMemoOutside: Map<Fiber, ChangedContexts | null> | null = null;
+let propagationMemoInside: Map<Fiber, ChangedContexts | null> | null = null;
+// The result for the return fiber of the last walk (whatever its tag), kept
+// inline because consecutive walks overwhelmingly start from siblings.
+let lastReturnFiber: Fiber | null = null;
+let lastReturnFiberIsInside: boolean = false;
+let lastReturnFiberContexts: ChangedContexts | null = null;
+
+// Scratch buffers for the provider fibers visited by a single walk before it
+// reaches a memoized ancestor, the root, or a DidPropagateContext boundary.
+const MAX_DEPTH = 0x3fffffff;
+const visitedFibers: Array<Fiber | null> = [];
+const visitedContexts: Array<ReactContext<mixed> | null> = [];
+
+// DEV only. Set once the memoized walk has been reported as disagreeing with
+// the full walk in the current render attempt, so we warn at most once per
+// attempt.
+let didWarnAboutContextPropagationMemoMismatch: boolean = false;
+
+export function resetContextPropagationMemo(): void {
+  propagationMemoOutside = null;
+  propagationMemoInside = null;
+  lastReturnFiber = null;
+  lastReturnFiberContexts = null;
+  if (__DEV__) {
+    didWarnAboutContextPropagationMemoMismatch = false;
+  }
+}
+
 export function resetContextDependencies(): void {
   // This is called right before React yields execution, to ensure `readContext`
   // cannot be called outside the render phase.
   currentlyRenderingFiber = null;
   lastContextDependency = null;
+  if (enableMemoizedContextPropagation) {
+    resetContextPropagationMemo();
+  }
   if (__DEV__) {
     isDisallowedContextReadInDEV = false;
   }
@@ -203,17 +261,21 @@ export function propagateContextChange<T>(
   // lazilyPropagateParentContextChanges to look for Cache components so they
   // can take advantage of lazy propagation.
   const forcePropagateEntireTree = true;
+  const contexts: ChangedContexts = {
+    context: context as any as ReactContext<mixed>,
+    next: null,
+  };
   propagateContextChanges(
     workInProgress,
-    [context],
+    contexts,
     renderLanes,
     forcePropagateEntireTree,
   );
 }
 
-function propagateContextChanges<T>(
+function propagateContextChanges(
   workInProgress: Fiber,
-  contexts: Array<any>,
+  contexts: ChangedContexts,
   renderLanes: Lanes,
   forcePropagateEntireTree: boolean,
 ): void {
@@ -235,10 +297,11 @@ function propagateContextChanges<T>(
         // Assigning these to constants to help Flow
         const dependency = dep;
         const consumer = fiber;
-        findContext: for (let i = 0; i < contexts.length; i++) {
-          const context: ReactContext<T> = contexts[i];
+        let changed: ChangedContexts | null = contexts;
+        findContext: while (changed !== null) {
+          const context = changed.context;
+          changed = changed.next;
           // Check if the context matches.
-          // $FlowFixMe[invalid-compare]
           if (dependency.context === context) {
             // Match! Schedule an update on this fiber.
 
@@ -408,15 +471,67 @@ export function propagateParentContextChangesToDeferredTree(
   );
 }
 
-function propagateParentContextChanges(
-  current: Fiber,
-  workInProgress: Fiber,
-  renderLanes: Lanes,
-  forcePropagateEntireTree: boolean,
+function isPossiblyProvider(
+  fiber: Fiber,
+  hostTransitionProvider: Fiber | null,
 ): boolean {
+  return fiber.tag === ContextProvider || fiber === hostTransitionProvider;
+}
+
+// Returns the context provided by `fiber` if `fiber` is a provider whose value
+// differs from the committed one, or null otherwise.
+function getChangedContext(
+  fiber: Fiber,
+  hostTransitionProvider: Fiber | null,
+): ReactContext<mixed> | null {
+  if (fiber.tag === ContextProvider) {
+    const current = fiber.alternate;
+    if (current === null) {
+      throw new Error('Should have a current fiber. This is a bug in React.');
+    }
+    const oldProps = current.memoizedProps;
+    if (oldProps !== null) {
+      const newProps = fiber.pendingProps;
+      if (!is(newProps.value, oldProps.value)) {
+        return fiber.type;
+      }
+    }
+  } else if (fiber === hostTransitionProvider) {
+    // During a host transition, a host component can act like a context
+    // provider. E.g. in React DOM, this would be a <form />.
+    //
+    // NOTE: Like pushHostContext, this assumes host transition providers do
+    // not nest, so the nearest one on the stack is the only one on the return
+    // path and the memoized result below does not depend on which descendant
+    // computed it.
+    const current = fiber.alternate;
+    if (current === null) {
+      throw new Error('Should have a current fiber. This is a bug in React.');
+    }
+    const oldStateHook: Hook = current.memoizedState;
+    const oldState: TransitionStatus = oldStateHook.memoizedState;
+    const newStateHook: Hook = fiber.memoizedState;
+    const newState: TransitionStatus = newStateHook.memoizedState;
+    // This uses regular equality instead of Object.is because we assume that
+    // host transition state doesn't include NaN as a valid type.
+    if (oldState !== newState) {
+      return HostTransitionContext as any;
+    }
+  }
+  return null;
+}
+
+// Collects the parent providers whose value changed, walking from
+// `workInProgress` towards the root. This is the unmemoized walk used when
+// enableMemoizedContextPropagation is off (and, in DEV, to check the memoized
+// walk against). The result is in walk order: nearest provider first.
+function collectChangedParentContexts(
+  workInProgress: Fiber,
+): ChangedContexts | null {
   // Collect all the parent providers that changed. Since this is usually small
-  // number, we use an Array instead of Set.
-  let contexts = null;
+  // number, we use a linked list in walk order.
+  let contexts: ChangedContexts | null = null;
+  let lastContexts: ChangedContexts | null = null;
   let parent: null | Fiber = workInProgress;
   let isInsidePropagationBailout = false;
   while (parent !== null) {
@@ -428,6 +543,7 @@ function propagateParentContextChanges(
       }
     }
 
+    let context: ReactContext<mixed> | null = null;
     if (parent.tag === ContextProvider) {
       const currentParent = parent.alternate;
 
@@ -437,18 +553,13 @@ function propagateParentContextChanges(
 
       const oldProps = currentParent.memoizedProps;
       if (oldProps !== null) {
-        const context: ReactContext<any> = parent.type;
         const newProps = parent.pendingProps;
         const newValue = newProps.value;
 
         const oldValue = oldProps.value;
 
         if (!is(newValue, oldValue)) {
-          if (contexts !== null) {
-            contexts.push(context);
-          } else {
-            contexts = [context];
-          }
+          context = parent.type;
         }
       }
     } else if (parent === getHostTransitionProvider()) {
@@ -468,15 +579,226 @@ function propagateParentContextChanges(
       // This uses regular equality instead of Object.is because we assume that
       // host transition state doesn't include NaN as a valid type.
       if (oldState !== newState) {
-        if (contexts !== null) {
-          contexts.push(HostTransitionContext);
-        } else {
-          contexts = [HostTransitionContext];
+        context = HostTransitionContext as any;
+      }
+    }
+    if (context !== null) {
+      const node: ChangedContexts = {context, next: null};
+      if (lastContexts !== null) {
+        lastContexts.next = node;
+      } else {
+        contexts = node;
+      }
+      lastContexts = node;
+    }
+    parent = parent.return;
+  }
+  return contexts;
+}
+
+// Same as `collectChangedParentContexts` but memoized per render attempt.
+// Only used when enableMemoizedContextPropagation is on.
+function collectChangedParentContextsMemoized(
+  workInProgress: Fiber,
+): ChangedContexts | null {
+  // For any strict ancestor the portion of the result contributed by it and
+  // everything above it is fixed for the rest of this begin pass (see
+  // `propagationMemoOutside`), so the first walk that visits a provider
+  // records that portion and later walks stop as soon as they reach a
+  // provider that has already been visited. The providers visited before the
+  // hit are buffered in `visitedFibers`/`visitedContexts` and memoized once
+  // the suffix is known.
+  //
+  // `workInProgress` itself is always evaluated against its live flags and is
+  // never memoized here: it receives DidPropagateContext at the end of
+  // `propagateParentContextChanges`, which changes the answer for its
+  // descendants. Walks started by its descendants will see the
+  // post-propagation flags.
+  let isInsidePropagationBailout =
+    (workInProgress.flags & NeedsPropagation) !== NoFlags;
+  if (
+    !isInsidePropagationBailout &&
+    (workInProgress.flags & DidPropagateContext) !== NoFlags
+  ) {
+    // We already propagated from this fiber earlier in its begin phase.
+    return null;
+  }
+  const hostTransitionProvider = getHostTransitionProvider();
+  const ownContext = isPossiblyProvider(workInProgress, hostTransitionProvider)
+    ? getChangedContext(workInProgress, hostTransitionProvider)
+    : null;
+
+  const returnFiber = workInProgress.return;
+  const returnFiberIsInside = isInsidePropagationBailout;
+  let suffix: ChangedContexts | null = null;
+  let depth = 0;
+  // Index into the visited buffer of the first provider that was reached
+  // while already inside a NeedsPropagation subtree. Providers below this index
+  // are memoized in the "outside" map, the rest in the "inside" map.
+  let firstInsideDepth = isInsidePropagationBailout ? 0 : MAX_DEPTH;
+  let didHitMemo = false;
+  let parent: null | Fiber = returnFiber;
+  if (
+    parent === lastReturnFiber &&
+    returnFiberIsInside === lastReturnFiberIsInside &&
+    parent !== null
+  ) {
+    suffix = lastReturnFiberContexts;
+    parent = null;
+    didHitMemo = true;
+  }
+  while (parent !== null) {
+    if (isPossiblyProvider(parent, hostTransitionProvider)) {
+      const memo = isInsidePropagationBailout
+        ? propagationMemoInside
+        : propagationMemoOutside;
+      if (memo !== null) {
+        const memoized = memo.get(parent);
+        if (memoized !== undefined) {
+          suffix = memoized;
+          didHitMemo = true;
+          break;
         }
+      }
+      visitedFibers[depth] = parent;
+      if (!isInsidePropagationBailout) {
+        if ((parent.flags & NeedsPropagation) !== NoFlags) {
+          isInsidePropagationBailout = true;
+          firstInsideDepth = depth + 1;
+        } else if ((parent.flags & DidPropagateContext) !== NoFlags) {
+          // Everything at or above this fiber was already propagated into its
+          // subtree, which includes us.
+          visitedContexts[depth] = null;
+          depth++;
+          break;
+        }
+      }
+      visitedContexts[depth] = getChangedContext(
+        parent,
+        hostTransitionProvider,
+      );
+      depth++;
+    } else if (!isInsidePropagationBailout) {
+      if ((parent.flags & NeedsPropagation) !== NoFlags) {
+        isInsidePropagationBailout = true;
+        firstInsideDepth = depth;
+      } else if ((parent.flags & DidPropagateContext) !== NoFlags) {
+        break;
       }
     }
     parent = parent.return;
   }
+
+  // Memoize the result for every provider we visited, sharing structure with
+  // the suffix we stopped at.
+  let contexts: ChangedContexts | null = suffix;
+  if (depth > 0) {
+    let outside = propagationMemoOutside;
+    let inside = propagationMemoInside;
+    for (let i = depth - 1; i >= 0; i--) {
+      const fiber: Fiber = visitedFibers[i] as any;
+      const context = visitedContexts[i];
+      visitedFibers[i] = null;
+      if (context !== null) {
+        contexts = {context, next: contexts};
+      }
+      if (i >= firstInsideDepth) {
+        if (inside === null) {
+          inside = propagationMemoInside = new Map();
+        }
+        inside.set(fiber, contexts);
+      } else {
+        if (outside === null) {
+          outside = propagationMemoOutside = new Map();
+        }
+        outside.set(fiber, contexts);
+      }
+    }
+  }
+  // At this point `contexts` is the entry for the return fiber.
+  lastReturnFiber = returnFiber;
+  lastReturnFiberIsInside = returnFiberIsInside;
+  lastReturnFiberContexts = contexts;
+
+  if (ownContext !== null) {
+    contexts = {context: ownContext, next: contexts};
+  }
+
+  if (__DEV__) {
+    if (didHitMemo) {
+      // Whenever a memoized result was reused, check it against the full walk
+      // and fall back to the full walk's result if they disagree, so that a
+      // memoization bug surfaces as a warning rather than a missed update.
+      const unmemoized = collectChangedParentContexts(workInProgress);
+      if (!areChangedContextsEqual(contexts, unmemoized)) {
+        if (!didWarnAboutContextPropagationMemoMismatch) {
+          didWarnAboutContextPropagationMemoMismatch = true;
+          console.error(
+            'React: memoized context propagation result did not match the ' +
+              'full walk (%s the NeedsPropagation subtree, %s). ' +
+              'This is a bug in React.',
+            returnFiberIsInside ? 'inside' : 'outside',
+            areChangedContextsEqualUnordered(contexts, unmemoized)
+              ? 'same contexts in a different order'
+              : 'different contexts',
+          );
+        }
+        contexts = unmemoized;
+      }
+    }
+  }
+  return contexts;
+}
+
+// DEV only.
+function areChangedContextsEqual(
+  a: ChangedContexts | null,
+  b: ChangedContexts | null,
+): boolean {
+  while (a !== null && b !== null) {
+    if (a.context !== b.context) {
+      return false;
+    }
+    a = a.next;
+    b = b.next;
+  }
+  return a === null && b === null;
+}
+
+function areChangedContextsEqualUnordered(
+  a: ChangedContexts | null,
+  b: ChangedContexts | null,
+): boolean {
+  const setA: Set<ReactContext<mixed>> = new Set();
+  const setB: Set<ReactContext<mixed>> = new Set();
+  for (let node = a; node !== null; node = node.next) {
+    setA.add(node.context);
+  }
+  for (let node = b; node !== null; node = node.next) {
+    setB.add(node.context);
+  }
+  if (setA.size !== setB.size) {
+    return false;
+  }
+  let equal = true;
+  setA.forEach(context => {
+    if (!setB.has(context)) {
+      equal = false;
+    }
+  });
+  return equal;
+}
+
+function propagateParentContextChanges(
+  current: Fiber,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+  forcePropagateEntireTree: boolean,
+): boolean {
+  // Collect all the parent providers that changed.
+  const contexts = enableMemoizedContextPropagation
+    ? collectChangedParentContextsMemoized(workInProgress)
+    : collectChangedParentContexts(workInProgress);
 
   if (contexts !== null) {
     // If there were any changed providers, search through the children and
@@ -543,11 +865,10 @@ export function prepareToReadContext(
   currentlyRenderingFiber = workInProgress;
   lastContextDependency = null;
 
-  const dependencies = workInProgress.dependencies;
-  if (dependencies !== null) {
-    // Reset the work-in-progress list
-    dependencies.firstContext = null;
-  }
+  // Reset the work-in-progress list. The dependencies object may be shared
+  // with the current fiber, so we drop the reference rather than mutate it. A
+  // new object is created on the first `readContext` call.
+  workInProgress.dependencies = null;
 }
 
 export function readContext<T>(context: ReactContext<T>): T {
@@ -608,13 +929,11 @@ function readContextForConsumer<T>(
     consumer.dependencies = __DEV__
       ? // $FlowFixMe[incompatible-type]
         {
-          lanes: NoLanes,
           firstContext: contextItem,
           _debugThenableState: null,
         }
       : // $FlowFixMe[incompatible-type]
         {
-          lanes: NoLanes,
           firstContext: contextItem,
         };
     consumer.flags |= NeedsPropagation;

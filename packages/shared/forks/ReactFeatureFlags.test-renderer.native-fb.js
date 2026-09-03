@@ -73,6 +73,7 @@ export const enableFragmentRefsInstanceHandles = false;
 export const enableFragmentRefsTextNodes = false;
 export const ownerStackLimit = 1e4;
 export const enableOptimisticKey = false;
+export const enableMemoizedContextPropagation = false;
 export const enableParallelTransitions = true;
 
 export const eprh_enableUseKeyedStateCompilerLint: boolean = false;
