@@ -291,6 +291,46 @@ describe('ReactLazy', () => {
     expect(root).not.toMatchRenderedOutput('Hi');
   });
 
+  it('warns if promise resolves to null', async () => {
+    const LazyText = lazy(async () => null);
+
+    const root = ReactTestRenderer.create(null, {
+      unstable_isConcurrent: true,
+    });
+
+    function App() {
+      return (
+        <Suspense fallback={<Text text="Loading..." />}>
+          <LazyText text="Hi" />
+        </Suspense>
+      );
+    }
+
+    let error;
+    try {
+      await act(() => {
+        root.update(<App />);
+      });
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    assertLog(['Loading...']);
+    assertConsoleErrorDev([
+      'lazy: Expected the result of a dynamic import() call. ' +
+        'Instead received: null\n\n' +
+        'Your code should look like: \n  ' +
+        "const MyComponent = lazy(() => import('./MyComponent'))\n" +
+        '    in App (at **)',
+      'lazy: Expected the result of a dynamic import() call. ' +
+        'Instead received: null\n\n' +
+        'Your code should look like: \n  ' +
+        "const MyComponent = lazy(() => import('./MyComponent'))\n" +
+        '    in App (at **)',
+    ]);
+  });
+
   it('throws if promise rejects', async () => {
     const networkError = new Error('Bad network');
     const LazyText = lazy(async () => {
