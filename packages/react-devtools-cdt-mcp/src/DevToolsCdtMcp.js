@@ -280,7 +280,8 @@ const TOOL_DEFINITIONS: Array<ToolDefinition> = [
       properties: {
         traceName: {type: 'string', description: 'The trace to query.'},
         commitIndex: {
-          type: 'number',
+          type: 'integer',
+          minimum: 0,
           description: 'Zero-based commit index within the trace.',
         },
       },
