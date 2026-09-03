@@ -1712,9 +1712,10 @@ function codegenInstructionValue(
       break;
     }
     case 'JsxExpression': {
+      const isBuiltinTag = instrValue.tag.kind === 'BuiltinTag';
       const attributes: Array<t.JSXAttribute | t.JSXSpreadAttribute> = [];
       for (const attribute of instrValue.props) {
-        attributes.push(codegenJsxAttribute(cx, attribute));
+        attributes.push(codegenJsxAttribute(cx, attribute, isBuiltinTag));
       }
       let tagValue =
         instrValue.tag.kind === 'Identifier'
@@ -2123,9 +2124,28 @@ function codegenInstructionValue(
  */
 const STRING_REQUIRES_EXPR_CONTAINER_PATTERN =
   /[\u{0000}-\u{001F}\u{007F}\u{0080}-\u{FFFF}\u{010000}-\u{10FFFF}]|"|\\/u;
+
+/**
+ * The Babel JSX transform (@babel/plugin-transform-react-jsx) normalizes
+ * newlines followed by whitespace in plain JSX string attributes:
+ *
+ *   value.value = value.value.replace(/\n\s+/g, " ");
+ *
+ * However, this normalization is skipped for JSXExpressionContainer values.
+ * When the compiler wraps strings in expression containers (because they
+ * match STRING_REQUIRES_EXPR_CONTAINER_PATTERN), the JSX transform bypasses
+ * normalization. The server code (uncompiled or differently compiled) goes
+ * through the standard normalization, creating a hydration mismatch.
+ *
+ * We apply the same normalization here before the expression container check,
+ * ensuring compiled output matches the behavior of non-compiled code.
+ */
+const JSX_STRING_NEWLINE_PATTERN = /\n\s+/g;
+
 function codegenJsxAttribute(
   cx: Context,
   attribute: JsxAttribute,
+  isBuiltinTag: boolean,
 ): t.JSXAttribute | t.JSXSpreadAttribute {
   switch (attribute.kind) {
     case 'JsxAttribute': {
@@ -2145,6 +2165,18 @@ function codegenJsxAttribute(
       switch (innerValue.type) {
         case 'StringLiteral': {
           value = innerValue;
+          if (
+            isBuiltinTag &&
+            !cx.fbtOperands.has(attribute.place.identifier.id)
+          ) {
+            const normalized = value.value.replace(
+              JSX_STRING_NEWLINE_PATTERN,
+              ' ',
+            );
+            if (normalized !== value.value) {
+              value = createStringLiteral(value.loc, normalized);
+            }
+          }
           if (
             STRING_REQUIRES_EXPR_CONTAINER_PATTERN.test(value.value) &&
             !cx.fbtOperands.has(attribute.place.identifier.id)
