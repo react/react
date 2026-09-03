@@ -30,6 +30,16 @@ function aggregateErrors(errors: Array<mixed>): mixed {
 
 export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
   if (__DEV__) {
+    // We're capturing the callsite eagerly in case we log warnings later.
+    // When the warnings are logged async, we want the callsite in userland
+    // that lead to the warning which would only be available in debuggers via async stacks.
+    // Most tests just log errors to the terminal with the stack of the console
+    // call which is not very useful.
+    const stack = new Error();
+    // We're not interested in the `Error: ` prefix. Node.js will omit
+    // a prefix for empty names. Chrome will still include the prefix.
+    stack.name = '';
+    Error.captureStackTrace(stack, act);
     // When ReactSharedInternals.actQueue is not null, it signals to React that
     // we're currently inside an `act` scope. React will push all its tasks to
     // this queue instead of scheduling them with platform APIs.
@@ -95,7 +105,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       if (!disableLegacyMode) {
         ReactSharedInternals.isBatchingLegacy = prevIsBatchingLegacy;
       }
-      popActScope(prevActQueue, prevActScopeDepth);
+      popActScope(prevActQueue, prevActScopeDepth, stack);
       const thrownError = aggregateErrors(ReactSharedInternals.thrownErrors);
       ReactSharedInternals.thrownErrors.length = 0;
       throw thrownError;
@@ -121,13 +131,14 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       queueSeveralMicrotasks(() => {
         if (!didAwaitActCall && !didWarnNoAwaitAct) {
           didWarnNoAwaitAct = true;
-          console.error(
+          stack.message =
             'You called act(async () => ...) without await. ' +
-              'This could lead to unexpected testing behaviour, ' +
-              'interleaving multiple act calls and mixing their ' +
-              'scopes. ' +
-              'You should - await act(async () => ...);',
-          );
+            'This could lead to unexpected testing behaviour, ' +
+            'interleaving multiple act calls and mixing their ' +
+            'scopes. ' +
+            'You should - await act(async () => ...);';
+          // eslint-disable-next-line react-internal/warning-args -- We don't care about a component stack here.
+          console.error(stack);
         }
       });
 
@@ -136,7 +147,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
           didAwaitActCall = true;
           thenable.then(
             returnValue => {
-              popActScope(prevActQueue, prevActScopeDepth);
+              popActScope(prevActQueue, prevActScopeDepth, stack);
               if (prevActScopeDepth === 0) {
                 // We're exiting the outermost `act` scope. Flush the queue.
                 try {
@@ -163,7 +174,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
               }
             },
             error => {
-              popActScope(prevActQueue, prevActScopeDepth);
+              popActScope(prevActQueue, prevActScopeDepth, stack);
               if (ReactSharedInternals.thrownErrors.length > 0) {
                 const thrownError = aggregateErrors(
                   ReactSharedInternals.thrownErrors,
@@ -181,7 +192,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       const returnValue: T = result as any;
       // The callback is not an async function. Exit the current
       // scope immediately.
-      popActScope(prevActQueue, prevActScopeDepth);
+      popActScope(prevActQueue, prevActScopeDepth, stack);
       if (prevActScopeDepth === 0) {
         // We're exiting the outermost `act` scope. Flush the queue.
         flushActQueue(queue);
@@ -196,13 +207,14 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
           queueSeveralMicrotasks(() => {
             if (!didAwaitActCall && !didWarnNoAwaitAct) {
               didWarnNoAwaitAct = true;
-              console.error(
+              stack.message =
                 'A component suspended inside an `act` scope, but the ' +
-                  '`act` call was not awaited. When testing React ' +
-                  'components that depend on asynchronous data, you must ' +
-                  'await the result:\n\n' +
-                  'await act(() => ...)',
-              );
+                '`act` call was not awaited. When testing React ' +
+                'components that depend on asynchronous data, you must ' +
+                'await the result:\n\n' +
+                'await act(() => ...)';
+              // eslint-disable-next-line react-internal/warning-args -- We don't care about a component stack here.
+              console.error(stack);
             }
           });
         }
@@ -256,13 +268,15 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
 function popActScope(
   prevActQueue: null | Array<RendererTask>,
   prevActScopeDepth: number,
+  stack: Error,
 ) {
   if (__DEV__) {
     if (prevActScopeDepth !== actScopeDepth - 1) {
-      console.error(
+      stack.message =
         'You seem to have overlapping act() calls, this is not supported. ' +
-          'Be sure to await previous act() calls before making a new one. ',
-      );
+        'Be sure to await previous act() calls before making a new one. ';
+      // eslint-disable-next-line react-internal/warning-args -- We don't care about a component stack here.
+      console.error(stack);
     }
     actScopeDepth = prevActScopeDepth;
   }
