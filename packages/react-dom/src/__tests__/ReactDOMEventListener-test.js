@@ -703,6 +703,43 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
+  it('should dispatch dialog events on a hydrated dialog', async () => {
+    const container = document.createElement('div');
+    const ref = React.createRef();
+    const onBeforeToggle = jest.fn();
+    const onToggle = jest.fn();
+    const onCancel = jest.fn();
+    const onClose = jest.fn();
+    const tree = (
+      <dialog
+        ref={ref}
+        onBeforeToggle={onBeforeToggle}
+        onToggle={onToggle}
+        onCancel={onCancel}
+        onClose={onClose}
+      />
+    );
+    document.body.appendChild(container);
+    try {
+      container.innerHTML = ReactDOMServer.renderToString(tree);
+      await act(() => {
+        ReactDOMClient.hydrateRoot(container, tree);
+      });
+      await act(() => {
+        ref.current.dispatchEvent(new Event('beforetoggle', {bubbles: false}));
+        ref.current.dispatchEvent(new Event('toggle', {bubbles: false}));
+        ref.current.dispatchEvent(new Event('cancel', {bubbles: false}));
+        ref.current.dispatchEvent(new Event('close', {bubbles: false}));
+      });
+      expect(onBeforeToggle).toHaveBeenCalledTimes(1);
+      expect(onToggle).toHaveBeenCalledTimes(1);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      document.body.removeChild(container);
+    }
+  });
+
   it('should bubble non-native bubbling toggle events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
