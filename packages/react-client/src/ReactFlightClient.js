@@ -197,6 +197,7 @@ type BlockedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _receivedDebugInfo: null | Set<ReactDebugInfoEntry>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type ResolvedModelChunk<T> = {
@@ -276,6 +277,7 @@ function ReactPromise(status: any, value: any, reason: any) {
   if (__DEV__) {
     this._debugChunk = null;
     this._debugInfo = [];
+    this._receivedDebugInfo = null;
   }
 }
 // We subclass Promise.prototype so that we get other methods like .catch
@@ -1170,6 +1172,10 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
         return;
       }
     }
+    if (__DEV__) {
+      // Only a blocked chunk receives debug info, so release the set here.
+      cyclicChunk._receivedDebugInfo = null;
+    }
     const initializedChunk: InitializedChunk<T> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = value;
@@ -1280,10 +1286,11 @@ function getTaskName(type: mixed): string {
     type !== null &&
     type.$$typeof === REACT_LAZY_TYPE
   ) {
-    if (type._init === readChunk) {
-      // This is a lazy node created by Flight. It is probably a client reference.
-      // We use the "use client" string to indicate that this is the boundary into
-      // the client. There will only be one for any given owner chain.
+    if (type._payload instanceof ReactPromise) {
+      // This is a lazy node created by Flight, i.e. it wraps a chunk. It is
+      // probably a client reference. We use the "use client" string to indicate
+      // that this is the boundary into the client. There will only be one for
+      // any given owner chain.
       return '"use client"';
     }
     // We don't want to eagerly initialize the initializer in DEV mode so we can't
@@ -1374,16 +1381,6 @@ function initializeElement(
   }
 
   if (lazyNode !== null) {
-    // In case the JSX runtime has validated the lazy type as a static child, we
-    // need to transfer this information to the element.
-    if (
-      lazyNode._store &&
-      lazyNode._store.validated &&
-      !element._store.validated
-    ) {
-      element._store.validated = lazyNode._store.validated;
-    }
-
     // If the lazy node is initialized, we move its debug info to the inner
     // value.
     if (lazyNode._payload.status === INITIALIZED && lazyNode._debugInfo) {
@@ -1535,6 +1532,29 @@ function createElement(
   return element;
 }
 
+function transferValidation(store: {validated: 0 | 1 | 2}, value: mixed): void {
+  if (store.validated && typeof value === 'object' && value !== null) {
+    // Only elements and lazy nodes carry key validation. Any other value, e.g.
+    // an array of children, needs to have its own items validated instead.
+    const $$typeof = (value as any).$$typeof;
+    if ($$typeof === REACT_ELEMENT_TYPE || $$typeof === REACT_LAZY_TYPE) {
+      const valueStore = (value as any)._store;
+      if (valueStore && !valueStore.validated) {
+        valueStore.validated = store.validated;
+      }
+    }
+  }
+}
+
+function readChunkAndTransferValidation<T>(
+  store: {validated: 0 | 1 | 2},
+  payload: SomeChunk<T>,
+): T {
+  const value: T = readChunk(payload);
+  transferValidation(store, value);
+  return value;
+}
+
 function createLazyChunkWrapper<T>(
   chunk: SomeChunk<T>,
   validated: 0 | 1 | 2, // DEV-only
@@ -1547,8 +1567,16 @@ function createLazyChunkWrapper<T>(
   if (__DEV__) {
     // Forward the live array
     lazyType._debugInfo = chunk._debugInfo;
-    // Initialize a store for key validation by the JSX runtime.
-    lazyType._store = {validated: validated};
+    // Initialize a store for key validation by the JSX runtime. It can only
+    // validate the lazy node itself, because the value it refers to might not
+    // exist yet at that point, e.g. if it's an outlined row that hasn't been
+    // initialized. So the validation is transferred to the value when the lazy
+    // node is unwrapped. If the value is another lazy node, unwrapping that one
+    // forwards the validation further.
+    const store = {validated: validated};
+    lazyType._store = store;
+    // $FlowFixMe[incompatible-type] `bind` loses the type argument.
+    lazyType._init = readChunkAndTransferValidation.bind(null, store);
   }
   return lazyType;
 }
@@ -1749,7 +1777,7 @@ function fulfillReference(
       const element: any = handler.value;
       switch (key) {
         case '3':
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           element.props = mappedValue;
@@ -1767,7 +1795,7 @@ function fulfillReference(
           }
           break;
         default:
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           break;
@@ -1788,6 +1816,10 @@ function fulfillReference(
       return;
     }
     const resolveListeners = chunk.value;
+    if (__DEV__) {
+      // Only a blocked chunk receives debug info, so release the set here.
+      chunk._receivedDebugInfo = null;
+    }
     const initializedChunk: InitializedChunk<any> = chunk as any;
     initializedChunk.status = INITIALIZED;
     initializedChunk.value = handler.value;
@@ -2126,30 +2158,46 @@ function resolveLazy(value: any): mixed {
 }
 
 function transferReferencedDebugInfo(
-  parentChunk: null | SomeChunk<any>,
+  receivingChunk: null | BlockedChunk<any>,
   referencedChunk: SomeChunk<any>,
 ): void {
   if (__DEV__) {
-    // We add the debug info to the initializing chunk since the resolution of
-    // that promise is also blocked by the referenced debug info. By adding it
-    // to both we can track it even if the array/element/lazy is extracted, or
-    // if the root is rendered as is.
-    if (parentChunk !== null) {
+    // We add the debug info to the receiving chunk since the resolution of that
+    // promise is also blocked by the referenced debug info. By adding it to
+    // both we can track it even if the array/element/lazy is extracted, or if
+    // the root is rendered as is.
+    if (receivingChunk !== null) {
       const referencedDebugInfo = referencedChunk._debugInfo;
-      const parentDebugInfo = parentChunk._debugInfo;
+      const receivingDebugInfo = receivingChunk._debugInfo;
+      // The receiving chunk takes each entry only once. A repeated entry
+      // carries no information. An entry repeats in two ways:
+      //
+      // - the receiving chunk references the same chunk more than once
+      // - two referenced chunks carry the same entry
+      //
+      // Without the set, the entries multiply along a chain of references.
+      let receivedDebugInfo = receivingChunk._receivedDebugInfo;
+      if (receivedDebugInfo === null) {
+        receivedDebugInfo = receivingChunk._receivedDebugInfo = new Set();
+      }
       for (let i = 0; i < referencedDebugInfo.length; ++i) {
         const debugInfoEntry = referencedDebugInfo[i];
         if (debugInfoEntry.name != null) {
           debugInfoEntry as ReactComponentInfo;
           // We're not transferring Component info since we use Component info
           // in Debug info to fill in gaps between Fibers for the parent stack.
-        } else {
-          parentDebugInfo.push(debugInfoEntry);
+        } else if (!receivedDebugInfo.has(debugInfoEntry)) {
+          receivedDebugInfo.add(debugInfoEntry);
+          receivingDebugInfo.push(debugInfoEntry);
         }
       }
     }
   }
 }
+
+// Most references have no path, so they can all share the same empty array.
+// It's never mutated because only paths with entries get spliced in place.
+const EMPTY_REFERENCE_PATH: Array<string> = [];
 
 function getOutlinedModel<T>(
   response: Response,
@@ -2158,8 +2206,10 @@ function getOutlinedModel<T>(
   key: string,
   map: (response: Response, model: any, parentObject: Object, key: string) => T,
 ): T {
-  const path = reference.split(':');
-  const id = parseInt(path[0], 16);
+  // parseInt stops at the ':' so we only need to split when there's a path.
+  const id = parseInt(reference, 16);
+  const path =
+    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   const chunk = getChunk(response, id);
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
@@ -3224,10 +3274,22 @@ function resolveModule(
 ): void {
   const chunks = response._chunks;
   const chunk = chunks.get(id);
-  const clientReferenceMetadata: ClientReferenceMetadata = parseModel(
-    response,
-    model,
-  );
+  const prevHandler = initializingHandler;
+  initializingHandler = null;
+  let clientReferenceMetadata: ClientReferenceMetadata;
+  try {
+    clientReferenceMetadata = parseModel(response, model);
+    if (initializingHandler !== null) {
+      // We resolve the client reference below and have nothing to wait on,
+      // so the metadata can't reference a row that hasn't arrived.
+      throw new Error(
+        'A client reference was blocked on a row that has not been received yet. ' +
+          'This is a bug in React.',
+      );
+    }
+  } finally {
+    initializingHandler = prevHandler;
+  }
   const clientReference = resolveClientReference<$FlowFixMe>(
     response._bundlerConfig,
     clientReferenceMetadata,

@@ -41,6 +41,9 @@ describe('ReactFlightTurbopackDOMReply', () => {
     turbopackServerMap = TurbopackMock.turbopackServerMap;
     ReactServerDOMServer = require('react-server-dom-turbopack/server.browser');
     jest.resetModules();
+    jest.mock('react-server-dom-turbopack/client', () =>
+      require('react-server-dom-turbopack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-turbopack/client');
 
     const InternalTestUtils = require('internal-test-utils');
