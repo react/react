@@ -2221,12 +2221,16 @@ function computeSignatureForInstruction(
         value: ValueKind.Primitive,
         reason: ValueReason.Other,
       });
-      effects.push({
-        kind: 'Create',
-        into: value.lvalue,
-        value: ValueKind.Primitive,
-        reason: ValueReason.Other,
-      });
+      if (value.isContext) {
+        effects.push({kind: 'Mutate', value: value.lvalue});
+      } else {
+        effects.push({
+          kind: 'Create',
+          into: value.lvalue,
+          value: ValueKind.Primitive,
+          reason: ValueReason.Other,
+        });
+      }
       break;
     }
     case 'StoreGlobal': {

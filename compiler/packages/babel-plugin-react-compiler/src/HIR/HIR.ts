@@ -1083,6 +1083,7 @@ export type InstructionValue =
    */
   | {
       kind: 'PrefixUpdate';
+      isContext: boolean;
       lvalue: Place;
       operation: t.UpdateExpression['operator'];
       value: Place;
@@ -1095,6 +1096,7 @@ export type InstructionValue =
    */
   | {
       kind: 'PostfixUpdate';
+      isContext: boolean;
       lvalue: Place;
       operation: t.UpdateExpression['operator'];
       value: Place;

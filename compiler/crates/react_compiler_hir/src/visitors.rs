@@ -596,9 +596,15 @@ pub fn map_instruction_lvalues(instr: &mut Instruction, f: &mut impl FnMut(Place
         InstructionValue::Destructure { lvalue, .. } => {
             map_pattern_operands(&mut lvalue.pattern, f);
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
-            *lvalue = f(lvalue.clone());
+        InstructionValue::PostfixUpdate {
+            lvalue, is_context, ..
+        }
+        | InstructionValue::PrefixUpdate {
+            lvalue, is_context, ..
+        } => {
+            if !*is_context {
+                *lvalue = f(lvalue.clone());
+            }
         }
         _ => {}
     }
@@ -1697,9 +1703,15 @@ pub fn for_each_instruction_lvalue_mut(instr: &mut Instruction, f: &mut impl FnM
         InstructionValue::Destructure { lvalue, .. } => {
             for_each_pattern_operand_mut(&mut lvalue.pattern, f);
         }
-        InstructionValue::PostfixUpdate { lvalue, .. }
-        | InstructionValue::PrefixUpdate { lvalue, .. } => {
-            f(lvalue);
+        InstructionValue::PostfixUpdate {
+            lvalue, is_context, ..
+        }
+        | InstructionValue::PrefixUpdate {
+            lvalue, is_context, ..
+        } => {
+            if !*is_context {
+                f(lvalue);
+            }
         }
         _ => {}
     }

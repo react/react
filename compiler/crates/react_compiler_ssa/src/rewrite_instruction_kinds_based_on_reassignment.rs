@@ -295,11 +295,18 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
                         kind.ok_or_else(|| invariant_error("Expected at least one operand", None))?;
                     destructure_kind_locs.push((block_index, local_idx, kind));
                 }
-                InstructionValue::PostfixUpdate { lvalue, .. }
-                | InstructionValue::PrefixUpdate { lvalue, .. } => {
+                InstructionValue::PostfixUpdate {
+                    lvalue, is_context, ..
+                }
+                | InstructionValue::PrefixUpdate {
+                    lvalue, is_context, ..
+                } => {
                     let ident = &env.identifiers[lvalue.identifier.0 as usize];
                     let decl_id = ident.declaration_id;
                     let Some(existing) = declarations.get(&decl_id) else {
+                        if *is_context {
+                            continue;
+                        }
                         return Err(invariant_error_with_loc(
                             "Expected variable to have been defined",
                             Some(format!("No declaration for {}", format_place(lvalue, env),)),

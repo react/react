@@ -434,7 +434,9 @@ export function mapInstructionLValues(
     }
     case 'PostfixUpdate':
     case 'PrefixUpdate': {
-      instr.value.lvalue = fn(instr.value.lvalue);
+      if (!instr.value.isContext) {
+        instr.value.lvalue = fn(instr.value.lvalue);
+      }
       break;
     }
   }

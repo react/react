@@ -154,6 +154,9 @@ export function rewriteInstructionKindsBasedOnReassignment(
         case 'PrefixUpdate': {
           const lvalue = value.lvalue;
           const declaration = declarations.get(lvalue.identifier.declarationId);
+          if (value.isContext && declaration === undefined) {
+            break;
+          }
           CompilerError.invariant(declaration !== undefined, {
             reason: `Expected variable to have been defined`,
             description: `No declaration for ${printPlace(lvalue)}`,

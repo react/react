@@ -1386,6 +1386,7 @@ impl<'a> PrintFormatter<'a> {
                 operation,
                 value: val,
                 loc,
+                ..
             } => {
                 self.line("PostfixUpdate {");
                 self.indent();
@@ -1401,6 +1402,7 @@ impl<'a> PrintFormatter<'a> {
                 operation,
                 value: val,
                 loc,
+                ..
             } => {
                 self.line("PrefixUpdate {");
                 self.indent();

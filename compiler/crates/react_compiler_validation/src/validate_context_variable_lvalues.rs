@@ -116,12 +116,20 @@ fn validate_context_variable_lvalues_impl(
                         errors,
                     )?;
                 }
-                InstructionValue::PostfixUpdate { lvalue, .. }
-                | InstructionValue::PrefixUpdate { lvalue, .. } => {
+                InstructionValue::PostfixUpdate {
+                    is_context, lvalue, ..
+                }
+                | InstructionValue::PrefixUpdate {
+                    is_context, lvalue, ..
+                } => {
                     visit(
                         identifier_kinds,
                         lvalue,
-                        VarRefKind::Local,
+                        if *is_context {
+                            VarRefKind::Context
+                        } else {
+                            VarRefKind::Local
+                        },
                         identifiers,
                         errors,
                     )?;

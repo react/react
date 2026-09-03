@@ -750,12 +750,14 @@ pub enum InstructionValue {
         loc: Option<SourceLocation>,
     },
     PrefixUpdate {
+        is_context: bool,
         lvalue: Place,
         operation: UpdateOperator,
         value: Place,
         loc: Option<SourceLocation>,
     },
     PostfixUpdate {
+        is_context: bool,
         lvalue: Place,
         operation: UpdateOperator,
         value: Place,

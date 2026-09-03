@@ -387,6 +387,7 @@ fn evaluate_instruction(
             operation,
             value,
             loc,
+            ..
         } => {
             let previous = read(constants, value);
             if let Some(Constant::Primitive {
@@ -421,6 +422,7 @@ fn evaluate_instruction(
             operation,
             value,
             loc,
+            ..
         } => {
             let previous = read(constants, value);
             if let Some(Constant::Primitive {

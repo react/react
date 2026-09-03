@@ -2628,21 +2628,32 @@ fn compute_signature_for_instruction(
             });
         }
         InstructionValue::PostfixUpdate {
-            lvalue: pf_lvalue, ..
+            is_context,
+            lvalue: pf_lvalue,
+            ..
         }
         | InstructionValue::PrefixUpdate {
-            lvalue: pf_lvalue, ..
+            is_context,
+            lvalue: pf_lvalue,
+            ..
         } => {
             effects.push(AliasingEffect::Create {
                 into: lvalue.clone(),
                 value: ValueKind::Primitive,
                 reason: ValueReason::Other,
             });
-            effects.push(AliasingEffect::Create {
-                into: pf_lvalue.clone(),
-                value: ValueKind::Primitive,
-                reason: ValueReason::Other,
-            });
+            if *is_context {
+                effects.push(AliasingEffect::Mutate {
+                    value: pf_lvalue.clone(),
+                    reason: None,
+                });
+            } else {
+                effects.push(AliasingEffect::Create {
+                    into: pf_lvalue.clone(),
+                    value: ValueKind::Primitive,
+                    reason: ValueReason::Other,
+                });
+            }
         }
         InstructionValue::StoreGlobal {
             name,

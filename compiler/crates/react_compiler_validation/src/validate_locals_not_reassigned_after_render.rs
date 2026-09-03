@@ -209,6 +209,33 @@ fn get_context_reassignment(
                     }
                 }
 
+                InstructionValue::PostfixUpdate {
+                    is_context,
+                    lvalue,
+                    value,
+                    ..
+                }
+                | InstructionValue::PrefixUpdate {
+                    is_context,
+                    lvalue,
+                    value,
+                    ..
+                } => {
+                    if !is_context {
+                        continue;
+                    }
+                    if is_function_expression {
+                        if context_variables.contains(&lvalue.identifier)
+                            || context_variables.contains(&value.identifier)
+                        {
+                            return Some(lvalue.clone());
+                        }
+                    } else {
+                        context_variables.insert(lvalue.identifier);
+                        context_variables.insert(value.identifier);
+                    }
+                }
+
                 _ => {
                     // For calls with noAlias signatures, only check the callee/receiver
                     // (not args) to avoid false positives from callbacks that reassign
