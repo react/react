@@ -1403,6 +1403,10 @@ pub enum AliasingEffect {
     MutateTransitiveConditionally { value: Place },
     /// Information flow from `from` to `into` (non-aliasing capture).
     Capture { from: Place, into: Place },
+    /// A shallow copy with one spread source and no property overrides. Unlike
+    /// ordinary context captures, this remains definite until a mutation
+    /// could replace one of the copied properties.
+    ObjectSpreadCapture { from: Place, into: Place },
     /// Direct aliasing: mutation of `into` implies mutation of `from`.
     Alias { from: Place, into: Place },
     /// Potential aliasing relationship.

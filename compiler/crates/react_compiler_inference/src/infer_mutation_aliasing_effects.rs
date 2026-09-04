@@ -838,6 +838,12 @@ fn hash_effect(effect: &AliasingEffect) -> String {
         AliasingEffect::Capture { from, into } => {
             format!("Capture:{}:{}", from.identifier.0, into.identifier.0)
         }
+        AliasingEffect::ObjectSpreadCapture { from, into } => {
+            format!(
+                "ObjectSpreadCapture:{}:{}",
+                from.identifier.0, into.identifier.0
+            )
+        }
         AliasingEffect::MaybeAlias { from, into } => {
             format!("MaybeAlias:{}:{}", from.identifier.0, into.identifier.0)
         }
@@ -1663,8 +1669,14 @@ fn apply_effect(
         }
         AliasingEffect::MaybeAlias { ref from, ref into }
         | AliasingEffect::Alias { ref from, ref into }
-        | AliasingEffect::Capture { ref from, ref into } => {
-            let is_capture = matches!(effect, AliasingEffect::Capture { .. });
+        | AliasingEffect::Capture { ref from, ref into }
+        | AliasingEffect::ObjectSpreadCapture { ref from, ref into } => {
+            let is_capture = matches!(
+                effect,
+                AliasingEffect::Capture { .. } | AliasingEffect::ObjectSpreadCapture { .. }
+            );
+            let is_object_spread_capture =
+                matches!(effect, AliasingEffect::ObjectSpreadCapture { .. });
             let is_maybe_alias = matches!(effect, AliasingEffect::MaybeAlias { .. });
             // For Alias, destination must already be initialized (Capture/MaybeAlias are exempt)
             assert!(
@@ -1703,6 +1715,11 @@ fn apply_effect(
                 )?;
             } else if (source_type == Some("mutable") && destination_type == Some("mutable"))
                 || is_maybe_alias
+            {
+                effects.push(effect.clone());
+            } else if source_type == Some("context")
+                && destination_type == Some("mutable")
+                && is_object_spread_capture
             {
                 effects.push(effect.clone());
             } else if (source_type == Some("context") && destination_type.is_some())
@@ -2211,9 +2228,17 @@ fn compute_signature_for_instruction(
                         });
                     }
                     react_compiler_hir::ObjectPropertyOrSpread::Spread(s) => {
-                        effects.push(AliasingEffect::Capture {
-                            from: s.place.clone(),
-                            into: lvalue.clone(),
+                        // With additional properties, a load may read an overwritten value.
+                        effects.push(if properties.len() == 1 {
+                            AliasingEffect::ObjectSpreadCapture {
+                                from: s.place.clone(),
+                                into: lvalue.clone(),
+                            }
+                        } else {
+                            AliasingEffect::Capture {
+                                from: s.place.clone(),
+                                into: lvalue.clone(),
+                            }
                         });
                     }
                 }
@@ -3324,7 +3349,8 @@ fn compute_effects_for_aliasing_signature(
             | AliasingEffect::ImmutableCapture { from, into }
             | AliasingEffect::Alias { from, into }
             | AliasingEffect::CreateFrom { from, into }
-            | AliasingEffect::Capture { from, into } => {
+            | AliasingEffect::Capture { from, into }
+            | AliasingEffect::ObjectSpreadCapture { from, into } => {
                 let from_places = substitutions
                     .get(&from.identifier)
                     .cloned()
@@ -3362,6 +3388,12 @@ fn compute_effects_for_aliasing_signature(
                                 from: f.clone(),
                                 into: t.clone(),
                             },
+                            AliasingEffect::ObjectSpreadCapture { .. } => {
+                                AliasingEffect::ObjectSpreadCapture {
+                                    from: f.clone(),
+                                    into: t.clone(),
+                                }
+                            }
                             _ => unreachable!(),
                         });
                     }

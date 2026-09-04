@@ -144,6 +144,7 @@ where
             AliasingEffect::Assign { from, .. }
             | AliasingEffect::Alias { from, .. }
             | AliasingEffect::Capture { from, .. }
+            | AliasingEffect::ObjectSpreadCapture { from, .. }
             | AliasingEffect::CreateFrom { from, .. }
             | AliasingEffect::MaybeAlias { from, .. } => {
                 captured_or_mutated.insert(from.identifier);
