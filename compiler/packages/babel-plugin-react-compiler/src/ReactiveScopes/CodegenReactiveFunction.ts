@@ -334,6 +334,10 @@ function codegenReactiveFunction(
   cx: Context,
   fn: ReactiveFunction,
 ): CodegenFunction {
+  if (fn.selfBinding !== null) {
+    cx.temp.set(fn.selfBinding.identifier.declarationId, null);
+    cx.declare(fn.selfBinding.identifier);
+  }
   for (const param of fn.params) {
     const place = param.kind === 'Identifier' ? param : param.place;
     cx.temp.set(place.identifier.declarationId, null);
@@ -1886,7 +1890,11 @@ function codegenInstructionValue(
         value = t.arrowFunctionExpression(fn.params, body, fn.async);
       } else {
         value = t.functionExpression(
-          instrValue.name != null ? t.identifier(instrValue.name) : null,
+          reactiveFunction.selfBinding !== null
+            ? convertIdentifier(reactiveFunction.selfBinding.identifier)
+            : instrValue.name != null
+              ? t.identifier(instrValue.name)
+              : null,
           fn.params,
           fn.body,
           fn.generator,

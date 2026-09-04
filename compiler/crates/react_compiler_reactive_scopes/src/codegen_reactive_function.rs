@@ -754,6 +754,11 @@ fn codegen_reactive_function(
     cx: &mut Context,
     func: &ReactiveFunction,
 ) -> Result<CodegenFunction, CompilerError> {
+    if let Some(self_binding) = &func.self_binding {
+        let declaration_id = cx.env.identifiers[self_binding.identifier.0 as usize].declaration_id;
+        cx.temp.set(declaration_id, None);
+        cx.declare(self_binding.identifier);
+    }
     // Register parameters
     for param in &func.params {
         let place = match param {
@@ -2814,7 +2819,14 @@ fn codegen_function_expression(
             base: BaseNode::typed("FunctionExpression"),
             params: fn_result.params,
             body: fn_result.body,
-            id: name.as_ref().map(|n| make_identifier(n)),
+            id: if let Some(self_binding) = &reactive_fn_mut.self_binding {
+                Some(convert_identifier(
+                    self_binding.identifier,
+                    inner_cx.env,
+                )?)
+            } else {
+                name.as_ref().map(|n| make_identifier(n))
+            },
             generator: fn_result.generator,
             is_async: fn_result.is_async,
             return_type: None,
