@@ -583,7 +583,8 @@ pub fn infer_mutation_aliasing_ranges(
                         state.maybe_alias(index, from, into);
                         index += 1;
                     }
-                    AliasingEffect::Capture { from, into } => {
+                    AliasingEffect::Capture { from, into }
+                    | AliasingEffect::ObjectSpreadCapture { from, into } => {
                         state.capture(index, from, into);
                         index += 1;
                     }
@@ -899,6 +900,7 @@ pub fn infer_mutation_aliasing_ranges(
                     AliasingEffect::Assign { from, into, .. }
                     | AliasingEffect::Alias { from, into }
                     | AliasingEffect::Capture { from, into }
+                    | AliasingEffect::ObjectSpreadCapture { from, into }
                     | AliasingEffect::CreateFrom { from, into }
                     | AliasingEffect::MaybeAlias { from, into } => {
                         let is_mutated_or_reassigned = env.identifiers[into.identifier.0 as usize]

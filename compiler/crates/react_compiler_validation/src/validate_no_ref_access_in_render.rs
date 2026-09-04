@@ -910,6 +910,9 @@ fn validate_no_ref_access_in_render_impl(
                                                 (Some(place), "ref-passed")
                                             }
                                             AliasingEffect::Capture { from, .. }
+                                            | AliasingEffect::ObjectSpreadCapture {
+                                                from, ..
+                                            }
                                             | AliasingEffect::Alias { from, .. }
                                             | AliasingEffect::MaybeAlias { from, .. }
                                             | AliasingEffect::Assign { from, .. }

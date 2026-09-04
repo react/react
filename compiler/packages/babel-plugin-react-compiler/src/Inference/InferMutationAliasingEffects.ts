@@ -931,6 +931,13 @@ function applyEffect(
       ) {
         effects.push(effect);
       } else if (
+        sourceType === 'context' &&
+        destinationType === 'mutable' &&
+        effect.kind === 'Capture' &&
+        effect.isObjectSpreadCapture === true
+      ) {
+        effects.push(effect);
+      } else if (
         (sourceType === 'context' && destinationType != null) ||
         (sourceType === 'mutable' && destinationType === 'context')
       ) {
@@ -1779,6 +1786,7 @@ function computeSignatureForInstruction(
             kind: 'Capture',
             from: property.place,
             into: lvalue,
+            isObjectSpreadCapture: true,
           });
         }
       }
