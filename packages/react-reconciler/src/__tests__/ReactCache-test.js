@@ -263,6 +263,47 @@ describe('ReactCache', () => {
     );
   });
 
+  it('does not capture a stack for the completion abort reason (#37288)', async () => {
+    let renderedCacheSignal = null;
+
+    let resolve;
+    const promise = new Promise(r => (resolve = r));
+
+    async function Test() {
+      renderedCacheSignal = cacheSignal();
+      await promise;
+      return 'Hi';
+    }
+
+    const controller = new AbortController();
+    const errors = [];
+    const result = ReactNoopFlightServer.render(<Test />, {
+      signal: controller.signal,
+      onError(x) {
+        errors.push(x);
+      },
+    });
+    expect(renderedCacheSignal.aborted).toBe(false);
+    await resolve();
+    await 0;
+    await 0;
+
+    expect(await ReactNoopFlightClient.read(result)).toBe('Hi');
+
+    expect(errors).toEqual([]);
+    expect(renderedCacheSignal.aborted).toBe(true);
+    expect(renderedCacheSignal.reason.message).toContain(
+      'This render completed successfully.',
+    );
+    // The completion reason must not capture a stack. A captured stack retains the
+    // completed render's cache scope for the request's lifetime and leaks RSC
+    // responses under load. See #37288.
+    const stackFrames = (renderedCacheSignal.reason.stack || '')
+      .split('\n')
+      .filter(line => /^\s*at\s/.test(line));
+    expect(stackFrames).toEqual([]);
+  });
+
   it('cacheSignal() aborts when the render is aborted', async () => {
     let renderedCacheSignal = null;
 
