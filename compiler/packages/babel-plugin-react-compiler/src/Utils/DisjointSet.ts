@@ -18,7 +18,7 @@ export default class DisjointSet<T> {
    * set.
    */
   union(items: Array<T>): void {
-    const first = items.shift();
+    const first = items[0];
     CompilerError.invariant(first != null, {
       reason: 'Expected set to be non-empty',
       loc: GeneratedSource,
@@ -34,7 +34,8 @@ export default class DisjointSet<T> {
       this.#entries.set(first, first);
     }
     // update remaining items (which may already be part of other sets)
-    for (const item of items) {
+    for (let i = 1; i < items.length; i++) {
+      const item = items[i];
       let itemParent = this.#entries.get(item);
       if (itemParent == null) {
         // new item, no existing set to update
