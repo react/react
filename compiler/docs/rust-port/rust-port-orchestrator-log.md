@@ -1,24 +1,24 @@
 # Status
 
-Overall: 1810/1810 passing, 0 failed. All passes ported through ValidatePreservedManualMemoization (#48). Codegen (#49) fully ported. Rust-port frontier: none. Code comparison: 1810/1810.
+Overall: 1724/1724 passing, 0 failed. All passes ported through ValidatePreservedManualMemoization (#48). Codegen (#49) fully ported. Code comparison: 1724/1724.
 
-Snap (end-to-end): 1811/1811 assertions passed, 0 failed; local runner shutdown exits separately with `Farm is ended`
+Snap (end-to-end): 1725/1725 passed, 0 failed
 
 ## Transformation passes
 
-HIR: complete (1716/1716)
-PruneMaybeThrows: complete (1716/1716, includes 2nd call)
-DropManualMemoization: complete (1715/1715)
-MergeConsecutiveBlocks: complete (1715/1715)
-SSA: complete (1714/1714)
+HIR: partial (1651/1653, 2 failures — block ID ordering)
+PruneMaybeThrows: complete (1651/1651, includes 2nd call)
+DropManualMemoization: complete
+MergeConsecutiveBlocks: complete
+SSA: complete (1650/1650)
 EliminateRedundantPhi: complete
-ConstantPropagation: complete (1714/1714)
-InferTypes: complete (1714/1714)
+ConstantPropagation: complete
+InferTypes: complete
 OptimizePropsMethodCalls: complete
 AnalyseFunctions: complete (1649/1649)
 InferMutationAliasingEffects: complete (1643/1643)
 OptimizeForSSR: complete (5/5, conditional, outputMode === 'ssr')
-DeadCodeElimination: complete (1703/1703)
+DeadCodeElimination: complete
 InferMutationAliasingRanges: complete
 InferReactivePlaces: complete
 ValidateExhaustiveDependencies: complete
@@ -27,8 +27,8 @@ InferReactiveScopeVariables: complete
 MemoizeFbtAndMacroOperandsInSameScope: complete
 outlineJSX: complete (conditional on enableJsxOutlining)
 NameAnonymousFunctions: complete (2/2, conditional)
-OutlineFunctions: complete (1702/1702)
-AlignMethodCallScopes: complete (1702/1702)
+OutlineFunctions: complete
+AlignMethodCallScopes: complete
 AlignObjectMethodScopes: complete
 PruneUnusedLabelsHIR: complete
 AlignReactiveScopesToBlockScopesHIR: complete
@@ -37,33 +37,26 @@ BuildReactiveScopeTerminalsHIR: complete
 FlattenReactiveLoopsHIR: complete
 FlattenScopesWithHooksOrUseHIR: complete
 PropagateScopeDependenciesHIR: complete
-BuildReactiveFunction: complete (1701/1701)
+BuildReactiveFunction: complete
 AssertWellFormedBreakTargets: complete
 PruneUnusedLabels: complete
 AssertScopeInstructionsWithinScopes: complete
-PruneNonEscapingScopes: complete (1701/1701)
+PruneNonEscapingScopes: complete
 PruneNonReactiveDependencies: complete
 PruneUnusedScopes: complete
 MergeReactiveScopesThatInvalidateTogether: complete
 PruneAlwaysInvalidatingScopes: complete
-PropagateEarlyReturns: complete (1701/1701)
+PropagateEarlyReturns: complete
 PruneUnusedLValues: complete
-PromoteUsedTemporaries: complete (1701/1701)
+PromoteUsedTemporaries: complete
 ExtractScopeDeclarationsFromDestructuring: complete
-StabilizeBlockIds: complete (1701/1701)
-RenameVariables: complete (1701/1701)
-PruneHoistedContexts: complete (1699/1699)
+StabilizeBlockIds: complete
+RenameVariables: complete
+PruneHoistedContexts: complete
 ValidatePreservedManualMemoization: complete
 Codegen: complete (1717/1717 code comparison)
 
 # Logs
-
-## 20260904-222403 Preserve state aliasing through object spreads
-
-Added an object-spread-specific capture effect so shallow copies retain the definite alias
-needed to detect later nested state mutations. Kept the TypeScript and Rust inference paths
-aligned and added one focused regression fixture. Rust-port comparison: 1810/1810 passed,
-with no frontier.
 
 ## 20260401-120000 Extend test-e2e with event comparison and fix bugs
 

@@ -8,7 +8,8 @@ function Component({initial}) {
   const [values, setValues] = useState(initial);
 
   const handleChange = (itemId, diff) => {
-    const copyValues = {...values};
+    const clone = () => ({...values});
+    const copyValues = clone();
     copyValues[itemId].confirmedQuantity = diff;
     setValues(copyValues);
   };
@@ -28,14 +29,14 @@ Error: This value cannot be modified
 
 Modifying a value returned from 'useState()', which should not be modified directly. Use the setter function to update instead.
 
-error.invalid-mutate-nested-state-through-shallow-copy.ts:8:4
-   6 |   const handleChange = (itemId, diff) => {
-   7 |     const copyValues = {...values};
->  8 |     copyValues[itemId].confirmedQuantity = diff;
+error.invalid-mutate-state-shallow-copy-helper.ts:9:4
+   7 |     const clone = () => ({...values});
+   8 |     const copyValues = clone();
+>  9 |     copyValues[itemId].confirmedQuantity = diff;
      |     ^^^^^^^^^^^^^^^^^^ `values` cannot be modified
-   9 |     setValues(copyValues);
-  10 |   };
-  11 |
+  10 |     setValues(copyValues);
+  11 |   };
+  12 |
 ```
           
       

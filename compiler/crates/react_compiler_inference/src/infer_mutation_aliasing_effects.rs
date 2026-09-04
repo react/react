@@ -2228,9 +2228,17 @@ fn compute_signature_for_instruction(
                         });
                     }
                     react_compiler_hir::ObjectPropertyOrSpread::Spread(s) => {
-                        effects.push(AliasingEffect::ObjectSpreadCapture {
-                            from: s.place.clone(),
-                            into: lvalue.clone(),
+                        // With additional properties, a load may read an overwritten value.
+                        effects.push(if properties.len() == 1 {
+                            AliasingEffect::ObjectSpreadCapture {
+                                from: s.place.clone(),
+                                into: lvalue.clone(),
+                            }
+                        } else {
+                            AliasingEffect::Capture {
+                                from: s.place.clone(),
+                                into: lvalue.clone(),
+                            }
                         });
                     }
                 }
@@ -3376,9 +3384,12 @@ fn compute_effects_for_aliasing_signature(
                                 from: f.clone(),
                                 into: t.clone(),
                             },
-                            AliasingEffect::Capture { .. }
-                            | AliasingEffect::ObjectSpreadCapture { .. } => {
-                                AliasingEffect::Capture {
+                            AliasingEffect::Capture { .. } => AliasingEffect::Capture {
+                                from: f.clone(),
+                                into: t.clone(),
+                            },
+                            AliasingEffect::ObjectSpreadCapture { .. } => {
+                                AliasingEffect::ObjectSpreadCapture {
                                     from: f.clone(),
                                     into: t.clone(),
                                 }

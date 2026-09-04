@@ -66,6 +66,12 @@ struct MutationInfo {
     loc: Option<SourceLocation>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CaptureInfo {
+    index: usize,
+    is_object_spread_capture: bool,
+}
+
 #[derive(Debug, Clone)]
 enum NodeValue {
     Object,
@@ -77,7 +83,7 @@ enum NodeValue {
 struct Node {
     id: IdentifierId,
     created_from: IndexMap<IdentifierId, usize, FxBuildHasher>,
-    captures: IndexMap<IdentifierId, usize, FxBuildHasher>,
+    captures: IndexMap<IdentifierId, CaptureInfo, FxBuildHasher>,
     aliases: IndexMap<IdentifierId, usize, FxBuildHasher>,
     maybe_aliases: IndexMap<IdentifierId, usize, FxBuildHasher>,
     edges: Vec<Edge>,
@@ -140,7 +146,13 @@ impl AliasingState {
         }
     }
 
-    fn capture(&mut self, index: usize, from: &Place, into: &Place) {
+    fn capture(
+        &mut self,
+        index: usize,
+        from: &Place,
+        into: &Place,
+        is_object_spread_capture: bool,
+    ) {
         let from_id = from.identifier;
         let into_id = into.identifier;
         if !self.nodes.contains_key(&from_id) || !self.nodes.contains_key(&into_id) {
@@ -156,7 +168,42 @@ impl AliasingState {
             .unwrap()
             .captures
             .entry(from_id)
-            .or_insert(index);
+            .or_insert(CaptureInfo {
+                index,
+                is_object_spread_capture,
+            });
+    }
+
+    /// A helper returning an unmodified shallow copy captures its source without
+    /// aliasing it. Only preserve this distinction for a single, unambiguous source.
+    fn get_object_spread_source(&self, start: IdentifierId) -> Option<IdentifierId> {
+        let mut seen = FxHashSet::default();
+        let mut current = start;
+        let mut has_spread = false;
+        while seen.insert(current) {
+            let node = self.nodes.get(&current)?;
+            if node.local.is_some()
+                || node.transitive.is_some()
+                || !node.created_from.is_empty()
+                || !node.maybe_aliases.is_empty()
+            {
+                return None;
+            }
+            if node.aliases.len() == 1 && node.captures.is_empty() {
+                current = *node.aliases.first().unwrap().0;
+            } else if node.aliases.is_empty() && node.captures.len() == 1 {
+                let (&source, capture) = node.captures.first().unwrap();
+                if !capture.is_object_spread_capture {
+                    return None;
+                }
+                has_spread = true;
+                current = source;
+            } else {
+                return (has_spread && node.aliases.is_empty() && node.captures.is_empty())
+                    .then_some(current);
+            }
+        }
+        None
     }
 
     fn assign(&mut self, index: usize, from: &Place, into: &Place) {
@@ -226,8 +273,8 @@ impl AliasingState {
                 }
                 queue.push(alias);
             }
-            for (&capture, &when) in &node.captures {
-                if when >= index {
+            for (&capture, info) in &node.captures {
+                if info.index >= index {
                     continue;
                 }
                 queue.push(capture);
@@ -283,6 +330,7 @@ impl AliasingState {
                 None => continue,
             };
 
+            let was_mutated = node.local.is_some() || node.transitive.is_some();
             if node.mutation_reason.is_none() {
                 node.mutation_reason = reason.clone();
             }
@@ -346,7 +394,7 @@ impl AliasingState {
                 node.aliases.iter().map(|(&k, &v)| (k, v)).collect();
             let node_maybe_aliases: Vec<(IdentifierId, usize)> =
                 node.maybe_aliases.iter().map(|(&k, &v)| (k, v)).collect();
-            let node_captures: Vec<(IdentifierId, usize)> =
+            let node_captures: Vec<(IdentifierId, CaptureInfo)> =
                 node.captures.iter().map(|(&k, &v)| (k, v)).collect();
             let node_created_from: Vec<(IdentifierId, usize)> =
                 node.created_from.iter().map(|(&k, &v)| (k, v)).collect();
@@ -409,15 +457,20 @@ impl AliasingState {
 
             // Only transitive mutations affect captures backward
             if entry.transitive {
-                for (capture, when) in &node_captures {
-                    if *when >= index {
+                for (capture, info) in &node_captures {
+                    if info.index >= index {
                         continue;
                     }
                     queue.push(QueueEntry {
                         place: *capture,
                         transitive: entry.transitive,
                         direction: Direction::Backwards,
-                        kind: entry.kind,
+                        // An earlier mutation may have replaced the property being mutated.
+                        kind: if info.is_object_spread_capture && was_mutated {
+                            MutationKind::Conditional
+                        } else {
+                            entry.kind
+                        },
                     });
                 }
             }
@@ -585,7 +638,12 @@ pub fn infer_mutation_aliasing_ranges(
                     }
                     AliasingEffect::Capture { from, into }
                     | AliasingEffect::ObjectSpreadCapture { from, into } => {
-                        state.capture(index, from, into);
+                        state.capture(
+                            index,
+                            from,
+                            into,
+                            matches!(effect, AliasingEffect::ObjectSpreadCapture { .. }),
+                        );
                         index += 1;
                     }
                     AliasingEffect::MutateTransitive { value }
@@ -1043,6 +1101,7 @@ pub fn infer_mutation_aliasing_ranges(
     // Part 3: Finish populating the externally visible effects
     // =========================================================================
     let returns_id = func.returns.identifier;
+    let object_spread_source = state.get_object_spread_source(returns_id);
     let returns_type_id = env.identifiers[returns_id.0 as usize].type_;
     let returns_type = &env.types[returns_type_id.0 as usize];
     let return_value_kind = if is_primitive_type(returns_type) {
@@ -1107,6 +1166,13 @@ pub fn infer_mutation_aliasing_ranges(
 
             if from_node.last_mutated == mutation_index {
                 if into.identifier == returns_identifier_id {
+                    if Some(from.identifier) == object_spread_source {
+                        function_effects.push(AliasingEffect::ObjectSpreadCapture {
+                            from: from.clone(),
+                            into: into.clone(),
+                        });
+                        continue;
+                    }
                     function_effects.push(AliasingEffect::Alias {
                         from: from.clone(),
                         into: into.clone(),

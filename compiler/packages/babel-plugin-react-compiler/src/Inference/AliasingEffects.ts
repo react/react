@@ -81,6 +81,11 @@ export type AliasingEffect =
       kind: 'Capture';
       from: Place;
       into: Place;
+      /**
+       * A shallow copy with one spread source and no property overrides. Unlike
+       * ordinary context captures, this remains definite until a mutation
+       * could replace one of the copied properties.
+       */
       isObjectSpreadCapture?: boolean;
     }
   /**
