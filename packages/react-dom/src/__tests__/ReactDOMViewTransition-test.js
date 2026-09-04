@@ -1348,5 +1348,43 @@ describe('ReactDOMViewTransition', () => {
 
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
+
+    // @gate enableViewTransition
+    it('restores styles correctly when element has null-prototype style object', async () => {
+      const styleA = Object.create(null);
+      styleA.viewTransitionName = 'custom-name';
+      styleA.viewTransitionClass = 'custom-class';
+      styleA.color = 'red';
+
+      const styleB = Object.create(null);
+      styleB.color = 'blue';
+
+      function App({show}) {
+        return (
+          <ViewTransition name="hero">
+            <div style={show ? styleA : styleB}>Content</div>
+          </ViewTransition>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={true} />);
+        });
+      });
+
+      const div = container.querySelector('div');
+      expect(div.style.color).toBe('red');
+
+      await act(() => {
+        startTransition(() => {
+          root.render(<App show={false} />);
+        });
+      });
+
+      expect(div.style.color).toBe('blue');
+    });
   });
 });
+

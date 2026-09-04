@@ -555,4 +555,45 @@ describe('ReactDOMActivity', () => {
     expect(container.innerHTML).toBe('<div></div>');
     expect(portalContainer.innerHTML).toBe('<span prop="Child"></span>');
   });
+
+  it('hiding and unhiding an Activity boundary with a null-prototype style object', async () => {
+    const styleWithDisplay = Object.create(null);
+    styleWithDisplay.display = 'flex';
+    styleWithDisplay.color = 'red';
+
+    const styleWithoutDisplay = Object.create(null);
+    styleWithoutDisplay.color = 'blue';
+
+    let setShow;
+    function App() {
+      const [shouldShow, _setShow] = useState(true);
+      setShow = _setShow;
+      return (
+        <Activity mode={shouldShow ? 'visible' : 'hidden'}>
+          <div id="with-display" style={styleWithDisplay} />
+          <div id="without-display" style={styleWithoutDisplay} />
+        </Activity>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<App />));
+
+    const elWithDisplay = container.querySelector('#with-display');
+    const elWithoutDisplay = container.querySelector('#without-display');
+
+    expect(elWithDisplay.style.display).toBe('flex');
+    expect(elWithoutDisplay.style.display).toBe('');
+
+    // Hide Activity
+    await act(() => setShow(false));
+    expect(elWithDisplay.style.display).toBe('none');
+    expect(elWithoutDisplay.style.display).toBe('none');
+
+    // Unhide Activity - should restore display correctly without crashing
+    await act(() => setShow(true));
+    expect(elWithDisplay.style.display).toBe('flex');
+    expect(elWithoutDisplay.style.display).toBe('');
+  });
 });
+
