@@ -185,10 +185,7 @@ fn join_ref_access_ref_types(a: &RefAccessRefType, b: &RefAccessRefType) -> RefA
             loc: None,
             ref_id: None,
         },
-        (_, RefAccessRefType::RefValue { .. }) => RefAccessRefType::RefValue {
-            loc: None,
-            ref_id: None,
-        },
+        (_, RefAccessRefType::RefValue { .. }) => b.clone(),
         (RefAccessRefType::Ref { ref_id: a_id }, RefAccessRefType::Ref { ref_id: b_id }) => {
             if a_id == b_id {
                 a.clone()
