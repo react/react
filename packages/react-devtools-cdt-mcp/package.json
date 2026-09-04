@@ -1,7 +1,7 @@
 {
   "name": "react-devtools-cdt-mcp",
-  "version": "0.0.0",
-  "description": "Integration of React tools with chrome-devtools-mcp",
+  "version": "0.1.0",
+  "description": "Browser library that registers React inspection and profiling tools with chrome-devtools-mcp",
   "license": "MIT",
   "type": "module",
   "exports": {
