@@ -2705,9 +2705,26 @@ fn compute_signature_for_instruction(
                 reason: ValueReason::Other,
             });
         }
+        InstructionValue::TaggedTemplateExpression {
+            tag, subexprs, loc, ..
+        } => {
+            let sig = get_function_call_signature(env, tag.identifier)
+                .ok()
+                .flatten();
+            let mut args = vec![PlaceOrSpreadOrHole::Hole];
+            args.extend(subexprs.iter().cloned().map(PlaceOrSpreadOrHole::Place));
+            effects.push(AliasingEffect::Apply {
+                receiver: tag.clone(),
+                function: tag.clone(),
+                mutates_function: true,
+                args,
+                into: lvalue.clone(),
+                signature: sig,
+                loc: *loc,
+            });
+        }
         // All primitive-creating instructions
-        InstructionValue::TaggedTemplateExpression { .. }
-        | InstructionValue::BinaryExpression { .. }
+        InstructionValue::BinaryExpression { .. }
         | InstructionValue::Debugger { .. }
         | InstructionValue::JSXText { .. }
         | InstructionValue::MetaProperty { .. }

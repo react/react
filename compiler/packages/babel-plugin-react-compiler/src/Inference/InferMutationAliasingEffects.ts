@@ -2280,7 +2280,19 @@ function computeSignatureForInstruction(
       });
       break;
     }
-    case 'TaggedTemplateExpression':
+    case 'TaggedTemplateExpression': {
+      effects.push({
+        kind: 'Apply',
+        receiver: value.tag,
+        function: value.tag,
+        mutatesFunction: true,
+        args: [{kind: 'Hole'}, ...value.subexprs],
+        into: lvalue,
+        signature: getFunctionCallSignature(env, value.tag.identifier.type),
+        loc: value.loc,
+      });
+      break;
+    }
     case 'BinaryExpression':
     case 'Debugger':
     case 'JSXText':

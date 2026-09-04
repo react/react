@@ -616,10 +616,10 @@ export class DebugPrinter {
         this.line('TaggedTemplateExpression {');
         this.indent();
         this.formatPlaceField('tag', instrValue.tag);
-        this.line(`raw: ${JSON.stringify(instrValue.value.raw)}`);
-        this.line(
-          `cooked: ${instrValue.value.cooked !== undefined ? JSON.stringify(instrValue.value.cooked) : 'undefined'}`,
-        );
+        this.line(`quasis: ${JSON.stringify(instrValue.quasis)}`);
+        for (const subexpr of instrValue.subexprs) {
+          this.formatPlaceField('subexpr', subexpr);
+        }
         this.line(`loc: ${this.formatLoc(instrValue.loc)}`);
         this.dedent();
         this.line('}');
