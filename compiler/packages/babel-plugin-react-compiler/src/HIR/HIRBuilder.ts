@@ -651,8 +651,9 @@ function _shrink(func: HIR): void {
 
   const queue = [func.entry];
   const reachable = new Set<BlockId>();
-  while (queue.length !== 0) {
-    const blockId = queue.shift()!;
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const blockId = queue[queueIndex++];
     if (reachable.has(blockId)) {
       continue;
     }
