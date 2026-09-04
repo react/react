@@ -1611,6 +1611,11 @@ function lowerObjectPropertyKey(
       kind: 'identifier',
       name: String(key.node.value),
     };
+  } else if (key.isBigIntLiteral()) {
+    return {
+      kind: 'string',
+      name: BigInt(key.node.value).toString(10),
+    };
   }
 
   builder.recordError(
