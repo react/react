@@ -293,9 +293,14 @@ import type {Flags} from './ReactFiberFlags';
 
 type LayoutEffectTraversalFlags = number;
 
-const NoLayoutEffectTraversalFlags = /*        */ 0b00;
-const IncludeWorkInProgressEffects = /*       */ 0b01;
-const IncludeHostSingletons = /*              */ 0b10;
+const NoLayoutEffectTraversalFlags = /*        */ 0b000;
+const IncludeWorkInProgressEffects = /*       */ 0b001;
+const IncludeHostSingletons = /*              */ 0b010;
+// Only real Offscreen/Activity visibility transitions attach or detach
+// Hoistable DOM nodes. The StrictMode DEV double-invoke passes
+// NoLayoutEffectTraversalFlags so it leaves hoistables in place: re-inserting
+// appends to <head> and would reorder the document in DEV only.
+const IncludeHostHoistables = /*              */ 0b100;
 
 // Used during the commit phase to track the state of the Offscreen component stack.
 // Allows us to avoid traversing the return path to find the nearest Offscreen ancestor.
@@ -804,12 +809,15 @@ function commitLayoutEffectOnFiber(
             // traversing the layout effects, we must also re-mount layout
             // effects that were unmounted when the Offscreen subtree was
             // hidden. So this is a superset of the normal commitLayoutEffects.
-            let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
+            let layoutEffectTraversalFlags: LayoutEffectTraversalFlags =
+              NoLayoutEffectTraversalFlags;
             // $FlowFixMe[constant-condition]
             if (supportsSingletons) {
-              layoutEffectTraversalFlags = IncludeHostSingletons;
-            } else {
-              layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
+              layoutEffectTraversalFlags |= IncludeHostSingletons;
+            }
+            // $FlowFixMe[constant-condition]
+            if (supportsResources) {
+              layoutEffectTraversalFlags |= IncludeHostHoistables;
             }
             if ((finishedWork.subtreeFlags & LayoutMask) !== NoFlags) {
               layoutEffectTraversalFlags |= IncludeWorkInProgressEffects;
@@ -2639,12 +2647,15 @@ function commitMutationEffectsOnFiber(
               (finishedWork.mode & ConcurrentMode) !== NoMode
             ) {
               // Disappear the layout effects of all the children
-              let layoutEffectTraversalFlags: LayoutEffectTraversalFlags;
+              let layoutEffectTraversalFlags: LayoutEffectTraversalFlags =
+                NoLayoutEffectTraversalFlags;
               // $FlowFixMe[constant-condition]
               if (supportsSingletons) {
-                layoutEffectTraversalFlags = IncludeHostSingletons;
-              } else {
-                layoutEffectTraversalFlags = NoLayoutEffectTraversalFlags;
+                layoutEffectTraversalFlags |= IncludeHostSingletons;
+              }
+              // $FlowFixMe[constant-condition]
+              if (supportsResources) {
+                layoutEffectTraversalFlags |= IncludeHostHoistables;
               }
               const newOffscreenSubtreeIsHidden =
                 // $FlowFixMe[constant-condition]
@@ -3187,17 +3198,22 @@ function disappearLayoutEffects(
 
       // $FlowFixMe[constant-condition]
       if (supportsResources) {
-        // We only act on Hoistable Instances (memoizedState === null).
-        // Resources (memoizedState !== null) are ref-counted and intentionally
-        // remain in the document across Activity visibility transitions;
-        // they are released only on actual deletion.
-        const instance = finishedWork.stateNode;
-        if (
-          finishedWork.memoizedState === null &&
-          instance !== null &&
-          !offscreenSubtreeWasHidden
-        ) {
-          unmountHoistable(instance);
+        const includeHostHoistables =
+          (layoutEffectTraversalFlags & IncludeHostHoistables) !==
+          NoLayoutEffectTraversalFlags;
+        if (includeHostHoistables) {
+          // We only act on Hoistable Instances (memoizedState === null).
+          // Resources (memoizedState !== null) are ref-counted and intentionally
+          // remain in the document across Activity visibility transitions;
+          // they are released only on actual deletion.
+          const instance = finishedWork.stateNode;
+          if (
+            finishedWork.memoizedState === null &&
+            instance !== null &&
+            !offscreenSubtreeWasHidden
+          ) {
+            unmountHoistable(instance);
+          }
         }
       }
 
@@ -3413,38 +3429,40 @@ function reappearLayoutEffects(
     case HostHoistable: {
       // $FlowFixMe[constant-condition]
       if (supportsResources) {
-        // The reappear traversal runs whenever an Activity transitions from
-        // hidden to visible. We piggy-back on it (rather than adding a
-        // separate recursive traversal) to insert hoistable metadata such as
-        // <title> and <meta> into the document.
-        //
-        // We only act on Hoistable Instances (memoizedState === null).
-        // Resources stay mounted across Activity visibility transitions.
-        //
-        // The parentNode guard makes this idempotent and safe under StrictMode
-        // dev double-invoke: if the instance is already attached we skip.
-        //
-        // Note: this runs in the layout phase. A useLayoutEffect on an earlier
-        // sibling can therefore observe document.title before the hoistable
-        // is re-attached. Moving this to the mutation phase would require an
-        // additional unconditional traversal of the Activity subtree (the
-        // mutation traversal is gated by subtreeFlags and would skip an
-        // unchanged hoistable). This is the same tradeoff as for HostSingleton.
-        const instance = finishedWork.stateNode;
-        if (
-          finishedWork.memoizedState === null &&
-          instance !== null &&
-          !offscreenSubtreeIsHidden
-        ) {
-          // currentHoistableRoot is only maintained during the mutation phase.
-          // Derive the hoistable root from the instance's owner document so
-          // this works in the layout phase too. Hoistable Instances are
-          // hoisted to document.head, which always lives in ownerDocument.
-          mountHoistable(
-            getHoistableRoot(instance.ownerDocument),
-            finishedWork.type,
-            instance,
-          );
+        const includeHostHoistables =
+          (layoutEffectTraversalFlags & IncludeHostHoistables) !==
+          NoLayoutEffectTraversalFlags;
+        if (includeHostHoistables) {
+          // The reappear traversal runs whenever an Activity transitions from
+          // hidden to visible. We piggy-back on it (rather than adding a
+          // separate recursive traversal) to insert hoistable metadata such as
+          // <title> and <meta> into the document.
+          //
+          // We only act on Hoistable Instances (memoizedState === null).
+          // Resources stay mounted across Activity visibility transitions.
+          //
+          // Note: this runs in the layout phase. A useLayoutEffect on an earlier
+          // sibling can therefore observe document.title before the hoistable
+          // is re-attached. Moving this to the mutation phase would require an
+          // additional unconditional traversal of the Activity subtree (the
+          // mutation traversal is gated by subtreeFlags and would skip an
+          // unchanged hoistable). This is the same tradeoff as for HostSingleton.
+          const instance = finishedWork.stateNode;
+          if (
+            finishedWork.memoizedState === null &&
+            instance !== null &&
+            !offscreenSubtreeIsHidden
+          ) {
+            // currentHoistableRoot is only maintained during the mutation phase.
+            // Derive the hoistable root from the instance's owner document so
+            // this works in the layout phase too. Hoistable Instances are
+            // hoisted to document.head, which always lives in ownerDocument.
+            mountHoistable(
+              getHoistableRoot(instance.ownerDocument),
+              finishedWork.type,
+              instance,
+            );
+          }
         }
       }
       recursivelyTraverseReappearLayoutEffects(
