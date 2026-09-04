@@ -2627,33 +2627,38 @@ fn compute_signature_for_instruction(
                 into: lvalue.clone(),
             });
         }
-        InstructionValue::PostfixUpdate {
-            is_context,
-            lvalue: pf_lvalue,
-            ..
+        InstructionValue::PostfixUpdateLocal {
+            lvalue: pf_lvalue, ..
         }
-        | InstructionValue::PrefixUpdate {
-            is_context,
-            lvalue: pf_lvalue,
-            ..
+        | InstructionValue::PrefixUpdateLocal {
+            lvalue: pf_lvalue, ..
         } => {
             effects.push(AliasingEffect::Create {
                 into: lvalue.clone(),
                 value: ValueKind::Primitive,
                 reason: ValueReason::Other,
             });
-            if *is_context {
-                effects.push(AliasingEffect::Mutate {
-                    value: pf_lvalue.clone(),
-                    reason: None,
-                });
-            } else {
-                effects.push(AliasingEffect::Create {
-                    into: pf_lvalue.clone(),
-                    value: ValueKind::Primitive,
-                    reason: ValueReason::Other,
-                });
-            }
+            effects.push(AliasingEffect::Create {
+                into: pf_lvalue.clone(),
+                value: ValueKind::Primitive,
+                reason: ValueReason::Other,
+            });
+        }
+        InstructionValue::PostfixUpdateContext {
+            lvalue: pf_lvalue, ..
+        }
+        | InstructionValue::PrefixUpdateContext {
+            lvalue: pf_lvalue, ..
+        } => {
+            effects.push(AliasingEffect::Create {
+                into: lvalue.clone(),
+                value: ValueKind::Primitive,
+                reason: ValueReason::Other,
+            });
+            effects.push(AliasingEffect::Mutate {
+                value: pf_lvalue.clone(),
+                reason: None,
+            });
         }
         InstructionValue::StoreGlobal {
             name,

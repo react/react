@@ -308,11 +308,12 @@ function pruneableValue(value: InstructionValue, state: State): boolean {
         return !isIdOrNameUsed;
       }
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
-      if (value.isContext) {
-        return false;
-      }
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext': {
+      return false;
+    }
+    case 'PostfixUpdateLocal':
+    case 'PrefixUpdateLocal': {
       // Updates are pruneable if the specific instance instance being assigned is never read
       return !state.isIdUsed(value.lvalue.identifier);
     }

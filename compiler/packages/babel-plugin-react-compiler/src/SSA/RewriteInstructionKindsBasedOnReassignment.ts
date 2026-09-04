@@ -150,19 +150,26 @@ export function rewriteInstructionKindsBasedOnReassignment(
           lvalue.kind = kind;
           break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PrefixUpdateLocal': {
           const lvalue = value.lvalue;
           const declaration = declarations.get(lvalue.identifier.declarationId);
-          if (value.isContext && declaration === undefined) {
-            break;
-          }
           CompilerError.invariant(declaration !== undefined, {
             reason: `Expected variable to have been defined`,
             description: `No declaration for ${printPlace(lvalue)}`,
             loc: lvalue.loc,
           });
           declaration.kind = InstructionKind.Let;
+          break;
+        }
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
+          const declaration = declarations.get(
+            value.lvalue.identifier.declarationId,
+          );
+          if (declaration !== undefined) {
+            declaration.kind = InstructionKind.Let;
+          }
           break;
         }
       }

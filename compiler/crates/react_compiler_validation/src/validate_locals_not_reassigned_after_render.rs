@@ -209,21 +209,8 @@ fn get_context_reassignment(
                     }
                 }
 
-                InstructionValue::PostfixUpdate {
-                    is_context,
-                    lvalue,
-                    value,
-                    ..
-                }
-                | InstructionValue::PrefixUpdate {
-                    is_context,
-                    lvalue,
-                    value,
-                    ..
-                } => {
-                    if !is_context {
-                        continue;
-                    }
+                InstructionValue::PostfixUpdateContext { lvalue, value, .. }
+                | InstructionValue::PrefixUpdateContext { lvalue, value, .. } => {
                     if is_function_expression {
                         if context_variables.contains(&lvalue.identifier)
                             || context_variables.contains(&value.identifier)

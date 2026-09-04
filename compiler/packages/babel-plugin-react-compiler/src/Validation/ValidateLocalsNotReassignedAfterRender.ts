@@ -161,11 +161,8 @@ function getContextReassignment(
           }
           break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
-          if (!value.isContext) {
-            break;
-          }
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
           if (isFunctionExpression) {
             if (
               contextVariables.has(value.lvalue.identifier.id) ||

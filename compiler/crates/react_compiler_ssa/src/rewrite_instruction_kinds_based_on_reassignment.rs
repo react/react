@@ -295,18 +295,11 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
                         kind.ok_or_else(|| invariant_error("Expected at least one operand", None))?;
                     destructure_kind_locs.push((block_index, local_idx, kind));
                 }
-                InstructionValue::PostfixUpdate {
-                    lvalue, is_context, ..
-                }
-                | InstructionValue::PrefixUpdate {
-                    lvalue, is_context, ..
-                } => {
+                InstructionValue::PostfixUpdateLocal { lvalue, .. }
+                | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
                     let ident = &env.identifiers[lvalue.identifier.0 as usize];
                     let decl_id = ident.declaration_id;
                     let Some(existing) = declarations.get(&decl_id) else {
-                        if *is_context {
-                            continue;
-                        }
                         return Err(invariant_error_with_loc(
                             "Expected variable to have been defined",
                             Some(format!("No declaration for {}", format_place(lvalue, env),)),
@@ -322,6 +315,23 @@ pub fn rewrite_instruction_kinds_based_on_reassignment(
                         }
                         DeclarationLoc::ParamOrContext => {
                             // Already Let
+                        }
+                    }
+                }
+                InstructionValue::PostfixUpdateContext { lvalue, .. }
+                | InstructionValue::PrefixUpdateContext { lvalue, .. } => {
+                    let ident = &env.identifiers[lvalue.identifier.0 as usize];
+                    if let Some(existing) = declarations.get(&ident.declaration_id) {
+                        match existing {
+                            DeclarationLoc::Instruction {
+                                block_index: bi,
+                                instr_local_index: ili,
+                            } => {
+                                let_locs.push((*bi, *ili));
+                            }
+                            DeclarationLoc::ParamOrContext => {
+                                // Already Let
+                            }
                         }
                     }
                 }

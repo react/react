@@ -1093,21 +1093,39 @@ fn lower_expression(
                         builder.is_context_identifier(&ident.name, start, ident.base.node_id);
 
                     if update.prefix {
-                        Ok(InstructionValue::PrefixUpdate {
-                            is_context,
-                            lvalue: lvalue_place,
-                            operation,
-                            value,
-                            loc,
-                        })
+                        let value = if is_context {
+                            InstructionValue::PrefixUpdateContext {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        } else {
+                            InstructionValue::PrefixUpdateLocal {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        };
+                        Ok(value)
                     } else {
-                        Ok(InstructionValue::PostfixUpdate {
-                            is_context,
-                            lvalue: lvalue_place,
-                            operation,
-                            value,
-                            loc,
-                        })
+                        let value = if is_context {
+                            InstructionValue::PostfixUpdateContext {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        } else {
+                            InstructionValue::PostfixUpdateLocal {
+                                lvalue: lvalue_place,
+                                operation,
+                                value,
+                                loc,
+                            }
+                        };
+                        Ok(value)
                     }
                 }
                 _ => {

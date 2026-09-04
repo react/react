@@ -212,8 +212,10 @@ function mayAllocate(_env: Environment, instruction: Instruction): boolean {
     case 'Destructure': {
       return doesPatternContainSpreadElement(value.lvalue.pattern);
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate':
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal':
     case 'Await':
     case 'DeclareLocal':
     case 'DeclareContext':

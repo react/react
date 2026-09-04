@@ -1082,8 +1082,14 @@ export type InstructionValue =
    * but evaluates to the value of <value> prior to the update.
    */
   | {
-      kind: 'PrefixUpdate';
-      isContext: boolean;
+      kind: 'PrefixUpdateLocal';
+      lvalue: Place;
+      operation: t.UpdateExpression['operator'];
+      value: Place;
+      loc: SourceLocation;
+    }
+  | {
+      kind: 'PrefixUpdateContext';
       lvalue: Place;
       operation: t.UpdateExpression['operator'];
       value: Place;
@@ -1095,8 +1101,14 @@ export type InstructionValue =
    * and evaluates to the value after the update
    */
   | {
-      kind: 'PostfixUpdate';
-      isContext: boolean;
+      kind: 'PostfixUpdateLocal';
+      lvalue: Place;
+      operation: t.UpdateExpression['operator'];
+      value: Place;
+      loc: SourceLocation;
+    }
+  | {
+      kind: 'PostfixUpdateContext';
       lvalue: Place;
       operation: t.UpdateExpression['operator'];
       value: Place;

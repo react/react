@@ -319,15 +319,10 @@ fn pruneable_value(value: &InstructionValue, state: &State, env: &Environment) -
                 !is_id_or_name_used_flag
             }
         }
-        InstructionValue::PostfixUpdate {
-            is_context, lvalue, ..
-        }
-        | InstructionValue::PrefixUpdate {
-            is_context, lvalue, ..
-        } => {
-            if *is_context {
-                return false;
-            }
+        InstructionValue::PostfixUpdateContext { .. }
+        | InstructionValue::PrefixUpdateContext { .. } => false,
+        InstructionValue::PostfixUpdateLocal { lvalue, .. }
+        | InstructionValue::PrefixUpdateLocal { lvalue, .. } => {
             // Updates are pruneable if the specific instance being assigned is never read
             !is_id_used(state, lvalue.identifier)
         }

@@ -602,12 +602,22 @@ impl<'a> CollectDependenciesVisitor<'a> {
                 }
                 (lvalues, vec![])
             }
-            InstructionValue::PrefixUpdate {
+            InstructionValue::PrefixUpdateLocal {
                 lvalue: upd_lvalue,
                 value: upd_value,
                 ..
             }
-            | InstructionValue::PostfixUpdate {
+            | InstructionValue::PrefixUpdateContext {
+                lvalue: upd_lvalue,
+                value: upd_value,
+                ..
+            }
+            | InstructionValue::PostfixUpdateContext {
+                lvalue: upd_lvalue,
+                value: upd_value,
+                ..
+            }
+            | InstructionValue::PostfixUpdateLocal {
                 lvalue: upd_lvalue,
                 value: upd_value,
                 ..

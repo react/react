@@ -382,12 +382,18 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
             lvalue,
             operation,
             value,
             loc,
             ..
+        }
+        | InstructionValue::PostfixUpdateContext {
+            lvalue,
+            operation,
+            value,
+            loc,
         } => {
             let previous = read(constants, value);
             if let Some(Constant::Primitive {
@@ -417,12 +423,18 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
             lvalue,
             operation,
             value,
             loc,
             ..
+        }
+        | InstructionValue::PrefixUpdateContext {
+            lvalue,
+            operation,
+            value,
+            loc,
         } => {
             let previous = read(constants, value);
             if let Some(Constant::Primitive {

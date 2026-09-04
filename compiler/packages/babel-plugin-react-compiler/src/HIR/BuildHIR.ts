@@ -2737,8 +2737,7 @@ function lowerExpression(
       const isContext = builder.isContextIdentifier(argument);
       if (expr.node.prefix) {
         return {
-          kind: 'PrefixUpdate',
-          isContext,
+          kind: isContext ? 'PrefixUpdateContext' : 'PrefixUpdateLocal',
           lvalue,
           operation: expr.node.operator,
           value,
@@ -2746,8 +2745,7 @@ function lowerExpression(
         };
       } else {
         return {
-          kind: 'PostfixUpdate',
-          isContext,
+          kind: isContext ? 'PostfixUpdateContext' : 'PostfixUpdateLocal',
           lvalue,
           operation: expr.node.operator,
           value,
