@@ -220,14 +220,29 @@ pub fn infer_mutation_aliasing_effects(
                 return Err(diag);
             }
 
-            // Queue successors
+            // Queue successors. TS passes the same state object to every
+            // successor; Rust has to hand each one its own copy, but the last
+            // successor can take ownership instead of cloning. Straight-line
+            // blocks have a single successor, so they clone not at all.
             let successors = terminal_successors(&func.body.blocks[&block_id].terminal);
-            for next_block_id in successors {
+            let last = successors.len();
+            let mut state = Some(state);
+            for (i, next_block_id) in successors.into_iter().enumerate() {
+                let outgoing = if i + 1 == last {
+                    state
+                        .take()
+                        .expect("state is taken only on the last successor")
+                } else {
+                    state
+                        .as_ref()
+                        .expect("state is live until the last successor")
+                        .clone()
+                };
                 queue(
                     &mut queued_states,
                     &states_by_block,
                     next_block_id,
-                    state.clone(),
+                    outgoing,
                 );
             }
         }
