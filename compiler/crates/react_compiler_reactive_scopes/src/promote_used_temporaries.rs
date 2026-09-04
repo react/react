@@ -628,8 +628,10 @@ fn promote_interposed_instruction(
                 | InstructionValue::PropertyDelete { .. }
                 | InstructionValue::ComputedStore { .. }
                 | InstructionValue::ComputedDelete { .. }
-                | InstructionValue::PostfixUpdate { .. }
-                | InstructionValue::PrefixUpdate { .. }
+                | InstructionValue::PostfixUpdateLocal { .. }
+                | InstructionValue::PostfixUpdateContext { .. }
+                | InstructionValue::PrefixUpdateContext { .. }
+                | InstructionValue::PrefixUpdateLocal { .. }
                 | InstructionValue::StoreLocal { .. }
                 | InstructionValue::StoreContext { .. }
                 | InstructionValue::StoreGlobal { .. }

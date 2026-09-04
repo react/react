@@ -749,13 +749,25 @@ pub enum InstructionValue {
         value: Place,
         loc: Option<SourceLocation>,
     },
-    PrefixUpdate {
+    PrefixUpdateLocal {
         lvalue: Place,
         operation: UpdateOperator,
         value: Place,
         loc: Option<SourceLocation>,
     },
-    PostfixUpdate {
+    PrefixUpdateContext {
+        lvalue: Place,
+        operation: UpdateOperator,
+        value: Place,
+        loc: Option<SourceLocation>,
+    },
+    PostfixUpdateLocal {
+        lvalue: Place,
+        operation: UpdateOperator,
+        value: Place,
+        loc: Option<SourceLocation>,
+    },
+    PostfixUpdateContext {
         lvalue: Place,
         operation: UpdateOperator,
         value: Place,
@@ -825,8 +837,10 @@ impl InstructionValue {
             | InstructionValue::GetIterator { loc, .. }
             | InstructionValue::IteratorNext { loc, .. }
             | InstructionValue::NextPropertyOf { loc, .. }
-            | InstructionValue::PrefixUpdate { loc, .. }
-            | InstructionValue::PostfixUpdate { loc, .. }
+            | InstructionValue::PrefixUpdateLocal { loc, .. }
+            | InstructionValue::PrefixUpdateContext { loc, .. }
+            | InstructionValue::PostfixUpdateLocal { loc, .. }
+            | InstructionValue::PostfixUpdateContext { loc, .. }
             | InstructionValue::Debugger { loc, .. }
             | InstructionValue::StartMemoize { loc, .. }
             | InstructionValue::FinishMemoize { loc, .. }

@@ -530,7 +530,7 @@ Remove "BLOCKED" status from #32. Add crate mapping: `src/ReactiveScopes/` -> `r
 | `compiler/crates/react_compiler_hir/src/reactive.rs` | Create: all reactive types |
 | `compiler/crates/react_compiler_hir/src/lib.rs` | Edit: `pub mod reactive; pub use reactive::*;` |
 | `compiler/crates/react_compiler_reactive_scopes/` | Create: new crate |
-| `compiler/crates/Cargo.toml` (workspace) | Edit: add member |
+| `compiler/Cargo.toml` (workspace) | Edit: add member |
 | `compiler/crates/react_compiler/Cargo.toml` | Edit: add dependency |
 | `compiler/crates/react_compiler/src/debug_print.rs` | Edit: extract shared helpers as `pub` |
 | `compiler/crates/react_compiler/src/entrypoint/pipeline.rs` | Edit: wire reactive passes |

@@ -382,7 +382,14 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
+            lvalue,
+            operation,
+            value,
+            loc,
+            ..
+        }
+        | InstructionValue::PostfixUpdateContext {
             lvalue,
             operation,
             value,
@@ -416,7 +423,14 @@ fn evaluate_instruction(
             }
             None
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
+            lvalue,
+            operation,
+            value,
+            loc,
+            ..
+        }
+        | InstructionValue::PrefixUpdateContext {
             lvalue,
             operation,
             value,
