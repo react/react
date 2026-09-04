@@ -806,5 +806,123 @@ describe('ReactDOMServerIntegration', () => {
         expect(e.hasAttribute('foo')).toBe(false);
       },
     );
+
+    describe('aria attributes', function () {
+      itRenders('simple strings on custom elements', async render => {
+        const e = await render(<custom-element aria-label="hello" />);
+        expect(e.getAttribute('aria-label')).toBe('hello');
+      });
+
+      itRenders(
+        'aria string prop with false value on custom elements',
+        async render => {
+          const e = await render(<custom-element aria-hidden={false} />);
+          expect(e.getAttribute('aria-hidden')).toBe('false');
+        },
+      );
+
+      itRenders(
+        'aria string prop with true value on custom elements',
+        async render => {
+          const e = await render(<custom-element aria-hidden={true} />);
+          expect(e.getAttribute('aria-hidden')).toBe('true');
+        },
+      );
+
+      itRenders(
+        'aria string prop with number value on custom elements',
+        async render => {
+          const e = await render(<custom-element aria-label={1} />);
+          expect(e.getAttribute('aria-label')).toBe('1');
+        },
+      );
+
+      itRenders(
+        'aria string prop with string value on custom elements',
+        async render => {
+          const e = await render(<custom-element aria-label="hello" />);
+          expect(e.getAttribute('aria-label')).toBe('hello');
+        },
+      );
+
+      itRenders(
+        'no aria prop with null value on custom elements',
+        async render => {
+          const e = await render(<custom-element aria-label={null} />);
+          expect(e.hasAttribute('aria-label')).toBe(false);
+        },
+      );
+
+      itRenders(
+        'no aria prop with undefined value on custom elements',
+        async render => {
+          const e = await render(<custom-element aria-label={undefined} />);
+          expect(e.hasAttribute('aria-label')).toBe(false);
+        },
+      );
+    });
+  });
+
+  describe('data attributes', function () {
+    itRenders('simple strings on custom elements', async render => {
+      const e = await render(<custom-element data-foo="hello" />);
+      expect(e.getAttribute('data-foo')).toBe('hello');
+    });
+
+    itRenders(
+      'data string prop with false value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo={false} />);
+        expect(e.getAttribute('data-foo')).toBe('false');
+      },
+    );
+
+    itRenders(
+      'data string prop with true value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo={true} />);
+        expect(e.getAttribute('data-foo')).toBe('true');
+      },
+    );
+
+    itRenders(
+      'no data prop with null value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo={null} />);
+        expect(e.hasAttribute('data-foo')).toBe(false);
+      },
+    );
+
+    itRenders(
+      'no data prop with undefined value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo={undefined} />);
+        expect(e.hasAttribute('data-foo')).toBe(false);
+      },
+    );
+
+    itRenders(
+      'no data prop with function value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo={function () {}} />);
+        expect(e.hasAttribute('data-foo')).toBe(false);
+      },
+    );
+
+    itRenders(
+      'data string prop for number value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo={1} />);
+        expect(e.getAttribute('data-foo')).toBe('1');
+      },
+    );
+
+    itRenders(
+      'data string prop for string value on custom elements',
+      async render => {
+        const e = await render(<custom-element data-foo="hello" />);
+        expect(e.getAttribute('data-foo')).toBe('hello');
+      },
+    );
   });
 });
