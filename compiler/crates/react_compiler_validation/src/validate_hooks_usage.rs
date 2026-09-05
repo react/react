@@ -10,9 +10,10 @@
 //! and not called dynamically. Also validates that hooks are not
 //! called inside function expressions.
 
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::FxBuildHasher;
 
 use indexmap::IndexMap;
+use oxc_index::IndexVec;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerError, CompilerErrorDetail, ErrorCategory, SourceLocation,
 };
@@ -35,6 +36,9 @@ enum Kind {
     Local,
 }
 
+/// Value classification per identifier, indexed densely by identifier id.
+type ValueKinds = IndexVec<IdentifierId, Option<Kind>>;
+
 fn join_kinds(a: Kind, b: Kind) -> Kind {
     if a == Kind::Error || b == Kind::Error {
         Kind::Error
@@ -49,12 +53,8 @@ fn join_kinds(a: Kind, b: Kind) -> Kind {
     }
 }
 
-fn get_kind_for_place(
-    place: &Place,
-    value_kinds: &FxHashMap<IdentifierId, Kind>,
-    identifiers: &[Identifier],
-) -> Kind {
-    let known_kind = value_kinds.get(&place.identifier).copied();
+fn get_kind_for_place(place: &Place, value_kinds: &ValueKinds, identifiers: &[Identifier]) -> Kind {
+    let known_kind = value_kinds[place.identifier];
     let ident = &identifiers[place.identifier.0 as usize];
     if let Some(ref name) = ident.name {
         if is_hook_name(name.value()) {
@@ -86,11 +86,11 @@ fn get_hook_kind_for_id<'a>(
 
 fn visit_place(
     place: &Place,
-    value_kinds: &FxHashMap<IdentifierId, Kind>,
+    value_kinds: &ValueKinds,
     errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
-    let kind = value_kinds.get(&place.identifier).copied();
+    let kind = value_kinds[place.identifier];
     if kind == Some(Kind::KnownHook) {
         record_invalid_hook_usage_error(place, errors_by_loc, env)?;
     }
@@ -99,11 +99,11 @@ fn visit_place(
 
 fn record_conditional_hook_error(
     place: &Place,
-    value_kinds: &mut FxHashMap<IdentifierId, Kind>,
+    value_kinds: &mut ValueKinds,
     errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {
-    value_kinds.insert(place.identifier, Kind::Error);
+    value_kinds[place.identifier] = Some(Kind::Error);
     let reason = "Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)".to_string();
     if let Some(loc) = place.loc {
         let previous = errors_by_loc.get(&loc);
@@ -201,7 +201,7 @@ pub fn validate_hooks_usage(
     let unconditional_blocks = compute_unconditional_blocks(func, env.next_block_id().0)?;
     let mut errors_by_loc: IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher> =
         IndexMap::default();
-    let mut value_kinds: FxHashMap<IdentifierId, Kind> = FxHashMap::default();
+    let mut value_kinds: ValueKinds = IndexVec::from_vec(vec![None; env.identifiers.len()]);
 
     // Process params
     for param in &func.params {
@@ -210,7 +210,7 @@ pub fn validate_hooks_usage(
             ParamPattern::Spread(s) => &s.place,
         };
         let kind = get_kind_for_place(place, &value_kinds, &env.identifiers);
-        value_kinds.insert(place.identifier, kind);
+        value_kinds[place.identifier] = Some(kind);
     }
 
     // Process blocks
@@ -223,11 +223,11 @@ pub fn validate_hooks_usage(
                 Kind::Local
             };
             for (_, operand) in &phi.operands {
-                if let Some(&operand_kind) = value_kinds.get(&operand.identifier) {
+                if let Some(operand_kind) = value_kinds[operand.identifier] {
                     kind = join_kinds(kind, operand_kind);
                 }
             }
-            value_kinds.insert(phi.place.identifier, kind);
+            value_kinds[phi.place.identifier] = Some(kind);
         }
 
         // Process instructions
@@ -239,16 +239,16 @@ pub fn validate_hooks_usage(
                 InstructionValue::LoadGlobal { .. } => {
                     if get_hook_kind_for_id(lvalue_id, &env.identifiers, &env.types, env)?.is_some()
                     {
-                        value_kinds.insert(lvalue_id, Kind::KnownHook);
+                        value_kinds[lvalue_id] = Some(Kind::KnownHook);
                     } else {
-                        value_kinds.insert(lvalue_id, Kind::Global);
+                        value_kinds[lvalue_id] = Some(Kind::Global);
                     }
                 }
                 InstructionValue::LoadContext { place, .. }
                 | InstructionValue::LoadLocal { place, .. } => {
                     visit_place(place, &value_kinds, &mut errors_by_loc, env)?;
                     let kind = get_kind_for_place(place, &value_kinds, &env.identifiers);
-                    value_kinds.insert(lvalue_id, kind);
+                    value_kinds[lvalue_id] = Some(kind);
                 }
                 InstructionValue::StoreLocal { lvalue, value, .. }
                 | InstructionValue::StoreContext { lvalue, value, .. } => {
@@ -257,15 +257,15 @@ pub fn validate_hooks_usage(
                         get_kind_for_place(value, &value_kinds, &env.identifiers),
                         get_kind_for_place(&lvalue.place, &value_kinds, &env.identifiers),
                     );
-                    value_kinds.insert(lvalue.place.identifier, kind);
-                    value_kinds.insert(lvalue_id, kind);
+                    value_kinds[lvalue.place.identifier] = Some(kind);
+                    value_kinds[lvalue_id] = Some(kind);
                 }
                 InstructionValue::ComputedLoad { object, .. } => {
                     visit_place(object, &value_kinds, &mut errors_by_loc, env)?;
                     let kind = get_kind_for_place(object, &value_kinds, &env.identifiers);
                     let lvalue_kind =
                         get_kind_for_place(&instr.lvalue, &value_kinds, &env.identifiers);
-                    value_kinds.insert(lvalue_id, join_kinds(lvalue_kind, kind));
+                    value_kinds[lvalue_id] = Some(join_kinds(lvalue_kind, kind));
                 }
                 InstructionValue::PropertyLoad {
                     object, property, ..
@@ -300,7 +300,7 @@ pub fn validate_hooks_usage(
                             }
                         }
                     };
-                    value_kinds.insert(lvalue_id, kind);
+                    value_kinds[lvalue_id] = Some(kind);
                 }
                 InstructionValue::CallExpression { callee, args, .. } => {
                     let callee_kind = get_kind_for_place(callee, &value_kinds, &env.identifiers);
@@ -383,7 +383,7 @@ pub fn validate_hooks_usage(
                                 }
                             }
                         };
-                        value_kinds.insert(place.identifier, kind);
+                        value_kinds[place.identifier] = Some(kind);
                     }
                 }
                 InstructionValue::ObjectMethod { lowered_func, .. }
@@ -396,11 +396,11 @@ pub fn validate_hooks_usage(
                     visit_all_operands(&instr.value, &value_kinds, &mut errors_by_loc, env)?;
                     // Set kind for instr.lvalue
                     let kind = get_kind_for_place(&instr.lvalue, &value_kinds, &env.identifiers);
-                    value_kinds.insert(lvalue_id, kind);
+                    value_kinds[lvalue_id] = Some(kind);
                     // Also set kind for value-level lvalues (e.g. DeclareLocal, PrefixUpdate, PostfixUpdate)
                     for lv in visitors::each_instruction_value_lvalue(&instr.value) {
                         let lv_kind = get_kind_for_place(&lv, &value_kinds, &env.identifiers);
-                        value_kinds.insert(lv.identifier, lv_kind);
+                        value_kinds[lv.identifier] = Some(lv_kind);
                     }
                 }
             }
@@ -513,7 +513,7 @@ fn hook_kind_display(kind: &HookKind) -> &'static str {
 /// Uses the canonical `each_instruction_value_operand` from visitors.
 fn visit_all_operands(
     value: &InstructionValue,
-    value_kinds: &FxHashMap<IdentifierId, Kind>,
+    value_kinds: &ValueKinds,
     errors_by_loc: &mut IndexMap<SourceLocation, CompilerErrorDetail, FxBuildHasher>,
     env: &mut Environment,
 ) -> Result<(), CompilerError> {

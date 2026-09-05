@@ -9,7 +9,9 @@
 //! Uses the Cooper/Harvey/Kennedy algorithm from
 //! https://www.cs.rice.edu/~keith/Embed/dom.pdf
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
+
+use oxc_index::{IndexSlice, IndexVec};
 
 use react_compiler_diagnostics::{CompilerDiagnostic, ErrorCategory};
 
@@ -24,21 +26,19 @@ use crate::{BlockId, HirFunction, Terminal};
 pub struct PostDominator {
     /// The exit node (synthetic node representing function exit).
     pub exit: BlockId,
-    nodes: FxHashMap<BlockId, BlockId>,
+    /// Immediate post-dominator per block, indexed densely by block id.
+    nodes: IndexVec<BlockId, Option<BlockId>>,
 }
 
 impl PostDominator {
     /// Returns the immediate post-dominator of the given block, or None if
     /// the block post-dominates itself (i.e., it is the exit node).
     pub fn get(&self, id: BlockId) -> Option<BlockId> {
-        let dominator = self
-            .nodes
-            .get(&id)
-            .expect("Unknown node in post-dominator tree");
-        if *dominator == id {
+        let dominator = self.nodes[id].expect("Unknown node in post-dominator tree");
+        if dominator == id {
             None
         } else {
-            Some(*dominator)
+            Some(dominator)
         }
     }
 }
@@ -59,12 +59,13 @@ struct Graph {
     /// Nodes stored in iteration order (RPO for reverse graph).
     nodes: Vec<Node>,
     /// Map from BlockId to index in the nodes vec.
-    node_index: FxHashMap<BlockId, usize>,
+    /// Map from BlockId to index in the nodes vec, indexed densely by block id.
+    node_index: IndexVec<BlockId, Option<usize>>,
 }
 
 impl Graph {
     fn get_node(&self, id: BlockId) -> &Node {
-        let idx = self.node_index[&id];
+        let idx = self.node_index[id].expect("Unknown node in dominator graph");
         &self.nodes[idx]
     }
 }
@@ -90,7 +91,7 @@ pub fn compute_post_dominator_tree(
     // with themselves as dominator.
     if !include_throws_as_exit_node {
         for (id, _) in &func.body.blocks {
-            nodes.entry(*id).or_insert(*id);
+            nodes[*id].get_or_insert(*id);
         }
     }
 
@@ -110,20 +111,20 @@ fn build_reverse_graph(
     include_throws_as_exit_node: bool,
 ) -> Graph {
     let exit_id = BlockId(next_block_id_counter);
+    // All block ids are below `next_block_id_counter`; add one slot for the exit node.
+    let num_ids = next_block_id_counter as usize + 1;
 
     // Build initial nodes with reversed edges
-    let mut raw_nodes: FxHashMap<BlockId, Node> = FxHashMap::default();
+    let mut raw_nodes: IndexVec<BlockId, Option<Node>> =
+        IndexVec::from_vec((0..num_ids).map(|_| None).collect());
 
     // Create exit node
-    raw_nodes.insert(
-        exit_id,
-        Node {
-            id: exit_id,
-            index: 0,
-            preds: FxHashSet::default(),
-            succs: FxHashSet::default(),
-        },
-    );
+    raw_nodes[exit_id] = Some(Node {
+        id: exit_id,
+        index: 0,
+        preds: FxHashSet::default(),
+        succs: FxHashSet::default(),
+    });
 
     for (id, block) in &func.body.blocks {
         let successors = each_terminal_successor(&block.terminal);
@@ -135,18 +136,15 @@ fn build_reverse_graph(
 
         if is_return || (is_throw && include_throws_as_exit_node) {
             preds_set.insert(exit_id);
-            raw_nodes.get_mut(&exit_id).unwrap().succs.insert(*id);
+            raw_nodes[exit_id].as_mut().unwrap().succs.insert(*id);
         }
 
-        raw_nodes.insert(
-            *id,
-            Node {
-                id: *id,
-                index: 0,
-                preds: preds_set,
-                succs: succs_set,
-            },
-        );
+        raw_nodes[*id] = Some(Node {
+            id: *id,
+            index: 0,
+            preds: preds_set,
+            succs: succs_set,
+        });
     }
 
     // DFS from exit to compute RPO
@@ -158,11 +156,11 @@ fn build_reverse_graph(
     postorder.reverse();
 
     let mut nodes = Vec::with_capacity(postorder.len());
-    let mut node_index = FxHashMap::default();
+    let mut node_index: IndexVec<BlockId, Option<usize>> = IndexVec::from_vec(vec![None; num_ids]);
     for (idx, id) in postorder.into_iter().enumerate() {
-        let mut node = raw_nodes.remove(&id).unwrap();
+        let mut node = raw_nodes[id].take().unwrap();
         node.index = idx;
-        node_index.insert(id, idx);
+        node_index[id] = Some(idx);
         nodes.push(node);
     }
 
@@ -175,14 +173,14 @@ fn build_reverse_graph(
 
 fn dfs_postorder(
     id: BlockId,
-    nodes: &FxHashMap<BlockId, Node>,
+    nodes: &IndexSlice<BlockId, [Option<Node>]>,
     visited: &mut FxHashSet<BlockId>,
     postorder: &mut Vec<BlockId>,
 ) {
     if !visited.insert(id) {
         return;
     }
-    if let Some(node) = nodes.get(&id) {
+    if let Some(node) = &nodes[id] {
         for &succ in &node.succs {
             dfs_postorder(succ, nodes, visited, postorder);
         }
@@ -196,9 +194,10 @@ fn dfs_postorder(
 
 fn compute_immediate_dominators(
     graph: &Graph,
-) -> Result<FxHashMap<BlockId, BlockId>, CompilerDiagnostic> {
-    let mut doms: FxHashMap<BlockId, BlockId> = FxHashMap::default();
-    doms.insert(graph.entry, graph.entry);
+) -> Result<IndexVec<BlockId, Option<BlockId>>, CompilerDiagnostic> {
+    let mut doms: IndexVec<BlockId, Option<BlockId>> =
+        IndexVec::from_vec(vec![None; graph.node_index.len()]);
+    doms[graph.entry] = Some(graph.entry);
 
     let mut changed = true;
     while changed {
@@ -211,7 +210,7 @@ fn compute_immediate_dominators(
             // Find first processed predecessor
             let mut new_idom: Option<BlockId> = None;
             for &pred in &node.preds {
-                if doms.contains_key(&pred) {
+                if doms[pred].is_some() {
                     new_idom = Some(pred);
                     break;
                 }
@@ -235,13 +234,13 @@ fn compute_immediate_dominators(
                 if pred == new_idom {
                     continue;
                 }
-                if doms.contains_key(&pred) {
+                if doms[pred].is_some() {
                     new_idom = intersect(pred, new_idom, graph, &doms);
                 }
             }
 
-            if doms.get(&node.id) != Some(&new_idom) {
-                doms.insert(node.id, new_idom);
+            if doms[node.id] != Some(new_idom) {
+                doms[node.id] = Some(new_idom);
                 changed = true;
             }
         }
@@ -249,16 +248,21 @@ fn compute_immediate_dominators(
     Ok(doms)
 }
 
-fn intersect(a: BlockId, b: BlockId, graph: &Graph, doms: &FxHashMap<BlockId, BlockId>) -> BlockId {
+fn intersect(
+    a: BlockId,
+    b: BlockId,
+    graph: &Graph,
+    doms: &IndexSlice<BlockId, [Option<BlockId>]>,
+) -> BlockId {
     let mut block1 = graph.get_node(a);
     let mut block2 = graph.get_node(b);
     while block1.id != block2.id {
         while block1.index > block2.index {
-            let dom = doms[&block1.id];
+            let dom = doms[block1.id].expect("Expected dominator to be set for processed node");
             block1 = graph.get_node(dom);
         }
         while block2.index > block1.index {
-            let dom = doms[&block2.id];
+            let dom = doms[block2.id].expect("Expected dominator to be set for processed node");
             block2 = graph.get_node(dom);
         }
     }

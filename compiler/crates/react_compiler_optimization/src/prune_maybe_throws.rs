@@ -10,7 +10,7 @@
 //!
 //! Analogous to TS `Optimization/PruneMaybeThrows.ts`.
 
-use rustc_hash::FxHashMap;
+use oxc_index::IndexVec;
 
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, ErrorCategory, GENERATED_SOURCE,
@@ -48,8 +48,11 @@ pub fn prune_maybe_throws(
                 let mut updates = Vec::new();
                 for (predecessor, _) in &phi.operands {
                     if !preds.contains(predecessor) {
-                        let mapped_terminal =
-                            terminal_mapping.get(predecessor).copied().ok_or_else(|| {
+                        let mapped_terminal = terminal_mapping
+                            .get(*predecessor)
+                            .copied()
+                            .flatten()
+                            .ok_or_else(|| {
                                 CompilerDiagnostic::new(
                                     ErrorCategory::Invariant,
                                     "Expected non-existing phi operand's predecessor to have been mapped to a new terminal",
@@ -86,8 +89,19 @@ pub fn prune_maybe_throws(
     Ok(())
 }
 
-fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, BlockId>> {
-    let mut terminal_mapping: FxHashMap<BlockId, BlockId> = FxHashMap::default();
+fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<IndexVec<BlockId, Option<BlockId>>> {
+    // Both keys (continuations) and values (source blocks) are ids of blocks present
+    // in the function body, so the maximum present id bounds the id space.
+    let num_ids = func
+        .body
+        .blocks
+        .keys()
+        .map(|id| id.0 as usize + 1)
+        .max()
+        .unwrap_or(0);
+    let mut terminal_mapping: IndexVec<BlockId, Option<BlockId>> =
+        IndexVec::from_vec(vec![None; num_ids]);
+    let mut mapped_any = false;
     let instructions = &func.instructions;
 
     for block in func.body.blocks.values_mut() {
@@ -102,8 +116,9 @@ fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, 
             .any(|instr_id| instruction_may_throw(&instructions[instr_id.0 as usize]));
 
         if !can_throw {
-            let source = terminal_mapping.get(&block.id).copied().unwrap_or(block.id);
-            terminal_mapping.insert(continuation, source);
+            let source = terminal_mapping[block.id].unwrap_or(block.id);
+            terminal_mapping[continuation] = Some(source);
+            mapped_any = true;
             // Null out the handler rather than replacing with Goto.
             // Preserving the MaybeThrow makes the continuations clear for
             // BuildReactiveFunction, while nulling out the handler tells us
@@ -114,7 +129,7 @@ fn prune_maybe_throws_impl(func: &mut HirFunction) -> Option<FxHashMap<BlockId, 
         }
     }
 
-    if terminal_mapping.is_empty() {
+    if !mapped_any {
         None
     } else {
         Some(terminal_mapping)

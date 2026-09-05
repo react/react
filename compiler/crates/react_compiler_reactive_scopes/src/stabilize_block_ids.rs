@@ -10,9 +10,10 @@
 //!
 //! Corresponds to `src/ReactiveScopes/StabilizeBlockIds.ts`.
 
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::FxBuildHasher;
 
 use indexmap::IndexSet;
+use oxc_index::IndexVec;
 use react_compiler_hir::{
     BlockId, ReactiveFunction, ReactiveScopeBlock, ReactiveTerminal, ReactiveTerminalStatement,
     environment::Environment,
@@ -23,6 +24,33 @@ use crate::visitors::{
     visit_reactive_function,
 };
 
+/// Mapping from original block ids to stable sequential ids, indexed densely by
+/// block id. `next` is the next sequential id to assign (i.e. the number of ids
+/// mapped so far).
+struct BlockIdMappings {
+    map: IndexVec<BlockId, Option<BlockId>>,
+    next: u32,
+}
+
+impl BlockIdMappings {
+    fn new(num_block_ids: usize) -> Self {
+        Self {
+            map: IndexVec::from_vec(vec![None; num_block_ids]),
+            next: 0,
+        }
+    }
+
+    fn get_or_insert(&mut self, id: BlockId) -> BlockId {
+        if let Some(mapped) = self.map[id] {
+            return mapped;
+        }
+        let mapped = BlockId(self.next);
+        self.next += 1;
+        self.map[id] = Some(mapped);
+        mapped
+    }
+}
+
 /// Rewrites block IDs to sequential values.
 /// TS: `stabilizeBlockIds`
 pub fn stabilize_block_ids(func: &mut ReactiveFunction, env: &mut Environment) {
@@ -32,10 +60,9 @@ pub fn stabilize_block_ids(func: &mut ReactiveFunction, env: &mut Environment) {
     visit_reactive_function(func, &collector, &mut referenced);
 
     // Build mappings: referenced block IDs -> sequential IDs (insertion-order deterministic)
-    let mut mappings: FxHashMap<BlockId, BlockId> = FxHashMap::default();
+    let mut mappings = BlockIdMappings::new(env.next_block_id_counter as usize);
     for block_id in &referenced {
-        let len = mappings.len() as u32;
-        mappings.entry(*block_id).or_insert(BlockId(len));
+        mappings.get_or_insert(*block_id);
     }
 
     // Pass 2: Rewrite block IDs using ReactiveFunctionTransform
@@ -80,18 +107,13 @@ impl<'a> ReactiveFunctionVisitor for CollectReferencedLabels<'a> {
 // Pass 2: RewriteBlockIds
 // =============================================================================
 
-fn get_or_insert_mapping(mappings: &mut FxHashMap<BlockId, BlockId>, id: BlockId) -> BlockId {
-    let len = mappings.len() as u32;
-    *mappings.entry(id).or_insert(BlockId(len))
-}
-
 /// TS: `class RewriteBlockIds extends ReactiveFunctionVisitor<Map<BlockId, BlockId>>`
 struct RewriteBlockIds<'a> {
     env: &'a mut Environment,
 }
 
 impl<'a> ReactiveFunctionTransform for RewriteBlockIds<'a> {
-    type State = FxHashMap<BlockId, BlockId>;
+    type State = BlockIdMappings;
 
     fn env(&self) -> &Environment {
         self.env
@@ -104,7 +126,7 @@ impl<'a> ReactiveFunctionTransform for RewriteBlockIds<'a> {
     ) -> Result<(), react_compiler_diagnostics::CompilerError> {
         let scope_data = &mut self.env.scopes[scope.scope.0 as usize];
         if let Some(ref mut early_return) = scope_data.early_return_value {
-            early_return.label = get_or_insert_mapping(state, early_return.label);
+            early_return.label = state.get_or_insert(early_return.label);
         }
         self.traverse_scope(scope, state)
     }
@@ -115,12 +137,12 @@ impl<'a> ReactiveFunctionTransform for RewriteBlockIds<'a> {
         state: &mut Self::State,
     ) -> Result<(), react_compiler_diagnostics::CompilerError> {
         if let Some(ref mut label) = stmt.label {
-            label.id = get_or_insert_mapping(state, label.id);
+            label.id = state.get_or_insert(label.id);
         }
 
         match &mut stmt.terminal {
             ReactiveTerminal::Break { target, .. } | ReactiveTerminal::Continue { target, .. } => {
-                *target = get_or_insert_mapping(state, *target);
+                *target = state.get_or_insert(*target);
             }
             _ => {}
         }
