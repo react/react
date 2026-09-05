@@ -424,6 +424,54 @@ describe('ReactFlightDOMBrowser', () => {
     expect(container.innerHTML).toBe('<div><span>12345</span>12345</div>');
   });
 
+  // @gate __DEV__
+  it('freezes element props after late deduped references resolve', async () => {
+    let resolveBlockedClientReference;
+    const Blocked = clientExports(
+      'resolved',
+      '41',
+      '/blocked.js',
+      new Promise(resolve => (resolveBlockedClientReference = resolve)),
+    );
+    const receivedProps = [];
+    const Client = clientExports(function Client(props) {
+      receivedProps.push(props);
+      return props.i18n.label;
+    });
+    const i18n = {label: 'shared', blocked: Blocked};
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <>
+          <Client i18n={i18n} />
+          <Client i18n={i18n} />
+        </>,
+        webpackMap,
+      ),
+    );
+
+    function ClientRoot({response}) {
+      return use(response);
+    }
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<ClientRoot response={response} />);
+    });
+    expect(container.innerHTML).toBe('');
+
+    await act(() => {
+      resolveBlockedClientReference();
+    });
+
+    expect(container.innerHTML).toBe('sharedshared');
+    expect(receivedProps).toHaveLength(2);
+    expect(receivedProps.every(Object.isFrozen)).toBe(true);
+  });
+
   it('should resolve deduped objects in nested children of blocked models', async () => {
     let resolveOuterClientComponentChunk;
     let resolveInnerClientComponentChunk;
