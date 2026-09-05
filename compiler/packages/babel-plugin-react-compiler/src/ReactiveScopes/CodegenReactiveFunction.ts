@@ -1104,7 +1104,9 @@ function codegenInstructionNullable(
         });
         CompilerError.invariant(value?.type === 'FunctionExpression', {
           reason: 'Expected a function as a function declaration value',
-          description: `Got ${value == null ? String(value) : value.type} at ${printInstruction(instr)}`,
+          description: `Got ${
+            value == null ? String(value) : value.type
+          } at ${printInstruction(instr)}`,
           loc: instr.value.loc,
         });
         return createFunctionDeclaration(
@@ -2420,7 +2422,13 @@ function codegenPlace(cx: Context, place: Place): t.Expression | t.JSXText {
     loc: place.loc,
   });
   const identifier = convertIdentifier(place.identifier);
-  identifier.loc = place.loc as any;
+  /*
+   * Guard against GeneratedSource (a Symbol) leaking into Babel AST nodes.
+   * Babel requires Node.loc to be SourceLocation | null, so synthesized nodes
+   * without real source positions must use null, not the internal sentinel.
+   */
+  identifier.loc =
+    place.loc !== GeneratedSource ? (place.loc as t.SourceLocation) : null;
   return identifier;
 }
 
