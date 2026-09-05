@@ -55,7 +55,7 @@ export interface Result<T, E> {
    * Arguments passed to {@link or} are eagerly evaluated; if you are passing the result of a
    * function call, it is recommended to use {@link orElse}, which is lazily evaluated.
    */
-  or(res: Result<T, E>): Result<T, E>;
+  or<F>(res: Result<T, F>): Result<T, F>;
   /*
    * Calls `fn` if the result is `Err`, otherwise returns the `Ok` value of self.
    *
@@ -111,15 +111,15 @@ class OkImpl<T> implements Result<T, never> {
     return fn(this.#val);
   }
 
-  andThen<U>(fn: (val: T) => Result<U, never>): Result<U, never> {
+  andThen<U, E>(fn: (val: T) => Result<U, E>): Result<U, E> {
     return fn(this.#val);
   }
 
-  and<U>(res: Result<U, never>): Result<U, never> {
+  and<U, E>(res: Result<U, E>): Result<U, E> {
     return res;
   }
 
-  or(_res: Result<T, never>): Result<T, never> {
+  or<E>(_res: Result<T, E>): Result<T, E> {
     return this;
   }
 
@@ -197,11 +197,11 @@ class ErrImpl<E> implements Result<never, E> {
     return this;
   }
 
-  or(res: Result<never, E>): Result<never, E> {
+  or<T, F>(res: Result<T, F>): Result<T, F> {
     return res;
   }
 
-  orElse<F>(fn: (val: E) => ErrImpl<F>): Result<never, F> {
+  orElse<T, F>(fn: (val: E) => Result<T, F>): Result<T, F> {
     return fn(this.#val);
   }
 
