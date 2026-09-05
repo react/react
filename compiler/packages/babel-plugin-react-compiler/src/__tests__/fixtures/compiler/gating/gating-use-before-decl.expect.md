@@ -49,8 +49,9 @@ function Foo_unoptimized({ prop1, prop2 }) {
   return <Stringify prop1={prop1} prop2={prop2} />;
 }
 function Foo(arg0) {
-  if (isForgetEnabled_Fixtures_result) return Foo_optimized(arg0);
-  else return Foo_unoptimized(arg0);
+  if (isForgetEnabled_Fixtures_result)
+    return Foo_optimized.apply(this, arguments);
+  else return Foo_unoptimized.apply(this, arguments);
 }
 
 export const FIXTURE_ENTRYPOINT = {
