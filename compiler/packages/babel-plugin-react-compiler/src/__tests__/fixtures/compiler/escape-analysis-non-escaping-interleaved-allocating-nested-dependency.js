@@ -1,6 +1,6 @@
 function Component(props) {
   // a can be independently memoized, is not mutated later
-  // but a is a dependnecy of b, which is a dependency of c.
+  // but a is a dependency of b, which is a dependency of c.
   // we have to memoize a to avoid breaking memoization of b,
   // to avoid breaking memoization of c.
   const a = [props.a];
