@@ -2677,6 +2677,9 @@ fn compute_signature_for_instruction(
         }
         InstructionValue::TypeCastExpression {
             value: tc_value, ..
+        }
+        | InstructionValue::NonNullExpression {
+            value: tc_value, ..
         } => {
             effects.push(AliasingEffect::Assign {
                 from: tc_value.clone(),
