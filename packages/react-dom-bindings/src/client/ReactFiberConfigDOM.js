@@ -5046,11 +5046,8 @@ export function acquireSingletonInstance(
     }
   }
 
-  const attributes = instance.attributes;
-  while (attributes.length) {
-    instance.removeAttributeNode(attributes[0]);
-  }
-
+  // Preserve attributes that aren't represented by this Fiber's props. They
+  // may have been added imperatively before React acquired the singleton.
   setInitialProperties(instance, type, props);
   precacheFiberNode(internalInstanceHandle, instance);
   updateFiberProps(instance, props);
