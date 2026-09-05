@@ -170,6 +170,23 @@ describe('ref swapping', () => {
       });
     }).rejects.toThrow('Expected ref to be a function');
   });
+
+  it('supports object refs without a prototype', async () => {
+    const ref = Object.create(null);
+    ref.current = null;
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    await act(() => {
+      root.render(<div ref={ref} />);
+    });
+    expect(ref.current).toBe(container.firstChild);
+
+    await act(() => {
+      root.unmount();
+    });
+    expect(ref.current).toBe(null);
+  });
 });
 
 describe('root level refs', () => {
@@ -497,6 +514,23 @@ describe('useImerativeHandle refs', () => {
       root.render(<ImperativeHandleComponent name="Alice" ref={ref} />);
     });
     expect(ref.current.greet()).toBe('Hello Alice');
+    await act(() => {
+      root.render(null);
+    });
+    expect(ref.current).toBe(null);
+  });
+
+  it('should work with object style refs without a prototype', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    const ref = Object.create(null);
+    ref.current = null;
+
+    await act(() => {
+      root.render(<ImperativeHandleComponent name="Alice" ref={ref} />);
+    });
+    expect(ref.current.greet()).toBe('Hello Alice');
+
     await act(() => {
       root.render(null);
     });
