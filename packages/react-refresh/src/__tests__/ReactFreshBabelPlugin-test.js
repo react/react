@@ -453,6 +453,19 @@ describe('ReactFreshBabelPlugin', () => {
     ).toMatchSnapshot();
   });
 
+  it('generates valid signature for nested ways to call Hooks', () => {
+    expect(
+      transform(`
+        import FancyHook from 'fancy';
+
+        export default function App() {
+          const foo = FancyHook.property.useNestedThing();
+          return <h1>{foo}</h1>;
+        }
+    `),
+    ).toMatchSnapshot();
+  });
+
   it('does not consider require-like methods to be HOCs', () => {
     // None of these were declared in this file.
     // It's bad to register them because that would trigger
