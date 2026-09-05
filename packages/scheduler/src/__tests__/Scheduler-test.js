@@ -317,6 +317,41 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog(['Message Event', 'B']);
   });
 
+  it('re-entrant message event is a no-op (Firefox alert/debugger regression)', () => {
+    // Regression: https://github.com/facebook/react/issues/17355
+    //
+    // Firefox and IE allow alert() or a debugger statement to pause the JS
+    // call stack while still letting the event loop run. If a MessageChannel
+    // message is already queued (e.g. because the scheduler yielded), Firefox
+    // delivers it immediately when execution resumes — re-entering
+    // performWorkUntilDeadline while the first invocation is still on the
+    // stack. Without the isPerformingWork guard, this caused
+    // "Should not already be working." in react-reconciler.
+    //
+    // We simulate this by directly invoking port1.onmessage (which IS
+    // performWorkUntilDeadline) from inside a running task, mimicking the
+    // browser delivering a new MessageChannel event during a debugger pause.
+
+    // port1 is the same shared object for all mock MessageChannel instances.
+    // After scheduler initialisation, port1.onmessage === performWorkUntilDeadline.
+    const performWorkUntilDeadline = new global.MessageChannel().port1.onmessage;
+
+    let taskRunCount = 0;
+    scheduleCallback(NormalPriority, () => {
+      taskRunCount++;
+      runtime.log('Task');
+      // Re-enter performWorkUntilDeadline while isPerformingWork is true.
+      // Should be a no-op — must not throw "Should not already be working."
+      expect(() => performWorkUntilDeadline()).not.toThrow();
+    });
+
+    runtime.assertLog(['Post Message']);
+    runtime.fireMessageEvent();
+    // Task ran exactly once; the re-entrant invocation was silently ignored.
+    expect(taskRunCount).toBe(1);
+    runtime.assertLog(['Message Event', 'Task']);
+  });
+
   it('yielding continues in a new task regardless of how much time is remaining', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('Original Task');
