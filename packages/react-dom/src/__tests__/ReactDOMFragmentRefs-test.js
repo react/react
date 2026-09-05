@@ -2577,6 +2577,51 @@ describe('FragmentRefs', () => {
     });
 
     // @gate enableFragmentRefs
+    it('returns implementation specific when DOM containment disagrees with the Fiber tree', async () => {
+      const fragmentRef = React.createRef();
+      const portalContainerRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test() {
+        const [portalContainer, setPortalContainer] = React.useState(null);
+
+        React.useLayoutEffect(() => {
+          setPortalContainer(portalContainerRef.current);
+        }, []);
+
+        return (
+          <>
+            <div ref={portalContainerRef} />
+            {portalContainer === null
+              ? null
+              : createPortal(
+                  <div>
+                    <React.Fragment ref={fragmentRef}>
+                      <div />
+                    </React.Fragment>
+                  </div>,
+                  portalContainer,
+                )}
+          </>
+        );
+      }
+
+      await act(() => root.render(<Test />));
+
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(portalContainerRef.current),
+        {
+          preceding: false,
+          following: false,
+          contains: false,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: true,
+        },
+      );
+    });
+
+    // @gate enableFragmentRefs
     it('handles fragment instances with one child', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
