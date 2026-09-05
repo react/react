@@ -345,6 +345,44 @@ describe('ReactDOMServerHydration', () => {
     );
   });
 
+  it('should not corrupt the hydration cursor for siblings following a client-only portal', async () => {
+    const portalContainer = document.createElement('div');
+
+    function PortalChild({isServer}) {
+      if (isServer) {
+        return null;
+      }
+      return ReactDOM.createPortal(<div>Portal content</div>, portalContainer);
+    }
+
+    function App({isServer}) {
+      return (
+        <span>
+          A
+          <PortalChild isServer={isServer} />
+          <b>B</b>
+        </span>
+      );
+    }
+
+    const container = document.createElement('div');
+    container.innerHTML = ReactDOMServer.renderToString(
+      <App isServer={true} />,
+    );
+    const serverB = container.querySelector('b');
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, <App isServer={false} />);
+    });
+
+    // The <b>B</b> node exists identically on the server and the client;
+    // hydration should reuse the server-rendered node rather than tearing
+    // it down and recreating it because the unrelated client-only portal
+    // desynced the hydration cursor.
+    const clientB = container.querySelector('b');
+    expect(clientB).toBe(serverB);
+  });
+
   it('should be able to render and hydrate Mode components', async () => {
     class ComponentWithWarning extends React.Component {
       componentWillMount() {
