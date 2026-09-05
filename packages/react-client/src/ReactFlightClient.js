@@ -1756,7 +1756,22 @@ function fulfillReference(
 
     const mappedValue = map(response, value, parentObject, key);
     if (key !== __PROTO__) {
-      parentObject[key] = mappedValue;
+      if (Object.isFrozen(parentObject)) {
+        if (
+          typeof handler.value === 'object' &&
+          handler.value !== null &&
+          (handler.value: any).$$typeof === REACT_ELEMENT_TYPE &&
+          (handler.value: any).props === parentObject
+        ) {
+          const newProps: any = {...(parentObject: any)};
+          newProps[key] = mappedValue;
+          (handler.value: any).props = newProps;
+        } else {
+          parentObject[key] = mappedValue;
+        }
+      } else {
+        parentObject[key] = mappedValue;
+      }
     }
 
     // If this is the root object for a model reference, where `handler.value`
