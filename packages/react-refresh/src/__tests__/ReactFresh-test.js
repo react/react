@@ -3949,6 +3949,102 @@ describe('ReactFresh', () => {
     }
   });
 
+  it('skips roots that leave a refresh snapshot while another root is scheduled', () => {
+    if (__DEV__) {
+      const hook = global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+      const scheduledRoots = [];
+      const refreshedRoots = [];
+      const rootA = {
+        current: {
+          alternate: null,
+          memoizedState: {element: 'A'},
+        },
+      };
+      const rootB = {
+        current: {
+          alternate: null,
+          memoizedState: {element: 'B'},
+        },
+      };
+
+      const rendererID = hook.inject({
+        scheduleRoot(fakeRoot) {
+          scheduledRoots.push(fakeRoot);
+          if (fakeRoot === rootA) {
+            rootB.current = {
+              alternate: rootB.current,
+              memoizedState: {element: 'B'},
+            };
+            hook.onCommitFiberRoot(rendererID, rootB, null, false);
+          }
+        },
+        scheduleRefresh(fakeRoot) {
+          refreshedRoots.push(fakeRoot);
+          if (fakeRoot === rootA) {
+            hook.onScheduleFiberRoot(rendererID, rootB, null);
+            rootB.current = {
+              alternate: rootB.current,
+              memoizedState: {element: null},
+            };
+            hook.onCommitFiberRoot(rendererID, rootB, null, false);
+          }
+        },
+        setRefreshHandler() {},
+      });
+
+      hook.onScheduleFiberRoot(rendererID, rootA, 'A');
+      hook.onCommitFiberRoot(rendererID, rootA, null, false);
+      hook.onScheduleFiberRoot(rendererID, rootB, 'B');
+      hook.onCommitFiberRoot(rendererID, rootB, null, false);
+
+      rootA.current = {
+        alternate: rootA.current,
+        memoizedState: {element: null},
+      };
+      hook.onCommitFiberRoot(rendererID, rootA, null, true);
+      rootB.current = {
+        alternate: rootB.current,
+        memoizedState: {element: null},
+      };
+      hook.onCommitFiberRoot(rendererID, rootB, null, true);
+
+      const ComponentV1 = () => {};
+      const ComponentV2 = () => {};
+      $RefreshReg$(ComponentV1, 'Component');
+      $RefreshReg$(ComponentV2, 'Component');
+      ReactFreshRuntime.performReactRefresh();
+
+      expect(scheduledRoots).toEqual([rootA]);
+
+      hook.onScheduleFiberRoot(rendererID, rootB, null);
+      rootB.current = {
+        alternate: rootB.current,
+        memoizedState: {element: null},
+      };
+      hook.onCommitFiberRoot(rendererID, rootB, null, false);
+      hook.onScheduleFiberRoot(rendererID, rootA, null);
+
+      rootA.current = {
+        alternate: null,
+        memoizedState: {element: 'A'},
+      };
+      rootB.current = {
+        alternate: null,
+        memoizedState: {element: 'B'},
+      };
+      hook.onScheduleFiberRoot(rendererID, rootA, 'A');
+      hook.onCommitFiberRoot(rendererID, rootA, null, false);
+      hook.onScheduleFiberRoot(rendererID, rootB, 'B');
+      hook.onCommitFiberRoot(rendererID, rootB, null, false);
+
+      const ComponentV3 = () => {};
+      $RefreshReg$(ComponentV3, 'Component');
+      ReactFreshRuntime.performReactRefresh();
+
+      expect(refreshedRoots).toEqual([rootA]);
+    }
+  });
+
   it('remounts classes on every edit', async () => {
     if (__DEV__) {
       const HelloV1 = await render(() => {
