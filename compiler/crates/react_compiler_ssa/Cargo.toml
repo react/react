@@ -11,4 +11,5 @@ repository.workspace = true
 react_compiler_diagnostics.workspace = true
 react_compiler_hir.workspace = true
 indexmap = "2"
+oxc_index = "5.0.0"
 rustc-hash = "2"

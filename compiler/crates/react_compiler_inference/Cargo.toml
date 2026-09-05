@@ -15,4 +15,6 @@ react_compiler_optimization.workspace = true
 react_compiler_ssa.workspace = true
 react_compiler_utils.workspace = true
 indexmap = "2"
+oxc_index = "5.0.0"
 rustc-hash = "2"
+smallvec = "1"
