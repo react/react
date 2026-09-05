@@ -4220,7 +4220,13 @@ function lowerAssignment(
             continue;
           }
           const element = property.get('value');
-          if (!element.isLVal()) {
+          /*
+           * Babel 8 removed AssignmentPattern from the LVal alias. In pattern
+           * position the value of `{a = 1}` is an AssignmentPattern, which
+           * isLVal() accepts under Babel 7 and rejects under 8; the recursive
+           * call below dispatches on it either way.
+           */
+          if (!(element.isLVal() || element.isAssignmentPattern())) {
             builder.recordError(
               new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerAssignment) Expected object property value to be an LVal, got: ${element.type}`,
