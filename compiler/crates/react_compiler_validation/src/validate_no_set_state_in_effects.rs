@@ -17,7 +17,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
 };
-use react_compiler_hir::dominator::{compute_post_dominator_tree, post_dominator_frontier};
+use react_compiler_hir::dominator::compute_post_dominator_frontiers;
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
     BlockId, HirFunction, Identifier, IdentifierId, IdentifierName, InstructionValue,
@@ -310,15 +310,14 @@ fn create_ref_controlled_block_checker(
     identifiers: &[Identifier],
     types: &[Type],
 ) -> Result<FxHashMap<BlockId, bool>, CompilerDiagnostic> {
-    let post_dominators = compute_post_dominator_tree(func, next_block_id_counter, false)?;
+    let frontiers = compute_post_dominator_frontiers(func, next_block_id_counter, false)?;
     let mut cache: FxHashMap<BlockId, bool> = FxHashMap::default();
 
     for (block_id, _block) in &func.body.blocks {
-        let frontier = post_dominator_frontier(func, &post_dominators, *block_id);
         let mut is_controlled = false;
 
-        for frontier_block_id in &frontier {
-            let control_block = &func.body.blocks[frontier_block_id];
+        for frontier_block_id in frontiers.iter(*block_id) {
+            let control_block = &func.body.blocks[&frontier_block_id];
             match &control_block.terminal {
                 Terminal::If { test, .. } | Terminal::Branch { test, .. } => {
                     if is_derived_from_ref(test.identifier, ref_derived_values, identifiers, types)
