@@ -46,6 +46,8 @@ struct VisitorState<'a> {
     pruned_scopes: FxHashSet<ScopeId>,
     /// Map from identifier ID to its normalized manual memo dependency.
     temporaries: FxHashMap<IdentifierId, ManualMemoDependency>,
+    /// Alias and property-load dependencies used to validate pruned memo outputs.
+    memo_dependencies: FxHashMap<IdentifierId, ManualMemoDependency>,
 }
 
 /// Validate that manual memoization (useMemo/useCallback) is preserved.
@@ -62,6 +64,7 @@ pub fn validate_preserved_manual_memoization(func: &ReactiveFunction, env: &mut 
         scopes: FxHashSet::default(),
         pruned_scopes: FxHashSet::default(),
         temporaries: FxHashMap::default(),
+        memo_dependencies: FxHashMap::default(),
     };
     visit_block(&func.body, &mut state);
 }
@@ -261,7 +264,28 @@ fn visit_instruction(instr: &ReactiveInstruction, state: &mut VisitorState) {
 
             let memo_state = state.manual_memo_state.take().unwrap();
 
-            if !pruned {
+            if *pruned {
+                if let Some(ref deps_from_source) = memo_state.deps_from_source {
+                    if let Some(output_dependency) =
+                        state.memo_dependencies.get(&decl.identifier).cloned()
+                    {
+                        if let ManualMemoDependencyRoot::NamedLocal { value, .. } =
+                            output_dependency.root
+                        {
+                            let temporaries = state.temporaries.clone();
+                            validate_inferred_dep(
+                                value.identifier,
+                                &output_dependency.path,
+                                &temporaries,
+                                &memo_state.decls,
+                                deps_from_source,
+                                state.env,
+                                memo_state.loc,
+                            );
+                        }
+                    }
+                }
+            } else {
                 // Check if the declared value is unmemoized
                 let decl_ident = &state.env.identifiers[decl.identifier.0 as usize];
 
@@ -363,27 +387,36 @@ fn record_temporaries(instr: &ReactiveInstruction, state: &mut VisitorState) {
     }
 
     // Record deps from the instruction value first (before setting lvalue temporary)
-    record_deps_in_value(&instr.value, state);
+    let dependency = record_deps_in_value(&instr.value, state);
 
-    // Then set the lvalue temporary (TS always sets this, even for unnamed lvalues)
+    // Then set the existing temporary map exactly as before, and separately retain
+    // aliases and property paths for validating pruned manual memo outputs.
     if let Some(ref lvalue) = instr.lvalue {
-        state.temporaries.insert(
-            lvalue.identifier,
-            ManualMemoDependency {
-                root: ManualMemoDependencyRoot::NamedLocal {
-                    value: lvalue.clone(),
-                    constant: false,
-                },
-                path: Vec::new(),
-                loc: lvalue.loc,
+        let local_dependency = ManualMemoDependency {
+            root: ManualMemoDependencyRoot::NamedLocal {
+                value: lvalue.clone(),
+                constant: false,
             },
-        );
+            path: Vec::new(),
+            loc: lvalue.loc,
+        };
+        state
+            .temporaries
+            .insert(lvalue.identifier, local_dependency.clone());
+        if let Some(dependency) = dependency {
+            state
+                .memo_dependencies
+                .insert(lvalue.identifier, dependency);
+        }
     }
 }
 
 /// Record dependencies from a reactive value.
 /// TS: `recordDepsInValue`
-fn record_deps_in_value(value: &ReactiveValue, state: &mut VisitorState) {
+fn record_deps_in_value(
+    value: &ReactiveValue,
+    state: &mut VisitorState,
+) -> Option<ManualMemoDependency> {
     match value {
         ReactiveValue::SequenceExpression {
             instructions,
@@ -393,10 +426,10 @@ fn record_deps_in_value(value: &ReactiveValue, state: &mut VisitorState) {
             for instr in instructions {
                 visit_instruction(instr, state);
             }
-            record_deps_in_value(value, state);
+            record_deps_in_value(value, state)
         }
         ReactiveValue::OptionalExpression { value: inner, .. } => {
-            record_deps_in_value(inner, state);
+            record_deps_in_value(inner, state)
         }
         ReactiveValue::ConditionalExpression {
             test,
@@ -407,18 +440,16 @@ fn record_deps_in_value(value: &ReactiveValue, state: &mut VisitorState) {
             record_deps_in_value(test, state);
             record_deps_in_value(consequent, state);
             record_deps_in_value(alternate, state);
+            None
         }
         ReactiveValue::LogicalExpression { left, right, .. } => {
             record_deps_in_value(left, state);
             record_deps_in_value(right, state);
+            None
         }
         ReactiveValue::Instruction(iv) => {
-            // TS: collectMaybeMemoDependencies(value, this.temporaries, false)
-            // Called for side-effect of building up the dependency chain through
-            // LoadGlobal -> PropertyLoad -> ... The return value is discarded here
-            // (only used in DropManualMemoization's caller), but we need to store
-            // the result in temporaries for the lvalue of the enclosing instruction.
-            // That storage is handled by record_temporaries after this function returns.
+            let dependency =
+                collect_maybe_memo_dependency(iv, &state.memo_dependencies, false, state.env);
 
             // Track store targets within manual memo blocks
             // TS: if (value.kind === 'StoreLocal' || value.kind === 'StoreContext' || value.kind === 'Destructure')
@@ -466,7 +497,68 @@ fn record_deps_in_value(value: &ReactiveValue, state: &mut VisitorState) {
                 }
                 _ => {}
             }
+            dependency
         }
+    }
+}
+
+fn collect_maybe_memo_dependency(
+    value: &InstructionValue,
+    maybe_deps: &FxHashMap<IdentifierId, ManualMemoDependency>,
+    optional: bool,
+    env: &Environment,
+) -> Option<ManualMemoDependency> {
+    match value {
+        InstructionValue::LoadGlobal { binding, loc, .. } => Some(ManualMemoDependency {
+            root: ManualMemoDependencyRoot::Global {
+                identifier_name: binding.name().to_string(),
+            },
+            path: Vec::new(),
+            loc: *loc,
+        }),
+        InstructionValue::PropertyLoad {
+            object,
+            property,
+            loc,
+            ..
+        } => maybe_deps.get(&object.identifier).map(|object_dependency| {
+            let mut path = object_dependency.path.clone();
+            path.push(DependencyPathEntry {
+                property: property.clone(),
+                optional,
+                loc: *loc,
+            });
+            ManualMemoDependency {
+                root: object_dependency.root.clone(),
+                path,
+                loc: *loc,
+            }
+        }),
+        InstructionValue::LoadLocal { place, .. } | InstructionValue::LoadContext { place, .. } => {
+            if let Some(source) = maybe_deps.get(&place.identifier) {
+                Some(source.clone())
+            } else if is_named(&env.identifiers[place.identifier.0 as usize]) {
+                Some(ManualMemoDependency {
+                    root: ManualMemoDependencyRoot::NamedLocal {
+                        value: place.clone(),
+                        constant: false,
+                    },
+                    path: Vec::new(),
+                    loc: place.loc,
+                })
+            } else {
+                None
+            }
+        }
+        InstructionValue::StoreLocal { lvalue, value, .. } => {
+            let lvalue_ident = &env.identifiers[lvalue.place.identifier.0 as usize];
+            if !is_named(lvalue_ident) {
+                maybe_deps.get(&value.identifier).cloned()
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 
