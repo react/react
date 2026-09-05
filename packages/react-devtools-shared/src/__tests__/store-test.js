@@ -1548,6 +1548,66 @@ describe('Store', () => {
       `);
     });
 
+    // @reactVersion >= 19.0
+    it('should not change the element count when collapsing inside a collapsed subtree', async () => {
+      function Leaf() {
+        return <span>leaf</span>;
+      }
+      function Middle() {
+        return (
+          <div>
+            <Leaf />
+            <Leaf />
+          </div>
+        );
+      }
+      function Outer() {
+        return <Middle />;
+      }
+      function App() {
+        return <Outer />;
+      }
+
+      await actAsync(() => render(<App />));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▾ <Outer>
+              ▾ <Middle>
+                  <Leaf>
+                  <Leaf>
+      `);
+
+      const outer = store.getElementAtIndex(1);
+      const middle = store.getElementAtIndex(2);
+
+      await act(() => store.toggleIsCollapsed(outer.id, true));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▸ <Outer>
+      `);
+
+      await act(() => store.toggleIsCollapsed(middle.id, true));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▸ <Outer>
+      `);
+      expect(store.numElements).toBe(2);
+
+      await act(() => store.toggleIsCollapsed(middle.id, false));
+      await act(() => store.toggleIsCollapsed(outer.id, false));
+      expect(store).toMatchInlineSnapshot(`
+        [root]
+          ▾ <App>
+            ▾ <Outer>
+              ▾ <Middle>
+                  <Leaf>
+                  <Leaf>
+      `);
+    });
+
     // @reactVersion >= 18.0
     it('should support reordering of children', async () => {
       const Root = ({children}) => children;
