@@ -109,9 +109,20 @@ export function Set_intersect<T>(sets: Array<ReadonlySet<T>>): Set<T> {
     return new Set(sets[0]);
   }
   const result: Set<T> = new Set();
-  const first = sets[0];
-  outer: for (const e of first) {
+  let smallestIndex = 1;
+  for (let i = 2; i < sets.length; i++) {
+    if (sets[i].size < sets[smallestIndex].size) {
+      smallestIndex = i;
+    }
+  }
+  outer: for (const e of sets[0]) {
+    if (!sets[smallestIndex].has(e)) {
+      continue;
+    }
     for (let i = 1; i < sets.length; i++) {
+      if (i === smallestIndex) {
+        continue;
+      }
       if (!sets[i].has(e)) {
         continue outer;
       }
