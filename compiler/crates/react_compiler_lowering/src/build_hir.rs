@@ -5813,15 +5813,12 @@ fn lower_function_declaration(
     };
     let fn_place = lower_value_to_temporary(builder, fn_value)?;
 
-    // Resolve the binding for the function name and store. TS resolves the id
-    // via Babel's `path.scope.getBinding(name)`, which starts at the function's
-    // OWN scope: a body-level local that shadows the function's name resolves
-    // to that inner binding — storing the function into the shadow while
-    // references elsewhere resolve to the hoisted binding in the parent scope.
-    // This is a known TS quirk that we reproduce for parity (see
-    // todo-repro-named-function-with-shadowed-local-same-name). Fall back to
-    // node-based resolution when the scope walk fails (degraded scope info,
-    // e.g. synthetic scopes, or backends that split function-body scopes).
+    // Resolve the binding for the function name and store. Function declaration
+    // ids bind in the parent scope, so start there rather than in the function's
+    // own scope, where a parameter or body-level local may shadow the name.
+    // Fall back to node-based resolution when the scope walk fails (degraded
+    // scope info, e.g. synthetic scopes, or backends that split function-body
+    // scopes).
     if let Some(ref name) = func_name {
         if let Some(id_node) = &func_decl.id {
             let start = id_node.base.start.unwrap_or(0);
