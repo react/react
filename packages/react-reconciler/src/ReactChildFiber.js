@@ -1480,6 +1480,12 @@ function createChildReconciler(
       next(): IteratorResult<mixed, void> {
         return unwrapThenable(newChildren.next());
       },
+      return(): IteratorResult<mixed, void> {
+        const iteratorReturn = (newChildren as any).return;
+        return typeof iteratorReturn === 'function'
+          ? unwrapThenable(iteratorReturn.call(newChildren))
+          : {done: true, value: undefined};
+      },
     } as any;
 
     return reconcileChildrenIterator(
@@ -1500,6 +1506,32 @@ function createChildReconciler(
       throw new Error('An iterable object provided no iterator.');
     }
 
+    try {
+      return reconcileChildrenIteratorImpl(
+        returnFiber,
+        currentFirstChild,
+        newChildren,
+        lanes,
+      );
+    } catch (error) {
+      try {
+        const iteratorReturn = (newChildren as any).return;
+        if (typeof iteratorReturn === 'function') {
+          iteratorReturn.call(newChildren);
+        }
+      } catch {
+        // Preserve the reconciliation error, matching IteratorClose semantics.
+      }
+      throw error;
+    }
+  }
+
+  function reconcileChildrenIteratorImpl(
+    returnFiber: Fiber,
+    currentFirstChild: Fiber | null,
+    newChildren: Iterator<mixed>,
+    lanes: Lanes,
+  ): Fiber | null {
     let resultingFirstChild: Fiber | null = null;
     let previousNewFiber: Fiber | null = null;
 
