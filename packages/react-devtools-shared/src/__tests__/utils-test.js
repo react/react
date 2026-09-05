@@ -15,6 +15,7 @@ import {
 } from 'react-devtools-shared/src/utils';
 import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
+import {createRegExp} from 'react-devtools-shared/src/devtools/views/utils';
 import {
   formatConsoleArguments,
   formatConsoleArgumentsToSingleString,
@@ -319,6 +320,47 @@ describe('utils', () => {
 
     it('should return true for objects with no prototype', () => {
       expect(isPlainObject(Object.create(null))).toBe(true);
+    });
+  });
+
+  describe('createRegExp', () => {
+    it('should match at the start of a name or at an uppercase boundary', () => {
+      const regExp = createRegExp('item');
+
+      expect(regExp.test('item')).toBe(true);
+      expect(regExp.test('Item')).toBe(true);
+      expect(regExp.test('ListItem')).toBe(true);
+      expect(regExp.test('InviteMom')).toBe(false);
+    });
+
+    it('should match names containing a hyphen', () => {
+      expect(createRegExp('my-element').test('my-element')).toBe(true);
+      expect(createRegExp('ion-button').test('ion-button')).toBe(true);
+      expect(createRegExp('Grid').test('Data-Grid')).toBe(true);
+    });
+
+    it('should match a name that begins with a hyphen', () => {
+      const regExp = createRegExp('-element');
+
+      expect(regExp.test('-element')).toBe(true);
+      expect(regExp.test('my-element')).toBe(true);
+      expect(regExp.test('myelement')).toBe(false);
+    });
+
+    it('should treat regex syntax in the query as literal characters', () => {
+      expect(createRegExp('Foo.Bar').test('Foo.Bar')).toBe(true);
+      expect(createRegExp('Foo.Bar').test('FooXBar')).toBe(false);
+      expect(createRegExp('Chart(Memo)').test('Chart(Memo)')).toBe(true);
+      expect(createRegExp('a[b').test('a[b')).toBe(true);
+    });
+
+    it('should support /regex/ syntax', () => {
+      expect(createRegExp('/^item$/').test('Item')).toBe(true);
+      expect(createRegExp('/^item$/').test('ListItem')).toBe(false);
+    });
+
+    it('should not match anything for an invalid regex', () => {
+      expect(createRegExp('/(/').test('anything')).toBe(false);
     });
   });
 
