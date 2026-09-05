@@ -134,6 +134,8 @@ import {
   readPreviousThenableFromState,
   getActionStateCount,
   getActionStateMatchingIndex,
+  getCurrentHooksState,
+  restoreHooksState,
   createRecoverableError,
   isRecoverableError,
   cloneRecoverableErrorAsFatal,
@@ -1128,6 +1130,12 @@ function rerenderStalledTask(request: Request, task: Task): void {
 
   const prevContext = getActiveContext();
   const prevDispatcher = ReactSharedInternals.H;
+  const prevHooksState =
+    prevDispatcher === HooksDispatcher ? getCurrentHooksState() : null;
+  if (prevHooksState !== null) {
+    // Hook nodes are mutable, so isolate the nested work from the outer list.
+    resetHooksState();
+  }
   ReactSharedInternals.H = HooksDispatcher;
   const prevAsyncDispatcher = ReactSharedInternals.A;
   ReactSharedInternals.A = DefaultAsyncDispatcher;
@@ -1156,15 +1164,16 @@ function rerenderStalledTask(request: Request, task: Task): void {
     ReactSharedInternals.A = prevAsyncDispatcher;
 
     ReactSharedInternals.getCurrentStack = prevGetCurrentStackImpl;
-    if (prevDispatcher === HooksDispatcher) {
+    if (prevHooksState !== null) {
       // This means that we were in a reentrant work loop. This could happen
       // in a renderer that supports synchronous work like renderToString,
       // when it's called from within another renderer.
       // Normally we don't bother switching the contexts to their root/default
       // values when leaving because we'll likely need the same or similar
       // context again. However, when we're inside a synchronous loop like this
-      // we'll to restore the context to what it was before returning.
+      // we need to restore the context and Hooks state before returning.
       switchContext(prevContext);
+      restoreHooksState(prevHooksState);
     }
     currentRequest = prevRequest;
     request.status = prevStatus;
@@ -5597,6 +5606,12 @@ export function performWork(request: Request): void {
   }
   const prevContext = getActiveContext();
   const prevDispatcher = ReactSharedInternals.H;
+  const prevHooksState =
+    prevDispatcher === HooksDispatcher ? getCurrentHooksState() : null;
+  if (prevHooksState !== null) {
+    // Hook nodes are mutable, so isolate the nested work from the outer list.
+    resetHooksState();
+  }
   ReactSharedInternals.H = HooksDispatcher;
   const prevAsyncDispatcher = ReactSharedInternals.A;
   ReactSharedInternals.A = DefaultAsyncDispatcher;
@@ -5635,15 +5650,16 @@ export function performWork(request: Request): void {
     if (__DEV__) {
       ReactSharedInternals.getCurrentStack = prevGetCurrentStackImpl;
     }
-    if (prevDispatcher === HooksDispatcher) {
+    if (prevHooksState !== null) {
       // This means that we were in a reentrant work loop. This could happen
       // in a renderer that supports synchronous work like renderToString,
       // when it's called from within another renderer.
       // Normally we don't bother switching the contexts to their root/default
       // values when leaving because we'll likely need the same or similar
       // context again. However, when we're inside a synchronous loop like this
-      // we'll to restore the context to what it was before returning.
+      // we need to restore the context and Hooks state before returning.
       switchContext(prevContext);
+      restoreHooksState(prevHooksState);
     }
     currentRequest = prevRequest;
   }
