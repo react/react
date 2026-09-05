@@ -313,6 +313,7 @@ fn evaluate_instruction(
                             InstructionValue::PropertyLoad {
                                 object,
                                 property: new_property,
+                                computed: true,
                                 loc,
                             };
                     }
@@ -324,6 +325,7 @@ fn evaluate_instruction(
                             InstructionValue::PropertyLoad {
                                 object,
                                 property: new_property,
+                                computed: true,
                                 loc,
                             };
                     }
@@ -357,6 +359,7 @@ fn evaluate_instruction(
                             InstructionValue::PropertyStore {
                                 object,
                                 property: new_property,
+                                computed: true,
                                 value: store_value,
                                 loc,
                             };
@@ -370,6 +373,7 @@ fn evaluate_instruction(
                             InstructionValue::PropertyStore {
                                 object,
                                 property: new_property,
+                                computed: true,
                                 value: store_value,
                                 loc,
                             };
@@ -527,6 +531,7 @@ fn evaluate_instruction(
             object,
             property,
             loc,
+            ..
         } => {
             let object_value = read(constants, object);
             if let Some(Constant::Primitive {

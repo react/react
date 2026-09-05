@@ -14,7 +14,7 @@ Applies Sparse Conditional Constant Propagation (SCCP) to fold compile-time eval
 
 ## Output Guarantees
 - Instructions with compile-time evaluable operands are replaced with `Primitive` constants
-- `ComputedLoad`/`ComputedStore` with constant string/number properties are converted to `PropertyLoad`/`PropertyStore`
+- `ComputedLoad`/`ComputedStore` with constant string/number properties are converted to `PropertyLoad`/`PropertyStore` while retaining their computed-access syntax for code generation
 - `LoadLocal` and `StoreLocal` propagate known constant values
 - `IfTerminal` with constant boolean test values are replaced with `goto` terminals
 - Unreachable blocks are removed and the CFG is minimized
@@ -48,7 +48,7 @@ The pass uses Sparse Conditional Constant Propagation (SCCP) with fixpoint itera
    - **PostfixUpdate/PrefixUpdate**: Folds `++`/`--` on constant numbers
    - **PropertyLoad**: Folds `.length` on constant strings
    - **TemplateLiteral**: Folds template strings with constant interpolations
-   - **ComputedLoad/ComputedStore**: Converts to property access when property is constant string/number
+   - **ComputedLoad/ComputedStore**: Converts to a static property access when the property is a constant string/number, while preserving whether the source used bracket notation
 
 ## Key Data Structures
 - `Constant = Primitive | LoadGlobal` - The lattice values (no top/bottom, absence means unknown)

@@ -2371,10 +2371,13 @@ fn codegen_base_instruction_value(
             codegen_object_expression(cx, properties)
         }
         InstructionValue::PropertyLoad {
-            object, property, ..
+            object,
+            property,
+            computed,
+            ..
         } => {
             let obj = codegen_place_to_expression(cx, object)?;
-            let (prop, computed) = property_literal_to_expression(property);
+            let (prop, computed) = property_literal_to_expression(property, *computed);
             Ok(ExpressionOrJsxText::Expression(
                 Expression::MemberExpression(ast_expr::MemberExpression {
                     base: BaseNode::typed("MemberExpression"),
@@ -2387,11 +2390,12 @@ fn codegen_base_instruction_value(
         InstructionValue::PropertyStore {
             object,
             property,
+            computed,
             value,
             ..
         } => {
             let obj = codegen_place_to_expression(cx, object)?;
-            let (prop, computed) = property_literal_to_expression(property);
+            let (prop, computed) = property_literal_to_expression(property, *computed);
             let val = codegen_place_to_expression(cx, value)?;
             Ok(ExpressionOrJsxText::Expression(
                 Expression::AssignmentExpression(ast_expr::AssignmentExpression {
@@ -2411,7 +2415,7 @@ fn codegen_base_instruction_value(
             object, property, ..
         } => {
             let obj = codegen_place_to_expression(cx, object)?;
-            let (prop, computed) = property_literal_to_expression(property);
+            let (prop, computed) = property_literal_to_expression(property, false);
             Ok(ExpressionOrJsxText::Expression(
                 Expression::UnaryExpression(ast_expr::UnaryExpression {
                     base: BaseNode::typed("UnaryExpression"),
@@ -3528,7 +3532,8 @@ fn codegen_dependency(
     if !dep.path.is_empty() {
         let has_optional = dep.path.iter().any(|p| p.optional);
         for path_entry in &dep.path {
-            let (property, is_computed) = property_literal_to_expression(&path_entry.property);
+            let (property, is_computed) =
+                property_literal_to_expression(&path_entry.property, path_entry.computed);
             if has_optional {
                 object = Expression::OptionalMemberExpression(ast_expr::OptionalMemberExpression {
                     base: BaseNode::typed("OptionalMemberExpression"),
@@ -3934,8 +3939,15 @@ fn codegen_primitive_value(value: &PrimitiveValue, loc: Option<DiagSourceLocatio
     }
 }
 
-fn property_literal_to_expression(prop: &PropertyLiteral) -> (Expression, bool) {
+fn property_literal_to_expression(prop: &PropertyLiteral, computed: bool) -> (Expression, bool) {
     match prop {
+        PropertyLiteral::String(s) if computed => (
+            Expression::StringLiteral(StringLiteral {
+                base: BaseNode::typed("StringLiteral"),
+                value: s.clone().into(),
+            }),
+            true,
+        ),
         PropertyLiteral::String(s) => (Expression::Identifier(make_identifier(s)), false),
         PropertyLiteral::Number(n) => (
             Expression::NumericLiteral(NumericLiteral {

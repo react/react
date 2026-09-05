@@ -2198,7 +2198,7 @@ function lowerExpression(
         case 'MemberExpression': {
           // a.b.c += <right>
           const leftExpr = left as NodePath<t.MemberExpression>;
-          const {object, property, value} = lowerMemberExpression(
+          const {object, property, computed, value} = lowerMemberExpression(
             builder,
             leftExpr,
           );
@@ -2220,6 +2220,7 @@ function lowerExpression(
               kind: 'PropertyStore',
               object: {...object},
               property: makePropertyLiteral(property),
+              computed,
               value: {...newValuePlace},
               loc: leftExpr.node.loc ?? GeneratedSource,
             };
@@ -2641,7 +2642,7 @@ function lowerExpression(
       if (argument.isMemberExpression()) {
         const binaryOperator = expr.node.operator === '++' ? '+' : '-';
         const leftExpr = argument as NodePath<t.MemberExpression>;
-        const {object, property, value} = lowerMemberExpression(
+        const {object, property, computed, value} = lowerMemberExpression(
           builder,
           leftExpr,
         );
@@ -2668,6 +2669,7 @@ function lowerExpression(
             kind: 'PropertyStore',
             object: {...object},
             property: makePropertyLiteral(property),
+            computed,
             value: {...updatedValue},
             loc: leftExpr.node.loc ?? GeneratedSource,
           });
@@ -3333,6 +3335,7 @@ function lowerArguments(
 type LoweredMemberExpression = {
   object: Place;
   property: Place | string | number;
+  computed: boolean;
   value: InstructionValue;
 };
 function lowerMemberExpression(
@@ -3365,6 +3368,7 @@ function lowerMemberExpression(
       return {
         object,
         property: propertyNode.toString(),
+        computed: exprNode.computed,
         value: {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc},
       };
     }
@@ -3372,9 +3376,10 @@ function lowerMemberExpression(
       kind: 'PropertyLoad',
       object: {...object},
       property,
+      computed: exprNode.computed,
       loc: exprLoc,
     };
-    return {object, property, value};
+    return {object, property, computed: exprNode.computed, value};
   } else {
     if (!propertyNode.isExpression()) {
       builder.recordError(
@@ -3388,6 +3393,7 @@ function lowerMemberExpression(
       return {
         object,
         property: propertyNode.toString(),
+        computed: exprNode.computed,
         value: {
           kind: 'UnsupportedNode',
           node: exprNode,
@@ -3402,7 +3408,7 @@ function lowerMemberExpression(
       property: {...property},
       loc: exprLoc,
     };
-    return {object, property, value};
+    return {object, property, computed: true, value};
   }
 }
 
@@ -3497,6 +3503,7 @@ function lowerJsxMemberExpression(
     kind: 'PropertyLoad',
     object: objectPlace,
     property: makePropertyLiteral(property),
+    computed: false,
     loc,
   });
 }
@@ -3932,6 +3939,7 @@ function lowerAssignment(
             kind: 'PropertyStore',
             object,
             property: makePropertyLiteral(property.node.name),
+            computed: false,
             value,
             loc,
           });
@@ -3940,6 +3948,7 @@ function lowerAssignment(
             kind: 'PropertyStore',
             object,
             property: makePropertyLiteral(property.node.value),
+            computed: lvalue.node.computed,
             value,
             loc,
           });
