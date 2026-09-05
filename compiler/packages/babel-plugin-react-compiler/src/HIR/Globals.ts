@@ -28,6 +28,14 @@ import {
   BuiltInWeakMapId,
   BuiltInWeakSetId,
   BuiltInEffectEventId,
+  BuiltInIntlDateTimeFormatId,
+  BuiltInIntlNumberFormatId,
+  BuiltInIntlCollatorId,
+  BuiltInIntlPluralRulesId,
+  BuiltInIntlListFormatId,
+  BuiltInIntlRelativeTimeFormatId,
+  BuiltInIntlSegmenterId,
+  BuiltInIntlDisplayNamesId,
   ReanimatedSharedValueId,
   ShapeRegistry,
   addFunction,
@@ -619,6 +627,145 @@ const TYPED_GLOBALS: Array<[string, BuiltInType]> = [
       null,
       true,
     ),
+  ],
+  [
+    'Intl',
+    addObject(DEFAULT_SHAPES, 'Intl', [
+      [
+        'DateTimeFormat',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {
+              kind: 'Object',
+              shapeId: BuiltInIntlDateTimeFormatId,
+            },
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'NumberFormat',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInIntlNumberFormatId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'Collator',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInIntlCollatorId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'PluralRules',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInIntlPluralRulesId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'ListFormat',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInIntlListFormatId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'RelativeTimeFormat',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {
+              kind: 'Object',
+              shapeId: BuiltInIntlRelativeTimeFormatId,
+            },
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'Segmenter',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInIntlSegmenterId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+      [
+        'DisplayNames',
+        addFunction(
+          DEFAULT_SHAPES,
+          [],
+          {
+            positionalParams: [Effect.Read, Effect.Read],
+            restParam: null,
+            returnType: {kind: 'Object', shapeId: BuiltInIntlDisplayNamesId},
+            calleeEffect: Effect.Read,
+            returnValueKind: ValueKind.Frozen,
+          },
+          null,
+          true,
+        ),
+      ],
+    ]),
   ],
   // TODO: rest of Global objects
 ];
