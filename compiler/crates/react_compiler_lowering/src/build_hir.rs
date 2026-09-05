@@ -4964,7 +4964,12 @@ fn lower_assignment(
                     react_compiler_ast::patterns::ObjectPatternProperty::ObjectProperty(
                         obj_prop,
                     ) => {
-                        if obj_prop.computed {
+                        if obj_prop.computed
+                            && !matches!(
+                                &*obj_prop.key,
+                                react_compiler_ast::expressions::Expression::StringLiteral(_)
+                            )
+                        {
                             builder.record_error(CompilerErrorDetail {
                                 reason: "(BuildHIR::lowerAssignment) Handle computed properties in ObjectPattern".to_string(),
                                 category: ErrorCategory::Todo,
