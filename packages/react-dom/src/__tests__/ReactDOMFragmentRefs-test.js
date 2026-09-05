@@ -1870,6 +1870,64 @@ describe('FragmentRefs', () => {
         );
         expect(logs).toEqual([['click', undefined, undefined]]);
       });
+
+      // @gate enableFragmentRefs
+      it('removes its temporary node when native dispatch throws', async () => {
+        const fragmentRef = React.createRef();
+        const parentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        await act(() => {
+          root.render(
+            <div ref={parentRef}>
+              <Fragment ref={fragmentRef} />
+            </div>,
+          );
+        });
+
+        expect(parentRef.current.childNodes).toHaveLength(0);
+        const error = new Error('dispatch failed');
+        const nativeDispatch = EventTarget.prototype.dispatchEvent;
+        const dispatch = jest
+          .spyOn(EventTarget.prototype, 'dispatchEvent')
+          .mockImplementation(function (event) {
+            if (this.nodeType === Node.TEXT_NODE) {
+              throw error;
+            }
+            return nativeDispatch.call(this, event);
+          });
+        try {
+          expect(() => {
+            fragmentRef.current.dispatchEvent(new Event('test'));
+          }).toThrow(error);
+        } finally {
+          dispatch.mockRestore();
+        }
+        expect(parentRef.current.childNodes).toHaveLength(0);
+      });
+
+      // @gate enableFragmentRefs
+      it('allows a listener to remove the temporary event target', async () => {
+        const fragmentRef = React.createRef();
+        const parentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        await act(() => {
+          root.render(
+            <div ref={parentRef}>
+              <Fragment ref={fragmentRef} />
+            </div>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('test', event => {
+          event.target.remove();
+        });
+        expect(() => {
+          fragmentRef.current.dispatchEvent(new Event('test'));
+        }).not.toThrow();
+        expect(parentRef.current.childNodes).toHaveLength(0);
+      });
     });
   });
 
