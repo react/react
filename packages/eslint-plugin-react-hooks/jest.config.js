@@ -8,5 +8,7 @@ module.exports = {
   moduleNameMapper: {
     '^babel-plugin-react-compiler$':
       '<rootDir>/../../compiler/packages/babel-plugin-react-compiler/dist/index.js',
+    '^babel-plugin-react-compiler/(.*)$':
+      '<rootDir>/../../compiler/packages/babel-plugin-react-compiler/$1',
   },
 };
