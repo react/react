@@ -381,6 +381,8 @@ describe('ReactDOM', () => {
 
       expect(inputFocusedAfterMount).toBe(true);
       expect(focusedElement.tagName).toBe('INPUT');
+      // The native attribute should also be present.
+      expect(focusedElement.autofocus).toBe(true);
     } finally {
       HTMLElement.prototype.focus = originalFocus;
     }
