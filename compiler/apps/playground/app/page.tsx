@@ -10,7 +10,6 @@
 import {SnackbarProvider} from 'notistack';
 import {Editor, Header, StoreProvider} from '../components';
 import MessageSnackbar from '../components/Message';
-
 export default function Page(): JSX.Element {
   return (
     <StoreProvider>
