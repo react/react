@@ -10,8 +10,8 @@ use react_compiler_hir::visitors::{
     each_pattern_operand, each_terminal_operand,
 };
 use react_compiler_hir::{
-    AliasingEffect, BlockId, HirFunction, Identifier, IdentifierId, InstructionValue, Place,
-    PrimitiveValue, PropertyLiteral, Terminal, Type, UnaryOperator,
+    AliasingEffect, BinaryOperator, BlockId, HirFunction, Identifier, IdentifierId,
+    InstructionValue, Place, PrimitiveValue, PropertyLiteral, Terminal, Type, UnaryOperator,
 };
 
 const ERROR_DESCRIPTION: &str = "React refs are values that are not needed for rendering. \
@@ -1112,7 +1112,12 @@ fn validate_no_ref_access_in_render_impl(
                             validate_no_ref_value_access(errors, ref_env, value);
                         }
                     }
-                    InstructionValue::BinaryExpression { left, right, .. } => {
+                    InstructionValue::BinaryExpression {
+                        operator,
+                        left,
+                        right,
+                        ..
+                    } => {
                         let left_type = ref_env.get(left.identifier).cloned();
                         let right_type = ref_env.get(right.identifier).cloned();
                         let mut nullish = false;
@@ -1136,14 +1141,15 @@ fn validate_no_ref_access_in_render_impl(
                             nullish = true;
                         }
 
-                        if let Some(ref_id) = found_ref_id {
-                            if nullish {
-                                ref_env
-                                    .set(instr.lvalue.identifier, RefAccessType::Guard { ref_id });
-                            } else {
-                                validate_no_ref_value_access(errors, ref_env, left);
-                                validate_no_ref_value_access(errors, ref_env, right);
-                            }
+                        if let Some(ref_id) = found_ref_id.filter(|_| nullish) {
+                            ref_env.set(instr.lvalue.identifier, RefAccessType::Guard { ref_id });
+                        } else if matches!(
+                            operator,
+                            BinaryOperator::StrictEqual | BinaryOperator::StrictNotEqual
+                        ) {
+                            // Strict equality check does not call or coerce operands
+                            validate_no_direct_ref_value_access(errors, left, ref_env);
+                            validate_no_direct_ref_value_access(errors, right, ref_env);
                         } else {
                             validate_no_ref_value_access(errors, ref_env, left);
                             validate_no_ref_value_access(errors, ref_env, right);
