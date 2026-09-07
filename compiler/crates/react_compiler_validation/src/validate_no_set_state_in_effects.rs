@@ -160,18 +160,40 @@ fn get_identifier_name_with_loc(
     if let Some(IdentifierName::Named(name)) = &ident.name {
         return Some(name.clone());
     }
-    // Fall back to extracting from source code
+    // Fall back to extracting from source code using UTF-16 code unit indices.
+    // Babel/JS positions use UTF-16 code unit offsets, but Rust strings are UTF-8,
+    // so we need to convert between the two.
     if let (Some(loc), Some(code)) = (loc, source_code) {
-        let start_idx = loc.start.index? as usize;
-        let end_idx = loc.end.index? as usize;
-        if start_idx < code.len() && end_idx <= code.len() && start_idx < end_idx {
-            let slice = &code[start_idx..end_idx];
-            if !slice.is_empty()
-                && slice
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
-            {
-                return Some(slice.to_string());
+        let start_utf16 = loc.start.index? as usize;
+        let end_utf16 = loc.end.index? as usize;
+        if start_utf16 < end_utf16 {
+            // Convert UTF-16 code unit offsets to UTF-8 byte offsets
+            let mut utf16_pos = 0usize;
+            let mut byte_start = None;
+            let mut byte_end = None;
+            for (byte_idx, ch) in code.char_indices() {
+                if utf16_pos == start_utf16 {
+                    byte_start = Some(byte_idx);
+                }
+                if utf16_pos == end_utf16 {
+                    byte_end = Some(byte_idx);
+                    break;
+                }
+                utf16_pos += ch.len_utf16();
+            }
+            // Handle end at the very end of string
+            if utf16_pos == end_utf16 && byte_end.is_none() {
+                byte_end = Some(code.len());
+            }
+            if let (Some(start), Some(end)) = (byte_start, byte_end) {
+                let slice = &code[start..end];
+                if !slice.is_empty()
+                    && slice
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+                {
+                    return Some(slice.to_string());
+                }
             }
         }
     }
