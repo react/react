@@ -10832,4 +10832,70 @@ Unfortunately that previous paragraph wasn't quite long enough so I'll continue 
       </html>,
     );
   });
+
+  // Regression test for https://github.com/facebook/react/issues/36985
+  it('does not emit a duplicate completion instruction when a boundary completes while its fallback is still pending and eligible for outlining', async () => {
+    function Filler() {
+      const row = 'x'.repeat(100);
+      return (
+        <div>
+          {Array.from({length: 300}, (_, i) => (
+            <p key={i}>{row}</p>
+          ))}
+        </div>
+      );
+    }
+
+    function Content() {
+      return (
+        <section>
+          <Filler />
+          {readText('content')}
+        </section>
+      );
+    }
+
+    function SlowFallback() {
+      return <p>{readText('fallback')}</p>;
+    }
+
+    let allOutput = '';
+    writable.on('data', chunk => {
+      allOutput += chunk;
+    });
+
+    await act(async () => {
+      renderToPipeableStream(
+        <html>
+          <body>
+            <Suspense fallback={<p>outer fallback</p>}>
+              <main>
+                <Suspense fallback={<SlowFallback />}>
+                  <Content />
+                </Suspense>
+              </main>
+            </Suspense>
+          </body>
+        </html>,
+        {unstable_externalRuntimeSrc: undefined},
+      ).pipe(writable);
+    });
+
+    // The content completes and is large enough to be eligible for outlining,
+    // so its fallback task is intentionally not aborted yet.
+    await act(async () => {
+      resolveText('content');
+    });
+
+    // The fallback finally resolves after its boundary's content has already
+    // been revealed. This should not cause the boundary to be completed a
+    // second time.
+    await act(async () => {
+      resolveText('fallback');
+    });
+
+    const rcMatches =
+      allOutput.match(/\$RC\("B:[0-9a-f]+","S:[0-9a-f]+"\)/g) || [];
+    expect(rcMatches.length).toBe(2);
+  });
 });

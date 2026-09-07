@@ -342,7 +342,7 @@ type Segment = {
   // The context that this segment was created in.
   parentFormatContext: FormatContext,
   // If this segment represents a fallback, this is the content that will replace that fallback.
-  +boundary: null | SuspenseBoundary,
+  boundary: null | SuspenseBoundary,
   // used to discern when text separator boundaries are needed
   lastPushedText: boolean,
   textEmbedded: boolean,
@@ -5681,6 +5681,10 @@ function flushSegment(
     return flushSubtree(request, destination, segment, hoistableState);
   }
 
+  // We're going to write the boundary. We don't need to maintain this reference since
+  // we might reflush this segment at a later time (if it aborts and we inlined) but
+  // we don't want to reflush the boundary
+  segment.boundary = null;
   boundary.parentFlushed = true;
   // This segment is a Suspense boundary. We need to decide whether to
   // emit the content or the fallback now.
