@@ -174,38 +174,6 @@ impl AliasingState {
             });
     }
 
-    /// A helper returning an unmodified shallow copy captures its source without
-    /// aliasing it. Only preserve this distinction for a single, unambiguous source.
-    fn get_object_spread_source(&self, start: IdentifierId) -> Option<IdentifierId> {
-        let mut seen = FxHashSet::default();
-        let mut current = start;
-        let mut has_spread = false;
-        while seen.insert(current) {
-            let node = self.nodes.get(&current)?;
-            if node.local.is_some()
-                || node.transitive.is_some()
-                || !node.created_from.is_empty()
-                || !node.maybe_aliases.is_empty()
-            {
-                return None;
-            }
-            if node.aliases.len() == 1 && node.captures.is_empty() {
-                current = *node.aliases.first().unwrap().0;
-            } else if node.aliases.is_empty() && node.captures.len() == 1 {
-                let (&source, capture) = node.captures.first().unwrap();
-                if !capture.is_object_spread_capture {
-                    return None;
-                }
-                has_spread = true;
-                current = source;
-            } else {
-                return (has_spread && node.aliases.is_empty() && node.captures.is_empty())
-                    .then_some(current);
-            }
-        }
-        None
-    }
-
     fn assign(&mut self, index: usize, from: &Place, into: &Place) {
         let from_id = from.identifier;
         let into_id = into.identifier;
@@ -1101,7 +1069,6 @@ pub fn infer_mutation_aliasing_ranges(
     // Part 3: Finish populating the externally visible effects
     // =========================================================================
     let returns_id = func.returns.identifier;
-    let object_spread_source = state.get_object_spread_source(returns_id);
     let returns_type_id = env.identifiers[returns_id.0 as usize].type_;
     let returns_type = &env.types[returns_type_id.0 as usize];
     let return_value_kind = if is_primitive_type(returns_type) {
@@ -1166,13 +1133,6 @@ pub fn infer_mutation_aliasing_ranges(
 
             if from_node.last_mutated == mutation_index {
                 if into.identifier == returns_identifier_id {
-                    if Some(from.identifier) == object_spread_source {
-                        function_effects.push(AliasingEffect::ObjectSpreadCapture {
-                            from: from.clone(),
-                            into: into.clone(),
-                        });
-                        continue;
-                    }
                     function_effects.push(AliasingEffect::Alias {
                         from: from.clone(),
                         into: into.clone(),

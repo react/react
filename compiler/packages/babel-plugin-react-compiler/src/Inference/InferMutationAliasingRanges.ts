@@ -494,7 +494,6 @@ export function inferMutationAliasingRanges(
    * effects for how data flows between the params, context vars, and return.
    */
   const returns = fn.returns.identifier;
-  const objectSpreadSource = state.getObjectSpreadSource(returns);
   functionEffects.push({
     kind: 'Create',
     into: fn.returns,
@@ -541,15 +540,6 @@ export function inferMutationAliasingRanges(
       });
       if (fromNode.lastMutated === mutationIndex) {
         if (into.identifier.id === fn.returns.identifier.id) {
-          if (from.identifier === objectSpreadSource) {
-            functionEffects.push({
-              kind: 'Capture',
-              from,
-              into,
-              isObjectSpreadCapture: true,
-            });
-            continue;
-          }
           // The return value could be any of the params/context variables
           functionEffects.push({
             kind: 'Alias',
@@ -658,44 +648,6 @@ class AliasingState {
     if (!toNode.captures.has(from.identifier)) {
       toNode.captures.set(from.identifier, {index, isObjectSpreadCapture});
     }
-  }
-
-  /**
-   * A helper returning an unmodified shallow copy captures its source without
-   * aliasing it. Only preserve this distinction for a single, unambiguous source.
-   */
-  getObjectSpreadSource(start: Identifier): Identifier | null {
-    const seen = new Set<Identifier>();
-    let current = start;
-    let hasSpread = false;
-    while (!seen.has(current)) {
-      seen.add(current);
-      const node = this.nodes.get(current);
-      if (
-        node == null ||
-        node.local != null ||
-        node.transitive != null ||
-        node.createdFrom.size !== 0 ||
-        node.maybeAliases.size !== 0
-      ) {
-        return null;
-      }
-      if (node.aliases.size === 1 && node.captures.size === 0) {
-        current = [...node.aliases.keys()][0];
-      } else if (node.aliases.size === 0 && node.captures.size === 1) {
-        const [source, capture] = [...node.captures][0];
-        if (!capture.isObjectSpreadCapture) {
-          return null;
-        }
-        hasSpread = true;
-        current = source;
-      } else {
-        return hasSpread && node.aliases.size === 0 && node.captures.size === 0
-          ? current
-          : null;
-      }
-    }
-    return null;
   }
 
   assign(index: number, from: Place, into: Place): void {
