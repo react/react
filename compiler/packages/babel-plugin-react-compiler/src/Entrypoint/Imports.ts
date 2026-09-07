@@ -313,6 +313,20 @@ export function addImportsToProgram(
       }
     }
   }
+  const firstStatement = path.node.body[0];
+  if (stmts.length !== 0 && firstStatement?.leadingComments != null) {
+    /*
+     * Downstream JSX transforms only read pragmas before the first statement.
+     * Keep them ahead of generated imports without moving statement annotations.
+     */
+    const jsxPragma = /@jsx(?:ImportSource|Runtime|Frag)?\s/;
+    stmts[0].leadingComments = firstStatement.leadingComments.filter(comment =>
+      jsxPragma.test(comment.value),
+    );
+    firstStatement.leadingComments = firstStatement.leadingComments.filter(
+      comment => !jsxPragma.test(comment.value),
+    );
+  }
   path.unshiftContainer('body', stmts);
 }
 
