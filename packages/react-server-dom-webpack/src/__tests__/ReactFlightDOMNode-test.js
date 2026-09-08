@@ -2525,11 +2525,11 @@ describe('ReactFlightDOMNode', () => {
     //
     // The client must not hand the element the props object at that point. The
     // props row still waits on a client module reference, and the element is
-    // not part of that wait, so it has to stay a lazy until the props row
-    // completes. An element initialized early carries the null placeholder
-    // where `ClientModule` belongs, which is what DevTools reads. In DEV its
-    // props are also frozen, so the module write that lands later throws, and
-    // the response rejects.
+    // not part of that wait, so the lazy that wraps the element has to stay
+    // pending until the props row completes. An element initialized early
+    // carries the null placeholder where `ClientModule` belongs, which is what
+    // DevTools reads. In DEV its props are also frozen, so the module write
+    // that lands later throws, and the response rejects.
     //
     // The Suspense boundary inside PassthroughServerComponent keeps
     // PassthroughServerComponent's componentInfo on row 0 and moves
@@ -2670,35 +2670,33 @@ describe('ReactFlightDOMNode', () => {
     await expect(response).resolves.toBeDefined();
     const root = await response;
 
-    const unwrap = node => {
-      let current = node;
-      while (
-        current !== null &&
-        typeof current === 'object' &&
-        current.$$typeof === Symbol.for('react.lazy') &&
-        current._payload.status === 'fulfilled'
-      ) {
-        current = current._payload.value;
-      }
-      return current;
-    };
+    // DevTools reads the element from the componentInfo's `children`, through
+    // the payload of the lazy that wraps it. The status is recorded here and
+    // asserted after the module resolves, so that a regression fails on the
+    // frozen-props error first.
     const passthroughInfo = getDebugInfo(root).find(
       entry => entry.name === 'PassthroughServerComponent',
     );
-    const asyncServerElement = unwrap(passthroughInfo.props.children);
-
-    // The props row still waits on the module, so the element must still be a
-    // lazy. An element initialized here would carry the null placeholder that
-    // DevTools reads, whether or not the frozen props make the later module
-    // write throw. Without the fix it is already initialized at this point.
-    expect(asyncServerElement.$$typeof).toBe(Symbol.for('react.lazy'));
+    const asyncServerElementLazy = passthroughInfo.props.children;
+    const payloadStatusBeforeModule = asyncServerElementLazy._payload.status;
 
     await actOnStream(() => resolveClientModuleChunk());
 
+    // Without the fix, the element was initialized before the module arrived,
+    // and writing the module into its frozen props throws. The SSR render
+    // reports the error.
     expect(ssrErrors).toEqual([]);
     expect(received).toEqual([{module: 'object', shared: 'object'}]);
-    expect(unwrap(passthroughInfo.props.children).props.ClientModule).toEqual({
-      label: 'module',
-    });
+
+    // An element initialized before the module arrived carries the null
+    // placeholder that DevTools reads, whether or not the write throws. The
+    // lazy must not have resolved while its props row was waiting.
+    expect(payloadStatusBeforeModule).not.toBe('fulfilled');
+
+    // Resolve the lazy the way a renderer does. It holds the module now.
+    const asyncServerElement = asyncServerElementLazy._init(
+      asyncServerElementLazy._payload,
+    );
+    expect(asyncServerElement.props.ClientModule).toEqual({label: 'module'});
   });
 });
