@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "build": "cross-env NODE_ENV=production rollup -c rollup.config.cjs",
-    "prepublish": "yarn run build",
+    "prepublishOnly": "yarn run build",
     "start": "cross-env NODE_ENV=development rollup -c rollup.config.cjs --watch",
     "test:e2e": "node e2e/run.js",
     "test:e2e:ci": "cross-env E2E_CI=true node e2e/run.js"
