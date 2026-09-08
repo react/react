@@ -225,19 +225,10 @@ pub fn infer_mutation_aliasing_effects(
             // successor can take ownership instead of cloning. Straight-line
             // blocks have a single successor, so they clone not at all.
             let successors = terminal_successors(&func.body.blocks[&block_id].terminal);
-            let last = successors.len();
-            let mut state = Some(state);
-            for (i, next_block_id) in successors.into_iter().enumerate() {
-                let outgoing = if i + 1 == last {
-                    state
-                        .take()
-                        .expect("state is taken only on the last successor")
-                } else {
-                    state
-                        .as_ref()
-                        .expect("state is live until the last successor")
-                        .clone()
-                };
+            let outgoing_states = std::iter::repeat_n(state, successors.len());
+            for (next_block_id, outgoing) in
+                  successors.into_iter().zip(outgoing_states)
+              {
                 queue(
                     &mut queued_states,
                     &states_by_block,
