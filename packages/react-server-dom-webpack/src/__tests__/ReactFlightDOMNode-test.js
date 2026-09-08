@@ -30,6 +30,7 @@ let Stream;
 let use;
 let assertConsoleErrorDev;
 let serverAct;
+let getDebugInfo;
 
 // We test pass-through without encoding strings but it should work without it too.
 const streamOptions = {
@@ -77,6 +78,10 @@ describe('ReactFlightDOMNode', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
+    getDebugInfo = InternalTestUtils.getDebugInfo.bind(null, {
+      ignoreProps: false,
+      useFixedTime: true,
+    });
   });
 
   function filterStackFrame(filename, functionName) {
@@ -202,6 +207,28 @@ describe('ReactFlightDOMNode', () => {
       },
     });
     return {delayedStream, resolveDelayedStream};
+  }
+
+  // Runs an action that makes a Node stream emit, and flushes the ticks inside
+  // the act scope so that act sees the work the delivery triggers. Node streams
+  // hand data over through `process.nextTick`, which the fake timers mock.
+  function actOnStream(action: () => mixed): Promise<void> {
+    return serverAct(() => {
+      action();
+      jest.runAllTicks();
+    });
+  }
+
+  // The Node client resolves client references through a server consumer
+  // manifest, which maps each client module id to the module the SSR bundle
+  // loads for it. These tests use the same module on both sides.
+  function createIdentityServerConsumerManifest(...clientReferences) {
+    const moduleMap = {};
+    for (let i = 0; i < clientReferences.length; i++) {
+      const metadata = webpackMap[clientReferences[i].$$id];
+      moduleMap[metadata.id] = {'*': metadata};
+    }
+    return {moduleMap, moduleLoading: webpackModuleLoading};
   }
 
   it('should support web streams in node', async () => {
@@ -980,10 +1007,10 @@ describe('ReactFlightDOMNode', () => {
           // The concrete location may change as this test is updated.
           // Just make sure they still point at React.use(p2)
           (gate(flags => flags.enableAsyncDebugInfo)
-            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:838:7)'
+            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:865:7)'
             : '') +
-          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:860:26)' +
-          '\n    at App (file://./ReactFlightDOMNode-test.js:877:25)',
+          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:887:26)' +
+          '\n    at App (file://./ReactFlightDOMNode-test.js:904:25)',
       );
     } else {
       expect(ownerStack).toBeNull();
@@ -1567,12 +1594,12 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in Dynamic' +
             (gate(flags => flags.enableAsyncDebugInfo)
-              ? ' (file://ReactFlightDOMNode-test.js:1441:27)\n'
+              ? ' (file://ReactFlightDOMNode-test.js:1468:27)\n'
               : '\n') +
             '    in body\n' +
             '    in html\n' +
-            '    in App (file://ReactFlightDOMNode-test.js:1454:25)\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1529:16)',
+            '    in App (file://ReactFlightDOMNode-test.js:1481:25)\n' +
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1556:16)',
         );
       } else {
         expect(
@@ -1581,7 +1608,7 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1529:16)',
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1556:16)',
         );
       }
 
@@ -1591,8 +1618,8 @@ describe('ReactFlightDOMNode', () => {
             normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
           ).toBe(
             '\n' +
-              '    in Dynamic (file://ReactFlightDOMNode-test.js:1441:27)\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1454:25)',
+              '    in Dynamic (file://ReactFlightDOMNode-test.js:1468:27)\n' +
+              '    in App (file://ReactFlightDOMNode-test.js:1481:25)',
           );
         } else {
           expect(
@@ -1600,7 +1627,7 @@ describe('ReactFlightDOMNode', () => {
           ).toBe(
             '' +
               '\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1454:25)',
+              '    in App (file://ReactFlightDOMNode-test.js:1481:25)',
           );
         }
       } else {
@@ -1757,7 +1784,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1704:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1731:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1768,7 +1795,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1704:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1731:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1781,10 +1808,10 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             gate(flags =>
               flags.enableAsyncDebugInfo
-                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1705:9)\n'
+                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1732:9)\n'
                 : '',
             ) +
-            '    at ClientRoot (./ReactFlightDOMNode-test.js:1718:21)',
+            '    at ClientRoot (./ReactFlightDOMNode-test.js:1745:21)',
         );
       } else {
         expect(ownerStack).toBeNull();
@@ -2486,31 +2513,6 @@ describe('ReactFlightDOMNode', () => {
     expect(getEventListeners(composite, 'abort')).toHaveLength(0);
   });
 
-  // Runs an action that makes a Node stream emit, and flushes the ticks inside
-  // the act scope so that act sees the work the delivery triggers. Node streams
-  // hand data over through `process.nextTick`, which the fake timers mock.
-  //
-  // The tests above assert on source line numbers. A definition above them
-  // would shift those, so these helpers stay below them.
-  function actOnStream(action: () => mixed): Promise<void> {
-    return serverAct(() => {
-      action();
-      jest.runAllTicks();
-    });
-  }
-
-  // The Node client resolves client references through a server consumer
-  // manifest, which maps each client module id to the module the SSR bundle
-  // loads for it. These tests use the same module on both sides.
-  function createIdentityServerConsumerManifest(...clientReferences) {
-    const moduleMap = {};
-    for (let i = 0; i < clientReferences.length; i++) {
-      const metadata = webpackMap[clientReferences[i].$$id];
-      moduleMap[metadata.id] = {'*': metadata};
-    }
-    return {moduleMap, moduleLoading: webpackModuleLoading};
-  }
-
   // @gate __DEV__
   it('does not expose a debug-tree element whose props still hold an unresolved reference', async () => {
     // Regression test for facebook/react#37361.
@@ -2668,11 +2670,6 @@ describe('ReactFlightDOMNode', () => {
     await expect(response).resolves.toBeDefined();
     const root = await response;
 
-    const getDebugInfoWithProps =
-      require('internal-test-utils').getDebugInfo.bind(null, {
-        ignoreProps: false,
-        useFixedTime: true,
-      });
     const unwrap = node => {
       let current = node;
       while (
@@ -2685,14 +2682,15 @@ describe('ReactFlightDOMNode', () => {
       }
       return current;
     };
-    const passthroughInfo = getDebugInfoWithProps(root).find(
+    const passthroughInfo = getDebugInfo(root).find(
       entry => entry.name === 'PassthroughServerComponent',
     );
     const asyncServerElement = unwrap(passthroughInfo.props.children);
 
     // The props row still waits on the module, so the element must still be a
-    // lazy. Without the fix it is already initialized here, with the null
-    // placeholder where `ClientModule` belongs.
+    // lazy. An element initialized here would carry the null placeholder that
+    // DevTools reads, whether or not the frozen props make the later module
+    // write throw. Without the fix it is already initialized at this point.
     expect(asyncServerElement.$$typeof).toBe(Symbol.for('react.lazy'));
 
     await actOnStream(() => resolveClientModuleChunk());

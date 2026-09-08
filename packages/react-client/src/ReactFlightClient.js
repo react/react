@@ -1021,14 +1021,28 @@ type InitializationReference = {
   path: Array<string>,
   isDebug?: boolean, // DEV-only
 };
-type InitializationHandler = {
+type PendingInitializationHandler = {
   parent: null | InitializationHandler,
   chunk: null | BlockedChunk<any>,
   value: any,
-  reason: any,
+  // The controller of a stream whose chunk is blocked on its debug info. Null
+  // for every other model.
+  reason: null | FlightStreamController,
   deps: number,
-  errored: boolean,
+  errored: false,
 };
+type ErroredInitializationHandler = {
+  parent: null | InitializationHandler,
+  chunk: null | BlockedChunk<any>,
+  value: null,
+  // The error the handler was rejected with.
+  reason: mixed,
+  deps: number,
+  errored: true,
+};
+type InitializationHandler =
+  | PendingInitializationHandler
+  | ErroredInitializationHandler;
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
@@ -1688,7 +1702,7 @@ function initializeBlockedChunk<T>(
   response: Response,
   chunk: BlockedChunk<T>,
   value: T,
-  reason: any,
+  reason: InitializedChunk<T>['reason'],
 ): void {
   const resolveListeners = chunk.value;
   if (__DEV__) {
@@ -1717,10 +1731,18 @@ function initializeChunkIfUnblocked(
     return;
   }
   const chunk = handler.chunk;
-  if (chunk === null || chunk.status !== BLOCKED) {
+  if (chunk === null) {
     return;
   }
-  // For a stream chunk, `handler.reason` holds its controller.
+  // `BlockedChunk` is the chunk's type at the time the handler recorded it.
+  // The chunk can have errored since, or a cyclic reference can have completed
+  // it, so its status is read again here.
+  if ((chunk as SomeChunk<any>).status !== BLOCKED) {
+    return;
+  }
+  // `handler.reason` is the controller of a stream whose chunk was blocked on
+  // its debug info, and null otherwise. It becomes the initialized chunk's
+  // `reason` either way.
   initializeBlockedChunk(response, chunk, handler.value, handler.reason);
 }
 
@@ -1926,9 +1948,10 @@ function rejectReference(
     return;
   }
   const blockedValue = handler.value;
-  handler.errored = true;
-  handler.value = null;
-  handler.reason = error;
+  const erroredHandler: ErroredInitializationHandler = handler as any;
+  erroredHandler.errored = true;
+  erroredHandler.value = null;
+  erroredHandler.reason = error;
   const chunk = handler.chunk;
   if (chunk === null || chunk.status !== BLOCKED) {
     return;
@@ -2158,9 +2181,10 @@ function loadServerReference<A: Iterable<any>, T>(
       return;
     }
     const blockedValue = handler.value;
-    handler.errored = true;
-    handler.value = null;
-    handler.reason = error;
+    const erroredHandler: ErroredInitializationHandler = handler as any;
+    erroredHandler.errored = true;
+    erroredHandler.value = null;
+    erroredHandler.reason = error;
     const chunk = handler.chunk;
     if (chunk === null || chunk.status !== BLOCKED) {
       return;
@@ -2346,9 +2370,11 @@ function getOutlinedModel<T>(
               // This is an error. Instead of erroring directly, we're going to encode this on
               // an initialization handler so that we can catch it at the nearest Element.
               if (initializingHandler) {
-                initializingHandler.errored = true;
-                initializingHandler.value = null;
-                initializingHandler.reason = referencedChunk.reason;
+                const erroredHandler: ErroredInitializationHandler =
+                  initializingHandler as any;
+                erroredHandler.errored = true;
+                erroredHandler.value = null;
+                erroredHandler.reason = referencedChunk.reason;
               } else {
                 initializingHandler = {
                   parent: null,
@@ -2455,9 +2481,11 @@ function getOutlinedModel<T>(
       // This is an error. Instead of erroring directly, we're going to encode this on
       // an initialization handler so that we can catch it at the nearest Element.
       if (initializingHandler) {
-        initializingHandler.errored = true;
-        initializingHandler.value = null;
-        initializingHandler.reason = chunk.reason;
+        const erroredHandler: ErroredInitializationHandler =
+          initializingHandler as any;
+        erroredHandler.errored = true;
+        erroredHandler.value = null;
+        erroredHandler.reason = chunk.reason;
       } else {
         initializingHandler = {
           parent: null,
