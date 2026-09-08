@@ -11,7 +11,7 @@
 
 'use strict';
 
-import {BatchedBridge} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import {BatchedBridge} from 'react-native/react-private-interface';
 
 import type {ReactFabricType} from './ReactNativeTypes';
 

@@ -1,0 +1,68 @@
+name: React Compiler (Rust)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - compiler/**
+      - .github/workflows/compiler_rust.yml
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  TZ: /usr/share/zoneinfo/America/Los_Angeles
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+
+defaults:
+  run:
+    working-directory: compiler
+
+jobs:
+  rust:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Rust toolchain ---
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('compiler/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      # --- Node (needed for test scripts) ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: yarn
+          cache-dependency-path: compiler/yarn.lock
+
+      - name: Restore cached node_modules
+        uses: actions/cache@v4
+        id: node_modules
+        with:
+          path: '**/node_modules'
+          key: compiler-node_modules-v6-${{ runner.arch }}-${{ runner.os }}-${{ hashFiles('compiler/yarn.lock') }}
+
+      - run: yarn install --frozen-lockfile
+        if: steps.node_modules.outputs.cache-hit != 'true'
+
+      # --- Build & test ---
+      - run: cargo check
+      - run: cargo build
+      - run: bash scripts/test-babel-ast.sh
+      - run: bash scripts/test-rust-port.sh
+      - run: yarn workspace snap run build
+      - run: yarn snap --rust

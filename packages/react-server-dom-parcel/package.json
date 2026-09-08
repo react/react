@@ -6,7 +6,7 @@
     "react"
   ],
   "homepage": "https://reactjs.org/",
-  "bugs": "https://github.com/facebook/react/issues",
+  "bugs": "https://github.com/react/react/issues",
   "license": "MIT",
   "files": [
     "LICENSE",
@@ -72,7 +72,7 @@
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-server-dom-parcel"
   },
   "engines": {

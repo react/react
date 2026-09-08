@@ -56,9 +56,8 @@ export default function ReloadAndProfileButton({
 
     bridge.send('reloadAndProfile', {
       recordChangeDescriptions,
-      recordTimeline: store.supportsTimeline,
     });
-  }, [bridge, recordChangeDescriptions, store]);
+  }, [bridge, recordChangeDescriptions]);
 
   if (!supportsReloadAndProfile) {
     return null;

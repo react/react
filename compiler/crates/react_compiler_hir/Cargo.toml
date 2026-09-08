@@ -1,0 +1,15 @@
+[package]
+name = "react_compiler_hir"
+description = "High-level intermediate representation for the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+react_compiler_diagnostics.workspace = true
+indexmap = { version = "2", features = ["serde"] }
+rustc-hash = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

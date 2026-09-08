@@ -46,10 +46,10 @@ export type SharedStateServer = {
 
 export type RendererTask = boolean => RendererTask | null;
 
-const ReactSharedInternals: SharedStateServer = ({
+const ReactSharedInternals: SharedStateServer = {
   H: null,
   A: null,
-}: any);
+} as any;
 
 if (enableTaint) {
   ReactSharedInternals.TaintRegistryObjects = TaintRegistryObjects;
@@ -61,7 +61,7 @@ if (enableTaint) {
 
 if (__DEV__) {
   // Stack implementation injected by the current renderer.
-  ReactSharedInternals.getCurrentStack = (null: null | (() => string));
+  ReactSharedInternals.getCurrentStack = null as null | (() => string);
   ReactSharedInternals.recentlyCreatedOwnerStacks = 0;
 }
 

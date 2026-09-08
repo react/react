@@ -1,0 +1,24 @@
+pub mod constant_propagation;
+pub mod dead_code_elimination;
+pub mod drop_manual_memoization;
+pub mod inline_iifes;
+pub mod merge_consecutive_blocks;
+pub mod name_anonymous_functions;
+pub mod optimize_for_ssr;
+pub mod optimize_props_method_calls;
+pub mod outline_functions;
+pub mod outline_jsx;
+pub mod prune_maybe_throws;
+pub mod prune_unused_labels_hir;
+
+pub use constant_propagation::constant_propagation;
+pub use dead_code_elimination::dead_code_elimination;
+pub use drop_manual_memoization::drop_manual_memoization;
+pub use inline_iifes::inline_immediately_invoked_function_expressions;
+pub use name_anonymous_functions::name_anonymous_functions;
+pub use optimize_for_ssr::optimize_for_ssr;
+pub use optimize_props_method_calls::optimize_props_method_calls;
+pub use outline_functions::outline_functions;
+pub use outline_jsx::outline_jsx;
+pub use prune_maybe_throws::prune_maybe_throws;
+pub use prune_unused_labels_hir::prune_unused_labels_hir;

@@ -162,7 +162,7 @@ function extractEvents(
     // Track the input node that has focus.
     case 'focusin':
       if (
-        isTextInputElement((targetNode: any)) ||
+        isTextInputElement(targetNode as any) ||
         targetNode.contentEditable === 'true'
       ) {
         activeElement = targetNode;

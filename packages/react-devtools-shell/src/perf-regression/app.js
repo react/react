@@ -9,7 +9,7 @@ import App from './apps/index';
 function mountApp() {
   const container = document.createElement('div');
 
-  ((document.body: any): HTMLBodyElement).appendChild(container);
+  (document.body as any as HTMLBodyElement).appendChild(container);
 
   const root = createRoot(container);
   root.render(

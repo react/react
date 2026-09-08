@@ -57,12 +57,12 @@ it('logs failed compilation', () => {
   invariant(event.kind === 'CompileError', 'typescript be smarter');
 
   expect(event.detail.severity).toEqual('Error');
-  //@ts-ignore
-  const {start, end, identifierName} =
-    event.detail.primaryLocation() as t.SourceLocation;
-  expect(start).toEqual({column: 28, index: 28, line: 1});
-  expect(end).toEqual({column: 33, index: 33, line: 1});
-  expect(identifierName).toEqual('props');
+  const errorDetail = event.detail.details?.find(d => d.kind === 'error');
+  expect(errorDetail).toBeDefined();
+  const loc = errorDetail!.loc as t.SourceLocation;
+  expect(loc.start).toEqual({column: 28, index: 28, line: 1});
+  expect(loc.end).toEqual({column: 33, index: 33, line: 1});
+  expect(loc.identifierName).toEqual('props');
 
   // Make sure event.fnLoc is different from event.detail.loc
   expect(event.fnLoc?.start).toEqual({column: 0, index: 0, line: 1});

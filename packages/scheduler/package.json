@@ -4,7 +4,7 @@
   "description": "Cooperative scheduler for the browser environment.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/scheduler"
   },
   "license": "MIT",
@@ -12,7 +12,7 @@
     "react"
   ],
   "bugs": {
-    "url": "https://github.com/facebook/react/issues"
+    "url": "https://github.com/react/react/issues"
   },
   "homepage": "https://react.dev/",
   "files": [

@@ -54,7 +54,7 @@ declare opaque type __PublicInstance;
 declare opaque type __PublicTextInstance;
 declare opaque type __PublicRootInstance;
 
-declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface' {
+declare module 'react-native/react-private-interface' {
   declare export function deepFreezeAndThrowOnMutationInDev<T>(obj: T): T;
   declare export const ReactFiberErrorDialog: {
     showErrorDialog: (error: __CapturedError) => boolean,
@@ -117,7 +117,7 @@ declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface'
   ): null | Object;
 }
 
-declare module 'react-native/Libraries/ReactPrivate/ReactNativePrivateInitializeCore' {
+declare module 'react-native/setup-env' {
 }
 
 declare module 'react-native' {
@@ -126,9 +126,6 @@ declare module 'react-native' {
   declare export type PublicRootInstance = __PublicRootInstance;
   declare export type MeasureOnSuccessCallback = __MeasureOnSuccessCallback;
 }
-
-// eslint-disable-next-line no-unused-vars
-declare const RN$enableMicrotasksInReact: boolean;
 
 // eslint-disable-next-line no-unused-vars
 declare const RN$isNativeEventTargetEventDispatchingEnabled:

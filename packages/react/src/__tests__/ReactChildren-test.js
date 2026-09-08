@@ -1118,7 +1118,7 @@ describe('ReactChildren', () => {
   it('should throw on object', () => {
     expect(function () {
       React.Children.forEach({a: 1, b: 2}, function () {}, null);
-    }).toThrowError(
+    }).toThrow(
       'Objects are not valid as a React child (found: object with keys ' +
         '{a, b}).' +
         (__DEV__
@@ -1165,7 +1165,7 @@ describe('ReactChildren', () => {
     // serialization (timezones) so let's test a regex instead:
     expect(function () {
       React.Children.forEach(/abc/, function () {}, null);
-    }).toThrowError(
+    }).toThrow(
       'Objects are not valid as a React child (found: /abc/).' +
         (__DEV__
           ? ' If you meant to render a collection of children, use an ' +

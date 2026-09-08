@@ -40,7 +40,7 @@ async function insertNodesAndExecuteScripts(
     lastChild = node;
 
     if (node.nodeType === 1) {
-      const element: Element = (node: any);
+      const element: Element = node as any;
       if (
         // $FlowFixMe[prop-missing]
         element.dataset != null &&
@@ -53,7 +53,7 @@ async function insertNodesAndExecuteScripts(
         // When we have renderIntoContainer and renderDocument this will be
         // more enforceable. At the moment you can misconfigure your stream and end up
         // with instructions that are deep in the document
-        (ownerDocument.body: any).appendChild(element);
+        (ownerDocument.body as any).appendChild(element);
       } else {
         target.appendChild(element);
 
@@ -95,7 +95,7 @@ async function executeScript(script: Element) {
     }
 
     try {
-      // $FlowFixMe
+      // $FlowFixMe[unsupported-syntax]
       require(scriptSrc);
     } catch (x) {
       const event = new window.ErrorEvent('error', {error: x});

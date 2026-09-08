@@ -17,7 +17,7 @@ import {
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import {HostComponent} from 'react-reconciler/src/ReactWorkTags';
 // Module provided by RN:
-import {getNodeFromPublicInstance} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+import {getNodeFromPublicInstance} from 'react-native/react-private-interface';
 import {getNodeFromInternalInstanceHandle} from './ReactNativePublicCompat';
 import {getStackByFiberInDevAndProd} from 'react-reconciler/src/ReactFiberComponentStack';
 
@@ -123,7 +123,7 @@ if (__DEV__) {
     hierarchy.unshift(instance);
     const owner = instance._debugOwner;
     if (owner != null && typeof owner.tag === 'number') {
-      traverseOwnerTreeUp(hierarchy, (owner: any));
+      traverseOwnerTreeUp(hierarchy, owner as any);
     } else {
       // TODO: Traverse Server Components owners.
     }

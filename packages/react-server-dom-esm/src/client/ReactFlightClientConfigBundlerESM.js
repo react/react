@@ -95,12 +95,12 @@ export function preloadModule<T>(
     modulePromise.then(
       value => {
         const fulfilledThenable: FulfilledThenable<mixed> =
-          (modulePromise: any);
+          modulePromise as any;
         fulfilledThenable.status = 'fulfilled';
         fulfilledThenable.value = value;
       },
       reason => {
-        const rejectedThenable: RejectedThenable<mixed> = (modulePromise: any);
+        const rejectedThenable: RejectedThenable<mixed> = modulePromise as any;
         rejectedThenable.status = 'rejected';
         rejectedThenable.reason = reason;
       },
@@ -126,7 +126,7 @@ export function requireModule<T>(metadata: ClientReference<T>): T {
 // We cache ReactIOInfo across requests so that inner refreshes can dedupe with outer.
 const moduleIOInfoCache: Map<string, ReactIOInfo> = __DEV__
   ? new Map()
-  : (null: any);
+  : (null as any);
 
 export function getModuleDebugInfo<T>(
   metadata: ClientReference<T>,
@@ -139,7 +139,7 @@ export function getModuleDebugInfo<T>(
   if (ioInfo === undefined) {
     let href;
     try {
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       href = new URL(filename, document.baseURI).href;
     } catch (_) {
       href = filename;
@@ -157,15 +157,15 @@ export function getModuleDebugInfo<T>(
           start = resourceEntry.startTime;
           end = start + resourceEntry.duration;
           // $FlowFixMe[prop-missing]
-          byteSize = (resourceEntry.transferSize: any) || 0;
+          byteSize = (resourceEntry.transferSize as any) || 0;
         }
       }
     }
     const value = Promise.resolve(href);
-    // $FlowFixMe
+    // $FlowFixMe[prop-missing]
     value.status = 'fulfilled';
     // Is there some more useful representation for the chunk?
-    // $FlowFixMe
+    // $FlowFixMe[prop-missing]
     value.value = href;
     // Create a fake stack frame that points to the beginning of the chunk. This is
     // probably not source mapped so will link to the compiled source rather than
@@ -193,13 +193,13 @@ export function getModuleDebugInfo<T>(
         href +
         ':1:1';
     }
-    ioInfo = ({
+    ioInfo = {
       name: 'script',
       start: start,
       end: end,
       value: value,
       debugStack: fakeStack,
-    }: ReactIOInfo);
+    } as ReactIOInfo;
     if (byteSize > 0) {
       // $FlowFixMe[cannot-write]
       ioInfo.byteSize = byteSize;

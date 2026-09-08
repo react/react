@@ -10,6 +10,7 @@
 'use strict';
 
 let React;
+let ReactDOM;
 let ReactDOMClient;
 let ReactDOMServer;
 let act;
@@ -21,6 +22,7 @@ describe('ReactDOMServerSuspense', () => {
     jest.resetModules();
 
     React = require('react');
+    ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     act = require('internal-test-utils').act;
@@ -96,6 +98,51 @@ describe('ReactDOMServerSuspense', () => {
     );
     container.innerHTML = html;
     expect(getVisibleChildren(container)).toEqual(<div>Fallback</div>);
+  });
+
+  // @gate enableBrowserAPI
+  it('hydrates browser-only content rendered with renderToString', async () => {
+    function BrowserOnly() {
+      React.use(ReactDOM.browser('Only render this content in the browser'));
+      return <Text text="Children" />;
+    }
+
+    const app = (
+      <React.Suspense fallback={<Text text="Fallback" />}>
+        <BrowserOnly />
+      </React.Suspense>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = ReactDOMServer.renderToString(app);
+    expect(getVisibleChildren(container)).toEqual(<div>Fallback</div>);
+
+    const recoverableErrors = [];
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, app, {
+        onRecoverableError(error) {
+          recoverableErrors.push(error);
+        },
+      });
+    });
+
+    expect(recoverableErrors).toEqual([]);
+    expect(getVisibleChildren(container)).toEqual(<div>Children</div>);
+  });
+
+  // @gate enableBrowserAPI
+  it('renders only the browser-only fallback with renderToStaticMarkup', () => {
+    function BrowserOnly() {
+      React.use(ReactDOM.browser('Only render this content in the browser'));
+      return <Text text="Children" />;
+    }
+
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <React.Suspense fallback={<Text text="Fallback" />}>
+        <BrowserOnly />
+      </React.Suspense>,
+    );
+
+    expect(html).toBe('<div>Fallback</div>');
   });
 
   it('should work with nested suspense components', async () => {

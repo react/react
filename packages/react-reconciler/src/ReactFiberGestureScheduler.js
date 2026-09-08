@@ -53,6 +53,7 @@ export function scheduleGesture(
       return prev;
     }
     const next = prev.next;
+    // $FlowFixMe[invalid-compare]
     if (next === null) {
       break;
     }
@@ -119,6 +120,7 @@ export function startScheduledGesture(
       return prev;
     }
     const next = prev.next;
+    // $FlowFixMe[invalid-compare]
     if (next === null) {
       break;
     }

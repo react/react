@@ -50,6 +50,7 @@ function fallbackEvalInInspectedWindow(
   });
   const timeout = setTimeout(() => {
     evalRequestCallbacks.delete(requestId);
+    // $FlowFixMe[constant-condition]
     if (callback) {
       callback(null, {
         code,
@@ -64,6 +65,7 @@ function fallbackEvalInInspectedWindow(
   evalRequestCallbacks.set(requestId, ({result, error}) => {
     clearTimeout(timeout);
     evalRequestCallbacks.delete(requestId);
+    // $FlowFixMe[constant-condition]
     if (callback) {
       if (error) {
         callback(null, {

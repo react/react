@@ -67,6 +67,7 @@ export default function SidebarSelectedFiberInfo(): React.Node {
   const handleKeyDown = event => {
     switch (event.key) {
       case 'ArrowUp':
+        // $FlowFixMe[invalid-compare]
         if (selectedCommitIndex !== null) {
           const prevIndex = commitIndices.indexOf(selectedCommitIndex);
           const nextIndex =
@@ -76,6 +77,7 @@ export default function SidebarSelectedFiberInfo(): React.Node {
         event.preventDefault();
         break;
       case 'ArrowDown':
+        // $FlowFixMe[invalid-compare]
         if (selectedCommitIndex !== null) {
           const prevIndex = commitIndices.indexOf(selectedCommitIndex);
           const nextIndex =
@@ -95,7 +97,7 @@ export default function SidebarSelectedFiberInfo(): React.Node {
     const commitIndex = commitIndices[i];
 
     const {duration, timestamp} = profilerStore.getCommitData(
-      ((rootID: any): number),
+      rootID as any as number,
       commitIndex,
     );
 
@@ -127,23 +129,31 @@ export default function SidebarSelectedFiberInfo(): React.Node {
           <ButtonIcon type="close" />
         </Button>
       </div>
-      <div className={styles.Content} onKeyDown={handleKeyDown} tabIndex={0}>
-        {node != null && (
-          <InspectedElementBadges
-            hocDisplayNames={node.hocDisplayNames}
-            compiledWithForget={node.compiledWithForget}
-          />
-        )}
-        <WhatChanged fiberID={((selectedFiberID: any): number)} />
-        {listItems.length > 0 && (
-          <div>
-            <label className={styles.Label}>Rendered at: </label>
-            {listItems}
+      <div className={styles.Content}>
+        <div className={styles.RenderInfo}>
+          <div className={styles.RenderInfoContent}>
+            {node != null && (
+              <InspectedElementBadges
+                hocDisplayNames={node.hocDisplayNames}
+                compiledWithForget={node.compiledWithForget}
+              />
+            )}
+            <WhatChanged fiberID={selectedFiberID as any as number} />
           </div>
-        )}
-        {listItems.length === 0 && (
-          <div>Did not render on the client during this profiling session.</div>
-        )}
+        </div>
+        <div className={styles.CommitList} onKeyDown={handleKeyDown}>
+          {listItems.length > 0 && (
+            <div>
+              <label className={styles.Label}>Rendered at: </label>
+              {listItems}
+            </div>
+          )}
+          {listItems.length === 0 && (
+            <div>
+              Did not render on the client during this profiling session.
+            </div>
+          )}
+        </div>
       </div>
     </Fragment>
   );

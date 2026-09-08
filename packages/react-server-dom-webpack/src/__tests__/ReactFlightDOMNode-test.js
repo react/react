@@ -30,6 +30,7 @@ let Stream;
 let use;
 let assertConsoleErrorDev;
 let serverAct;
+let getDebugInfo;
 
 // We test pass-through without encoding strings but it should work without it too.
 const streamOptions = {
@@ -77,6 +78,10 @@ describe('ReactFlightDOMNode', () => {
 
     const InternalTestUtils = require('internal-test-utils');
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
+    getDebugInfo = InternalTestUtils.getDebugInfo.bind(null, {
+      ignoreProps: false,
+      useFixedTime: true,
+    });
   });
 
   function filterStackFrame(filename, functionName) {
@@ -202,6 +207,28 @@ describe('ReactFlightDOMNode', () => {
       },
     });
     return {delayedStream, resolveDelayedStream};
+  }
+
+  // Runs an action that makes a Node stream emit, and flushes the ticks inside
+  // the act scope so that act sees the work the delivery triggers. Node streams
+  // hand data over through `process.nextTick`, which the fake timers mock.
+  function actOnStream(action: () => mixed): Promise<void> {
+    return serverAct(() => {
+      action();
+      jest.runAllTicks();
+    });
+  }
+
+  // The Node client resolves client references through a server consumer
+  // manifest, which maps each client module id to the module the SSR bundle
+  // loads for it. These tests use the same module on both sides.
+  function createIdentityServerConsumerManifest(...clientReferences) {
+    const moduleMap = {};
+    for (let i = 0; i < clientReferences.length; i++) {
+      const metadata = webpackMap[clientReferences[i].$$id];
+      moduleMap[metadata.id] = {'*': metadata};
+    }
+    return {moduleMap, moduleLoading: webpackModuleLoading};
   }
 
   it('should support web streams in node', async () => {
@@ -335,6 +362,31 @@ describe('ReactFlightDOMNode', () => {
 
     const result = await parsedResult;
     // Should still match the result when parsed
+    expect(result.text).toBe(testString);
+  });
+
+  it('round-trips long multi-byte strings using true UTF-8 byte length', async () => {
+    // Strings >= 1024 chars are emitted out-of-band with a binary length
+    // prefix (`id:T<byteLength>,`). The client reads exactly that many bytes,
+    // so the prefix must be the true UTF-8 byte length. These are three-byte
+    // characters: byte length is 3x the code unit count. A string.length
+    // shortcut for byteLengthOfChunk would undercount and truncate parsing.
+    const testString = '✓'.repeat(1100);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({
+        text: testString,
+      }),
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+    const parsedResult = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+
+    const result = await parsedResult;
     expect(result.text).toBe(testString);
   });
 
@@ -955,10 +1007,10 @@ describe('ReactFlightDOMNode', () => {
           // The concrete location may change as this test is updated.
           // Just make sure they still point at React.use(p2)
           (gate(flags => flags.enableAsyncDebugInfo)
-            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:813:7)'
+            ? '\n    at SharedComponent (./ReactFlightDOMNode-test.js:865:7)'
             : '') +
-          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:835:26)' +
-          '\n    at App (file://./ReactFlightDOMNode-test.js:852:25)',
+          '\n    at ServerComponent (file://./ReactFlightDOMNode-test.js:887:26)' +
+          '\n    at App (file://./ReactFlightDOMNode-test.js:904:25)',
       );
     } else {
       expect(ownerStack).toBeNull();
@@ -1542,12 +1594,12 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in Dynamic' +
             (gate(flags => flags.enableAsyncDebugInfo)
-              ? ' (file://ReactFlightDOMNode-test.js:1416:27)\n'
+              ? ' (file://ReactFlightDOMNode-test.js:1468:27)\n'
               : '\n') +
             '    in body\n' +
             '    in html\n' +
-            '    in App (file://ReactFlightDOMNode-test.js:1429:25)\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1504:16)',
+            '    in App (file://ReactFlightDOMNode-test.js:1481:25)\n' +
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1556:16)',
         );
       } else {
         expect(
@@ -1556,7 +1608,7 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             '    in body\n' +
             '    in html\n' +
-            '    in ClientRoot (ReactFlightDOMNode-test.js:1504:16)',
+            '    in ClientRoot (ReactFlightDOMNode-test.js:1556:16)',
         );
       }
 
@@ -1566,8 +1618,8 @@ describe('ReactFlightDOMNode', () => {
             normalizeCodeLocInfo(ownerStack, {preserveLocation: true}),
           ).toBe(
             '\n' +
-              '    in Dynamic (file://ReactFlightDOMNode-test.js:1416:27)\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1429:25)',
+              '    in Dynamic (file://ReactFlightDOMNode-test.js:1468:27)\n' +
+              '    in App (file://ReactFlightDOMNode-test.js:1481:25)',
           );
         } else {
           expect(
@@ -1575,7 +1627,7 @@ describe('ReactFlightDOMNode', () => {
           ).toBe(
             '' +
               '\n' +
-              '    in App (file://ReactFlightDOMNode-test.js:1429:25)',
+              '    in App (file://ReactFlightDOMNode-test.js:1481:25)',
           );
         }
       } else {
@@ -1732,7 +1784,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1679:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1731:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1743,7 +1795,7 @@ describe('ReactFlightDOMNode', () => {
           normalizeCodeLocInfo(componentStack, {preserveLocation: true}),
         ).toBe(
           '\n' +
-            '    in ClientDynamic (ReactFlightDOMNode-test.js:1679:9)\n' +
+            '    in ClientDynamic (ReactFlightDOMNode-test.js:1731:9)\n' +
             '    in Suspense\n' +
             '    in body\n' +
             '    in html\n' +
@@ -1756,10 +1808,10 @@ describe('ReactFlightDOMNode', () => {
           '\n' +
             gate(flags =>
               flags.enableAsyncDebugInfo
-                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1680:9)\n'
+                ? '    at ClientDynamic (./ReactFlightDOMNode-test.js:1732:9)\n'
                 : '',
             ) +
-            '    at ClientRoot (./ReactFlightDOMNode-test.js:1693:21)',
+            '    at ClientRoot (./ReactFlightDOMNode-test.js:1745:21)',
         );
       } else {
         expect(ownerStack).toBeNull();
@@ -2051,8 +2103,157 @@ describe('ReactFlightDOMNode', () => {
       );
 
       expect(result).toContain(
-        'Switched to client rendering because the server rendering aborted due to:\n\n' +
+        'Switched to client rendering because the server rendering aborted due to:\\n\\n' +
           'ssr-abort',
+      );
+    });
+
+    // @gate __DEV__
+    it('filters parsed debug info when the Flight stream errors', async () => {
+      let resolveInitialData;
+      const laterDataResolvers = [];
+
+      async function getInitialData() {
+        return new Promise(resolve => {
+          resolveInitialData = resolve;
+        });
+      }
+
+      async function loadInitialData() {
+        return await getInitialData();
+      }
+
+      async function loadLaterData() {
+        for (let i = 0; i < 40; i++) {
+          await new Promise(resolve => {
+            laterDataResolvers[i] = resolve;
+          });
+        }
+      }
+
+      async function Dynamic() {
+        await loadInitialData();
+        await loadLaterData();
+        return ReactServer.createElement('p', null, 'Done');
+      }
+
+      function App() {
+        return ReactServer.createElement(
+          'html',
+          null,
+          ReactServer.createElement(
+            'body',
+            null,
+            ReactServer.createElement(Dynamic),
+          ),
+        );
+      }
+
+      let staticEndTime = -1;
+      const chunks = [];
+
+      await new Promise(resolve => {
+        setTimeout(() => {
+          const flightStream = ReactServerDOMServer.renderToPipeableStream(
+            ReactServer.createElement(App),
+            webpackMap,
+            {
+              filterStackFrame,
+            },
+          );
+
+          const passThrough = new Stream.PassThrough(streamOptions);
+          flightStream.pipe(passThrough);
+          passThrough.on('data', chunk => {
+            chunks.push(chunk);
+          });
+          passThrough.on('end', resolve);
+        });
+
+        setTimeout(() => {
+          staticEndTime = performance.now() + performance.timeOrigin;
+          resolveInitialData();
+
+          let index = 0;
+          function resolveNext() {
+            setTimeout(() => {
+              laterDataResolvers[index++]();
+              if (index < 40) {
+                resolveNext();
+              }
+            });
+          }
+          setTimeout(resolveNext);
+        });
+      });
+
+      const contentStream = new Stream.Readable({
+        ...streamOptions,
+        read() {},
+      });
+      const response = ReactServerDOMClient.createFromNodeStream(
+        contentStream,
+        {
+          moduleMap: null,
+          moduleLoading: null,
+          serverModuleMap: null,
+        },
+        {
+          endTime: staticEndTime,
+        },
+      );
+      // The final write contains the completed model. The preceding writes
+      // contain the debug rows produced while rendering it.
+      for (let i = 0; i < chunks.length - 1; i++) {
+        contentStream.push(chunks[i]);
+      }
+
+      const decoded = await response;
+
+      function ClientRoot() {
+        return decoded;
+      }
+
+      const flightError = new Error('Flight stream errored');
+      const fizzAbortController = new AbortController();
+      let caughtError;
+      let ownerStack;
+      const {prelude} = await new Promise(resolve => {
+        let result;
+
+        setTimeout(() => {
+          result = ReactDOMFizzStatic.prerenderToNodeStream(
+            React.createElement(ClientRoot),
+            {
+              signal: fizzAbortController.signal,
+              onError(error) {
+                caughtError = error;
+                ownerStack = React.captureOwnerStack
+                  ? React.captureOwnerStack()
+                  : null;
+              },
+            },
+          );
+        });
+
+        setTimeout(() => {
+          contentStream.emit('error', flightError);
+          contentStream.push(null);
+          fizzAbortController.abort(new Error('Fizz aborted'));
+          resolve(result);
+        });
+      });
+
+      expect(await readResult(prelude)).toBe('');
+      expect(caughtError).toBe(flightError);
+      expect(normalizeCodeLocInfo(ownerStack)).toBe(
+        '\n' +
+          gate(flags =>
+            flags.enableAsyncDebugInfo
+              ? '    in loadInitialData (at **)\n' + '    in Dynamic (at **)\n'
+              : '',
+          ) +
+          '    in App (at **)',
       );
     });
   });
@@ -2244,5 +2445,258 @@ describe('ReactFlightDOMNode', () => {
     // Client2's Import row bytes followed by whatever happened to land in
     // the next 1024-byte window.
     expect(result.payload).toEqual(binaryData);
+  });
+
+  // A Node.js Buffer carries a `toJSON` method, so Flight serializes it through
+  // that method instead of as binary, and warns. It is therefore deserialized
+  // as a plain `{type: 'Buffer', data: [...]}` object rather than a
+  // Buffer/Uint8Array.
+  it('serializes a Node Buffer through its toJSON and warns', async () => {
+    const buffer = Buffer.from([1, 2, 3, 4]);
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream({font: buffer}),
+    );
+    assertConsoleErrorDev([
+      'Binary data with a toJSON method, such as a Node.js Buffer, is ' +
+        'serialized through toJSON instead of as binary. Pass a ' +
+        'Uint8Array or ArrayBuffer to send binary data.\n' +
+        '  {font: Uint8Array}\n' +
+        '         ^^^^^^^^^^',
+    ]);
+    const readable = new Stream.PassThrough(streamOptions);
+    const promise = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: webpackModuleLoading,
+    });
+    stream.pipe(readable);
+    const result = await promise;
+    expect(Buffer.isBuffer(result.font)).toBe(false);
+    expect(result.font).toEqual({type: 'Buffer', data: [1, 2, 3, 4]});
+  });
+
+  it('detaches the abort listener from a composite signal once the prerender completes', async () => {
+    // A composite signal from AbortSignal.any() is retained by the runtime for
+    // as long as it has an abort listener attached, so a listener left behind
+    // by a completed render keeps that render reachable for the lifetime of the
+    // source signals.
+    //
+    // React bounds its listener with a lifetime signal, so the runtime removes
+    // the listener rather than React calling removeEventListener. This test
+    // observes the registration itself through a Node API, which is the only
+    // way to see that removal. The suites that run under jsdom assert on the
+    // lifetime signal instead.
+    const {getEventListeners} = require('node:events');
+
+    const outer = new AbortController();
+    const timeout = new AbortController();
+    const composite = AbortSignal.any([outer.signal, timeout.signal]);
+
+    function App() {
+      return <div>hello world</div>;
+    }
+
+    const {prelude} = await serverAct(() =>
+      ReactServerDOMStaticServer.prerenderToNodeStream(<App />, webpackMap, {
+        signal: composite,
+      }),
+    );
+    expect(getEventListeners(composite, 'abort')).toHaveLength(1);
+
+    await serverAct(
+      () =>
+        new Promise(resolve => {
+          prelude.resume();
+          prelude.on('end', resolve);
+        }),
+    );
+
+    expect(getEventListeners(composite, 'abort')).toHaveLength(0);
+  });
+
+  // @gate __DEV__
+  it('does not expose a debug-tree element whose props still hold an unresolved reference', async () => {
+    // Regression test for facebook/react#37361.
+    //
+    // A server component element sits in its parent's componentInfo. Its props
+    // object is shared with its own componentInfo, so the debug channel
+    // outlines the props into a separate row. The client parses the props row
+    // nested inside the parent's componentInfo row, and registers the element's
+    // reference to the props row while that parse is still running.
+    //
+    // The client must not hand the element the props object at that point. The
+    // props row still waits on a client module reference, and the element is
+    // not part of that wait, so the lazy that wraps the element has to stay
+    // pending until the props row completes. An element initialized early
+    // carries the null placeholder where `ClientModule` belongs, which is what
+    // DevTools reads. In DEV its props are also frozen, so the module write
+    // that lands later throws, and the response rejects.
+    //
+    // The Suspense boundary inside PassthroughServerComponent keeps
+    // PassthroughServerComponent's componentInfo on row 0 and moves
+    // AsyncServerComponent's to the outlined row. Row 0 then resolves before
+    // the module loads, and the element is observable through the root's debug
+    // info while its props row is still waiting.
+    const received = [];
+    let resolveClientModuleChunk;
+    const ClientModule = clientExports(
+      {label: 'module'},
+      '43',
+      '/client-module.js',
+      new Promise(resolve => (resolveClientModuleChunk = resolve)),
+    );
+    const ClientComponent = clientExports(function ClientComponent(props) {
+      received.push({
+        module:
+          props.module === null
+            ? 'null'
+            : props.module === undefined
+              ? 'undefined'
+              : 'object',
+        shared:
+          props.shared === null
+            ? 'null'
+            : props.shared === undefined
+              ? 'undefined'
+              : 'object',
+      });
+      return React.createElement('span', null, 'client');
+    });
+
+    const shared = {};
+    const longText = 'a'.repeat(4000);
+
+    let resolveIo;
+    async function AsyncServerComponent(props) {
+      await new Promise(resolve => {
+        resolveIo = resolve;
+      });
+      return ReactServer.createElement(
+        'div',
+        null,
+        longText,
+        ReactServer.createElement(ClientComponent, {
+          shared: props.shared,
+          module: props.ClientModule,
+        }),
+      );
+    }
+
+    function PassthroughServerComponent({children}) {
+      return ReactServer.createElement(
+        ReactServer.Suspense,
+        {fallback: 'loading'},
+        children,
+      );
+    }
+
+    function App() {
+      return ReactServer.createElement(PassthroughServerComponent, {
+        shared,
+        children: ReactServer.createElement(AsyncServerComponent, {
+          shared,
+          ClientModule,
+        }),
+      });
+    }
+
+    let debugText = '';
+    const rscStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(App, null),
+        webpackMap,
+        {
+          debugChannel: new Stream.Writable({
+            write(chunk, encoding, callback) {
+              debugText += Buffer.from(chunk).toString('utf8');
+              callback();
+            },
+          }),
+        },
+      ),
+    );
+
+    const rscChunks = [];
+    rscStream.pipe(
+      new Stream.Writable({
+        write(chunk, encoding, callback) {
+          rscChunks.push(Buffer.from(chunk));
+          callback();
+        },
+      }),
+    );
+    await actOnStream(() => resolveIo('io'));
+
+    const debugReadable = new Stream.PassThrough(streamOptions);
+    const rscReadable = new Stream.PassThrough(streamOptions);
+    const response = ReactServerDOMClient.createFromNodeStream(
+      rscReadable,
+      createIdentityServerConsumerManifest(ClientComponent, ClientModule),
+      {debugChannel: debugReadable},
+    );
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    // The SSR render runs ClientComponent, which records the props it receives.
+    const ssrErrors = [];
+    const ssrStream = ReactDOMServer.renderToPipeableStream(
+      React.createElement(ClientRoot),
+      {
+        onError(error) {
+          ssrErrors.push(String(error).slice(0, 80));
+        },
+      },
+    );
+    await actOnStream(() =>
+      ssrStream.pipe(new Stream.PassThrough(streamOptions)),
+    );
+
+    const debugRows = debugText.split('\n');
+    for (let i = 0; i < debugRows.length; i++) {
+      if (debugRows[i].length > 0) {
+        await actOnStream(() => debugReadable.write(debugRows[i] + '\n'));
+      }
+    }
+    await actOnStream(() => debugReadable.end());
+
+    for (let i = 0; i < rscChunks.length; i++) {
+      await actOnStream(() => rscReadable.write(rscChunks[i]));
+    }
+    await actOnStream(() => rscReadable.end());
+
+    // Row 0 resolves before the module loads, because the boundary keeps
+    // AsyncServerComponent's blocked debug chain off it.
+    await expect(response).resolves.toBeDefined();
+    const root = await response;
+
+    // DevTools reads the element from the componentInfo's `children`, through
+    // the payload of the lazy that wraps it. The status is recorded here and
+    // asserted after the module resolves, so that a regression fails on the
+    // frozen-props error first.
+    const passthroughInfo = getDebugInfo(root).find(
+      entry => entry.name === 'PassthroughServerComponent',
+    );
+    const asyncServerElementLazy = passthroughInfo.props.children;
+    const payloadStatusBeforeModule = asyncServerElementLazy._payload.status;
+
+    await actOnStream(() => resolveClientModuleChunk());
+
+    // Without the fix, the element was initialized before the module arrived,
+    // and writing the module into its frozen props throws. The SSR render
+    // reports the error.
+    expect(ssrErrors).toEqual([]);
+    expect(received).toEqual([{module: 'object', shared: 'object'}]);
+
+    // An element initialized before the module arrived carries the null
+    // placeholder that DevTools reads, whether or not the write throws. The
+    // lazy must not have resolved while its props row was waiting.
+    expect(payloadStatusBeforeModule).not.toBe('fulfilled');
+
+    // Resolve the lazy the way a renderer does. It holds the module now.
+    const asyncServerElement = asyncServerElementLazy._init(
+      asyncServerElementLazy._payload,
+    );
+    expect(asyncServerElement.props.ClientModule).toEqual({label: 'module'});
   });
 });

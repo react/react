@@ -17,4 +17,4 @@ export * from 'react-client/src/ReactClientConsoleConfigBrowser';
 export const isWorkLoopExternallyDriven = true;
 
 export const supportsRequestStorage = false;
-export const requestStorage: AsyncLocalStorage<Request | void> = (null: any);
+export const requestStorage: AsyncLocalStorage<Request | void> = null as any;

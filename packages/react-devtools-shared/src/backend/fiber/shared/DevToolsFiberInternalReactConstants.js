@@ -99,7 +99,7 @@ export function getInternalReactConstants(version: string): {
 
   const SuspenseyImagesMode = 0b0100000;
 
-  let ReactTypeOfWork: WorkTagMap = ((null: any): WorkTagMap);
+  let ReactTypeOfWork: WorkTagMap = null as any as WorkTagMap;
 
   // **********************************************************
   // The section below is copied from files in React repo.
@@ -385,12 +385,16 @@ export function getInternalReactConstants(version: string): {
     }
 
     switch (tag) {
+      // $FlowFixMe[invalid-compare]
       case ActivityComponent:
         return 'Activity';
+      // $FlowFixMe[invalid-compare]
       case CacheComponent:
         return 'Cache';
       case ClassComponent:
+      // $FlowFixMe[invalid-compare] -- falls through
       case IncompleteClassComponent:
+      // $FlowFixMe[invalid-compare] -- falls through
       case IncompleteFunctionComponent:
       case FunctionComponent:
       case IndeterminateComponent:
@@ -409,7 +413,9 @@ export function getInternalReactConstants(version: string): {
         }
         return null;
       case HostComponent:
+      // $FlowFixMe[invalid-compare] -- falls through
       case HostSingleton:
+      // $FlowFixMe[invalid-compare] -- falls through
       case HostHoistable:
         return type;
       case HostPortal:
@@ -417,12 +423,15 @@ export function getInternalReactConstants(version: string): {
         return null;
       case Fragment:
         return 'Fragment';
+      // $FlowFixMe[invalid-compare]
       case LazyComponent:
         // This display name will not be user visible.
         // Once a Lazy component loads its inner component, React replaces the tag and type.
         // This display name will only show up in console logs when DevTools DEBUG mode is on.
         return 'Lazy';
+      // $FlowFixMe[invalid-compare]
       case MemoComponent:
+      // $FlowFixMe[invalid-compare] -- falls through
       case SimpleMemoComponent:
         // Display name in React does not use `Memo` as a wrapper but fallback name.
         return getWrappedDisplayName(
@@ -433,20 +442,27 @@ export function getInternalReactConstants(version: string): {
         );
       case SuspenseComponent:
         return 'Suspense';
+      // $FlowFixMe[invalid-compare]
       case LegacyHiddenComponent:
         return 'LegacyHidden';
+      // $FlowFixMe[invalid-compare]
       case OffscreenComponent:
         return 'Offscreen';
+      // $FlowFixMe[invalid-compare]
       case ScopeComponent:
         return 'Scope';
+      // $FlowFixMe[invalid-compare]
       case SuspenseListComponent:
         return 'SuspenseList';
       case Profiler:
         return 'Profiler';
+      // $FlowFixMe[invalid-compare]
       case TracingMarkerComponent:
         return 'TracingMarker';
+      // $FlowFixMe[invalid-compare]
       case ViewTransitionComponent:
         return 'ViewTransition';
+      // $FlowFixMe[invalid-compare]
       case Throw:
         // This should really never be visible.
         return 'Error';

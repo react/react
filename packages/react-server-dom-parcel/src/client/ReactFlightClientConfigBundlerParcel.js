@@ -83,7 +83,7 @@ export function requireModule<T>(metadata: ClientReference<T>): T {
   if (hasOwnProperty.call(moduleExports, metadata[NAME])) {
     return moduleExports[metadata[NAME]];
   }
-  return (undefined: any);
+  return undefined as any;
 }
 
 export function getModuleDebugInfo<T>(

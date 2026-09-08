@@ -1,0 +1,16 @@
+[package]
+name = "react_compiler_lowering"
+description = "AST to HIR lowering for the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+react_compiler_ast.workspace = true
+react_compiler_hir.workspace = true
+react_compiler_diagnostics.workspace = true
+indexmap = "2"
+rustc-hash = "2"
+serde_json = "1"

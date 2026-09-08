@@ -58,9 +58,11 @@ interface ExtensionRuntimeSender {
 interface ExtensionRuntimePort {
   disconnect(): void;
   name: string;
-  onMessage: ExtensionEvent<(message: any, port: ExtensionRuntimePort) => void>;
+  onMessage: ExtensionEvent<
+    (message: mixed, port: ExtensionRuntimePort) => void,
+  >;
   onDisconnect: ExtensionEvent<(port: ExtensionRuntimePort) => void>;
-  postMessage(message: mixed, transferable?: Array<mixed>): void;
+  postMessage(message: mixed, transferable?: $ReadOnlyArray<mixed>): void;
   sender?: ExtensionRuntimeSender;
 }
 

@@ -11,6 +11,7 @@ export {
   CompilerErrorDetail,
   CompilerDiagnostic,
   CompilerSuggestionOperation,
+  type CompilerSuggestion,
   ErrorSeverity,
   ErrorCategory,
   LintRules,

@@ -14,7 +14,7 @@ import {initDevTools} from 'react-devtools-shared/src/devtools';
 // $FlowFixMe[cannot-resolve-name]
 __webpack_public_path__ = '/dist/'; // eslint-disable-line no-undef
 
-const iframe = ((document.getElementById('target'): any): HTMLIFrameElement);
+const iframe = document.getElementById('target') as any as HTMLIFrameElement;
 
 const {contentDocument, contentWindow} = iframe;
 
@@ -31,13 +31,13 @@ const DevTools = initializeFrontend(contentWindow);
 // Otherwise the Store may miss important initial tree op codes.
 activateBackend(contentWindow);
 
-const container = ((document.getElementById('devtools'): any): HTMLElement);
+const container = document.getElementById('devtools') as any as HTMLElement;
 
 let isTestAppMounted = true;
 
-const mountButton = ((document.getElementById(
+const mountButton = document.getElementById(
   'mountButton',
-): any): HTMLButtonElement);
+) as any as HTMLButtonElement;
 mountButton.addEventListener('click', function () {
   if (isTestAppMounted) {
     if (typeof window.unmountTestApp === 'function') {
@@ -86,5 +86,5 @@ function inject(sourcePath: string, callback: () => void) {
   script.onload = callback;
   script.src = sourcePath;
 
-  ((contentDocument.body: any): HTMLBodyElement).appendChild(script);
+  (contentDocument.body as any as HTMLBodyElement).appendChild(script);
 }

@@ -903,7 +903,11 @@ function lowerStatement(
     case 'VariableDeclaration': {
       const stmt = stmtPath as NodePath<t.VariableDeclaration>;
       const nodeKind: t.VariableDeclaration['kind'] = stmt.node.kind;
-      if (nodeKind === 'var') {
+      if (
+        nodeKind === 'var' ||
+        nodeKind === 'using' ||
+        nodeKind === 'await using'
+      ) {
         builder.recordError(
           new CompilerErrorDetail({
             reason: `(BuildHIR::lowerStatement) Handle ${nodeKind} kinds in VariableDeclaration`,
@@ -912,7 +916,10 @@ function lowerStatement(
             suggestions: null,
           }),
         );
-        // Treat `var` as `let` so references to the variable don't break
+        /*
+         * Treat `var` as `let` and `using`/`await using` as `const` so
+         * references to the variable don't break while the error unwinds
+         */
       }
       const kind =
         nodeKind === 'let' || nodeKind === 'var'
@@ -3409,7 +3416,7 @@ function lowerJsxElementName(
   const exprLoc = exprNode.loc ?? GeneratedSource;
   if (exprPath.isJSXIdentifier()) {
     const tag: string = exprPath.node.name;
-    if (tag.match(/^[A-Z]/)) {
+    if (!tag.match(/^[a-z]/)) {
       const kind = getLoadKind(builder, exprPath);
       return lowerValueToTemporary(builder, {
         kind: kind,

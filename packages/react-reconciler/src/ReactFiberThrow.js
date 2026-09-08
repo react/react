@@ -187,7 +187,7 @@ function initializeClassErrorUpdate(
           // If componentDidCatch is the only error boundary method defined,
           // then it needs to call setState to recover from errors.
           // If no state update is scheduled then the boundary will swallow the error.
-          if (!includesSomeLane(fiber.lanes, (SyncLane: Lane))) {
+          if (!includesSomeLane(fiber.lanes, SyncLane as Lane)) {
             console.error(
               '%s: Error boundaries should implement getDerivedStateFromError(). ' +
                 'In that method, return a state update to display an error message or fallback UI.',
@@ -381,7 +381,7 @@ function throwException(
   if (value !== null && typeof value === 'object') {
     if (typeof value.then === 'function') {
       // This is a wakeable. The component suspended.
-      const wakeable: Wakeable = (value: any);
+      const wakeable: Wakeable = value as any;
       resetSuspendedComponent(sourceFiber, rootRenderLanes);
 
       if (__DEV__) {
@@ -468,7 +468,7 @@ function throwException(
               suspenseBoundary.flags |= ScheduleRetry;
             } else {
               const retryQueue: RetryQueue | null =
-                (suspenseBoundary.updateQueue: any);
+                suspenseBoundary.updateQueue as any;
               if (retryQueue === null) {
                 suspenseBoundary.updateQueue = new Set([wakeable]);
               } else {
@@ -493,7 +493,7 @@ function throwException(
                 suspenseBoundary.flags |= ScheduleRetry;
               } else {
                 const offscreenQueue: OffscreenQueue | null =
-                  (suspenseBoundary.updateQueue: any);
+                  suspenseBoundary.updateQueue as any;
                 if (offscreenQueue === null) {
                   const newOffscreenQueue: OffscreenQueue = {
                     transitions: null,
@@ -604,7 +604,7 @@ function throwException(
           createCapturedValueAtFiber(wrapperError, sourceFiber),
         );
       }
-      const workInProgress: Fiber = (root.current: any).alternate;
+      const workInProgress: Fiber = (root.current as any).alternate;
       // Schedule an update at the root to log the error but this shouldn't
       // actually happen because we should recover.
       workInProgress.flags |= ShouldCapture;
@@ -681,7 +681,7 @@ function throwException(
         break;
       case OffscreenComponent: {
         const offscreenState: OffscreenState | null =
-          (workInProgress.memoizedState: any);
+          workInProgress.memoizedState as any;
         if (offscreenState !== null) {
           // An error was thrown inside a hidden Offscreen boundary. This should
           // not be allowed to escape into the visible part of the UI. Mark the

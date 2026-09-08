@@ -18,10 +18,6 @@ import type {
   ProfilingDataFrontend,
   SnapshotNode,
 } from './types';
-import type {
-  TimelineData,
-  TimelineDataExport,
-} from 'react-devtools-timeline/src/types';
 
 const commitGradient = [
   'var(--color-commit-gradient-0)',
@@ -45,31 +41,7 @@ export function prepareProfilingDataFrontendFromBackendAndStore(
 ): ProfilingDataFrontend {
   const dataForRoots: Map<number, ProfilingDataForRootFrontend> = new Map();
 
-  const timelineDataArray = [];
-
   dataBackends.forEach(dataBackend => {
-    const {timelineData} = dataBackend;
-    if (timelineData != null) {
-      const {
-        batchUIDToMeasuresKeyValueArray,
-        internalModuleSourceToRanges,
-        laneToLabelKeyValueArray,
-        laneToReactMeasureKeyValueArray,
-        ...rest
-      } = timelineData;
-
-      timelineDataArray.push({
-        ...rest,
-
-        // Most of the data is safe to parse as-is,
-        // but we need to convert the nested Arrays back to Maps.
-        batchUIDToMeasuresMap: new Map(batchUIDToMeasuresKeyValueArray),
-        internalModuleSourceToRanges: new Map(internalModuleSourceToRanges),
-        laneToLabelMap: new Map(laneToLabelKeyValueArray),
-        laneToReactMeasureMap: new Map(laneToReactMeasureKeyValueArray),
-      });
-    }
-
     dataBackend.dataForRoots.forEach(
       ({commitData, displayName, initialTreeBaseDurations, rootID}) => {
         const operations = operationsByRootID.get(rootID);
@@ -125,7 +97,7 @@ export function prepareProfilingDataFrontendFromBackendAndStore(
     );
   });
 
-  return {dataForRoots, imported: false, timelineData: timelineDataArray};
+  return {dataForRoots, imported: false};
 }
 
 // Converts a Profiling data export into the format required by the Store.
@@ -139,50 +111,6 @@ export function prepareProfilingDataFrontendFromExport(
       `Unsupported profile export version "${version}". Supported version is "${PROFILER_EXPORT_VERSION}".`,
     );
   }
-
-  const timelineData: Array<TimelineData> = profilingDataExport.timelineData
-    ? profilingDataExport.timelineData.map(
-        ({
-          batchUIDToMeasuresKeyValueArray,
-          componentMeasures,
-          duration,
-          flamechart,
-          internalModuleSourceToRanges,
-          laneToLabelKeyValueArray,
-          laneToReactMeasureKeyValueArray,
-          nativeEvents,
-          networkMeasures,
-          otherUserTimingMarks,
-          reactVersion,
-          schedulingEvents,
-          snapshots,
-          snapshotHeight,
-          startTime,
-          suspenseEvents,
-          thrownErrors,
-        }) => ({
-          // Most of the data is safe to parse as-is,
-          // but we need to convert the nested Arrays back to Maps.
-          batchUIDToMeasuresMap: new Map(batchUIDToMeasuresKeyValueArray),
-          componentMeasures,
-          duration,
-          flamechart,
-          internalModuleSourceToRanges: new Map(internalModuleSourceToRanges),
-          laneToLabelMap: new Map(laneToLabelKeyValueArray),
-          laneToReactMeasureMap: new Map(laneToReactMeasureKeyValueArray),
-          nativeEvents,
-          networkMeasures,
-          otherUserTimingMarks,
-          reactVersion,
-          schedulingEvents,
-          snapshots,
-          snapshotHeight,
-          startTime,
-          suspenseEvents,
-          thrownErrors,
-        }),
-      )
-    : [];
 
   const dataForRoots: Map<number, ProfilingDataForRootFrontend> = new Map();
   profilingDataExport.dataForRoots.forEach(
@@ -231,7 +159,6 @@ export function prepareProfilingDataFrontendFromExport(
   return {
     dataForRoots,
     imported: true,
-    timelineData,
   };
 }
 
@@ -239,55 +166,6 @@ export function prepareProfilingDataFrontendFromExport(
 export function prepareProfilingDataExport(
   profilingDataFrontend: ProfilingDataFrontend,
 ): ProfilingDataExport {
-  const timelineData: Array<TimelineDataExport> =
-    profilingDataFrontend.timelineData.map(
-      ({
-        batchUIDToMeasuresMap,
-        componentMeasures,
-        duration,
-        flamechart,
-        internalModuleSourceToRanges,
-        laneToLabelMap,
-        laneToReactMeasureMap,
-        nativeEvents,
-        networkMeasures,
-        otherUserTimingMarks,
-        reactVersion,
-        schedulingEvents,
-        snapshots,
-        snapshotHeight,
-        startTime,
-        suspenseEvents,
-        thrownErrors,
-      }) => ({
-        // Most of the data is safe to serialize as-is,
-        // but we need to convert the Maps to nested Arrays.
-        batchUIDToMeasuresKeyValueArray: Array.from(
-          batchUIDToMeasuresMap.entries(),
-        ),
-        componentMeasures: componentMeasures,
-        duration,
-        flamechart,
-        internalModuleSourceToRanges: Array.from(
-          internalModuleSourceToRanges.entries(),
-        ),
-        laneToLabelKeyValueArray: Array.from(laneToLabelMap.entries()),
-        laneToReactMeasureKeyValueArray: Array.from(
-          laneToReactMeasureMap.entries(),
-        ),
-        nativeEvents,
-        networkMeasures,
-        otherUserTimingMarks,
-        reactVersion,
-        schedulingEvents,
-        snapshots,
-        snapshotHeight,
-        startTime,
-        suspenseEvents,
-        thrownErrors,
-      }),
-    );
-
   const dataForRoots: Array<ProfilingDataForRootExport> = [];
   profilingDataFrontend.dataForRoots.forEach(
     ({
@@ -339,7 +217,6 @@ export function prepareProfilingDataExport(
   return {
     version: PROFILER_EXPORT_VERSION,
     dataForRoots,
-    timelineData,
   };
 }
 

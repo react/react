@@ -1,4 +1,4 @@
-// @enableOptimizeForSSR
+// @outputMode:"ssr"
 function Component() {
   const [, startTransition] = useTransition();
   const [state, setState] = useState(0);

@@ -15,13 +15,16 @@ import typeof {SyntheticMouseEvent} from 'react-dom-bindings/src/events/Syntheti
 type Props = {
   color: string,
   height: number,
+  isCurrentSearchMatch?: boolean,
   isDimmed?: boolean,
+  isSearchMatch?: boolean,
   label: string,
   onClick: (event: SyntheticMouseEvent) => mixed,
   onDoubleClick?: (event: SyntheticMouseEvent) => mixed,
   onMouseEnter: (event: SyntheticMouseEvent) => mixed,
   onMouseLeave: (event: SyntheticMouseEvent) => mixed,
   placeLabelAboveNode?: boolean,
+  searchRegExp?: RegExp | null,
   textStyle?: Object,
   width: number,
   x: number,
@@ -30,20 +33,54 @@ type Props = {
 
 const minWidthToDisplay = 35;
 
+// Wrap the matched substring of `label` in a highlight, like the Components
+// panel search does (see IndexableDisplayName).
+function highlightLabel(
+  label: string,
+  searchRegExp: RegExp,
+  isCurrentSearchMatch: boolean,
+): React.Node {
+  const match = searchRegExp.exec(label);
+  if (match === null) {
+    return label;
+  }
+  const start = match.index;
+  const stop = start + match[0].length;
+  return (
+    <>
+      {start > 0 ? label.slice(0, start) : null}
+      <mark
+        className={
+          isCurrentSearchMatch ? styles.CurrentHighlight : styles.Highlight
+        }>
+        {label.slice(start, stop)}
+      </mark>
+      {stop < label.length ? label.slice(stop) : null}
+    </>
+  );
+}
+
 export default function ChartNode({
   color,
   height,
+  isCurrentSearchMatch = false,
   isDimmed = false,
+  isSearchMatch = false,
   label,
   onClick,
   onMouseEnter,
   onMouseLeave,
   onDoubleClick,
+  searchRegExp,
   textStyle,
   width,
   x,
   y,
 }: Props): React.Node {
+  const content =
+    isSearchMatch && searchRegExp != null
+      ? highlightLabel(label, searchRegExp, isCurrentSearchMatch)
+      : label;
   return (
     <g className={styles.Group} transform={`translate(${x},${y})`}>
       <rect
@@ -71,7 +108,7 @@ export default function ChartNode({
           }}
           y={0}>
           <div className={styles.Div} style={textStyle}>
-            {label}
+            {content}
           </div>
         </foreignObject>
       )}

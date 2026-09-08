@@ -204,7 +204,7 @@ function getPromiseForRequestID<T>(
     const onInspectedElement = (data: any) => {
       if (data.responseID === requestID) {
         cleanup();
-        resolve((data: T));
+        resolve(data as T);
       }
     };
 

@@ -114,7 +114,7 @@ function startReadingFromDebugChannelReadable(
       }
       stringBuffer += chunk;
     } else {
-      const buffer: Uint8Array = (chunk: any);
+      const buffer: Uint8Array = chunk as any;
       stringBuffer += readPartialStringChunk(stringDecoder, buffer);
       lastWasPartial = true;
     }
@@ -141,19 +141,19 @@ function startReadingFromDebugChannelReadable(
     // $FlowFixMe[method-unbinding]
     typeof stream.binaryType === 'string'
   ) {
-    const ws: WebSocket = (stream: any);
+    const ws: WebSocket = stream as any;
     ws.binaryType = 'arraybuffer';
     ws.addEventListener('message', event => {
-      // $FlowFixMe
+      // $FlowFixMe[incompatible-type]
       onData(event.data);
     });
     ws.addEventListener('error', event => {
-      // $FlowFixMe
+      // $FlowFixMe[prop-missing]
       onError(event.error);
     });
     ws.addEventListener('close', onClose);
   } else {
-    const readable: Readable = (stream: any);
+    const readable: Readable = stream as any;
     readable.on('data', onData);
     readable.on('error', onError);
     readable.on('end', onClose);
@@ -186,16 +186,16 @@ function renderToPipeableStream(
     // $FlowFixMe[method-unbinding]
     (typeof debugChannel.read === 'function' ||
       typeof debugChannel.readyState === 'number')
-      ? (debugChannel: any)
+      ? (debugChannel as any)
       : undefined;
   const debugChannelWritable: void | Writable =
     __DEV__ && debugChannel !== undefined
       ? // $FlowFixMe[method-unbinding]
         typeof debugChannel.write === 'function'
-        ? (debugChannel: any)
+        ? (debugChannel as any)
         : // $FlowFixMe[method-unbinding]
           typeof debugChannel.send === 'function'
-          ? createFakeWritableFromWebSocket((debugChannel: any))
+          ? createFakeWritableFromWebSocket(debugChannel as any)
           : undefined
       : undefined;
   const request = createRequest(
@@ -250,9 +250,9 @@ function renderToPipeableStream(
 }
 
 function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
-  return ({
+  return {
     write(chunk: string | Uint8Array) {
-      webSocket.send((chunk: any));
+      webSocket.send(chunk as any);
       return true;
     },
     end() {
@@ -268,7 +268,7 @@ function createFakeWritableFromWebSocket(webSocket: WebSocket): Writable {
         webSocket.close(1011);
       }
     },
-  }: any);
+  } as any;
 }
 
 function decodeReplyFromBusboy<T>(
@@ -339,7 +339,7 @@ function decodeReplyFromBusboy<T>(
   busboyStream.on('error', err => {
     reportGlobalError(
       response,
-      // $FlowFixMe[incompatible-call] types Error and mixed are incompatible
+      // $FlowFixMe[incompatible-type] types Error and mixed are incompatible
       err,
     );
   });

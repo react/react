@@ -71,7 +71,7 @@ export function writeChunk(
     if (writtenBytes > 0) {
       destination.enqueue(
         new Uint8Array(
-          ((currentView: any): Uint8Array).buffer,
+          (currentView as any as Uint8Array).buffer,
           0,
           writtenBytes,
         ),
@@ -84,7 +84,8 @@ export function writeChunk(
   }
 
   let bytesToWrite = chunk;
-  const allowableBytes = ((currentView: any): Uint8Array).length - writtenBytes;
+  const allowableBytes =
+    (currentView as any as Uint8Array).length - writtenBytes;
   if (allowableBytes < bytesToWrite.byteLength) {
     // this chunk would overflow the current view. We enqueue a full view
     // and start a new view with the remaining chunk
@@ -94,7 +95,7 @@ export function writeChunk(
     } else {
       // fill up the current view and apply the remaining chunk bytes
       // to a new view.
-      ((currentView: any): Uint8Array).set(
+      (currentView as any as Uint8Array).set(
         bytesToWrite.subarray(0, allowableBytes),
         writtenBytes,
       );
@@ -105,7 +106,7 @@ export function writeChunk(
     currentView = new Uint8Array(VIEW_SIZE);
     writtenBytes = 0;
   }
-  ((currentView: any): Uint8Array).set(bytesToWrite, writtenBytes);
+  (currentView as any as Uint8Array).set(bytesToWrite, writtenBytes);
   writtenBytes += bytesToWrite.byteLength;
 }
 
@@ -178,7 +179,7 @@ export function byteLengthOfBinaryChunk(chunk: BinaryChunk): number {
 export function closeWithError(destination: Destination, error: mixed): void {
   // $FlowFixMe[method-unbinding]
   if (typeof destination.error === 'function') {
-    // $FlowFixMe[incompatible-call]: This is an Error object or the destination accepts other types.
+    // $FlowFixMe[incompatible-type]: This is an Error object or the destination accepts other types.
     destination.error(error);
   } else {
     // Earlier implementations doesn't support this method. In that environment you're
@@ -196,7 +197,7 @@ export {createFastHashJS as createFastHash} from 'react-server/src/createFastHas
 export function readAsDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    // $FlowFixMe[incompatible-call]: We always expect a string result with readAsDataURL.
+    // $FlowFixMe[incompatible-type]: We always expect a string result with readAsDataURL.
     reader.onloadend = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(blob);

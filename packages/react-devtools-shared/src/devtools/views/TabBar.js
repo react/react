@@ -41,7 +41,7 @@ export default function TabBar({
   type,
 }: Props): React.Node {
   if (!tabs.some(tab => tab !== null && tab.id === currentTab)) {
-    const firstTab = ((tabs.find(tab => tab !== null): any): TabInfo);
+    const firstTab = tabs.find(tab => tab !== null) as any as TabInfo;
     selectTab(firstTab.id);
   }
 

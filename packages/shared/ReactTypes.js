@@ -126,6 +126,11 @@ export interface PendingThenable<T> extends ThenableImpl<T> {
   _debugInfo?: null | ReactDebugInfo;
 }
 
+export interface WeakPendingThenable<T> extends ThenableImpl<T> {
+  status: 'pending_weak';
+  _debugInfo?: null | ReactDebugInfo;
+}
+
 export interface FulfilledThenable<T> extends ThenableImpl<T> {
   status: 'fulfilled';
   value: T;
@@ -141,14 +146,26 @@ export interface RejectedThenable<T> extends ThenableImpl<T> {
 export type Thenable<T> =
   | UntrackedThenable<T>
   | PendingThenable<T>
+  | WeakPendingThenable<T>
   | FulfilledThenable<T>
   | RejectedThenable<T>;
+
+export type ReactRecoverableReason = string | (() => mixed);
+
+// A recoverable lets an intermediate renderer defer a subtree to a downstream
+// renderer. It does not produce a value: a renderer either continues through
+// it or interrupts the current render so that a later renderer can recover the
+// subtree. The reason is initialized only by a renderer that defers the work.
+export type ReactRecoverable = {
+  $$typeof: symbol,
+  _reason: ReactRecoverableReason | void,
+};
 
 export type StartTransitionOptions = {
   name?: string,
 };
 
-export type Usable<T> = Thenable<T> | ReactContext<T>;
+export type Usable<T> = Thenable<T> | ReactContext<T> | ReactRecoverable;
 
 export type ReactCustomFormAction = {
   name?: string,
@@ -313,11 +330,21 @@ export type ViewTransitionProps = {
   exit?: ViewTransitionClass,
   share?: ViewTransitionClass,
   update?: ViewTransitionClass,
+  parentEnter?: ViewTransitionClass,
+  parentExit?: ViewTransitionClass,
   onEnter?: (
     instance: ViewTransitionInstance,
     types: Array<string>,
   ) => void | (() => void),
   onExit?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentEnter?: (
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onParentExit?: (
     instance: ViewTransitionInstance,
     types: Array<string>,
   ) => void | (() => void),
@@ -336,6 +363,18 @@ export type ViewTransitionProps = {
     types: Array<string>,
   ) => void | (() => void),
   onGestureExit?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentEnter?: (
+    timeline: GestureProvider,
+    options: GestureOptionsRequired,
+    instance: ViewTransitionInstance,
+    types: Array<string>,
+  ) => void | (() => void),
+  onGestureParentExit?: (
     timeline: GestureProvider,
     options: GestureOptionsRequired,
     instance: ViewTransitionInstance,

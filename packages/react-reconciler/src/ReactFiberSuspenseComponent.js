@@ -62,6 +62,7 @@ export type RetryQueue = Set<Wakeable>;
 
 export function findFirstSuspended(row: Fiber): null | Fiber {
   let node = row;
+  // $FlowFixMe[invalid-compare]
   while (node !== null) {
     if (node.tag === SuspenseComponent) {
       const state: SuspenseState | null = node.memoizedState;

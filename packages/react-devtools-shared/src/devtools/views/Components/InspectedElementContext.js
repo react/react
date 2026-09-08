@@ -57,7 +57,7 @@ type Context = {
 };
 
 export const InspectedElementContext: ReactContext<Context> =
-  createContext<Context>(((null: any): Context));
+  createContext<Context>(null as any as Context);
 
 export type Props = {
   children: ReactNodeList,

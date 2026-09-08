@@ -83,6 +83,10 @@ export const ViewTransitionNamedStatic =
 // ViewTransitionStatic tracks whether there are an ViewTransition components from
 // the nearest HostComponent down. It resets at every HostComponent level.
 export const ViewTransitionStatic = /*         */ 0b0000010000000000000000000000000;
+// ViewTransitionStaticParent tracks whether there are ViewTransition components
+// with parentEnter/parentExit props. Unlike ViewTransitionStatic, this is NOT
+// cleared by HostComponents so it can be used to skip subtrees in parent walks.
+export const ViewTransitionStaticParent = /*   */ 0b1000000000000000000000000000000;
 // Tracks whether a HostPortal is present in the tree.
 export const PortalStatic = /*                 */ 0b0000100000000000000000000000000;
 
@@ -140,6 +144,7 @@ export const StaticMask =
   RefStatic |
   MaySuspendCommit |
   ViewTransitionStatic |
+  ViewTransitionStaticParent |
   ViewTransitionNamedStatic |
   PortalStatic |
   Forked;

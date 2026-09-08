@@ -8,10 +8,12 @@
 import {NodePath} from '@babel/core';
 import * as t from '@babel/types';
 import {
+  CompilerDiagnostic,
   CompilerError,
   CompilerErrorDetail,
   ErrorCategory,
 } from '../CompilerError';
+import {CompileErrorDetail} from './Options';
 import {ExternalFunction, ReactFunctionType} from '../HIR/Environment';
 import {CodegenFunction} from '../ReactiveScopes';
 import {isComponentDeclaration} from '../Utils/ComponentDeclaration';
@@ -170,6 +172,44 @@ export type CompileResult = {
   compiledFn: CodegenFunction;
 };
 
+/**
+ * Format a CompilerDiagnostic or CompilerErrorDetail class instance
+ * into a plain object for logEvent(). This ensures the logged value
+ * has all fields as direct properties (no getters, no nested `options`).
+ */
+export function formatDetailForLogging(
+  detail: CompilerDiagnostic | CompilerErrorDetail,
+): CompileErrorDetail {
+  if (detail instanceof CompilerDiagnostic) {
+    return {
+      category: detail.category,
+      reason: detail.reason,
+      description: detail.description ?? null,
+      severity: detail.severity,
+      suggestions: detail.suggestions ?? null,
+      details: detail.options.details.map(d => {
+        if (d.kind === 'error') {
+          const loc = d.loc != null && typeof d.loc !== 'symbol' ? d.loc : null;
+          return {kind: d.kind, loc, message: d.message};
+        } else {
+          return {kind: d.kind, loc: null, message: d.message};
+        }
+      }),
+    };
+  } else {
+    const loc =
+      detail.loc != null && typeof detail.loc !== 'symbol' ? detail.loc : null;
+    return {
+      category: detail.category,
+      reason: detail.reason,
+      description: detail.description ?? null,
+      severity: detail.severity,
+      suggestions: detail.suggestions ?? null,
+      loc,
+    };
+  }
+}
+
 function logError(
   err: unknown,
   context: {
@@ -184,7 +224,7 @@ function logError(
         context.opts.logger.logEvent(context.filename, {
           kind: 'CompileError',
           fnLoc,
-          detail,
+          detail: formatDetailForLogging(detail),
         });
       }
     } else {
@@ -638,7 +678,7 @@ function processFn(
     programContext.logEvent({
       kind: 'CompileSkip',
       fnLoc: fn.node.body.loc ?? null,
-      reason: `Skipped due to '${directives.optOut.value}' directive.`,
+      reason: `Skipped due to '${directives.optOut.value.value}' directive.`,
       loc: directives.optOut.loc ?? null,
     });
     return null;

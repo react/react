@@ -183,7 +183,7 @@ describe('ReactFunctionComponent', () => {
           </div>,
         );
       }),
-    ).resolves.not.toThrowError();
+    ).resolves.not.toThrow();
   });
 
   it('should use correct name in key warning', async () => {

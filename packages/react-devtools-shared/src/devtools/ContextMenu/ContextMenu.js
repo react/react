@@ -84,10 +84,10 @@ export default function ContextMenu({
         "Can't access context menu element. This is a bug in React DevTools.",
       );
     }
-    const menu = (maybeMenu: HTMLDivElement);
+    const menu = maybeMenu as HTMLDivElement;
 
     function hideUnlessContains(event: Event) {
-      if (!menu.contains(((event.target: any): Node))) {
+      if (!menu.contains(event.target as any as Node)) {
         hide();
       }
     }

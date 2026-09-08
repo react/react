@@ -912,7 +912,7 @@ describe('ReactLegacyUpdates', () => {
       await act(() => {
         component.setState({}, 'no');
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. ' +
         'Instead received: no',
     );
@@ -927,7 +927,7 @@ describe('ReactLegacyUpdates', () => {
       await act(() => {
         component.setState({}, {foo: 'bar'});
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -942,7 +942,7 @@ describe('ReactLegacyUpdates', () => {
       await act(() => {
         component.setState({}, new Foo());
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -970,7 +970,7 @@ describe('ReactLegacyUpdates', () => {
       await act(() => {
         component.forceUpdate('no');
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
@@ -984,7 +984,7 @@ describe('ReactLegacyUpdates', () => {
       await act(() => {
         component.forceUpdate({foo: 'bar'});
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -999,7 +999,7 @@ describe('ReactLegacyUpdates', () => {
       await act(() => {
         component.forceUpdate(new Foo());
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );

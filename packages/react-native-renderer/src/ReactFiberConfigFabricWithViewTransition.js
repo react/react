@@ -94,7 +94,7 @@ export function cloneRootViewTransitionContainer(
   if (__DEV__) {
     console.warn('cloneRootViewTransitionContainer is not implemented');
   }
-  // $FlowFixMe[incompatible-return] Return empty stub
+  // $FlowFixMe[incompatible-type] Return empty stub
   return null;
 }
 
@@ -204,8 +204,8 @@ export function createViewTransitionInstance(
   fabricCreateViewTransitionInstance(name, tag);
   return {
     name,
-    old: new (ViewTransitionPseudoElement: any)('old', name),
-    new: new (ViewTransitionPseudoElement: any)('new', name),
+    old: new (ViewTransitionPseudoElement as any)('old', name),
+    new: new (ViewTransitionPseudoElement as any)('new', name),
   };
 }
 

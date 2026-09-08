@@ -942,6 +942,7 @@ export function markRootFinished(
       // commits, they behave like regular updates.
       for (let i = 0; i < hiddenUpdatesForLane.length; i++) {
         const update = hiddenUpdatesForLane[i];
+        // $FlowFixMe[invalid-compare]
         if (update !== null) {
           update.lane &= ~OffscreenLane;
         }

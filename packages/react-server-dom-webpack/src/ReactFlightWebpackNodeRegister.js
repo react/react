@@ -73,14 +73,14 @@ module.exports = function register() {
     }
 
     if (useClient) {
-      const moduleId: string = (url.pathToFileURL(filename).href: any);
+      const moduleId: string = url.pathToFileURL(filename).href as any;
       this.exports = createClientModuleProxy(moduleId);
     }
 
     if (useServer) {
       originalCompile.apply(this, arguments);
 
-      const moduleId: string = (url.pathToFileURL(filename).href: any);
+      const moduleId: string = url.pathToFileURL(filename).href as any;
 
       const exports = this.exports;
 
@@ -89,7 +89,7 @@ module.exports = function register() {
       if (typeof exports === 'function') {
         // The module exports a function directly,
         registerServerReference(
-          (exports: any),
+          exports as any,
           moduleId,
           // Represents the whole Module object instead of a particular import.
           null,
@@ -100,7 +100,7 @@ module.exports = function register() {
           const key = keys[i];
           const value = exports[keys[i]];
           if (typeof value === 'function') {
-            registerServerReference((value: any), moduleId, key);
+            registerServerReference(value as any, moduleId, key);
           }
         }
       }

@@ -1,0 +1,13 @@
+{
+  "name": "react-devtools-facade",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Building blocks for querying React runtime state",
+  "license": "MIT",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/facebook/react.git",
+    "directory": "packages/react-devtools-facade"
+  }
+}

@@ -27,7 +27,6 @@ function Component(props) {
   if ($[0] !== props.value) {
     x = [];
     debugger;
-
     x.push(props.value);
     $[0] = props.value;
     $[1] = x;

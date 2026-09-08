@@ -65,7 +65,7 @@ function extractEvents(
     // then it's because we couldn't dispatch against this target previously
     // so we have to do it now instead.
     const related =
-      (nativeEvent: any).relatedTarget || (nativeEvent: any).fromElement;
+      (nativeEvent as any).relatedTarget || (nativeEvent as any).fromElement;
     if (related) {
       // If the related node is managed by React, we can assume that we have
       // already dispatched the corresponding events during its mouseout.
@@ -85,12 +85,12 @@ function extractEvents(
 
   let win;
   // TODO: why is this nullable in the types but we read from it?
-  if ((nativeEventTarget: any).window === nativeEventTarget) {
+  if ((nativeEventTarget as any).window === nativeEventTarget) {
     // `nativeEventTarget` is probably a window object.
     win = nativeEventTarget;
   } else {
     // TODO: Figure out why `ownerDocument` is sometimes undefined in IE8.
-    const doc = (nativeEventTarget: any).ownerDocument;
+    const doc = (nativeEventTarget as any).ownerDocument;
     if (doc) {
       win = doc.defaultView || doc.parentWindow;
     } else {
@@ -101,9 +101,9 @@ function extractEvents(
   let from;
   let to;
   if (isOutEvent) {
-    const related = nativeEvent.relatedTarget || (nativeEvent: any).toElement;
+    const related = nativeEvent.relatedTarget || (nativeEvent as any).toElement;
     from = targetInst;
-    to = related ? getClosestInstanceFromNode((related: any)) : null;
+    to = related ? getClosestInstanceFromNode(related as any) : null;
     if (to !== null) {
       const nearestMounted = getNearestMountedFiber(to);
       const tag = to.tag;
@@ -153,7 +153,7 @@ function extractEvents(
 
   // We should only process this nativeEvent if we are processing
   // the first ancestor. Next time, we will ignore the event.
-  const nativeTargetInst = getClosestInstanceFromNode((nativeEventTarget: any));
+  const nativeTargetInst = getClosestInstanceFromNode(nativeEventTarget as any);
   if (nativeTargetInst === targetInst) {
     const enterEvent: KnownReactSyntheticEvent = new SyntheticEventCtor(
       enterEventType,

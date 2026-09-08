@@ -7,7 +7,7 @@ import * as ReactDOMClient from 'react-dom/client';
 
 const container = document.createElement('div');
 
-((document.body: any): HTMLBodyElement).appendChild(container);
+(document.body as any as HTMLBodyElement).appendChild(container);
 
 // TODO We may want to parameterize this app
 // so that it can load things other than just ToDoList.

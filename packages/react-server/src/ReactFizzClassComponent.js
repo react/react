@@ -214,7 +214,7 @@ export function constructClassInstance(
   }
 
   if (typeof contextType === 'object' && contextType !== null) {
-    context = readContext((contextType: any));
+    context = readContext(contextType as any);
   } else if (!disableLegacyContext) {
     context = maskedLegacyContext;
   }

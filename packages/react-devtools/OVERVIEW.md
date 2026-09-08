@@ -293,13 +293,13 @@ To mitigate the performance impact of re-rendering a component, DevTools does th
 
 ## Profiler
 
-DevTools provides a suite of profiling tools for identifying and fixing performance problems. React 16.9+ supports a "legacy" profiler and React 18+ adds the ["timeline" profiler](https://github.com/facebook/react/tree/main/packages/react-devtools-timeline/src) support. These profilers are explained below, but at a high level– the architecture of each profiler aims to minimize the impact (CPU usage) while profiling is active. This can be accomplished by:
+DevTools provides profiling tools for identifying and fixing performance problems in React 16.9+. The profiler is explained below, but at a high level– its architecture aims to minimize the impact (CPU usage) while profiling is active. This can be accomplished by:
 * Minimizing bridge traffic.
 * Making expensive computations lazy.
 
 The majority of profiling information is stored in the DevTools backend. The backend push-notifies the frontend of when profiling starts or stops by sending a "_profilingStatus_" message. The frontend also asks for the current status after mounting by sending a "_getProfilingStatus_" message. (This is done to support the reload-and-profile functionality.)
 
-### Legacy profiler
+### Commit profiler
 
 When profiling begins, the frontend takes a snapshot/copy of each root. This snapshot includes the id, name, key, and child IDs for each node in the tree. (This information is already present on the frontend, so it does not require any additional bridge traffic.) While profiling is active, each time React commits– the frontend also stores a copy of the "_operations_" message (described above). Once profiling has finished, the frontend can use the original snapshot along with each of the stored "_operations_" messages to reconstruct the tree for each of the profiled commits.
 
@@ -309,12 +309,6 @@ When profiling begins, the backend records the base durations of each fiber curr
 * Which props and state changed (if enabled in profiler settings)
 
 This information will eventually be required by the frontend in order to render its profiling graphs, but it will not be sent across the bridge until profiling has been completed (to minimize the performance impact of profiling).
-
-### Timeline profiler
-
-Timeline profiling data can come from one of two places:
-* The React DevTools backend, which injects a [set of profiling hooks](https://github.com/facebook/react/blob/main/packages/react-devtools-shared/src/backend/profilingHooks.js) that React calls while rendering. When profiling, these hooks store information in memory which gets passed to DevTools when profiling is stopped.
-* A Chrome performance export (JSON) containing React data (as User Timing marks) and other browser data like CPU samples, Network traffic, and native commits. (This method is not as convenient but provides more detailed browser performance data.)
 
 ### Combining profiling data
 

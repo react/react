@@ -24,8 +24,8 @@ import {
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import {HostText} from 'react-reconciler/src/ReactWorkTags';
 import {
-  getFragmentParentHostFiber,
-  traverseFragmentInstance,
+  getFragmentParentInstanceOrContainerFiber,
+  traverseFragmentInstancesAndTextInstances,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
 
 // Modules provided by RN:
@@ -39,7 +39,7 @@ import {
   type PublicInstance as ReactNativePublicInstance,
   type PublicTextInstance,
   type PublicRootInstance,
-} from 'react-native/Libraries/ReactPrivate/ReactNativePrivateInterface';
+} from 'react-native/react-private-interface';
 import {
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
@@ -155,6 +155,7 @@ export type RendererInspectionConfig = $ReadOnly<{
 }>;
 
 // TODO: Remove this conditional once all changes have propagated.
+// $FlowFixMe[constant-condition]
 if (registerEventHandler) {
   /**
    * Register the event emitter with the native bridge
@@ -392,6 +393,7 @@ export function resolveUpdatePriority(): EventPriority {
     return currentUpdatePriority;
   }
 
+  // $FlowFixMe[constant-condition]
   const currentEventPriority = fabricGetCurrentEventPriority
     ? fabricGetCurrentEventPriority()
     : null;
@@ -702,11 +704,16 @@ FragmentInstance.prototype.observeUsing = function (
     this._observers = new Set();
   }
   this._observers.add(observer);
-  traverseFragmentInstance(this._fragmentFiber, observeChild, observer);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    observeChild,
+    observer,
+  );
 };
 function observeChild(child: Fiber, observer: IntersectionObserver) {
+  // $FlowFixMe[incompatible-type]
   const publicInstance = getPublicInstanceFromHostFiber(child);
-  // $FlowFixMe[incompatible-call] DOM types expect Element
+  // $FlowFixMe[incompatible-type] DOM types expect Element
   observer.observe(publicInstance);
   return false;
 }
@@ -725,12 +732,17 @@ FragmentInstance.prototype.unobserveUsing = function (
     }
   } else {
     observers.delete(observer);
-    traverseFragmentInstance(this._fragmentFiber, unobserveChild, observer);
+    traverseFragmentInstancesAndTextInstances(
+      this._fragmentFiber,
+      unobserveChild,
+      observer,
+    );
   }
 };
 function unobserveChild(child: Fiber, observer: IntersectionObserver) {
+  // $FlowFixMe[incompatible-type]
   const publicInstance = getPublicInstanceFromHostFiber(child);
-  // $FlowFixMe[incompatible-call] DOM types expect Element
+  // $FlowFixMe[incompatible-type] DOM types expect Element
   observer.unobserve(publicInstance);
   return false;
 }
@@ -740,12 +752,18 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   this: FragmentInstanceType,
   otherNode: PublicInstance,
 ): number {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return Node.DOCUMENT_POSITION_DISCONNECTED;
   }
   const children: Array<Fiber> = [];
-  traverseFragmentInstance(this._fragmentFiber, collectChildren, children);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectChildren,
+    children,
+  );
   if (children.length === 0) {
     const parentHostInstance = getPublicInstanceFromHostFiber(parentHostFiber);
     return compareDocumentPositionForEmptyFragment<PublicInstance>(
@@ -800,13 +818,15 @@ FragmentInstance.prototype.getRootNode = function (
   this: FragmentInstanceType,
   getRootNodeOptions?: {composed: boolean},
 ): Node | FragmentInstanceType {
-  const parentHostFiber = getFragmentParentHostFiber(this._fragmentFiber);
+  const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
+    this._fragmentFiber,
+  );
   if (parentHostFiber === null) {
     return this;
   }
   const parentHostInstance = getPublicInstanceFromHostFiber(parentHostFiber);
   // $FlowFixMe[incompatible-use] Fabric PublicInstance is opaque
-  const rootNode = (parentHostInstance.getRootNode(getRootNodeOptions): Node);
+  const rootNode = parentHostInstance.getRootNode(getRootNodeOptions) as Node;
   return rootNode;
 };
 
@@ -815,7 +835,11 @@ FragmentInstance.prototype.getClientRects = function (
   this: FragmentInstanceType,
 ): Array<DOMRect> {
   const rects: Array<DOMRect> = [];
-  traverseFragmentInstance(this._fragmentFiber, collectClientRects, rects);
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectClientRects,
+    rects,
+  );
   return rects;
 };
 function collectClientRects(child: Fiber, rects: Array<DOMRect>): boolean {
@@ -836,9 +860,9 @@ function addFragmentHandleToFiber(
   fragmentInstance: FragmentInstanceType,
 ): boolean {
   if (enableFragmentRefsInstanceHandles) {
-    const instance = ((getPublicInstanceFromHostFiber(
+    const instance = getPublicInstanceFromHostFiber(
       child,
-    ): any): PublicInstanceWithFragmentHandles);
+    ) as any as PublicInstanceWithFragmentHandles;
     if (instance != null) {
       addFragmentHandleToInstance(instance, fragmentInstance);
     }
@@ -861,9 +885,9 @@ function addFragmentHandleToInstance(
 export function createFragmentInstance(
   fragmentFiber: Fiber,
 ): FragmentInstanceType {
-  const fragmentInstance = new (FragmentInstance: any)(fragmentFiber);
+  const fragmentInstance = new (FragmentInstance as any)(fragmentFiber);
   if (enableFragmentRefsInstanceHandles) {
-    traverseFragmentInstance(
+    traverseFragmentInstancesAndTextInstances(
       fragmentFiber,
       addFragmentHandleToFiber,
       fragmentInstance,
@@ -887,20 +911,21 @@ export function commitNewChildToFragmentInstance(
   if (enableFragmentRefsTextNodes && childInstance.canonical == null) {
     return;
   }
-  const instance: Instance = (childInstance: any);
+  const instance: Instance = childInstance as any;
   const publicInstance = getPublicInstance(instance);
   if (fragmentInstance._observers !== null) {
     if (publicInstance == null) {
       throw new Error('Expected to find a host node. This is a bug in React.');
     }
+    // $FlowFixMe[incompatible-type]
     fragmentInstance._observers.forEach(observer => {
-      // $FlowFixMe[incompatible-call] Element types are behind a flag in RN
+      // $FlowFixMe[incompatible-type] Element types are behind a flag in RN
       observer.observe(publicInstance);
     });
   }
   if (enableFragmentRefsInstanceHandles) {
     addFragmentHandleToInstance(
-      ((publicInstance: any): PublicInstanceWithFragmentHandles),
+      publicInstance as any as PublicInstanceWithFragmentHandles,
       fragmentInstance,
     );
   }
@@ -914,10 +939,10 @@ export function deleteChildFromFragmentInstance(
   if (enableFragmentRefsTextNodes && childInstance.canonical == null) {
     return;
   }
-  const instance: Instance = (childInstance: any);
-  const publicInstance = ((getPublicInstance(
+  const instance: Instance = childInstance as any;
+  const publicInstance = getPublicInstance(
     instance,
-  ): any): PublicInstanceWithFragmentHandles);
+  ) as any as PublicInstanceWithFragmentHandles;
   if (enableFragmentRefsInstanceHandles) {
     if (publicInstance.reactFragments != null) {
       publicInstance.reactFragments.delete(fragmentInstance);
@@ -928,8 +953,8 @@ export function deleteChildFromFragmentInstance(
 export const NotPendingTransition: TransitionStatus = null;
 export const HostTransitionContext: ReactContext<TransitionStatus> = {
   $$typeof: REACT_CONTEXT_TYPE,
-  Provider: (null: any),
-  Consumer: (null: any),
+  Provider: null as any,
+  Consumer: null as any,
   _currentValue: NotPendingTransition,
   _currentValue2: NotPendingTransition,
   _threadCount: 0,
@@ -942,9 +967,7 @@ export function resetFormInstance(form: Instance): void {}
 //     Microtasks
 // -------------------
 
-export const supportsMicrotasks: boolean =
-  typeof RN$enableMicrotasksInReact !== 'undefined' &&
-  !!RN$enableMicrotasksInReact;
+export const supportsMicrotasks: boolean = true;
 
 export const scheduleMicrotask: any =
   typeof queueMicrotask === 'function' ? queueMicrotask : scheduleTimeout;

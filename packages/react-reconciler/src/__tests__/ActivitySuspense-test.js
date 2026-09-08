@@ -41,47 +41,39 @@ describe('Activity Suspense', () => {
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
+      const promise = Promise.resolve(text);
+      promise.status = 'fulfilled';
+      promise.value = text;
       const newRecord = {
-        status: 'resolved',
-        value: text,
+        promise,
       };
       textCache.set(text, newRecord);
-    } else if (record.status === 'pending') {
+    } else if (record.promise.status === 'pending') {
       const resolve = record.resolve;
-      record.status = 'resolved';
-      record.value = text;
-      resolve();
+      record.promise.status = 'fulfilled';
+      record.promise.value = text;
+      resolve(text);
     }
   }
 
   function readText(text) {
-    const record = textCache.get(text);
-    if (record !== undefined) {
-      switch (record.status) {
-        case 'pending':
-          Scheduler.log(`Suspend! [${text}]`);
-          return use(record.value);
-        case 'rejected':
-          throw record.value;
-        case 'resolved':
-          return record.value;
-      }
-    } else {
-      Scheduler.log(`Suspend! [${text}]`);
+    let record = textCache.get(text);
+    if (record === undefined) {
       let resolve;
       const promise = new Promise(_resolve => {
         resolve = _resolve;
       });
-
-      const newRecord = {
-        status: 'pending',
-        value: promise,
+      promise.status = 'pending';
+      record = {
+        promise,
         resolve,
       };
-      textCache.set(text, newRecord);
-
-      return use(promise);
+      textCache.set(text, record);
     }
+    if (record.promise.status === 'pending') {
+      Scheduler.log(`Suspend! [${text}]`);
+    }
+    return use(record.promise);
   }
 
   function Text({text}) {

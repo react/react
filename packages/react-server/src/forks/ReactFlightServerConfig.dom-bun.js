@@ -14,11 +14,11 @@ export * from '../ReactFlightServerConfigBundlerCustom';
 export * from 'react-dom-bindings/src/server/ReactFlightServerConfigDOM';
 
 export const supportsRequestStorage = false;
-export const requestStorage: AsyncLocalStorage<Request | void> = (null: any);
+export const requestStorage: AsyncLocalStorage<Request | void> = null as any;
 
 export const supportsComponentStorage = false;
 export const componentStorage: AsyncLocalStorage<ReactComponentInfo | void> =
-  (null: any);
+  null as any;
 
 export * from '../ReactFlightServerConfigDebugNoop';
 

@@ -26,7 +26,7 @@ import type {Resource, Thenable} from '../../cache';
 type Context = (id: number) => Array<SerializedElement> | null;
 
 const OwnersListContext: ReactContext<Context> = createContext<Context>(
-  ((null: any): Context),
+  null as any as Context,
 );
 OwnersListContext.displayName = 'OwnersListContext';
 
@@ -52,15 +52,15 @@ const resource: Resource<
       | ResolveFn
       | ((
           result: Promise<Array<SerializedElement>> | Array<SerializedElement>,
-        ) => void) = ((null: any): ResolveFn);
+        ) => void) = null as any as ResolveFn;
     const promise = new Promise(resolve => {
       resolveFn = resolve;
     });
 
-    // $FlowFixMe[incompatible-call] found when upgrading Flow
+    // $FlowFixMe[incompatible-type] found when upgrading Flow
     inProgressRequests.set(element, {promise, resolveFn});
 
-    return (promise: $FlowFixMe);
+    return promise as $FlowFixMe;
   },
   (element: Element) => element,
   {useWeakMap: true},
@@ -88,12 +88,12 @@ function useChangeOwnerAction(): (nextOwnerID: number) => void {
                 result:
                   | Promise<Array<SerializedElement>>
                   | Array<SerializedElement>,
-              ) => void) = ((null: any): ResolveFn);
+              ) => void) = null as any as ResolveFn;
           const promise = new Promise(resolve => {
             resolveFn = resolve;
           });
 
-          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          // $FlowFixMe[incompatible-type] found when upgrading Flow
           inProgressRequests.set(element, {promise, resolveFn});
         }
 

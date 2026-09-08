@@ -47,7 +47,6 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
 
   expect.extend({
     ...require('./matchers/reactTestMatchers'),
-    ...require('./matchers/toThrow'),
   });
 
   // We have a Babel transform that inserts guards against infinite loops.
@@ -139,6 +138,10 @@ if (process.env.REACT_CLASS_EQUIVALENCE_TEST) {
         set(target, key, value, receiver) {
           if (key === 'message') {
             return ReflectSet(target, key, decodeErrorMessage(value), receiver);
+          }
+          if (key === 'stack') {
+            // https://github.com/nodejs/node/issues/60862
+            return ReflectSet(target, key, value);
           }
           return ReflectSet(target, key, value, receiver);
         },

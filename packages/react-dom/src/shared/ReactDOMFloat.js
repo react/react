@@ -114,6 +114,7 @@ export function preload(href: string, options: PreloadOptions) {
     typeof href === 'string' &&
     // We check existence because we cannot enforce this function is actually called with the stated type
     typeof options === 'object' &&
+    // $FlowFixMe[invalid-compare]
     options !== null &&
     typeof options.as === 'string'
   ) {
@@ -190,6 +191,11 @@ export function preloadModule(href: string, options?: ?PreloadModuleOptions) {
           integrity:
             typeof options.integrity === 'string'
               ? options.integrity
+              : undefined,
+          nonce: typeof options.nonce === 'string' ? options.nonce : undefined,
+          fetchPriority:
+            typeof options.fetchPriority === 'string'
+              ? options.fetchPriority
               : undefined,
         });
     } else {
@@ -320,6 +326,10 @@ export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
                 : undefined,
             nonce:
               typeof options.nonce === 'string' ? options.nonce : undefined,
+            fetchPriority:
+              typeof options.fetchPriority === 'string'
+                ? options.fetchPriority
+                : undefined,
           });
       }
     } else if (options == null) {

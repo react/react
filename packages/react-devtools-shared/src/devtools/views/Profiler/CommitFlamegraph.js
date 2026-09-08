@@ -8,7 +8,15 @@
  */
 
 import * as React from 'react';
-import {forwardRef, useCallback, useContext, useMemo, useState} from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {FixedSizeList} from 'react-window';
 import {ProfilerContext} from './ProfilerContext';
@@ -16,6 +24,7 @@ import NoCommitData from './NoCommitData';
 import CommitFlamegraphListItem from './CommitFlamegraphListItem';
 import HoveredFiberInfo from './HoveredFiberInfo';
 import {scale} from './utils';
+import {createRegExp} from '../utils';
 import {useHighlightHostInstance} from '../hooks';
 import {StoreContext} from '../context';
 import {SettingsContext} from '../Settings/SettingsContext';
@@ -29,9 +38,12 @@ import type {CommitTree} from './types';
 
 export type ItemData = {
   chartData: ChartData,
+  currentSearchMatchID: number | null,
+  matchedFiberIDs: Set<number>,
   onElementMouseEnter: (fiberData: TooltipFiberData) => void,
   onElementMouseLeave: () => void,
   scaleX: (value: number, fallbackValue: number) => number,
+  searchRegExp: RegExp | null,
   selectedChartNode: ChartNode | null,
   selectedChartNodeIndex: number,
   selectFiber: (id: number | null, name: string | null) => void,
@@ -57,13 +69,13 @@ export default function CommitFlamegraphAutoSizer(_: {}): React.Node {
   if (selectedCommitIndex !== null) {
     commitTree = profilingCache.getCommitTree({
       commitIndex: selectedCommitIndex,
-      rootID: ((rootID: any): number),
+      rootID: rootID as any as number,
     });
 
     chartData = profilingCache.getFlamegraphChartData({
       commitIndex: selectedCommitIndex,
       commitTree,
-      rootID: ((rootID: any): number),
+      rootID: rootID as any as number,
     });
   }
 
@@ -75,8 +87,8 @@ export default function CommitFlamegraphAutoSizer(_: {}): React.Node {
             // Force Flow types to avoid checking for `null` here because there's no static proof that
             // by the time this render prop function is called, the values of the `let` variables have not changed.
             <CommitFlamegraph
-              chartData={((chartData: any): ChartData)}
-              commitTree={((commitTree: any): CommitTree)}
+              chartData={chartData as any as ChartData}
+              commitTree={commitTree as any as CommitTree}
               height={height}
               width={width}
             />
@@ -100,9 +112,25 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
   const [hoveredFiberData, setHoveredFiberData] =
     useState<TooltipFiberData | null>(null);
   const {lineHeight} = useContext(SettingsContext);
-  const {selectFiber, selectedFiberID} = useContext(ProfilerContext);
+  const {selectFiber, selectedFiberID, searchText, searchResults, searchIndex} =
+    useContext(ProfilerContext);
   const {highlightHostInstance, clearHighlightHostInstance} =
     useHighlightHostInstance();
+
+  // Search highlighting: the regexp to highlight, the set of matching fibers,
+  // and the id of the current match (highlighted more prominently).
+  const searchRegExp = useMemo(
+    () => (searchText === '' ? null : createRegExp(searchText)),
+    [searchText],
+  );
+  const matchedFiberIDs = useMemo(
+    () => new Set(searchResults.map(result => result.id)),
+    [searchResults],
+  );
+  const currentSearchMatchID =
+    searchIndex >= 0 && searchIndex < searchResults.length
+      ? searchResults[searchIndex].id
+      : null;
 
   const selectedChartNodeIndex = useMemo<number>(() => {
     if (selectedFiberID === null) {
@@ -141,6 +169,8 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
   const itemData = useMemo<ItemData>(
     () => ({
       chartData,
+      currentSearchMatchID,
+      matchedFiberIDs,
       onElementMouseEnter: handleElementMouseEnter,
       onElementMouseLeave: handleElementMouseLeave,
       scaleX: scale(
@@ -151,6 +181,7 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
         0,
         width,
       ),
+      searchRegExp,
       selectedChartNode,
       selectedChartNodeIndex,
       selectFiber,
@@ -158,8 +189,11 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
     }),
     [
       chartData,
+      currentSearchMatchID,
+      matchedFiberIDs,
       handleElementMouseEnter,
       handleElementMouseLeave,
+      searchRegExp,
       selectedChartNode,
       selectedChartNodeIndex,
       selectFiber,
@@ -176,6 +210,22 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
     [hoveredFiberData],
   );
 
+  // Scroll the selected fiber's row into view when the selection changes (e.g.
+  // when navigating between search results). Selection is driven externally
+  // (search nav in ProfilerContext, or a node click) and selectedChartNodeIndex
+  // is derived here — no local event handler sets it — so we sync the imperative
+  // scroll in a layout effect, which runs before paint to avoid a frame where
+  // the scroll position lags the selection.
+  const listRef = useRef<FixedSizeList | null>(null);
+  const itemIsSelected = selectedFiberID !== null;
+  useLayoutEffect(() => {
+    // selectedChartNodeIndex falls back to 0 when nothing is selected, so only
+    // scroll when a fiber is actually selected.
+    if (itemIsSelected && listRef.current !== null) {
+      listRef.current.scrollToItem(selectedChartNodeIndex, 'smart');
+    }
+  }, [itemIsSelected, selectedChartNodeIndex]);
+
   return (
     <Tooltip label={tooltipLabel}>
       <FixedSizeList
@@ -184,6 +234,7 @@ function CommitFlamegraph({chartData, commitTree, height, width}: Props) {
         itemCount={chartData.depth}
         itemData={itemData}
         itemSize={lineHeight}
+        ref={listRef}
         width={width}>
         {CommitFlamegraphListItem}
       </FixedSizeList>

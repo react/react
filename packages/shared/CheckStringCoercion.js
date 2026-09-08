@@ -17,21 +17,21 @@
  * of the `value` object).
  */
 
-// $FlowFixMe[incompatible-return] only called in DEV, so void return is not possible.
+// $FlowFixMe[incompatible-type] only called in DEV, so void return is not possible.
 function typeName(value: mixed): string {
   if (__DEV__) {
     // toStringTag is needed for namespaced types like Temporal.Instant
     const hasToStringTag = typeof Symbol === 'function' && Symbol.toStringTag;
     const type =
-      (hasToStringTag && (value: any)[Symbol.toStringTag]) ||
-      (value: any).constructor.name ||
+      (hasToStringTag && (value as any)[Symbol.toStringTag]) ||
+      (value as any).constructor.name ||
       'Object';
-    // $FlowFixMe[incompatible-return]
+    // $FlowFixMe[incompatible-type]
     return type;
   }
 }
 
-// $FlowFixMe[incompatible-return] only called in DEV, so void return is not possible.
+// $FlowFixMe[incompatible-type] only called in DEV, so void return is not possible.
 function willCoercionThrow(value: mixed): boolean {
   if (__DEV__) {
     try {
@@ -68,7 +68,7 @@ function testStringCoercion(value: mixed) {
   // ancestor components where the exception happened.
   //
   // eslint-disable-next-line react-internal/safe-string-coercion
-  return '' + (value: any);
+  return '' + (value as any);
 }
 
 export function checkAttributeStringCoercion(

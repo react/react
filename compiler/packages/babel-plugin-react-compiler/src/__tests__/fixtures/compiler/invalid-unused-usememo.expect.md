@@ -33,7 +33,7 @@ function Component() {
 ## Logs
 
 ```
-{"kind":"CompileError","detail":{"options":{"category":"VoidUseMemo","reason":"useMemo() result is unused","description":"This useMemo() value is unused. useMemo() is for computing and caching values, not for arbitrary side effects","suggestions":null,"details":[{"kind":"error","loc":{"start":{"line":3,"column":2,"index":67},"end":{"line":3,"column":9,"index":74},"filename":"invalid-unused-usememo.ts","identifierName":"useMemo"},"message":"useMemo() result is unused"}]}},"fnLoc":null}
+{"kind":"CompileError","detail":{"category":"VoidUseMemo","reason":"useMemo() result is unused","description":"This useMemo() value is unused. useMemo() is for computing and caching values, not for arbitrary side effects","severity":"Error","suggestions":null,"details":[{"kind":"error","loc":{"start":{"line":3,"column":2,"index":67},"end":{"line":3,"column":9,"index":74},"filename":"invalid-unused-usememo.ts","identifierName":"useMemo"},"message":"useMemo() result is unused"}]},"fnLoc":null}
 {"kind":"CompileSuccess","fnLoc":{"start":{"line":2,"column":0,"index":42},"end":{"line":7,"column":1,"index":127},"filename":"invalid-unused-usememo.ts"},"fnName":"Component","memoSlots":1,"memoBlocks":1,"memoValues":1,"prunedMemoBlocks":0,"prunedMemoValues":0}
 ```
       

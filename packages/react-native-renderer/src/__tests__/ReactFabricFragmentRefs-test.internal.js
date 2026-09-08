@@ -26,7 +26,7 @@ describe('Fabric FragmentRefs', () => {
     React = require('react');
     ReactFabric = require('react-native-renderer/fabric');
     createReactNativeComponentClass =
-      require('react-native/Libraries/ReactPrivate/ReactNativePrivateInterface')
+      require('react-native/react-private-interface')
         .ReactNativeViewConfigRegistry.register;
     ({act} = require('internal-test-utils'));
     View = createReactNativeComponentClass('RCTView', () => ({

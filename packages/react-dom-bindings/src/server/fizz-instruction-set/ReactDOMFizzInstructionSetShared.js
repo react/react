@@ -232,6 +232,12 @@ export function revealCompletedBoundariesWithViewTransitions(
               appearingViewTransitions.set(name, null); // mark claimed
             }
           }
+          // Relay the exit to nested ViewTransitions that opted in
+          const relayExitElements =
+            exitElement.querySelectorAll('[vt-parent-exit]');
+          for (let j = 0; j < relayExitElements.length; j++) {
+            applyViewTransitionName(relayExitElements[j], 'vt-parent-exit');
+          }
         }
         node = node.nextSibling;
       }
@@ -245,6 +251,12 @@ export function revealCompletedBoundariesWithViewTransitions(
           null;
         if (!paired) {
           applyViewTransitionName(enterElement, 'vt-enter');
+        }
+        // Relay the enter to nested ViewTransitions that opted in
+        const relayEnterElements =
+          enterElement.querySelectorAll('[vt-parent-enter]');
+        for (let j = 0; j < relayEnterElements.length; j++) {
+          applyViewTransitionName(relayEnterElements[j], 'vt-parent-enter');
         }
         enterElement = enterElement.nextElementSibling;
       }
@@ -383,7 +395,7 @@ export function clientRenderBoundary(
   suspenseNode.data = SUSPENSE_FALLBACK_START_DATA;
   // assign error metadata to first sibling
   const dataset = suspenseIdNode.dataset;
-  if (errorDigest) dataset['dgst'] = errorDigest;
+  if (errorDigest != null) dataset['dgst'] = errorDigest;
   if (errorMsg) dataset['msg'] = errorMsg;
   if (errorStack) dataset['stck'] = errorStack;
   if (errorComponentStack) dataset['cstck'] = errorComponentStack;

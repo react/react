@@ -9,7 +9,7 @@ import ListApp from '../e2e-apps/ListApp';
 function mountApp(App: () => React$Node) {
   const container = document.createElement('div');
 
-  ((document.body: any): HTMLBodyElement).appendChild(container);
+  (document.body as any as HTMLBodyElement).appendChild(container);
 
   const root = ReactDOMClient.createRoot(container);
   root.render(<App />);

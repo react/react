@@ -14,11 +14,7 @@
  * Be mindful of backwards compatibility when making changes.
  */
 
-import type {
-  ReactContext,
-  Wakeable,
-  ReactComponentInfo,
-} from 'shared/ReactTypes';
+import type {ReactContext, ReactComponentInfo} from 'shared/ReactTypes';
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {
   ComponentFilter,
@@ -30,7 +26,6 @@ import type {
   SetupNativeStyleEditor,
 } from 'react-devtools-shared/src/backend/NativeStyleEditor/setupNativeStyleEditor';
 import type {InitBackend} from 'react-devtools-shared/src/backend';
-import type {TimelineDataExport} from 'react-devtools-timeline/src/types';
 import type {BackendBridge} from 'react-devtools-shared/src/bridge';
 import type {ReactFunctionLocation, ReactStackTrace} from 'shared/ReactTypes';
 import type Agent from './agent';
@@ -186,9 +181,6 @@ export type ReactRenderer = {
   setErrorHandler?: ?(shouldError: (fiber: Object) => ?boolean) => void,
   // Intentionally opaque type to avoid coupling DevTools to different Fast Refresh versions.
   scheduleRefresh?: Function,
-  // 18.0+
-  injectProfilingHooks?: (profilingHooks: DevToolsProfilingHooks) => void,
-  getLaneLabelMap?: () => Map<Lane, string> | null,
   ...
 };
 
@@ -231,7 +223,6 @@ export type ProfilingDataForRootBackend = {
 export type ProfilingDataBackend = {
   dataForRoots: Array<ProfilingDataForRootBackend>,
   rendererID: number,
-  timelineData: TimelineDataExport | null,
 };
 
 export type PathFrame = {
@@ -474,10 +465,7 @@ export type RendererInterface = {
   renderer: ReactRenderer | null,
   setTraceUpdatesEnabled: (enabled: boolean) => void,
   setTrackedPath: (path: Array<PathFrame> | null) => void,
-  startProfiling: (
-    recordChangeDescriptions: boolean,
-    recordTimeline: boolean,
-  ) => void,
+  startProfiling: (recordChangeDescriptions: boolean) => void,
   stopProfiling: () => void,
   storeAsGlobal: (
     id: number,
@@ -488,54 +476,10 @@ export type RendererInterface = {
   updateComponentFilters: (componentFilters: Array<ComponentFilter>) => void,
   getEnvironmentNames: () => Array<string>,
 
-  // Timeline profiler interface
-
   ...
 };
 
 export type Handler = (data: any) => void;
-
-// Renderers use these APIs to report profiling data to DevTools at runtime.
-// They get passed from the DevTools backend to the reconciler during injection.
-export type DevToolsProfilingHooks = {
-  // Scheduling methods:
-  markRenderScheduled: (lane: Lane) => void,
-  markStateUpdateScheduled: (fiber: Fiber, lane: Lane) => void,
-  markForceUpdateScheduled: (fiber: Fiber, lane: Lane) => void,
-
-  // Work loop level methods:
-  markRenderStarted: (lanes: Lanes) => void,
-  markRenderYielded: () => void,
-  markRenderStopped: () => void,
-  markCommitStarted: (lanes: Lanes) => void,
-  markCommitStopped: () => void,
-  markLayoutEffectsStarted: (lanes: Lanes) => void,
-  markLayoutEffectsStopped: () => void,
-  markPassiveEffectsStarted: (lanes: Lanes) => void,
-  markPassiveEffectsStopped: () => void,
-
-  // Fiber level methods:
-  markComponentRenderStarted: (fiber: Fiber) => void,
-  markComponentRenderStopped: () => void,
-  markComponentErrored: (
-    fiber: Fiber,
-    thrownValue: mixed,
-    lanes: Lanes,
-  ) => void,
-  markComponentSuspended: (
-    fiber: Fiber,
-    wakeable: Wakeable,
-    lanes: Lanes,
-  ) => void,
-  markComponentLayoutEffectMountStarted: (fiber: Fiber) => void,
-  markComponentLayoutEffectMountStopped: () => void,
-  markComponentLayoutEffectUnmountStarted: (fiber: Fiber) => void,
-  markComponentLayoutEffectUnmountStopped: () => void,
-  markComponentPassiveEffectMountStarted: (fiber: Fiber) => void,
-  markComponentPassiveEffectMountStopped: () => void,
-  markComponentPassiveEffectUnmountStarted: (fiber: Fiber) => void,
-  markComponentPassiveEffectUnmountStopped: () => void,
-};
 
 export type DevToolsBackend = {
   Agent: Class<Agent>,
@@ -546,7 +490,6 @@ export type DevToolsBackend = {
 
 export type ProfilingSettings = {
   recordChangeDescriptions: boolean,
-  recordTimeline: boolean,
 };
 
 export type DevToolsHook = {
@@ -579,11 +522,6 @@ export type DevToolsHook = {
     // Added in v16.9 to support Fast Refresh
     didError?: boolean,
   ) => void,
-
-  // Timeline internal module filtering
-  getInternalModuleRanges: () => Array<[string, string]>,
-  registerInternalModuleStart: (moduleStartError: Error) => void,
-  registerInternalModuleStop: (moduleStopError: Error) => void,
 
   // Testing
   dangerous_setTargetConsoleForTesting?: (fakeConsole: Object) => void,

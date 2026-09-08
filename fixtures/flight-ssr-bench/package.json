@@ -7,13 +7,14 @@
   },
   "dependencies": {
     "@babel/core": "^7.16.0",
+    "@babel/plugin-transform-modules-commonjs": "^7.25.9",
     "@babel/preset-react": "^7.22.5",
     "@babel/register": "^7.28.6",
+    "autocannon": "^8.0.0",
     "babel-loader": "^8.2.3",
     "react": "experimental",
     "react-dom": "experimental",
     "react-server-dom-webpack": "experimental",
-    "autocannon": "^8.0.0",
     "webpack": "^5.64.4"
   },
   "scripts": {

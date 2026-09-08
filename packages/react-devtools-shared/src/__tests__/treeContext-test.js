@@ -1078,6 +1078,172 @@ describe('TreeListContext', () => {
       `);
     });
 
+    it('should jump directly to a specific search result by index', () => {
+      const Foo = () => null;
+      const Bar = () => null;
+      const Baz = () => null;
+
+      utils.act(() =>
+        render(
+          <React.Fragment>
+            <Foo />
+            <Baz />
+            <Bar />
+            <Baz />
+          </React.Fragment>,
+        ),
+      );
+
+      let renderer;
+      utils.act(() => (renderer = TestRenderer.create(<Contexts />)));
+
+      // search for "ba" (matches both <Baz> elements and <Bar>)
+      utils.act(() => dispatch({type: 'SET_SEARCH_TEXT', payload: 'ba'}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+        →    <Baz>
+             <Bar>
+             <Baz>
+      `);
+
+      // jump directly to the third result
+      utils.act(() => dispatch({type: 'GO_TO_SEARCH_RESULT', payload: 2}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+             <Bar>
+        →    <Baz>
+      `);
+
+      // jump directly back to the first result
+      utils.act(() => dispatch({type: 'GO_TO_SEARCH_RESULT', payload: 0}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+        →    <Baz>
+             <Bar>
+             <Baz>
+      `);
+
+      // out-of-range indices are clamped to the valid range
+      utils.act(() => dispatch({type: 'GO_TO_SEARCH_RESULT', payload: 99}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+             <Bar>
+        →    <Baz>
+      `);
+
+      utils.act(() => dispatch({type: 'GO_TO_SEARCH_RESULT', payload: -5}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+        →    <Baz>
+             <Bar>
+             <Baz>
+      `);
+    });
+
+    it('should do nothing when jumping to a result with no search matches', () => {
+      const Foo = () => null;
+      const Bar = () => null;
+      const Baz = () => null;
+
+      utils.act(() =>
+        render(
+          <React.Fragment>
+            <Foo />
+            <Baz />
+            <Bar />
+            <Baz />
+          </React.Fragment>,
+        ),
+      );
+
+      let renderer;
+      utils.act(() => (renderer = TestRenderer.create(<Contexts />)));
+
+      utils.act(() => dispatch({type: 'SET_SEARCH_TEXT', payload: 'nomatch'}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state.searchResults).toHaveLength(0);
+      expect(state.searchIndex).toBe(null);
+
+      utils.act(() => dispatch({type: 'GO_TO_SEARCH_RESULT', payload: 0}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state.searchIndex).toBe(null);
+      expect(state.inspectedElementID).toBe(null);
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+             <Bar>
+             <Baz>
+      `);
+    });
+
+    it('should advance past the selected result when retyping the same search', () => {
+      const Foo = () => null;
+      const Bar = () => null;
+      const Baz = () => null;
+
+      utils.act(() =>
+        render(
+          <React.Fragment>
+            <Foo />
+            <Baz />
+            <Bar />
+            <Baz />
+          </React.Fragment>,
+        ),
+      );
+
+      let renderer;
+      utils.act(() => (renderer = TestRenderer.create(<Contexts />)));
+
+      // search for "ba" and step to the second result (<Bar>)
+      utils.act(() => dispatch({type: 'SET_SEARCH_TEXT', payload: 'ba'}));
+      utils.act(() => dispatch({type: 'GO_TO_NEXT_SEARCH_RESULT'}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+        →    <Bar>
+             <Baz>
+      `);
+
+      // clear the search; the matched element stays selected
+      utils.act(() => dispatch({type: 'SET_SEARCH_TEXT', payload: ''}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+        →    <Bar>
+             <Baz>
+      `);
+
+      // retype the same query: instead of snapping back to the still-selected
+      // <Bar>, the search advances to the next match (find-next semantics)
+      utils.act(() => dispatch({type: 'SET_SEARCH_TEXT', payload: 'ba'}));
+      utils.act(() => renderer.update(<Contexts />));
+      expect(state).toMatchInlineSnapshot(`
+        [root]
+             <Foo>
+             <Baz>
+             <Bar>
+        →    <Baz>
+      `);
+    });
+
     it('should add newly mounted elements to the search results set if they match the current text', async () => {
       const Foo = () => null;
       const Bar = () => null;

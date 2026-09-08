@@ -90,7 +90,7 @@ export default class ReactFlightWebpackPlugin {
       typeof options.clientReferences === 'string' ||
       !isArray(options.clientReferences)
     ) {
-      this.clientReferences = [(options.clientReferences: $FlowFixMe)];
+      this.clientReferences = [options.clientReferences as $FlowFixMe];
     } else {
       // $FlowFixMe[incompatible-type] found when upgrading Flow
       this.clientReferences = options.clientReferences;

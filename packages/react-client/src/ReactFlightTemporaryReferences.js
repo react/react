@@ -27,5 +27,5 @@ export function readTemporaryReference<T>(
   set: TemporaryReferenceSet,
   reference: string,
 ): T {
-  return (set.get(reference): any);
+  return set.get(reference) as any;
 }

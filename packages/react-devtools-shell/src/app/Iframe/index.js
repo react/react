@@ -28,6 +28,7 @@ function Frame(props) {
   React.useLayoutEffect(function () {
     const iframe = ref.current;
 
+    // $FlowFixMe[constant-condition]
     if (iframe) {
       const html = `
     <!DOCTYPE html>
@@ -57,6 +58,7 @@ function Frame(props) {
         style={iframeStyle}
       />
 
+      {/* $FlowFixMe[constant-condition] */}
       {element ? createPortal(props.children, element) : null}
     </Fragment>
   );

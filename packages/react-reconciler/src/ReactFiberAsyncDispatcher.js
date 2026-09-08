@@ -17,7 +17,7 @@ import {current as currentOwner} from './ReactCurrentFiber';
 
 function getCacheForType<T>(resourceType: () => T): T {
   const cache: Cache = readContext(CacheContext);
-  let cacheForType: T | void = (cache.data.get(resourceType): any);
+  let cacheForType: T | void = cache.data.get(resourceType) as any;
   if (cacheForType === undefined) {
     cacheForType = resourceType();
     cache.data.set(resourceType, cacheForType);
@@ -30,10 +30,10 @@ function cacheSignal(): null | AbortSignal {
   return cache.controller.signal;
 }
 
-export const DefaultAsyncDispatcher: AsyncDispatcher = ({
+export const DefaultAsyncDispatcher: AsyncDispatcher = {
   getCacheForType,
   cacheSignal,
-}: any);
+} as any;
 
 if (__DEV__) {
   DefaultAsyncDispatcher.getOwner = (): null | Fiber => {

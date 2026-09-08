@@ -558,6 +558,7 @@ export default function KeyValue({
     }
   }
 
+  // $FlowFixMe[incompatible-type]
   return children;
 }
 
