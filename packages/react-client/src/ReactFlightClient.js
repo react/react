@@ -1144,46 +1144,104 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
 
   try {
     const value: T = parseModel(response, resolvedModel);
-    // Invoke any listeners added while resolving this model. I.e. cyclic
-    // references. This may or may not fully resolve the model depending on
-    // if they were blocked.
-    const resolveListeners = cyclicChunk.value;
-    if (resolveListeners !== null) {
-      cyclicChunk.value = null;
-      cyclicChunk.reason = null;
-      for (let i = 0; i < resolveListeners.length; i++) {
-        const listener = resolveListeners[i];
-        if (typeof listener === 'function') {
-          listener(value);
+    const handler = initializingHandler;
+    if (handler !== null) {
+      if (handler.errored) {
+        // The handler errored during the parse, so `cyclicChunk` errors with
+        // the same reason. `triggerErrorOnChunk` also rejects the references
+        // that nested parses queued on `cyclicChunk` during the parse. No value
+        // will arrive for them. `initializeDebugChunk` can have errored
+        // `cyclicChunk` before the parse. That error stays.
+        if ((cyclicChunk as any).status === BLOCKED) {
+          triggerErrorOnChunk(response, cyclicChunk, handler.reason);
+        }
+        return;
+      }
+      // Record on the handler which chunk it completes, and with what value,
+      // before the listeners below are examined. `resolveBlockedCycle` walks
+      // from a reference to its handler and on to that handler's chunk. A cycle
+      // that closes through `cyclicChunk` is only found once `handler.chunk` is
+      // `cyclicChunk`.
+      handler.value = value;
+      handler.chunk = cyclicChunk;
+    }
+
+    const listeners = cyclicChunk.value;
+    const rejectListeners = cyclicChunk.reason;
+    cyclicChunk.value = null;
+    cyclicChunk.reason = null;
+    if (listeners !== null) {
+      // These listeners were added to `cyclicChunk` while its model was
+      // parsing. They come from models that were parsed nested inside that
+      // parse and that pointed back at `cyclicChunk`. They fall in two groups.
+      //
+      // A reference whose handler is transitively waiting on `cyclicChunk` is a
+      // cycle. Neither side can complete before the other, so one of them has
+      // to accept the value as it is now. The reference receives the current
+      // object, and the outstanding references fill it in place.
+      //
+      // Every other listener waits. Its handler is not waiting on
+      // `cyclicChunk`, so it can receive the value once the model has resolved
+      // its own references, like any reference into a blocked chunk does.
+      // Handing it the value now would complete that handler with an object
+      // that still has references outstanding. Function listeners have no
+      // handler and always wait.
+      let cyclic: null | Array<InitializationReference> = null;
+      let deferred: null | Array<InitializationReference | (T => mixed)> = null;
+      for (let i = 0; i < listeners.length; i++) {
+        const listener = listeners[i];
+        if (
+          typeof listener !== 'function' &&
+          resolveBlockedCycle(cyclicChunk, listener) !== null
+        ) {
+          if (cyclic === null) {
+            cyclic = [];
+          }
+          cyclic.push(listener);
+          // A reference is queued for rejection as the same object that is
+          // queued for resolution. It is fulfilled below, so its rejection
+          // entry goes.
+          if (rejectListeners !== null) {
+            const rejectionIdx = rejectListeners.indexOf(listener);
+            if (rejectionIdx !== -1) {
+              rejectListeners.splice(rejectionIdx, 1);
+            }
+          }
         } else {
-          fulfillReference(response, listener, value, cyclicChunk);
+          if (deferred === null) {
+            deferred = [];
+          }
+          deferred.push(listener);
+        }
+      }
+      // Put the deferred listeners back on `cyclicChunk` before any cyclic
+      // reference is fulfilled. Fulfilling one can complete `cyclicChunk`, and
+      // completion wakes what is queued on it at that moment.
+      if (deferred !== null) {
+        cyclicChunk.value = deferred;
+        cyclicChunk.reason = rejectListeners;
+      }
+      if (cyclic !== null) {
+        for (let i = 0; i < cyclic.length; i++) {
+          fulfillReference(response, cyclic[i], value, cyclicChunk);
         }
       }
     }
-    if (initializingHandler !== null) {
-      if (initializingHandler.errored) {
-        throw initializingHandler.reason;
-      }
-      if (initializingHandler.deps > 0) {
-        // We discovered new dependencies on modules that are not yet resolved.
-        // We have to keep the BLOCKED state until they're resolved.
-        initializingHandler.value = value;
-        initializingHandler.chunk = cyclicChunk;
-        return;
-      }
-    }
-    if (__DEV__) {
-      // Only a blocked chunk receives debug info, so release the set here.
-      cyclicChunk._receivedDebugInfo = null;
-    }
-    const initializedChunk: InitializedChunk<T> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = value;
-    initializedChunk.reason = null;
 
-    if (__DEV__) {
-      processChunkDebugInfo(response, initializedChunk, value);
+    if ((cyclicChunk as any).status !== BLOCKED) {
+      // Fulfilling a cyclic reference completed `cyclicChunk`, or failed and
+      // errored it. A failure rejects the reference's handler. The rejection
+      // reaches `cyclicChunk`, directly or through the cycle, because
+      // `handler.chunk` is set.
+      return;
     }
+    if (handler !== null && handler.deps > 0) {
+      // The model references chunks that have not resolved yet. `cyclicChunk`
+      // stays BLOCKED, with the deferred listeners queued on it, until the last
+      // of those resolves.
+      return;
+    }
+    initializeBlockedChunk(response, cyclicChunk, value, null);
   } catch (error) {
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
@@ -1622,6 +1680,50 @@ function getWeakChunk(response: Response, id: number): SomeChunk<any> {
   return chunk;
 }
 
+// Moves a blocked chunk to INITIALIZED and wakes whatever is waiting on it. The
+// other `initialize*Chunk` functions start from a resolved chunk and parse it.
+// This one starts from a chunk whose model is already parsed and whose
+// references have all resolved.
+function initializeBlockedChunk<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: any,
+): void {
+  const resolveListeners = chunk.value;
+  if (__DEV__) {
+    // Only a blocked chunk receives debug info, so release the set here.
+    chunk._receivedDebugInfo = null;
+  }
+  const initializedChunk: InitializedChunk<T> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = value;
+  initializedChunk.reason = reason;
+  if (resolveListeners !== null) {
+    wakeChunk(response, resolveListeners, value, initializedChunk);
+  } else if (__DEV__) {
+    processChunkDebugInfo(response, initializedChunk, value);
+  }
+}
+
+// Initializes the handler's chunk once the handler has no references left to
+// wait on. `handler.chunk` is null while the handler's model is still parsing.
+// `initializeModelChunk` handles that case when the parse ends.
+function initializeChunkIfUnblocked(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  if (handler.deps !== 0 || handler.errored) {
+    return;
+  }
+  const chunk = handler.chunk;
+  if (chunk === null || chunk.status !== BLOCKED) {
+    return;
+  }
+  // For a stream chunk, `handler.reason` holds its controller.
+  initializeBlockedChunk(response, chunk, handler.value, handler.reason);
+}
+
 function fulfillReference(
   response: Response,
   reference: InitializationReference,
@@ -1809,29 +1911,7 @@ function fulfillReference(
   }
 
   handler.deps--;
-
-  if (handler.deps === 0) {
-    const chunk = handler.chunk;
-    if (chunk === null || chunk.status !== BLOCKED) {
-      return;
-    }
-    const resolveListeners = chunk.value;
-    if (__DEV__) {
-      // Only a blocked chunk receives debug info, so release the set here.
-      chunk._receivedDebugInfo = null;
-    }
-    const initializedChunk: InitializedChunk<any> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = handler.value;
-    initializedChunk.reason = handler.reason; // Used by streaming chunks
-    if (resolveListeners !== null) {
-      wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-    } else {
-      if (__DEV__) {
-        processChunkDebugInfo(response, initializedChunk, handler.value);
-      }
-    }
-  }
+  initializeChunkIfUnblocked(response, handler);
 }
 
 function rejectReference(
@@ -2067,25 +2147,7 @@ function loadServerReference<A: Iterable<any>, T>(
     }
 
     handler.deps--;
-
-    if (handler.deps === 0) {
-      const chunk = handler.chunk;
-      if (chunk === null || chunk.status !== BLOCKED) {
-        return;
-      }
-      const resolveListeners = chunk.value;
-      const initializedChunk: InitializedChunk<T> = chunk as any;
-      initializedChunk.status = INITIALIZED;
-      initializedChunk.value = handler.value;
-      initializedChunk.reason = null;
-      if (resolveListeners !== null) {
-        wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-      } else {
-        if (__DEV__) {
-          processChunkDebugInfo(response, initializedChunk, handler.value);
-        }
-      }
-    }
+    initializeChunkIfUnblocked(response, handler);
   }
 
   function reject(error: mixed): void {

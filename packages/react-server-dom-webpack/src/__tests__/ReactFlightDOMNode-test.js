@@ -2485,4 +2485,222 @@ describe('ReactFlightDOMNode', () => {
 
     expect(getEventListeners(composite, 'abort')).toHaveLength(0);
   });
+
+  // Runs an action that makes a Node stream emit, and flushes the ticks inside
+  // the act scope so that act sees the work the delivery triggers. Node streams
+  // hand data over through `process.nextTick`, which the fake timers mock.
+  //
+  // The tests above assert on source line numbers. A definition above them
+  // would shift those, so these helpers stay below them.
+  function actOnStream(action: () => mixed): Promise<void> {
+    return serverAct(() => {
+      action();
+      jest.runAllTicks();
+    });
+  }
+
+  // The Node client resolves client references through a server consumer
+  // manifest, which maps each client module id to the module the SSR bundle
+  // loads for it. These tests use the same module on both sides.
+  function createIdentityServerConsumerManifest(...clientReferences) {
+    const moduleMap = {};
+    for (let i = 0; i < clientReferences.length; i++) {
+      const metadata = webpackMap[clientReferences[i].$$id];
+      moduleMap[metadata.id] = {'*': metadata};
+    }
+    return {moduleMap, moduleLoading: webpackModuleLoading};
+  }
+
+  // @gate __DEV__
+  it('does not expose a debug-tree element whose props still hold an unresolved reference', async () => {
+    // Regression test for facebook/react#37361.
+    //
+    // A server component element sits in its parent's componentInfo. Its props
+    // object is shared with its own componentInfo, so the debug channel
+    // outlines the props into a separate row. The client parses the props row
+    // nested inside the parent's componentInfo row, and registers the element's
+    // reference to the props row while that parse is still running.
+    //
+    // The client must not hand the element the props object at that point. The
+    // props row still waits on a client module reference, and the element is
+    // not part of that wait, so it has to stay a lazy until the props row
+    // completes. An element initialized early carries the null placeholder
+    // where `ClientModule` belongs, which is what DevTools reads. In DEV its
+    // props are also frozen, so the module write that lands later throws, and
+    // the response rejects.
+    //
+    // The Suspense boundary inside PassthroughServerComponent keeps
+    // PassthroughServerComponent's componentInfo on row 0 and moves
+    // AsyncServerComponent's to the outlined row. Row 0 then resolves before
+    // the module loads, and the element is observable through the root's debug
+    // info while its props row is still waiting.
+    const received = [];
+    let resolveClientModuleChunk;
+    const ClientModule = clientExports(
+      {label: 'module'},
+      '43',
+      '/client-module.js',
+      new Promise(resolve => (resolveClientModuleChunk = resolve)),
+    );
+    const ClientComponent = clientExports(function ClientComponent(props) {
+      received.push({
+        module:
+          props.module === null
+            ? 'null'
+            : props.module === undefined
+              ? 'undefined'
+              : 'object',
+        shared:
+          props.shared === null
+            ? 'null'
+            : props.shared === undefined
+              ? 'undefined'
+              : 'object',
+      });
+      return React.createElement('span', null, 'client');
+    });
+
+    const shared = {};
+    const longText = 'a'.repeat(4000);
+
+    let resolveIo;
+    async function AsyncServerComponent(props) {
+      await new Promise(resolve => {
+        resolveIo = resolve;
+      });
+      return ReactServer.createElement(
+        'div',
+        null,
+        longText,
+        ReactServer.createElement(ClientComponent, {
+          shared: props.shared,
+          module: props.ClientModule,
+        }),
+      );
+    }
+
+    function PassthroughServerComponent({children}) {
+      return ReactServer.createElement(
+        ReactServer.Suspense,
+        {fallback: 'loading'},
+        children,
+      );
+    }
+
+    function App() {
+      return ReactServer.createElement(PassthroughServerComponent, {
+        shared,
+        children: ReactServer.createElement(AsyncServerComponent, {
+          shared,
+          ClientModule,
+        }),
+      });
+    }
+
+    let debugText = '';
+    const rscStream = await serverAct(() =>
+      ReactServerDOMServer.renderToPipeableStream(
+        ReactServer.createElement(App, null),
+        webpackMap,
+        {
+          debugChannel: new Stream.Writable({
+            write(chunk, encoding, callback) {
+              debugText += Buffer.from(chunk).toString('utf8');
+              callback();
+            },
+          }),
+        },
+      ),
+    );
+
+    const rscChunks = [];
+    rscStream.pipe(
+      new Stream.Writable({
+        write(chunk, encoding, callback) {
+          rscChunks.push(Buffer.from(chunk));
+          callback();
+        },
+      }),
+    );
+    await actOnStream(() => resolveIo('io'));
+
+    const debugReadable = new Stream.PassThrough(streamOptions);
+    const rscReadable = new Stream.PassThrough(streamOptions);
+    const response = ReactServerDOMClient.createFromNodeStream(
+      rscReadable,
+      createIdentityServerConsumerManifest(ClientComponent, ClientModule),
+      {debugChannel: debugReadable},
+    );
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    // The SSR render runs ClientComponent, which records the props it receives.
+    const ssrErrors = [];
+    const ssrStream = ReactDOMServer.renderToPipeableStream(
+      React.createElement(ClientRoot),
+      {
+        onError(error) {
+          ssrErrors.push(String(error).slice(0, 80));
+        },
+      },
+    );
+    await actOnStream(() =>
+      ssrStream.pipe(new Stream.PassThrough(streamOptions)),
+    );
+
+    const debugRows = debugText.split('\n');
+    for (let i = 0; i < debugRows.length; i++) {
+      if (debugRows[i].length > 0) {
+        await actOnStream(() => debugReadable.write(debugRows[i] + '\n'));
+      }
+    }
+    await actOnStream(() => debugReadable.end());
+
+    for (let i = 0; i < rscChunks.length; i++) {
+      await actOnStream(() => rscReadable.write(rscChunks[i]));
+    }
+    await actOnStream(() => rscReadable.end());
+
+    // Row 0 resolves before the module loads, because the boundary keeps
+    // AsyncServerComponent's blocked debug chain off it.
+    await expect(response).resolves.toBeDefined();
+    const root = await response;
+
+    const getDebugInfoWithProps =
+      require('internal-test-utils').getDebugInfo.bind(null, {
+        ignoreProps: false,
+        useFixedTime: true,
+      });
+    const unwrap = node => {
+      let current = node;
+      while (
+        current !== null &&
+        typeof current === 'object' &&
+        current.$$typeof === Symbol.for('react.lazy') &&
+        current._payload.status === 'fulfilled'
+      ) {
+        current = current._payload.value;
+      }
+      return current;
+    };
+    const passthroughInfo = getDebugInfoWithProps(root).find(
+      entry => entry.name === 'PassthroughServerComponent',
+    );
+    const asyncServerElement = unwrap(passthroughInfo.props.children);
+
+    // The props row still waits on the module, so the element must still be a
+    // lazy. Without the fix it is already initialized here, with the null
+    // placeholder where `ClientModule` belongs.
+    expect(asyncServerElement.$$typeof).toBe(Symbol.for('react.lazy'));
+
+    await actOnStream(() => resolveClientModuleChunk());
+
+    expect(ssrErrors).toEqual([]);
+    expect(received).toEqual([{module: 'object', shared: 'object'}]);
+    expect(unwrap(passthroughInfo.props.children).props.ClientModule).toEqual({
+      label: 'module',
+    });
+  });
 });
