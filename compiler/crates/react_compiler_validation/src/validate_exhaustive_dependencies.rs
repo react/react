@@ -1378,10 +1378,7 @@ fn validate_dependencies(
                 continue;
             }
             InferredDependency::Local {
-                identifier,
-                path,
-                loc: _,
-                ..
+                identifier, path, ..
             } => {
                 // Skip effect event functions
                 let ty = get_identifier_type(*identifier, identifiers, types);
