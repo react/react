@@ -10,9 +10,11 @@ import {
   InstructionId,
   Place,
   ReactiveScope,
+  getHookKind,
+  isUseOperator,
   makeInstructionId,
 } from '.';
-import {getPlaceScope} from '../HIR/HIR';
+import {getPlaceScope, isMutableEffect} from '../HIR/HIR';
 import {isMutable} from '../ReactiveScopes/InferReactiveScopeVariables';
 import DisjointSet from '../Utils/DisjointSet';
 import {getOrInsertDefault} from '../Utils/utils';
@@ -144,6 +146,7 @@ type ScopeInfo = {
 type TraversalState = {
   joined: DisjointSet<ReactiveScope>;
   activeScopes: Array<ReactiveScope>;
+  hookCallIds: Array<InstructionId>;
 };
 
 function collectScopeInfo(fn: HIRFunction): ScopeInfo {
@@ -262,7 +265,7 @@ function visitInstructionId(
 function visitPlace(
   id: InstructionId,
   place: Place,
-  {activeScopes, joined}: TraversalState,
+  {activeScopes, joined, hookCallIds}: TraversalState,
 ): void {
   /**
    * If an instruction mutates an outer scope, flatten all scopes from the top
@@ -272,18 +275,72 @@ function visitPlace(
   if (placeScope != null && isMutable({id}, place)) {
     const placeScopeIdx = activeScopes.indexOf(placeScope);
     if (placeScopeIdx !== -1 && placeScopeIdx !== activeScopes.length - 1) {
+      /**
+       * Reactive scopes can never span a hook or `use()` call (such scopes are
+       * pruned by FlattenScopesWithHooksOrUse). If `placeScope` already spans a
+       * hook call it is going to be pruned regardless. Merging the inner scopes
+       * into it would then de-memoize them too -- but only when this reference
+       * actually mutates `placeScope`'s value does correctness *require* the
+       * merge. For a non-mutating reference (a plain read/freeze) there is no
+       * such requirement, so we leave the inner scopes nested and independently
+       * memoizeable rather than dragging them across the hook barrier.
+       */
+      if (
+        !isMutableEffect(place.effect, place.loc) &&
+        spansHookCall(hookCallIds, placeScope.range.start, id)
+      ) {
+        return;
+      }
       joined.union([placeScope, ...activeScopes.slice(placeScopeIdx + 1)]);
     }
   }
+}
+
+/**
+ * Returns true if a hook/use call occurs at an instruction strictly after
+ * `start` and at or before `id`, ie within the span a scope starting at `start`
+ * would have to cover to reach `id`.
+ */
+function spansHookCall(
+  hookCallIds: Array<InstructionId>,
+  start: InstructionId,
+  id: InstructionId,
+): boolean {
+  for (const hookId of hookCallIds) {
+    if (hookId > start && hookId <= id) {
+      return true;
+    }
+    if (hookId > id) {
+      break;
+    }
+  }
+  return false;
 }
 
 function getOverlappingReactiveScopes(
   fn: HIRFunction,
   context: ScopeInfo,
 ): DisjointSet<ReactiveScope> {
+  const hookCallIds: Array<InstructionId> = [];
+  for (const [, block] of fn.body.blocks) {
+    for (const instr of block.instructions) {
+      const value = instr.value;
+      if (value.kind === 'CallExpression' || value.kind === 'MethodCall') {
+        const callee =
+          value.kind === 'CallExpression' ? value.callee : value.property;
+        if (
+          getHookKind(fn.env, callee.identifier) != null ||
+          isUseOperator(callee.identifier)
+        ) {
+          hookCallIds.push(instr.id);
+        }
+      }
+    }
+  }
   const state: TraversalState = {
     joined: new DisjointSet<ReactiveScope>(),
     activeScopes: [],
+    hookCallIds,
   };
 
   for (const [, block] of fn.body.blocks) {
