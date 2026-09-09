@@ -274,6 +274,123 @@ describe('ReactFreshIntegration', () => {
       }
     });
 
+    it('switches memo to forwardRef with different inner', async () => {
+      if (__DEV__) {
+        await render(`
+          const Child = () => {
+            return <h1>A1</h1>;
+          };
+
+          export default Child;
+        `);
+        let lastElement = container.firstChild;
+        expect(lastElement.textContent).toBe('A1');
+        await patch(`
+          const {memo} = React;
+
+          const Child2 = () => {
+            return <h1>A2</h1>;
+          };
+
+          export default memo(Child2);
+        `);
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A2');
+        lastElement = container.firstChild;
+
+        await patch(`
+          const {forwardRef} = React;
+
+          const Child3 = () => {
+            return <h1>A3</h1>;
+          };
+
+          export default forwardRef(Child3);
+        `);
+
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A3');
+        lastElement = container.firstChild;
+
+        await patch(`
+          const {memo} = React;
+
+          const Child4 = () => {
+            return <h1>A4</h1>;
+          };
+
+          export default memo(Child4);
+        `);
+
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A4');
+        lastElement = container.firstChild;
+
+        await patch(`
+          const Child5 = () => {
+            return <h1>A5</h1>;
+          };
+
+          export default Child5;
+        `);
+
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A5');
+      }
+    });
+
+    it('switches memo to forwardRef with same inner', async () => {
+      if (__DEV__) {
+        await render(`
+          const Child = () => {
+            return <h1>A1</h1>;
+          };
+
+          export default Child;
+        `);
+        let lastElement = container.firstChild;
+        expect(lastElement.textContent).toBe('A1');
+        await patch(`
+          const {memo} = React;
+
+          const Child = () => {
+            return <h1>A1</h1>;
+          };
+
+          export default memo(Child);
+        `);
+
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A1');
+        lastElement = container.firstChild;
+
+        await patch(`
+          const {forwardRef} = React;
+
+          const Child = () => {
+            return <h1>A1</h1>;
+          };
+
+          export default forwardRef(Child);
+        `);
+
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A1');
+        lastElement = container.firstChild;
+
+        await patch(`
+          const Child = () => {
+            return <h1>A1</h1>;
+          };
+
+          export default Child;
+        `);
+
+        expect(container.firstChild !== lastElement).toBe(true);
+        expect(container.firstChild.textContent).toBe('A1');
+      }
+    });
+
     it('reloads default export with named memo', async () => {
       if (__DEV__) {
         await render(`

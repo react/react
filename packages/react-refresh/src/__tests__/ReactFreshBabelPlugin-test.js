@@ -206,6 +206,44 @@ describe('ReactFreshBabelPlugin', () => {
     ).toMatchSnapshot();
   });
 
+  it('registers memo default export', () => {
+    expect(
+      transform(`
+        function Component() {}
+        export default React.memo(Component);
+    `),
+    ).toMatchSnapshot();
+  });
+
+  it('registers forwardRef default export', () => {
+    expect(
+      transform(`
+        function Component() {}
+        export default React.forwardRef(Component);
+    `),
+    ).toMatchSnapshot();
+  });
+
+  it('registers memo default export', () => {
+    expect(
+      transform(`
+        import {memo} from 'react';
+        function Component() {}
+        export default memo(Component);
+    `),
+    ).toMatchSnapshot();
+  });
+
+  it('registers forwardRef default export', () => {
+    expect(
+      transform(`
+        import {forwardRef} from 'react';
+        function Component() {}
+        export default forwardRef(Component);
+    `),
+    ).toMatchSnapshot();
+  });
+
   it('registers likely HOCs with inline functions', () => {
     expect(
       transform(`
