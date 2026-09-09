@@ -84,6 +84,21 @@ class PromoteTemporaries extends ReactiveFunctionVisitor<State> {
     if (value.kind === 'FunctionExpression' || value.kind === 'ObjectMethod') {
       this.visitHirFunction(value.loweredFunc.func, state);
     }
+    /*
+     * A JSX tag written as an identifier refers to a *value*. If codegen would
+     * inline such a tag down to a bare lowercase identifier (e.g. reference to
+     * the global `base` in `const Comp = base; <Comp />`), JSX would reinterpret
+     * it as a host element (`<base />`) rather than a reference to the value.
+     * Promote the tag temporary so the reference is preserved as `<T0 />`.
+     */
+    if (
+      value.kind === 'JsxExpression' &&
+      value.tag.kind === 'Identifier' &&
+      value.tag.identifier.name === null &&
+      jsxTagWouldInlineToHostIdentifier(value.tag, state.tagValues)
+    ) {
+      promoteIdentifier(value.tag.identifier, state);
+    }
   }
 
   override visitReactiveFunctionValue(
@@ -177,7 +192,61 @@ type State = {
     DeclarationId,
     {activeScopes: Array<ScopeId>; usedOutsideScope: boolean}
   >; // true if referenced within another scope, false if only accessed outside of scopes
+  /*
+   * Maps a temporary's IdentifierId to its defining value, restricted to the
+   * load instructions that can appear in JSX tag position. Used to determine
+   * whether an unnamed JSX tag temporary would be emitted as a lowercase
+   * (host-like) identifier when inlined. See `jsxTagWouldInlineToHostIdentifier`.
+   */
+  tagValues: Map<IdentifierId, ReactiveValue>;
 };
+
+/*
+ * A JSX tag written as an identifier (e.g. `<Comp />`) is always lowered from a
+ * capitalized source name and refers to a *value*. If codegen inlines such a
+ * tag down to a bare identifier that begins with a lowercase letter (e.g. a
+ * reference to the global `base`), JSX would reinterpret it as a host element
+ * (`<base />`) rather than a reference to the value. This returns true when the
+ * given tag temporary would inline to such a lowercase identifier, meaning it
+ * must be promoted to a named variable to preserve the reference.
+ */
+function jsxTagWouldInlineToHostIdentifier(
+  place: Place,
+  tagValues: Map<IdentifierId, ReactiveValue>,
+  seen: Set<IdentifierId> = new Set(),
+): boolean {
+  if (place.identifier.name !== null) {
+    // A named variable is emitted verbatim; only lowercase names are host-like.
+    return (
+      place.identifier.name.kind === 'named' &&
+      /^[a-z]/.test(place.identifier.name.value)
+    );
+  }
+  if (seen.has(place.identifier.id)) {
+    return false;
+  }
+  seen.add(place.identifier.id);
+  const value = tagValues.get(place.identifier.id);
+  if (value == null) {
+    return false;
+  }
+  switch (value.kind) {
+    case 'LoadGlobal': {
+      return /^[a-z]/.test(value.binding.name);
+    }
+    case 'LoadLocal':
+    case 'LoadContext': {
+      return jsxTagWouldInlineToHostIdentifier(value.place, tagValues, seen);
+    }
+    default: {
+      /*
+       * Anything else (member expressions, calls, etc.) is emitted as a
+       * non-identifier expression, which JSX always treats as a value reference.
+       */
+      return false;
+    }
+  }
+}
 
 /**
  * Phase 1: checks for pruned variables which need to be promoted, as well as
@@ -196,6 +265,27 @@ class CollectPromotableTemporaries extends ReactiveFunctionVisitor<State> {
         prunedPlace.usedOutsideScope = true;
       }
     }
+  }
+
+  override visitInstruction(
+    instruction: ReactiveInstruction,
+    state: State,
+  ): void {
+    /*
+     * Record the defining value of temporaries that can be inlined into a JSX
+     * tag position, so that we can later resolve whether a tag temporary would
+     * emit as a lowercase (host-like) identifier.
+     */
+    if (
+      instruction.lvalue != null &&
+      instruction.lvalue.identifier.name === null &&
+      (instruction.value.kind === 'LoadGlobal' ||
+        instruction.value.kind === 'LoadLocal' ||
+        instruction.value.kind === 'LoadContext')
+    ) {
+      state.tagValues.set(instruction.lvalue.identifier.id, instruction.value);
+    }
+    this.traverseInstruction(instruction, state);
   }
 
   override visitValue(
@@ -427,6 +517,7 @@ export function promoteUsedTemporaries(fn: ReactiveFunction): void {
     tags: new Set(),
     promoted: new Set(),
     pruned: new Map(),
+    tagValues: new Map(),
   };
   visitReactiveFunction(fn, new CollectPromotableTemporaries(), state);
   for (const operand of fn.params) {
