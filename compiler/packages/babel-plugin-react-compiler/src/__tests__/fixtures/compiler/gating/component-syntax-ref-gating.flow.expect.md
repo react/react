@@ -24,9 +24,9 @@ import { c as _c } from "react/compiler-runtime";
 import { isForgetEnabled_Fixtures } from "ReactForgetFeatureFlag";
 import { Stringify } from "shared-runtime";
 import * as React from "react";
+const isForgetEnabled_Fixtures_result = isForgetEnabled_Fixtures();
 
 const Foo = React.forwardRef(Foo_withRef);
-const isForgetEnabled_Fixtures_result = isForgetEnabled_Fixtures();
 function Foo_withRef_optimized(_$$empty_props_placeholder$$, ref) {
   const $ = _c(2);
   let t0;
