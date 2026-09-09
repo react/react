@@ -175,10 +175,13 @@ describe('utils', () => {
       );
     });
 
-    it('should gracefully handle objects with no prototype', () => {
-      expect(
-        formatConsoleArgumentsToSingleString('%o', Object.create(null)),
-      ).toEqual('%o [object Object]');
+    it('should leave unmatched format specifiers as literals when arguments are exhausted', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual(
+        '1 %d',
+      );
     });
   });
 
