@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<50ef70d0c4826640f3041af8c7116510>>
+ * @generated SignedSource<<0f47942508492de1bd497fd2f0155c16>>
  */
 
 "use strict";
@@ -43,7 +43,10 @@ __DEV__ &&
                   null != hostFiber &&
                   null !== hostFiber.stateNode &&
                   hostFiber.stateNode.node) &&
-                  nativeFabricUIManager.measure(hostFiber, callback);
+                  reactPrivateInterface.fabricUIManager.measure(
+                    hostFiber,
+                    callback
+                  );
               }
             };
           }
@@ -1291,10 +1294,13 @@ __DEV__ &&
         reactPrivateInterface.RawEventEmitter.emit(topLevelType, event);
         reactPrivateInterface.RawEventEmitter.emit("*", event);
         null == _enableNativeEventTargetEventDispatching &&
+          ((event =
+            null != reactPrivateInterface.ReactNativeFeatureFlags
+              ? reactPrivateInterface.ReactNativeFeatureFlags
+                  .enableNativeEventTargetEventDispatching
+              : null),
           (_enableNativeEventTargetEventDispatching =
-            "function" ===
-              typeof RN$isNativeEventTargetEventDispatchingEnabled &&
-            RN$isNativeEventTargetEventDispatchingEnabled());
+            "function" === typeof event && event()));
         if (_enableNativeEventTargetEventDispatching)
           null != eventTarget &&
             reactPrivateInterface.dispatchNativeEvent(
@@ -21112,34 +21118,38 @@ __DEV__ &&
       commitHydratedInstance = shim$1,
       preloadResource = shim,
       suspendResource = shim,
-      _nativeFabricUIManage$1 = nativeFabricUIManager,
       fabricApplyViewTransitionName =
-        _nativeFabricUIManage$1.applyViewTransitionName,
+        reactPrivateInterface.fabricUIManager.applyViewTransitionName,
       fabricCreateViewTransitionInstance =
-        _nativeFabricUIManage$1.createViewTransitionInstance,
-      fabricStartViewTransition = _nativeFabricUIManage$1.startViewTransition,
+        reactPrivateInterface.fabricUIManager.createViewTransitionInstance,
+      fabricStartViewTransition =
+        reactPrivateInterface.fabricUIManager.startViewTransition,
       fabricStartViewTransitionReadyFinished =
-        _nativeFabricUIManage$1.startViewTransitionReadyFinished,
-      _nativeFabricUIManage = nativeFabricUIManager,
-      createNode = _nativeFabricUIManage.createNode,
-      cloneNodeWithNewChildren = _nativeFabricUIManage.cloneNodeWithNewChildren,
+        reactPrivateInterface.fabricUIManager.startViewTransitionReadyFinished,
+      createNode = reactPrivateInterface.fabricUIManager.createNode,
+      cloneNodeWithNewChildren =
+        reactPrivateInterface.fabricUIManager.cloneNodeWithNewChildren,
       cloneNodeWithNewChildrenAndProps =
-        _nativeFabricUIManage.cloneNodeWithNewChildrenAndProps,
-      cloneNodeWithNewProps = _nativeFabricUIManage.cloneNodeWithNewProps,
-      createChildNodeSet = _nativeFabricUIManage.createChildSet,
-      appendChildNode = _nativeFabricUIManage.appendChild,
-      appendChildNodeToSet = _nativeFabricUIManage.appendChildToSet,
-      completeRoot = _nativeFabricUIManage.completeRoot,
-      registerEventHandler = _nativeFabricUIManage.registerEventHandler,
+        reactPrivateInterface.fabricUIManager.cloneNodeWithNewChildrenAndProps,
+      cloneNodeWithNewProps =
+        reactPrivateInterface.fabricUIManager.cloneNodeWithNewProps,
+      createChildNodeSet = reactPrivateInterface.fabricUIManager.createChildSet,
+      appendChildNode = reactPrivateInterface.fabricUIManager.appendChild,
+      appendChildNodeToSet =
+        reactPrivateInterface.fabricUIManager.appendChildToSet,
+      completeRoot = reactPrivateInterface.fabricUIManager.completeRoot,
+      registerEventHandler =
+        reactPrivateInterface.fabricUIManager.registerEventHandler,
       FabricDiscretePriority =
-        _nativeFabricUIManage.unstable_DiscreteEventPriority,
+        reactPrivateInterface.fabricUIManager.unstable_DiscreteEventPriority,
       FabricContinuousPriority =
-        _nativeFabricUIManage.unstable_ContinuousEventPriority,
-      FabricIdlePriority = _nativeFabricUIManage.unstable_IdleEventPriority,
+        reactPrivateInterface.fabricUIManager.unstable_ContinuousEventPriority,
+      FabricIdlePriority =
+        reactPrivateInterface.fabricUIManager.unstable_IdleEventPriority,
       fabricGetCurrentEventPriority =
-        _nativeFabricUIManage.unstable_getCurrentEventPriority,
+        reactPrivateInterface.fabricUIManager.unstable_getCurrentEventPriority,
       fabricSuspendOnActiveViewTransition =
-        _nativeFabricUIManage.suspendOnActiveViewTransition,
+        reactPrivateInterface.fabricUIManager.suspendOnActiveViewTransition,
       extraDevToolsConfig = {
         getInspectorDataForInstance: getInspectorDataForInstance,
         getInspectorDataForViewAtPoint: function (
@@ -21151,7 +21161,7 @@ __DEV__ &&
           var closestInstance = null;
           (inspectedView =
             reactPrivateInterface.getNodeFromPublicInstance(inspectedView))
-            ? nativeFabricUIManager.findNodeAtPoint(
+            ? reactPrivateInterface.fabricUIManager.findNodeAtPoint(
                 inspectedView,
                 locationX,
                 locationY,
@@ -21181,7 +21191,7 @@ __DEV__ &&
                           .publicInstance,
                       nativeViewTag =
                         internalInstanceHandle.stateNode.canonical.nativeTag;
-                    nativeFabricUIManager.measure(
+                    reactPrivateInterface.fabricUIManager.measure(
                       node,
                       function (x, y, width, height, pageX, pageY) {
                         x = getInspectorDataForInstance(closestInstance);
@@ -21375,14 +21385,14 @@ __DEV__ &&
       onChange: function (from, to, blockNativeResponder) {
         from &&
           from.stateNode &&
-          nativeFabricUIManager.setIsJSResponder(
+          reactPrivateInterface.fabricUIManager.setIsJSResponder(
             from.stateNode.node,
             !1,
             blockNativeResponder || !1
           );
         to &&
           to.stateNode &&
-          nativeFabricUIManager.setIsJSResponder(
+          reactPrivateInterface.fabricUIManager.setIsJSResponder(
             to.stateNode.node,
             !0,
             blockNativeResponder || !1
@@ -21413,10 +21423,10 @@ __DEV__ &&
     (function () {
       var internals = {
         bundleType: 1,
-        version: "19.3.0-native-fb-21c89c9f-20260901",
+        version: "19.3.0-native-fb-1d34f91d-20260909",
         rendererPackageName: "react-native-renderer",
         currentDispatcherRef: ReactSharedInternals,
-        reconcilerVersion: "19.3.0-native-fb-21c89c9f-20260901"
+        reconcilerVersion: "19.3.0-native-fb-1d34f91d-20260909"
       };
       null !== extraDevToolsConfig &&
         (internals.rendererConfig = extraDevToolsConfig);
@@ -21449,7 +21459,11 @@ __DEV__ &&
     exports.dispatchCommand = function (handle, command, args) {
       handle = reactPrivateInterface.getNodeFromPublicInstance(handle);
       null != handle
-        ? nativeFabricUIManager.dispatchCommand(handle, command, args)
+        ? reactPrivateInterface.fabricUIManager.dispatchCommand(
+            handle,
+            command,
+            args
+          )
         : console.error(
             "dispatchCommand was called with a ref that isn't a native component. Use React.forwardRef to get access to the underlying native component"
           );
@@ -21644,7 +21658,10 @@ __DEV__ &&
     exports.sendAccessibilityEvent = function (handle, eventType) {
       handle = reactPrivateInterface.getNodeFromPublicInstance(handle);
       null != handle
-        ? nativeFabricUIManager.sendAccessibilityEvent(handle, eventType)
+        ? reactPrivateInterface.fabricUIManager.sendAccessibilityEvent(
+            handle,
+            eventType
+          )
         : console.error(
             "sendAccessibilityEvent was called with a ref that isn't a native component. Use React.forwardRef to get access to the underlying native component"
           );

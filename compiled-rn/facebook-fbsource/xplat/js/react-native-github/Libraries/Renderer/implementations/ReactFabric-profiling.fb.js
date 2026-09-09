@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<4c1479082450661c8c3aab927369c568>>
+ * @generated SignedSource<<6130a39fb4a7612e10cc72645f16b473>>
  */
 
 "use strict";
@@ -1406,9 +1406,13 @@ function dispatchEvent(target, topLevelType, nativeEventParam) {
     reactPrivateInterface.RawEventEmitter.emit(topLevelType, event);
     reactPrivateInterface.RawEventEmitter.emit("*", event);
     null == _enableNativeEventTargetEventDispatching &&
+      ((event =
+        null != reactPrivateInterface.ReactNativeFeatureFlags
+          ? reactPrivateInterface.ReactNativeFeatureFlags
+              .enableNativeEventTargetEventDispatching
+          : null),
       (_enableNativeEventTargetEventDispatching =
-        "function" === typeof RN$isNativeEventTargetEventDispatchingEnabled &&
-        RN$isNativeEventTargetEventDispatchingEnabled());
+        "function" === typeof event && event()));
     if (_enableNativeEventTargetEventDispatching)
       null != eventTarget &&
         reactPrivateInterface.dispatchNativeEvent(
@@ -14082,14 +14086,14 @@ function shim() {
     "The current renderer does not support Resources. This error is likely caused by a bug in React. Please file an issue."
   );
 }
-var _nativeFabricUIManage$1 = nativeFabricUIManager,
-  fabricApplyViewTransitionName =
-    _nativeFabricUIManage$1.applyViewTransitionName,
+var fabricApplyViewTransitionName =
+    reactPrivateInterface.fabricUIManager.applyViewTransitionName,
   fabricCreateViewTransitionInstance =
-    _nativeFabricUIManage$1.createViewTransitionInstance,
-  fabricStartViewTransition = _nativeFabricUIManage$1.startViewTransition,
+    reactPrivateInterface.fabricUIManager.createViewTransitionInstance,
+  fabricStartViewTransition =
+    reactPrivateInterface.fabricUIManager.startViewTransition,
   fabricStartViewTransitionReadyFinished =
-    _nativeFabricUIManage$1.startViewTransitionReadyFinished;
+    reactPrivateInterface.fabricUIManager.startViewTransitionReadyFinished;
 function ViewTransitionPseudoElement(pseudo, name) {
   this._pseudo = pseudo;
   this._name = name;
@@ -14137,25 +14141,29 @@ function startViewTransition(
   });
   return suspendedState;
 }
-var _nativeFabricUIManage = nativeFabricUIManager,
-  createNode = _nativeFabricUIManage.createNode,
-  cloneNodeWithNewChildren = _nativeFabricUIManage.cloneNodeWithNewChildren,
+var createNode = reactPrivateInterface.fabricUIManager.createNode,
+  cloneNodeWithNewChildren =
+    reactPrivateInterface.fabricUIManager.cloneNodeWithNewChildren,
   cloneNodeWithNewChildrenAndProps =
-    _nativeFabricUIManage.cloneNodeWithNewChildrenAndProps,
-  cloneNodeWithNewProps = _nativeFabricUIManage.cloneNodeWithNewProps,
-  createChildNodeSet = _nativeFabricUIManage.createChildSet,
-  appendChildNode = _nativeFabricUIManage.appendChild,
-  appendChildNodeToSet = _nativeFabricUIManage.appendChildToSet,
-  completeRoot = _nativeFabricUIManage.completeRoot,
-  registerEventHandler = _nativeFabricUIManage.registerEventHandler,
-  FabricDiscretePriority = _nativeFabricUIManage.unstable_DiscreteEventPriority,
+    reactPrivateInterface.fabricUIManager.cloneNodeWithNewChildrenAndProps,
+  cloneNodeWithNewProps =
+    reactPrivateInterface.fabricUIManager.cloneNodeWithNewProps,
+  createChildNodeSet = reactPrivateInterface.fabricUIManager.createChildSet,
+  appendChildNode = reactPrivateInterface.fabricUIManager.appendChild,
+  appendChildNodeToSet = reactPrivateInterface.fabricUIManager.appendChildToSet,
+  completeRoot = reactPrivateInterface.fabricUIManager.completeRoot,
+  registerEventHandler =
+    reactPrivateInterface.fabricUIManager.registerEventHandler,
+  FabricDiscretePriority =
+    reactPrivateInterface.fabricUIManager.unstable_DiscreteEventPriority,
   FabricContinuousPriority =
-    _nativeFabricUIManage.unstable_ContinuousEventPriority,
-  FabricIdlePriority = _nativeFabricUIManage.unstable_IdleEventPriority,
+    reactPrivateInterface.fabricUIManager.unstable_ContinuousEventPriority,
+  FabricIdlePriority =
+    reactPrivateInterface.fabricUIManager.unstable_IdleEventPriority,
   fabricGetCurrentEventPriority =
-    _nativeFabricUIManage.unstable_getCurrentEventPriority,
+    reactPrivateInterface.fabricUIManager.unstable_getCurrentEventPriority,
   fabricSuspendOnActiveViewTransition =
-    _nativeFabricUIManage.suspendOnActiveViewTransition,
+    reactPrivateInterface.fabricUIManager.suspendOnActiveViewTransition,
   extraDevToolsConfig = {
     getInspectorDataForInstance: void 0,
     getInspectorDataForViewAtPoint: function () {
@@ -14455,14 +14463,14 @@ ResponderEventPlugin.injection.injectGlobalResponderHandler({
   onChange: function (from, to, blockNativeResponder) {
     from &&
       from.stateNode &&
-      nativeFabricUIManager.setIsJSResponder(
+      reactPrivateInterface.fabricUIManager.setIsJSResponder(
         from.stateNode.node,
         !1,
         blockNativeResponder || !1
       );
     to &&
       to.stateNode &&
-      nativeFabricUIManager.setIsJSResponder(
+      reactPrivateInterface.fabricUIManager.setIsJSResponder(
         to.stateNode.node,
         !0,
         blockNativeResponder || !1
@@ -14508,16 +14516,16 @@ batchedUpdatesImpl = function (fn, a) {
   }
 };
 var roots = new Map(),
-  internals$jscomp$inline_1666 = {
+  internals$jscomp$inline_1667 = {
     bundleType: 0,
-    version: "19.3.0-native-fb-21c89c9f-20260901",
+    version: "19.3.0-native-fb-1d34f91d-20260909",
     rendererPackageName: "react-native-renderer",
     currentDispatcherRef: ReactSharedInternals,
-    reconcilerVersion: "19.3.0-native-fb-21c89c9f-20260901"
+    reconcilerVersion: "19.3.0-native-fb-1d34f91d-20260909"
   };
 null !== extraDevToolsConfig &&
-  (internals$jscomp$inline_1666.rendererConfig = extraDevToolsConfig);
-internals$jscomp$inline_1666.getLaneLabelMap = function () {
+  (internals$jscomp$inline_1667.rendererConfig = extraDevToolsConfig);
+internals$jscomp$inline_1667.getLaneLabelMap = function () {
   for (
     var map = new Map(), lane = 1, index$186 = 0;
     31 > index$186;
@@ -14529,20 +14537,20 @@ internals$jscomp$inline_1666.getLaneLabelMap = function () {
   }
   return map;
 };
-internals$jscomp$inline_1666.injectProfilingHooks = function (profilingHooks) {
+internals$jscomp$inline_1667.injectProfilingHooks = function (profilingHooks) {
   injectedProfilingHooks = profilingHooks;
 };
 if ("undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__) {
-  var hook$jscomp$inline_2037 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
+  var hook$jscomp$inline_2038 = __REACT_DEVTOOLS_GLOBAL_HOOK__;
   if (
-    !hook$jscomp$inline_2037.isDisabled &&
-    hook$jscomp$inline_2037.supportsFiber
+    !hook$jscomp$inline_2038.isDisabled &&
+    hook$jscomp$inline_2038.supportsFiber
   )
     try {
-      (rendererID = hook$jscomp$inline_2037.inject(
-        internals$jscomp$inline_1666
+      (rendererID = hook$jscomp$inline_2038.inject(
+        internals$jscomp$inline_1667
       )),
-        (injectedHook = hook$jscomp$inline_2037);
+        (injectedHook = hook$jscomp$inline_2038);
     } catch (err) {}
 }
 exports.createPortal = function (children, containerTag) {
@@ -14556,7 +14564,11 @@ exports.createPortal = function (children, containerTag) {
 exports.dispatchCommand = function (handle, command, args) {
   handle = reactPrivateInterface.getNodeFromPublicInstance(handle);
   null != handle &&
-    nativeFabricUIManager.dispatchCommand(handle, command, args);
+    reactPrivateInterface.fabricUIManager.dispatchCommand(
+      handle,
+      command,
+      args
+    );
 };
 exports.findHostInstance_DEPRECATED = function (componentOrHandle) {
   return null == componentOrHandle
@@ -14693,7 +14705,10 @@ exports.render = function (
 exports.sendAccessibilityEvent = function (handle, eventType) {
   handle = reactPrivateInterface.getNodeFromPublicInstance(handle);
   null != handle &&
-    nativeFabricUIManager.sendAccessibilityEvent(handle, eventType);
+    reactPrivateInterface.fabricUIManager.sendAccessibilityEvent(
+      handle,
+      eventType
+    );
 };
 exports.stopSurface = function (containerTag) {
   var root = roots.get(containerTag);
