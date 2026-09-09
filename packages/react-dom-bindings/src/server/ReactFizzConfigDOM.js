@@ -1831,7 +1831,7 @@ function pushAttribute(
       if (
         typeof value !== 'function' &&
         typeof value !== 'symbol' &&
-        !isNaN(value) &&
+        (typeof value === 'bigint' || !isNaN(value)) &&
         (value as any) >= 1
       ) {
         target.push(
@@ -1850,7 +1850,7 @@ function pushAttribute(
       if (
         typeof value !== 'function' &&
         typeof value !== 'symbol' &&
-        !isNaN(value)
+        (typeof value === 'bigint' || !isNaN(value))
       ) {
         target.push(
           attributeSeparator,
