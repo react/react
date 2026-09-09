@@ -70,31 +70,49 @@ export function addObjectToProperties(
     return;
   }
   let addedProperties = 0;
-  for (const key in object) {
-    if (hasOwnProperty.call(object, key) && key[0] !== '_') {
-      addedProperties++;
-      const value = object[key];
-      addValueToProperties(key, value, properties, indent, prefix);
-      if (addedProperties >= OBJECT_WIDTH_LIMIT) {
-        properties.push([
-          prefix +
-            '\xa0\xa0'.repeat(indent) +
-            'Only ' +
-            OBJECT_WIDTH_LIMIT +
-            ' properties are shown. React will not log more properties of this object.',
-          '',
-        ]);
-        break;
+  try {
+    for (const key in object) {
+      if (hasOwnProperty.call(object, key) && key[0] !== '_') {
+        addedProperties++;
+        const value = object[key];
+        addValueToProperties(key, value, properties, indent, prefix);
+        if (addedProperties >= OBJECT_WIDTH_LIMIT) {
+          properties.push([
+            prefix +
+              '\xa0\xa0'.repeat(indent) +
+              'Only ' +
+              OBJECT_WIDTH_LIMIT +
+              ' properties are shown. React will not log more properties of this object.',
+            '',
+          ]);
+          break;
+        }
       }
+    }
+  } catch (e) {
+    // Cross-origin objects (e.g. a Window from a cross-origin iframe) throw
+    // SecurityError when their properties are enumerated. Treat the object as
+    // opaque so the render-logger never corrupts the fiber tree.
+    if (addedProperties === 0) {
+      properties.push([
+        prefix + '\xa0\xa0'.repeat(indent) + '[CrossOriginObject]',
+        '',
+      ]);
     }
   }
 }
 
 function readReactElementTypeof(value: Object): mixed {
-  // Prevents dotting into $$typeof in opaque origin windows.
-  return '$$typeof' in value && hasOwnProperty.call(value, '$$typeof')
-    ? value.$$typeof
-    : undefined;
+  try {
+    // Prevents dotting into $$typeof in opaque origin windows.
+    return '$$typeof' in value && hasOwnProperty.call(value, '$$typeof')
+      ? value.$$typeof
+      : undefined;
+  } catch (e) {
+    // Cross-origin objects (e.g. a Window from a cross-origin iframe) throw
+    // SecurityError on any property access. Treat as non-React-element.
+    return undefined;
+  }
 }
 
 export function addValueToProperties(
