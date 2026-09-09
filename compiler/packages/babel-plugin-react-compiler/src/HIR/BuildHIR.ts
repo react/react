@@ -4220,7 +4220,17 @@ function lowerAssignment(
             continue;
           }
           const element = property.get('value');
-          if (!element.isLVal()) {
+          /*
+           * Babel 7 classifies `AssignmentPattern` (ie a destructured default
+           * such as `{a = 1}`) as part of the `LVal` alias group, so
+           * `element.isLVal()` returns true for it. Babel 8 narrowed the
+           * `LVal` alias group and no longer includes `AssignmentPattern`,
+           * even though it remains a valid assignment target that
+           * `lowerAssignment` explicitly handles below. Check for it
+           * separately so this destructuring case continues to compile
+           * under both Babel 7 and Babel 8.
+           */
+          if (!element.isLVal() && !element.isAssignmentPattern()) {
             builder.recordError(
               new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerAssignment) Expected object property value to be an LVal, got: ${element.type}`,
