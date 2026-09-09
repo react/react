@@ -71,6 +71,7 @@ export function createServerReference<A: Iterable<any>, T>(
 type EncodeFormActionCallback = <A>(
   id: any,
   args: Promise<A>,
+  encodeDefault: () => ReactCustomFormAction,
 ) => ReactCustomFormAction;
 
 export type Options = {
