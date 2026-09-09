@@ -333,8 +333,32 @@ export function findDisjointMutableValues(
     for (const instr of block.instructions) {
       const operands: Array<Identifier> = [];
       const range = instr.lvalue.identifier.mutableRange;
-      if (range.end > range.start + 1 || mayAllocate(fn.env, instr)) {
+      if (mayAllocate(fn.env, instr)) {
+        /*
+         * Allocating instructions (CallExpression, ArrayExpression, etc.) always
+         * create a new memoizable value, so include the lvalue unconditionally.
+         */
         operands.push(instr.lvalue!.identifier);
+      } else if (range.end > range.start + 1) {
+        /*
+         * For non-allocating instructions (LoadLocal, PropertyLoad, etc.), only
+         * add the lvalue to the scope operands if it has a definite mutation
+         * effect at this instruction. Range extension from downstream conditional
+         * mutations (MutateTransitiveConditionally from passing the value to an
+         * unknown function) should not cause a temporary reference to join a
+         * scope — the scope should be anchored to the original allocating value,
+         * not to temporaries created to pass it as an argument.
+         */
+        if (
+          instr.effects != null &&
+          instr.effects.some(
+            effect =>
+              (effect.kind === 'Mutate' || effect.kind === 'MutateTransitive') &&
+              effect.value.identifier.id === instr.lvalue.identifier.id,
+          )
+        ) {
+          operands.push(instr.lvalue!.identifier);
+        }
       }
       if (
         instr.value.kind === 'DeclareLocal' ||
@@ -392,6 +416,33 @@ export function findDisjointMutableValues(
          * call itself
          */
         operands.push(instr.value.property.identifier);
+      } else if (instr.value.kind === 'CallExpression') {
+        /*
+         * For CallExpression, only union operands that are definitively mutated by
+         * the call (not just conditionally/maybe mutated). Unknown function calls
+         * generate MutateTransitiveConditionally effects for arguments — a conservative
+         * assumption that the call might mutate them — but this should not force
+         * arguments into the same scope as the call result.
+         *
+         * Only definite Mutate or MutateTransitive effects indicate genuine co-mutation
+         * that requires the same scope. This allows intermediate function call results
+         * to be memoized in their own scope, separate from the outer call that consumes
+         * them, enabling finer-grained memoization.
+         */
+        for (const operand of eachInstructionOperand(instr)) {
+          if (
+            isMutable(instr, operand) &&
+            operand.identifier.mutableRange.start > 0 &&
+            instr.effects != null &&
+            instr.effects.some(
+              effect =>
+                (effect.kind === 'Mutate' || effect.kind === 'MutateTransitive') &&
+                effect.value.identifier.id === operand.identifier.id,
+            )
+          ) {
+            operands.push(operand.identifier);
+          }
+        }
       } else {
         for (const operand of eachInstructionOperand(instr)) {
           if (

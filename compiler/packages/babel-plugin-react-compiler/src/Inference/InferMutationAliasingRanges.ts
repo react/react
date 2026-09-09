@@ -160,6 +160,34 @@ export function inferMutationAliasingRanges(
             state.create(effect.into, {kind: 'Object'});
           }
           state.assign(index++, effect.from, effect.into);
+          /**
+           * For StoreLocal/StoreContext instructions, extend the source (FROM)
+           * identifier's mutable range to include the store instruction. This
+           * ensures the source value is recognized as live at the store point,
+           * so that the stored value and the source are correctly unified into
+           * the same reactive scope.
+           *
+           * For example, `const intermediate = cheapFunction()` compiles to
+           * `StoreLocal intermediate = $callResult`, so we extend
+           * `$callResult.mutableRange.end` to cover instruction [storeId+1].
+           * Without this, the `isMutable` check in findDisjointMutableValues
+           * would fail and `$callResult` and `intermediate` would not be unioned
+           * into the same scope.
+           *
+           * We intentionally do NOT apply this to LoadLocal/LoadContext: extending
+           * the source's range through a load would pull the load instruction
+           * inside the scope body, causing the LoadLocal temporaries to appear as
+           * scope declarations and triggering unnecessary scope merges in
+           * MergeReactiveScopesThatInvalidateTogether.
+           */
+          if (
+            instr.value.kind === 'StoreLocal' ||
+            instr.value.kind === 'StoreContext'
+          ) {
+            effect.from.identifier.mutableRange.end = makeInstructionId(
+              Math.max(effect.from.identifier.mutableRange.end, instr.id + 1),
+            );
+          }
         } else if (effect.kind === 'Alias') {
           state.assign(index++, effect.from, effect.into);
         } else if (effect.kind === 'MaybeAlias') {
@@ -794,6 +822,21 @@ class AliasingState {
          */
         for (const [alias, when] of node.aliases) {
           if (when >= index) {
+            continue;
+          }
+          /**
+           * Don't propagate conditional mutations backward through aliases when
+           * performing real range extension (end != null). If `y = x` (Assign)
+           * and `fn(y)` conditionally mutates `y`, x's mutable range should not
+           * extend to cover the call site — in React's render model, values are
+           * not mutated during render, so this conservative extension would only
+           * inflate scope ranges and cause unnecessary scope merges.
+           *
+           * For simulation (end == null, used in Part 3 to detect function
+           * aliasing relationships), we still propagate so that aliasing between
+           * params/context-vars/return is correctly detected.
+           */
+          if (end != null && kind === MutationKind.Conditional) {
             continue;
           }
           queue.push({
