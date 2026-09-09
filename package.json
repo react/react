@@ -80,7 +80,7 @@
     "flow-typed": "^4.1.1",
     "glob": "^7.1.6",
     "glob-stream": "^6.1.0",
-    "google-closure-compiler": "^20230206.0.0",
+    "google-closure-compiler": "^20240317.0.0",
     "gzip-size": "^5.1.1",
     "hermes-eslint": "^0.36.1",
     "hermes-parser": "^0.36.1",
