@@ -119,18 +119,24 @@ export function assertConsoleLogsCleared() {
     }
 
     if (warnings.length > 0) {
+      const stringifiedWarnings = warnings.map(log => {
+        return util.format(...normalizeComponentStack(log));
+      });
       message += `\nconsole.warn was called without assertConsoleWarnDev:\n${diff(
         '',
-        warnings.map(normalizeComponentStack).join('\n'),
+        stringifiedWarnings.join('\n'),
         {
           omitAnnotationLines: true,
         },
       )}\n`;
     }
     if (errors.length > 0) {
+      const stringifiedErrors = errors.map(log => {
+        return util.format(...normalizeComponentStack(log));
+      });
       message += `\nconsole.error was called without assertConsoleErrorDev:\n${diff(
         '',
-        errors.map(normalizeComponentStack).join('\n'),
+        stringifiedErrors.join('\n'),
         {
           omitAnnotationLines: true,
         },
