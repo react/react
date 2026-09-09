@@ -231,6 +231,14 @@ function evaluateInstruction(
       return value;
     }
     case 'LoadGlobal': {
+      /*
+       * Module-local bindings may be reassigned by code outside the current
+       * function's reactive graph. A load from one of those bindings is a
+       * snapshot, not a constant reference that can replace later local reads.
+       */
+      if (value.binding.kind === 'ModuleLocal') {
+        return null;
+      }
       return value;
     }
     case 'ComputedLoad': {
