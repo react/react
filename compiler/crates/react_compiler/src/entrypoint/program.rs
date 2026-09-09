@@ -2218,6 +2218,8 @@ fn expr_references_identifier_at_top_level(expr: &Expression, name: &str) -> boo
         }
         Expression::MemberExpression(member) => {
             expr_references_identifier_at_top_level(&member.object, name)
+                || (member.computed
+                    && expr_references_identifier_at_top_level(&member.property, name))
         }
         Expression::ConditionalExpression(cond) => {
             expr_references_identifier_at_top_level(&cond.test, name)
