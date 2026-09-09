@@ -98,6 +98,12 @@ pub struct EnvironmentConfig {
     #[serde(default)]
     pub enable_reset_cache_on_source_file_changes: Option<bool>,
 
+    /// If true, skips the DropManualMemoization pass entirely, leaving existing
+    /// useMemo/useCallback calls in place while the compiler layers
+    /// auto-memoization around them.
+    #[serde(default)]
+    pub enable_preserve_existing_manual_use_memo: bool,
+
     #[serde(default = "default_true")]
     pub enable_preserve_existing_memoization_guarantees: bool,
     #[serde(default = "default_true")]
@@ -189,6 +195,7 @@ impl Default for EnvironmentConfig {
             custom_hooks: FxHashMap::default(),
             enable_reset_cache_on_source_file_changes: None,
             module_type_provider: None,
+            enable_preserve_existing_manual_use_memo: false,
             enable_preserve_existing_memoization_guarantees: true,
             validate_preserve_existing_memoization_guarantees: true,
             validate_exhaustive_memoization_dependencies: true,
