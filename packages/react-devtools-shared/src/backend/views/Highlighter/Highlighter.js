@@ -10,14 +10,13 @@
 import type Agent from 'react-devtools-shared/src/backend/agent';
 import type {HostInstance} from '../../types';
 
-import {isReactNativeEnvironment} from 'react-devtools-shared/src/backend/utils';
+import {isReactNativeEnvironment} from '../../utils';
 
-import Overlay from './Overlay';
+import {drawHighlighter as draw, destroy} from '../canvas';
 
 const SHOW_DURATION = 2000;
 
 let timeoutID: TimeoutID | null = null;
-let overlay: Overlay | null = null;
 
 function hideOverlayNative(agent: Agent): void {
   agent.emit('hideNativeHighlight');
@@ -26,10 +25,7 @@ function hideOverlayNative(agent: Agent): void {
 function hideOverlayWeb(): void {
   timeoutID = null;
 
-  if (overlay !== null) {
-    overlay.remove();
-    overlay = null;
-  }
+  destroy();
 }
 
 export function hideOverlay(agent: Agent): void {
@@ -55,11 +51,7 @@ function showOverlayWeb(
     clearTimeout(timeoutID);
   }
 
-  if (overlay === null) {
-    overlay = new Overlay(agent);
-  }
-
-  overlay.inspect(elements, componentName);
+  draw(elements, componentName);
 
   if (hideAfterTimeout) {
     timeoutID = setTimeout(() => hideOverlay(agent), SHOW_DURATION);
