@@ -75,6 +75,18 @@ const tests: CompilerTestCases = {
         };
       `,
     },
+    {
+      name: '[Heuristic] Skips lowercase variable initialized with call expression wrapping a function',
+      filename: 'utils.ts',
+      // Lowercase name means the heuristic skips this file entirely,
+      // even though the init is a call expression wrapping a function.
+      code: normalizeIndent`
+        const helper = someWrapper(function(obj) {
+          obj.key = 'value';
+          return obj;
+        });
+      `,
+    },
   ],
   invalid: [
     {
@@ -185,6 +197,87 @@ const tests: CompilerTestCases = {
           a.key = 'value';
           return <div />;
         }
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    // ===========================================
+    // Tests for HOC-wrapped components (memo, forwardRef, etc.)
+    // The heuristic must unwrap one level of CallExpression to detect these.
+    // Regression tests for: const Comp = memo(function Comp() {...}) being
+    // silently skipped while an equivalent plain function declaration was compiled.
+    // ===========================================
+    {
+      name: '[Heuristic] Compiles memo-wrapped named function expression - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const MyComponent = memo(function MyComponent({a}) {
+          a.key = 'value';
+          return <div />;
+        });
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles memo-wrapped arrow function - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const MyComponent = memo(({a}) => {
+          a.key = 'value';
+          return <div />;
+        });
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles React.memo-wrapped function expression - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const MyComponent = React.memo(function MyComponent({a}) {
+          a.key = 'value';
+          return <div />;
+        });
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles forwardRef-wrapped function expression - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        const MyComponent = forwardRef(function MyComponent({a}, ref) {
+          a.key = 'value';
+          return <div ref={ref} />;
+        });
+      `,
+      errors: [
+        {
+          message: /Modifying component props/,
+        },
+      ],
+    },
+    {
+      name: '[Heuristic] Compiles exported memo-wrapped component - detects prop mutation',
+      filename: 'component.tsx',
+      code: normalizeIndent`
+        export const MyComponent = memo(function MyComponent({a}) {
+          a.key = 'value';
+          return <div />;
+        });
       `,
       errors: [
         {
