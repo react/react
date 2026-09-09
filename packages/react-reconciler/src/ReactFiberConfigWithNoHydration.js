@@ -23,6 +23,7 @@ export type ActivityInstance = mixed;
 export type SuspenseInstance = mixed;
 export const supportsHydration = false;
 export const isSuspenseInstancePending = shim;
+export const isSuspenseInstanceQueued = shim;
 export const isSuspenseInstanceFallback = shim;
 export const getSuspenseInstanceFallbackErrorDetails = shim;
 export const registerSuspenseInstanceRetry = shim;
