@@ -3846,9 +3846,10 @@ function bailoutOnAlreadyFinishedWork(
     // TODO: Once we add back resuming, we should check if the children are
     // a work-in-progress set. If so, we need to transfer their effects.
 
-    if (current !== null) {
+    if (current !== null && workInProgress.child !== null) {
       // Before bailing out, check if there are any context changes in
-      // the children.
+      // the children. If there are no children there's nothing to propagate
+      // to, so we can skip the walk up the return path entirely.
       lazilyPropagateParentContextChanges(current, workInProgress, renderLanes);
       if (!includesSomeLane(renderLanes, workInProgress.childLanes)) {
         return null;

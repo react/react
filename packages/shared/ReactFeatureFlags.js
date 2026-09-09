@@ -25,6 +25,11 @@
 // Enables the browser() API exported from react-dom.
 export const enableBrowserAPI: boolean = true;
 
+// Memoizes the upward provider walk done by lazy context propagation when a
+// fiber bails out, per render attempt, so wide bailing subtrees don't repeat
+// it. Off by default while it rolls out.
+export const enableMemoizedContextPropagation: boolean = false;
+
 // -----------------------------------------------------------------------------
 // Land or remove (moderate effort)
 //

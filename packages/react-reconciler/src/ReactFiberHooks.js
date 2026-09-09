@@ -641,16 +641,26 @@ function finishRenderingHooks<Props, SecondArg>(
   if (__DEV__) {
     workInProgress._debugHookTypes = hookTypesDev;
     // Stash the thenable state for use by DevTools.
-    if (workInProgress.dependencies === null) {
+    const dependencies = workInProgress.dependencies;
+    if (dependencies === null) {
       if (thenableState !== null) {
         workInProgress.dependencies = {
-          lanes: NoLanes,
           firstContext: null,
           _debugThenableState: thenableState,
         };
       }
+    } else if (current !== null && dependencies === current.dependencies) {
+      // The dependencies object is still shared with the current fiber (this
+      // fiber rendered hooks without going through prepareToReadContext, e.g.
+      // a stateful host component). Don't mutate the current tree.
+      if (dependencies._debugThenableState !== thenableState) {
+        workInProgress.dependencies = {
+          firstContext: dependencies.firstContext,
+          _debugThenableState: thenableState,
+        };
+      }
     } else {
-      workInProgress.dependencies._debugThenableState = thenableState;
+      dependencies._debugThenableState = thenableState;
     }
     checkIfUseWasUsedBefore(workInProgress, thenableState);
   }
