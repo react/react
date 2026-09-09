@@ -11,8 +11,6 @@
 const fs = require('fs');
 const path = require('path');
 const {execSync} = require('child_process');
-const yargs = require('yargs/yargs');
-const {hideBin} = require('yargs/helpers');
 
 // Constants
 const COMPILER_ROOT = path.resolve(__dirname, '..');
@@ -30,6 +28,9 @@ const FIXTURE_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx'];
  * Parse command line arguments
  */
 function parseArgs() {
+  const yargs = require('yargs/yargs');
+  const {hideBin} = require('yargs/helpers');
+
   const argv = yargs(hideBin(process.argv))
     .usage('Usage: $0 <flag-name>')
     .command('$0 <flag-name>', 'Enable a feature flag by default', yargs => {
@@ -264,42 +265,56 @@ function verifyAllTestsPass() {
 /**
  * Main function
  */
-async function main() {
-  const flagName = parseArgs();
+async function main(options = {}) {
+  const flagName =
+    options.flagName != null
+      ? options.flagName
+      : (options.parseArgs || parseArgs)();
+  const enableFlagInEnvironmentImpl =
+    options.enableFlagInEnvironment || enableFlagInEnvironment;
+  const runTestsImpl = options.runTests || runTests;
+  const parseFailingTestsImpl = options.parseFailingTests || parseFailingTests;
+  const findFixtureFileImpl = options.findFixtureFile || findFixtureFile;
+  const addPragmaToFixtureImpl =
+    options.addPragmaToFixture || addPragmaToFixture;
+  const updateSnapshotsImpl = options.updateSnapshots || updateSnapshots;
+  const verifyAllTestsPassImpl =
+    options.verifyAllTestsPass || verifyAllTestsPass;
+  const exit = options.exit || process.exit;
 
   console.log(`\nEnabling flag: '${flagName}'`);
 
   try {
     // Step 1: Enable flag in Environment.ts
-    enableFlagInEnvironment(flagName);
+    enableFlagInEnvironmentImpl(flagName);
 
     // Step 2: Run tests to find failures
-    const {output} = runTests();
-    const failingTests = parseFailingTests(output);
+    const {output} = runTestsImpl();
+    const failingTests = parseFailingTestsImpl(output);
 
     console.log(`\nFound ${failingTests.length} failing tests`);
 
     if (failingTests.length === 0) {
       console.log('No failing tests! Feature flag enabled successfully.');
-      process.exit(0);
+      return exit(0);
     }
 
     // Step 3: Add pragma to each failing fixture
     console.log(`\nAdding '@${flagName}:false' pragma to failing fixtures...`);
 
     const notFound = [];
-    let notFoundCount = 0;
+    let updatedCount = 0;
 
     for (const testName of failingTests) {
-      const fixturePath = findFixtureFile(testName);
+      const fixturePath = findFixtureFileImpl(testName);
 
       if (!fixturePath) {
         console.warn(`Could not find fixture file for: ${testName}`);
-        notFound.push(fixturePath);
+        notFound.push(testName);
         continue;
       }
 
-      const updated = addPragmaToFixture(fixturePath, flagName);
+      const updated = addPragmaToFixtureImpl(fixturePath, flagName);
       if (updated) {
         updatedCount++;
         console.log(`  Updated: ${testName}`);
@@ -307,26 +322,26 @@ async function main() {
     }
 
     console.log(
-      `\nSummary: Updated ${updatedCount} fixtures, ${notFoundCount} not found`
+      `\nSummary: Updated ${updatedCount} fixtures, ${notFound.length} not found`
     );
 
-    if (notFoundCount.length !== 0) {
+    if (notFound.length !== 0) {
       console.error(
         '\nFailed to update snapshots, could not find:\n' + notFound.join('\n')
       );
-      process.exit(1);
+      return exit(1);
     }
 
     // Step 4: Update snapshots
-    if (!updateSnapshots()) {
+    if (!updateSnapshotsImpl()) {
       console.error('\nFailed to update snapshots');
-      process.exit(1);
+      return exit(1);
     }
 
     // Step 5: Verify all tests pass
-    if (!verifyAllTestsPass()) {
+    if (!verifyAllTestsPassImpl()) {
       console.error('\nVerification failed: Some tests are still failing');
-      process.exit(1);
+      return exit(1);
     }
 
     console.log('\nSuccess! Feature flag enabled and all tests passing.');
@@ -335,13 +350,26 @@ async function main() {
     console.log(`  - Updated ${updatedCount} fixture files with pragma`);
     console.log(`  - All tests passing`);
 
-    process.exit(0);
+    return exit(0);
   } catch (error) {
     console.error('\nFatal error:', error.message);
     console.error(error.stack);
-    process.exit(1);
+    return exit(1);
   }
 }
 
 // Run the script
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  addPragmaToFixture,
+  enableFlagInEnvironment,
+  findFixtureFile,
+  main,
+  parseFailingTests,
+  runTests,
+  updateSnapshots,
+  verifyAllTestsPass,
+};
