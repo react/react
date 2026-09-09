@@ -26,6 +26,12 @@ import {HostText} from 'react-reconciler/src/ReactWorkTags';
 import {
   getFragmentParentInstanceOrContainerFiber,
   traverseFragmentInstancesAndTextInstances,
+  fiberIsPortaledIntoHost,
+  getFragmentPortalContainerInfo,
+  isFiberContainedByFragment,
+  isFragmentContainedByFiber,
+  isFiberPreceding,
+  isFiberFollowing,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
 
 // Modules provided by RN:
@@ -36,6 +42,7 @@ import {
   createPublicTextInstance,
   createAttributePayload,
   diffAttributePayloads,
+  getInternalInstanceHandleFromPublicInstance,
   type PublicInstance as ReactNativePublicInstance,
   type PublicTextInstance,
   type PublicRootInstance,
@@ -764,8 +771,22 @@ FragmentInstance.prototype.compareDocumentPosition = function (
     collectChildren,
     children,
   );
+
+  // If the fragment has been portaled into another host instance, position
+  // against the portal container rather than the React host parent.
+  let parentHostInstance = getPublicInstanceFromHostFiber(parentHostFiber);
+  if (fiberIsPortaledIntoHost(this._fragmentFiber)) {
+    const portalContainer = getFragmentPortalContainerInfo(
+      this._fragmentFiber,
+    );
+    if (portalContainer != null && portalContainer.publicInstance != null) {
+      // $FlowFixMe[incompatible-type] Container's publicInstance is typed as
+      // PublicRootInstance, but it's used the same way as PublicInstance.
+      parentHostInstance = portalContainer.publicInstance;
+    }
+  }
+
   if (children.length === 0) {
-    const parentHostInstance = getPublicInstanceFromHostFiber(parentHostFiber);
     return compareDocumentPositionForEmptyFragment<PublicInstance>(
       this._fragmentFiber,
       parentHostInstance,
@@ -779,6 +800,19 @@ FragmentInstance.prototype.compareDocumentPosition = function (
     children[children.length - 1],
   );
 
+  // Check if first and last node are actually in the expected position
+  // before relying on them as source of truth for other contained nodes.
+  // $FlowFixMe[incompatible-use] Fabric PublicInstance is opaque
+  // $FlowFixMe[prop-missing]
+  const firstNodeIsContained =
+    parentHostInstance.compareDocumentPosition(firstInstance) &
+    Node.DOCUMENT_POSITION_CONTAINED_BY;
+  // $FlowFixMe[incompatible-use] Fabric PublicInstance is opaque
+  // $FlowFixMe[prop-missing]
+  const lastNodeIsContained =
+    parentHostInstance.compareDocumentPosition(lastInstance) &
+    Node.DOCUMENT_POSITION_CONTAINED_BY;
+
   // $FlowFixMe[incompatible-use] Fabric PublicInstance is opaque
   // $FlowFixMe[prop-missing]
   const firstResult = firstInstance.compareDocumentPosition(otherNode);
@@ -787,13 +821,20 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   const lastResult = lastInstance.compareDocumentPosition(otherNode);
 
   const otherNodeIsFirstOrLastChild =
-    firstInstance === otherNode || lastInstance === otherNode;
+    (firstNodeIsContained && firstInstance === otherNode) ||
+    (lastNodeIsContained && lastInstance === otherNode);
+  const otherNodeIsFirstOrLastChildDisconnected =
+    (!firstNodeIsContained && firstInstance === otherNode) ||
+    (!lastNodeIsContained && lastInstance === otherNode);
   const otherNodeIsWithinFirstOrLastChild =
     firstResult & Node.DOCUMENT_POSITION_CONTAINED_BY ||
     lastResult & Node.DOCUMENT_POSITION_CONTAINED_BY;
   const otherNodeIsBetweenFirstAndLastChildren =
+    firstNodeIsContained &&
+    lastNodeIsContained &&
     firstResult & Node.DOCUMENT_POSITION_FOLLOWING &&
     lastResult & Node.DOCUMENT_POSITION_PRECEDING;
+
   let result;
   if (
     otherNodeIsFirstOrLastChild ||
@@ -801,12 +842,78 @@ FragmentInstance.prototype.compareDocumentPosition = function (
     otherNodeIsBetweenFirstAndLastChildren
   ) {
     result = Node.DOCUMENT_POSITION_CONTAINED_BY;
+  } else if (otherNodeIsFirstOrLastChildDisconnected) {
+    // otherNode has been portaled into another container.
+    result = Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
   } else {
     result = firstResult;
   }
 
-  return result;
+  if (
+    result & Node.DOCUMENT_POSITION_DISCONNECTED ||
+    result & Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC
+  ) {
+    return result;
+  }
+
+  // Now that we have the result from the native API, double check it
+  // matches the state of the React tree. If it doesn't, we have a case of
+  // portaled or otherwise injected instances and we return
+  // DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC.
+  const documentPositionMatchesFiberPosition =
+    validateDocumentPositionWithFiberTree(
+      result,
+      this._fragmentFiber,
+      children[0],
+      children[children.length - 1],
+      otherNode,
+    );
+  if (documentPositionMatchesFiberPosition) {
+    return result;
+  }
+  return Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
 };
+
+function validateDocumentPositionWithFiberTree(
+  documentPosition: number,
+  fragmentFiber: Fiber,
+  precedingBoundaryFiber: Fiber,
+  followingBoundaryFiber: Fiber,
+  otherNode: PublicInstance,
+): boolean {
+  const otherFiber: Fiber | null =
+    // $FlowFixMe[incompatible-type] internal instance handle is the fiber.
+    getInternalInstanceHandleFromPublicInstance(otherNode);
+  if (documentPosition & Node.DOCUMENT_POSITION_CONTAINED_BY) {
+    return (
+      !!otherFiber && isFiberContainedByFragment(otherFiber, fragmentFiber)
+    );
+  }
+  if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
+    if (otherFiber === null) {
+      // otherNode isn't a React-managed instance (e.g. a foreign native
+      // view), so we can't validate it against the fiber tree.
+      return false;
+    }
+    return isFragmentContainedByFiber(fragmentFiber, otherFiber);
+  }
+  if (documentPosition & Node.DOCUMENT_POSITION_PRECEDING) {
+    return (
+      !!otherFiber &&
+      (otherFiber === precedingBoundaryFiber ||
+        isFiberPreceding(precedingBoundaryFiber, otherFiber))
+    );
+  }
+  if (documentPosition & Node.DOCUMENT_POSITION_FOLLOWING) {
+    return (
+      !!otherFiber &&
+      (otherFiber === followingBoundaryFiber ||
+        isFiberFollowing(followingBoundaryFiber, otherFiber))
+    );
+  }
+
+  return false;
+}
 
 function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
   collection.push(child);

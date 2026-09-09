@@ -22,6 +22,100 @@ function dumpSubtree(info, indent) {
   return out;
 }
 
+// document.compareDocumentPosition() bits, replicated here because this file
+// runs under `@jest-environment node`, which has no DOM `Node` global.
+const DOCUMENT_POSITION_DISCONNECTED = 1;
+const DOCUMENT_POSITION_PRECEDING = 2;
+const DOCUMENT_POSITION_FOLLOWING = 4;
+const DOCUMENT_POSITION_CONTAINS = 8;
+const DOCUMENT_POSITION_CONTAINED_BY = 16;
+const DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
+
+// Fabric persists/clones nodes on nearly every commit, so a node object's
+// identity (and any parent pointer we'd cache on it) goes stale almost
+// immediately. Instead, walk the *live* `roots` map fresh on every query, so
+// this always reflects the currently committed tree.
+function computeDocumentOrder() {
+  const positions = new Map();
+  let order = 0;
+  function visit(node, ancestorTags, rootTag) {
+    positions.set(node.reactTag, {ancestorTags, order: order++, rootTag});
+    const childAncestorTags = ancestorTags.concat(node.reactTag);
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const child of node.children) {
+      visit(child, childAncestorTags, rootTag);
+    }
+  }
+  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+  for (const [rootTag, childSet] of roots) {
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const child of childSet) {
+      visit(child, [], rootTag);
+    }
+  }
+  return positions;
+}
+
+// Test-only stand-in for the native compareDocumentPosition method that a
+// real Fabric PublicInstance exposes. Not a claim about the real native
+// module's shape or naming.
+function compareDocumentPositionForJestTestsOnly(reactTagA, reactTagB) {
+  if (reactTagA === reactTagB) {
+    return 0;
+  }
+  const positions = computeDocumentOrder();
+  const a = positions.get(reactTagA);
+  const b = positions.get(reactTagB);
+  if (a === undefined || b === undefined || a.rootTag !== b.rootTag) {
+    return (
+      DOCUMENT_POSITION_DISCONNECTED |
+      DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC |
+      (reactTagA < reactTagB
+        ? DOCUMENT_POSITION_FOLLOWING
+        : DOCUMENT_POSITION_PRECEDING)
+    );
+  }
+  if (b.ancestorTags.includes(reactTagA)) {
+    return DOCUMENT_POSITION_CONTAINED_BY | DOCUMENT_POSITION_FOLLOWING;
+  }
+  if (a.ancestorTags.includes(reactTagB)) {
+    return DOCUMENT_POSITION_CONTAINS | DOCUMENT_POSITION_PRECEDING;
+  }
+  return a.order < b.order
+    ? DOCUMENT_POSITION_FOLLOWING
+    : DOCUMENT_POSITION_PRECEDING;
+}
+
+// Test-only lookup so tests can splice a foreign (non-React-tracked) node
+// directly into a shadow node's children, to simulate an injected native
+// view. Not a real native API.
+function findNodeForJestTestsOnly(reactTag) {
+  function search(node) {
+    if (node.reactTag === reactTag) {
+      return node;
+    }
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const child of node.children) {
+      const found = search(child);
+      if (found != null) {
+        return found;
+      }
+    }
+    return null;
+  }
+  // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+  for (const childSet of roots.values()) {
+    // eslint-disable-next-line no-for-of-loops/no-for-of-loops
+    for (const child of childSet) {
+      const found = search(child);
+      if (found != null) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
 const RCTFabricUIManager = {
   __dumpChildSetForJestTestsOnly: function (childSet) {
     const result = [];
@@ -191,6 +285,11 @@ const RCTFabricUIManager = {
     },
   ),
   setIsJSResponder: jest.fn(),
+
+  compareDocumentPositionForJestTestsOnly: jest.fn(
+    compareDocumentPositionForJestTestsOnly,
+  ),
+  findNodeForJestTestsOnly: jest.fn(findNodeForJestTestsOnly),
 };
 
 global.nativeFabricUIManager = RCTFabricUIManager;

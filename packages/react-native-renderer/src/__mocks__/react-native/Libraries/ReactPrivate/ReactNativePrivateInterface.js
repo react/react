@@ -26,6 +26,9 @@ module.exports = {
   get getNodeFromPublicInstance() {
     return require('./getNodeFromPublicInstance').default;
   },
+  get getInternalInstanceHandleFromPublicInstance() {
+    return require('./getInternalInstanceHandleFromPublicInstance').default;
+  },
   get createPublicInstance() {
     return require('./createPublicInstance').default;
   },
