@@ -455,6 +455,25 @@ describe('ReactDOMFizzForm', () => {
     expect(container.textContent).toBe('Pending: false');
   });
 
+  it('useFormStatus in the same component as a form is not pending during server render', async () => {
+    function App() {
+      const {pending} = useFormStatus();
+      return (
+        <form action={() => {}}>
+          <span>{pending ? 'Pending' : 'Not pending'}</span>
+        </form>
+      );
+    }
+
+    const stream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<App />),
+    );
+    await readIntoContainer(stream);
+    // The container also holds the form action replay script that Fizz
+    // injects for forms with actions, so read only the span's text.
+    expect(container.querySelector('span').textContent).toBe('Not pending');
+  });
+
   it('should replay a form action after hydration', async () => {
     let foo;
     function action(formData) {
