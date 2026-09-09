@@ -197,6 +197,12 @@ export function formatConsoleArgumentsToSingleString(
 
       // $FlowFixMe[incompatible-type]
       formatted = formatted.replace(REGEXP, (match, escaped, ptn, flag) => {
+        if (escaped) {
+          return match;
+        }
+        if (args.length === 0) {
+          return match;
+        }
         let arg = args.shift();
         switch (flag) {
           case 's':
@@ -211,11 +217,7 @@ export function formatConsoleArgumentsToSingleString(
             arg = parseFloat(arg).toString();
             break;
         }
-        if (!escaped) {
-          return arg;
-        }
-        args.unshift(arg);
-        return match;
+        return arg;
       });
     }
   }
