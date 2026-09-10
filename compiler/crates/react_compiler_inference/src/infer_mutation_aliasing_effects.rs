@@ -2248,6 +2248,14 @@ fn compute_signature_for_instruction(
                 signature: sig,
                 loc: *loc,
             });
+            // Zero-arg `new Date()` reads the current clock. Matches TS
+            // InferMutationAliasingEffects: the Date global is an Object type,
+            // so NewExpression has no impure function signature.
+            if env.config.validate_no_impure_functions_in_render
+                && is_zero_argument_date_constructor(env, callee.identifier, args)
+            {
+                effects.push(impure_new_date_effect(callee, *loc));
+            }
         }
         InstructionValue::CallExpression { callee, args, loc } => {
             let sig = get_function_call_signature(env, callee.identifier)
@@ -3620,6 +3628,38 @@ fn is_builtin_collection_type(ty: &Type) -> bool {
     matches!(ty, Type::Object { shape_id: Some(id) }
         if id == BUILT_IN_ARRAY_ID || id == BUILT_IN_SET_ID || id == BUILT_IN_MAP_ID
     )
+}
+
+fn is_zero_argument_date_constructor(
+    env: &Environment,
+    callee_id: IdentifierId,
+    args: &[PlaceOrSpread],
+) -> bool {
+    if !args.is_empty() {
+        return false;
+    }
+    let ty = &env.types[env.identifiers[callee_id.0 as usize].type_.0 as usize];
+    matches!(ty, Type::Object { shape_id: Some(id) } if id == "Date")
+}
+
+fn impure_new_date_effect(place: &Place, loc: Option<SourceLocation>) -> AliasingEffect {
+    let mut diagnostic = CompilerDiagnostic::new(
+        ErrorCategory::Purity,
+        "Cannot call impure function during render",
+        Some(
+            "`new Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent)"
+                .to_string(),
+        ),
+    );
+    diagnostic.details.push(CompilerDiagnosticDetail::Error {
+        loc,
+        message: Some("Cannot call impure function".to_string()),
+        identifier_name: None,
+    });
+    AliasingEffect::Impure {
+        place: place.clone(),
+        error: diagnostic,
+    }
 }
 
 fn get_function_call_signature(
