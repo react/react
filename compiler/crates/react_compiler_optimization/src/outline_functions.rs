@@ -15,7 +15,7 @@ use rustc_hash::FxHashSet;
 
 use react_compiler_hir::environment::Environment;
 use react_compiler_hir::{
-    FunctionId, HirFunction, IdentifierId, InstructionValue, NonLocalBinding,
+    FunctionId, HirFunction, IdentifierId, InstructionValue, NonLocalBinding, OPT_OUT_DIRECTIVES,
 };
 use react_compiler_ssa::enter_ssa::placeholder_function;
 
@@ -50,6 +50,14 @@ pub fn outline_functions(
                 InstructionValue::FunctionExpression { lowered_func, .. } => {
                     let inner_func = &env.functions[lowered_func.func.0 as usize];
 
+                    if inner_func
+                        .directives
+                        .iter()
+                        .any(|d| OPT_OUT_DIRECTIVES.contains(&d.as_str()))
+                    {
+                        continue;
+                    }
+
                     // Check outlining conditions (TS only checks func.id === null, not name):
                     // 1. No captured context variables
                     // 2. Anonymous (no explicit id on the inner function)
@@ -67,6 +75,14 @@ pub fn outline_functions(
                     }
                 }
                 InstructionValue::ObjectMethod { lowered_func, .. } => {
+                    let inner_func = &env.functions[lowered_func.func.0 as usize];
+                    if inner_func
+                        .directives
+                        .iter()
+                        .any(|d| OPT_OUT_DIRECTIVES.contains(&d.as_str()))
+                    {
+                        continue;
+                    }
                     // Recurse into object methods (but don't outline them)
                     actions.push(Action::Recurse(lowered_func.func));
                 }

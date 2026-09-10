@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import {OPT_OUT_DIRECTIVES} from '../Entrypoint';
 import {HIRFunction, IdentifierId} from '../HIR';
 
 export function outlineFunctions(
@@ -19,6 +20,13 @@ export function outlineFunctions(
         value.kind === 'FunctionExpression' ||
         value.kind === 'ObjectMethod'
       ) {
+        if (
+          value.loweredFunc.func.directives.some(directive =>
+            OPT_OUT_DIRECTIVES.has(directive),
+          )
+        ) {
+          continue;
+        }
         // Recurse in case there are inner functions which can be outlined
         outlineFunctions(value.loweredFunc.func, fbtOperands);
       }
