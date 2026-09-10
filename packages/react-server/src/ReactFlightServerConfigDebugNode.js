@@ -54,6 +54,11 @@ function resolvePromiseOrAwaitNode(
 
 const emptyStack: ReactStackTrace = [];
 
+// The higher the limit, the slower Error() is when not inspecting with a
+// debugger. V8 defaults to 10, but the ambient limit can be configured by
+// user code.
+const asyncStackTraceLimit = 10;
+
 // Initialize the tracing of async operations.
 // We do this globally since the async work can potentially eagerly
 // start before the first request and once requests start they can interleave.
@@ -104,7 +109,12 @@ export function initAsyncDebugInfo(): void {
               if (request === null) {
                 // We don't collect stacks for awaits that weren't in the scope of a specific render.
               } else {
-                stack = parseStackTracePrivate(new Error(), 5);
+                let error;
+                const previousStackTraceLimit = Error.stackTraceLimit;
+                Error.stackTraceLimit = asyncStackTraceLimit;
+                error = new Error(); // eslint-disable-line prefer-const
+                Error.stackTraceLimit = previousStackTraceLimit;
+                stack = parseStackTracePrivate(error, 5);
                 if (stack !== null && !isAwaitInUserspace(request, stack)) {
                   // If this await was not done directly in user space, then clear the stack. We won't use it
                   // anyway. This lets future awaits on this await know that we still need to get their stacks
@@ -126,11 +136,19 @@ export function initAsyncDebugInfo(): void {
             } as UnresolvedAwaitNode;
           } else {
             const owner = resolveOwner();
+            let stack = null;
+            if (owner !== null) {
+              let error;
+              const previousStackTraceLimit = Error.stackTraceLimit;
+              Error.stackTraceLimit = asyncStackTraceLimit;
+              error = new Error(); // eslint-disable-line prefer-const
+              Error.stackTraceLimit = previousStackTraceLimit;
+              stack = parseStackTracePrivate(error, 5);
+            }
             node = {
               tag: UNRESOLVED_PROMISE_NODE,
               owner: owner,
-              stack:
-                owner === null ? null : parseStackTracePrivate(new Error(), 5),
+              stack: stack,
               start: performance.now(),
               end: -1.1, // Set when we resolve.
               promise: new WeakRef(resource as Promise<any>),
