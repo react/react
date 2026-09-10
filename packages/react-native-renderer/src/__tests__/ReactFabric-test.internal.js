@@ -13,6 +13,7 @@
 let React;
 let ReactFabric;
 let ReactNativePrivateInterface;
+let fabricUIManager;
 let createReactNativeComponentClass;
 let StrictMode;
 let act;
@@ -36,6 +37,7 @@ describe('ReactFabric', () => {
     StrictMode = React.StrictMode;
     ReactFabric = require('react-native-renderer/fabric');
     ReactNativePrivateInterface = require('react-native/react-private-interface');
+    fabricUIManager = ReactNativePrivateInterface.fabricUIManager;
     createReactNativeComponentClass =
       require('react-native/react-private-interface')
         .ReactNativeViewConfigRegistry.register;
@@ -51,9 +53,9 @@ describe('ReactFabric', () => {
     await act(() => {
       ReactFabric.render(<View foo="test" />, 1, null, true);
     });
-    expect(nativeFabricUIManager.createNode).toHaveBeenCalled();
-    expect(nativeFabricUIManager.appendChild).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.completeRoot).toHaveBeenCalled();
+    expect(fabricUIManager.createNode).toHaveBeenCalled();
+    expect(fabricUIManager.appendChild).not.toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).toHaveBeenCalled();
   });
 
   it('should be able to create and update a native component', async () => {
@@ -64,28 +66,24 @@ describe('ReactFabric', () => {
 
     const firstNode = {};
 
-    nativeFabricUIManager.createNode.mockReturnValue(firstNode);
+    fabricUIManager.createNode.mockReturnValue(firstNode);
 
     await act(() => {
       ReactFabric.render(<View foo="foo" />, 11, null, true);
     });
 
-    expect(nativeFabricUIManager.createNode).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.createNode).toHaveBeenCalledTimes(1);
 
     await act(() => {
       ReactFabric.render(<View foo="bar" />, 11, null, true);
     });
 
-    expect(nativeFabricUIManager.createNode).toHaveBeenCalledTimes(1);
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(nativeFabricUIManager.cloneNodeWithNewProps.mock.calls[0][0]).toBe(
+    expect(fabricUIManager.createNode).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.cloneNodeWithNewProps.mock.calls[0][0]).toBe(
       firstNode,
     );
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewProps.mock.calls[0][1],
-    ).toEqual({
+    expect(fabricUIManager.cloneNodeWithNewProps.mock.calls[0][1]).toEqual({
       foo: 'bar',
     });
   });
@@ -99,71 +97,55 @@ describe('ReactFabric', () => {
     await act(() => {
       ReactFabric.render(<Text foo="a">1</Text>, 11, null, true);
     });
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
 
     // If no properties have changed, we shouldn't call cloneNode.
     await act(() => {
       ReactFabric.render(<Text foo="a">1</Text>, 11, null, true);
     });
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
 
     // Only call cloneNode for the changed property (and not for text).
     await act(() => {
       ReactFabric.render(<Text foo="b">1</Text>, 11, null, true);
     });
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(1);
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
 
     // Only call cloneNode for the changed text (and no other properties).
     await act(() => {
       ReactFabric.render(<Text foo="b">2</Text>, 11, null, true);
     });
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(1);
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).toHaveBeenCalledTimes(1);
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
 
     // Call cloneNode for both changed text and properties.
     await act(() => {
       ReactFabric.render(<Text foo="c">3</Text>, 11, null, true);
     });
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(1);
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).toHaveBeenCalledTimes(1);
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).toHaveBeenCalledTimes(1);
   });
 
@@ -183,13 +165,11 @@ describe('ReactFabric', () => {
         true,
       );
     });
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
 
     jest
@@ -206,12 +186,10 @@ describe('ReactFabric', () => {
         true,
       );
     });
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewProps.mock.calls[0][1],
-    ).toEqual({
+    expect(fabricUIManager.cloneNodeWithNewProps.mock.calls[0][1]).toEqual({
       bar: 'b',
     });
-    expect(nativeFabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
+    expect(fabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
  RCTText {"foo":"a","bar":"b"}
    RCTRawText {"text":"1"}`);
 
@@ -232,13 +210,11 @@ describe('ReactFabric', () => {
       ? 2
       : 1;
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps.mock.calls[0][
-        argIndex
-      ],
+      fabricUIManager.cloneNodeWithNewChildrenAndProps.mock.calls[0][argIndex],
     ).toEqual({
       foo: 'b',
     });
-    expect(nativeFabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
+    expect(fabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
  RCTText {"foo":"b","bar":"b"}
    RCTRawText {"text":"2"}`);
   });
@@ -258,41 +234,36 @@ describe('ReactFabric', () => {
     await act(() =>
       ReactFabric.render(<Component foo={true} />, 11, null, true),
     );
-    expect(nativeFabricUIManager.completeRoot).toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).toHaveBeenCalled();
     jest.clearAllMocks();
 
     await act(() =>
       ReactFabric.render(<Component foo={false} />, 11, null, true),
     );
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledWith(
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.cloneNodeWithNewProps).toHaveBeenCalledWith(
       expect.anything(),
       {foo: false},
     );
 
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
-    ).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.cloneNodeWithNewChildren).toHaveBeenCalledTimes(1);
     if (gate(flags => flags.passChildrenWhenCloningPersistedNodes)) {
-      expect(
-        nativeFabricUIManager.cloneNodeWithNewChildren,
-      ).toHaveBeenCalledWith(expect.anything(), [
-        expect.objectContaining({props: {foo: false}}),
-      ]);
-      expect(nativeFabricUIManager.appendChild).not.toHaveBeenCalled();
+      expect(fabricUIManager.cloneNodeWithNewChildren).toHaveBeenCalledWith(
+        expect.anything(),
+        [expect.objectContaining({props: {foo: false}})],
+      );
+      expect(fabricUIManager.appendChild).not.toHaveBeenCalled();
     } else {
-      expect(
-        nativeFabricUIManager.cloneNodeWithNewChildren,
-      ).toHaveBeenCalledWith(expect.anything());
-      expect(nativeFabricUIManager.appendChild).toHaveBeenCalledTimes(1);
+      expect(fabricUIManager.cloneNodeWithNewChildren).toHaveBeenCalledWith(
+        expect.anything(),
+      );
+      expect(fabricUIManager.appendChild).toHaveBeenCalledTimes(1);
     }
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.completeRoot).toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).toHaveBeenCalled();
   });
 
   it('should not clone nodes when layout effects are used', async () => {
@@ -316,7 +287,7 @@ describe('ReactFabric', () => {
         true,
       ),
     );
-    expect(nativeFabricUIManager.completeRoot).toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).toHaveBeenCalled();
     jest.clearAllMocks();
 
     await act(() =>
@@ -329,15 +300,13 @@ describe('ReactFabric', () => {
         true,
       ),
     );
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.completeRoot).not.toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).not.toHaveBeenCalled();
   });
 
   it('should not clone nodes when insertion effects are used', async () => {
@@ -361,7 +330,7 @@ describe('ReactFabric', () => {
         true,
       ),
     );
-    expect(nativeFabricUIManager.completeRoot).toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).toHaveBeenCalled();
     jest.clearAllMocks();
 
     await act(() =>
@@ -374,15 +343,13 @@ describe('ReactFabric', () => {
         true,
       ),
     );
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.completeRoot).not.toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).not.toHaveBeenCalled();
   });
 
   it('should not clone nodes when useImperativeHandle is used', async () => {
@@ -408,7 +375,7 @@ describe('ReactFabric', () => {
         true,
       ),
     );
-    expect(nativeFabricUIManager.completeRoot).toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).toHaveBeenCalled();
     expect(ref.current.greet()).toBe('hello');
     jest.clearAllMocks();
 
@@ -422,15 +389,13 @@ describe('ReactFabric', () => {
         true,
       ),
     );
-    expect(nativeFabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNode).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewChildren).not.toHaveBeenCalled();
+    expect(fabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
     expect(
-      nativeFabricUIManager.cloneNodeWithNewChildren,
+      fabricUIManager.cloneNodeWithNewChildrenAndProps,
     ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.cloneNodeWithNewProps).not.toHaveBeenCalled();
-    expect(
-      nativeFabricUIManager.cloneNodeWithNewChildrenAndProps,
-    ).not.toHaveBeenCalled();
-    expect(nativeFabricUIManager.completeRoot).not.toHaveBeenCalled();
+    expect(fabricUIManager.completeRoot).not.toHaveBeenCalled();
     expect(ref.current.greet()).toBe('hello');
   });
 
@@ -440,7 +405,7 @@ describe('ReactFabric', () => {
       uiViewClassName: 'RCTView',
     }));
 
-    nativeFabricUIManager.dispatchCommand.mockClear();
+    fabricUIManager.dispatchCommand.mockClear();
 
     let viewRef;
     await act(() => {
@@ -456,10 +421,10 @@ describe('ReactFabric', () => {
       );
     });
 
-    expect(nativeFabricUIManager.dispatchCommand).not.toHaveBeenCalled();
+    expect(fabricUIManager.dispatchCommand).not.toHaveBeenCalled();
     ReactFabric.dispatchCommand(viewRef, 'updateCommand', [10, 20]);
-    expect(nativeFabricUIManager.dispatchCommand).toHaveBeenCalledTimes(1);
-    expect(nativeFabricUIManager.dispatchCommand).toHaveBeenCalledWith(
+    expect(fabricUIManager.dispatchCommand).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.dispatchCommand).toHaveBeenCalledWith(
       expect.any(Object),
       'updateCommand',
       [10, 20],
@@ -473,7 +438,7 @@ describe('ReactFabric', () => {
       }
     }
 
-    nativeFabricUIManager.dispatchCommand.mockReset();
+    fabricUIManager.dispatchCommand.mockReset();
 
     let viewRef;
     await act(() => {
@@ -489,11 +454,11 @@ describe('ReactFabric', () => {
       );
     });
 
-    expect(nativeFabricUIManager.dispatchCommand).not.toHaveBeenCalled();
+    expect(fabricUIManager.dispatchCommand).not.toHaveBeenCalled();
     ReactFabric.dispatchCommand(viewRef, 'updateCommand', [10, 20]);
     assertConsoleErrorDev([DISPATCH_COMMAND_REQUIRES_HOST_COMPONENT]);
 
-    expect(nativeFabricUIManager.dispatchCommand).not.toHaveBeenCalled();
+    expect(fabricUIManager.dispatchCommand).not.toHaveBeenCalled();
   });
 
   it('should call sendAccessibilityEvent for native refs', async () => {
@@ -502,7 +467,7 @@ describe('ReactFabric', () => {
       uiViewClassName: 'RCTView',
     }));
 
-    nativeFabricUIManager.sendAccessibilityEvent.mockClear();
+    fabricUIManager.sendAccessibilityEvent.mockClear();
 
     let viewRef;
     await act(() => {
@@ -518,12 +483,10 @@ describe('ReactFabric', () => {
       );
     });
 
-    expect(nativeFabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
+    expect(fabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
     ReactFabric.sendAccessibilityEvent(viewRef, 'focus');
-    expect(nativeFabricUIManager.sendAccessibilityEvent).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(nativeFabricUIManager.sendAccessibilityEvent).toHaveBeenCalledWith(
+    expect(fabricUIManager.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
+    expect(fabricUIManager.sendAccessibilityEvent).toHaveBeenCalledWith(
       expect.any(Object),
       'focus',
     );
@@ -536,7 +499,7 @@ describe('ReactFabric', () => {
       }
     }
 
-    nativeFabricUIManager.sendAccessibilityEvent.mockReset();
+    fabricUIManager.sendAccessibilityEvent.mockReset();
 
     let viewRef;
     await act(() => {
@@ -552,11 +515,11 @@ describe('ReactFabric', () => {
       );
     });
 
-    expect(nativeFabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
+    expect(fabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
     ReactFabric.sendAccessibilityEvent(viewRef, 'eventTypeName');
     assertConsoleErrorDev([SEND_ACCESSIBILITY_EVENT_REQUIRES_HOST_COMPONENT]);
 
-    expect(nativeFabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
+    expect(fabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
   });
 
   it('calls the callback with the correct instance and returns null', async () => {
@@ -637,7 +600,7 @@ describe('ReactFabric', () => {
     await act(() => {
       ReactFabric.render(<Component chars={before} />, 11, null, true);
     });
-    expect(nativeFabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
+    expect(fabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
  RCTView {}
    RCTView {"title":"a"}
    RCTView {"title":"b"}
@@ -663,7 +626,7 @@ describe('ReactFabric', () => {
     await act(() => {
       ReactFabric.render(<Component chars={after} />, 11, null, true);
     });
-    expect(nativeFabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
+    expect(fabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
  RCTView {}
    RCTView {"title":"m"}
    RCTView {"title":"x"}
@@ -724,7 +687,7 @@ describe('ReactFabric', () => {
         true,
       );
     });
-    expect(nativeFabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(
+    expect(fabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(
       `11
  RCTView {}
    RCTView {}
@@ -757,7 +720,7 @@ describe('ReactFabric', () => {
         chars: after,
       });
     });
-    expect(nativeFabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
+    expect(fabricUIManager.__dumpHierarchyForJestTestsOnly()).toBe(`11
  RCTView {}
    RCTView {}
      RCTView {"title":"m"}
@@ -806,10 +769,10 @@ describe('ReactFabric', () => {
     }));
 
     const snapshots = [];
-    nativeFabricUIManager.completeRoot.mockImplementation(
+    fabricUIManager.completeRoot.mockImplementation(
       function (rootTag, newChildSet) {
         snapshots.push(
-          nativeFabricUIManager.__dumpChildSetForJestTestsOnly(newChildSet),
+          fabricUIManager.__dumpChildSetForJestTestsOnly(newChildSet),
         );
       },
     );
@@ -943,15 +906,11 @@ describe('ReactFabric', () => {
       ReactFabric.render(<View onTouchStart={touchStart} />, 11, null, true);
     });
 
-    expect(nativeFabricUIManager.createNode.mock.calls.length).toBe(1);
-    expect(nativeFabricUIManager.registerEventHandler.mock.calls.length).toBe(
-      1,
-    );
+    expect(fabricUIManager.createNode.mock.calls.length).toBe(1);
+    expect(fabricUIManager.registerEventHandler.mock.calls.length).toBe(1);
 
-    const [, , , , instanceHandle] =
-      nativeFabricUIManager.createNode.mock.calls[0];
-    const [dispatchEvent] =
-      nativeFabricUIManager.registerEventHandler.mock.calls[0];
+    const [, , , , instanceHandle] = fabricUIManager.createNode.mock.calls[0];
+    const [dispatchEvent] = fabricUIManager.registerEventHandler.mock.calls[0];
 
     const touchEvent = {
       touches: [],
@@ -1037,14 +996,11 @@ describe('ReactFabric', () => {
         );
       });
 
-      expect(nativeFabricUIManager.createNode.mock.calls.length).toBe(2);
-      expect(nativeFabricUIManager.registerEventHandler.mock.calls.length).toBe(
-        1,
-      );
-      const [, , , , childInstance] =
-        nativeFabricUIManager.createNode.mock.calls[0];
+      expect(fabricUIManager.createNode.mock.calls.length).toBe(2);
+      expect(fabricUIManager.registerEventHandler.mock.calls.length).toBe(1);
+      const [, , , , childInstance] = fabricUIManager.createNode.mock.calls[0];
       const [dispatchEvent] =
-        nativeFabricUIManager.registerEventHandler.mock.calls[0];
+        fabricUIManager.registerEventHandler.mock.calls[0];
 
       dispatchEvent(childInstance, 'topDefaultBubblingEvent', event);
       expect(targetBubble).toHaveBeenCalledTimes(1);
@@ -1092,7 +1048,7 @@ describe('ReactFabric', () => {
 
     function getViewById(id) {
       const [reactTag, , , , instanceHandle] =
-        nativeFabricUIManager.createNode.mock.calls.find(
+        fabricUIManager.createNode.mock.calls.find(
           args => args[3] && args[3].id === id,
         );
 
@@ -1138,8 +1094,7 @@ describe('ReactFabric', () => {
       );
     });
 
-    const [dispatchEvent] =
-      nativeFabricUIManager.registerEventHandler.mock.calls[0];
+    const [dispatchEvent] = fabricUIManager.registerEventHandler.mock.calls[0];
 
     const preexistingEvent = {};
     global.event = preexistingEvent;
@@ -1194,7 +1149,7 @@ describe('ReactFabric', () => {
 
     function getViewById(id) {
       const [reactTag, , , , instanceHandle] =
-        nativeFabricUIManager.createNode.mock.calls.find(
+        fabricUIManager.createNode.mock.calls.find(
           args => args[3] && args[3].id === id,
         );
 
@@ -1241,8 +1196,7 @@ describe('ReactFabric', () => {
       );
     });
 
-    const [dispatchEvent] =
-      nativeFabricUIManager.registerEventHandler.mock.calls[0];
+    const [dispatchEvent] = fabricUIManager.registerEventHandler.mock.calls[0];
 
     dispatchEvent(getViewById('default').instanceHandle, 'topTouchStart', {
       target: getViewById('default').reactTag,
@@ -1511,7 +1465,7 @@ describe('ReactFabric', () => {
       uiViewClassName: 'RCTView',
     }));
 
-    nativeFabricUIManager.sendAccessibilityEvent.mockReset();
+    fabricUIManager.sendAccessibilityEvent.mockReset();
 
     let viewRef;
     await act(() => {
@@ -1540,7 +1494,7 @@ describe('ReactFabric', () => {
         'native component. Use React.forwardRef to get access to the underlying native component',
     ]);
 
-    expect(nativeFabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
+    expect(fabricUIManager.sendAccessibilityEvent).not.toHaveBeenCalled();
   });
 
   it('getNodeFromInternalInstanceHandle should return the correct shadow node', async () => {
@@ -1553,12 +1507,10 @@ describe('ReactFabric', () => {
       ReactFabric.render(<View foo="test" />, 1, null, true);
     });
 
-    const internalInstanceHandle =
-      nativeFabricUIManager.createNode.mock.calls[0][4];
+    const internalInstanceHandle = fabricUIManager.createNode.mock.calls[0][4];
     expect(internalInstanceHandle).toEqual(expect.any(Object));
 
-    const expectedShadowNode =
-      nativeFabricUIManager.createNode.mock.results[0].value;
+    const expectedShadowNode = fabricUIManager.createNode.mock.results[0].value;
     expect(expectedShadowNode).toEqual(expect.any(Object));
 
     const node = ReactFabric.getNodeFromInternalInstanceHandle(
@@ -1588,8 +1540,7 @@ describe('ReactFabric', () => {
       );
     });
 
-    const internalInstanceHandle =
-      nativeFabricUIManager.createNode.mock.calls[0][4];
+    const internalInstanceHandle = fabricUIManager.createNode.mock.calls[0][4];
     expect(internalInstanceHandle).toEqual(expect.any(Object));
 
     const publicInstance =
@@ -1622,8 +1573,7 @@ describe('ReactFabric', () => {
     });
 
     // Access the internal instance handle used to create the text node.
-    const internalInstanceHandle =
-      nativeFabricUIManager.createNode.mock.calls[0][4];
+    const internalInstanceHandle = fabricUIManager.createNode.mock.calls[0][4];
     expect(internalInstanceHandle).toEqual(expect.any(Object));
 
     // Text public instances should be created lazily.
