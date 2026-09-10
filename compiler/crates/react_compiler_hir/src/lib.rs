@@ -1542,6 +1542,11 @@ pub fn is_set_state_type(ty: &Type) -> bool {
     matches!(ty, Type::Function { shape_id: Some(id), .. } if id == object_shape::BUILT_IN_SET_STATE_ID)
 }
 
+/// Returns true if the type is a useReducer dispatch function (BuiltInDispatch).
+pub fn is_dispatcher_type(ty: &Type) -> bool {
+    matches!(ty, Type::Function { shape_id: Some(id), .. } if id == object_shape::BUILT_IN_DISPATCH_ID)
+}
+
 /// Returns true if the type is a useEffect hook.
 pub fn is_use_effect_hook_type(ty: &Type) -> bool {
     matches!(ty, Type::Function { shape_id: Some(id), .. } if id == object_shape::BUILT_IN_USE_EFFECT_HOOK_ID)
