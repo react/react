@@ -548,10 +548,7 @@ const rule = {
             });
           }
 
-          if (
-            dependencyNode.parent?.type === 'TSTypeQuery' ||
-            dependencyNode.parent?.type === 'TSTypeReference'
-          ) {
+          if (isInsideTypeQuery(dependencyNode)) {
             continue;
           }
 
@@ -2133,6 +2130,38 @@ function getUnknownDependenciesMessage(reactiveHookName: string): string {
     `React Hook ${reactiveHookName} received a function whose dependencies ` +
     `are unknown. Pass an inline function instead.`
   );
+}
+
+function isInsideTypeQuery(node: Node): boolean {
+  let current: Node | null | undefined = node;
+  while (current != null) {
+    const parent: Node | null | undefined = current.parent;
+    if (parent == null) {
+      break;
+    }
+    if (
+      parent.type === 'TSTypeQuery' ||
+      parent.type === 'TSTypeReference' ||
+      // @ts-expect-error Flow-specific AST node type
+      parent.type === 'TypeofTypeAnnotation' ||
+      // @ts-expect-error Flow-specific AST node type
+      parent.type === 'GenericTypeAnnotation'
+    ) {
+      return true;
+    }
+    if (
+      parent.type === 'TSQualifiedName' ||
+      // @ts-expect-error Flow-specific AST node type
+      parent.type === 'QualifiedTypeIdentifier' ||
+      parent.type === 'MemberExpression' ||
+      parent.type === 'OptionalMemberExpression'
+    ) {
+      current = parent;
+    } else {
+      break;
+    }
+  }
+  return false;
 }
 
 export default rule;
