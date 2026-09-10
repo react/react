@@ -40,7 +40,6 @@ describe('FragmentRefs', () => {
 
   describe('focus methods', () => {
     describe('blur()', () => {
-      // @gate enableFragmentRefs
       it('throws when the nearest host parent is a Document container', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
@@ -76,7 +75,6 @@ describe('FragmentRefs', () => {
 
   describe('events', () => {
     describe('dispatchEvent()', () => {
-      // @gate enableFragmentRefs
       it('fires events when the fragment is a child of a HostSingleton in a document root', async () => {
         const fragmentRef = React.createRef();
         const bodyRef = React.createRef();
@@ -105,7 +103,6 @@ describe('FragmentRefs', () => {
         expect(bodyListener).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefs
       it('dispatches to its own listeners when the container is a Document', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
@@ -139,7 +136,6 @@ describe('FragmentRefs', () => {
         expect(isCancelable).toBe(false);
       });
 
-      // @gate enableFragmentRefs
       it('does not propagate through its own children when wrapping documentElement', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
@@ -174,7 +170,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['fragment', 'document']);
       });
 
-      // @gate enableFragmentRefs
       it('dispatches non-bubbling events when the container is a Document', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
@@ -207,7 +202,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('addEventListener()', () => {
-      // @gate enableFragmentRefs
       it('attaches listeners to the host children inside singletons', async () => {
         const fragmentRef = React.createRef();
         const childRef = React.createRef();
@@ -237,7 +231,6 @@ describe('FragmentRefs', () => {
         expect(currentTargets).toEqual([document.documentElement]);
       });
 
-      // @gate enableFragmentRefs
       it('attaches listeners to a singleton mounted into the fragment, but not to its content', async () => {
         const fragmentRef = React.createRef();
         const childRef = React.createRef();
@@ -278,7 +271,6 @@ describe('FragmentRefs', () => {
         expect(currentTargets).toEqual([document.documentElement]);
       });
 
-      // @gate enableFragmentRefs
       it('attributes new children inside a singleton to fragments below it, not above it', async () => {
         const outerFragmentRef = React.createRef();
         const innerFragmentRef = React.createRef();
@@ -330,7 +322,6 @@ describe('FragmentRefs', () => {
   });
 
   describe('getClientRects()', () => {
-    // @gate enableFragmentRefs
     it('measures the host children inside singletons', async () => {
       const fragmentRef = React.createRef();
       const childRef = React.createRef();
@@ -371,7 +362,6 @@ describe('FragmentRefs', () => {
       expect(positionResult).toEqual(spec);
     }
 
-    // @gate enableFragmentRefs
     it('treats documentElement as containing the fragment', async () => {
       const fragmentRef = React.createRef();
       const container = document.createElement('div');
