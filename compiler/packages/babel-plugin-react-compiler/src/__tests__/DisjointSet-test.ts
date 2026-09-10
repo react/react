@@ -104,6 +104,20 @@ describe('DisjointSet', () => {
     `);
   });
 
+  // Regression test for issue #37417
+  it('.union - does not mutate the input array', () => {
+    const identifiers = new DisjointSet<TestIdentifier>();
+    const [x, y, z] = makeIdentifiers('x', 'y', 'z');
+    const items = [x, y, z];
+
+    identifiers.union(items);
+
+    expect(items).toEqual([x, y, z]);
+    expect(identifiers.find(x)).toBe(x);
+    expect(identifiers.find(y)).toBe(x);
+    expect(identifiers.find(z)).toBe(x);
+  });
+
   // Regression test for issue #933
   it("`forEach` doesn't infinite loop when there are cycles", () => {
     const identifiers = new DisjointSet<TestIdentifier>();
