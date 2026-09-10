@@ -289,6 +289,8 @@ pub fn suppressions_to_compiler_error(suppressions: &[SuppressionRange]) -> Comp
                     column: l.end.column,
                     index: l.end.index,
                 },
+                start_offset: suppression.disable_comment.start,
+                end_offset: suppression.disable_comment.end,
             }
         });
 
