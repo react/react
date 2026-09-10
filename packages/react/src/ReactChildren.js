@@ -308,14 +308,24 @@ function mapIntoArray(
       // $FlowFixMe[incompatible-use] `iteratorFn` might return null according to typing.
       while (!(step = iterator.next()).done) {
         child = step.value;
-        nextName = nextNamePrefix + getElementKey(child, ii++);
-        subtreeCount += mapIntoArray(
-          child,
-          array,
-          escapedPrefix,
-          nextName,
-          callback,
-        );
+        try {
+          nextName = nextNamePrefix + getElementKey(child, ii++);
+          subtreeCount += mapIntoArray(
+            child,
+            array,
+            escapedPrefix,
+            nextName,
+            callback,
+          );
+        } catch (error) {
+          try {
+            const iteratorReturn = iterator.return;
+            if (typeof iteratorReturn === 'function') {
+              iteratorReturn.call(iterator);
+            }
+          } catch (x) {}
+          throw error;
+        }
       }
     } else if (type === 'object') {
       if (typeof (children as any).then === 'function') {
