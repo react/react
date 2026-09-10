@@ -58,7 +58,6 @@ import {
   disableLegacyMode,
   enableComponentPerformanceTrack,
   enableViewTransition,
-  enableFragmentRefs,
   enableDefaultTransitionIndicator,
   enableFragmentRefsTextNodes,
 } from 'shared/ReactFeatureFlags';
@@ -878,10 +877,8 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case Fragment:
-      if (enableFragmentRefs) {
-        if (flags & Ref) {
-          safelyAttachRef(finishedWork, finishedWork.return);
-        }
+      if (flags & Ref) {
+        safelyAttachRef(finishedWork, finishedWork.return);
       }
     // Fallthrough
     default: {
@@ -1541,9 +1538,7 @@ function commitDeletionEffectsOnFiber(
         if (!offscreenSubtreeWasHidden) {
           safelyDetachRef(deletedFiber, nearestMountedAncestor);
         }
-        if (enableFragmentRefs) {
-          commitFragmentInstanceDeletionEffects(deletedFiber);
-        }
+        commitFragmentInstanceDeletionEffects(deletedFiber);
 
         const prevHostParent = hostParent;
         const prevHostParentIsContainer = hostParentIsContainer;
@@ -1575,14 +1570,11 @@ function commitDeletionEffectsOnFiber(
       if (!offscreenSubtreeWasHidden) {
         safelyDetachRef(deletedFiber, nearestMountedAncestor);
       }
-      if (enableFragmentRefs) {
-        commitFragmentInstanceDeletionEffects(deletedFiber);
-      }
+      commitFragmentInstanceDeletionEffects(deletedFiber);
       // Intentional fallthrough to next branch
     }
     case HostText: {
       if (
-        enableFragmentRefs &&
         enableFragmentRefsTextNodes &&
         // HostComponent falls through into this case.
         deletedFiber.tag === HostText
@@ -1812,18 +1804,15 @@ function commitDeletionEffectsOnFiber(
       // Fallthrough
     }
     case Fragment: {
-      if (enableFragmentRefs) {
-        if (!offscreenSubtreeWasHidden) {
-          safelyDetachRef(deletedFiber, nearestMountedAncestor);
-        }
-        recursivelyTraverseDeletionEffects(
-          finishedRoot,
-          nearestMountedAncestor,
-          deletedFiber,
-        );
-        break;
+      if (!offscreenSubtreeWasHidden) {
+        safelyDetachRef(deletedFiber, nearestMountedAncestor);
       }
-      // Fallthrough
+      recursivelyTraverseDeletionEffects(
+        finishedRoot,
+        nearestMountedAncestor,
+        deletedFiber,
+      );
+      break;
     }
     default: {
       recursivelyTraverseDeletionEffects(
@@ -2784,15 +2773,13 @@ function commitMutationEffectsOnFiber(
       break;
     }
     case Fragment:
-      if (enableFragmentRefs) {
-        if (flags & Ref) {
-          if (!offscreenSubtreeWasHidden && current !== null) {
-            safelyDetachRef(current, current.return);
-          }
+      if (flags & Ref) {
+        if (!offscreenSubtreeWasHidden && current !== null) {
+          safelyDetachRef(current, current.return);
         }
-        if (current && current.stateNode !== null) {
-          updateFragmentInstanceFiber(finishedWork, current.stateNode);
-        }
+      }
+      if (current && current.stateNode !== null) {
+        updateFragmentInstanceFiber(finishedWork, current.stateNode);
       }
     // Fallthrough
     default: {
@@ -3165,11 +3152,10 @@ function disappearLayoutEffects(
       safelyDetachRef(finishedWork, finishedWork.return);
 
       if (
-        enableFragmentRefs &&
         // HostHoistable shares this case via fallthrough but must not be
         // attributed to fragment instances. HostText has its own case below.
-        (finishedWork.tag === HostComponent ||
-          finishedWork.tag === HostSingleton)
+        finishedWork.tag === HostComponent ||
+        finishedWork.tag === HostSingleton
       ) {
         commitFragmentInstanceDeletionEffects(finishedWork);
       }
@@ -3181,7 +3167,7 @@ function disappearLayoutEffects(
       break;
     }
     case HostText: {
-      if (enableFragmentRefs && enableFragmentRefsTextNodes) {
+      if (enableFragmentRefsTextNodes) {
         commitFragmentInstanceDeletionEffects(finishedWork);
       }
       break;
@@ -3241,9 +3227,7 @@ function disappearLayoutEffects(
       break;
     }
     case Fragment: {
-      if (enableFragmentRefs) {
-        safelyDetachRef(finishedWork, finishedWork.return);
-      }
+      safelyDetachRef(finishedWork, finishedWork.return);
       // Fallthrough
     }
     default: {
@@ -3385,9 +3369,8 @@ function reappearLayoutEffects(
     }
     case HostComponent: {
       if (
-        enableFragmentRefs &&
-        (finishedWork.tag === HostComponent ||
-          finishedWork.tag === HostSingleton)
+        finishedWork.tag === HostComponent ||
+        finishedWork.tag === HostSingleton
       ) {
         commitFragmentInstanceInsertionEffects(finishedWork);
       }
@@ -3414,7 +3397,7 @@ function reappearLayoutEffects(
       break;
     }
     case HostText: {
-      if (enableFragmentRefs && enableFragmentRefsTextNodes) {
+      if (enableFragmentRefsTextNodes) {
         commitFragmentInstanceInsertionEffects(finishedWork);
       }
       break;
@@ -3567,9 +3550,7 @@ function reappearLayoutEffects(
       break;
     }
     case Fragment: {
-      if (enableFragmentRefs) {
-        safelyAttachRef(finishedWork, finishedWork.return);
-      }
+      safelyAttachRef(finishedWork, finishedWork.return);
       // Fallthrough
     }
     default: {
