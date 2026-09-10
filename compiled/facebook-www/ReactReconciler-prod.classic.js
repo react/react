@@ -1979,7 +1979,7 @@ module.exports = function ($$$config) {
             lanes,
             element.key
           )),
-          enableFragmentRefs && coerceRef(returnFiber, element),
+          coerceRef(returnFiber, element),
           returnFiber
         );
       if (
@@ -2422,7 +2422,7 @@ module.exports = function ($$$config) {
         null !== newChild &&
         newChild.type === REACT_FRAGMENT_TYPE &&
         null === newChild.key &&
-        (enableFragmentRefs ? void 0 === newChild.props.ref : 1) &&
+        void 0 === newChild.props.ref &&
         (newChild = newChild.props.children);
       if ("object" === typeof newChild && null !== newChild) {
         switch (newChild.$$typeof) {
@@ -2441,7 +2441,7 @@ module.exports = function ($$$config) {
                         currentFirstChild,
                         newChild.props.children
                       );
-                      enableFragmentRefs && coerceRef(lanes, newChild);
+                      coerceRef(lanes, newChild);
                       lanes.return = returnFiber;
                       returnFiber = lanes;
                       break a;
@@ -2475,7 +2475,7 @@ module.exports = function ($$$config) {
                     lanes,
                     newChild.key
                   )),
-                  enableFragmentRefs && coerceRef(lanes, newChild),
+                  coerceRef(lanes, newChild),
                   (lanes.return = returnFiber),
                   (returnFiber = lanes))
                 : ((lanes = createFiberFromTypeAndProps(
@@ -6540,7 +6540,7 @@ module.exports = function ($$$config) {
       case 7:
         return (
           (props = workInProgress.pendingProps),
-          enableFragmentRefs && markRef(current, workInProgress),
+          markRef(current, workInProgress),
           reconcileChildren(current, workInProgress, props, renderLanes),
           workInProgress.child
         );
@@ -7956,12 +7956,10 @@ module.exports = function ($$$config) {
             instanceToUse = current.stateNode;
             break;
           case 7:
-            if (enableFragmentRefs) {
-              null === current.stateNode &&
-                (current.stateNode = createFragmentInstance(current));
-              instanceToUse = current.stateNode;
-              break;
-            }
+            null === current.stateNode &&
+              (current.stateNode = createFragmentInstance(current));
+            instanceToUse = current.stateNode;
+            break;
           default:
             instanceToUse = current.stateNode;
         }
@@ -8143,16 +8141,14 @@ module.exports = function ($$$config) {
         before
           ? insertInContainerBefore(parent, tag, before)
           : appendChildToContainer(parent, tag),
-        enableFragmentRefs &&
-          commitNewChildToFragmentInstances(node, parentFragmentInstances),
+        commitNewChildToFragmentInstances(node, parentFragmentInstances),
         trackHostMutation();
     else if (
       4 !== tag &&
       (supportsSingletons &&
         27 === tag &&
-        (enableFragmentRefs &&
-          (commitNewChildToFragmentInstances(node, parentFragmentInstances),
-          (parentFragmentInstances = null)),
+        (commitNewChildToFragmentInstances(node, parentFragmentInstances),
+        (parentFragmentInstances = null),
         isSingletonScope(node.type) &&
           ((parent = node.stateNode), (before = null))),
       (node = node.child),
@@ -8187,16 +8183,14 @@ module.exports = function ($$$config) {
     if (5 === tag || 6 === tag)
       (tag = node.stateNode),
         before ? insertBefore(parent, tag, before) : appendChild(parent, tag),
-        enableFragmentRefs &&
-          commitNewChildToFragmentInstances(node, parentFragmentInstances),
+        commitNewChildToFragmentInstances(node, parentFragmentInstances),
         trackHostMutation();
     else if (
       4 !== tag &&
       (supportsSingletons &&
         27 === tag &&
-        (enableFragmentRefs &&
-          (commitNewChildToFragmentInstances(node, parentFragmentInstances),
-          (parentFragmentInstances = null)),
+        (commitNewChildToFragmentInstances(node, parentFragmentInstances),
+        (parentFragmentInstances = null),
         isSingletonScope(node.type) && (parent = node.stateNode)),
       (node = node.child),
       null !== node)
@@ -8224,33 +8218,29 @@ module.exports = function ($$$config) {
     finishedWork,
     parentFragmentInstances
   ) {
-    if (enableFragmentRefs)
-      if (
-        5 === finishedWork.tag ||
-        (supportsSingletons && 27 === finishedWork.tag)
-      )
-        commitNewChildToFragmentInstances(
+    if (
+      5 === finishedWork.tag ||
+      (supportsSingletons && 27 === finishedWork.tag)
+    )
+      commitNewChildToFragmentInstances(finishedWork, parentFragmentInstances);
+    else if (
+      4 !== finishedWork.tag &&
+      ((finishedWork = finishedWork.child), null !== finishedWork)
+    )
+      for (
+        commitImmutablePlacementNodeToFragmentInstances(
           finishedWork,
           parentFragmentInstances
-        );
-      else if (
-        4 !== finishedWork.tag &&
-        ((finishedWork = finishedWork.child), null !== finishedWork)
-      )
-        for (
-          commitImmutablePlacementNodeToFragmentInstances(
-            finishedWork,
-            parentFragmentInstances
-          ),
-            finishedWork = finishedWork.sibling;
-          null !== finishedWork;
+        ),
+          finishedWork = finishedWork.sibling;
+        null !== finishedWork;
 
-        )
-          commitImmutablePlacementNodeToFragmentInstances(
-            finishedWork,
-            parentFragmentInstances
-          ),
-            (finishedWork = finishedWork.sibling);
+      )
+        commitImmutablePlacementNodeToFragmentInstances(
+          finishedWork,
+          parentFragmentInstances
+        ),
+          (finishedWork = finishedWork.sibling);
   }
   function commitHostPortalContainerChildren(
     portal,
@@ -9061,9 +9051,7 @@ module.exports = function ($$$config) {
           flags & 512 && safelyAttachRef(finishedWork, finishedWork.return));
         break;
       case 7:
-        enableFragmentRefs &&
-          flags & 512 &&
-          safelyAttachRef(finishedWork, finishedWork.return);
+        flags & 512 && safelyAttachRef(finishedWork, finishedWork.return);
       default:
         recursivelyTraverseLayoutEffects(finishedRoot, finishedWork);
     }
@@ -9385,8 +9373,7 @@ module.exports = function ($$$config) {
         if (supportsSingletons) {
           offscreenSubtreeWasHidden ||
             safelyDetachRef(deletedFiber, nearestMountedAncestor);
-          enableFragmentRefs &&
-            commitFragmentInstanceDeletionEffects(deletedFiber);
+          commitFragmentInstanceDeletionEffects(deletedFiber);
           var prevHostParent = hostParent,
             prevHostParentIsContainer = hostParentIsContainer;
           isSingletonScope(deletedFiber.type) &&
@@ -9409,11 +9396,9 @@ module.exports = function ($$$config) {
       case 5:
         offscreenSubtreeWasHidden ||
           safelyDetachRef(deletedFiber, nearestMountedAncestor),
-          enableFragmentRefs &&
-            commitFragmentInstanceDeletionEffects(deletedFiber);
+          commitFragmentInstanceDeletionEffects(deletedFiber);
       case 6:
-        enableFragmentRefs &&
-          enableFragmentRefsTextNodes &&
+        enableFragmentRefsTextNodes &&
           6 === deletedFiber.tag &&
           commitFragmentInstanceDeletionEffects(deletedFiber);
         if (supportsMutation) {
@@ -9566,16 +9551,14 @@ module.exports = function ($$$config) {
           break;
         }
       case 7:
-        if (enableFragmentRefs) {
-          offscreenSubtreeWasHidden ||
-            safelyDetachRef(deletedFiber, nearestMountedAncestor);
-          recursivelyTraverseDeletionEffects(
-            finishedRoot,
-            nearestMountedAncestor,
-            deletedFiber
-          );
-          break;
-        }
+        offscreenSubtreeWasHidden ||
+          safelyDetachRef(deletedFiber, nearestMountedAncestor);
+        recursivelyTraverseDeletionEffects(
+          finishedRoot,
+          nearestMountedAncestor,
+          deletedFiber
+        );
+        break;
       default:
         recursivelyTraverseDeletionEffects(
           finishedRoot,
@@ -10087,14 +10070,13 @@ module.exports = function ($$$config) {
         flags & 4 && prepareScopeUpdate(finishedWork.stateNode, finishedWork);
         break;
       case 7:
-        enableFragmentRefs &&
-          (flags & 512 &&
-            (offscreenSubtreeWasHidden ||
-              null === current ||
-              safelyDetachRef(current, current.return)),
+        flags & 512 &&
+          (offscreenSubtreeWasHidden ||
+            null === current ||
+            safelyDetachRef(current, current.return)),
           current &&
             null !== current.stateNode &&
-            updateFragmentInstanceFiber(finishedWork, current.stateNode));
+            updateFragmentInstanceFiber(finishedWork, current.stateNode);
       default:
         recursivelyTraverseMutationEffects(root, finishedWork, lanes),
           commitReconciliationEffects(finishedWork);
@@ -10115,20 +10097,18 @@ module.exports = function ($$$config) {
           }
           parentFiber = parentFiber.return;
         }
-        if (enableFragmentRefs) {
-          parentFiber = null;
-          for (var parent = finishedWork.return; null !== parent; ) {
-            if (isFragmentInstanceParent(parent)) {
-              var fragmentInstance = parent.stateNode;
-              null === parentFiber
-                ? (parentFiber = [fragmentInstance])
-                : parentFiber.push(fragmentInstance);
-            }
-            if (isFragmentInstanceHostBoundary(parent)) break;
-            parent = parent.return;
+        parentFiber = null;
+        for (var parent = finishedWork.return; null !== parent; ) {
+          if (isFragmentInstanceParent(parent)) {
+            var fragmentInstance = parent.stateNode;
+            null === parentFiber
+              ? (parentFiber = [fragmentInstance])
+              : parentFiber.push(fragmentInstance);
           }
-          var JSCompiler_temp = parentFiber;
-        } else JSCompiler_temp = null;
+          if (isFragmentInstanceHostBoundary(parent)) break;
+          parent = parent.return;
+        }
+        var JSCompiler_inline_result = parentFiber;
         if (supportsMutation) {
           if (null == hostParentFiber) throw Error(formatProdErrorMessage(160));
           switch (hostParentFiber.tag) {
@@ -10140,7 +10120,7 @@ module.exports = function ($$$config) {
                   finishedWork,
                   before,
                   parent$jscomp$0,
-                  JSCompiler_temp
+                  JSCompiler_inline_result
                 );
                 break;
               }
@@ -10153,7 +10133,7 @@ module.exports = function ($$$config) {
                 finishedWork,
                 before$144,
                 parent$143,
-                JSCompiler_temp
+                JSCompiler_inline_result
               );
               break;
             case 3:
@@ -10164,18 +10144,17 @@ module.exports = function ($$$config) {
                 finishedWork,
                 before$146,
                 parent$145,
-                JSCompiler_temp
+                JSCompiler_inline_result
               );
               break;
             default:
               throw Error(formatProdErrorMessage(161));
           }
         } else
-          enableFragmentRefs &&
-            commitImmutablePlacementNodeToFragmentInstances(
-              finishedWork,
-              JSCompiler_temp
-            );
+          commitImmutablePlacementNodeToFragmentInstances(
+            finishedWork,
+            JSCompiler_inline_result
+          );
       } catch (error) {
         captureCommitPhaseError(finishedWork, finishedWork.return, error);
       }
@@ -10339,8 +10318,7 @@ module.exports = function ($$$config) {
             );
         case 5:
           safelyDetachRef(finishedWork, finishedWork.return);
-          !enableFragmentRefs ||
-            (5 !== finishedWork.tag && 27 !== finishedWork.tag) ||
+          (5 !== finishedWork.tag && 27 !== finishedWork.tag) ||
             commitFragmentInstanceDeletionEffects(finishedWork);
           recursivelyTraverseDisappearLayoutEffects(
             finishedWork,
@@ -10348,8 +10326,7 @@ module.exports = function ($$$config) {
           );
           break;
         case 6:
-          enableFragmentRefs &&
-            enableFragmentRefsTextNodes &&
+          enableFragmentRefsTextNodes &&
             commitFragmentInstanceDeletionEffects(finishedWork);
           break;
         case 26:
@@ -10381,8 +10358,7 @@ module.exports = function ($$$config) {
           );
           break;
         case 7:
-          enableFragmentRefs &&
-            safelyDetachRef(finishedWork, finishedWork.return);
+          safelyDetachRef(finishedWork, finishedWork.return);
         default:
           recursivelyTraverseDisappearLayoutEffects(
             finishedWork,
@@ -10459,8 +10435,7 @@ module.exports = function ($$$config) {
             0 !== (layoutEffectTraversalFlags & 2) &&
             commitHostSingletonAcquisition(finishedWork);
         case 5:
-          !enableFragmentRefs ||
-            (5 !== finishedWork.tag && 27 !== finishedWork.tag) ||
+          (5 !== finishedWork.tag && 27 !== finishedWork.tag) ||
             commitFragmentInstanceInsertionEffects(finishedWork);
           recursivelyTraverseReappearLayoutEffects(
             finishedRoot,
@@ -10474,8 +10449,7 @@ module.exports = function ($$$config) {
           safelyAttachRef(finishedWork, finishedWork.return);
           break;
         case 6:
-          enableFragmentRefs &&
-            enableFragmentRefsTextNodes &&
+          enableFragmentRefsTextNodes &&
             commitFragmentInstanceInsertionEffects(finishedWork);
           break;
         case 26:
@@ -10546,8 +10520,7 @@ module.exports = function ($$$config) {
             safelyAttachRef(finishedWork, finishedWork.return));
           break;
         case 7:
-          enableFragmentRefs &&
-            safelyAttachRef(finishedWork, finishedWork.return);
+          safelyAttachRef(finishedWork, finishedWork.return);
         default:
           recursivelyTraverseReappearLayoutEffects(
             finishedRoot,
@@ -13517,7 +13490,6 @@ module.exports = function ($$$config) {
     transitionLaneExpirationMs = dynamicFeatureFlags.transitionLaneExpirationMs,
     enableSuspenseyImages = dynamicFeatureFlags.enableSuspenseyImages,
     enableViewTransition = dynamicFeatureFlags.enableViewTransition,
-    enableFragmentRefs = dynamicFeatureFlags.enableFragmentRefs,
     enableFragmentRefsTextNodes =
       dynamicFeatureFlags.enableFragmentRefsTextNodes,
     enableParallelTransitions = dynamicFeatureFlags.enableParallelTransitions,
@@ -14759,7 +14731,7 @@ module.exports = function ($$$config) {
       version: rendererVersion,
       rendererPackageName: rendererPackageName,
       currentDispatcherRef: ReactSharedInternals,
-      reconcilerVersion: "19.3.0-www-classic-6c0e1047-20260908"
+      reconcilerVersion: "19.3.0-www-classic-00f48cec-20260910"
     };
     null !== extraDevToolsConfig &&
       (internals.rendererConfig = extraDevToolsConfig);
