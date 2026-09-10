@@ -8,7 +8,9 @@
 //!
 //! Corresponds to `src/ReactiveScopes/PromoteUsedTemporaries.ts`.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
+
+use oxc_index::IndexVec;
 
 use react_compiler_hir::DeclarationId;
 use react_compiler_hir::FunctionId;
@@ -36,13 +38,19 @@ use react_compiler_hir::environment::Environment;
 struct State {
     tags: FxHashSet<DeclarationId>,
     promoted: FxHashSet<DeclarationId>,
-    pruned: FxHashMap<DeclarationId, PrunedInfo>,
+    /// Pruned-scope info per declaration, indexed densely by declaration id
+    /// (declaration ids share the identifier id space).
+    pruned: IndexVec<DeclarationId, Option<PrunedInfo>>,
 }
 
 struct PrunedInfo {
     active_scopes: Vec<ScopeId>,
     used_outside_scope: bool,
 }
+
+/// Interposed-temporary tracking state, indexed densely by identifier id.
+/// Each entry holds the tracked identifier and whether it needs promotion.
+type InterState = IndexVec<IdentifierId, Option<(IdentifierId, bool)>>;
 
 // =============================================================================
 // Public entry point
@@ -54,7 +62,7 @@ pub fn promote_used_temporaries(func: &mut ReactiveFunction, env: &mut Environme
     let mut state = State {
         tags: FxHashSet::default(),
         promoted: FxHashSet::default(),
-        pruned: FxHashMap::default(),
+        pruned: IndexVec::from_vec((0..env.identifiers.len()).map(|_| None).collect()),
     };
 
     // Phase 1: collect promotable temporaries (jsx tags, pruned scope usage)
@@ -89,7 +97,7 @@ pub fn promote_used_temporaries(func: &mut ReactiveFunction, env: &mut Environme
             }
         }
     }
-    let mut inter_state: FxHashMap<IdentifierId, (IdentifierId, bool)> = FxHashMap::default();
+    let mut inter_state: InterState = IndexVec::from_vec(vec![None; env.identifiers.len()]);
     promote_interposed_block(
         &func.body,
         &mut state,
@@ -129,13 +137,10 @@ fn collect_promotable_block(
                 let scope_data = &env.scopes[scope.scope.0 as usize];
                 for (_id, decl) in &scope_data.declarations {
                     let identifier = &env.identifiers[decl.identifier.0 as usize];
-                    state.pruned.insert(
-                        identifier.declaration_id,
-                        PrunedInfo {
-                            active_scopes: active_scopes.clone(),
-                            used_outside_scope: false,
-                        },
-                    );
+                    state.pruned[identifier.declaration_id] = Some(PrunedInfo {
+                        active_scopes: active_scopes.clone(),
+                        used_outside_scope: false,
+                    });
                 }
                 collect_promotable_block(&scope.instructions, state, active_scopes, env);
             }
@@ -154,7 +159,7 @@ fn collect_promotable_place(
 ) {
     if !active_scopes.is_empty() {
         let identifier = &env.identifiers[place.identifier.0 as usize];
-        if let Some(pruned) = state.pruned.get_mut(&identifier.declaration_id) {
+        if let Some(pruned) = state.pruned[identifier.declaration_id].as_mut() {
             if let Some(last) = active_scopes.last() {
                 if !pruned.active_scopes.contains(last) {
                     pruned.used_outside_scope = true;
@@ -360,7 +365,7 @@ fn promote_temporaries_block(block: &ReactiveBlock, state: &mut State, env: &mut
                 for (id, decl_id) in decls {
                     let identifier = &env.identifiers[id.0 as usize];
                     if identifier.name.is_none() {
-                        if let Some(pruned) = state.pruned.get(&decl_id) {
+                        if let Some(pruned) = &state.pruned[decl_id] {
                             if pruned.used_outside_scope {
                                 promote_identifier(id, state, env);
                             }
@@ -554,7 +559,7 @@ fn visit_hir_function_for_promotion(func_id: FunctionId, state: &mut State, env:
 fn promote_interposed_block(
     block: &ReactiveBlock,
     state: &mut State,
-    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    inter_state: &mut InterState,
     consts: &mut FxHashSet<IdentifierId>,
     globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
@@ -594,11 +599,11 @@ fn promote_interposed_block(
 fn promote_interposed_place(
     place: &Place,
     state: &mut State,
-    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    inter_state: &mut InterState,
     consts: &FxHashSet<IdentifierId>,
     env: &mut Environment,
 ) {
-    if let Some(&(id, needs_promotion)) = inter_state.get(&place.identifier) {
+    if let Some((id, needs_promotion)) = inter_state[place.identifier] {
         let identifier = &env.identifiers[id.0 as usize];
         if needs_promotion && identifier.name.is_none() && !consts.contains(&id) {
             promote_identifier(id, state, env);
@@ -609,7 +614,7 @@ fn promote_interposed_place(
 fn promote_interposed_instruction(
     instr: &ReactiveInstruction,
     state: &mut State,
-    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    inter_state: &mut InterState,
     consts: &mut FxHashSet<IdentifierId>,
     globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
@@ -679,17 +684,14 @@ fn promote_interposed_instruction(
                                 .is_some())
                     {
                         // Mark all tracked temporaries as needing promotion
-                        let keys: Vec<IdentifierId> = inter_state.keys().cloned().collect();
-                        for key in keys {
-                            if let Some(entry) = inter_state.get_mut(&key) {
-                                entry.1 = true;
-                            }
+                        for entry in inter_state.iter_mut().flatten() {
+                            entry.1 = true;
                         }
                     }
                     if let Some(lvalue) = &instr.lvalue {
                         let identifier = &env.identifiers[lvalue.identifier.0 as usize];
                         if identifier.name.is_none() {
-                            inter_state.insert(lvalue.identifier, (lvalue.identifier, false));
+                            inter_state[lvalue.identifier] = Some((lvalue.identifier, false));
                         }
                     }
                 }
@@ -719,7 +721,7 @@ fn promote_interposed_instruction(
                             if consts.contains(&load_place.identifier) {
                                 consts.insert(lvalue.identifier);
                             }
-                            inter_state.insert(lvalue.identifier, (lvalue.identifier, false));
+                            inter_state[lvalue.identifier] = Some((lvalue.identifier, false));
                         }
                     }
                     // Visit operands
@@ -738,7 +740,7 @@ fn promote_interposed_instruction(
                         }
                         let identifier = &env.identifiers[lvalue.identifier.0 as usize];
                         if identifier.name.is_none() {
-                            inter_state.insert(lvalue.identifier, (lvalue.identifier, false));
+                            inter_state[lvalue.identifier] = Some((lvalue.identifier, false));
                         }
                     }
                     // Visit operands
@@ -802,7 +804,7 @@ fn promote_interposed_instruction(
 fn promote_interposed_value(
     value: &ReactiveValue,
     state: &mut State,
-    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    inter_state: &mut InterState,
     consts: &mut FxHashSet<IdentifierId>,
     globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
@@ -846,7 +848,7 @@ fn promote_interposed_value(
 fn promote_interposed_terminal(
     stmt: &ReactiveTerminalStatement,
     state: &mut State,
-    inter_state: &mut FxHashMap<IdentifierId, (IdentifierId, bool)>,
+    inter_state: &mut InterState,
     consts: &mut FxHashSet<IdentifierId>,
     globals: &mut FxHashSet<IdentifierId>,
     env: &mut Environment,
