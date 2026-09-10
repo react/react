@@ -249,6 +249,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
+name = "oxc_index"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "191884bee6c3744909a51acc7d78d4ae370d817b25875b10642f632327b6296e"
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -319,6 +325,7 @@ name = "react_compiler_hir"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "rustc-hash",
  "serde",
@@ -330,6 +337,7 @@ name = "react_compiler_inference"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "react_compiler_lowering",
@@ -337,6 +345,7 @@ dependencies = [
  "react_compiler_ssa",
  "react_compiler_utils",
  "rustc-hash",
+ "smallvec",
 ]
 
 [[package]]
@@ -369,6 +378,7 @@ name = "react_compiler_optimization"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "react_compiler_lowering",
@@ -382,6 +392,7 @@ version = "0.0.1-oidc.0"
 dependencies = [
  "hmac-sha256",
  "indexmap",
+ "oxc_index",
  "react_compiler_ast",
  "react_compiler_diagnostics",
  "react_compiler_hir",
@@ -394,6 +405,7 @@ name = "react_compiler_ssa"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "rustc-hash",
@@ -422,6 +434,7 @@ name = "react_compiler_validation"
 version = "0.0.1-oidc.0"
 dependencies = [
  "indexmap",
+ "oxc_index",
  "react_compiler_diagnostics",
  "react_compiler_hir",
  "rustc-hash",
@@ -514,6 +527,12 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "smallvec"
+version = "1.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
 
 [[package]]
 name = "syn"
