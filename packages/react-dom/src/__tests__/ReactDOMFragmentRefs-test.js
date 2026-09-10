@@ -3239,7 +3239,6 @@ describe('FragmentRefs', () => {
     function expectLast(arr, test) {
       expect(arr[arr.length - 1]).toBe(test);
     }
-    // @gate enableFragmentRefsScrollIntoView
     it('does not yet support options', async () => {
       const fragmentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -3256,7 +3255,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('with children', () => {
-      // @gate enableFragmentRefsScrollIntoView
       it('settles scroll on the first child by default, or if alignToTop=true', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -3292,7 +3290,6 @@ describe('FragmentRefs', () => {
         expectLast(logs, 'childA');
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the last child if alignToTop is false', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -3319,7 +3316,6 @@ describe('FragmentRefs', () => {
         expectLast(logs, 'childB');
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('handles portaled elements -- same scroll container', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -3360,7 +3356,6 @@ describe('FragmentRefs', () => {
         expectLast(logs, 'childA');
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('handles portaled elements -- different scroll container', async () => {
         const fragmentRef = React.createRef();
         const headerChildRef = React.createRef();
@@ -3461,7 +3456,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('without children', () => {
-      // @gate enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the next sibling by default, or if alignToTop=true', async () => {
         const fragmentRef = React.createRef();
         const siblingARef = React.createRef();
@@ -3495,7 +3489,6 @@ describe('FragmentRefs', () => {
         expect(siblingBRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('finds host siblings when the empty fragment is nested in a non-host wrapper', async () => {
         const fragmentRef = React.createRef();
         const beforeRef = React.createRef();
@@ -3529,7 +3522,6 @@ describe('FragmentRefs', () => {
         expect(afterRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the prev sibling if alignToTop is false', async () => {
         const fragmentRef = React.createRef();
         const siblingARef = React.createRef();
@@ -3566,7 +3558,6 @@ describe('FragmentRefs', () => {
         expect(siblingBRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the parent if there are no siblings', async () => {
         const fragmentRef = React.createRef();
         const parentRef = React.createRef();
@@ -3586,7 +3577,6 @@ describe('FragmentRefs', () => {
         expect(parentRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('scrolls the host element when the fallback target is a ShadowRoot container', async () => {
         const fragmentRef = React.createRef();
         const host = document.createElement('div');
@@ -3604,7 +3594,6 @@ describe('FragmentRefs', () => {
         expect(host.scrollIntoView).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefsScrollIntoView
       it('warns without scrolling when the fallback target is a detached DocumentFragment container', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(
@@ -3758,7 +3747,7 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefsScrollIntoView
+    // @gate enableFragmentRefsTextNodes
     it('scrollIntoView works on text-only fragment using Range API', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 100, y: 200, width: 80, height: 16},
@@ -3788,7 +3777,7 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefsTextNodes && enableFragmentRefsScrollIntoView
+    // @gate enableFragmentRefsTextNodes
     it('scrollIntoView scrolls to text siblings of an empty fragment using the Range API', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 100, y: 200, width: 80, height: 16},

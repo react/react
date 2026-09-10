@@ -22,7 +22,6 @@ export const {
   alwaysThrottleRetries,
   enableObjectFiber,
   passChildrenWhenCloningPersistedNodes,
-  enableFragmentRefsScrollIntoView,
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
   enableViewTransitionForPersistenceMode,
