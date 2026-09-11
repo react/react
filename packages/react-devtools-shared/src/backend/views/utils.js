@@ -76,6 +76,32 @@ export function mergeRectOffsets(rects: Array<Rect>): Rect {
   });
 }
 
+// CSS `zoom` is a non-standard (but broadly supported) property that lets a
+// page rescale part of its layout. Unlike `transform: scale`, Chromium keeps
+// applying an ancestor's `zoom` to `position: fixed` descendants, which means
+// the highlighter/trace-updates overlays we inject into the inspected page
+// (also `position: fixed`) get scaled a second time on top of the already
+// zoom-adjusted coordinates we read via `getBoundingClientRect`/
+// `getComputedStyle`. Callers that assign such coordinates back to a
+// `position: fixed` element need to divide them by this cumulative zoom
+// factor to compensate.
+export function getCumulativeZoom(node: HTMLElement): number {
+  const ownerWindow = getOwnerWindow(node) || window;
+
+  let zoom = 1;
+  let currentElement: ?Element = node;
+  while (currentElement != null) {
+    const nodeZoom = parseFloat(
+      ownerWindow.getComputedStyle(currentElement).zoom,
+    );
+    if (!isNaN(nodeZoom) && nodeZoom > 0) {
+      zoom *= nodeZoom;
+    }
+    currentElement = currentElement.parentElement;
+  }
+  return zoom;
+}
+
 // Calculate a boundingClientRect for a node relative to boundaryWindow,
 // taking into account any offsets caused by intermediate iframes.
 export function getNestedBoundingClientRect(
