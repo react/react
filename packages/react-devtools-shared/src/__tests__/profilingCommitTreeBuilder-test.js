@@ -9,6 +9,8 @@
 
 import type Store from 'react-devtools-shared/src/devtools/store';
 
+import {TREE_OPERATION_UPDATE_TREE_BASE_DURATION} from 'react-devtools-shared/src/constants';
+import {invalidateCommitTrees} from 'react-devtools-shared/src/devtools/views/Profiler/CommitTreeBuilder';
 import {getVersionedRenderImplementation} from './utils';
 
 describe('commit tree', () => {
@@ -259,5 +261,30 @@ describe('commit tree', () => {
         });
       }
     });
+  });
+
+  // @reactVersion >= 16.9
+  it('should ignore tree base duration updates for fibers missing from the commit tree', () => {
+    const MissingDurationFiberID = 731;
+
+    utils.act(() => store.profilerStore.startProfiling());
+    utils.act(() => render(<div />));
+    utils.act(() => store.profilerStore.stopProfiling());
+
+    const rootID = store.roots[0];
+    const dataForRoot = store.profilerStore.getDataForRoot(rootID);
+    const firstCommitOperations = dataForRoot.operations[0];
+    dataForRoot.operations[0] = firstCommitOperations.concat([
+      TREE_OPERATION_UPDATE_TREE_BASE_DURATION,
+      MissingDurationFiberID,
+      500,
+    ]);
+    invalidateCommitTrees();
+
+    const commitTree = store.profilerStore.profilingCache.getCommitTree({
+      commitIndex: 0,
+      rootID,
+    });
+    expect(commitTree.nodes.has(MissingDurationFiberID)).toBe(false);
   });
 });

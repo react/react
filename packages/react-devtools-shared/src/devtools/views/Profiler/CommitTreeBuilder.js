@@ -352,9 +352,19 @@ function updateTree(
       }
       case TREE_OPERATION_UPDATE_TREE_BASE_DURATION: {
         id = operations[i + 1];
+        const treeBaseDuration = operations[i + 2] / 1000; // Convert microseconds back to milliseconds
+        i += 3;
+
+        // Imported profiles (and some live sessions) can include duration
+        // updates for fibers that are no longer in this commit snapshot.
+        // Skipping keeps the rest of the commit playable; throwing here
+        // aborts getCommitTree for every later commit as well.
+        if (!nodes.has(id)) {
+          break;
+        }
 
         const node = getClonedNode(id);
-        node.treeBaseDuration = operations[i + 2] / 1000; // Convert microseconds back to milliseconds;
+        node.treeBaseDuration = treeBaseDuration;
 
         // $FlowFixMe[constant-condition]
         if (__DEBUG__) {
@@ -364,7 +374,6 @@ function updateTree(
           );
         }
 
-        i += 3;
         break;
       }
       case TREE_OPERATION_UPDATE_ERRORS_OR_WARNINGS: {
