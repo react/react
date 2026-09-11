@@ -13,7 +13,11 @@ import {
   isPlainObject,
   printOperationsArray,
 } from 'react-devtools-shared/src/utils';
-import {TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE} from 'react-devtools-shared/src/constants';
+import {
+  SUSPENSE_TREE_OPERATION_ADD,
+  TREE_OPERATION_APPLIED_ACTIVITY_SLICE_CHANGE,
+  TREE_OPERATION_REMOVE,
+} from 'react-devtools-shared/src/constants';
 import {stackToComponentLocations} from 'react-devtools-shared/src/devtools/utils';
 import {
   formatConsoleArguments,
@@ -567,6 +571,44 @@ function f() { }
         'Applied activity slice change to 42',
       );
       expect(log.mock.calls[0][0]).toContain('Reset applied activity slice');
+    });
+
+    it('should log every rect of an added suspense node', () => {
+      const name = 'Suspense';
+      const operations = [
+        1, // rendererID
+        1, // rootID
+        1 + name.length,
+        name.length,
+        ...name.split('').map(char => char.charCodeAt(0)),
+        SUSPENSE_TREE_OPERATION_ADD,
+        3, // fiberID
+        2, // parentID
+        1, // nameStringID -> "Suspense"
+        1, // isSuspended
+        2, // numRects
+        11,
+        22,
+        33,
+        44,
+        111,
+        222,
+        333,
+        444,
+
+        TREE_OPERATION_REMOVE,
+        1, // removeLength
+        5,
+      ];
+
+      printOperationsArray(operations);
+
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toBe(
+        'operations for renderer:1 and root:1\n' +
+          '  Add suspense node 3 (Suspense,rects={[(11, 22, 33, 44), (111, 222, 333, 444)]}) under 2 suspended 1\n' +
+          '  Remove node 5',
+      );
     });
   });
 });
