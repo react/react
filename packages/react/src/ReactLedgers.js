@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {Ledger, LedgerKind} from 'shared/ReactLedgers';
+import type {Ledger, LedgerKind, LedgerTotals} from 'shared/ReactLedgers';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {MASK_LEDGER} from 'shared/ReactLedgers';
@@ -41,4 +41,17 @@ export function addToLedger<E>(ledger: Ledger<E>, entry: E): void {
     return;
   }
   dispatcher.addToLedger(ledger, normalized);
+}
+
+export function captureLedgers<T, V: $ReadOnlyArray<Ledger<empty>>>(
+  input: T,
+  ledgers: V,
+): {+data: T, +ledgers: LedgerTotals<V>} {
+  const dispatcher = ReactSharedInternals.A;
+  if (dispatcher === null || dispatcher.captureLedgers === undefined) {
+    throw new Error(
+      'captureLedgers() can only be called in a Server Components environment.',
+    );
+  }
+  return dispatcher.captureLedgers(input, ledgers);
 }
