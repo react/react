@@ -198,4 +198,103 @@ describe('ReactChildReconciler', () => {
         '    in GrandParent (at **)',
     ]);
   });
+
+  it('closes an iterator when reconciling one of its children throws', async () => {
+    const close = jest.fn(() => ({done: true}));
+    const iterable = {
+      [Symbol.iterator]() {
+        let didYield = false;
+        return {
+          next() {
+            if (didYield) {
+              return {done: true};
+            }
+            didYield = true;
+            return {done: false, value: {invalid: true}};
+          },
+          return: close,
+        };
+      },
+    };
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await expect(
+      act(() => {
+        root.render(<div>{iterable}</div>);
+      }),
+    ).rejects.toThrow('Objects are not valid as a React child');
+
+    expect(close).toHaveBeenCalled();
+  });
+
+  it('preserves reconciliation errors when reading iterator return throws', async () => {
+    const returnGetter = jest.fn(() => {
+      throw new Error('failed to read return');
+    });
+    const iterable = {
+      [Symbol.iterator]() {
+        let didYield = false;
+        const iterator = {
+          next() {
+            if (didYield) {
+              return {done: true};
+            }
+            didYield = true;
+            return {done: false, value: {invalid: true}};
+          },
+        };
+        Object.defineProperty(iterator, 'return', {get: returnGetter});
+        return iterator;
+      },
+    };
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await expect(
+      act(() => {
+        root.render(<div>{iterable}</div>);
+      }),
+    ).rejects.toThrow('Objects are not valid as a React child');
+
+    expect(returnGetter).toHaveBeenCalled();
+  });
+
+  // @gate enableAsyncIterableChildren
+  it('closes an async iterator when reconciling one of its children throws', async () => {
+    const fulfilledThenable = value => ({
+      status: 'fulfilled',
+      value,
+      then() {},
+    });
+    const closes = [];
+    const iterable = {
+      [Symbol.asyncIterator]() {
+        const close = jest.fn(() => fulfilledThenable({done: true}));
+        closes.push(close);
+        return {
+          next: () =>
+            fulfilledThenable({done: false, value: {invalidAsync: true}}),
+          return: close,
+        };
+      },
+    };
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await expect(
+      act(() => {
+        root.render(<div>{iterable}</div>);
+      }),
+    ).rejects.toThrow(
+      'Objects are not valid as a React child (found: object with keys {invalidAsync})',
+    );
+
+    // React retries the failed root once. Each underlying iterator must still
+    // be closed exactly once rather than once by each adapter layer.
+    expect(closes).toHaveLength(2);
+    closes.forEach(close => {
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+  });
 });
