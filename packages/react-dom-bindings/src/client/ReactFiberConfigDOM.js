@@ -887,6 +887,32 @@ function handleErrorInNextTick(error: any) {
 
 export const supportsMutation = true;
 
+function isInsideDialog(domElement: Instance): boolean {
+  let ancestor = domElement.parentElement;
+  while (ancestor != null) {
+    const currentAncestor = ancestor;
+    if (currentAncestor.tagName === 'DIALOG') {
+      return true;
+    }
+    ancestor = currentAncestor.parentElement;
+  }
+  return false;
+}
+
+function updateDialogAutoFocusAttribute(
+  domElement: Instance,
+  autoFocus: mixed,
+): void {
+  if (!isInsideDialog(domElement)) {
+    return;
+  }
+  if (autoFocus) {
+    domElement.setAttribute('autofocus', '');
+  } else {
+    domElement.removeAttribute('autofocus');
+  }
+}
+
 export function commitMount(
   domElement: Instance,
   type: string,
@@ -905,6 +931,11 @@ export function commitMount(
     case 'select':
     case 'textarea':
       if (newProps.autoFocus) {
+        // Unlike the document-level autofocus behavior that we polyfill below,
+        // dialogs look for the attribute when they are opened. The dialog may
+        // still be closed at this point, so preserve the attribute for the
+        // browser to use when showModal() or show() is called later.
+        updateDialogAutoFocusAttribute(domElement, true);
         (
           domElement as any as
             | HTMLButtonElement
@@ -1004,6 +1035,17 @@ export function commitUpdate(
 ): void {
   // Diff and update the properties.
   updateProperties(domElement, type, oldProps, newProps);
+
+  if (oldProps.autoFocus !== newProps.autoFocus) {
+    switch (type) {
+      case 'button':
+      case 'input':
+      case 'select':
+      case 'textarea':
+        updateDialogAutoFocusAttribute(domElement, newProps.autoFocus);
+        break;
+    }
+  }
 
   // Update the props handle so that we know which props are the ones with
   // with current event handlers.
