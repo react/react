@@ -696,10 +696,17 @@ export function commitBeforeUpdateViewTransition(
   // For example, if update="foo" layout="none" and it turns out this was
   // a layout only change, then the "foo" class will be applied even though
   // it was not actually an update. Which is a bug.
-  const className: ?string = getViewTransitionClassName(
+  let className: ?string = getViewTransitionClassName(
     newProps.default,
     newProps.update,
   );
+  if (className === 'none' && oldProps.name !== newProps.name) {
+    // A change to the `name` prop is a sharing/morph event, not an ordinary
+    // content update. `default="none"` only opts out of ordinary updates, so it
+    // must not suppress a name handoff. Fall back to the `share` class, which is
+    // how this boundary opts in to animating shared names.
+    className = getViewTransitionClassName(newProps.default, newProps.share);
+  }
   if (className === 'none') {
     // If update is "none" then we don't have to apply a name. Since we won't animate this boundary.
     return;
@@ -1028,10 +1035,17 @@ export function measureUpdateViewTransition(
   const newName = getViewTransitionName(props, state);
   const oldName = getViewTransitionName(oldFiber.memoizedProps, state);
   // Whether it ends up having been updated or relayout we apply the update class name.
-  const className: ?string = getViewTransitionClassName(
+  let className: ?string = getViewTransitionClassName(
     props.default,
     props.update,
   );
+  if (className === 'none' && oldFiber.memoizedProps.name !== props.name) {
+    // A change to the `name` prop is a sharing/morph event, not an ordinary
+    // content update. `default="none"` only opts out of ordinary updates, so it
+    // must not suppress a name handoff. Fall back to the `share` class, which is
+    // how this boundary opts in to animating shared names.
+    className = getViewTransitionClassName(props.default, props.share);
+  }
   if (className === 'none') {
     // If update is "none" then we don't have to apply a name. Since we won't animate this boundary.
     return false;
