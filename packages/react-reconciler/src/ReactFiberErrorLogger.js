@@ -6,7 +6,7 @@
  *
  * @flow
  */
-
+import { analyzeError } from 'shared/ReactErrorAnalyzer';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 import type {CapturedValue} from './ReactCapturedValue';
 
@@ -36,6 +36,14 @@ export function defaultOnUncaughtError(
   // So we add those into a separate console.warn.
   reportGlobalError(error);
   if (__DEV__) {
+    // --- ADDED FIX: Analyze and suggest recovery ---
+    const suggestion = analyzeError(error);
+    if (suggestion) {
+      console.groupCollapsed('%c💡 React Recovery Suggestion', 'color: #00d8ff; font-weight: bold;');
+      console.log(suggestion);
+      console.groupEnd();
+    }
+    // ----------------------------------------------
     const componentNameMessage = componentName
       ? `An error occurred in the <${componentName}> component.`
       : 'An error occurred in one of your React components.';
@@ -69,6 +77,14 @@ export function defaultOnCaughtError(
 
   // Caught by error boundary
   if (__DEV__) {
+    // --- ADDED FIX: Analyze and suggest recovery ---
+    const suggestion = analyzeError(error);
+    if (suggestion) {
+      console.groupCollapsed('%c💡 React Recovery Suggestion', 'color: #00d8ff; font-weight: bold;');
+      console.log(suggestion);
+      console.groupEnd();
+    }
+    // ----------------------------------------------
     const componentNameMessage = componentName
       ? `The above error occurred in the <${componentName}> component.`
       : 'The above error occurred in one of your React components.';
