@@ -900,22 +900,29 @@ export function markRootFinished(
   suspendedRetryLanes: Lanes,
 ) {
   const previouslyPendingLanes = root.pendingLanes;
-  const previouslySuspendedLanes = root.suspendedLanes;
-  const previouslyPingedLanes = root.pingedLanes;
-  const previouslyWarmLanes = root.warmLanes;
+  const previouslySuspendedRetryLanes =
+    root.suspendedLanes & remainingLanes & RetryLanes;
+  const previouslyPingedRetryLanes =
+    root.pingedLanes & remainingLanes & RetryLanes;
+  const previouslyWarmRetryLanes = root.warmLanes & remainingLanes & RetryLanes;
   const noLongerPendingLanes = previouslyPendingLanes & ~remainingLanes;
 
   root.pendingLanes = remainingLanes;
 
-  // Drop lane bookkeeping for work we just finished, but keep it for lanes that
-  // are still pending. Sibling Suspense "prewarm" retries are spawned as
-  // multiple suspended retry lanes; if we cleared suspended/warm for those
-  // remaining lanes here, the next pass would treat them as fresh updates,
-  // skip siblings again, spawn more retries, and loop forever under act()'s
-  // synchronous flush (regression: facebook/react#37556).
-  root.suspendedLanes = previouslySuspendedLanes & remainingLanes;
-  root.pingedLanes = previouslyPingedLanes & remainingLanes;
-  root.warmLanes = previouslyWarmLanes & remainingLanes;
+  // Let's try everything again
+  root.suspendedLanes = NoLanes;
+  root.pingedLanes = NoLanes;
+  root.warmLanes = NoLanes;
+
+  // Exception: sibling Suspense "prewarm" retries are queued as multiple
+  // suspended retry lanes. Clearing those remaining retries here would make
+  // the next pass look like a fresh update (skip siblings → spawn more
+  // retries → infinite loop under act()). Only preserve Retry lane
+  // bookkeeping; other lanes still reset so selective hydration can retry.
+  // (facebook/react#37556)
+  root.suspendedLanes |= previouslySuspendedRetryLanes;
+  root.pingedLanes |= previouslyPingedRetryLanes;
+  root.warmLanes |= previouslyWarmRetryLanes;
 
   if (enableDefaultTransitionIndicator) {
     root.indicatorLanes &= remainingLanes;
