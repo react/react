@@ -164,6 +164,7 @@ import {
   getIsHydrating,
   upgradeHydrationErrorsToRecoverable,
   emitPendingHydrationWarnings,
+  resumeHydrationState,
 } from './ReactFiberHydrationContext';
 import {
   renderHasNotSuspendedYet,
@@ -1679,6 +1680,7 @@ function completeWork(
       return null;
     }
     case HostPortal:
+      resumeHydrationState(workInProgress);
       popHostContainer(workInProgress);
       updateHostContainer(current, workInProgress);
       if (current === null) {

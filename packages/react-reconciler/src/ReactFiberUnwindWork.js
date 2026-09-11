@@ -47,7 +47,10 @@ import {
   popSuspenseHandler,
 } from './ReactFiberSuspenseContext';
 import {popHiddenContext} from './ReactFiberHiddenContext';
-import {resetHydrationState} from './ReactFiberHydrationContext';
+import {
+  resetHydrationState,
+  resumeHydrationState,
+} from './ReactFiberHydrationContext';
 import {
   isContextProvider as isLegacyContextProvider,
   popContext as popLegacyContext,
@@ -207,6 +210,7 @@ function unwindWork(
       return null;
     }
     case HostPortal:
+      resumeHydrationState(workInProgress);
       popHostContainer(workInProgress);
       return null;
     case ContextProvider:
@@ -287,6 +291,7 @@ function unwindInterruptedWork(
       break;
     }
     case HostPortal:
+      resumeHydrationState(interruptedWork);
       popHostContainer(interruptedWork);
       break;
     case ActivityComponent: {

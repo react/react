@@ -22,7 +22,9 @@ import type {SuspenseState} from './ReactFiberSuspenseComponent';
 import type {TreeContext} from './ReactFiberTreeContext';
 import type {CapturedValue} from './ReactCapturedValue';
 import type {HydrationDiffNode} from './ReactFiberHydrationDiffs';
+import type {StackCursor} from './ReactFiberStack';
 
+import {createCursor, push, pop} from './ReactFiberStack';
 import {
   HostComponent,
   HostSingleton,
@@ -141,6 +143,71 @@ function buildHydrationDiffNode(
   };
   siblings.push(newNode);
   return newNode;
+}
+
+type HydrationState = {
+  hydrationParentFiber: null | Fiber,
+  nextHydratableInstance: null | HydratableInstance,
+  isHydrating: boolean,
+  didSuspendOrErrorDEV: boolean,
+  hydrationErrors: Array<CapturedValue<mixed>> | null,
+  hydrationDiffRootDEV: null | HydrationDiffNode,
+  rootOrSingletonContext: boolean,
+};
+
+// Portals never appear in the server-rendered HTML for their host parent,
+// since the server renderer throws if it encounters one. Suspend the
+// ambient hydration state while entering a portal's subtree — using the
+// same push/pop stack discipline as pushHostContainer/popHostContainer so
+// that nested portals restore correctly — so that its descendants mount
+// fresh instead of misinterpreting the hydration cursor belonging to the
+// portal's host parent.
+const pausedHydrationStateStack: StackCursor<HydrationState | null> =
+  createCursor(null);
+
+export function pauseHydrationState(fiber: Fiber): void {
+  // $FlowFixMe[constant-condition]
+  if (!supportsHydration) {
+    return;
+  }
+  push(
+    pausedHydrationStateStack,
+    {
+      hydrationParentFiber,
+      nextHydratableInstance,
+      isHydrating,
+      didSuspendOrErrorDEV,
+      hydrationErrors,
+      hydrationDiffRootDEV,
+      rootOrSingletonContext,
+    },
+    fiber,
+  );
+  hydrationParentFiber = null;
+  nextHydratableInstance = null;
+  isHydrating = false;
+  didSuspendOrErrorDEV = false;
+  hydrationErrors = null;
+  hydrationDiffRootDEV = null;
+  rootOrSingletonContext = false;
+}
+
+export function resumeHydrationState(fiber: Fiber): void {
+  // $FlowFixMe[constant-condition]
+  if (!supportsHydration) {
+    return;
+  }
+  const previousState = pausedHydrationStateStack.current;
+  pop(pausedHydrationStateStack, fiber);
+  if (previousState !== null) {
+    hydrationParentFiber = previousState.hydrationParentFiber;
+    nextHydratableInstance = previousState.nextHydratableInstance;
+    isHydrating = previousState.isHydrating;
+    didSuspendOrErrorDEV = previousState.didSuspendOrErrorDEV;
+    hydrationErrors = previousState.hydrationErrors;
+    hydrationDiffRootDEV = previousState.hydrationDiffRootDEV;
+    rootOrSingletonContext = previousState.rootOrSingletonContext;
+  }
 }
 
 function warnIfHydrating() {
