@@ -60,18 +60,44 @@ class Node<T> implements StackInterface<T> {
   }
 
   find(fn: (value: T) => boolean): boolean {
-    return fn(this.#value) ? true : this.#next.find(fn);
+    /*
+     * Walk the linked list iteratively instead of recursing per-node so that
+     * deeply nested stacks (e.g. tens of thousands of entries) don't
+     * overflow the JS call stack.
+     */
+    if (fn(this.#value)) {
+      return true;
+    }
+    let node: Stack<T> = this.#next;
+    while (node instanceof Node) {
+      if (fn(node.#value)) {
+        return true;
+      }
+      node = node.#next;
+    }
+    return false;
   }
 
   contains(value: T): boolean {
-    return (
-      value === this.#value ||
-      (this.#next !== null && this.#next.contains(value))
-    );
+    if (value === this.#value) {
+      return true;
+    }
+    let node: Stack<T> = this.#next;
+    while (node instanceof Node) {
+      if (value === node.#value) {
+        return true;
+      }
+      node = node.#next;
+    }
+    return false;
   }
   each(fn: (value: T) => void): void {
     fn(this.#value);
-    this.#next.each(fn);
+    let node: Stack<T> = this.#next;
+    while (node instanceof Node) {
+      fn(node.#value);
+      node = node.#next;
+    }
   }
 
   get value(): T {
@@ -79,7 +105,13 @@ class Node<T> implements StackInterface<T> {
   }
 
   print(fn: (node: T) => string): string {
-    return fn(this.#value) + this.#next.print(fn);
+    let result = fn(this.#value);
+    let node: Stack<T> = this.#next;
+    while (node instanceof Node) {
+      result += fn(node.#value);
+      node = node.#next;
+    }
+    return result;
   }
 }
 
