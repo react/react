@@ -29,6 +29,7 @@ import {
   SyntheticPointerEvent,
   SyntheticSubmitEvent,
   SyntheticToggleEvent,
+  SyntheticCommandEvent,
 } from '../../events/SyntheticEvent';
 
 import {
@@ -166,6 +167,9 @@ function extractEvents(
     case 'submit':
       SyntheticEventCtor = SyntheticSubmitEvent;
       break;
+    case 'command':
+      SyntheticEventCtor = SyntheticCommandEvent;
+      break;
     case 'toggle':
     case 'beforetoggle':
       // MDN claims <details> should not receive ToggleEvent contradicting the spec: https://html.spec.whatwg.org/multipage/indices.html#event-toggle
@@ -210,7 +214,9 @@ function extractEvents(
       // nonDelegatedEvents list in DOMPluginEventSystem.
       // Then we can remove this special list.
       // This is a breaking change that can wait until React 18.
-      (domEventName === 'scroll' || domEventName === 'scrollend');
+      (domEventName === 'scroll' ||
+        domEventName === 'scrollend' ||
+        domEventName === 'command');
 
     const listeners = accumulateSinglePhaseListeners(
       targetInst,

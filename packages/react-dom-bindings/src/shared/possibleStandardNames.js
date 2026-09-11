@@ -38,6 +38,8 @@ const possibleStandardNames = {
   classname: 'className',
   cols: 'cols',
   colspan: 'colSpan',
+  command: 'command',
+  commandfor: 'commandFor',
   content: 'content',
   contenteditable: 'contentEditable',
   contextmenu: 'contextMenu',
