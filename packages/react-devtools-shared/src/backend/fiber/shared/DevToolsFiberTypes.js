@@ -34,6 +34,7 @@ export type FiberInstance = {
   treeBaseDuration: number, // the profiled time of the last render of this subtree
   suspendedBy: null | Array<ReactAsyncInfo>, // things that suspended in the children position of this component
   suspenseNode: null | SuspenseNode,
+  connected: boolean, // whether the frontend has been told about this instance
   data: Fiber, // one of a Fiber pair
 };
 
@@ -50,6 +51,7 @@ export type FilteredFiberInstance = {
   treeBaseDuration: number, // the profiled time of the last render of this subtree
   suspendedBy: null | Array<ReactAsyncInfo>, // only used at the root
   suspenseNode: null | SuspenseNode,
+  connected: boolean, // always false here.
   data: Fiber, // one of a Fiber pair
 };
 
@@ -69,6 +71,7 @@ export type VirtualInstance = {
   treeBaseDuration: number, // the profiled time of the last render of this subtree
   suspendedBy: null | Array<ReactAsyncInfo>, // things that blocked the server component's child from rendering
   suspenseNode: null,
+  connected: boolean, // whether the frontend has been told about this instance
   // The latest info for this instance. This can be updated over time and the
   // same info can appear in more than once ServerComponentInstance.
   data: ReactComponentInfo,
