@@ -51,6 +51,52 @@ describe('react-devtools-facade', () => {
     container = null;
   });
 
+  it('looks up hoistable DOM instances without resource records', () => {
+    const root = ReactDOMClient.createRoot(container);
+    act(() =>
+      root.render(
+        <>
+          <meta name="facade-test" content="value" />
+          <title>Facade test title</title>
+          <link rel="author" href="https://example.com/facade-test" />
+        </>,
+      ),
+    );
+    const tools = createTools(facade);
+    const tree = tools.getComponentTree();
+    ['meta', 'title', 'link'].forEach(tag => {
+      const node = tree.find(n => n.name === tag);
+      const element = document.head.querySelector(tag);
+      expect(element).not.toBe(null);
+      const info = tools.getComponentByHostInstance(element);
+      expect(info).toEqual(tools.getComponentByUid(node.uid));
+      expect(info.type).toBe('host');
+      expect(info.name).toBe(tag);
+    });
+    act(() => root.unmount());
+  });
+
+  it('still looks up resource-backed hoistable DOM instances', () => {
+    const root = ReactDOMClient.createRoot(container);
+    act(() =>
+      root.render(
+        <style href="facade-test-style" precedence="default">
+          {'body {}'}
+        </style>,
+      ),
+    );
+    const tools = createTools(facade);
+    const style = document.head.querySelector(
+      'style[data-href="facade-test-style"]',
+    );
+    expect(style).not.toBe(null);
+    const info = tools.getComponentByHostInstance(style);
+    expect(info.name).toBe('style');
+    expect(info.props.href).toBe('facade-test-style');
+    act(() => root.unmount());
+    style.remove();
+  });
+
   it('installs __REACT_DEVTOOLS_GLOBAL_HOOK__ on globalThis', () => {
     expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBe(facade.hook);
   });
