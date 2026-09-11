@@ -94,6 +94,9 @@ export function inferMutationAliasingRanges(
    * and values that x flowed into.
    */
   const state = new AliasingState();
+  if (fn.selfBinding !== null) {
+    state.create(fn.selfBinding, {kind: 'Object'});
+  }
   type PendingPhiOperand = {from: Place; into: Place; index: number};
   const pendingPhis = new Map<BlockId, Array<PendingPhiOperand>>();
   const mutations: Array<{

@@ -4363,6 +4363,7 @@ pub fn lower(
         scope_id, // component_scope = function_scope for top-level
         &context_identifiers,
         true, // is_top_level
+        false,
         &identifier_locs,
     )?;
 
@@ -5726,6 +5727,7 @@ fn lower_function(
         component_scope,
         &context_ids,
         false, // nested function
+        matches!(expr, Expression::FunctionExpression(_)),
         ident_locs,
     )?;
 
@@ -5801,6 +5803,7 @@ fn lower_function_declaration(
         component_scope,
         &context_ids,
         false, // nested function
+        false,
         ident_locs,
     )?;
 
@@ -6006,6 +6009,7 @@ fn lower_function_for_object_method(
         component_scope,
         &context_ids,
         false, // nested function
+        false,
         ident_locs,
     )?;
 
@@ -6042,6 +6046,7 @@ fn lower_inner(
     component_scope: react_compiler_ast::scope::ScopeId,
     context_identifiers: &FxHashSet<react_compiler_ast::scope::BindingId>,
     is_top_level: bool,
+    is_function_expression: bool,
     identifier_locs: &IdentifierLocIndex,
 ) -> Result<
     (
@@ -6254,6 +6259,30 @@ fn lower_inner(
     // Build the HIR
     let (hir_body, instructions, used_names, child_bindings) = builder.build()?;
 
+    let self_binding = if is_function_expression {
+        id.and_then(|name| {
+            let binding_id = scope_info.scopes[function_scope.0 as usize]
+                .bindings
+                .get(name)?;
+            let has_references = scope_info
+                .ref_node_id_to_binding
+                .iter()
+                .any(|(&node_id, referenced_binding_id)| {
+                    referenced_binding_id == binding_id
+                        && scope_info.bindings[binding_id.0 as usize].declaration_node_id
+                            != Some(node_id)
+                });
+            has_references.then(|| Place {
+                identifier: child_bindings[binding_id],
+                effect: Effect::Unknown,
+                reactive: false,
+                loc: loc.clone(),
+            })
+        })
+    } else {
+        None
+    };
+
     // Create the returns place
     let returns = crate::hir_builder::create_temporary_place(env, loc.clone());
 
@@ -6261,6 +6290,7 @@ fn lower_inner(
         HirFunction {
             loc,
             id: id.map(|s| s.to_string()),
+            self_binding,
             name_hint: None,
             fn_type: if is_top_level {
                 env.fn_type

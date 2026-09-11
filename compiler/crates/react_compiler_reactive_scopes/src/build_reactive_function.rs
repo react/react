@@ -39,6 +39,7 @@ pub fn build_reactive_function(
     Ok(ReactiveFunction {
         loc: hir.loc,
         id: hir.id.clone(),
+        self_binding: hir.self_binding.clone(),
         name_hint: hir.name_hint.clone(),
         params: hir.params.clone(),
         generator: hir.generator,
