@@ -660,15 +660,7 @@ function lowerStatement(
 
       const test = stmt.get('test');
       if (test.node == null) {
-        builder.recordError(
-          new CompilerErrorDetail({
-            reason: `(BuildHIR::lowerStatement) Handle empty test in ForStatement`,
-            category: ErrorCategory.Todo,
-            loc: stmt.node.loc ?? null,
-            suggestions: null,
-          }),
-        );
-        // Treat `for(;;)` as `while(true)` to keep the builder state consistent
+        // Treat `for(;;)` as `while(true)`.
         builder.terminateWithContinuation(
           {
             kind: 'branch',
