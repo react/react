@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<7efc43a906b364f62ecf5ee8dcd7cfc4>>
+ * @generated SignedSource<<e415dd63c93f48009a9678507360a468>>
  */
 
 /*
@@ -28065,8 +28065,6 @@ __DEV__ &&
       ReactDOM = require("react-dom"),
       alwaysThrottleRetries = dynamicFlagsUntyped.alwaysThrottleRetries,
       enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
-      enableFragmentRefsScrollIntoView =
-        dynamicFlagsUntyped.enableFragmentRefsScrollIntoView,
       enableFragmentRefsInstanceHandles =
         dynamicFlagsUntyped.enableFragmentRefsInstanceHandles,
       enableFragmentRefsTextNodes =
@@ -31953,62 +31951,61 @@ __DEV__ &&
         ? parentHostFiber
         : Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
     };
-    enableFragmentRefsScrollIntoView &&
-      (FragmentInstance.prototype.scrollIntoView = function (alignToTop) {
-        if ("object" === typeof alignToTop)
-          throw Error(
-            "FragmentInstance.scrollIntoView() does not support scrollIntoViewOptions. Use the alignToTop boolean instead."
-          );
-        var children = [];
-        traverseFragmentInstancesAndTextInstances(
-          this._fragmentFiber,
-          collectChildren,
-          children
+    FragmentInstance.prototype.scrollIntoView = function (alignToTop) {
+      if ("object" === typeof alignToTop)
+        throw Error(
+          "FragmentInstance.scrollIntoView() does not support scrollIntoViewOptions. Use the alignToTop boolean instead."
         );
-        var resolvedAlignToTop = !1 !== alignToTop;
-        if (0 === children.length) {
-          var hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
-            this._fragmentFiber
-          );
-          hostSiblings = resolvedAlignToTop
-            ? hostSiblings[1] ||
-              hostSiblings[0] ||
-              getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
-            : hostSiblings[0] || hostSiblings[1];
-          if (null === hostSiblings) return;
-          if (enableFragmentRefsTextNodes && 6 === hostSiblings.tag) {
-            alignToTop = getInstanceFromHostFiber(hostSiblings);
-            scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
+      var children = [];
+      traverseFragmentInstancesAndTextInstances(
+        this._fragmentFiber,
+        collectChildren,
+        children
+      );
+      var resolvedAlignToTop = !1 !== alignToTop;
+      if (0 === children.length) {
+        var hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
+          this._fragmentFiber
+        );
+        hostSiblings = resolvedAlignToTop
+          ? hostSiblings[1] ||
+            hostSiblings[0] ||
+            getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
+          : hostSiblings[0] || hostSiblings[1];
+        if (null === hostSiblings) return;
+        if (enableFragmentRefsTextNodes && 6 === hostSiblings.tag) {
+          alignToTop = getInstanceFromHostFiber(hostSiblings);
+          scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
+          return;
+        }
+        hostSiblings = getInstanceFromHostFiber(hostSiblings);
+        if (9 !== hostSiblings.nodeType) {
+          if (11 === hostSiblings.nodeType) {
+            resolvedAlignToTop =
+              "host" in hostSiblings ? hostSiblings.host : null;
+            null !== resolvedAlignToTop
+              ? resolvedAlignToTop.scrollIntoView(alignToTop)
+              : console.warn(
+                  "You are attempting to scroll a FragmentInstance that is only mounted inside a detached DocumentFragment. No scroll was performed."
+                );
             return;
           }
-          hostSiblings = getInstanceFromHostFiber(hostSiblings);
-          if (9 !== hostSiblings.nodeType) {
-            if (11 === hostSiblings.nodeType) {
-              resolvedAlignToTop =
-                "host" in hostSiblings ? hostSiblings.host : null;
-              null !== resolvedAlignToTop
-                ? resolvedAlignToTop.scrollIntoView(alignToTop)
-                : console.warn(
-                    "You are attempting to scroll a FragmentInstance that is only mounted inside a detached DocumentFragment. No scroll was performed."
-                  );
-              return;
-            }
-            hostSiblings.scrollIntoView(alignToTop);
-          }
+          hostSiblings.scrollIntoView(alignToTop);
         }
-        for (
-          hostSiblings = resolvedAlignToTop ? children.length - 1 : 0;
-          hostSiblings !== (resolvedAlignToTop ? -1 : children.length);
+      }
+      for (
+        hostSiblings = resolvedAlignToTop ? children.length - 1 : 0;
+        hostSiblings !== (resolvedAlignToTop ? -1 : children.length);
 
-        ) {
-          var child = children[hostSiblings];
-          enableFragmentRefsTextNodes && 6 === child.tag
-            ? ((child = getInstanceFromHostFiber(child)),
-              scrollTextNodeIntoView(child, resolvedAlignToTop))
-            : getInstanceFromHostFiber(child).scrollIntoView(alignToTop);
-          hostSiblings += resolvedAlignToTop ? -1 : 1;
-        }
-      });
+      ) {
+        var child = children[hostSiblings];
+        enableFragmentRefsTextNodes && 6 === child.tag
+          ? ((child = getInstanceFromHostFiber(child)),
+            scrollTextNodeIntoView(child, resolvedAlignToTop))
+          : getInstanceFromHostFiber(child).scrollIntoView(alignToTop);
+        hostSiblings += resolvedAlignToTop ? -1 : 1;
+      }
+    };
     var previousHydratableOnEnteringScopedSingleton = null,
       NotLoaded = 0,
       Loaded = 1,
@@ -32442,11 +32439,11 @@ __DEV__ &&
     };
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-native-fb-00f48cec-20260910" !== isomorphicReactPackageVersion)
+      if ("19.3.0-native-fb-9a785953-20260911" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-native-fb-00f48cec-20260910\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-native-fb-9a785953-20260911\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -32483,10 +32480,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-native-fb-00f48cec-20260910",
+          version: "19.3.0-native-fb-9a785953-20260911",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-native-fb-00f48cec-20260910"
+          reconcilerVersion: "19.3.0-native-fb-9a785953-20260911"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -32636,5 +32633,5 @@ __DEV__ &&
       listenToAllSupportedEvents(container);
       return new ReactDOMHydrationRoot(initialChildren);
     };
-    exports.version = "19.3.0-native-fb-00f48cec-20260910";
+    exports.version = "19.3.0-native-fb-9a785953-20260911";
   })();

@@ -12,7 +12,7 @@
  * @lightSyntaxTransform
  * @preventMunge
  * @oncall react_core
- * @generated SignedSource<<d72e88535b74ff9c22c978a7411a2818>>
+ * @generated SignedSource<<ba4fad6d2e972a9931dbee1392bbc00c>>
  */
 
 'use strict';
@@ -19407,12 +19407,14 @@ function printInstructionValue(instrValue) {
             value = `Debugger`;
             break;
         }
-        case 'PostfixUpdate': {
-            value = `PostfixUpdate ${printPlace(instrValue.lvalue)} = ${printPlace(instrValue.value)} ${instrValue.operation}`;
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext': {
+            value = `${instrValue.kind} ${printPlace(instrValue.lvalue)} = ${printPlace(instrValue.value)} ${instrValue.operation}`;
             break;
         }
-        case 'PrefixUpdate': {
-            value = `PrefixUpdate ${printPlace(instrValue.lvalue)} = ${instrValue.operation} ${printPlace(instrValue.value)}`;
+        case 'PrefixUpdateLocal':
+        case 'PrefixUpdateContext': {
+            value = `${instrValue.kind} ${printPlace(instrValue.lvalue)} = ${instrValue.operation} ${printPlace(instrValue.value)}`;
             break;
         }
         case 'StartMemoize': {
@@ -19680,8 +19682,10 @@ function* eachInstructionLValueWithKind(instr) {
             }
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal': {
             yield [instr.value.lvalue, InstructionKind.Reassign];
             break;
         }
@@ -19700,8 +19704,10 @@ function* eachInstructionValueLValue(value) {
             yield* eachPatternOperand(value.lvalue.pattern);
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal': {
             yield value.lvalue;
             break;
         }
@@ -19871,8 +19877,10 @@ function* eachInstructionValueOperand(instrValue) {
             yield instrValue.value;
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal': {
             yield instrValue.value;
             break;
         }
@@ -20026,8 +20034,8 @@ function mapInstructionLValues(instr, fn) {
             mapPatternOperands(instr.value.lvalue.pattern, fn);
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PrefixUpdateLocal': {
             instr.value.lvalue = fn(instr.value.lvalue);
             break;
         }
@@ -20205,8 +20213,10 @@ function mapInstructionValueOperands(instrValue, fn) {
             instrValue.value = fn(instrValue.value);
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal': {
             instrValue.value = fn(instrValue.value);
             break;
         }
@@ -23865,7 +23875,7 @@ function lowerObjectPropertyKey(builder, property) {
     return null;
 }
 function lowerExpression(builder, exprPath) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22, _23;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, _21, _22;
     const exprNode = exprPath.node;
     const exprLoc = (_a = exprNode.loc) !== null && _a !== void 0 ? _a : GeneratedSource;
     switch (exprNode.type) {
@@ -24817,16 +24827,7 @@ function lowerExpression(builder, exprPath) {
                 }));
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
             }
-            else if (builder.isContextIdentifier(argument)) {
-                builder.recordError(new CompilerErrorDetail({
-                    reason: `(BuildHIR::lowerExpression) Handle UpdateExpression to variables captured within lambdas.`,
-                    category: ErrorCategory.Todo,
-                    loc: (_18 = exprPath.node.loc) !== null && _18 !== void 0 ? _18 : null,
-                    suggestions: null,
-                }));
-                return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
-            }
-            const lvalue = lowerIdentifierForAssignment(builder, (_19 = argument.node.loc) !== null && _19 !== void 0 ? _19 : GeneratedSource, InstructionKind.Reassign, argument);
+            const lvalue = lowerIdentifierForAssignment(builder, (_18 = argument.node.loc) !== null && _18 !== void 0 ? _18 : GeneratedSource, InstructionKind.Reassign, argument);
             if (lvalue === null) {
                 if (!builder.environment.hasErrors()) {
                     builder.recordError(new CompilerErrorDetail({
@@ -24848,9 +24849,10 @@ function lowerExpression(builder, exprPath) {
                 return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
             }
             const value = lowerIdentifier(builder, argument);
+            const isContext = builder.isContextIdentifier(argument);
             if (expr.node.prefix) {
                 return {
-                    kind: 'PrefixUpdate',
+                    kind: isContext ? 'PrefixUpdateContext' : 'PrefixUpdateLocal',
                     lvalue,
                     operation: expr.node.operator,
                     value,
@@ -24859,7 +24861,7 @@ function lowerExpression(builder, exprPath) {
             }
             else {
                 return {
-                    kind: 'PostfixUpdate',
+                    kind: isContext ? 'PostfixUpdateContext' : 'PostfixUpdateLocal',
                     lvalue,
                     operation: expr.node.operator,
                     value,
@@ -24873,7 +24875,7 @@ function lowerExpression(builder, exprPath) {
                 kind: 'RegExpLiteral',
                 pattern: expr.node.pattern,
                 flags: expr.node.flags,
-                loc: (_20 = expr.node.loc) !== null && _20 !== void 0 ? _20 : GeneratedSource,
+                loc: (_19 = expr.node.loc) !== null && _19 !== void 0 ? _19 : GeneratedSource,
             };
         }
         case 'TSInstantiationExpression':
@@ -24889,13 +24891,13 @@ function lowerExpression(builder, exprPath) {
                     kind: 'MetaProperty',
                     meta: expr.node.meta.name,
                     property: expr.node.property.name,
-                    loc: (_21 = expr.node.loc) !== null && _21 !== void 0 ? _21 : GeneratedSource,
+                    loc: (_20 = expr.node.loc) !== null && _20 !== void 0 ? _20 : GeneratedSource,
                 };
             }
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerExpression) Handle MetaProperty expressions other than import.meta`,
                 category: ErrorCategory.Todo,
-                loc: (_22 = exprPath.node.loc) !== null && _22 !== void 0 ? _22 : null,
+                loc: (_21 = exprPath.node.loc) !== null && _21 !== void 0 ? _21 : null,
                 suggestions: null,
             }));
             return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -24904,7 +24906,7 @@ function lowerExpression(builder, exprPath) {
             builder.recordError(new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerExpression) Handle ${exprPath.type} expressions`,
                 category: ErrorCategory.Todo,
-                loc: (_23 = exprPath.node.loc) !== null && _23 !== void 0 ? _23 : null,
+                loc: (_22 = exprPath.node.loc) !== null && _22 !== void 0 ? _22 : null,
                 suggestions: null,
             }));
             return { kind: 'UnsupportedNode', node: exprNode, loc: exprLoc };
@@ -32379,8 +32381,10 @@ function mayAllocate(_env, instruction) {
         case 'Destructure': {
             return doesPatternContainSpreadElement(value.lvalue.pattern);
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate':
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal':
         case 'Await':
         case 'DeclareLocal':
         case 'DeclareContext':
@@ -33356,8 +33360,8 @@ function rewriteInstructionKindsBasedOnReassignment(fn) {
                     lvalue.kind = kind;
                     break;
                 }
-                case 'PostfixUpdate':
-                case 'PrefixUpdate': {
+                case 'PostfixUpdateLocal':
+                case 'PrefixUpdateLocal': {
                     const lvalue = value.lvalue;
                     const declaration = declarations.get(lvalue.identifier.declarationId);
                     CompilerError.invariant(declaration !== undefined, {
@@ -33366,6 +33370,14 @@ function rewriteInstructionKindsBasedOnReassignment(fn) {
                         loc: lvalue.loc,
                     });
                     declaration.kind = InstructionKind.Let;
+                    break;
+                }
+                case 'PostfixUpdateContext':
+                case 'PrefixUpdateContext': {
+                    const declaration = declarations.get(value.lvalue.identifier.declarationId);
+                    if (declaration !== undefined) {
+                        declaration.kind = InstructionKind.Let;
+                    }
                     break;
                 }
             }
@@ -33532,7 +33544,8 @@ function evaluateInstruction(constants, instr) {
             }
             return null;
         }
-        case 'PostfixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext': {
             const previous = read(constants, value.value);
             if (previous !== null &&
                 previous.kind === 'Primitive' &&
@@ -33547,7 +33560,8 @@ function evaluateInstruction(constants, instr) {
             }
             return null;
         }
-        case 'PrefixUpdate': {
+        case 'PrefixUpdateLocal':
+        case 'PrefixUpdateContext': {
             const previous = read(constants, value.value);
             if (previous !== null &&
                 previous.kind === 'Primitive' &&
@@ -34023,8 +34037,12 @@ function pruneableValue(value, state) {
                 return !isIdOrNameUsed;
             }
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
+            return false;
+        }
+        case 'PostfixUpdateLocal':
+        case 'PrefixUpdateLocal': {
             return !state.isIdUsed(value.lvalue.identifier);
         }
         case 'Debugger': {
@@ -35903,8 +35921,10 @@ function mergeMacroArguments(fn, macroTags, macroKinds) {
                 case 'Destructure':
                 case 'LoadContext':
                 case 'LoadLocal':
-                case 'PostfixUpdate':
-                case 'PrefixUpdate':
+                case 'PostfixUpdateLocal':
+                case 'PostfixUpdateContext':
+                case 'PrefixUpdateContext':
+                case 'PrefixUpdateLocal':
                 case 'StoreContext':
                 case 'StoreLocal': {
                     break;
@@ -37243,11 +37263,13 @@ function codegenInstructionValue(cx, instrValue) {
             value = codegenPlaceToExpression(cx, instrValue.value);
             break;
         }
-        case 'PostfixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext': {
             value = libExports$1.updateExpression(instrValue.operation, codegenPlaceToExpression(cx, instrValue.lvalue), false);
             break;
         }
-        case 'PrefixUpdate': {
+        case 'PrefixUpdateLocal':
+        case 'PrefixUpdateContext': {
             value = libExports$1.updateExpression(instrValue.operation, codegenPlaceToExpression(cx, instrValue.lvalue), true);
             break;
         }
@@ -38082,8 +38104,10 @@ class PromoteInterposedTemporaries extends ReactiveFunctionVisitor {
             case 'PropertyDelete':
             case 'ComputedStore':
             case 'ComputedDelete':
-            case 'PostfixUpdate':
-            case 'PrefixUpdate':
+            case 'PostfixUpdateLocal':
+            case 'PostfixUpdateContext':
+            case 'PrefixUpdateContext':
+            case 'PrefixUpdateLocal':
             case 'StoreLocal':
             case 'StoreContext':
             case 'StoreGlobal':
@@ -40128,8 +40152,8 @@ function computeSignatureForInstruction(context, env, instr) {
             effects.push({ kind: 'Assign', from: value.value, into: lvalue });
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PrefixUpdateLocal': {
             effects.push({
                 kind: 'Create',
                 into: lvalue,
@@ -40142,6 +40166,17 @@ function computeSignatureForInstruction(context, env, instr) {
                 value: ValueKind.Primitive,
                 reason: ValueReason.Other,
             });
+            break;
+        }
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
+            effects.push({
+                kind: 'Create',
+                into: lvalue,
+                value: ValueKind.Primitive,
+                reason: ValueReason.Other,
+            });
+            effects.push({ kind: 'Mutate', value: value.lvalue });
             break;
         }
         case 'StoreGlobal': {
@@ -41074,8 +41109,10 @@ class CollectDependenciesVisitor extends ReactiveFunctionVisitor {
                     rvalues: [],
                 };
             }
-            case 'PrefixUpdate':
-            case 'PostfixUpdate': {
+            case 'PrefixUpdateLocal':
+            case 'PrefixUpdateContext':
+            case 'PostfixUpdateContext':
+            case 'PostfixUpdateLocal': {
                 const lvalues = [
                     { place: value.lvalue, level: MemoizationLevel.Conditional },
                 ];
@@ -43796,8 +43833,10 @@ function* generateInstructionTypes(env, names, instr) {
             yield equation(left, { kind: 'Primitive' });
             break;
         }
-        case 'PostfixUpdate':
-        case 'PrefixUpdate': {
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal': {
             yield equation(value.value.identifier.type, { kind: 'Primitive' });
             yield equation(value.lvalue.identifier.type, { kind: 'Primitive' });
             yield equation(left, { kind: 'Primitive' });
@@ -44271,9 +44310,14 @@ function validateContextVariableLValuesImpl(fn, identifierKinds, env) {
                     visit(identifierKinds, value.place, 'local', env);
                     break;
                 }
-                case 'PostfixUpdate':
-                case 'PrefixUpdate': {
+                case 'PostfixUpdateLocal':
+                case 'PrefixUpdateLocal': {
                     visit(identifierKinds, value.lvalue, 'local', env);
+                    break;
+                }
+                case 'PostfixUpdateContext':
+                case 'PrefixUpdateContext': {
+                    visit(identifierKinds, value.lvalue, 'context', env);
                     break;
                 }
                 case 'Destructure': {
@@ -46310,6 +46354,20 @@ function getContextReassignment(fn, contextVariables, isFunctionExpression, isAs
                     }
                     break;
                 }
+                case 'PostfixUpdateContext':
+                case 'PrefixUpdateContext': {
+                    if (isFunctionExpression) {
+                        if (contextVariables.has(value.lvalue.identifier.id) ||
+                            contextVariables.has(value.value.identifier.id)) {
+                            return value.lvalue;
+                        }
+                    }
+                    else {
+                        contextVariables.add(value.lvalue.identifier.id);
+                        contextVariables.add(value.value.identifier.id);
+                    }
+                    break;
+                }
                 default: {
                     let operands = eachInstructionValueOperand(value);
                     if (value.kind === 'CallExpression') {
@@ -47884,8 +47942,10 @@ function outlineJsxImpl(fn, outlinedFns) {
                 case 'NextPropertyOf':
                 case 'ObjectExpression':
                 case 'ObjectMethod':
-                case 'PostfixUpdate':
-                case 'PrefixUpdate':
+                case 'PostfixUpdateLocal':
+                case 'PostfixUpdateContext':
+                case 'PrefixUpdateContext':
+                case 'PrefixUpdateLocal':
                 case 'Primitive':
                 case 'PropertyDelete':
                 case 'PropertyLoad':

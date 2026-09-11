@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<cf52e12d9a4c6454fec1c655bb284141>>
+ * @generated SignedSource<<ffa39f7abbf6d8a0e00d5170ae2cc39c>>
  */
 
 /*
@@ -39,8 +39,6 @@ function formatProdErrorMessage(code) {
 }
 var alwaysThrottleRetries = dynamicFlagsUntyped.alwaysThrottleRetries,
   enableObjectFiber = dynamicFlagsUntyped.enableObjectFiber,
-  enableFragmentRefsScrollIntoView =
-    dynamicFlagsUntyped.enableFragmentRefsScrollIntoView,
   enableFragmentRefsInstanceHandles =
     dynamicFlagsUntyped.enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes = dynamicFlagsUntyped.enableFragmentRefsTextNodes;
@@ -19599,60 +19597,57 @@ function scrollTextNodeIntoView(textNode, resolvedAlignToTop) {
       : window.scrollY + textNode.bottom - window.innerHeight
   );
 }
-enableFragmentRefsScrollIntoView &&
-  (FragmentInstance.prototype.scrollIntoView = function (alignToTop) {
-    if ("object" === typeof alignToTop)
-      throw Error(formatProdErrorMessage(566));
-    var children = [];
-    traverseVisibleInstancesAndTextInstances(
-      this._fragmentFiber.child,
-      !1,
-      collectChildren,
-      children,
-      void 0,
-      void 0
+FragmentInstance.prototype.scrollIntoView = function (alignToTop) {
+  if ("object" === typeof alignToTop) throw Error(formatProdErrorMessage(566));
+  var children = [];
+  traverseVisibleInstancesAndTextInstances(
+    this._fragmentFiber.child,
+    !1,
+    collectChildren,
+    children,
+    void 0,
+    void 0
+  );
+  var resolvedAlignToTop = !1 !== alignToTop;
+  if (0 === children.length) {
+    var hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
+      this._fragmentFiber
     );
-    var resolvedAlignToTop = !1 !== alignToTop;
-    if (0 === children.length) {
-      var hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
-        this._fragmentFiber
-      );
-      hostSiblings = resolvedAlignToTop
-        ? hostSiblings[1] ||
-          hostSiblings[0] ||
-          getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
-        : hostSiblings[0] || hostSiblings[1];
-      if (null === hostSiblings) return;
-      if (enableFragmentRefsTextNodes && 6 === hostSiblings.tag) {
-        alignToTop = getInstanceFromHostFiber(hostSiblings);
-        scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
+    hostSiblings = resolvedAlignToTop
+      ? hostSiblings[1] ||
+        hostSiblings[0] ||
+        getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
+      : hostSiblings[0] || hostSiblings[1];
+    if (null === hostSiblings) return;
+    if (enableFragmentRefsTextNodes && 6 === hostSiblings.tag) {
+      alignToTop = getInstanceFromHostFiber(hostSiblings);
+      scrollTextNodeIntoView(alignToTop, resolvedAlignToTop);
+      return;
+    }
+    hostSiblings = getInstanceFromHostFiber(hostSiblings);
+    if (9 !== hostSiblings.nodeType) {
+      if (11 === hostSiblings.nodeType) {
+        resolvedAlignToTop = "host" in hostSiblings ? hostSiblings.host : null;
+        null !== resolvedAlignToTop &&
+          resolvedAlignToTop.scrollIntoView(alignToTop);
         return;
       }
-      hostSiblings = getInstanceFromHostFiber(hostSiblings);
-      if (9 !== hostSiblings.nodeType) {
-        if (11 === hostSiblings.nodeType) {
-          resolvedAlignToTop =
-            "host" in hostSiblings ? hostSiblings.host : null;
-          null !== resolvedAlignToTop &&
-            resolvedAlignToTop.scrollIntoView(alignToTop);
-          return;
-        }
-        hostSiblings.scrollIntoView(alignToTop);
-      }
+      hostSiblings.scrollIntoView(alignToTop);
     }
-    for (
-      hostSiblings = resolvedAlignToTop ? children.length - 1 : 0;
-      hostSiblings !== (resolvedAlignToTop ? -1 : children.length);
+  }
+  for (
+    hostSiblings = resolvedAlignToTop ? children.length - 1 : 0;
+    hostSiblings !== (resolvedAlignToTop ? -1 : children.length);
 
-    ) {
-      var child = children[hostSiblings];
-      enableFragmentRefsTextNodes && 6 === child.tag
-        ? ((child = getInstanceFromHostFiber(child)),
-          scrollTextNodeIntoView(child, resolvedAlignToTop))
-        : getInstanceFromHostFiber(child).scrollIntoView(alignToTop);
-      hostSiblings += resolvedAlignToTop ? -1 : 1;
-    }
-  });
+  ) {
+    var child = children[hostSiblings];
+    enableFragmentRefsTextNodes && 6 === child.tag
+      ? ((child = getInstanceFromHostFiber(child)),
+        scrollTextNodeIntoView(child, resolvedAlignToTop))
+      : getInstanceFromHostFiber(child).scrollIntoView(alignToTop);
+    hostSiblings += resolvedAlignToTop ? -1 : 1;
+  }
+};
 function addFragmentHandleToFiber(child, fragmentInstance) {
   enableFragmentRefsInstanceHandles &&
     ((child = getInstanceFromHostFiber(child)),
@@ -21658,14 +21653,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2476 = React.version;
 if (
-  "19.3.0-native-fb-00f48cec-20260910" !==
+  "19.3.0-native-fb-9a785953-20260911" !==
   isomorphicReactPackageVersion$jscomp$inline_2476
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2476,
-      "19.3.0-native-fb-00f48cec-20260910"
+      "19.3.0-native-fb-9a785953-20260911"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21687,10 +21682,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2483 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-00f48cec-20260910",
+  version: "19.3.0-native-fb-9a785953-20260911",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-00f48cec-20260910",
+  reconcilerVersion: "19.3.0-native-fb-9a785953-20260911",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$351 = 0;
@@ -21978,7 +21973,7 @@ exports.useFormState = function (action, initialState, permalink) {
 exports.useFormStatus = function () {
   return ReactSharedInternals.H.useHostTransitionStatus();
 };
-exports.version = "19.3.0-native-fb-00f48cec-20260910";
+exports.version = "19.3.0-native-fb-9a785953-20260911";
 "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ &&
   "function" ===
     typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop &&
