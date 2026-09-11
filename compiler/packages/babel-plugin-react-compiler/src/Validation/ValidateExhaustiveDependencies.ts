@@ -598,6 +598,21 @@ function collectDependencies(
       const place = param.kind === 'Identifier' ? param : param.place;
       locals.add(place.identifier.id);
     }
+    /*
+     * A named function's own name is bound inside its body (e.g. for recursion
+     * via the function's own name). Treat that self-reference as a local so it
+     * is not surfaced as a captured dependency of an enclosing memo/effect.
+     */
+    if (fn.id != null) {
+      for (const capture of fn.context) {
+        if (
+          capture.identifier.name?.kind === 'named' &&
+          capture.identifier.name.value === fn.id
+        ) {
+          locals.add(capture.identifier.id);
+        }
+      }
+    }
   }
 
   const dependencies: Set<InferredDependency> = new Set();
