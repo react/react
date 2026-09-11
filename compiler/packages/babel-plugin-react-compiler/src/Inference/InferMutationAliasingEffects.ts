@@ -2329,7 +2329,11 @@ function computeEffectsForLegacySignature(
     value: signature.returnValueKind,
     reason: returnValueReason,
   });
-  if (signature.impure && state.env.config.validateNoImpureFunctionsInRender) {
+  if (
+    signature.impure &&
+    state.env.config.validateNoImpureFunctionsInRender &&
+    (!signature.impureIfNoArgs || args.length === 0)
+  ) {
     effects.push({
       kind: 'Impure',
       place: receiver,

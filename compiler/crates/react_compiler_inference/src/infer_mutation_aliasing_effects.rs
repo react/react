@@ -2751,7 +2751,10 @@ fn compute_effects_for_legacy_signature(
         reason: return_value_reason,
     });
 
-    if signature.impure && env.config.validate_no_impure_functions_in_render {
+    if signature.impure
+        && env.config.validate_no_impure_functions_in_render
+        && (!signature.impure_if_no_args || args.is_empty())
+    {
         let mut diagnostic = CompilerDiagnostic::new(
             ErrorCategory::Purity,
             "Cannot call impure function during render",

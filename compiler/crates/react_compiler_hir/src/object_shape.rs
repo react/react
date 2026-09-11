@@ -108,6 +108,10 @@ pub struct FunctionSignature {
     pub no_alias: bool,
     pub mutable_only_if_operands_are_mutable: bool,
     pub impure: bool,
+    /// When true, `impure` only applies if the call/construct has no arguments.
+    /// Ported from TS `impureIfNoArgs`. Used for `Date`: `new Date()` reads the
+    /// clock, `new Date(timestamp)` does not.
+    pub impure_if_no_args: bool,
     pub known_incompatible: Option<String>,
     pub canonical_name: Option<String>,
     /// Aliasing signature in config form. Full parsing into AliasingSignature
@@ -226,6 +230,7 @@ pub fn add_function(
             no_alias: sig.no_alias,
             mutable_only_if_operands_are_mutable: sig.mutable_only_if_operands_are_mutable,
             impure: sig.impure,
+            impure_if_no_args: sig.impure_if_no_args,
             known_incompatible: sig.known_incompatible,
             canonical_name: sig.canonical_name,
             aliasing: sig.aliasing,
@@ -258,6 +263,7 @@ pub fn add_hook(registry: &mut ShapeRegistry, sig: HookSignatureBuilder, id: Opt
             no_alias: sig.no_alias,
             mutable_only_if_operands_are_mutable: false,
             impure: false,
+            impure_if_no_args: false,
             known_incompatible: sig.known_incompatible,
             canonical_name: None,
             aliasing: sig.aliasing,
@@ -315,6 +321,7 @@ pub struct FunctionSignatureBuilder {
     pub no_alias: bool,
     pub mutable_only_if_operands_are_mutable: bool,
     pub impure: bool,
+    pub impure_if_no_args: bool,
     pub known_incompatible: Option<String>,
     pub canonical_name: Option<String>,
     pub aliasing: Option<AliasingSignatureConfig>,
@@ -332,6 +339,7 @@ impl Default for FunctionSignatureBuilder {
             no_alias: false,
             mutable_only_if_operands_are_mutable: false,
             impure: false,
+            impure_if_no_args: false,
             known_incompatible: None,
             canonical_name: None,
             aliasing: None,

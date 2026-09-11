@@ -2188,7 +2188,9 @@ fn build_typed_globals(
     typed_globals.push(("performance".to_string(), perf_global.clone()));
     globals.insert("performance".to_string(), perf_global);
 
-    // Date
+    // Date: constructor is a function so `new Date()` gets a call signature.
+    // Zero-arg construction reads the clock (`impure_if_no_args`); `Date.now`
+    // remains a static method on the same shape.
     let date_now = add_function(
         shapes,
         Vec::new(),
@@ -2203,7 +2205,21 @@ fn build_typed_globals(
         None,
         false,
     );
-    let date_global = add_object(shapes, Some("Date"), vec![("now".to_string(), date_now)]);
+    let date_global = add_function(
+        shapes,
+        vec![("now".to_string(), date_now)],
+        FunctionSignatureBuilder {
+            rest_param: Some(Effect::Read),
+            return_type: Type::Poly,
+            return_value_kind: ValueKind::Mutable,
+            impure: true,
+            impure_if_no_args: true,
+            canonical_name: Some("Date".to_string()),
+            ..Default::default()
+        },
+        Some("Date"),
+        false,
+    );
     typed_globals.push(("Date".to_string(), date_global.clone()));
     globals.insert("Date".to_string(), date_global);
 
