@@ -7,7 +7,7 @@
  * @noflow
  * @nolint
  * @preventMunge
- * @generated SignedSource<<e5b1beeb321cf9fa3284f190f7f37bee>>
+ * @generated SignedSource<<c8023ca7521a88e39eaf07d1b150772c>>
  */
 
 /*
@@ -19506,7 +19506,7 @@ function validateDocumentPositionWithFiberTree(
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (null === otherFiber)
       return (
-        (otherFiber = otherNode.ownerDocument),
+        (otherFiber = getOwnerDocumentFromRootContainer(otherNode)),
         otherNode === otherFiber ||
           otherNode === otherFiber.documentElement ||
           otherNode === otherFiber.body
@@ -21632,14 +21632,14 @@ ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = function (target) {
 };
 var isomorphicReactPackageVersion$jscomp$inline_2475 = React.version;
 if (
-  "19.3.0-native-fb-9a785953-20260911" !==
+  "19.3.0-native-fb-019019be-20260911" !==
   isomorphicReactPackageVersion$jscomp$inline_2475
 )
   throw Error(
     formatProdErrorMessage(
       527,
       isomorphicReactPackageVersion$jscomp$inline_2475,
-      "19.3.0-native-fb-9a785953-20260911"
+      "19.3.0-native-fb-019019be-20260911"
     )
   );
 ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
@@ -21661,10 +21661,10 @@ ReactDOMSharedInternals.findDOMNode = function (componentOrElement) {
 };
 var internals$jscomp$inline_2482 = {
   bundleType: 0,
-  version: "19.3.0-native-fb-9a785953-20260911",
+  version: "19.3.0-native-fb-019019be-20260911",
   rendererPackageName: "react-dom",
   currentDispatcherRef: ReactSharedInternals,
-  reconcilerVersion: "19.3.0-native-fb-9a785953-20260911",
+  reconcilerVersion: "19.3.0-native-fb-019019be-20260911",
   getLaneLabelMap: function () {
     for (
       var map = new Map(), lane = 1, index$351 = 0;
@@ -21787,4 +21787,4 @@ exports.hydrateRoot = function (container, initialChildren, options) {
   listenToAllSupportedEvents(container);
   return new ReactDOMHydrationRoot(initialChildren);
 };
-exports.version = "19.3.0-native-fb-9a785953-20260911";
+exports.version = "19.3.0-native-fb-019019be-20260911";
