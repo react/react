@@ -20,7 +20,7 @@ import type {
   ReactKey,
 } from 'shared/ReactTypes';
 import type {TransitionTypes} from 'react/src/ReactTransitionType';
-import type {Ledger} from 'shared/ReactLedgers';
+import type {Ledger, LedgerTotals} from 'shared/ReactLedgers';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Flags} from './ReactFiberFlags';
@@ -474,6 +474,10 @@ export type AsyncDispatcher = {
   // Installed by Flight when the host supports async context.
   units: null | UnitCacheHooks,
   addToLedger?: (ledger: Ledger<empty>, entry: mixed) => void,
+  captureLedgers?: <T, V: $ReadOnlyArray<Ledger<empty>>>(
+    input: T,
+    ledgers: V,
+  ) => {+data: T, +ledgers: LedgerTotals<V>},
   // DEV-only
   getOwner: () => null | Fiber | ReactComponentInfo | ComponentStackNode,
 };
