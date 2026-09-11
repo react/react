@@ -59,7 +59,7 @@ describe('ReactFlightTurbopackLedgers', () => {
   // @gate enableFlightLedgers
   it('throws when captureLedgers is called outside a Flight render', () => {
     expect(() =>
-      ReactServer.captureLedgers('value', [ReactServer.createMaskLedger()]),
+      ReactServer.captureLedgers('value', [ReactServer.createBitLedger()]),
     ).toThrow(
       'captureLedgers() can only be called in a Server Components environment.',
     );
@@ -67,7 +67,7 @@ describe('ReactFlightTurbopackLedgers', () => {
 
   // @gate enableFlightLedgers
   it('throws when a ledger total is read on the server', async () => {
-    const Dynamic = ReactServer.createMaskLedger();
+    const Dynamic = ReactServer.createBitLedger();
     const attempts = [];
 
     function Page() {
@@ -101,6 +101,132 @@ describe('ReactFlightTurbopackLedgers', () => {
         'Pass it to the client, where it resolves after the response has ' +
         'finished streaming.',
     ]);
+  });
+
+  // @gate enableFlightLedgers
+  it('throws when a set entry is not a primitive', async () => {
+    const Tags = ReactServer.createSetLedger();
+    expect(() => ReactServer.addToLedger(Tags, {foo: 'bar'})).toThrow(
+      'Only a primitive can be added to a set ledger.',
+    );
+    expect(() => ReactServer.addToLedger(Tags, ['tag'])).toThrow(
+      'Only a primitive can be added to a set ledger.',
+    );
+    expect(() => ReactServer.addToLedger(Tags, () => 'tag')).toThrow(
+      'Only a primitive can be added to a set ledger.',
+    );
+
+    const Dynamic = ReactServer.createBitLedger();
+    let dynamic;
+    function App() {
+      const captured = ReactServer.captureLedgers('page', [Dynamic]);
+      dynamic = captured.ledgers[0];
+      return captured.data;
+    }
+    expect(await render(<App />)).toBe('page');
+    expect(() => ReactServer.addToLedger(Tags, dynamic)).toThrow(
+      'Only a primitive can be added to a set ledger.',
+    );
+  });
+
+  // @gate enableFlightLedgers
+  it('throws when a set entry is a symbol that is not registered', () => {
+    const Tags = ReactServer.createSetLedger();
+    expect(() => ReactServer.addToLedger(Tags, Symbol('local'))).toThrow(
+      'Only a global symbol received from Symbol.for(...) can be added to ' +
+        'a set ledger.',
+    );
+  });
+
+  // @gate enableFlightLedgers
+  it('resolves several declared ledgers positionally and independently', async () => {
+    const Tags = ReactServer.createSetLedger();
+    const Dynamic = ReactServer.createBitLedger();
+    const Expiry = ReactServer.createMinLedger();
+    const Priority = ReactServer.createMaxLedger();
+    const Locales = ReactServer.createSetLedger();
+
+    function Page() {
+      ReactServer.addToLedger(Tags, 'a');
+      ReactServer.addToLedger(Dynamic);
+      return 'page';
+    }
+
+    function App() {
+      const captured = ReactServer.captureLedgers(<Page />, [
+        Tags,
+        Dynamic,
+        Expiry,
+        Priority,
+        Locales,
+      ]);
+      const [tags, dynamic, expiry, priority, locales] = captured.ledgers;
+      return {page: captured.data, tags, dynamic, expiry, priority, locales};
+    }
+
+    const result = await render(<App />);
+    expect(result.page).toBe('page');
+    expect(Array.from(await result.tags)).toEqual(['a']);
+    expect(await result.dynamic).toBe(true);
+    // Nothing wrote to these three.
+    expect(await result.expiry).toBe(undefined);
+    expect(await result.priority).toBe(undefined);
+    expect(Array.from(await result.locales)).toEqual([]);
+  });
+
+  // @gate enableFlightLedgers
+  it('round-trips every kind', async () => {
+    const Dynamic = ReactServer.createBitLedger();
+    const Mask = ReactServer.createMaskLedger();
+    const Expiry = ReactServer.createMinLedger();
+    const Priority = ReactServer.createMaxLedger();
+    const Tags = ReactServer.createSetLedger();
+
+    function Page() {
+      ReactServer.addToLedger(Dynamic);
+      ReactServer.addToLedger(Mask, 0x80000001);
+      ReactServer.addToLedger(Expiry, 10);
+      ReactServer.addToLedger(Expiry, 5);
+      ReactServer.addToLedger(Priority, -10);
+      ReactServer.addToLedger(Priority, 2);
+      ReactServer.addToLedger(Tags, undefined);
+      ReactServer.addToLedger(Tags, NaN);
+      ReactServer.addToLedger(Tags, -0);
+      ReactServer.addToLedger(Tags, 0);
+      ReactServer.addToLedger(Tags, 12n);
+      ReactServer.addToLedger(Tags, Symbol.for('global'));
+      return 'page';
+    }
+
+    function App() {
+      const captured = ReactServer.captureLedgers(<Page />, [
+        Dynamic,
+        Mask,
+        Expiry,
+        Priority,
+        Tags,
+      ]);
+      return {page: captured.data, ledgers: captured.ledgers};
+    }
+
+    const result = await render(<App />);
+    expect(result.page).toBe('page');
+    const [dynamic, mask, expiry, priority, tags] = result.ledgers;
+    expect(await dynamic).toBe(true);
+    expect(await mask).toBe(0x80000001);
+    expect(await expiry).toBe(5);
+    expect(await priority).toBe(2);
+    // Check membership because Set ledger iteration order is unspecified.
+    // The writes of -0 and 0 must produce a single entry.
+    const entries = Array.from(await tags);
+    expect(entries.length).toBe(5);
+    expect(entries).toContain(undefined);
+    expect(
+      entries.some(entry => typeof entry === 'number' && isNaN(entry)),
+    ).toBe(true);
+    expect(entries.some(entry => Object.is(entry, 0))).toBe(true);
+    expect(entries.some(entry => entry === 12n)).toBe(true);
+    expect(entries).toContain(Symbol.for('global'));
   });
 
   // @gate enableFlightLedgers
