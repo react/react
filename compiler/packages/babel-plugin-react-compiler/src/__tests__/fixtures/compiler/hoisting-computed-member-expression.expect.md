@@ -37,7 +37,7 @@ function hoisting() {
   let t0;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     const onClick = function onClick() {
-      return bar.baz;
+      return bar["baz"];
     };
     const onClick2 = function onClick2() {
       return bar[baz];

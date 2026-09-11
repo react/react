@@ -400,8 +400,8 @@ pub fn collect_maybe_memo_dependencies(
         InstructionValue::PropertyLoad {
             object,
             property,
+            computed,
             loc,
-            ..
         } => {
             if let Some(object_dep) = maybe_deps.get(&object.identifier) {
                 Some(ManualMemoDependency {
@@ -410,6 +410,7 @@ pub fn collect_maybe_memo_dependencies(
                         let mut path = object_dep.path.clone();
                         path.push(DependencyPathEntry {
                             property: property.clone(),
+                            computed: *computed,
                             optional,
                             loc: loc.clone(),
                         });

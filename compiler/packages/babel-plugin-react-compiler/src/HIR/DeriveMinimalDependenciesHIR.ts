@@ -64,9 +64,12 @@ export class ReactiveScopeDependencyTreeHIR {
           nextNode = {
             properties: new Map(),
             accessType,
+            computed: path[i].computed,
             loc: path[i].loc,
           };
           currNode.properties.set(path[i].property, nextNode);
+        } else {
+          nextNode.computed ||= path[i].computed;
         }
         currNode = nextNode;
       }
@@ -88,6 +91,7 @@ export class ReactiveScopeDependencyTreeHIR {
         properties: new Map(),
         reactive,
         accessType: defaultAccessType,
+        computed: false,
         loc,
       };
       roots.set(identifier, rootNode);
@@ -159,6 +163,7 @@ export class ReactiveScopeDependencyTreeHIR {
           depCursor,
           entry.property,
           accessType,
+          entry.computed,
           entry.loc,
         );
       } else if (
@@ -170,6 +175,7 @@ export class ReactiveScopeDependencyTreeHIR {
           depCursor,
           entry.property,
           PropertyAccessType.UnconditionalAccess,
+          entry.computed,
           entry.loc,
         );
       } else {
@@ -314,6 +320,7 @@ function merge(
 type TreeNode<T extends string> = {
   properties: Map<PropertyLiteral, TreeNode<T>>;
   accessType: T;
+  computed: boolean;
   loc: SourceLocation;
 };
 type HoistableNode = TreeNode<'Optional' | 'NonNull'>;
@@ -343,6 +350,7 @@ function collectMinimalDependenciesInSubtree(
           ...path,
           {
             property: childName,
+            computed: childNode.computed,
             optional: isOptional(childNode.accessType),
             loc: childNode.loc,
           },
@@ -372,6 +380,7 @@ function makeOrMergeProperty(
   node: DependencyNode,
   property: PropertyLiteral,
   accessType: PropertyAccessType,
+  computed: boolean,
   loc: SourceLocation,
 ): DependencyNode {
   let child = node.properties.get(property);
@@ -379,11 +388,13 @@ function makeOrMergeProperty(
     child = {
       properties: new Map(),
       accessType,
+      computed,
       loc,
     };
     node.properties.set(property, child);
   } else {
     child.accessType = merge(child.accessType, accessType);
+    child.computed ||= computed;
   }
   return child;
 }
