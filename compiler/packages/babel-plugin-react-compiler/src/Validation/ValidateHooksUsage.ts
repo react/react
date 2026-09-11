@@ -110,7 +110,7 @@ export function validateHooksUsage(fn: HIRFunction): void {
 
     /*
      * In some circumstances such as optional calls, we may first encounter a "hook may not be referenced as normal values" error.
-     * If that same place is also used as a conditional call, upgrade the error to a conditonal hook error
+     * If that same place is also used as a conditional call, upgrade the error to a conditional hook error
      */
     if (previousError === undefined || previousError.reason !== reason) {
       trackError(

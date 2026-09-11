@@ -1091,7 +1091,7 @@ describe('ReactDOMServerSelectiveHydration', () => {
       });
 
       // Inner is still blocked so when Outer replays the event in capture phase
-      // inner ends up caling stopPropagation
+      // inner ends up calling stopPropagation
       assertLog([]);
       OuterTestUtils.assertLog([]);
       InnerTestUtils.assertLog(['Suspend Inner']);

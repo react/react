@@ -1615,7 +1615,7 @@ type HeadersInit =
   | Array<[string, string]>
   | {[key: string]: string, ...};
 
-// TODO Heades and URLSearchParams are almost the same thing.
+// TODO Headers and URLSearchParams are almost the same thing.
 // Could it somehow be abstracted away?
 declare class Headers {
   @@iterator(): Iterator<[string, string]>;

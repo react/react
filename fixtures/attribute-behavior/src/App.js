@@ -512,7 +512,7 @@ async function prepareState(initGlobals) {
     table.set(attribute, row);
   }
 
-  // Renable error overlay
+  // Re-enable error overlay
   injectErrorOverlay();
 
   return {

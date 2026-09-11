@@ -779,7 +779,7 @@ describe('ReactUse', () => {
     });
     assertLog(['Async text requested [Will never resolve]']);
 
-    // Calling a hook should error because we're oustide of a component.
+    // Calling a hook should error because we're outside of a component.
     expect(useState).toThrow(
       'Invalid hook call. Hooks can only be called inside of the body of a ' +
         'function component.',
@@ -1398,7 +1398,7 @@ describe('ReactUse', () => {
 
   it('async children are recursively unwrapped', async () => {
     // This is a Usable of a Usable. `use` would only unwrap a single level, but
-    // when passed as a child, the reconciler recurisvely unwraps until it
+    // when passed as a child, the reconciler recursively unwraps until it
     // resolves to a non-Usable value.
     const thenable = {
       then() {},
@@ -1603,10 +1603,10 @@ describe('ReactUse', () => {
 
       // TODO: We shouldn't have to re-render the parent of the context node.
       // This happens because we need to reconcile the parent's children again.
-      // However, we should be able to skip directly to reconcilation without
+      // However, we should be able to skip directly to reconciliation without
       // evaluating the component. One way to do this might be to mark the
       // context dependency with a flag that says it was added
-      // during reconcilation.
+      // during reconciliation.
       'ParentOfContextNode',
 
       // Notice that this was an update, not a remount.

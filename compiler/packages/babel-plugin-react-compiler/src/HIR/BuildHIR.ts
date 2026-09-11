@@ -1035,7 +1035,7 @@ function lowerStatement(
       const conditionalBlock = builder.reserve('loop');
       //  Block for code following the loop
       const continuationBlock = builder.reserve('block');
-      //  Loop body, executed at least once uncondtionally prior to exit
+      //  Loop body, executed at least once unconditionally prior to exit
       const loopBlock = builder.enter('block', _loopBlockId => {
         return builder.loop(
           label,
@@ -2819,7 +2819,7 @@ function lowerOptionalMemberExpression(
   /*
    * block to evaluate if the callee is null/undefined, this sets the result of the call to undefined.
    * note that we only create an alternate when first entering an optional subtree of the ast: if this
-   * is a child of an optional node, we use the alterate created by the parent.
+   * is a child of an optional node, we use the alternate created by the parent.
    */
   const alternate =
     parentAlternate !== null
@@ -2930,7 +2930,7 @@ function lowerOptionalCallExpression(
   /*
    * block to evaluate if the callee is null/undefined, this sets the result of the call to undefined.
    * note that we only create an alternate when first entering an optional subtree of the ast: if this
-   * is a child of an optional node, we use the alterate created by the parent.
+   * is a child of an optional node, we use the alternate created by the parent.
    */
   const alternate =
     parentAlternate !== null

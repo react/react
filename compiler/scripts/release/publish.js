@@ -56,7 +56,7 @@ async function main() {
     })
     .option('debug', {
       description:
-        'If enabled, will always run npm commands in dry run mode irregardless of the for-real flag',
+        'If enabled, will always run npm commands in dry run mode regardless of the for-real flag',
       type: 'boolean',
       default: false,
     })

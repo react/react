@@ -347,7 +347,7 @@ describe('DOMPropertyOperations', () => {
       expect(oncustomevent2).toHaveBeenCalledTimes(1);
     });
 
-    it('custom elements shouldnt have non-functions for on* attributes treated as event listeners', async () => {
+    it("custom elements shouldn't have non-functions for on* attributes treated as event listeners", async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
       await act(() => {

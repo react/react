@@ -19,4 +19,4 @@ First, add this file if you're using Claude Desktop: `code ~/Library/Application
 }
 ```
 
-Next, run `yarn workspace react-mcp-server watch` from the `react/compiler` directory and make changes as needed. You will need to restart Claude everytime you want to try your changes.
+Next, run `yarn workspace react-mcp-server watch` from the `react/compiler` directory and make changes as needed. You will need to restart Claude every time you want to try your changes.

@@ -115,7 +115,7 @@ export function writeChunkAndReturn(
   chunk: PrecomputedChunk | Chunk | BinaryChunk,
 ): boolean {
   writeChunk(destination, chunk);
-  // in web streams there is no backpressure so we can alwas write more
+  // in web streams there is no backpressure so we can always write more
   return true;
 }
 

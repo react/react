@@ -4555,7 +4555,7 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // bugfix: https://github.com/facebook/react/issues/27286
-  it('can render custom elements with children on ther server', async () => {
+  it('can render custom elements with children on the server', async () => {
     await act(() => {
       renderToPipeableStream(
         <html>
@@ -4581,10 +4581,10 @@ describe('ReactDOMFizzServer', () => {
   });
 
   // https://github.com/facebook/react/issues/27540
-  // This test is not actually asserting much because there is possibly a bug in the closeing logic for the
+  // This test is not actually asserting much because there is possibly a bug in the closing logic for the
   // Node implementation of Fizz. The close leads to an abort which sets the destination to null before the Float
   // method has an opportunity to schedule a write. We should fix this probably and once we do this test will start
-  // to fail if the underyling issue of writing after stream completion isn't fixed
+  // to fail if the underlying issue of writing after stream completion isn't fixed
   it('does not try to write to the stream after it has been closed', async () => {
     async function preloadLate() {
       await 1;
@@ -5364,7 +5364,7 @@ describe('ReactDOMFizzServer', () => {
       });
 
       it('does not escape <, >, or & characters', async () => {
-        // these characters valid javascript and may be necessary in scripts and won't be interpretted properly
+        // these characters valid javascript and may be necessary in scripts and won't be interpreted properly
         // escaped outside of a string context within javascript
         window.__test_outlet = null;
         // this boolean expression will be cast to a number due to the bitwise &. we will look for a truthy value (1) below
@@ -5768,7 +5768,7 @@ describe('ReactDOMFizzServer', () => {
     await waitForAll([]);
   });
 
-  it('supresses hydration warnings when an error occurs within a Suspense boundary', async () => {
+  it('suppresses hydration warnings when an error occurs within a Suspense boundary', async () => {
     let isClient = false;
 
     function ThrowWhenHydrating({children}) {

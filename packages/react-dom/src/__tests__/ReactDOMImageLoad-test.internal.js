@@ -296,7 +296,7 @@ describe('ReactDOMImageLoad', () => {
       'render start',
       'Img b',
       'Yield',
-      // yield is ignored becasue we are sync rendering
+      // yield is ignored because we are sync rendering
       'last layout',
       'last passive',
     ]);

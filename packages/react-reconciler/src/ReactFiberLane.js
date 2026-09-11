@@ -1098,7 +1098,7 @@ export function getBumpedLaneForHydration(
     (renderLane & SyncUpdateLanes) !== NoLane
       ? // Unify sync lanes. We don't do this inside getBumpedLaneForHydrationByLane
         // because that causes things to flush synchronously when they shouldn't.
-        // TODO: This is not coherent but that's beacuse the unification is not coherent.
+        // TODO: This is not coherent but that's because the unification is not coherent.
         // We need to get merge these into an actual single lane.
         SyncHydrationLane
       : getBumpedLaneForHydrationByLane(renderLane);

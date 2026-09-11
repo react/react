@@ -121,7 +121,7 @@ export function initAsyncDebugInfo(): void {
               start: performance.now(),
               end: -1.1, // set when resolved.
               promise: promiseRef,
-              awaited: trigger, // The thing we're awaiting on. Might get overrriden when we resolve.
+              awaited: trigger, // The thing we're awaiting on. Might get overridden when we resolve.
               previous: current === undefined ? null : current, // The path that led us here.
             } as UnresolvedAwaitNode;
           } else {

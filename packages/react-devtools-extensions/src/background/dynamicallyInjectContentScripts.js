@@ -44,7 +44,7 @@ const contentScriptsToInject = [
 
 async function dynamicallyInjectContentScripts() {
   try {
-    // Using this, instead of filtering registered scrips with `chrome.scripting.getRegisteredScripts`
+    // Using this, instead of filtering registered scripts with `chrome.scripting.getRegisteredScripts`
     // because of https://bugs.chromium.org/p/chromium/issues/detail?id=1393762
     // This fixes registering proxy content script in incognito mode
     await chrome.scripting.unregisterContentScripts();

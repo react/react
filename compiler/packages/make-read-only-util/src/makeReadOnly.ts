@@ -54,7 +54,7 @@ function buildMakeReadOnly(
   logger: ROViolationLogger,
   skippedClasses: string[],
 ): <T>(val: T, source: string) => T {
-  // All saved proxys
+  // All saved proxies
   const savedROObjects: SavedROObjects = new WeakMap();
 
   // Overwrites an object property with its proxy and saves its original value
