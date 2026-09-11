@@ -3240,27 +3240,37 @@ FragmentInstance.prototype.dispatchEvent = function (
       parentHostInstance.nodeType === DOCUMENT_NODE
         ? (parentHostInstance as any as Document).createComment('')
         : document.createTextNode('');
+    const removeListeners: Array<() => void> = [];
     if (eventListeners) {
       for (let i = 0; i < eventListeners.length; i++) {
-        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
-        temp.addEventListener(
-          type,
-          attachedListener,
-          getAttachOptions(optionsOrUseCapture),
-        );
+        const storedListener = eventListeners[i];
+        const {type, attachedListener, optionsOrUseCapture} = storedListener;
+        // Removal walks the Fragment's host children, which do not include
+        // this temporary target. Check the original registration so a listener
+        // removed (or removed and re-added) during dispatch is not called.
+        const dispatchListener = function (
+          this: EventTarget,
+          dispatchedEvent: Event,
+        ) {
+          if (eventListeners.indexOf(storedListener) !== -1) {
+            if (typeof attachedListener === 'function') {
+              attachedListener.call(this, dispatchedEvent);
+            } else {
+              attachedListener.handleEvent(dispatchedEvent);
+            }
+          }
+        };
+        const attachOptions = getAttachOptions(optionsOrUseCapture);
+        temp.addEventListener(type, dispatchListener, attachOptions);
+        removeListeners.push(() => {
+          temp.removeEventListener(type, dispatchListener, attachOptions);
+        });
       }
     }
     parentHostInstance.appendChild(temp);
     const cancelable = temp.dispatchEvent(event);
-    if (eventListeners) {
-      for (let i = 0; i < eventListeners.length; i++) {
-        const {type, attachedListener, optionsOrUseCapture} = eventListeners[i];
-        temp.removeEventListener(
-          type,
-          attachedListener,
-          getAttachOptions(optionsOrUseCapture),
-        );
-      }
+    for (let i = 0; i < removeListeners.length; i++) {
+      removeListeners[i]();
     }
     parentHostInstance.removeChild(temp);
     return cancelable;
