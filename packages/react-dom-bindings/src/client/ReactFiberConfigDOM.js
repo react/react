@@ -3629,7 +3629,7 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   // our best guess is to use the parent of the child instance, rather than
   // the fiber tree host parent.
   const parentHostInstanceFromDOM = fiberIsPortaledIntoHost(this._fragmentFiber)
-    ? (firstNode.parentElement as ?Instance)
+    ? firstNode.parentNode
     : parentHostInstance;
 
   if (parentHostInstanceFromDOM == null) {
