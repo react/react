@@ -47,6 +47,7 @@ import {
   enableComponentPerformanceTrack,
   enableAsyncDebugInfo,
   enableFlightWeakThenables,
+  enableFlightLedgers,
 } from 'shared/ReactFeatureFlags';
 
 import {
@@ -92,6 +93,15 @@ import {
   ASYNC_ITERATOR,
   REACT_FRAGMENT_TYPE,
 } from 'shared/ReactSymbols';
+
+import type {
+  LedgerCell,
+  LedgerKind,
+  Ledger,
+  LedgerUnitDeclaration,
+  LedgerReferencesRow,
+} from 'shared/ReactLedgers';
+import {MASK_LEDGER} from 'shared/ReactLedgers';
 
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 
@@ -159,6 +169,7 @@ const PENDING_WEAK = 'pending_weak';
 const BLOCKED = 'blocked';
 const RESOLVED_MODEL = 'resolved_model';
 const RESOLVED_MODULE = 'resolved_module';
+const RESOLVED_LEDGER = 'resolved_ledger';
 const INITIALIZED = 'fulfilled';
 const ERRORED = 'rejected';
 // Means it never resolves, even when the connection closes. The shared
@@ -218,6 +229,15 @@ type ResolvedModuleChunk<T> = {
   _debugInfo: ReactDebugInfo, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
+type ResolvedLedgerChunk<T> = {
+  status: 'resolved_ledger',
+  value: LedgerTotalRecord,
+  reason: Response,
+  _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
+  _debugChunk: null, // DEV-only
+  _debugInfo: ReactDebugInfo, // DEV-only
+  then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
+};
 type InitializedChunk<T> = {
   status: 'fulfilled',
   value: T,
@@ -262,6 +282,7 @@ type SomeChunk<T> =
   | BlockedChunk<T>
   | ResolvedModelChunk<T>
   | ResolvedModuleChunk<T>
+  | ResolvedLedgerChunk<T>
   | InitializedChunk<T>
   | ErroredChunk<T>
   | HaltedChunk<T>;
@@ -297,6 +318,9 @@ function reactPromiseThen<T>(
       break;
     case RESOLVED_MODULE:
       initializeModuleChunk(chunk);
+      break;
+    case RESOLVED_LEDGER:
+      initializeLedgerChunk(chunk);
       break;
   }
   if (__DEV__ && enableAsyncDebugInfo) {
@@ -391,6 +415,7 @@ type Response = {
   _closedReason: mixed,
   _allowPartialStream: boolean,
   _tempRefs: void | TemporaryReferenceSet, // the set temporary references can be resolved from
+  _ledgers: null | ResponseLedgers,
   _timeOrigin: number, // Profiling-only
   _pendingInitialRender: null | TimeoutID, // Profiling-only,
   _pendingChunks: number, // DEV-only
@@ -465,6 +490,9 @@ function readChunk<T>(chunk: SomeChunk<T>): T {
       break;
     case RESOLVED_MODULE:
       initializeModuleChunk(chunk);
+      break;
+    case RESOLVED_LEDGER:
+      initializeLedgerChunk(chunk);
       break;
   }
   // The status might have changed after initialization.
@@ -1295,6 +1323,7 @@ export function reportGlobalError(
   const response = unwrapWeakResponse(weakResponse);
   response._closed = true;
   response._closedReason = error;
+  resolveLedgerTotalsAtClose(response);
   response._chunks.forEach(chunk => {
     // If this chunk was already resolved or errored, it won't
     // trigger an error but if it wasn't then we need to
@@ -2707,6 +2736,27 @@ function parseModelString(
         // Symbol
         return Symbol.for(value.slice(2));
       }
+      case 'y': {
+        if (enableFlightLedgers) {
+          // The total's declaration arrives before any model references to it.
+          const record = getResponseLedgers(response).totals.get(
+            parseInt(value.slice(2), 16),
+          );
+          if (record !== undefined) {
+            const chunk = record.chunk;
+            if (enableProfilerTimer && enableComponentPerformanceTrack) {
+              if (
+                initializingChunk !== null &&
+                isArray(initializingChunk._children)
+              ) {
+                initializingChunk._children.push(chunk);
+              }
+            }
+            return chunk;
+          }
+        }
+        return undefined;
+      }
       case 'h': {
         // Server Reference
         const ref = value.slice(2);
@@ -2995,6 +3045,9 @@ function ResponseInstance(
   this._closedReason = null;
   this._allowPartialStream = allowPartialStream;
   this._tempRefs = temporaryReferences;
+  if (enableFlightLedgers) {
+    this._ledgers = null;
+  }
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     this._timeOrigin = 0;
     this._pendingInitialRender = null;
@@ -3942,6 +3995,267 @@ function resolveHint<Code: HintCode>(
   dispatchHint(code, hintModel);
 }
 
+// Ledger rows form a graph alongside the model. We can decode them without
+// initializing model chunks, preserving the laziness of the main response.
+// Once the stream closes, each total is computed from this graph on demand.
+
+type LedgerTotalRecord = {
+  chunk: SomeChunk<mixed>,
+  type: Ledger<empty>,
+  roots: Array<UnitRecord>,
+};
+
+type UnitRecord = {
+  children: null | Array<UnitRecord>,
+  capturedLedgers: null | Array<Ledger<empty>>,
+  cells: null | Map<Ledger<empty>, LedgerCell>,
+  // Reused units may be declared later, or have no ledger records at all.
+  references: null | Array<number>,
+};
+
+type ResponseLedgers = {
+  totals: Map<number, LedgerTotalRecord>,
+  types: Map<number, Ledger<empty>>,
+  units: Map<number, UnitRecord>,
+};
+
+function getResponseLedgers(response: Response): ResponseLedgers {
+  let ledgers = response._ledgers;
+  if (ledgers === null) {
+    response._ledgers = ledgers = {
+      totals: new Map(),
+      types: new Map(),
+      units: new Map(),
+    };
+  }
+  return ledgers;
+}
+
+// Closing the stream makes every total available. Compute totals with waiting
+// readers now; leave the others uninitialized until they are read.
+//
+// Even if the stream closes early (due to an abort, an error, Partial
+// Prefetching, etc) we still compute the totals for what was already decoded.
+function resolveLedgerTotalsAtClose(response: Response): void {
+  if (!enableFlightLedgers) {
+    return;
+  }
+  const ledgers = response._ledgers;
+  if (ledgers !== null) {
+    ledgers.totals.forEach(record => {
+      const chunk = record.chunk;
+      if (chunk.status === PENDING) {
+        releasePendingChunk(response, chunk);
+        const resolveListeners = chunk.value;
+        const rejectListeners = chunk.reason;
+        const resolvedChunk: ResolvedLedgerChunk<mixed> = chunk as any;
+        resolvedChunk.status = RESOLVED_LEDGER;
+        resolvedChunk.value = record;
+        resolvedChunk.reason = response;
+        if (resolveListeners !== null) {
+          initializeLedgerChunk(resolvedChunk);
+          wakeChunkIfInitialized(
+            response,
+            chunk,
+            resolveListeners,
+            rejectListeners,
+          );
+        }
+      }
+    });
+  }
+}
+
+function initializeLedgerChunk<T>(chunk: ResolvedLedgerChunk<T>): void {
+  const record = chunk.value;
+  const response = chunk.reason;
+  const total = reduceLedgerCell(getResponseLedgers(response), record).state;
+  const initializedChunk: InitializedChunk<mixed> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = total;
+  initializedChunk.reason = null;
+  if (__DEV__) {
+    processChunkDebugInfo(response, initializedChunk, total);
+  }
+}
+
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+function resolveLedgerType(response: Response, id: number, row: string): void {
+  let kind: LedgerKind;
+  switch (row.charCodeAt(0)) {
+    case 49 /* "1" */:
+      kind = MASK_LEDGER;
+      break;
+    default:
+      return;
+  }
+  getResponseLedgers(response).types.set(id, {kind});
+}
+
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+function createLedgerCell(type: Ledger<empty>): LedgerCell {
+  return {kind: MASK_LEDGER, state: 0};
+}
+
+function resolveLedgerTotal(response: Response, id: number, row: string): void {
+  const typeId = parseInt(row, 16);
+  const ledgers = getResponseLedgers(response);
+  const type = ledgers.types.get(typeId);
+  if (type === undefined) {
+    return;
+  }
+  ledgers.totals.set(id, {
+    chunk: createPendingChunk(response),
+    type,
+    roots: [],
+  });
+}
+
+// Creator and total declarations arrive first, so these links can be resolved
+// while decoding.
+function resolveUnitDeclaration(
+  response: Response,
+  id: number,
+  row: string,
+): void {
+  const declaration: LedgerUnitDeclaration = parseModel(response, row);
+  const ledgers = getResponseLedgers(response);
+  const units = ledgers.units;
+  const unit: UnitRecord = {
+    children: null,
+    capturedLedgers: null,
+    cells: null,
+    references: null,
+  };
+  units.set(id, unit);
+  const creatorId = declaration[0];
+  if (creatorId !== null) {
+    const creator = units.get(parseInt(creatorId, 16));
+    if (creator !== undefined) {
+      let children = creator.children;
+      if (children === null) {
+        creator.children = children = [];
+      }
+      children.push(unit);
+    }
+  }
+  const totalIds = declaration[1];
+  if (totalIds.length !== 0) {
+    const totals = ledgers.totals;
+    const list: Array<Ledger<empty>> = [];
+    for (let i = 0; i < totalIds.length; i++) {
+      const record = totals.get(parseInt(totalIds[i], 16));
+      if (record !== undefined) {
+        list.push(record.type);
+        record.roots.push(unit);
+      }
+    }
+    unit.capturedLedgers = list;
+  }
+}
+
+function resolveLedgerDelta(response: Response, id: number, row: string): void {
+  const delta: [string, number] = parseModel(response, row);
+  const ledgers = getResponseLedgers(response);
+  const unit = ledgers.units.get(id);
+  if (unit === undefined) {
+    return;
+  }
+  const type = ledgers.types.get(parseInt(delta[0], 16));
+  if (type === undefined) {
+    return;
+  }
+  let cells = unit.cells;
+  if (cells === null) {
+    unit.cells = cells = new Map();
+  }
+  let cell = cells.get(type);
+  if (cell === undefined) {
+    cells.set(type, (cell = createLedgerCell(type)));
+  }
+  cell.state = (cell.state | delta[1]) >>> 0;
+}
+
+function resolveUnitReferences(
+  response: Response,
+  id: number,
+  row: string,
+): void {
+  const references: LedgerReferencesRow = parseModel(response, row);
+  const unit = getResponseLedgers(response).units.get(id);
+  if (unit === undefined) {
+    return;
+  }
+  let list = unit.references;
+  if (list === null) {
+    unit.references = list = [];
+  }
+  for (let i = 0; i < references.length; i++) {
+    list.push(parseInt(references[i], 16));
+  }
+}
+
+// Compute one captured ledger's total from the unit graph. The server records
+// writes where they happen; the client determines which capture receives them.
+function reduceLedgerCell(
+  ledgers: ResponseLedgers,
+  total: LedgerTotalRecord,
+): LedgerCell {
+  const type = total.type;
+  // Use a fresh accumulator so the result doesn't alias cells shared by
+  // other captures.
+  const acc = createLedgerCell(type);
+  const units = ledgers.units;
+  // Start at this total's capture occurrences. The traversal appends other
+  // units to the worklist, so use a copy of the roots.
+  const queue = total.roots.slice();
+
+  // Reuse can form cycles or reach the same work along several paths. Expand
+  // each unit only once per total.
+  const visited: Set<UnitRecord> = new Set();
+  for (let i = 0; i < queue.length; i++) {
+    const unit = queue[i];
+    if (visited.has(unit)) {
+      continue;
+    }
+    visited.add(unit);
+    const cells = unit.cells;
+    const cell = cells === null ? undefined : cells.get(type);
+    if (cell !== undefined) {
+      acc.state = (acc.state | cell.state) >>> 0;
+    }
+
+    // Each segment that reads a cache entry needs that entry's ledger writes,
+    // even though its computation ran only once. Follow reuse references across
+    // capture boundaries, including when the target itself establishes a capture.
+    const references = unit.references;
+    if (references !== null) {
+      for (let j = 0; j < references.length; j++) {
+        const target = units.get(references[j]);
+        if (target !== undefined) {
+          queue.push(target);
+        }
+      }
+    }
+
+    // Follow work started by this unit, stopping at nested captures of this
+    // ledger. Filter only child edges: a reference may still reach the same
+    // unit and include its effects.
+    const children = unit.children;
+    if (children !== null) {
+      for (let j = 0; j < children.length; j++) {
+        const child = children[j];
+        const capturedLedgers = child.capturedLedgers;
+        if (capturedLedgers !== null && capturedLedgers.indexOf(type) !== -1) {
+          continue;
+        }
+        queue.push(child);
+      }
+    }
+  }
+  return acc;
+}
+
 const supportsCreateTask = __DEV__ && !!(console as any).createTask;
 
 type FakeFunction<T> = (() => T) => T;
@@ -4418,8 +4732,12 @@ function resolveDebugModel(
     // We shouldn't really get debug info late. It's too late to add it after we resolved.
     return;
   }
-  if (parentChunk.status === RESOLVED_MODULE) {
-    // We don't expect to get debug info on modules.
+  if (
+    // Modules don't carry debug rows.
+    parentChunk.status === RESOLVED_MODULE ||
+    // Ledger totals are outside the model chunk map, so debug rows can't target them.
+    parentChunk.status === RESOLVED_LEDGER
+  ) {
     return;
   }
   const previousChunk = parentChunk._debugChunk;
@@ -5276,6 +5594,41 @@ function processFullStringRow(
       stopStream(response, id, row);
       return;
     }
+    case 75 /* "K" */: {
+      if (enableFlightLedgers) {
+        resolveLedgerType(response, id, row);
+        return;
+      }
+      // Fallthrough to be treated as model data.
+    }
+    case 89 /* "Y" */: {
+      if (enableFlightLedgers) {
+        resolveLedgerTotal(response, id, row);
+        return;
+      }
+      // Fallthrough to be treated as model data.
+    }
+    case 81 /* "Q" */: {
+      if (enableFlightLedgers) {
+        resolveUnitDeclaration(response, id, row);
+        return;
+      }
+      // Fallthrough to be treated as model data.
+    }
+    case 90 /* "Z" */: {
+      if (enableFlightLedgers) {
+        resolveLedgerDelta(response, id, row);
+        return;
+      }
+      // Fallthrough to be treated as model data.
+    }
+    case 70 /* "F" */: {
+      if (enableFlightLedgers) {
+        resolveUnitReferences(response, id, row);
+        return;
+      }
+      // Fallthrough to be treated as model data.
+    }
     // Fallthrough
     default: /* """ "{" "[" "t" "f" "n" "0" - "9" */ {
       if (__DEV__ && row === '') {
@@ -5673,6 +6026,8 @@ export function close(weakResponse: WeakResponse): void {
   if (response._allowPartialStream) {
     // For partial streams, we halt pending chunks instead of erroring them.
     response._closed = true;
+    // Resolve totals for the received prefix before halting unfinished chunks.
+    resolveLedgerTotalsAtClose(response);
     response._chunks.forEach(chunk => {
       if (
         chunk.status === PENDING ||

@@ -102,4 +102,52 @@ describe('ReactFlightTurbopackLedgers', () => {
         'finished streaming.',
     ]);
   });
+
+  // @gate enableFlightLedgers
+  it('nets several writes into one total', async () => {
+    const Mask = ReactServer.createMaskLedger();
+    const FIRST = 0b1;
+    const SECOND = 0b10;
+
+    function Page() {
+      ReactServer.addToLedger(Mask, FIRST);
+      ReactServer.addToLedger(Mask, SECOND);
+      return 'page';
+    }
+
+    function App() {
+      const captured = ReactServer.captureLedgers(<Page />, [Mask]);
+      return {page: captured.data, mask: captured.ledgers[0]};
+    }
+
+    const result = await render(<App />);
+    expect(await result.mask).toBe(FIRST | SECOND);
+  });
+
+  // @gate enableFlightLedgers
+  it("keeps a nested capture's writes out of the enclosing one", async () => {
+    const Mask = ReactServer.createMaskLedger();
+    const SEGMENT = 0b1;
+    const LAYOUT = 0b10;
+
+    function Segment() {
+      ReactServer.addToLedger(Mask, SEGMENT);
+      return 'segment';
+    }
+
+    function Layout() {
+      ReactServer.addToLedger(Mask, LAYOUT);
+      const captured = ReactServer.captureLedgers(<Segment />, [Mask]);
+      return {segment: captured.data, segmentMask: captured.ledgers[0]};
+    }
+
+    function App() {
+      const captured = ReactServer.captureLedgers(<Layout />, [Mask]);
+      return {layout: captured.data, layoutMask: captured.ledgers[0]};
+    }
+
+    const result = await render(<App />);
+    expect(await result.layout.segmentMask).toBe(SEGMENT);
+    expect(await result.layoutMask).toBe(LAYOUT);
+  });
 });
