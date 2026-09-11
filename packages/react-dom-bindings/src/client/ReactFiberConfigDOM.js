@@ -3037,6 +3037,14 @@ FragmentInstance.prototype.addEventListener = function (
   let signal: null | AbortSignal = null;
   let cleanup: null | (() => void) = null;
   if (optionsOrUseCapture != null && typeof optionsOrUseCapture !== 'boolean') {
+    // Keep the registration's options stable if the caller later reuses or
+    // mutates the options object, including for children inserted later.
+    optionsOrUseCapture = {
+      capture: optionsOrUseCapture.capture,
+      passive: optionsOrUseCapture.passive,
+      once: optionsOrUseCapture.once,
+      signal: optionsOrUseCapture.signal,
+    };
     signal = optionsOrUseCapture.signal || null;
     if (signal !== null && signal.aborted) {
       return;
