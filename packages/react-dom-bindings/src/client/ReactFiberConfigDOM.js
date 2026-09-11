@@ -3716,8 +3716,12 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document, documentElement, or body
-      const ownerDocument = otherNode.ownerDocument;
+      // otherFiber could be null if its the document, documentElement, or body.
+      // Document.ownerDocument is null, so treat the node itself as the document.
+      const ownerDocument =
+        otherNode.nodeType === DOCUMENT_NODE
+          ? (otherNode: any)
+          : otherNode.ownerDocument;
       return (
         (otherNode as Instance | Document) === ownerDocument ||
         otherNode === ownerDocument.documentElement ||

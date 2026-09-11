@@ -2433,6 +2433,16 @@ describe('FragmentRefs', () => {
         },
       );
 
+      // document is preceding and contains the fragment (Document.ownerDocument is null)
+      expectPosition(fragmentRef.current.compareDocumentPosition(document), {
+        preceding: true,
+        following: false,
+        contains: true,
+        containedBy: false,
+        disconnected: false,
+        implementationSpecific: false,
+      });
+
       // beforeRef is preceding the fragment
       expectPosition(
         fragmentRef.current.compareDocumentPosition(beforeRef.current),
