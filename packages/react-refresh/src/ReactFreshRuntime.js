@@ -447,10 +447,15 @@ export function injectIntoGlobalHook(globalObject: any): void {
       // Note that in this case it's important that renderer code runs *after* this method call.
       // Otherwise, the renderer will think that there is no global hook, and won't do the injection.
       let nextID = 0;
+      const renderers = new Map();
       globalObject.__REACT_DEVTOOLS_GLOBAL_HOOK__ = hook = {
-        renderers: new Map(),
+        renderers,
         supportsFiber: true,
-        inject: injected => nextID++,
+        inject: injected => {
+          const id = nextID++;
+          renderers.set(id, injected);
+          return id;
+        },
         onScheduleFiberRoot: (
           id: number,
           root: FiberRoot,
