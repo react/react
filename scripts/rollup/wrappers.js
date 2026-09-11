@@ -529,7 +529,7 @@ function wrapWithTopLevelDefinitions(
         source = source.replace(USE_STRICT_HEADER_REGEX, '');
 
         // Certain DEV and Profiling bundles should self-register their own module boundaries with DevTools.
-        // This allows the Timeline to de-emphasize (dim) internal stack frames.
+        // This allows DevTools to de-emphasize (dim) internal stack frames.
         source = wrapWithRegisterInternalModule(source);
         break;
     }
