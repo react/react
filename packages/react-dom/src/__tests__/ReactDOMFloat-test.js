@@ -9,6 +9,7 @@
  */
 
 'use strict';
+import {StrictMode} from 'react';
 import {
   insertNodesAndExecuteScripts,
   mergeOptions,
@@ -9557,7 +9558,11 @@ background-color: green;
         );
       }
       await act(() => {
-        renderToPipeableStream(<App />).pipe(writable);
+        renderToPipeableStream(
+          <StrictMode>
+            <App />
+          </StrictMode>,
+        ).pipe(writable);
       });
 
       expect(getMeaningfulChildren(document)).toEqual(
@@ -9576,7 +9581,12 @@ background-color: green;
         </html>,
       );
 
-      const root = ReactDOMClient.hydrateRoot(document, <App />);
+      const root = ReactDOMClient.hydrateRoot(
+        document,
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      );
       await waitForAll([]);
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
