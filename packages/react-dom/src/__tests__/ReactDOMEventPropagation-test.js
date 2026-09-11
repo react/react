@@ -1287,72 +1287,6 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    it('onVolumeChange', async () => {
-      await testEmulatedBubblingEvent({
-        type: 'video',
-        reactEvent: 'onVolumeChange',
-        reactEventType: 'volumechange',
-        nativeEvent: 'volumechange',
-        dispatch(node) {
-          const e = new Event('volumechange', {
-            bubbles: false,
-            cancelable: true,
-          });
-          node.dispatchEvent(e);
-        },
-      });
-    });
-
-    it('onWaiting', async () => {
-      await testEmulatedBubblingEvent({
-        type: 'video',
-        reactEvent: 'onWaiting',
-        reactEventType: 'waiting',
-        nativeEvent: 'waiting',
-        dispatch(node) {
-          const e = new Event('waiting', {
-            bubbles: false,
-            cancelable: true,
-          });
-          node.dispatchEvent(e);
-        },
-      });
-    });
-  });
-
-  describe('non-bubbling events that do not bubble in React', () => {
-    it('onScroll', async () => {
-      await testNonBubblingEvent({
-        type: 'div',
-        reactEvent: 'onScroll',
-        reactEventType: 'scroll',
-        nativeEvent: 'scroll',
-        dispatch(node) {
-          const e = new Event('scroll', {
-            bubbles: false,
-            cancelable: true,
-          });
-          node.dispatchEvent(e);
-        },
-      });
-    });
-
-    it('onScrollEnd', async () => {
-      await testNonBubblingEvent({
-        type: 'div',
-        reactEvent: 'onScrollEnd',
-        reactEventType: 'scrollend',
-        nativeEvent: 'scrollend',
-        dispatch(node) {
-          const e = new Event('scrollend', {
-            bubbles: false,
-            cancelable: true,
-          });
-          node.dispatchEvent(e);
-        },
-      });
-    });
-
     it('onToggle', async () => {
       await testNonBubblingEvent({
         type: 'details',
@@ -1427,6 +1361,72 @@ describe('ReactDOMEventListener', () => {
         nativeEvent: 'toggle',
         dispatch(node) {
           const e = new Event('toggle', {
+            bubbles: false,
+            cancelable: true,
+          });
+          node.dispatchEvent(e);
+        },
+      });
+    });
+
+    it('onVolumeChange', async () => {
+      await testEmulatedBubblingEvent({
+        type: 'video',
+        reactEvent: 'onVolumeChange',
+        reactEventType: 'volumechange',
+        nativeEvent: 'volumechange',
+        dispatch(node) {
+          const e = new Event('volumechange', {
+            bubbles: false,
+            cancelable: true,
+          });
+          node.dispatchEvent(e);
+        },
+      });
+    });
+
+    it('onWaiting', async () => {
+      await testEmulatedBubblingEvent({
+        type: 'video',
+        reactEvent: 'onWaiting',
+        reactEventType: 'waiting',
+        nativeEvent: 'waiting',
+        dispatch(node) {
+          const e = new Event('waiting', {
+            bubbles: false,
+            cancelable: true,
+          });
+          node.dispatchEvent(e);
+        },
+      });
+    });
+  });
+
+  describe('non-bubbling events that do not bubble in React', () => {
+    it('onScroll', async () => {
+      await testNonBubblingEvent({
+        type: 'div',
+        reactEvent: 'onScroll',
+        reactEventType: 'scroll',
+        nativeEvent: 'scroll',
+        dispatch(node) {
+          const e = new Event('scroll', {
+            bubbles: false,
+            cancelable: true,
+          });
+          node.dispatchEvent(e);
+        },
+      });
+    });
+
+    it('onScrollEnd', async () => {
+      await testNonBubblingEvent({
+        type: 'div',
+        reactEvent: 'onScrollEnd',
+        reactEventType: 'scrollend',
+        nativeEvent: 'scrollend',
+        dispatch(node) {
+          const e = new Event('scrollend', {
             bubbles: false,
             cancelable: true,
           });
