@@ -175,8 +175,10 @@ function mergeMacroArguments(
         case 'Destructure':
         case 'LoadContext':
         case 'LoadLocal':
-        case 'PostfixUpdate':
-        case 'PrefixUpdate':
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal':
         case 'StoreContext':
         case 'StoreLocal': {
           // Instructions that never need to be merged

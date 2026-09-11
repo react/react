@@ -433,7 +433,6 @@ module.exports = {
         'packages/*/npm/**/*.js',
         'packages/dom-event-testing-library/**/*.js',
         'packages/react-devtools*/**/*.js',
-        'dangerfile.js',
         'fixtures',
         'packages/react-dom/src/test-utils/*.js',
       ],
@@ -457,13 +456,6 @@ module.exports = {
           {catchNoFixerButFixableProperty: true},
         ],
         'eslint-plugin/require-meta-has-suggestions': ERROR,
-      },
-    },
-    {
-      files: ['packages/react-native-renderer/**/*.js'],
-      globals: {
-        nativeFabricUIManager: 'readonly',
-        RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
       },
     },
     {

@@ -5,6 +5,26 @@ members = [
 ]
 resolver = "3"
 
+[workspace.package]
+version = "0.0.1-oidc.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/facebook/react"
+
+[workspace.dependencies]
+react_compiler_ast = { version = "0.0.1-oidc.0", path = "crates/react_compiler_ast" }
+react_compiler_diagnostics = { version = "0.0.1-oidc.0", path = "crates/react_compiler_diagnostics" }
+react_compiler_hir = { version = "0.0.1-oidc.0", path = "crates/react_compiler_hir" }
+react_compiler_inference = { version = "0.0.1-oidc.0", path = "crates/react_compiler_inference" }
+react_compiler_lowering = { version = "0.0.1-oidc.0", path = "crates/react_compiler_lowering" }
+react_compiler_optimization = { version = "0.0.1-oidc.0", path = "crates/react_compiler_optimization" }
+react_compiler_reactive_scopes = { version = "0.0.1-oidc.0", path = "crates/react_compiler_reactive_scopes" }
+react_compiler_ssa = { version = "0.0.1-oidc.0", path = "crates/react_compiler_ssa" }
+react_compiler_typeinference = { version = "0.0.1-oidc.0", path = "crates/react_compiler_typeinference" }
+react_compiler_utils = { version = "0.0.1-oidc.0", path = "crates/react_compiler_utils" }
+react_compiler_validation = { version = "0.0.1-oidc.0", path = "crates/react_compiler_validation" }
+
 # Sizes the shipped napi binary (index.node). Measured on arm64 macOS:
 # default release is 11.2MB; fat LTO + one codegen unit + stripping symbols
 # lands at 7.2MB with no runtime cost. Release builds get slower; debug

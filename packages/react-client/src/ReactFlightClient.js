@@ -197,6 +197,7 @@ type BlockedChunk<T> = {
   _children: Array<SomeChunk<any>> | ProfilingResult, // Profiling-only
   _debugChunk: null, // DEV-only
   _debugInfo: ReactDebugInfo, // DEV-only
+  _receivedDebugInfo: null | Set<ReactDebugInfoEntry>, // DEV-only
   then(resolve: (T) => mixed, reject?: (mixed) => mixed): void,
 };
 type ResolvedModelChunk<T> = {
@@ -276,6 +277,7 @@ function ReactPromise(status: any, value: any, reason: any) {
   if (__DEV__) {
     this._debugChunk = null;
     this._debugInfo = [];
+    this._receivedDebugInfo = null;
   }
 }
 // We subclass Promise.prototype so that we get other methods like .catch
@@ -1019,14 +1021,28 @@ type InitializationReference = {
   path: Array<string>,
   isDebug?: boolean, // DEV-only
 };
-type InitializationHandler = {
+type PendingInitializationHandler = {
   parent: null | InitializationHandler,
   chunk: null | BlockedChunk<any>,
   value: any,
-  reason: any,
+  // The controller of a stream whose chunk is blocked on its debug info. Null
+  // for every other model.
+  reason: null | FlightStreamController,
   deps: number,
-  errored: boolean,
+  errored: false,
 };
+type ErroredInitializationHandler = {
+  parent: null | InitializationHandler,
+  chunk: null | BlockedChunk<any>,
+  value: null,
+  // The error the handler was rejected with.
+  reason: mixed,
+  deps: number,
+  errored: true,
+};
+type InitializationHandler =
+  | PendingInitializationHandler
+  | ErroredInitializationHandler;
 let initializingHandler: null | InitializationHandler = null;
 let initializingChunk: null | BlockedChunk<any> = null;
 let isInitializingDebugInfo: boolean = false;
@@ -1142,42 +1158,104 @@ function initializeModelChunk<T>(chunk: ResolvedModelChunk<T>): void {
 
   try {
     const value: T = parseModel(response, resolvedModel);
-    // Invoke any listeners added while resolving this model. I.e. cyclic
-    // references. This may or may not fully resolve the model depending on
-    // if they were blocked.
-    const resolveListeners = cyclicChunk.value;
-    if (resolveListeners !== null) {
-      cyclicChunk.value = null;
-      cyclicChunk.reason = null;
-      for (let i = 0; i < resolveListeners.length; i++) {
-        const listener = resolveListeners[i];
-        if (typeof listener === 'function') {
-          listener(value);
+    const handler = initializingHandler;
+    if (handler !== null) {
+      if (handler.errored) {
+        // The handler errored during the parse, so `cyclicChunk` errors with
+        // the same reason. `triggerErrorOnChunk` also rejects the references
+        // that nested parses queued on `cyclicChunk` during the parse. No value
+        // will arrive for them. `initializeDebugChunk` can have errored
+        // `cyclicChunk` before the parse. That error stays.
+        if ((cyclicChunk as any).status === BLOCKED) {
+          triggerErrorOnChunk(response, cyclicChunk, handler.reason);
+        }
+        return;
+      }
+      // Record on the handler which chunk it completes, and with what value,
+      // before the listeners below are examined. `resolveBlockedCycle` walks
+      // from a reference to its handler and on to that handler's chunk. A cycle
+      // that closes through `cyclicChunk` is only found once `handler.chunk` is
+      // `cyclicChunk`.
+      handler.value = value;
+      handler.chunk = cyclicChunk;
+    }
+
+    const listeners = cyclicChunk.value;
+    const rejectListeners = cyclicChunk.reason;
+    cyclicChunk.value = null;
+    cyclicChunk.reason = null;
+    if (listeners !== null) {
+      // These listeners were added to `cyclicChunk` while its model was
+      // parsing. They come from models that were parsed nested inside that
+      // parse and that pointed back at `cyclicChunk`. They fall in two groups.
+      //
+      // A reference whose handler is transitively waiting on `cyclicChunk` is a
+      // cycle. Neither side can complete before the other, so one of them has
+      // to accept the value as it is now. The reference receives the current
+      // object, and the outstanding references fill it in place.
+      //
+      // Every other listener waits. Its handler is not waiting on
+      // `cyclicChunk`, so it can receive the value once the model has resolved
+      // its own references, like any reference into a blocked chunk does.
+      // Handing it the value now would complete that handler with an object
+      // that still has references outstanding. Function listeners have no
+      // handler and always wait.
+      let cyclic: null | Array<InitializationReference> = null;
+      let deferred: null | Array<InitializationReference | (T => mixed)> = null;
+      for (let i = 0; i < listeners.length; i++) {
+        const listener = listeners[i];
+        if (
+          typeof listener !== 'function' &&
+          resolveBlockedCycle(cyclicChunk, listener) !== null
+        ) {
+          if (cyclic === null) {
+            cyclic = [];
+          }
+          cyclic.push(listener);
+          // A reference is queued for rejection as the same object that is
+          // queued for resolution. It is fulfilled below, so its rejection
+          // entry goes.
+          if (rejectListeners !== null) {
+            const rejectionIdx = rejectListeners.indexOf(listener);
+            if (rejectionIdx !== -1) {
+              rejectListeners.splice(rejectionIdx, 1);
+            }
+          }
         } else {
-          fulfillReference(response, listener, value, cyclicChunk);
+          if (deferred === null) {
+            deferred = [];
+          }
+          deferred.push(listener);
+        }
+      }
+      // Put the deferred listeners back on `cyclicChunk` before any cyclic
+      // reference is fulfilled. Fulfilling one can complete `cyclicChunk`, and
+      // completion wakes what is queued on it at that moment.
+      if (deferred !== null) {
+        cyclicChunk.value = deferred;
+        cyclicChunk.reason = rejectListeners;
+      }
+      if (cyclic !== null) {
+        for (let i = 0; i < cyclic.length; i++) {
+          fulfillReference(response, cyclic[i], value, cyclicChunk);
         }
       }
     }
-    if (initializingHandler !== null) {
-      if (initializingHandler.errored) {
-        throw initializingHandler.reason;
-      }
-      if (initializingHandler.deps > 0) {
-        // We discovered new dependencies on modules that are not yet resolved.
-        // We have to keep the BLOCKED state until they're resolved.
-        initializingHandler.value = value;
-        initializingHandler.chunk = cyclicChunk;
-        return;
-      }
-    }
-    const initializedChunk: InitializedChunk<T> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = value;
-    initializedChunk.reason = null;
 
-    if (__DEV__) {
-      processChunkDebugInfo(response, initializedChunk, value);
+    if ((cyclicChunk as any).status !== BLOCKED) {
+      // Fulfilling a cyclic reference completed `cyclicChunk`, or failed and
+      // errored it. A failure rejects the reference's handler. The rejection
+      // reaches `cyclicChunk`, directly or through the cycle, because
+      // `handler.chunk` is set.
+      return;
     }
+    if (handler !== null && handler.deps > 0) {
+      // The model references chunks that have not resolved yet. `cyclicChunk`
+      // stays BLOCKED, with the deferred listeners queued on it, until the last
+      // of those resolves.
+      return;
+    }
+    initializeBlockedChunk(response, cyclicChunk, value, null);
   } catch (error) {
     const erroredChunk: ErroredChunk<T> = chunk as any;
     erroredChunk.status = ERRORED;
@@ -1280,10 +1358,11 @@ function getTaskName(type: mixed): string {
     type !== null &&
     type.$$typeof === REACT_LAZY_TYPE
   ) {
-    if (type._init === readChunk) {
-      // This is a lazy node created by Flight. It is probably a client reference.
-      // We use the "use client" string to indicate that this is the boundary into
-      // the client. There will only be one for any given owner chain.
+    if (type._payload instanceof ReactPromise) {
+      // This is a lazy node created by Flight, i.e. it wraps a chunk. It is
+      // probably a client reference. We use the "use client" string to indicate
+      // that this is the boundary into the client. There will only be one for
+      // any given owner chain.
       return '"use client"';
     }
     // We don't want to eagerly initialize the initializer in DEV mode so we can't
@@ -1374,16 +1453,6 @@ function initializeElement(
   }
 
   if (lazyNode !== null) {
-    // In case the JSX runtime has validated the lazy type as a static child, we
-    // need to transfer this information to the element.
-    if (
-      lazyNode._store &&
-      lazyNode._store.validated &&
-      !element._store.validated
-    ) {
-      element._store.validated = lazyNode._store.validated;
-    }
-
     // If the lazy node is initialized, we move its debug info to the inner
     // value.
     if (lazyNode._payload.status === INITIALIZED && lazyNode._debugInfo) {
@@ -1535,6 +1604,29 @@ function createElement(
   return element;
 }
 
+function transferValidation(store: {validated: 0 | 1 | 2}, value: mixed): void {
+  if (store.validated && typeof value === 'object' && value !== null) {
+    // Only elements and lazy nodes carry key validation. Any other value, e.g.
+    // an array of children, needs to have its own items validated instead.
+    const $$typeof = (value as any).$$typeof;
+    if ($$typeof === REACT_ELEMENT_TYPE || $$typeof === REACT_LAZY_TYPE) {
+      const valueStore = (value as any)._store;
+      if (valueStore && !valueStore.validated) {
+        valueStore.validated = store.validated;
+      }
+    }
+  }
+}
+
+function readChunkAndTransferValidation<T>(
+  store: {validated: 0 | 1 | 2},
+  payload: SomeChunk<T>,
+): T {
+  const value: T = readChunk(payload);
+  transferValidation(store, value);
+  return value;
+}
+
 function createLazyChunkWrapper<T>(
   chunk: SomeChunk<T>,
   validated: 0 | 1 | 2, // DEV-only
@@ -1547,8 +1639,16 @@ function createLazyChunkWrapper<T>(
   if (__DEV__) {
     // Forward the live array
     lazyType._debugInfo = chunk._debugInfo;
-    // Initialize a store for key validation by the JSX runtime.
-    lazyType._store = {validated: validated};
+    // Initialize a store for key validation by the JSX runtime. It can only
+    // validate the lazy node itself, because the value it refers to might not
+    // exist yet at that point, e.g. if it's an outlined row that hasn't been
+    // initialized. So the validation is transferred to the value when the lazy
+    // node is unwrapped. If the value is another lazy node, unwrapping that one
+    // forwards the validation further.
+    const store = {validated: validated};
+    lazyType._store = store;
+    // $FlowFixMe[incompatible-type] `bind` loses the type argument.
+    lazyType._init = readChunkAndTransferValidation.bind(null, store);
   }
   return lazyType;
 }
@@ -1592,6 +1692,58 @@ function getWeakChunk(response: Response, id: number): SomeChunk<any> {
     chunks.set(id, chunk);
   }
   return chunk;
+}
+
+// Moves a blocked chunk to INITIALIZED and wakes whatever is waiting on it. The
+// other `initialize*Chunk` functions start from a resolved chunk and parse it.
+// This one starts from a chunk whose model is already parsed and whose
+// references have all resolved.
+function initializeBlockedChunk<T>(
+  response: Response,
+  chunk: BlockedChunk<T>,
+  value: T,
+  reason: InitializedChunk<T>['reason'],
+): void {
+  const resolveListeners = chunk.value;
+  if (__DEV__) {
+    // Only a blocked chunk receives debug info, so release the set here.
+    chunk._receivedDebugInfo = null;
+  }
+  const initializedChunk: InitializedChunk<T> = chunk as any;
+  initializedChunk.status = INITIALIZED;
+  initializedChunk.value = value;
+  initializedChunk.reason = reason;
+  if (resolveListeners !== null) {
+    wakeChunk(response, resolveListeners, value, initializedChunk);
+  } else if (__DEV__) {
+    processChunkDebugInfo(response, initializedChunk, value);
+  }
+}
+
+// Initializes the handler's chunk once the handler has no references left to
+// wait on. `handler.chunk` is null while the handler's model is still parsing.
+// `initializeModelChunk` handles that case when the parse ends.
+function initializeChunkIfUnblocked(
+  response: Response,
+  handler: InitializationHandler,
+): void {
+  if (handler.deps !== 0 || handler.errored) {
+    return;
+  }
+  const chunk = handler.chunk;
+  if (chunk === null) {
+    return;
+  }
+  // `BlockedChunk` is the chunk's type at the time the handler recorded it.
+  // The chunk can have errored since, or a cyclic reference can have completed
+  // it, so its status is read again here.
+  if ((chunk as SomeChunk<any>).status !== BLOCKED) {
+    return;
+  }
+  // `handler.reason` is the controller of a stream whose chunk was blocked on
+  // its debug info, and null otherwise. It becomes the initialized chunk's
+  // `reason` either way.
+  initializeBlockedChunk(response, chunk, handler.value, handler.reason);
 }
 
 function fulfillReference(
@@ -1749,7 +1901,7 @@ function fulfillReference(
       const element: any = handler.value;
       switch (key) {
         case '3':
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           element.props = mappedValue;
@@ -1767,7 +1919,7 @@ function fulfillReference(
           }
           break;
         default:
-          if (__DEV__) {
+          if (__DEV__ && !reference.isDebug) {
             transferReferencedDebugInfo(handler.chunk, fulfilledChunk);
           }
           break;
@@ -1781,25 +1933,7 @@ function fulfillReference(
   }
 
   handler.deps--;
-
-  if (handler.deps === 0) {
-    const chunk = handler.chunk;
-    if (chunk === null || chunk.status !== BLOCKED) {
-      return;
-    }
-    const resolveListeners = chunk.value;
-    const initializedChunk: InitializedChunk<any> = chunk as any;
-    initializedChunk.status = INITIALIZED;
-    initializedChunk.value = handler.value;
-    initializedChunk.reason = handler.reason; // Used by streaming chunks
-    if (resolveListeners !== null) {
-      wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-    } else {
-      if (__DEV__) {
-        processChunkDebugInfo(response, initializedChunk, handler.value);
-      }
-    }
-  }
+  initializeChunkIfUnblocked(response, handler);
 }
 
 function rejectReference(
@@ -1814,9 +1948,10 @@ function rejectReference(
     return;
   }
   const blockedValue = handler.value;
-  handler.errored = true;
-  handler.value = null;
-  handler.reason = error;
+  const erroredHandler: ErroredInitializationHandler = handler as any;
+  erroredHandler.errored = true;
+  erroredHandler.value = null;
+  erroredHandler.reason = error;
   const chunk = handler.chunk;
   if (chunk === null || chunk.status !== BLOCKED) {
     return;
@@ -2035,25 +2170,7 @@ function loadServerReference<A: Iterable<any>, T>(
     }
 
     handler.deps--;
-
-    if (handler.deps === 0) {
-      const chunk = handler.chunk;
-      if (chunk === null || chunk.status !== BLOCKED) {
-        return;
-      }
-      const resolveListeners = chunk.value;
-      const initializedChunk: InitializedChunk<T> = chunk as any;
-      initializedChunk.status = INITIALIZED;
-      initializedChunk.value = handler.value;
-      initializedChunk.reason = null;
-      if (resolveListeners !== null) {
-        wakeChunk(response, resolveListeners, handler.value, initializedChunk);
-      } else {
-        if (__DEV__) {
-          processChunkDebugInfo(response, initializedChunk, handler.value);
-        }
-      }
-    }
+    initializeChunkIfUnblocked(response, handler);
   }
 
   function reject(error: mixed): void {
@@ -2064,9 +2181,10 @@ function loadServerReference<A: Iterable<any>, T>(
       return;
     }
     const blockedValue = handler.value;
-    handler.errored = true;
-    handler.value = null;
-    handler.reason = error;
+    const erroredHandler: ErroredInitializationHandler = handler as any;
+    erroredHandler.errored = true;
+    erroredHandler.value = null;
+    erroredHandler.reason = error;
     const chunk = handler.chunk;
     if (chunk === null || chunk.status !== BLOCKED) {
       return;
@@ -2126,30 +2244,46 @@ function resolveLazy(value: any): mixed {
 }
 
 function transferReferencedDebugInfo(
-  parentChunk: null | SomeChunk<any>,
+  receivingChunk: null | BlockedChunk<any>,
   referencedChunk: SomeChunk<any>,
 ): void {
   if (__DEV__) {
-    // We add the debug info to the initializing chunk since the resolution of
-    // that promise is also blocked by the referenced debug info. By adding it
-    // to both we can track it even if the array/element/lazy is extracted, or
-    // if the root is rendered as is.
-    if (parentChunk !== null) {
+    // We add the debug info to the receiving chunk since the resolution of that
+    // promise is also blocked by the referenced debug info. By adding it to
+    // both we can track it even if the array/element/lazy is extracted, or if
+    // the root is rendered as is.
+    if (receivingChunk !== null) {
       const referencedDebugInfo = referencedChunk._debugInfo;
-      const parentDebugInfo = parentChunk._debugInfo;
+      const receivingDebugInfo = receivingChunk._debugInfo;
+      // The receiving chunk takes each entry only once. A repeated entry
+      // carries no information. An entry repeats in two ways:
+      //
+      // - the receiving chunk references the same chunk more than once
+      // - two referenced chunks carry the same entry
+      //
+      // Without the set, the entries multiply along a chain of references.
+      let receivedDebugInfo = receivingChunk._receivedDebugInfo;
+      if (receivedDebugInfo === null) {
+        receivedDebugInfo = receivingChunk._receivedDebugInfo = new Set();
+      }
       for (let i = 0; i < referencedDebugInfo.length; ++i) {
         const debugInfoEntry = referencedDebugInfo[i];
         if (debugInfoEntry.name != null) {
           debugInfoEntry as ReactComponentInfo;
           // We're not transferring Component info since we use Component info
           // in Debug info to fill in gaps between Fibers for the parent stack.
-        } else {
-          parentDebugInfo.push(debugInfoEntry);
+        } else if (!receivedDebugInfo.has(debugInfoEntry)) {
+          receivedDebugInfo.add(debugInfoEntry);
+          receivingDebugInfo.push(debugInfoEntry);
         }
       }
     }
   }
 }
+
+// Most references have no path, so they can all share the same empty array.
+// It's never mutated because only paths with entries get spliced in place.
+const EMPTY_REFERENCE_PATH: Array<string> = [];
 
 function getOutlinedModel<T>(
   response: Response,
@@ -2158,8 +2292,10 @@ function getOutlinedModel<T>(
   key: string,
   map: (response: Response, model: any, parentObject: Object, key: string) => T,
 ): T {
-  const path = reference.split(':');
-  const id = parseInt(path[0], 16);
+  // parseInt stops at the ':' so we only need to split when there's a path.
+  const id = parseInt(reference, 16);
+  const path =
+    reference.indexOf(':') === -1 ? EMPTY_REFERENCE_PATH : reference.split(':');
   const chunk = getChunk(response, id);
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (initializingChunk !== null && isArray(initializingChunk._children)) {
@@ -2234,9 +2370,11 @@ function getOutlinedModel<T>(
               // This is an error. Instead of erroring directly, we're going to encode this on
               // an initialization handler so that we can catch it at the nearest Element.
               if (initializingHandler) {
-                initializingHandler.errored = true;
-                initializingHandler.value = null;
-                initializingHandler.reason = referencedChunk.reason;
+                const erroredHandler: ErroredInitializationHandler =
+                  initializingHandler as any;
+                erroredHandler.errored = true;
+                erroredHandler.value = null;
+                erroredHandler.reason = referencedChunk.reason;
               } else {
                 initializingHandler = {
                   parent: null,
@@ -2343,9 +2481,11 @@ function getOutlinedModel<T>(
       // This is an error. Instead of erroring directly, we're going to encode this on
       // an initialization handler so that we can catch it at the nearest Element.
       if (initializingHandler) {
-        initializingHandler.errored = true;
-        initializingHandler.value = null;
-        initializingHandler.reason = chunk.reason;
+        const erroredHandler: ErroredInitializationHandler =
+          initializingHandler as any;
+        erroredHandler.errored = true;
+        erroredHandler.value = null;
+        erroredHandler.reason = chunk.reason;
       } else {
         initializingHandler = {
           parent: null,
@@ -3224,10 +3364,22 @@ function resolveModule(
 ): void {
   const chunks = response._chunks;
   const chunk = chunks.get(id);
-  const clientReferenceMetadata: ClientReferenceMetadata = parseModel(
-    response,
-    model,
-  );
+  const prevHandler = initializingHandler;
+  initializingHandler = null;
+  let clientReferenceMetadata: ClientReferenceMetadata;
+  try {
+    clientReferenceMetadata = parseModel(response, model);
+    if (initializingHandler !== null) {
+      // We resolve the client reference below and have nothing to wait on,
+      // so the metadata can't reference a row that hasn't arrived.
+      throw new Error(
+        'A client reference was blocked on a row that has not been received yet. ' +
+          'This is a bug in React.',
+      );
+    }
+  } finally {
+    initializingHandler = prevHandler;
+  }
   const clientReference = resolveClientReference<$FlowFixMe>(
     response._bundlerConfig,
     clientReferenceMetadata,

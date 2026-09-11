@@ -459,6 +459,24 @@ export function fiberIsPortaledIntoHost(fiber: Fiber): boolean {
   return foundPortalParent;
 }
 
+export function getFragmentPortalContainerInfo(fiber: Fiber): null | Container {
+  let parent = fiber.return;
+  while (parent !== null) {
+    if (parent.tag === HostPortal) {
+      return parent.stateNode.containerInfo as Container;
+    }
+    if (
+      parent.tag === HostRoot ||
+      parent.tag === HostComponent ||
+      parent.tag === HostSingleton
+    ) {
+      break;
+    }
+    parent = parent.return;
+  }
+  return null;
+}
+
 export function getFragmentInstanceOrTextInstanceSiblings(
   fiber: Fiber,
 ): [Fiber | null, Fiber | null] {
@@ -472,34 +490,35 @@ export function getFragmentInstanceOrTextInstanceSiblings(
     result,
     fiber,
     parentHostFiber.child,
+    {foundSelf: false},
   );
   return result;
 }
 
 /**
  * Only collects HostText with enableFragmentRefsTextNodes enabled. Otherwise, only collects HostComponent.
+ * Returns true once the following host sibling has been found.
  */
 function findFragmentInstanceOrTextInstanceSiblings(
   result: [Fiber | null, Fiber | null],
   self: Fiber,
   child: null | Fiber,
-  foundSelf: boolean = false,
+  state: {foundSelf: boolean},
 ): boolean {
   while (child !== null) {
     if (child === self) {
-      foundSelf = true;
-      if (child.sibling) {
-        child = child.sibling;
-      } else {
-        return true;
-      }
+      // Shared across recursive calls so ancestors can keep scanning for
+      // following host siblings after a nested empty fragment.
+      state.foundSelf = true;
+      child = child.sibling;
+      continue;
     }
     if (
       child.tag === HostComponent ||
       child.tag === HostSingleton ||
       (enableFragmentRefsTextNodes && child.tag === HostText)
     ) {
-      if (foundSelf) {
+      if (state.foundSelf) {
         result[1] = child;
         return true;
       } else {
@@ -516,7 +535,7 @@ function findFragmentInstanceOrTextInstanceSiblings(
           result,
           self,
           child.child,
-          foundSelf,
+          state,
         )
       ) {
         return true;

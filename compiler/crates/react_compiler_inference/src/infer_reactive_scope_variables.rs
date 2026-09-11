@@ -183,8 +183,10 @@ fn may_allocate(value: &InstructionValue, lvalue_type_is_primitive: bool) -> boo
         InstructionValue::Destructure { lvalue, .. } => {
             visitors::does_pattern_contain_spread_element(&lvalue.pattern)
         }
-        InstructionValue::PostfixUpdate { .. }
-        | InstructionValue::PrefixUpdate { .. }
+        InstructionValue::PostfixUpdateLocal { .. }
+        | InstructionValue::PostfixUpdateContext { .. }
+        | InstructionValue::PrefixUpdateContext { .. }
+        | InstructionValue::PrefixUpdateLocal { .. }
         | InstructionValue::Await { .. }
         | InstructionValue::DeclareLocal { .. }
         | InstructionValue::DeclareContext { .. }

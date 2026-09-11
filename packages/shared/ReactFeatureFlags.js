@@ -160,10 +160,8 @@ export const enableInfiniteRenderLoopDetection: boolean = false;
  */
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
-export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
+export const enableConditionalUseWarning: boolean = true;
 
-export const enableFragmentRefs: boolean = true;
-export const enableFragmentRefsScrollIntoView: boolean = true;
 export const enableFragmentRefsInstanceHandles: boolean = true;
 export const enableFragmentRefsTextNodes: boolean = true;
 
@@ -232,7 +230,7 @@ export const disableInputAttributeSyncing: boolean = false;
 export const disableTextareaChildren: boolean = false;
 
 // Disables children for <textarea> elements
-export const enableParallelTransitions: boolean = false;
+export const enableParallelTransitions: boolean = true;
 
 // -----------------------------------------------------------------------------
 // Debugging and DevTools

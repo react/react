@@ -264,7 +264,7 @@ function encodeReply(
   string | URLSearchParams | FormData,
 > /* We don't use URLSearchParams yet but maybe */ {
   return new Promise((resolve, reject) => {
-    const abort = processReply(
+    processReply(
       value,
       '',
       options && options.temporaryReferences
@@ -272,19 +272,8 @@ function encodeReply(
         : undefined,
       resolve,
       reject,
+      options ? options.signal : undefined,
     );
-    if (options && options.signal) {
-      const signal = options.signal;
-      if (signal.aborted) {
-        abort((signal as any).reason);
-      } else {
-        const listener = () => {
-          abort((signal as any).reason);
-          signal.removeEventListener('abort', listener);
-        };
-        signal.addEventListener('abort', listener);
-      }
-    }
   });
 }
 

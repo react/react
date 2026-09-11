@@ -1,7 +1,11 @@
 [package]
 name = "react_compiler_diagnostics"
-version = "0.1.0"
-edition = "2024"
+description = "Diagnostics infrastructure for the React Compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 rustc-hash = "2"

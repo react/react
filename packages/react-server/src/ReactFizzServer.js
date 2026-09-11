@@ -28,7 +28,6 @@ import type {
   SuspenseListProps,
   SuspenseListRevealOrder,
   ReactKey,
-  ReactRecoverable,
 } from 'shared/ReactTypes';
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {
@@ -135,9 +134,9 @@ import {
   readPreviousThenableFromState,
   getActionStateCount,
   getActionStateMatchingIndex,
-  RecoverableException,
-  createFatalRecoverableError,
-  getSuspendedRecoverableError,
+  createRecoverableError,
+  isRecoverableError,
+  cloneRecoverableErrorAsFatal,
 } from './ReactFizzHooks';
 import {DefaultAsyncDispatcher} from './ReactFizzAsyncDispatcher';
 import {
@@ -377,6 +376,12 @@ const CLOSING = 12;
 const CLOSED = 13;
 const STALLED_DEV = 14;
 
+// Passed to renderLifetimeController.abort(). Nothing reads the reason, but a
+// call to abort() without one constructs an AbortError DOMException. Capturing
+// the stack trace dominates that cost, and the cost grows with the depth of the
+// stack.
+const RENDER_ENDED = 'The render ended.';
+
 export opaque type Request = {
   destination: null | Destination,
   flushScheduled: boolean,
@@ -428,6 +433,11 @@ export opaque type Request = {
   // emit a different response to the stream instead.
   onShellError: (error: mixed) => void,
   onFatalError: (error: mixed) => void,
+  // Aborted once the render ends, whether it completed, failed fatally or was
+  // aborted. Bounds the lifetime of anything that must not outlive the render.
+  // Null until attachAbortSignal creates it, so a render that is given no
+  // signal constructs no controller.
+  renderLifetimeController: null | AbortController,
   // Form state that was the result of an MPA submission, if it was provided.
   formState: null | ReactFormState<any, any>,
   // DEV-only, warning dedupe
@@ -581,6 +591,7 @@ function RequestInstance(
   this.onShellReady = onShellReady === undefined ? noop : onShellReady;
   this.onShellError = onShellError === undefined ? noop : onShellError;
   this.onFatalError = onFatalError === undefined ? noop : onFatalError;
+  this.renderLifetimeController = null;
   this.formState = formState === undefined ? null : formState;
   if (__DEV__) {
     this.didWarnForKey = null;
@@ -1337,7 +1348,7 @@ function encodeErrorForBoundary(
 ) {
   boundary.errorDigest = digest;
   if (__DEV__) {
-    if (error === RecoverableException) {
+    if (isRecoverableError(error)) {
       boundary.errorMessage = wasAborted
         ? 'Switched to client rendering because the server render was aborted ' +
           'with a request to render on the client.'
@@ -1375,17 +1386,8 @@ function logRecoverableError(
   errorInfo: ThrownInfo,
   debugTask: null | ConsoleTask,
 ): ?string {
-  if (error === RecoverableException) {
-    // The fatal wrapper was created eagerly to capture the use() call site, but
-    // this path recovered at a Suspense boundary. Report its original cause and
-    // discard the wrapper.
-    const fatalRecoverableError = getSuspendedRecoverableError();
-    logBrowserBailout(
-      request,
-      fatalRecoverableError.cause,
-      errorInfo,
-      debugTask,
-    );
+  if (isRecoverableError(error)) {
+    logBrowserBailout(request, error, errorInfo, debugTask);
     return REACT_RECOVERABLE_DIGEST;
   }
 
@@ -1455,12 +1457,17 @@ function fatalError(
     }
     onFatalError(error);
   }
+  endRenderLifetime(request);
   if (request.destination !== null) {
     request.status = CLOSED;
     closeWithError(request.destination, error);
   } else {
     request.status = CLOSING;
-    request.fatalError = error;
+    // abort() already stored the reason that every remaining task must
+    // observe. This error may only be a fatal diagnostic derived from it.
+    if (!request.aborted) {
+      request.fatalError = error;
+    }
   }
 }
 
@@ -4593,10 +4600,12 @@ function erroredTask(
     // shell and defer its content to a downstream renderer. At the root there
     // is no shell to stream, so this is a fatal error and must be reported like
     // any other root error.
-    if (error === RecoverableException) {
-      const useError = getSuspendedRecoverableError();
-      logRecoverableError(request, useError, errorInfo, debugTask);
-      fatalError(request, useError, errorInfo, debugTask);
+    if (isRecoverableError(error)) {
+      // This recoverable reached the root without a Suspense boundary, so
+      // report it using the fatal diagnostic while leaving the original intact.
+      const fatalRecoverableError = cloneRecoverableErrorAsFatal(error as any);
+      logRecoverableError(request, fatalRecoverableError, errorInfo, debugTask);
+      fatalError(request, fatalRecoverableError, errorInfo, debugTask);
     } else {
       logRecoverableError(request, error, errorInfo, debugTask);
       fatalError(request, error, errorInfo, debugTask);
@@ -4845,14 +4854,9 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
   }
 
   const errorInfo = getThrownInfo(task.componentStack);
-  // Only abort reasons get this interpretation. Throwing a recoverable
-  // directly is still an application error; it must be passed to use() or
-  // abort() for a renderer to recover it.
-  const isRecoverableAbort =
-    typeof error === 'object' &&
-    error !== null &&
-    // $FlowFixMe[prop-missing]
-    error.$$typeof === REACT_RECOVERABLE_TYPE;
+  // Only errors materialized by use() or abort() carry this internal brand.
+  // Throwing the browser() token directly is still an application error.
+  const isRecoverableReason = isRecoverableError(error);
 
   if (boundary === null) {
     const replay: null | ReplaySet = task.replay;
@@ -4860,7 +4864,7 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       // We didn't complete the root so we have nothing to show. We can close
       // the request;
       if (
-        !isRecoverableAbort &&
+        !isRecoverableReason &&
         request.trackedPostpones !== null &&
         segment !== null
       ) {
@@ -4870,9 +4874,12 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
         logRecoverableError(request, error, errorInfo, task.debugTask);
         trackPostpone(request, trackedPostpones, task, segment);
         finishedTask(request, null, task.row, segment);
-      } else if (isRecoverableAbort) {
-        const recoverable: ReactRecoverable = error as any;
-        const fatalRecoverableError = createFatalRecoverableError(recoverable);
+      } else if (isRecoverableReason) {
+        // This root task cannot recover from the abort. Report a fatal clone,
+        // but keep the original branded reason on the request for other tasks.
+        const fatalRecoverableError = cloneRecoverableErrorAsFatal(
+          error as any,
+        );
         logRecoverableError(
           request,
           fatalRecoverableError,
@@ -4896,22 +4903,18 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       // the ReplaySet.
       replay.pendingTasks--;
       if (replay.pendingTasks === 0 && replay.nodes.length > 0) {
-        let errorDigest;
-        let errorForBoundary;
-        if (isRecoverableAbort) {
-          logBrowserBailout(request, error, errorInfo, null);
-          errorDigest = REACT_RECOVERABLE_DIGEST;
-          errorForBoundary = RecoverableException;
-        } else {
-          errorDigest = logRecoverableError(request, error, errorInfo, null);
-          errorForBoundary = error;
-        }
+        const errorDigest = logRecoverableError(
+          request,
+          error,
+          errorInfo,
+          null,
+        );
         abortRemainingReplayNodes(
           request,
           null,
           replay.nodes,
           replay.slots,
-          errorForBoundary,
+          error,
           errorDigest,
           errorInfo,
           true,
@@ -4928,7 +4931,7 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
     const trackedPostpones = request.trackedPostpones;
     if (boundary.status !== CLIENT_RENDERED) {
       if (
-        !isRecoverableAbort &&
+        !isRecoverableReason &&
         trackedPostpones !== null &&
         segment !== null
       ) {
@@ -4947,28 +4950,13 @@ function finishAbortedTask(task: Task, request: Request, error: mixed): void {
       boundary.status = CLIENT_RENDERED;
       // We are aborting a render or resume which should put boundaries
       // into an explicitly client rendered state
-      let errorDigest;
-      let errorForBoundary;
-      if (isRecoverableAbort) {
-        logBrowserBailout(request, error, errorInfo, task.debugTask);
-        errorDigest = REACT_RECOVERABLE_DIGEST;
-        errorForBoundary = RecoverableException;
-      } else {
-        errorDigest = logRecoverableError(
-          request,
-          error,
-          errorInfo,
-          task.debugTask,
-        );
-        errorForBoundary = error;
-      }
-      encodeErrorForBoundary(
-        boundary,
-        errorDigest,
-        errorForBoundary,
+      const errorDigest = logRecoverableError(
+        request,
+        error,
         errorInfo,
-        true,
+        task.debugTask,
       );
+      encodeErrorForBoundary(boundary, errorDigest, error, errorInfo, true);
 
       untrackBoundary(request, boundary);
 
@@ -6366,6 +6354,7 @@ function flushCompletedQueues(
         }
       }
       // We're done.
+      endRenderLifetime(request);
       request.status = CLOSED;
       close(destination);
       // We need to stop flowing now because we do not want any async contexts which might call
@@ -6475,7 +6464,13 @@ export function prepareForStartFlowingIfBeforeAllReady(request: Request) {
 export function startFlowing(request: Request, destination: Destination): void {
   if (request.status === CLOSING) {
     request.status = CLOSED;
-    closeWithError(destination, request.fatalError);
+    let error = request.fatalError;
+    if (isRecoverableError(error)) {
+      // An aborted request keeps its original branded reason while tasks
+      // unwind. Convert it only now that the stream must receive a fatal.
+      error = cloneRecoverableErrorAsFatal(error as any);
+    }
+    closeWithError(destination, error);
     return;
   }
   if (request.status === CLOSED) {
@@ -6523,6 +6518,41 @@ function finishAbort(request: Request, abortableTasks: Set<Task>): void {
   }
 }
 
+function endRenderLifetime(request: Request): void {
+  const renderLifetimeController = request.renderLifetimeController;
+  if (renderLifetimeController !== null) {
+    renderLifetimeController.abort(RENDER_ENDED);
+  }
+}
+
+// Aborts the request when the caller's signal aborts. The render lifetime
+// bounds the listener, so the runtime removes the listener as soon as the
+// render ends. From that point on abort() returns early, so the listener has
+// nothing left to do.
+//
+// The listener has to be removed, because it would otherwise keep the whole
+// Request reachable for as long as the caller's signal lives. A composite
+// signal from AbortSignal.any() is itself retained by the runtime while it has
+// any abort listener attached.
+//
+// A request whose stream is neither consumed nor cancelled never ends, so its
+// listener stays attached for as long as the caller's signal lives.
+export function attachAbortSignal(request: Request, signal: AbortSignal): void {
+  if (signal.aborted) {
+    abort(request, signal.reason);
+    return;
+  }
+  const renderLifetimeController = new AbortController();
+  request.renderLifetimeController = renderLifetimeController;
+  signal.addEventListener(
+    'abort',
+    () => {
+      abort(request, signal.reason);
+    },
+    {signal: renderLifetimeController.signal},
+  );
+}
+
 // This is called to early terminate a request. It puts all pending boundaries in client rendered state.
 export function abort(request: Request, reason: mixed): void {
   if (
@@ -6533,9 +6563,18 @@ export function abort(request: Request, reason: mixed): void {
     // can be aborted. in practice this makes abort callable at most once per render.
     return;
   }
+  endRenderLifetime(request);
+  const isRecoverableReason =
+    typeof reason === 'object' &&
+    reason !== null &&
+    // $FlowFixMe[prop-missing]
+    reason.$$typeof === REACT_RECOVERABLE_TYPE;
+  // Mark the request before initializing a recoverable reason so an initializer
+  // cannot reenter abort().
   request.aborted = true;
-  const error =
-    reason === undefined
+  const error = isRecoverableReason
+    ? createRecoverableError(reason as any)
+    : reason === undefined
       ? new Error('The render was aborted by the server without a reason.')
       : typeof reason === 'object' &&
           reason !== null &&

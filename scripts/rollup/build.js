@@ -12,6 +12,7 @@ const stripBanner = require('rollup-plugin-strip-banner');
 const chalk = require('chalk');
 const resolve = require('@rollup/plugin-node-resolve').nodeResolve;
 const fs = require('fs');
+const {performance} = require('perf_hooks');
 const childProcess = require('child_process');
 const argv = require('minimist')(process.argv.slice(2));
 const Modules = require('./modules');
@@ -23,6 +24,7 @@ const useForks = require('./plugins/use-forks-plugin');
 const dynamicImports = require('./plugins/dynamic-imports');
 const externalRuntime = require('./plugins/external-runtime-plugin');
 const Packaging = require('./packaging');
+const {selectShard, writeShardTimings} = require('./sharding');
 const {asyncRimRaf} = require('./utils');
 const codeFrame = require('@babel/code-frame').default;
 const Wrappers = require('./wrappers');
@@ -866,19 +868,36 @@ async function buildEverything() {
     return !shouldSkipBundle(bundle, bundleType);
   });
 
+  // Prefixed with the channel because feature-flag forks change the cost of
+  // some heavy bundles.
+  const shardKeyOf = ([bundle, bundleType]) =>
+    process.env.RELEASE_CHANNEL +
+    '/' +
+    getFilename(bundle, bundleType) +
+    ' (' +
+    bundleType.toLowerCase() +
+    ')';
+
   if (process.env.CI_TOTAL && process.env.CI_INDEX) {
     const nodeTotal = parseInt(process.env.CI_TOTAL, 10);
     const nodeIndex = parseInt(process.env.CI_INDEX, 10);
-    bundles = bundles.filter((_, i) => i % nodeTotal === nodeIndex);
+    bundles = selectShard(bundles, shardKeyOf, nodeTotal, nodeIndex);
   }
 
+  const shardTimings = [];
   // eslint-disable-next-line no-for-of-loops/no-for-of-loops
   for (const [bundle, bundleType] of bundles) {
     if (bundle.prebuild) {
       runShellCommand(bundle.prebuild);
     }
+    const start = performance.now();
     await createBundle(bundle, bundleType);
+    shardTimings.push({
+      key: shardKeyOf([bundle, bundleType]),
+      seconds: (performance.now() - start) / 1000,
+    });
   }
+  writeShardTimings(shardTimings);
 
   await Packaging.copyAllShims();
   await Packaging.prepareNpmPackages();

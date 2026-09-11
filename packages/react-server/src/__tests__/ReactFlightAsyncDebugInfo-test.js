@@ -4160,4 +4160,59 @@ describe('ReactFlightAsyncDebugInfo', () => {
       `);
     }
   });
+
+  it('should not exponentially accumulate debug info on deduplicated model chunks', async () => {
+    // Regression test for debug info that grows exponentially with the length
+    // of the chain, along the path that resolves a reference synchronously.
+    // Each page derives its records from the records of the page before it.
+    // Those records deduplicate to the row of that page, which gives this row
+    // one reference per record. That page has already resolved by then, and it
+    // still holds its debug info because it resolves to a plain object. Only an
+    // array, an async iterable, an element, or a lazy node hands the debug info
+    // to the value. So each reference copies the entries of the previous page,
+    // and the count doubles at every page.
+    const pageCount = 10;
+
+    async function loadPage(pageNumber, previousRecords) {
+      await delay(0);
+      const records = previousRecords.map(record => ({previous: record}));
+      return {
+        records,
+        nextPage:
+          pageNumber === pageCount ? null : loadPage(pageNumber + 1, records),
+      };
+    }
+
+    const stream = ReactServerDOMServer.renderToPipeableStream(
+      loadPage(1, [{id: 'a'}, {id: 'b'}]),
+    );
+
+    const readable = new Stream.PassThrough(streamOptions);
+    const result = ReactServerDOMClient.createFromNodeStream(readable, {
+      moduleMap: {},
+      moduleLoading: {},
+    });
+    stream.pipe(readable);
+
+    let page = await result;
+    let lastPage = null;
+    let pagesRead = 1;
+    while (page.nextPage !== null) {
+      lastPage = page.nextPage;
+      page = await page.nextPage;
+      pagesRead++;
+    }
+    expect(pagesRead).toBe(pageCount);
+
+    await finishLoadingStream(readable);
+
+    if (__DEV__) {
+      // Flight represents a Promise in the model with the chunk of its row, so
+      // this reads the debug info of the row itself. Every page contributes a
+      // fixed number of entries, so the last page holds a multiple of the page
+      // count. Without deduplication in transferReferencedDebugInfo the count
+      // doubles at every page.
+      expect(lastPage._debugInfo.length).toBeLessThan(100);
+    }
+  });
 });

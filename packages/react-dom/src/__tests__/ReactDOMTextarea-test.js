@@ -333,7 +333,7 @@ describe('ReactDOMTextarea', () => {
         );
       });
     };
-    await expect(test).rejects.toThrowError(new TypeError('prod message'));
+    await expect(test).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +

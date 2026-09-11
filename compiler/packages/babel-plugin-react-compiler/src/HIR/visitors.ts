@@ -51,8 +51,10 @@ export function* eachInstructionLValueWithKind(
       }
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal': {
       yield [instr.value.lvalue, InstructionKind.Reassign];
       break;
     }
@@ -74,8 +76,10 @@ export function* eachInstructionValueLValue(
       yield* eachPatternOperand(value.lvalue.pattern);
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal': {
       yield value.lvalue;
       break;
     }
@@ -252,8 +256,10 @@ export function* eachInstructionValueOperand(
       yield instrValue.value;
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal': {
       yield instrValue.value;
       break;
     }
@@ -432,8 +438,8 @@ export function mapInstructionLValues(
       mapPatternOperands(instr.value.lvalue.pattern, fn);
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PrefixUpdateLocal': {
       instr.value.lvalue = fn(instr.value.lvalue);
       break;
     }
@@ -623,8 +629,10 @@ export function mapInstructionValueOperands(
       instrValue.value = fn(instrValue.value);
       break;
     }
-    case 'PostfixUpdate':
-    case 'PrefixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext':
+    case 'PrefixUpdateContext':
+    case 'PrefixUpdateLocal': {
       instrValue.value = fn(instrValue.value);
       break;
     }

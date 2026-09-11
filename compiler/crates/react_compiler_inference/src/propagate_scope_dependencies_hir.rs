@@ -1472,32 +1472,36 @@ fn recursively_propagate_non_null(
     }
 
     // Compute intersection of 'done' neighbors only (filter out 'active' = cycle nodes)
-    let done_neighbor_sets: Vec<BTreeSet<usize>> = neighbors
-        .iter()
-        .filter(|n| traversal_state.get(n) == Some(&TraversalState::Done))
-        .filter_map(|n| working.get(n).cloned())
-        .collect();
+    let neighbor_intersection = {
+        let done_neighbor_sets: Vec<&BTreeSet<usize>> = neighbors
+            .iter()
+            .filter(|n| traversal_state.get(n) == Some(&TraversalState::Done))
+            .filter_map(|n| working.get(n))
+            .collect();
 
-    let neighbor_intersection = if done_neighbor_sets.is_empty() {
-        BTreeSet::new()
-    } else {
-        let mut iter = done_neighbor_sets.into_iter();
-        let first = iter.next().unwrap();
-        iter.fold(first, |acc, s| acc.intersection(&s).copied().collect())
+        match done_neighbor_sets.split_first() {
+            None => BTreeSet::new(),
+            Some((first, rest)) => rest.iter().fold((*first).clone(), |acc, s| {
+                acc.intersection(s).copied().collect()
+            }),
+        }
     };
 
-    let prev_objects = working.get(&node_id).cloned().unwrap_or_default();
+    // Temporarily remove the previous set out of the map so it can be safely
+    // borrowed and compared without a heavy deep clone.
+    let prev_objects = working.remove(&node_id).unwrap_or_default();
     let mut merged: BTreeSet<usize> = prev_objects
         .union(&neighbor_intersection)
         .copied()
         .collect();
     reduce_maybe_optional_chains(&mut merged, registry);
 
-    working.insert(node_id, merged.clone());
-    traversal_state.insert(node_id, TraversalState::Done);
-
     // Compare with previous value — can't just check size due to reduce_maybe_optional_chains
     changed |= prev_objects != merged;
+
+    working.insert(node_id, merged);
+    traversal_state.insert(node_id, TraversalState::Done);
+
     changed
 }
 

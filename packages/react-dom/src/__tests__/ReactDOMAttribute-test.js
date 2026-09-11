@@ -178,7 +178,7 @@ describe('ReactDOM unknown attribute', () => {
       const test = () =>
         testUnknownAttributeAssignment(new TemporalLike(), null);
 
-      await expect(test).rejects.toThrowError(new TypeError('prod message'));
+      await expect(test).rejects.toThrow(new TypeError('prod message'));
       assertConsoleErrorDev([
         'The provided `unknown` attribute is an unsupported type TemporalLike.' +
           ' This value must be coerced to a string before using it here.\n' +

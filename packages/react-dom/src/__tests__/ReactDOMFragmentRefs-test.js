@@ -17,35 +17,43 @@ let act;
 let container;
 let Fragment;
 let Activity;
+let Scheduler;
 let mockIntersectionObserver;
 let simulateIntersection;
 let setClientRects;
 let mockRangeClientRects;
 let assertConsoleErrorDev;
 let assertConsoleWarnDev;
+let assertLog;
+let rafCallbacks;
 
 function Wrapper({children}) {
   return children;
 }
 
+function loadModules() {
+  React = require('react');
+  Fragment = React.Fragment;
+  Activity = React.Activity;
+  ReactDOMClient = require('react-dom/client');
+  ReactDOM = require('react-dom');
+  createPortal = ReactDOM.createPortal;
+  act = require('internal-test-utils').act;
+  Scheduler = require('scheduler');
+  const IntersectionMocks = require('./utils/IntersectionMocks');
+  mockIntersectionObserver = IntersectionMocks.mockIntersectionObserver;
+  simulateIntersection = IntersectionMocks.simulateIntersection;
+  setClientRects = IntersectionMocks.setClientRects;
+  mockRangeClientRects = IntersectionMocks.mockRangeClientRects;
+  assertConsoleErrorDev = require('internal-test-utils').assertConsoleErrorDev;
+  assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
+  assertLog = require('internal-test-utils').assertLog;
+}
+
 describe('FragmentRefs', () => {
   beforeEach(() => {
     jest.resetModules();
-    React = require('react');
-    Fragment = React.Fragment;
-    Activity = React.Activity;
-    ReactDOMClient = require('react-dom/client');
-    ReactDOM = require('react-dom');
-    createPortal = ReactDOM.createPortal;
-    act = require('internal-test-utils').act;
-    const IntersectionMocks = require('./utils/IntersectionMocks');
-    mockIntersectionObserver = IntersectionMocks.mockIntersectionObserver;
-    simulateIntersection = IntersectionMocks.simulateIntersection;
-    setClientRects = IntersectionMocks.setClientRects;
-    mockRangeClientRects = IntersectionMocks.mockRangeClientRects;
-    assertConsoleErrorDev =
-      require('internal-test-utils').assertConsoleErrorDev;
-    assertConsoleWarnDev = require('internal-test-utils').assertConsoleWarnDev;
+    loadModules();
 
     container = document.createElement('div');
     document.body.innerHTML = '';
@@ -56,7 +64,6 @@ describe('FragmentRefs', () => {
     document.body.removeChild(container);
   });
 
-  // @gate enableFragmentRefs
   it('attaches a ref to Fragment', async () => {
     const fragmentRef = React.createRef();
     const root = ReactDOMClient.createRoot(container);
@@ -77,7 +84,6 @@ describe('FragmentRefs', () => {
     expect(fragmentRef.current).not.toBe(null);
   });
 
-  // @gate enableFragmentRefs
   it('accepts a ref callback', async () => {
     let fragmentRef;
     const root = ReactDOMClient.createRoot(container);
@@ -93,7 +99,6 @@ describe('FragmentRefs', () => {
     expect(fragmentRef._fragmentFiber).toBeTruthy();
   });
 
-  // @gate enableFragmentRefs
   it('is available in effects', async () => {
     function Test() {
       const fragmentRef = React.useRef(null);
@@ -114,7 +119,7 @@ describe('FragmentRefs', () => {
     await act(() => root.render(<Test />));
   });
 
-  // @gate enableFragmentRefs && enableFragmentRefsInstanceHandles
+  // @gate enableFragmentRefsInstanceHandles
   it('attaches fragment handles to nodes', async () => {
     const fragmentParentRef = React.createRef();
     const fragmentRef = React.createRef();
@@ -153,9 +158,151 @@ describe('FragmentRefs', () => {
     expect(childD.reactFragments.has(fragmentParentRef.current)).toBe(true);
   });
 
+  it('runs the ref cleanup when an inline ref callback changes identity', async () => {
+    const fragmentInstances = [];
+    let rerender;
+
+    function Test() {
+      const [step, setStep] = React.useState(0);
+      rerender = () => {
+        setStep(p => p + 1);
+      };
+
+      return (
+        <Fragment
+          ref={fragmentInstance => {
+            fragmentInstances.push(fragmentInstance);
+            Scheduler.log(`fragment attach ${step}`);
+            return () => {
+              Scheduler.log(`fragment cleanup ${step}`);
+            };
+          }}>
+          <div
+            id="child"
+            ref={() => {
+              Scheduler.log(`host attach ${step}`);
+              return () => {
+                Scheduler.log(`host cleanup ${step}`);
+              };
+            }}
+          />
+        </Fragment>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<Test />));
+    assertLog(['fragment attach 0', 'host attach 0']);
+
+    await act(rerender);
+    // Both refs are inlined, so both change identity and are detached before
+    // being re-attached. The Fragment detaches ahead of its children, which is
+    // the same order it uses when the Fragment itself is deleted.
+    assertLog([
+      'fragment cleanup 0',
+      'host cleanup 0',
+      'fragment attach 1',
+      'host attach 1',
+    ]);
+
+    await act(() => root.render(null));
+    // The cleanups created by the final render run on unmount.
+    assertLog(['fragment cleanup 1', 'host cleanup 1']);
+
+    // The same FragmentInstance is handed to every attach, so a callback that
+    // registers event listeners or observers on it can rely on its cleanup to
+    // unregister them again.
+    expect(fragmentInstances).toHaveLength(2);
+    expect(fragmentInstances[0]).toBe(fragmentInstances[1]);
+  });
+
+  it('runs the ref cleanup when the ref is removed from a mounted Fragment', async () => {
+    function Test({withRef}) {
+      return (
+        <Fragment
+          ref={
+            withRef
+              ? () => {
+                  Scheduler.log('attach');
+                  return () => {
+                    Scheduler.log('cleanup');
+                  };
+                }
+              : null
+          }>
+          <div id="child" />
+        </Fragment>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => root.render(<Test withRef={true} />));
+    assertLog(['attach']);
+
+    // The Fragment stays mounted and only the ref goes away. commitAttachRef
+    // bails out on a null ref, so the detach is the only thing that can run the
+    // cleanup here.
+    await act(() => root.render(<Test withRef={false} />));
+    assertLog(['cleanup']);
+
+    // Nothing is left to clean up by the time the Fragment is deleted.
+    await act(() => root.render(null));
+    assertLog([]);
+  });
+
+  it('detaches and reattaches Fragment refs when StrictMode double invokes', async () => {
+    // This one collects its own log rather than using Scheduler.log, because
+    // setIsStrictModeForDevtools disables yield values for the duration of the
+    // double invoke to keep StrictMode tests quiet, which would hide the very
+    // detach and reattach this test is here to observe.
+    const logs = [];
+    let rerender;
+
+    function Test() {
+      const [step, setStep] = React.useState(0);
+      rerender = () => {
+        setStep(p => p + 1);
+      };
+
+      return (
+        <Fragment
+          ref={() => {
+            logs.push(`attach ${step}`);
+            return () => {
+              logs.push(`cleanup ${step}`);
+            };
+          }}>
+          <div id="child" />
+        </Fragment>
+      );
+    }
+
+    const root = ReactDOMClient.createRoot(container);
+    await act(() =>
+      root.render(
+        <React.StrictMode>
+          <Test />
+        </React.StrictMode>,
+      ),
+    );
+    if (__DEV__) {
+      // The double invoke goes through disappearLayoutEffects and
+      // reappearLayoutEffects rather than through the mutation and layout
+      // phases, so it exercises a separate pair of Fragment cases.
+      expect(logs).toEqual(['attach 0', 'cleanup 0', 'attach 0']);
+    } else {
+      expect(logs).toEqual(['attach 0']);
+    }
+
+    // The double invoke only applies to newly mounted fibers, so an update
+    // detaches and reattaches once in both environments.
+    logs.length = 0;
+    await act(rerender);
+    expect(logs).toEqual(['cleanup 0', 'attach 1']);
+  });
+
   describe('focus methods', () => {
     describe('focus()', () => {
-      // @gate enableFragmentRefs
       it('focuses the first focusable child', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -188,7 +335,6 @@ describe('FragmentRefs', () => {
         document.activeElement.blur();
       });
 
-      // @gate enableFragmentRefs
       it('focuses deeply nested focusable children, depth first', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -214,7 +360,6 @@ describe('FragmentRefs', () => {
         expect(document.activeElement.id).toEqual('grandchild-a');
       });
 
-      // @gate enableFragmentRefs
       it('preserves document order when adding and removing children', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -258,7 +403,6 @@ describe('FragmentRefs', () => {
         document.activeElement.blur();
       });
 
-      // @gate enableFragmentRefs
       it('keeps focus on the first focusable child if already focused', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -293,7 +437,6 @@ describe('FragmentRefs', () => {
         document.activeElement.blur();
       });
 
-      // @gate enableFragmentRefs
       it('keeps focus on a nested child if already focused', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -327,7 +470,6 @@ describe('FragmentRefs', () => {
         document.activeElement.blur();
       });
 
-      // @gate enableFragmentRefs
       it('focuses the first focusable child in a fieldset', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -356,7 +498,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('focusLast()', () => {
-      // @gate enableFragmentRefs
       it('focuses the last focusable child', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -394,7 +535,6 @@ describe('FragmentRefs', () => {
         document.activeElement.blur();
       });
 
-      // @gate enableFragmentRefs
       it('focuses deeply nested focusable children, depth first', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -424,7 +564,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('blur()', () => {
-      // @gate enableFragmentRefs
       it('removes focus from an element inside of the Fragment', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -454,7 +593,6 @@ describe('FragmentRefs', () => {
         expect(document.activeElement).toEqual(document.body);
       });
 
-      // @gate enableFragmentRefs
       it('removes focus from a nested element inside of the Fragment', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -484,7 +622,40 @@ describe('FragmentRefs', () => {
         expect(document.activeElement).toEqual(document.body);
       });
 
-      // @gate enableFragmentRefs
+      it('removes focus from a portaled element inside of the Fragment', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                {createPortal(
+                  <div>
+                    <input id="portaled-input" />
+                  </div>,
+                  document.body,
+                )}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        expect(document.activeElement.id).toEqual('portaled-input');
+
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(document.activeElement).toEqual(document.body);
+      });
+
       it('does not remove focus from elements outside of the Fragment', async () => {
         const fragmentRefA = React.createRef();
         const fragmentRefB = React.createRef();
@@ -524,7 +695,6 @@ describe('FragmentRefs', () => {
 
   describe('events', () => {
     describe('add/remove event listeners', () => {
-      // @gate enableFragmentRefs
       it('adds and removes event listeners from children', async () => {
         const parentRef = React.createRef();
         const fragmentRef = React.createRef();
@@ -606,7 +776,86 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['B']);
       });
 
-      // @gate enableFragmentRefs
+      it('regression: does not detach a registered listener when removing an unregistered one', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        function unregisteredListener() {
+          logs.push('unregistered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('click', registeredListener);
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        // Regression: removing a listener that was never added must be a no-op.
+        // It must not detach registered listeners from fragmentInstance,
+        // causing them to stay attached to DOM even after removeEventListener.
+        fragmentRef.current.removeEventListener('click', unregisteredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        fragmentRef.current.removeEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
+      it('matches listeners by their normalized capture flag', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        const logs = [];
+
+        function addedWithOmittedOptions() {
+          logs.push('addedWithOmittedOptions');
+        }
+
+        function addedWithCaptureFalse() {
+          logs.push('addedWithCaptureFalse');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        fragmentRef.current.addEventListener('click', addedWithOmittedOptions);
+        fragmentRef.current.addEventListener('click', addedWithCaptureFalse, {
+          capture: false,
+        });
+
+        // Omitted options and an explicit capture: false are the same
+        // EventTarget listener identity, so each removal should match.
+        fragmentRef.current.removeEventListener(
+          'click',
+          addedWithOmittedOptions,
+          false,
+        );
+        fragmentRef.current.removeEventListener('click', addedWithCaptureFalse);
+
+        childRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
       it('adds and removes event listeners from children with multiple fragments', async () => {
         const fragmentRef = React.createRef();
         const nestedFragmentRef = React.createRef();
@@ -685,7 +934,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['nestedFragmentRef2']);
       });
 
-      // @gate enableFragmentRefs
       it('adds an event listener to a newly added child', async () => {
         const fragmentRef = React.createRef();
         const childRef = React.createRef();
@@ -733,7 +981,308 @@ describe('FragmentRefs', () => {
         expect(hasClicked).toBe(true);
       });
 
-      // @gate enableFragmentRefs
+      it('fires a once listener only once across existing children', async () => {
+        const fragmentRef = React.createRef();
+        const childARef = React.createRef();
+        const childBRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        await act(() => {
+          root.render(
+            <div>
+              <Fragment ref={fragmentRef}>
+                <div ref={childARef} id="a">
+                  A
+                </div>
+                <div ref={childBRef} id="b">
+                  B
+                </div>
+              </Fragment>
+            </div>,
+          );
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener(
+          'click',
+          () => {
+            logs.push('once');
+          },
+          {once: true},
+        );
+
+        childARef.current.click();
+        expect(logs).toEqual(['once']);
+
+        logs.length = 0;
+        childBRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
+      it('does not re-arm a once listener when a new child is inserted', async () => {
+        const fragmentRef = React.createRef();
+        const childARef = React.createRef();
+        const childBRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let showChildB;
+
+        function Component() {
+          const [shouldShowChildB, setShouldShowChildB] = React.useState(false);
+          showChildB = () => {
+            setShouldShowChildB(true);
+          };
+
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                <div ref={childARef} id="a">
+                  A
+                </div>
+                {shouldShowChildB && (
+                  <div ref={childBRef} id="b">
+                    B
+                  </div>
+                )}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Component />);
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener(
+          'click',
+          () => {
+            logs.push('once');
+          },
+          {once: true},
+        );
+
+        childARef.current.click();
+        expect(logs).toEqual(['once']);
+
+        await act(() => {
+          showChildB();
+        });
+
+        logs.length = 0;
+        childBRef.current.click();
+        expect(logs).toEqual([]);
+      });
+
+      it('should remove the listener when the signal is aborted before registration', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        const signal = AbortSignal.abort();
+        fragmentRef.current.addEventListener('click', registeredListener, {
+          signal,
+        });
+        childRef.current.click();
+        expect(logs).toEqual([]);
+
+        // The event listener can be re-added
+        fragmentRef.current.addEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+      });
+
+      it('should remove the listener when the signal is aborted after registration', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        const controller = new AbortController();
+        fragmentRef.current.addEventListener('click', registeredListener, {
+          signal: controller.signal,
+        });
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        logs = [];
+        controller.abort();
+        childRef.current.click();
+        expect(logs).toEqual([]);
+
+        // The event listener can be re-added
+        fragmentRef.current.addEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+      });
+
+      it('should NOT remove the new subscription when the signal for the old subscription is aborted', async () => {
+        const fragmentRef = React.createRef();
+        const childRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let logs = [];
+
+        function registeredListener() {
+          logs.push('registered');
+        }
+
+        await act(() => {
+          root.render(
+            <Fragment ref={fragmentRef}>
+              <div ref={childRef}>child</div>
+            </Fragment>,
+          );
+        });
+
+        const controller = new AbortController();
+        fragmentRef.current.addEventListener('click', registeredListener, {
+          signal: controller.signal,
+        });
+        childRef.current.click();
+        expect(logs).toEqual(['registered']);
+
+        fragmentRef.current.removeEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        expect(logs).toEqual([]);
+
+        // Added without a signal
+        fragmentRef.current.addEventListener('click', registeredListener);
+        logs = [];
+        childRef.current.click();
+        // Listener is called
+        expect(logs).toEqual(['registered']);
+
+        logs = [];
+        controller.abort();
+        childRef.current.click();
+        // Listener is called
+        expect(logs).toEqual(['registered']);
+      });
+
+      // @gate enableFragmentRefsTextNodes
+      it('adds an event listener to a newly added text child', async () => {
+        const fragmentRef = React.createRef();
+        const parentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let showText;
+
+        function Component() {
+          const [shouldShowText, setShouldShowText] = React.useState(false);
+          showText = () => {
+            setShouldShowText(true);
+          };
+
+          return (
+            <div ref={parentRef}>
+              <Fragment ref={fragmentRef}>
+                {shouldShowText ? 'Hello' : null}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Component />);
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+
+        await act(() => {
+          showText();
+        });
+
+        const textNode = Array.from(parentRef.current.childNodes).find(
+          node => node.nodeType === 3,
+        );
+        expect(textNode).not.toBe(undefined);
+        textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        expect(logs).toEqual(['fragment']);
+      });
+
+      // @gate enableFragmentRefsTextNodes
+      it('removes event listeners from a deleted text child', async () => {
+        const fragmentRef = React.createRef();
+        const parentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let hideText;
+
+        function Component() {
+          const [shouldShowText, setShouldShowText] = React.useState(true);
+          hideText = () => {
+            setShouldShowText(false);
+          };
+
+          return (
+            <div ref={parentRef}>
+              <Fragment ref={fragmentRef}>
+                {shouldShowText ? 'Hello' : null}
+              </Fragment>
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Component />);
+        });
+
+        const textNode = Array.from(parentRef.current.childNodes).find(
+          node => node.nodeType === 3,
+        );
+        expect(textNode).not.toBe(undefined);
+
+        const logs = [];
+        fragmentRef.current.addEventListener('click', () => {
+          logs.push('fragment');
+        });
+
+        textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        expect(logs).toEqual(['fragment']);
+
+        await act(() => {
+          hideText();
+        });
+
+        const detachedHost = document.createElement('div');
+        document.body.appendChild(detachedHost);
+        detachedHost.appendChild(textNode);
+
+        logs.length = 0;
+        textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        expect(logs).toEqual([]);
+
+        document.body.removeChild(detachedHost);
+      });
+
       it('applies event listeners to host children nested within non-host children', async () => {
         const fragmentRef = React.createRef();
         const childRef = React.createRef();
@@ -768,7 +1317,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['Host A', 'Host B']);
       });
 
-      // @gate enableFragmentRefs
       it('allows adding and cleaning up listeners in effects', async () => {
         const root = ReactDOMClient.createRoot(container);
 
@@ -816,7 +1364,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['child-a']);
       });
 
-      // @gate enableFragmentRefs
       it('does not apply removed event listeners to new children', async () => {
         const root = ReactDOMClient.createRoot(container);
         const fragmentRef = React.createRef(null);
@@ -846,7 +1393,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual([]);
       });
 
-      // @gate enableFragmentRefs
       it('removes a capture listener registered with boolean when removed with options object', async () => {
         const fragmentRef = React.createRef(null);
         function Test() {
@@ -883,7 +1429,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual([]);
       });
 
-      // @gate enableFragmentRefs
       it('removes a capture listener registered with options object when removed with boolean', async () => {
         const fragmentRef = React.createRef(null);
         function Test() {
@@ -920,7 +1465,6 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual([]);
       });
 
-      // @gate enableFragmentRefs
       it('applies event listeners to portaled children', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -956,8 +1500,56 @@ describe('FragmentRefs', () => {
         expect(logs).toEqual(['child-b']);
       });
 
+      it('applies event listeners to children portaled in after registration', async () => {
+        const fragmentRef = React.createRef();
+        const childARef = React.createRef();
+        const childBRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        let showChildB;
+
+        function Test() {
+          const [shouldShowChildB, setShouldShowChildB] = React.useState(false);
+          showChildB = () => {
+            setShouldShowChildB(true);
+          };
+
+          return (
+            <Fragment ref={fragmentRef}>
+              {createPortal(
+                <>
+                  <div id="child-a" ref={childARef} />
+                  {shouldShowChildB && <div id="child-b" ref={childBRef} />}
+                </>,
+                document.body,
+              )}
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        const logs = [];
+        fragmentRef.current.addEventListener('click', e => {
+          logs.push(e.target.id);
+        });
+
+        childARef.current.click();
+        expect(logs).toEqual(['child-a']);
+
+        // child-b is inserted into the same portal after the listener was
+        // registered, so it should be treated like its sibling child-a.
+        await act(() => {
+          showChildB();
+        });
+
+        logs.length = 0;
+        childBRef.current.click();
+        expect(logs).toEqual(['child-b']);
+      });
+
       describe('with activity', () => {
-        // @gate enableFragmentRefs
         it('does not apply event listeners to hidden trees', async () => {
           const parentRef = React.createRef();
           const fragmentRef = React.createRef();
@@ -993,7 +1585,6 @@ describe('FragmentRefs', () => {
           expect(logs).toEqual(['Child 1', 'Child 3']);
         });
 
-        // @gate enableFragmentRefs
         it('applies event listeners to visible trees', async () => {
           const parentRef = React.createRef();
           const fragmentRef = React.createRef();
@@ -1029,7 +1620,6 @@ describe('FragmentRefs', () => {
           expect(logs).toEqual(['Child 1', 'Child 2', 'Child 3']);
         });
 
-        // @gate enableFragmentRefs
         it('handles Activity modes switching', async () => {
           const fragmentRef = React.createRef();
           const fragmentRef2 = React.createRef();
@@ -1081,11 +1671,70 @@ describe('FragmentRefs', () => {
           // Event order is flipped here because the nested child re-registers first
           expect(logs).toEqual(['clicked 2', 'clicked 1']);
         });
+
+        // @gate enableFragmentRefsTextNodes
+        it('does not dispatch fragment events from text children while hidden', async () => {
+          const parentRef = React.createRef();
+          const fragmentRef = React.createRef();
+          const root = ReactDOMClient.createRoot(container);
+
+          function Test({mode}) {
+            return (
+              <div ref={parentRef}>
+                <Fragment ref={fragmentRef}>
+                  <Activity mode={mode}>
+                    <div id="child">Element</div>
+                    Text
+                  </Activity>
+                </Fragment>
+              </div>
+            );
+          }
+
+          await act(() => {
+            root.render(<Test mode="visible" />);
+          });
+
+          const logs = [];
+          fragmentRef.current.addEventListener('click', e => {
+            logs.push(
+              e.target.nodeType === 3
+                ? 'text'
+                : e.target.id || e.target.tagName,
+            );
+          });
+
+          const textNode = Array.from(parentRef.current.childNodes).find(
+            node => node.nodeType === 3,
+          );
+          expect(textNode).not.toBe(undefined);
+
+          document.getElementById('child').click();
+          textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          expect(logs).toEqual(['child', 'text']);
+
+          logs.length = 0;
+          await act(() => {
+            root.render(<Test mode="hidden" />);
+          });
+
+          document.getElementById('child').click();
+          textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          expect(logs).toEqual([]);
+
+          logs.length = 0;
+          await act(() => {
+            root.render(<Test mode="visible" />);
+          });
+
+          document.getElementById('child').click();
+          textNode.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+          expect(logs).toEqual(['child', 'text']);
+        });
       });
     });
 
     describe('dispatchEvent()', () => {
-      // @gate enableFragmentRefs
       it('fires events on the host parent if bubbles=true', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -1143,7 +1792,6 @@ describe('FragmentRefs', () => {
         expect(isCancelable).toBe(false);
       });
 
-      // @gate enableFragmentRefs
       it('fires events on self, and only self if bubbles=false', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(container);
@@ -1186,11 +1834,42 @@ describe('FragmentRefs', () => {
   });
 
   describe('observers', () => {
+    let intersectionObserverMock;
+
+    function observedIds() {
+      return intersectionObserverMock.observedTargets.map(node => node.id);
+    }
+
+    function flushPostPaintCallbacks() {
+      const first = rafCallbacks.slice();
+      rafCallbacks.length = 0;
+      for (let i = 0; i < first.length; i++) {
+        first[i](0);
+      }
+      const second = rafCallbacks.slice();
+      rafCallbacks.length = 0;
+      for (let i = 0; i < second.length; i++) {
+        second[i](0);
+      }
+    }
+
     beforeEach(() => {
-      mockIntersectionObserver();
+      jest.resetModules();
+      // Install before requiring React so host config captures this rAF
+      // (requestPostPaintCallback / delayed observer unobserve).
+      rafCallbacks = [];
+      jest.spyOn(global, 'requestAnimationFrame').mockImplementation(cb => {
+        rafCallbacks.push(cb);
+        return rafCallbacks.length;
+      });
+      loadModules();
+      intersectionObserverMock = mockIntersectionObserver();
+
+      container = document.createElement('div');
+      document.body.innerHTML = '';
+      document.body.appendChild(container);
     });
 
-    // @gate enableFragmentRefs
     it('attaches intersection observers to children', async () => {
       let logs = [];
       const observer = new IntersectionObserver(entries => {
@@ -1251,7 +1930,185 @@ describe('FragmentRefs', () => {
       expect(logs).toEqual([]);
     });
 
-    // @gate enableFragmentRefs
+    it('keeps a removed child observed until after the intersection exit, then unobserves it', async () => {
+      const logs = [];
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          logs.push({id: entry.target.id, ratio: entry.intersectionRatio});
+        });
+      });
+      const fragmentRef = React.createRef();
+      function Test({showB}) {
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(observer);
+        }, []);
+        return (
+          <div id="parent">
+            <React.Fragment ref={fragmentRef}>
+              <div id="childA">A</div>
+              {showB && <div id="childB">B</div>}
+            </React.Fragment>
+          </div>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test showB={true} />));
+      const childA = container.querySelector('#childA');
+      const childB = container.querySelector('#childB');
+      expect(observedIds()).toEqual(['childA', 'childB']);
+
+      await act(() => root.render(<Test showB={false} />));
+      // Still observed so IntersectionObserver can deliver isIntersecting: false.
+      expect(observedIds()).toEqual(['childA', 'childB']);
+      expect(childB.isConnected).toBe(false);
+
+      simulateIntersection(
+        [childA, {y: 0, x: 0, width: 1, height: 1}, 1],
+        [childB, {y: 0, x: 0, width: 0, height: 0}, 0],
+      );
+      expect(logs).toEqual([
+        {id: 'childA', ratio: 1},
+        {id: 'childB', ratio: 0},
+      ]);
+
+      flushPostPaintCallbacks();
+      expect(observedIds()).toEqual(['childA']);
+    });
+
+    it('unobserveUsing() releases deleted children that were waiting for an exit record', async () => {
+      const observer = new IntersectionObserver(() => {});
+      const fragmentRef = React.createRef();
+      function Test({showB}) {
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(observer);
+        }, []);
+        return (
+          <React.Fragment ref={fragmentRef}>
+            <div id="childA">A</div>
+            {showB && <div id="childB">B</div>}
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test showB={true} />));
+
+      await act(() => root.render(<Test showB={false} />));
+      expect(observedIds()).toEqual(['childA', 'childB']);
+
+      fragmentRef.current.unobserveUsing(observer);
+      expect(observedIds()).toEqual([]);
+    });
+
+    it('unobserves ResizeObserver targets as soon as a child is deleted', async () => {
+      const observedTargets = [];
+      const resizeObserver = {
+        observe(target) {
+          observedTargets.push(target);
+        },
+        unobserve(target) {
+          const index = observedTargets.indexOf(target);
+          if (index >= 0) {
+            observedTargets.splice(index, 1);
+          }
+        },
+      };
+      const fragmentRef = React.createRef();
+      function Test({showB}) {
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(resizeObserver);
+        }, []);
+        return (
+          <React.Fragment ref={fragmentRef}>
+            <div id="childA">A</div>
+            {showB && <div id="childB">B</div>}
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test showB={true} />));
+      expect(observedTargets.map(node => node.id)).toEqual([
+        'childA',
+        'childB',
+      ]);
+
+      await act(() => root.render(<Test showB={false} />));
+      expect(observedTargets.map(node => node.id)).toEqual(['childA']);
+    });
+
+    it('unobserves a replaced child after post-paint and keeps the new child observed', async () => {
+      const observer = new IntersectionObserver(() => {});
+      const fragmentRef = React.createRef();
+      const childRef = React.createRef();
+      function Test({showChild}) {
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(observer);
+        }, []);
+        return (
+          <React.Fragment ref={fragmentRef}>
+            {showChild && <div id="child" ref={childRef} />}
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test showChild={true} />));
+      const firstChild = childRef.current;
+      expect(observedIds()).toEqual(['child']);
+
+      await act(() => root.render(<Test showChild={false} />));
+      expect(observedIds()).toEqual(['child']);
+      expect(intersectionObserverMock.observedTargets[0]).toBe(firstChild);
+
+      await act(() => root.render(<Test showChild={true} />));
+      const secondChild = childRef.current;
+      expect(secondChild).not.toBe(firstChild);
+      expect(intersectionObserverMock.observedTargets.length).toBe(2);
+      expect(intersectionObserverMock.observedTargets[0]).toBe(firstChild);
+      expect(intersectionObserverMock.observedTargets[1]).toBe(secondChild);
+
+      flushPostPaintCallbacks();
+      expect(intersectionObserverMock.observedTargets.length).toBe(1);
+      expect(intersectionObserverMock.observedTargets[0]).toBe(secondChild);
+    });
+
+    it('keeps a child observed if Activity shows it again before the delayed unobserve', async () => {
+      const observer = new IntersectionObserver(() => {});
+      const fragmentRef = React.createRef();
+      function Test({mode}) {
+        React.useEffect(() => {
+          fragmentRef.current.observeUsing(observer);
+        }, []);
+        return (
+          <React.Fragment ref={fragmentRef}>
+            <Activity mode={mode}>
+              <div id="child" />
+            </Activity>
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<Test mode="visible" />));
+      const child = container.querySelector('#child');
+      expect(observedIds()).toEqual(['child']);
+
+      await act(() => root.render(<Test mode="hidden" />));
+      // Same node, still observed so the exit record can fire.
+      expect(container.querySelector('#child')).toBe(child);
+      expect(observedIds()).toEqual(['child']);
+
+      // A second commit before post-paint reinserts the same instance.
+      await act(() => root.render(<Test mode="visible" />));
+      expect(container.querySelector('#child')).toBe(child);
+      expect(observedIds()).toEqual(['child']);
+
+      flushPostPaintCallbacks();
+      expect(observedIds()).toEqual(['child']);
+    });
+
     it('warns when unobserveUsing() is called with an observer that was not observed', async () => {
       const fragmentRef = React.createRef();
       const observer = new IntersectionObserver(() => {});
@@ -1283,7 +2140,7 @@ describe('FragmentRefs', () => {
       ]);
     });
 
-    // @gate enableFragmentRefs && enableFragmentRefsInstanceHandles
+    // @gate enableFragmentRefsInstanceHandles
     it('attaches handles to observed elements to allow caching of observers', async () => {
       const targetToCallbackMap = new WeakMap();
       let cachedObserver = null;
@@ -1405,7 +2262,6 @@ describe('FragmentRefs', () => {
   });
 
   describe('getClientRects', () => {
-    // @gate enableFragmentRefs
     it('returns the bounding client rects of all children', async () => {
       const fragmentRef = React.createRef();
       const childARef = React.createRef();
@@ -1446,7 +2302,6 @@ describe('FragmentRefs', () => {
   });
 
   describe('getRootNode', () => {
-    // @gate enableFragmentRefs
     it('returns the root node of the parent', async () => {
       const fragmentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -1469,7 +2324,6 @@ describe('FragmentRefs', () => {
     // fragment + parent are unmounted. Currently we have a pass during unmount that
     // recursively cleans up return pointers of the whole tree. We can change this
     // with a future refactor. See: https://github.com/facebook/react/pull/32682#discussion_r2008313082
-    // @gate enableFragmentRefs
     it('returns the topmost disconnected element if the fragment and parent are unmounted', async () => {
       const containerRef = React.createRef();
       const parentRef = React.createRef();
@@ -1501,7 +2355,6 @@ describe('FragmentRefs', () => {
       expect(fragmentHandle.getRootNode()).toBe(fragmentHandle);
     });
 
-    // @gate enableFragmentRefs
     it('returns self when only the fragment was unmounted', async () => {
       const fragmentRef = React.createRef();
       const parentRef = React.createRef();
@@ -1540,7 +2393,6 @@ describe('FragmentRefs', () => {
       };
       expect(positionResult).toEqual(spec);
     }
-    // @gate enableFragmentRefs
     it('returns the relationship between the fragment instance and a given node', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
@@ -1580,6 +2432,16 @@ describe('FragmentRefs', () => {
           implementationSpecific: false,
         },
       );
+
+      // document is preceding and contains the fragment (Document.ownerDocument is null)
+      expectPosition(fragmentRef.current.compareDocumentPosition(document), {
+        preceding: true,
+        following: false,
+        contains: true,
+        containedBy: false,
+        disconnected: false,
+        implementationSpecific: false,
+      });
 
       // beforeRef is preceding the fragment
       expectPosition(
@@ -1672,7 +2534,6 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefs
     it('handles fragment instances with one child', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
@@ -1754,7 +2615,6 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefs
     it('handles empty fragment instances', async () => {
       const fragmentRef = React.createRef();
       const beforeParentRef = React.createRef();
@@ -1848,7 +2708,50 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefs
+    it('handles empty fragments nested inside non-host wrappers', async () => {
+      const fragmentRef = React.createRef();
+      const beforeRef = React.createRef();
+      const afterRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test() {
+        return (
+          <div>
+            <div id="before" ref={beforeRef} />
+            <Wrapper>
+              <React.Fragment ref={fragmentRef} />
+            </Wrapper>
+            <div id="after" ref={afterRef} />
+          </div>
+        );
+      }
+
+      await act(() => root.render(<Test />));
+
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(beforeRef.current),
+        {
+          preceding: true,
+          following: false,
+          contains: false,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: true,
+        },
+      );
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(afterRef.current),
+        {
+          preceding: false,
+          following: true,
+          contains: false,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: true,
+        },
+      );
+    });
+
     it('handles nested children', async () => {
       const fragmentRef = React.createRef();
       const nestedFragmentRef = React.createRef();
@@ -1919,7 +2822,6 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefs
     it('returns disconnected for comparison with an unmounted fragment instance', async () => {
       const fragmentRef = React.createRef();
       const containerRef = React.createRef();
@@ -1970,7 +2872,6 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefs
     it('compares a root-level Fragment', async () => {
       const fragmentRef = React.createRef();
       const emptyFragmentRef = React.createRef();
@@ -2081,7 +2982,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('with portals', () => {
-      // @gate enableFragmentRefs
       it('handles portaled elements', async () => {
         const fragmentRef = React.createRef();
         const portaledSiblingRef = React.createRef();
@@ -2131,7 +3031,6 @@ describe('FragmentRefs', () => {
         );
       });
 
-      // @gate enableFragmentRefs
       it('handles multiple portals to the same element', async () => {
         const root = ReactDOMClient.createRoot(container);
         const fragmentRef = React.createRef();
@@ -2248,7 +3147,6 @@ describe('FragmentRefs', () => {
         );
       });
 
-      // @gate enableFragmentRefs
       it('handles empty fragments', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -2270,7 +3168,7 @@ describe('FragmentRefs', () => {
         expectPosition(
           fragmentRef.current.compareDocumentPosition(document.body),
           {
-            preceding: true,
+            preceding: false,
             following: false,
             contains: true,
             containedBy: false,
@@ -2292,6 +3190,49 @@ describe('FragmentRefs', () => {
         expectPosition(
           fragmentRef.current.compareDocumentPosition(childBRef.current),
           {
+            preceding: false,
+            following: true,
+            contains: false,
+            containedBy: false,
+            disconnected: false,
+            implementationSpecific: true,
+          },
+        );
+      });
+
+      it('positions empty portaled fragments against the portal container', async () => {
+        const fragmentRef = React.createRef();
+        const reactParentRef = React.createRef();
+        const portalTarget = document.createElement('div');
+        portalTarget.id = 'portal-target';
+        document.body.appendChild(portalTarget);
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <div id="react-parent" ref={reactParentRef}>
+              {createPortal(<Fragment ref={fragmentRef} />, portalTarget)}
+            </div>
+          );
+        }
+
+        await act(() => root.render(<Test />));
+
+        // Empty CDP must use the portal container as parent
+        expectPosition(
+          fragmentRef.current.compareDocumentPosition(portalTarget),
+          {
+            preceding: false,
+            following: false,
+            contains: true,
+            containedBy: false,
+            disconnected: false,
+            implementationSpecific: true,
+          },
+        );
+        expectPosition(
+          fragmentRef.current.compareDocumentPosition(reactParentRef.current),
+          {
             preceding: true,
             following: false,
             contains: false,
@@ -2308,7 +3249,6 @@ describe('FragmentRefs', () => {
     function expectLast(arr, test) {
       expect(arr[arr.length - 1]).toBe(test);
     }
-    // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
     it('does not yet support options', async () => {
       const fragmentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -2318,14 +3258,13 @@ describe('FragmentRefs', () => {
 
       expect(() => {
         fragmentRef.current.scrollIntoView({block: 'start'});
-      }).toThrowError(
+      }).toThrow(
         'FragmentInstance.scrollIntoView() does not support ' +
           'scrollIntoViewOptions. Use the alignToTop boolean instead.',
       );
     });
 
     describe('with children', () => {
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('settles scroll on the first child by default, or if alignToTop=true', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -2361,7 +3300,6 @@ describe('FragmentRefs', () => {
         expectLast(logs, 'childA');
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the last child if alignToTop is false', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -2388,7 +3326,6 @@ describe('FragmentRefs', () => {
         expectLast(logs, 'childB');
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('handles portaled elements -- same scroll container', async () => {
         const fragmentRef = React.createRef();
         const childARef = React.createRef();
@@ -2429,7 +3366,6 @@ describe('FragmentRefs', () => {
         expectLast(logs, 'childA');
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('handles portaled elements -- different scroll container', async () => {
         const fragmentRef = React.createRef();
         const headerChildRef = React.createRef();
@@ -2530,7 +3466,6 @@ describe('FragmentRefs', () => {
     });
 
     describe('without children', () => {
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the next sibling by default, or if alignToTop=true', async () => {
         const fragmentRef = React.createRef();
         const siblingARef = React.createRef();
@@ -2564,7 +3499,39 @@ describe('FragmentRefs', () => {
         expect(siblingBRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+      it('finds host siblings when the empty fragment is nested in a non-host wrapper', async () => {
+        const fragmentRef = React.createRef();
+        const beforeRef = React.createRef();
+        const afterRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+        await act(() => {
+          root.render(
+            <div>
+              <div ref={beforeRef} id="before" />
+              <Wrapper>
+                <Fragment ref={fragmentRef} />
+              </Wrapper>
+              <div ref={afterRef} id="after" />
+            </div>,
+          );
+        });
+
+        beforeRef.current.scrollIntoView = jest.fn();
+        afterRef.current.scrollIntoView = jest.fn();
+
+        // Default / alignToTop=true should use the following host sibling,
+        // even though the empty fragment's fiber.sibling is null.
+        fragmentRef.current.scrollIntoView();
+        expect(beforeRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
+        expect(afterRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
+
+        afterRef.current.scrollIntoView.mockClear();
+
+        fragmentRef.current.scrollIntoView(false);
+        expect(beforeRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
+        expect(afterRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
+      });
+
       it('calls scrollIntoView on the prev sibling if alignToTop is false', async () => {
         const fragmentRef = React.createRef();
         const siblingARef = React.createRef();
@@ -2601,7 +3568,6 @@ describe('FragmentRefs', () => {
         expect(siblingBRef.current.scrollIntoView).toHaveBeenCalledTimes(0);
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('calls scrollIntoView on the parent if there are no siblings', async () => {
         const fragmentRef = React.createRef();
         const parentRef = React.createRef();
@@ -2621,7 +3587,6 @@ describe('FragmentRefs', () => {
         expect(parentRef.current.scrollIntoView).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('scrolls the host element when the fallback target is a ShadowRoot container', async () => {
         const fragmentRef = React.createRef();
         const host = document.createElement('div');
@@ -2639,7 +3604,6 @@ describe('FragmentRefs', () => {
         expect(host.scrollIntoView).toHaveBeenCalledTimes(1);
       });
 
-      // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
       it('warns without scrolling when the fallback target is a detached DocumentFragment container', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(
@@ -2663,7 +3627,7 @@ describe('FragmentRefs', () => {
   });
 
   describe('with text nodes', () => {
-    // @gate enableFragmentRefs && enableFragmentRefsTextNodes
+    // @gate enableFragmentRefsTextNodes
     it('getClientRects includes text node bounds', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 0, y: 0, width: 80, height: 16},
@@ -2685,7 +3649,7 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefs && enableFragmentRefsTextNodes
+    // @gate enableFragmentRefsTextNodes
     it('getClientRects includes both text and element bounds', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 0, y: 0, width: 60, height: 16},
@@ -2715,7 +3679,6 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefs
     it('compareDocumentPosition works with text children', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
@@ -2736,7 +3699,6 @@ describe('FragmentRefs', () => {
       expect(position & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     });
 
-    // @gate enableFragmentRefs
     it('focus is a no-op on text-only fragment', async () => {
       const fragmentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -2754,7 +3716,6 @@ describe('FragmentRefs', () => {
       // Test passes if no error is thrown
     });
 
-    // @gate enableFragmentRefs
     it('focusLast is a no-op on text-only fragment', async () => {
       const fragmentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -2771,7 +3732,7 @@ describe('FragmentRefs', () => {
       fragmentRef.current.focusLast();
     });
 
-    // @gate enableFragmentRefs && enableFragmentRefsTextNodes
+    // @gate enableFragmentRefsTextNodes || !__DEV__
     it('warns when observeUsing is called on text-only fragment', async () => {
       mockIntersectionObserver();
       const fragmentRef = React.createRef();
@@ -2796,7 +3757,7 @@ describe('FragmentRefs', () => {
       );
     });
 
-    // @gate enableFragmentRefs && enableFragmentRefsScrollIntoView
+    // @gate enableFragmentRefsTextNodes
     it('scrollIntoView works on text-only fragment using Range API', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 100, y: 200, width: 80, height: 16},
@@ -2826,7 +3787,7 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefs && enableFragmentRefsTextNodes && enableFragmentRefsScrollIntoView
+    // @gate enableFragmentRefsTextNodes
     it('scrollIntoView scrolls to text siblings of an empty fragment using the Range API', async () => {
       const restoreRange = mockRangeClientRects([
         {x: 100, y: 200, width: 80, height: 16},
@@ -2868,7 +3829,6 @@ describe('FragmentRefs', () => {
       restoreRange();
     });
 
-    // @gate enableFragmentRefs
     it('treats passive:true and passive:false as same listener per DOM spec', async () => {
       const fragmentRef = React.createRef();
       const root = ReactDOMClient.createRoot(container);
@@ -2907,7 +3867,6 @@ describe('FragmentRefs', () => {
       document.querySelector('#child').click();
       expect(logs).toEqual([]);
     });
-    // @gate enableFragmentRefs
     it('removes a listener registered with passive:false when removed with passive:true', async () => {
       const fragmentRef = React.createRef(null);
       function Test() {

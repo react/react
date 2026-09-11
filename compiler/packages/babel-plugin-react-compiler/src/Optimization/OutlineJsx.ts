@@ -134,8 +134,10 @@ function outlineJsxImpl(
         case 'NextPropertyOf':
         case 'ObjectExpression':
         case 'ObjectMethod':
-        case 'PostfixUpdate':
-        case 'PrefixUpdate':
+        case 'PostfixUpdateLocal':
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext':
+        case 'PrefixUpdateLocal':
         case 'Primitive':
         case 'PropertyDelete':
         case 'PropertyLoad':
