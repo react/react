@@ -591,7 +591,7 @@ function jsxDEVImpl(
       }
     }
 
-    if (key) {
+    if (key !== null) {
       const displayName =
         typeof type === 'function'
           ? type.displayName || type.name || 'Unknown'
@@ -710,7 +710,7 @@ export function createElement(type, config, children) {
     }
   }
   if (__DEV__) {
-    if (key) {
+    if (key !== null) {
       const displayName =
         typeof type === 'function'
           ? type.displayName || type.name || 'Unknown'
