@@ -53,7 +53,7 @@ function useFoo(text) {
   const $ = _c(2);
   let t0;
   try {
-    let formattedText;
+    let formattedText = "";
     try {
       let t2;
       if ($[0] !== text) {
