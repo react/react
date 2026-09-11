@@ -72,6 +72,9 @@ import {textEncoder} from 'react-server/src/ReactServerStreamConfigNode';
 import type {TemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 import type {FileHandle} from 'react-server/src/ReactFlightReplyServer';
 
+import {stripChunkAffixesFromManifest} from './ReactFlightTurbopackChunkAffixes';
+import type {ChunkLoadingOptions} from './ReactFlightTurbopackChunkAffixes';
+
 export {createTemporaryReferenceSet} from 'react-server/src/ReactFlightServerTemporaryReferences';
 
 export type {TemporaryReferenceSet};
@@ -149,6 +152,7 @@ function startReadingFromDebugChannelReadable(
 }
 
 type Options = {
+  chunkLoading?: ChunkLoadingOptions,
   debugChannel?: Readable | Writable | Duplex | WebSocket,
   environmentName?: string | (() => string),
   filterStackFrame?: (url: string, functionName: string) => boolean,
@@ -189,7 +193,9 @@ function renderToPipeableStream(
       : undefined;
   const request = createRequest(
     model,
-    turbopackMap,
+    options && options.chunkLoading
+      ? stripChunkAffixesFromManifest(turbopackMap, options.chunkLoading)
+      : turbopackMap,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
@@ -348,7 +354,9 @@ function renderToReadableStream(
       : undefined;
   const request = createRequest(
     model,
-    turbopackMap,
+    options && options.chunkLoading
+      ? stripChunkAffixesFromManifest(turbopackMap, options.chunkLoading)
+      : turbopackMap,
     options ? options.onError : undefined,
     options ? options.identifierPrefix : undefined,
     options ? options.temporaryReferences : undefined,
@@ -454,7 +462,9 @@ function prerenderToNodeStream(
 
     const request = createPrerenderRequest(
       model,
-      turbopackMap,
+      options && options.chunkLoading
+        ? stripChunkAffixesFromManifest(turbopackMap, options.chunkLoading)
+        : turbopackMap,
       onAllReady,
       onFatalError,
       options ? options.onError : undefined,
@@ -508,7 +518,9 @@ function prerender(
     }
     const request = createPrerenderRequest(
       model,
-      turbopackMap,
+      options && options.chunkLoading
+        ? stripChunkAffixesFromManifest(turbopackMap, options.chunkLoading)
+        : turbopackMap,
       onAllReady,
       onFatalError,
       options ? options.onError : undefined,
