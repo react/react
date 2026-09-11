@@ -161,6 +161,18 @@ describe('SchedulerBrowser', () => {
       eventLog = [];
       expect(actual).toEqual(expected);
     }
+    // Simulates Firefox Bug #758004: alert()/confirm()/prompt()/debugger pause
+    // the current task but MessageChannel callbacks continue to be delivered.
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=758004
+    function simulateReentrantMessageEvent() {
+      if (!isFiringMessageEvent) {
+        throw Error(
+          'Can only simulate re-entrancy while a message event is firing',
+        );
+      }
+      log('Reentrant Message Event');
+      port1.onmessage();
+    }
     return {
       advanceTime,
       resetTime,
@@ -170,6 +182,7 @@ describe('SchedulerBrowser', () => {
       assertLog,
       scheduleDiscreteEvent,
       scheduleContinuousEvent,
+      simulateReentrantMessageEvent,
     };
   }
 
@@ -347,5 +360,55 @@ describe('SchedulerBrowser', () => {
 
     runtime.fireMessageEvent();
     runtime.assertLog(['Message Event', 'Continuation Task']);
+  });
+
+  // Firefox does not pause MessageChannel delivery during alert()/debugger.
+  // If a callback fires while we are already inside flushWork, we must return
+  // early so we do not corrupt scheduler state. The paused task then finishes
+  // and any remaining work is scheduled normally.
+  // @gate !enableAlwaysYieldScheduler
+  it('ignores re-entrant MessageChannel callbacks while performing work', () => {
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('A start');
+      runtime.simulateReentrantMessageEvent();
+      runtime.log('A end');
+    });
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('B');
+    });
+    runtime.assertLog(['Post Message']);
+    runtime.fireMessageEvent();
+    // A must finish before B. Without the re-entrancy guard, the nested
+    // callback would run B before A completes.
+    runtime.assertLog([
+      'Message Event',
+      'A start',
+      'Reentrant Message Event',
+      'A end',
+      'B',
+    ]);
+  });
+
+  // @gate enableAlwaysYieldScheduler
+  it('ignores re-entrant MessageChannel callbacks while performing work (always yield)', () => {
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('A start');
+      runtime.simulateReentrantMessageEvent();
+      runtime.log('A end');
+    });
+    scheduleCallback(NormalPriority, () => {
+      runtime.log('B');
+    });
+    runtime.assertLog(['Post Message']);
+    runtime.fireMessageEvent();
+    runtime.assertLog([
+      'Message Event',
+      'A start',
+      'Reentrant Message Event',
+      'A end',
+      'Post Message',
+    ]);
+    runtime.fireMessageEvent();
+    runtime.assertLog(['Message Event', 'B']);
   });
 });
