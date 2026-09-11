@@ -156,6 +156,18 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           ) {
             continue;
           }
+          /*
+           * If the loaded value is itself known to be a ref object (eg an
+           * `obj.prop` passed to a JSX `ref` attribute, which type inference
+           * unifies with the ref type), don't alias it to its base object.
+           * Otherwise the inferred ref type would be attributed to the base
+           * object itself, making every other property load off that object
+           * look like a ref value access during render.
+           * See https://github.com/react/react/issues/37507
+           */
+          if (isUseRefType(lvalue.identifier)) {
+            break;
+          }
           const temp = env.lookup(value.object);
           if (temp != null) {
             env.define(lvalue, temp);
