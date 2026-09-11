@@ -56,3 +56,17 @@ describe('connectToDevTools', () => {
     }
   });
 });
+
+describe('Agent.getProfilingData', () => {
+  it('warns without throwing when no renderer is registered for an id', () => {
+    const agent = global.agent;
+    const sendSpy = jest.spyOn(global.bridge, 'send');
+
+    expect(() => agent.getProfilingData({rendererID: 12345})).not.toThrow();
+
+    expect(global.consoleWarnMock).toHaveBeenCalledWith(
+      'Invalid renderer id "12345"',
+    );
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+});
