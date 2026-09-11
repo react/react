@@ -1,7 +1,7 @@
 {
   "name": "react-devtools-cdt-mcp",
-  "version": "0.0.0",
-  "description": "Integration of React tools with chrome-devtools-mcp",
+  "version": "0.1.0",
+  "description": "Browser library that registers React inspection and profiling tools with chrome-devtools-mcp",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/facebook/react.git",
+    "url": "https://github.com/react/react.git",
     "directory": "packages/react-devtools-cdt-mcp"
   },
   "files": [
@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "build": "cross-env NODE_ENV=production rollup -c rollup.config.cjs",
-    "prepublish": "yarn run build",
+    "prepublishOnly": "yarn run build",
     "start": "cross-env NODE_ENV=development rollup -c rollup.config.cjs --watch",
     "test:e2e": "node e2e/run.js",
     "test:e2e:ci": "cross-env E2E_CI=true node e2e/run.js"

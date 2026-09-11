@@ -2517,7 +2517,10 @@ fn codegen_base_instruction_value(
             let expr = codegen_place_to_expression(cx, value)?;
             Ok(ExpressionOrJsxText::Expression(expr))
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
+            operation, lvalue, ..
+        }
+        | InstructionValue::PostfixUpdateContext {
             operation, lvalue, ..
         } => {
             let arg = codegen_place_to_expression(cx, lvalue)?;
@@ -2530,7 +2533,10 @@ fn codegen_base_instruction_value(
                 }),
             ))
         }
-        InstructionValue::PrefixUpdate {
+        InstructionValue::PrefixUpdateLocal {
+            operation, lvalue, ..
+        }
+        | InstructionValue::PrefixUpdateContext {
             operation, lvalue, ..
         } => {
             let arg = codegen_place_to_expression(cx, lvalue)?;

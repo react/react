@@ -2627,10 +2627,10 @@ fn compute_signature_for_instruction(
                 into: lvalue.clone(),
             });
         }
-        InstructionValue::PostfixUpdate {
+        InstructionValue::PostfixUpdateLocal {
             lvalue: pf_lvalue, ..
         }
-        | InstructionValue::PrefixUpdate {
+        | InstructionValue::PrefixUpdateLocal {
             lvalue: pf_lvalue, ..
         } => {
             effects.push(AliasingEffect::Create {
@@ -2642,6 +2642,22 @@ fn compute_signature_for_instruction(
                 into: pf_lvalue.clone(),
                 value: ValueKind::Primitive,
                 reason: ValueReason::Other,
+            });
+        }
+        InstructionValue::PostfixUpdateContext {
+            lvalue: pf_lvalue, ..
+        }
+        | InstructionValue::PrefixUpdateContext {
+            lvalue: pf_lvalue, ..
+        } => {
+            effects.push(AliasingEffect::Create {
+                into: lvalue.clone(),
+                value: ValueKind::Primitive,
+                reason: ValueReason::Other,
+            });
+            effects.push(AliasingEffect::Mutate {
+                value: pf_lvalue.clone(),
+                reason: None,
             });
         }
         InstructionValue::StoreGlobal {
