@@ -51,6 +51,28 @@ describe('react-devtools-facade', () => {
     container = null;
   });
 
+  it.each(['0', '9007199254740993', '-9007199254740993'])(
+    'serializes BigInt props and hook values without losing precision (%s)',
+    value => {
+      function Sample({data}) {
+        React.useState(data);
+        return null;
+      }
+      const data = {id: BigInt(value), nested: [BigInt(value)]};
+      act(() =>
+        ReactDOMClient.createRoot(container).render(<Sample data={data} />),
+      );
+      const tools = createTools(facade);
+      const node = tools.getComponentTree().find(n => n.name === 'Sample');
+      const result = tools.getComponentByUid(node.uid, true);
+      expect(() => JSON.stringify(result)).not.toThrow();
+      const expected = {id: value + 'n', nested: [value + 'n']};
+      expect(result.props.data).toEqual(expected);
+      expect(result.hooks[0].value).toEqual(expected);
+      expect(data.id).toBe(BigInt(value));
+    },
+  );
+
   it('installs __REACT_DEVTOOLS_GLOBAL_HOOK__ on globalThis', () => {
     expect(globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBe(facade.hook);
   });
