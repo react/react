@@ -2648,6 +2648,15 @@ function lowerExpression(
 
         // Store the previous value to a temporary
         const previousValuePlace = lowerValueToTemporary(builder, value);
+        if (!expr.node.prefix) {
+          /*
+           * The original value is observed after the update, so it must remain
+           * valid across the store below. Promote the temporary so that codegen
+           * emits a named variable instead of re-emitting the load at the use
+           * site, which would occur after the store and observe the new value.
+           */
+          promoteTemporary(previousValuePlace.identifier);
+        }
         // Store the new value to a temporary
         const updatedValue = lowerValueToTemporary(builder, {
           kind: 'BinaryExpression',
