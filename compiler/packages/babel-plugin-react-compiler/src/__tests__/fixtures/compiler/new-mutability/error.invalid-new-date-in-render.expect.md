@@ -21,7 +21,7 @@ Found 3 errors:
 
 Error: Cannot call impure function during render
 
-`new Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+`Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
 
 error.invalid-new-date-in-render.ts:4:15
   2 |
@@ -34,7 +34,7 @@ error.invalid-new-date-in-render.ts:4:15
 
 Error: Cannot call impure function during render
 
-`new Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+`Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
 
 error.invalid-new-date-in-render.ts:5:15
   3 | function Component() {
@@ -47,7 +47,7 @@ error.invalid-new-date-in-render.ts:5:15
 
 Error: Cannot call impure function during render
 
-`new Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+`Date` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
 
 error.invalid-new-date-in-render.ts:6:15
   4 |   const date = new Date();

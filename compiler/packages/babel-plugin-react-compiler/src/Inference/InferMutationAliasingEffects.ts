@@ -1839,21 +1839,6 @@ function computeSignatureForInstruction(
         signature,
         loc: value.loc,
       });
-      // Zero-arg `new Date()` reads the current clock. `Date.now()` is already
-      // marked impure via its function signature; the constructor is an Object
-      // type (static `now` lives on the same global) so NewExpression has no
-      // signature. Constructing from an explicit timestamp is treated as pure.
-      if (
-        value.kind === 'NewExpression' &&
-        env.config.validateNoImpureFunctionsInRender &&
-        isZeroArgumentDateConstructor(callee.identifier.type, value.args)
-      ) {
-        effects.push({
-          kind: 'Impure',
-          place: callee,
-          error: createImpureFunctionDiagnostic('new Date', value.loc),
-        });
-      }
       break;
     }
     case 'PropertyDelete':
@@ -2344,7 +2329,11 @@ function computeEffectsForLegacySignature(
     value: signature.returnValueKind,
     reason: returnValueReason,
   });
-  if (signature.impure && state.env.config.validateNoImpureFunctionsInRender) {
+  if (
+    signature.impure &&
+    state.env.config.validateNoImpureFunctionsInRender &&
+    (!signature.impureIfNoArgs || args.length === 0)
+  ) {
     effects.push({
       kind: 'Impure',
       place: receiver,
@@ -2860,32 +2849,6 @@ export function getFunctionCallSignature(
     return null;
   }
   return env.getFunctionSignature(type);
-}
-
-function isZeroArgumentDateConstructor(
-  type: Type,
-  args: Array<Place | SpreadPattern | Hole>,
-): boolean {
-  return (
-    args.length === 0 && type.kind === 'Object' && type.shapeId === 'Date'
-  );
-}
-
-function createImpureFunctionDiagnostic(
-  canonicalName: string,
-  loc: SourceLocation,
-): CompilerDiagnostic {
-  return CompilerDiagnostic.create({
-    category: ErrorCategory.Purity,
-    reason: 'Cannot call impure function during render',
-    description:
-      `\`${canonicalName}\` is an impure function. ` +
-      'Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent)',
-  }).withDetails({
-    kind: 'error',
-    loc,
-    message: 'Cannot call impure function',
-  });
 }
 
 export function isKnownMutableEffect(effect: Effect): boolean {
