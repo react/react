@@ -258,7 +258,7 @@ describe('ReactCache', () => {
 
     expect(errors).toEqual([]);
     expect(renderedCacheSignal.aborted).toBe(true);
-    expect(renderedCacheSignal.reason.message).toContain(
+    expect(renderedCacheSignal.reason).toContain(
       'This render completed successfully.',
     );
   });

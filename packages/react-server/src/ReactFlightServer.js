@@ -6689,10 +6689,11 @@ function flushCompletedChunks(request: Request): void {
     // the taint registry as they are written, and a deferred debug object can
     // be written long after this point.
     if (request.status < ABORTING) {
-      const abortReason = new Error(
+      // A string rather than an Error because the only stack worth having here is the
+      // async one that says which render completed, and that is not in error.stack.
+      request.cacheController.abort(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
       );
-      request.cacheController.abort(abortReason);
     }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
