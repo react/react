@@ -1315,9 +1315,7 @@ function pushStyleAttribute(
       if (__DEV__) {
         checkCSSPropertyStringCoercion(styleValue, styleName);
       }
-      valueChunk = stringToChunk(
-        escapeTextForBrowser(('' + styleValue).trim()),
-      );
+      valueChunk = stringToChunk(escapeTextForBrowser('' + styleValue));
     } else {
       if (__DEV__) {
         warnValidStyle(styleName, styleValue);

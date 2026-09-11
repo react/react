@@ -69,6 +69,24 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"--someColor:#000000"');
   });
 
+  it('should not trim CSS custom property values', () => {
+    const styles = {
+      '--foo': ' a b ',
+    };
+    const div = <div style={styles} />;
+    const html = ReactDOMServer.renderToString(div);
+    expect(html).toContain('"--foo: a b "');
+  });
+
+  it('should not trim a CSS custom property value that is only whitespace (gh-20497)', () => {
+    const styles = {
+      '--foo': ' ',
+    };
+    const div = <div style={styles} />;
+    const html = ReactDOMServer.renderToString(div);
+    expect(html).toContain('"--foo: "');
+  });
+
   it('should set style attribute when styles exist', async () => {
     const styles = {
       backgroundColor: '#000',
