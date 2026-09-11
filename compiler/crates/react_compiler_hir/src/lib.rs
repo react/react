@@ -1440,7 +1440,7 @@ pub enum AliasingEffect {
         mutates_function: bool,
         args: Vec<PlaceOrSpreadOrHole>,
         into: Place,
-        signature: Option<FunctionSignature>,
+        signature: Option<std::rc::Rc<FunctionSignature>>,
         loc: Option<SourceLocation>,
     },
     /// Function expression creation with captures.
