@@ -99,6 +99,23 @@ describe('ReactDOMServerHooks', () => {
       expect(domNode.textContent).toEqual('Count: 0');
     });
 
+    it('preserves hook state across nested renderToString calls', async () => {
+      function Inner() {
+        const [value] = useState('inner');
+        return <span>{value}</span>;
+      }
+
+      function Outer() {
+        const [before] = useState('before');
+        ReactDOMServer.renderToString(<Inner />);
+        const [after] = useState('after');
+        return <span>{before + ' ' + after}</span>;
+      }
+
+      const domNode = await serverRender(<Outer />);
+      expect(domNode.textContent).toEqual('before after');
+    });
+
     itRenders('lazy state initialization', async render => {
       function Counter(props) {
         const [count] = useState(() => {
