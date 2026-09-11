@@ -10,7 +10,13 @@
 import type {Ledger, LedgerKind, LedgerTotals} from 'shared/ReactLedgers';
 
 import ReactSharedInternals from 'shared/ReactSharedInternals';
-import {MASK_LEDGER} from 'shared/ReactLedgers';
+import {
+  BIT_LEDGER,
+  MASK_LEDGER,
+  MIN_LEDGER,
+  MAX_LEDGER,
+  SET_LEDGER,
+} from 'shared/ReactLedgers';
 
 function createLedger<E>(kind: LedgerKind): Ledger<E> {
   const type = {
@@ -24,13 +30,65 @@ function createLedger<E>(kind: LedgerKind): Ledger<E> {
   return type;
 }
 
+// Records whether any write occurred, so no entry value is needed.
+export function createBitLedger(): Ledger<void> {
+  return createLedger(BIT_LEDGER);
+}
+
 export function createMaskLedger(): Ledger<number> {
   return createLedger(MASK_LEDGER);
 }
 
-// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+export function createMinLedger(): Ledger<number> {
+  return createLedger(MIN_LEDGER);
+}
+
+export function createMaxLedger(): Ledger<number> {
+  return createLedger(MAX_LEDGER);
+}
+
+export function createSetLedger<K>(): Ledger<K> {
+  return createLedger(SET_LEDGER);
+}
+
 function normalizeLedgerEntry(type: Ledger<empty>, entry: mixed): mixed {
-  return (entry as any) >>> 0;
+  switch (type.kind) {
+    case BIT_LEDGER:
+      return true;
+    case MASK_LEDGER:
+      return (entry as any) >>> 0;
+    case MIN_LEDGER:
+    case MAX_LEDGER:
+      // Normalize -0 to 0.
+      return entry === 0 ? 0 : entry;
+    default: {
+      // Set entries need stable equality when work is serialized and reused.
+      // Object identity does not provide that, so only primitives are supported.
+      if (
+        (typeof entry === 'object' || typeof entry === 'function') &&
+        entry !== null
+      ) {
+        throw new Error(
+          'Only a primitive can be added to a set ledger. A set ledger ' +
+            'nets entries by value, but a Set can only compare this entry ' +
+            'by reference, so structurally equal entries would silently ' +
+            'count as distinct. Primitives are the only entries whose ' +
+            'equality is well defined.',
+        );
+      }
+      if (typeof entry === 'symbol' && Symbol.keyFor(entry) === undefined) {
+        throw new Error(
+          'Only a global symbol received from Symbol.for(...) can be added ' +
+            'to a set ledger. A set ledger nets entries by value, but a ' +
+            'symbol that is not registered has no name to net it by, so no ' +
+            'other entry could ever equal it and it could not reach the ' +
+            'client.',
+        );
+      }
+      // Normalize -0 to 0.
+      return entry === 0 ? 0 : entry;
+    }
+  }
 }
 
 export function addToLedger<E>(ledger: Ledger<E>, entry: E): void {
