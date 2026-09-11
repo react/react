@@ -56,6 +56,23 @@ describe('ReactDOMEventListener', () => {
   }
 
   describe('bubbling events', () => {
+    it('onAnimationCancel', async () => {
+      await testNativeBubblingEvent({
+        type: 'div',
+        reactEvent: 'onAnimationCancel',
+        reactEventType: 'animationcancel',
+        nativeEvent: 'animationcancel',
+        dispatch(node) {
+          node.dispatchEvent(
+            new Event('animationcancel', {
+              bubbles: true,
+              cancelable: false,
+            }),
+          );
+        },
+      });
+    });
+
     it('onAnimationEnd', async () => {
       await testNativeBubblingEvent({
         type: 'div',

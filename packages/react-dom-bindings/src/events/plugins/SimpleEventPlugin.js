@@ -32,6 +32,7 @@ import {
 } from '../../events/SyntheticEvent';
 
 import {
+  ANIMATION_CANCEL,
   ANIMATION_END,
   ANIMATION_ITERATION,
   ANIMATION_START,
@@ -133,6 +134,7 @@ function extractEvents(
     case 'touchstart':
       SyntheticEventCtor = SyntheticTouchEvent;
       break;
+    case ANIMATION_CANCEL:
     case ANIMATION_END:
     case ANIMATION_ITERATION:
     case ANIMATION_START:
