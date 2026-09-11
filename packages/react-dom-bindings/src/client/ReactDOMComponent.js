@@ -694,13 +694,6 @@ function setProp(
       // Noop
       break;
     }
-    case 'autoFocus': {
-      // We polyfill it separately on the client during commit.
-      // We could have excluded it in the property list instead of
-      // adding a special case here, but then it wouldn't be emitted
-      // on server rendering (but we *do* want to emit it in SSR).
-      break;
-    }
     case 'xlinkHref': {
       if (
         value == null ||
@@ -771,6 +764,7 @@ function setProp(
     // Fallthrough for boolean props that don't have a warning for empty strings.
     case 'allowFullScreen':
     case 'async':
+    case 'autoFocus':
     case 'autoPlay':
     case 'controls':
     case 'credentialless':
