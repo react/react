@@ -20,6 +20,7 @@ import type {
   ReactKey,
 } from 'shared/ReactTypes';
 import type {TransitionTypes} from 'react/src/ReactTransitionType';
+import type {Ledger} from 'shared/ReactLedgers';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Flags} from './ReactFiberFlags';
@@ -456,9 +457,23 @@ export type Dispatcher = {
   ) => [Awaited<S>, (P) => void, boolean],
 };
 
+// Used by React.cache to notify the renderer when a unit of work is reused.
+// For example, this is used to track cached Ledger writes.
+export type UnitCacheHooks = {
+  hit: (unit: mixed) => void,
+  miss: <T>(
+    cacheEntry: {u: mixed, ...},
+    fn: (...Array<mixed>) => T,
+    args: Array<mixed>,
+  ) => T,
+};
+
 export type AsyncDispatcher = {
   getCacheForType: <T>(resourceType: () => T) => T,
   cacheSignal: () => null | AbortSignal,
+  // Installed by Flight when the host supports async context.
+  units: null | UnitCacheHooks,
+  addToLedger?: (ledger: Ledger<empty>, entry: mixed) => void,
   // DEV-only
   getOwner: () => null | Fiber | ReactComponentInfo | ComponentStackNode,
 };

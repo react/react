@@ -9,6 +9,7 @@
 
 import type {Ledger, LedgerKind} from 'shared/ReactLedgers';
 
+import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {MASK_LEDGER} from 'shared/ReactLedgers';
 
 function createLedger<E>(kind: LedgerKind): Ledger<E> {
@@ -27,5 +28,17 @@ export function createMaskLedger(): Ledger<number> {
   return createLedger(MASK_LEDGER);
 }
 
-// TODO: Record entries during a Flight render.
-export function addToLedger<E>(ledger: Ledger<E>, entry: E): void {}
+// TODO: Only the mask kind exists yet; the other kinds land in a later PR.
+function normalizeLedgerEntry(type: Ledger<empty>, entry: mixed): mixed {
+  return (entry as any) >>> 0;
+}
+
+export function addToLedger<E>(ledger: Ledger<E>, entry: E): void {
+  const normalized = normalizeLedgerEntry(ledger, entry);
+  const dispatcher = ReactSharedInternals.A;
+  if (dispatcher === null || dispatcher.addToLedger === undefined) {
+    // Other renderers don't collect ledger entries.
+    return;
+  }
+  dispatcher.addToLedger(ledger, normalized);
+}
