@@ -4195,7 +4195,10 @@ function lowerAssignment(
             );
             continue;
           }
-          if (property.node.computed) {
+          if (
+            property.node.computed &&
+            !property.get('key').isStringLiteral()
+          ) {
             builder.recordError(
               new CompilerErrorDetail({
                 reason: `(BuildHIR::lowerAssignment) Handle computed properties in ObjectPattern`,
