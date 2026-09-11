@@ -10,8 +10,9 @@
 export type TopLevelType =
   | 'abort'
   // Dynamic and vendor-prefixed at the usage site:
+  // 'animationcancel' |
   // 'animationiteration' |
-  // 'animationend |
+  // 'animationend' |
   // 'animationstart' |
   | 'canplay'
   | 'canplaythrough'
