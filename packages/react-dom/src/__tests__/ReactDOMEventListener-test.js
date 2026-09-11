@@ -734,14 +734,20 @@ describe('ReactDOMEventListener', () => {
     const container = document.createElement('div');
     const ref = React.createRef();
     const onCommand = jest.fn();
+    const onParentCommand = jest.fn();
     document.body.appendChild(container);
     try {
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
         root.render(
-          <div onCommand={onCommand}>
-            <img ref={ref} alt="" onCommand={onCommand} />
-          </div>,
+          <>
+            <button commandFor="target" command="--rotate-left">
+              Rotate left
+            </button>
+            <div onCommand={onParentCommand}>
+              <img id="target" ref={ref} alt="" onCommand={onCommand} />
+            </div>
+          </>,
         );
       });
       await act(() => {
@@ -752,6 +758,7 @@ describe('ReactDOMEventListener', () => {
         );
       });
       expect(onCommand).toHaveBeenCalledTimes(1);
+      expect(onParentCommand).not.toHaveBeenCalled();
     } finally {
       document.body.removeChild(container);
     }
