@@ -77,7 +77,17 @@ export type AliasingEffect =
    * Example: `array.push(item)`. Information from item is captured into array, but there is not a
    * direct aliasing, and local mutations of array will not modify item.
    */
-  | {kind: 'Capture'; from: Place; into: Place}
+  | {
+      kind: 'Capture';
+      from: Place;
+      into: Place;
+      /**
+       * A shallow copy with one spread source and no property overrides. Unlike
+       * ordinary context captures, this remains definite until a mutation
+       * could replace one of the copied properties.
+       */
+      isObjectSpreadCapture?: boolean;
+    }
   /**
    * Records information flow from `from` to `into` in cases where local mutation of the destination
    * *will* mutate the source:
@@ -205,7 +215,9 @@ export function hashEffect(effect: AliasingEffect): string {
     case 'Capture':
     case 'MaybeAlias': {
       return [
-        effect.kind,
+        effect.kind === 'Capture' && effect.isObjectSpreadCapture === true
+          ? 'ObjectSpreadCapture'
+          : effect.kind,
         effect.from.identifier.id,
         effect.into.identifier.id,
       ].join(':');
