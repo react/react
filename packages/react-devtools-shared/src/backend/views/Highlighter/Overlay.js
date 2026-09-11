@@ -164,24 +164,61 @@ export default class Overlay {
     const tipBoundsWindow = window.__REACT_DEVTOOLS_TARGET_WINDOW__ || window;
     this.tipBoundsWindow = tipBoundsWindow;
 
-    const doc = currentWindow.document;
+        const doc = currentWindow.document;
     this.container = doc.createElement('div');
     this.container.style.zIndex = '10000000';
+    
+    // Feature detection is handled by browsers ignoring unsupported attributes
+    this.container.setAttribute('popover', 'manual');
+    this.container.style.cssText += `
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background-color: transparent;
+      outline: none;
+      box-shadow: none;
+      border: none;
+      margin: 0;
+      padding: 0;
+      overflow: visible;
+    `;
 
     this.tip = new OverlayTip(doc, this.container);
+
     this.rects = [];
 
-    this.agent = agent;
+        this.agent = agent;
 
     doc.body.appendChild(this.container);
+
+    // Elevate the overlay into the Top Layer so it appears over <dialog> elements
+    if (typeof this.container.showPopover === 'function') {
+      try {
+        this.container.showPopover();
+      } catch (e) {
+        // Ignore if popover cannot be shown
+      }
+    }
   }
 
   remove() {
     this.tip.remove();
-    this.rects.forEach(rect => {
+        this.rects.forEach(rect => {
       rect.remove();
     });
     this.rects.length = 0;
+    
+    // Dismiss the popover properly before unmounting
+    if (typeof this.container.hidePopover === 'function') {
+      try {
+        this.container.hidePopover();
+      } catch (e) {
+        // Ignore
+      }
+    }
+
     if (this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }
