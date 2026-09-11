@@ -48,7 +48,15 @@ export function addChunkDebugInfo(
   }
   let ioInfo = chunkIOInfoCache.get(chunkId);
   if (ioInfo === undefined) {
-    const scriptFilename = __webpack_get_script_filename__(chunkId);
+    // Real Webpack compiles this identifier into a constant-folded reference to
+    // __webpack_require__.u (see Webpack's APIPlugin), so this is always defined
+    // there at effectively no runtime cost. Bundlers that only emulate the
+    // classic Webpack runtime APIs (e.g. Metro) don't define this newer global,
+    // so we fall back to the primitive it compiles down to.
+    const scriptFilename =
+      typeof __webpack_get_script_filename__ === 'function'
+        ? __webpack_get_script_filename__(chunkId)
+        : __webpack_require__.u(chunkId);
     let href;
     try {
       // $FlowFixMe[incompatible-type]
