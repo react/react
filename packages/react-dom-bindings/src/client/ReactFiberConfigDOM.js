@@ -3716,10 +3716,9 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document, documentElement, or body.
-      // Document.ownerDocument is null, so reuse the shared helper.
+      // otherFiber could be null if its the document, documentElement, or body
       const ownerDocument = getOwnerDocumentFromRootContainer(
-        (otherNode: Element | Document | DocumentFragment),
+        (otherNode: any),
       );
       return (
         (otherNode as Instance | Document) === ownerDocument ||
