@@ -75,7 +75,8 @@ const recommendedLatestRuleConfigs: Linter.RulesRecord = {
 const plugins = ['react-hooks'];
 
 type ReactHooksFlatConfig = {
-  plugins: {react: any};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  plugins: {'react-hooks': any};
   rules: Linter.RulesRecord;
 };
 
@@ -88,7 +89,12 @@ const configs = {
     plugins,
     rules: recommendedLatestRuleConfigs,
   },
+  // `flat` is a namespace for flat config objects, not a flat config itself.
+  // The `name` property is included to satisfy TypeScript's structural compatibility
+  // check with `Linter.Config` / `ESLint.Plugin['configs']` value type, which
+  // requires at least one shared property to avoid the TS2559 error.
   flat: {} as {
+    name?: string;
     recommended: ReactHooksFlatConfig;
     'recommended-latest': ReactHooksFlatConfig;
   },
