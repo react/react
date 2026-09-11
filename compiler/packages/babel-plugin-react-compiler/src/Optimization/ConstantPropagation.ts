@@ -195,8 +195,10 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
           loc: GeneratedSource,
         });
 
-        // different constant values, can't constant propogate
-        // (using Object.is to correctly distinguish -0 from 0, and NaN from itself)
+        /*
+         * different constant values, can't constant propogate
+         * (using Object.is to correctly distinguish -0 from 0, and NaN from itself)
+         */
         if (!Object.is(operandValue.value, value.value)) {
           return null;
         }
