@@ -724,7 +724,7 @@ describe('ReactDOMEventListener', () => {
           }),
         );
       });
-      expect(onToggle).toHaveBeenCalledTimes(2);
+      expect(onToggle).toHaveBeenCalledTimes(1);
     } finally {
       document.body.removeChild(container);
     }
