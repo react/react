@@ -4444,21 +4444,6 @@ function logRecoverableError(
   return errorDigest || '';
 }
 
-// Creates an Error without capturing a stack. This reason is stored on
-// `cacheController.signal.reason` for the request's lifetime; a captured stack would
-// retain the render's async/cache scope and leak RSC responses under load (#37288).
-// try/finally because Error.stackTraceLimit is process-wide shared state: restore it
-// even if `new Error` throws, or every later stack trace silently loses frames.
-function createErrorWithoutStack(message: string): Error {
-  const previousStackTraceLimit = Error.stackTraceLimit;
-  Error.stackTraceLimit = 0;
-  try {
-    return new Error(message);
-  } finally {
-    Error.stackTraceLimit = previousStackTraceLimit;
-  }
-}
-
 function fatalError(request: Request, error: mixed): void {
   const onFatalError = request.onFatalError;
   onFatalError(error);
@@ -4473,8 +4458,6 @@ function fatalError(request: Request, error: mixed): void {
     request.status = CLOSING;
     request.fatalError = error;
   }
-  // Unlike the success path (#37288), this runs at most once per request (not per
-  // completed render), so capturing a stack here is fine and not a leak source.
   const abortReason = new Error(
     'The render was aborted due to a fatal error.',
     {
@@ -6706,12 +6689,11 @@ function flushCompletedChunks(request: Request): void {
     // the taint registry as they are written, and a deferred debug object can
     // be written long after this point.
     if (request.status < ABORTING) {
-      // Internal cleanup signal, never surfaced to the user. It must not capture a
-      // stack — see createErrorWithoutStack (#37288).
-      const abortReason = createErrorWithoutStack(
+      // A string rather than an Error because the only stack worth having here is the
+      // async one that says which render completed, and that is not in error.stack.
+      request.cacheController.abort(
         'This render completed successfully. All cacheSignals are now aborted to allow clean up of any unused resources.',
       );
-      request.cacheController.abort(abortReason);
     }
     if (__DEV__) {
       const debugDestination = request.debugDestination;
