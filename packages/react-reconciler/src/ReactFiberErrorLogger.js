@@ -6,7 +6,7 @@
  *
  * @flow
  */
-
+import { analyzeError } from 'shared/ReactErrorAnalyzer';
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 import type {CapturedValue} from './ReactCapturedValue';
 
@@ -43,7 +43,16 @@ export function defaultOnUncaughtError(
     const errorBoundaryMessage =
       'Consider adding an error boundary to your tree to customize error handling behavior.\n' +
       'Visit https://react.dev/link/error-boundaries to learn more about error boundaries.';
-
+    
+    const errorString = error instanceof Error ? error.message : String(error);
+    const analysis = analyzeError(errorString);
+    if (analysis) {
+      console.groupCollapsed(`%c💡 React Recovery Suggestion: ${analysis.type}`, 'color: #00bcd4; font-weight: bold; background: #222; padding: 2px 4px; border-radius: 4px;');
+      console.log(`%c${analysis.suggestion}`, 'color: #4caf50; font-size: 1.1em;');
+      console.groupEnd();
+    }
+    
+    
     try {
       console.warn(
         '%s\n\n%s\n',
@@ -80,6 +89,14 @@ export function defaultOnCaughtError(
       `using the error boundary you provided, ${
         errorBoundaryName || 'Anonymous'
       }.`;
+      
+    const errorString = error instanceof Error ? error.message : String(error);
+    const analysis = analyzeError(errorString);
+    if (analysis) {
+      console.groupCollapsed(`%c💡 React Recovery Suggestion: ${analysis.type}`, 'color: #00bcd4; font-weight: bold; background: #222; padding: 2px 4px; border-radius: 4px;');
+      console.log(`%c${analysis.suggestion}`, 'color: #4caf50; font-size: 1.1em;');
+      console.groupEnd();
+    }
 
     try {
       if (
