@@ -19,6 +19,7 @@ import {
   REACT_PORTAL_TYPE,
   REACT_PROFILER_TYPE,
   REACT_CONSUMER_TYPE,
+  REACT_LEGACY_ELEMENT_TYPE,
   REACT_STRICT_MODE_TYPE,
   REACT_SUSPENSE_TYPE,
   REACT_SUSPENSE_LIST_TYPE,
@@ -41,6 +42,11 @@ export function typeOf(object: any): mixed {
   if (typeof object === 'object' && object !== null) {
     const $$typeof = object.$$typeof;
     switch ($$typeof) {
+      // React 19 renamed the element symbol from `react.element` to
+      // `react.transitional.element`. Elements created by React 17 and 18 still
+      // use the legacy symbol, so accept both: brand checking a foreign element
+      // is valid even though rendering one isn't.
+      case REACT_LEGACY_ELEMENT_TYPE:
       case REACT_ELEMENT_TYPE:
         const type = object.type;
 
@@ -65,7 +71,10 @@ export function typeOf(object: any): mixed {
                 return $$typeofType;
               // Fall through
               default:
-                return $$typeof;
+                // Normalize legacy elements to `Element` so that callers can
+                // compare against the exported constant regardless of which
+                // version of React created the element.
+                return REACT_ELEMENT_TYPE;
             }
         }
       case REACT_PORTAL_TYPE:
@@ -140,7 +149,8 @@ export function isElement(object: any): boolean {
   return (
     typeof object === 'object' &&
     object !== null &&
-    object.$$typeof === REACT_ELEMENT_TYPE
+    (object.$$typeof === REACT_ELEMENT_TYPE ||
+      object.$$typeof === REACT_LEGACY_ELEMENT_TYPE)
   );
 }
 export function isForwardRef(object: any): boolean {
