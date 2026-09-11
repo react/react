@@ -900,11 +900,6 @@ export function markRootFinished(
   suspendedRetryLanes: Lanes,
 ) {
   const previouslyPendingLanes = root.pendingLanes;
-  const previouslySuspendedRetryLanes =
-    root.suspendedLanes & remainingLanes & RetryLanes;
-  const previouslyPingedRetryLanes =
-    root.pingedLanes & remainingLanes & RetryLanes;
-  const previouslyWarmRetryLanes = root.warmLanes & remainingLanes & RetryLanes;
   const noLongerPendingLanes = previouslyPendingLanes & ~remainingLanes;
 
   root.pendingLanes = remainingLanes;
@@ -913,16 +908,6 @@ export function markRootFinished(
   root.suspendedLanes = NoLanes;
   root.pingedLanes = NoLanes;
   root.warmLanes = NoLanes;
-
-  // Exception: sibling Suspense "prewarm" retries are queued as multiple
-  // suspended retry lanes. Clearing those remaining retries here would make
-  // the next pass look like a fresh update (skip siblings → spawn more
-  // retries → infinite loop under act()). Only preserve Retry lane
-  // bookkeeping; other lanes still reset so selective hydration can retry.
-  // (facebook/react#37556)
-  root.suspendedLanes |= previouslySuspendedRetryLanes;
-  root.pingedLanes |= previouslyPingedRetryLanes;
-  root.warmLanes |= previouslyWarmRetryLanes;
 
   if (enableDefaultTransitionIndicator) {
     root.indicatorLanes &= remainingLanes;
