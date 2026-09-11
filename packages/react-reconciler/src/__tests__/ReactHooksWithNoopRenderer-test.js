@@ -234,7 +234,7 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   it('throws when called outside the render phase', async () => {
     expect(() => useState(0)).toThrow(
-      "Cannot read property 'useState' of null",
+      "Cannot read properties of null (reading 'useState')",
     );
     assertConsoleErrorDev([
       'Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for' +

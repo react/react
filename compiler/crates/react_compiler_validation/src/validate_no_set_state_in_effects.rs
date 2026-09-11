@@ -14,6 +14,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::source_offsets::slice_by_utf16_range;
 use react_compiler_diagnostics::{
     CompilerDiagnostic, CompilerDiagnosticDetail, CompilerError, ErrorCategory,
 };
@@ -160,12 +161,13 @@ fn get_identifier_name_with_loc(
     if let Some(IdentifierName::Named(name)) = &ident.name {
         return Some(name.clone());
     }
-    // Fall back to extracting from source code
+    // Fall back to extracting from source code. Babel/JS positions are UTF-16
+    // code unit offsets, but Rust strings are UTF-8, so they must be converted
+    // before slicing.
     if let (Some(loc), Some(code)) = (loc, source_code) {
-        let start_idx = loc.start.index? as usize;
-        let end_idx = loc.end.index? as usize;
-        if start_idx < code.len() && end_idx <= code.len() && start_idx < end_idx {
-            let slice = &code[start_idx..end_idx];
+        let start_utf16 = loc.start.index? as usize;
+        let end_utf16 = loc.end.index? as usize;
+        if let Some(slice) = slice_by_utf16_range(code, start_utf16, end_utf16) {
             if !slice.is_empty()
                 && slice
                     .chars()

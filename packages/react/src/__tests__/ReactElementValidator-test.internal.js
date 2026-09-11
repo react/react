@@ -410,7 +410,7 @@ describe('ReactElementValidator', () => {
     await expect(async () => {
       const root = ReactDOMClient.createRoot(document.createElement('div'));
       await act(() => root.render(React.createElement(ParentComp)));
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Element type is invalid: expected a string (for built-in components) ' +
         'or a class/function (for composite components) but got: null.' +
         (__DEV__ ? '\n\nCheck the render method of `ParentComp`.' : ''),
@@ -427,13 +427,9 @@ describe('ReactElementValidator', () => {
     const root = ReactDOMClient.createRoot(document.createElement('div'));
     await act(() => root.render(React.createElement(Foo)));
     assertConsoleErrorDev([
-      gate('enableFragmentRefs')
-        ? 'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
-          'can only have `key`, `ref`, and `children` props.\n' +
-          '    in Foo (at **)'
-        : 'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
-          'can only have `key` and `children` props.\n' +
-          '    in Foo (at **)',
+      'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
+        'can only have `key`, `ref`, and `children` props.\n' +
+        '    in Foo (at **)',
     ]);
   });
 

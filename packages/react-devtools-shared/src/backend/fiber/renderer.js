@@ -3933,6 +3933,7 @@ export function attach(
         nextFirstChild,
         nextLastChild,
         prevFirstChild,
+        null,
         traceNearestHostComponentUpdate,
         virtualLevel + 1,
       );
@@ -3971,6 +3972,7 @@ export function attach(
     nextFirstChild: Fiber,
     nextLastChild: null | Fiber, // non-inclusive
     prevFirstChild: null | Fiber,
+    prevLastChild: null | Fiber, // non-inclusive
     traceNearestHostComponentUpdate: boolean,
     virtualLevel: number, // the nth level of virtual instances
   ): UpdateFlags {
@@ -4247,7 +4249,10 @@ export function attach(
       }
     }
     // If we have no more children, but used to, they don't line up.
-    if (prevChildAtSameIndex !== null) {
+    if (
+      prevChildAtSameIndex !== null &&
+      prevChildAtSameIndex !== prevLastChild
+    ) {
       updateFlags |= ShouldResetChildren | ShouldResetSuspenseChildren;
     }
     return updateFlags;
@@ -4266,6 +4271,7 @@ export function attach(
       nextFirstChild,
       null,
       prevFirstChild,
+      null,
       traceNearestHostComponentUpdate,
       0,
     );
@@ -4284,10 +4290,14 @@ export function attach(
     const nextFallbackFiber = nextContentFiber.sibling;
 
     // First update only the Offscreen boundary. I.e. the main content.
+    // The previous set is bounded by the previous fallback fragment since the
+    // fallback is reconciled separately below. Without the bound, a boundary
+    // that stays suspended would always report its content set as changed.
     updateFlags |= updateVirtualChildrenRecursively(
       nextContentFiber,
       nextFallbackFiber,
       prevContentFiber,
+      prevFallbackFiber,
       traceNearestHostComponentUpdate,
       0,
     );
@@ -4306,6 +4316,7 @@ export function attach(
           nextFallbackFiber,
           null,
           prevFallbackFiber,
+          null,
           traceNearestHostComponentUpdate,
           0,
         );

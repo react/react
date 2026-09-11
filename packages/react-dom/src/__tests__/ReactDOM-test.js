@@ -191,7 +191,7 @@ describe('ReactDOM', () => {
       await act(() => {
         ReactDOM.render(<A />, myDiv, 'no');
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
@@ -204,7 +204,7 @@ describe('ReactDOM', () => {
       await act(() => {
         ReactDOM.render(<A />, myDiv, {foo: 'bar'});
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -217,7 +217,7 @@ describe('ReactDOM', () => {
       await act(() => {
         ReactDOM.render(<A />, myDiv, new Foo());
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -248,7 +248,7 @@ describe('ReactDOM', () => {
       await act(() => {
         ReactDOM.render(<A />, myDiv, 'no');
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: no',
     );
@@ -262,7 +262,7 @@ describe('ReactDOM', () => {
       await act(() => {
         ReactDOM.render(<A />, myDiv, {foo: 'bar'});
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );
@@ -276,7 +276,7 @@ describe('ReactDOM', () => {
       await act(() => {
         ReactDOM.render(<A />, myDiv, new Foo());
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       'Invalid argument passed as callback. Expected a function. Instead ' +
         'received: [object Object]',
     );

@@ -685,14 +685,16 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
       value = `Debugger`;
       break;
     }
-    case 'PostfixUpdate': {
-      value = `PostfixUpdate ${printPlace(instrValue.lvalue)} = ${printPlace(
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext': {
+      value = `${instrValue.kind} ${printPlace(instrValue.lvalue)} = ${printPlace(
         instrValue.value,
       )} ${instrValue.operation}`;
       break;
     }
-    case 'PrefixUpdate': {
-      value = `PrefixUpdate ${printPlace(instrValue.lvalue)} = ${
+    case 'PrefixUpdateLocal':
+    case 'PrefixUpdateContext': {
+      value = `${instrValue.kind} ${printPlace(instrValue.lvalue)} = ${
         instrValue.operation
       } ${printPlace(instrValue.value)}`;
       break;

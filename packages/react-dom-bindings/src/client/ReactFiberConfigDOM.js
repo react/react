@@ -131,7 +131,6 @@ import {
   enableSrcObject,
   enableViewTransition,
   enableHydrationChangeEvent,
-  enableFragmentRefsScrollIntoView,
   enableProfilerTimer,
   enableFragmentRefsInstanceHandles,
   enableFragmentRefsTextNodes,
@@ -2991,6 +2990,7 @@ type StoredEventListener = {
   // When once:true, a wrapper that removes the fragment listener after the
   // first fire. Otherwise the same as listener.
   attachedListener: EventListener,
+  cleanup: null | (() => void),
 };
 
 export type FragmentInstanceType = {
@@ -3034,6 +3034,15 @@ FragmentInstance.prototype.addEventListener = function (
   listener: EventListener,
   optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
 ): void {
+  let signal: null | AbortSignal = null;
+  let cleanup: null | (() => void) = null;
+  if (optionsOrUseCapture != null && typeof optionsOrUseCapture !== 'boolean') {
+    signal = optionsOrUseCapture.signal || null;
+    if (signal !== null && signal.aborted) {
+      return;
+    }
+  }
+
   if (this._eventListeners === null) {
     this._eventListeners = [];
   }
@@ -3063,12 +3072,24 @@ FragmentInstance.prototype.addEventListener = function (
         }
       };
     }
+    if (signal !== null) {
+      const onAbort = fragmentInstance.removeEventListener.bind(
+        fragmentInstance,
+        type,
+        listener,
+        optionsOrUseCapture,
+      );
+      signal.addEventListener('abort', onAbort, {once: true});
+      // $FlowFixMe[method-unbinding]
+      cleanup = signal.removeEventListener.bind(signal, 'abort', onAbort);
+    }
     const attachOptions = getAttachOptions(optionsOrUseCapture);
     listeners.push({
       type,
       listener,
       optionsOrUseCapture,
       attachedListener,
+      cleanup,
     });
     traverseFragmentInstancesAndTextInstances(
       this._fragmentFiber,
@@ -3110,8 +3131,11 @@ FragmentInstance.prototype.removeEventListener = function (
   if (index === -1) {
     return;
   }
-  const {attachedListener, optionsOrUseCapture: storedOptions} =
-    listeners[index];
+  const {
+    attachedListener,
+    optionsOrUseCapture: storedOptions,
+    cleanup,
+  } = listeners[index];
   const attachOptions = getAttachOptions(storedOptions);
   traverseFragmentInstancesAndTextInstances(
     this._fragmentFiber,
@@ -3121,6 +3145,9 @@ FragmentInstance.prototype.removeEventListener = function (
     attachOptions,
   );
   listeners.splice(index, 1);
+  if (cleanup !== null) {
+    cleanup();
+  }
 };
 function removeEventListenerFromChild(
   child: Fiber,
@@ -3138,21 +3165,24 @@ function isOnceOption(opts: ?EventListenerOptionsOrUseCapture): boolean {
 function getAttachOptions(
   opts: void | EventListenerOptionsOrUseCapture,
 ): void | EventListenerOptionsOrUseCapture {
-  // Strip once when attaching to host children; Fragment owns once semantics.
-  if (opts == null || typeof opts === 'boolean' || opts.once !== true) {
+  // Strip once and signal when attaching to host children; Fragment owns once and signal semantics.
+  if (
+    opts == null ||
+    typeof opts === 'boolean' ||
+    (opts.once !== true && !(opts.signal instanceof AbortSignal))
+  ) {
     return opts;
   }
   return {
     capture: opts.capture,
     passive: opts.passive,
-    signal: opts.signal,
   };
 }
 function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
 ): string {
   if (opts == null) {
-    return '0';
+    return 'c=0';
   }
 
   if (typeof opts === 'boolean') {
@@ -3399,6 +3429,7 @@ FragmentInstance.prototype.unobserveUsing = function (
       unobserveChild,
       observer,
     );
+    unobservePendingChildren(this, observer);
   }
 };
 function unobserveChild(
@@ -3414,6 +3445,92 @@ function unobserveChild(
   const instance = getInstanceFromHostFiber<Instance>(child);
   observer.unobserve(instance);
   return false;
+}
+
+type PendingIntersectionUnobserve = {
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver,
+  instance: Instance,
+};
+
+let pendingIntersectionUnobserves: Array<PendingIntersectionUnobserve> = [];
+let intersectionUnobserveScheduled: boolean = false;
+
+function isIntersectionObserver(
+  observer: IntersectionObserver | ResizeObserver,
+): boolean {
+  // IntersectionObserver has rootMargin; ResizeObserver does not. Avoid
+  // instanceof so jsdom mocks and cross-realm observers still match.
+  return typeof (observer as any).rootMargin === 'string';
+}
+
+// A later commit can reinsert the same node before the post-paint unobserve
+// runs (Activity hidden → visible). Cancel so the flush does not drop it.
+function cancelPendingIntersectionUnobserve(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver | ResizeObserver,
+  instance: Instance,
+): void {
+  let writeIdx = 0;
+  for (let i = 0; i < pendingIntersectionUnobserves.length; i++) {
+    const pending = pendingIntersectionUnobserves[i];
+    if (
+      pending.fragmentInstance !== fragmentInstance ||
+      pending.observer !== observer ||
+      pending.instance !== instance
+    ) {
+      pendingIntersectionUnobserves[writeIdx++] = pending;
+    }
+  }
+  pendingIntersectionUnobserves.length = writeIdx;
+}
+
+// unobserveUsing() only walks the children that are still mounted, so release
+// the deleted ones that are waiting for their exit record.
+function unobservePendingChildren(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver | ResizeObserver,
+): void {
+  let writeIdx = 0;
+  for (let i = 0; i < pendingIntersectionUnobserves.length; i++) {
+    const pending = pendingIntersectionUnobserves[i];
+    if (
+      pending.fragmentInstance === fragmentInstance &&
+      pending.observer === observer
+    ) {
+      observer.unobserve(pending.instance);
+    } else {
+      pendingIntersectionUnobserves[writeIdx++] = pending;
+    }
+  }
+  pendingIntersectionUnobserves.length = writeIdx;
+}
+
+function schedulePendingIntersectionUnobserve(
+  fragmentInstance: FragmentInstanceType,
+  observer: IntersectionObserver,
+  instance: Instance,
+): void {
+  pendingIntersectionUnobserves.push({
+    fragmentInstance,
+    observer,
+    instance,
+  });
+  if (!intersectionUnobserveScheduled) {
+    intersectionUnobserveScheduled = true;
+    // Unobserving in this commit would cancel the record IntersectionObserver
+    // delivers for the now disconnected target. Wait until after paint so the
+    // exit fires first, then drop the observer's strong ref to the node.
+    requestPostPaintCallback(() => {
+      intersectionUnobserveScheduled = false;
+      const pending = pendingIntersectionUnobserves;
+      pendingIntersectionUnobserves = [];
+      for (let i = 0; i < pending.length; i++) {
+        const item = pending[i];
+        item.observer.unobserve(item.instance);
+      }
+    });
+  }
 }
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.getClientRects = function (
@@ -3639,97 +3756,93 @@ function scrollTextNodeIntoView(
   window.scrollTo(window.scrollX + rect.left, scrollY);
 }
 
-if (enableFragmentRefsScrollIntoView) {
-  // $FlowFixMe[prop-missing]
-  FragmentInstance.prototype.scrollIntoView = function (
-    this: FragmentInstanceType,
-    alignToTop?: boolean,
-  ): void {
-    if (typeof alignToTop === 'object') {
-      throw new Error(
-        'FragmentInstance.scrollIntoView() does not support ' +
-          'scrollIntoViewOptions. Use the alignToTop boolean instead.',
-      );
-    }
-    // First, get the children nodes
-    const children: Array<Fiber> = [];
-    traverseFragmentInstancesAndTextInstances(
-      this._fragmentFiber,
-      collectChildren,
-      children,
+// $FlowFixMe[prop-missing]
+FragmentInstance.prototype.scrollIntoView = function (
+  this: FragmentInstanceType,
+  alignToTop?: boolean,
+): void {
+  if (typeof alignToTop === 'object') {
+    throw new Error(
+      'FragmentInstance.scrollIntoView() does not support ' +
+        'scrollIntoViewOptions. Use the alignToTop boolean instead.',
     );
+  }
+  // First, get the children nodes
+  const children: Array<Fiber> = [];
+  traverseFragmentInstancesAndTextInstances(
+    this._fragmentFiber,
+    collectChildren,
+    children,
+  );
 
-    const resolvedAlignToTop = alignToTop !== false;
+  const resolvedAlignToTop = alignToTop !== false;
 
-    // If there are no children, we can use the parent and siblings to determine a position
-    if (children.length === 0) {
-      const hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
-        this._fragmentFiber,
-      );
-      const targetFiber = resolvedAlignToTop
-        ? hostSiblings[1] ||
-          hostSiblings[0] ||
-          getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
-        : hostSiblings[0] || hostSiblings[1];
+  // If there are no children, we can use the parent and siblings to determine a position
+  if (children.length === 0) {
+    const hostSiblings = getFragmentInstanceOrTextInstanceSiblings(
+      this._fragmentFiber,
+    );
+    const targetFiber = resolvedAlignToTop
+      ? hostSiblings[1] ||
+        hostSiblings[0] ||
+        getFragmentParentInstanceOrContainerFiber(this._fragmentFiber)
+      : hostSiblings[0] || hostSiblings[1];
 
-      if (targetFiber === null) {
-        return;
-      }
-      // For text node siblings, use Range API to scroll to their position
-      if (enableFragmentRefsTextNodes && targetFiber.tag === HostText) {
-        const textNode = getInstanceFromHostFiber<TextInstance>(targetFiber);
-        scrollTextNodeIntoView(textNode, resolvedAlignToTop);
-        return;
-      }
-      const target = getInstanceFromHostFiber<Instance | Container>(
-        targetFiber,
-      );
-      // If the parent host fiber is a HostRoot, the target is a Container
-      // which is not necessarily an Element with a scrollIntoView method.
-      if (target.nodeType === DOCUMENT_NODE) {
-        // A Document is always in view.
-      } else if (target.nodeType === DOCUMENT_FRAGMENT_NODE) {
-        const fragment = target as any as DocumentFragment;
-        // ShadowRoot always has a host: https://dom.spec.whatwg.org/#ref-for-concept-documentfragment-host%E2%91%A5
-        // A generic DocumentFragment doesn't implement this property but conceptually
-        // host is a nullable Element: https://dom.spec.whatwg.org/#concept-documentfragment-host
-        const host =
-          'host' in fragment ? (fragment as any as ShadowRoot).host : null;
-        if (host !== null) {
-          // The ShadowRoot's host element marks the position where the
-          // fragment's content would appear.
-          host.scrollIntoView(alignToTop);
-        } else if (__DEV__) {
-          console.warn(
-            'You are attempting to scroll a FragmentInstance that is only ' +
-              'mounted inside a detached DocumentFragment. No scroll was ' +
-              'performed.',
-          );
-        }
-        return;
-      } else {
-        // Narrowed down to Element by nodeType check above, but Flow doesn't know that.
-        const element = target as any as Element;
-        element.scrollIntoView(alignToTop);
-      }
+    if (targetFiber === null) {
+      return;
     }
-
-    let i = resolvedAlignToTop ? children.length - 1 : 0;
-    while (i !== (resolvedAlignToTop ? -1 : children.length)) {
-      const child = children[i];
-      // For text nodes, use Range API to scroll to their position
-      if (enableFragmentRefsTextNodes && child.tag === HostText) {
-        const textNode = getInstanceFromHostFiber<TextInstance>(child);
-        scrollTextNodeIntoView(textNode, resolvedAlignToTop);
-        i += resolvedAlignToTop ? -1 : 1;
-        continue;
+    // For text node siblings, use Range API to scroll to their position
+    if (enableFragmentRefsTextNodes && targetFiber.tag === HostText) {
+      const textNode = getInstanceFromHostFiber<TextInstance>(targetFiber);
+      scrollTextNodeIntoView(textNode, resolvedAlignToTop);
+      return;
+    }
+    const target = getInstanceFromHostFiber<Instance | Container>(targetFiber);
+    // If the parent host fiber is a HostRoot, the target is a Container
+    // which is not necessarily an Element with a scrollIntoView method.
+    if (target.nodeType === DOCUMENT_NODE) {
+      // A Document is always in view.
+    } else if (target.nodeType === DOCUMENT_FRAGMENT_NODE) {
+      const fragment = target as any as DocumentFragment;
+      // ShadowRoot always has a host: https://dom.spec.whatwg.org/#ref-for-concept-documentfragment-host%E2%91%A5
+      // A generic DocumentFragment doesn't implement this property but conceptually
+      // host is a nullable Element: https://dom.spec.whatwg.org/#concept-documentfragment-host
+      const host =
+        'host' in fragment ? (fragment as any as ShadowRoot).host : null;
+      if (host !== null) {
+        // The ShadowRoot's host element marks the position where the
+        // fragment's content would appear.
+        host.scrollIntoView(alignToTop);
+      } else if (__DEV__) {
+        console.warn(
+          'You are attempting to scroll a FragmentInstance that is only ' +
+            'mounted inside a detached DocumentFragment. No scroll was ' +
+            'performed.',
+        );
       }
-      const instance = getInstanceFromHostFiber<Instance>(child);
-      instance.scrollIntoView(alignToTop);
+      return;
+    } else {
+      // Narrowed down to Element by nodeType check above, but Flow doesn't know that.
+      const element = target as any as Element;
+      element.scrollIntoView(alignToTop);
+    }
+  }
+
+  let i = resolvedAlignToTop ? children.length - 1 : 0;
+  while (i !== (resolvedAlignToTop ? -1 : children.length)) {
+    const child = children[i];
+    // For text nodes, use Range API to scroll to their position
+    if (enableFragmentRefsTextNodes && child.tag === HostText) {
+      const textNode = getInstanceFromHostFiber<TextInstance>(child);
+      scrollTextNodeIntoView(textNode, resolvedAlignToTop);
       i += resolvedAlignToTop ? -1 : 1;
+      continue;
     }
-  };
-}
+    const instance = getInstanceFromHostFiber<Instance>(child);
+    instance.scrollIntoView(alignToTop);
+    i += resolvedAlignToTop ? -1 : 1;
+  }
+};
 
 function addFragmentHandleToFiber(
   child: Fiber,
@@ -3797,8 +3910,10 @@ export function commitNewChildToFragmentInstance(
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
-  if (fragmentInstance._observers !== null) {
-    fragmentInstance._observers.forEach(observer => {
+  const observers = fragmentInstance._observers;
+  if (observers !== null) {
+    observers.forEach(observer => {
+      cancelPendingIntersectionUnobserve(fragmentInstance, observer, instance);
       observer.observe(instance);
     });
   }
@@ -3826,6 +3941,22 @@ export function deleteChildFromFragmentInstance(
     return;
   }
   const instance: InstanceWithFragmentHandles = childInstance as any;
+  const observers = fragmentInstance._observers;
+  if (observers !== null) {
+    observers.forEach(observer => {
+      if (isIntersectionObserver(observer)) {
+        // Stay observed until the next IntersectionObserver delivery so a
+        // disconnected target still gets an isIntersecting: false record.
+        schedulePendingIntersectionUnobserve(
+          fragmentInstance,
+          observer as any as IntersectionObserver,
+          instance,
+        );
+      } else {
+        observer.unobserve(instance);
+      }
+    });
+  }
   if (enableFragmentRefsInstanceHandles) {
     if (instance.reactFragments != null) {
       instance.reactFragments.delete(fragmentInstance);

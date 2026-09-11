@@ -349,7 +349,7 @@ describe('ReactDOMTextComponent', () => {
       act(() => {
         root.render(<div>{new TemporalLike()}</div>);
       }),
-    ).rejects.toThrowError(
+    ).rejects.toThrow(
       new Error(
         'Objects are not valid as a React child (found: object with keys {}).' +
           ' If you meant to render a collection of children, use an array instead.',

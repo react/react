@@ -160,10 +160,8 @@ export const enableInfiniteRenderLoopDetection: boolean = false;
  */
 export const enableInfiniteRenderLoopDetectionForceThrow: boolean = false;
 
-export const enableConditionalUseWarning: boolean = __EXPERIMENTAL__;
+export const enableConditionalUseWarning: boolean = true;
 
-export const enableFragmentRefs: boolean = true;
-export const enableFragmentRefsScrollIntoView: boolean = true;
 export const enableFragmentRefsInstanceHandles: boolean = true;
 export const enableFragmentRefsTextNodes: boolean = true;
 

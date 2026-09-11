@@ -669,7 +669,7 @@ describe('useId', () => {
       await clientAct(async () => {
         ReactDOMClient.hydrateRoot(container, <Foo />);
       });
-    }).rejects.toThrowError(
+    }).rejects.toThrow(
       `Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client.`,
     );
 

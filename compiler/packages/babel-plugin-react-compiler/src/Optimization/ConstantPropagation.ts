@@ -272,7 +272,8 @@ function evaluateInstruction(
       }
       return null;
     }
-    case 'PostfixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext': {
       const previous = read(constants, value.value);
       if (
         previous !== null &&
@@ -292,7 +293,8 @@ function evaluateInstruction(
       }
       return null;
     }
-    case 'PrefixUpdate': {
+    case 'PrefixUpdateLocal':
+    case 'PrefixUpdateContext': {
       const previous = read(constants, value.value);
       if (
         previous !== null &&

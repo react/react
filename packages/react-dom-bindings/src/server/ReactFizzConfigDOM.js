@@ -457,7 +457,15 @@ export function createRenderState(
   const importMapChunks: Array<Chunk | PrecomputedChunk> = [];
   if (importMap !== undefined) {
     const map = importMap;
-    importMapChunks.push(importMapScriptStart);
+    importMapChunks.push(
+      nonceScript === undefined
+        ? importMapScriptStart
+        : stringToPrecomputedChunk(
+            '<script type="importmap" nonce="' +
+              escapeTextForBrowser(nonceScript) +
+              '">',
+          ),
+    );
     importMapChunks.push(
       stringToChunk(escapeEntireInlineScriptContent(JSON.stringify(map))),
     );

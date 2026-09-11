@@ -95,10 +95,11 @@ jobs:
             const {post} = require(`${process.env.GITHUB_WORKSPACE}/scripts/sizebot/pull-request-comment.js`);
             await post({github, context, core});
 
-      - name: Fail if the build configuration drifted
+      - name: Fail if sizebot reported a problem
         # The comment is posted first, so it explains the problem on the pull
-        # request itself. This step exists so the drift also shows up as a failed
-        # run rather than only in a comment.
+        # request itself. This step exists so the problem (build configuration
+        # drift, or no base build to compare against) also shows up as a
+        # failed run rather than only in a comment.
         if: ${{ steps.resolve.outputs.action == 'continue' && hashFiles('sizebot-problem.txt') != '' }}
         run: |
           cat sizebot-problem.txt
