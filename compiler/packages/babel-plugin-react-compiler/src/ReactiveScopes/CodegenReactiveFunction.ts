@@ -2370,11 +2370,15 @@ function codegenValue(
   value: boolean | number | string | null | undefined,
 ): t.Expression {
   if (typeof value === 'number') {
-    if (value < 0) {
+    if (value < 0 || Object.is(value, -0)) {
       /**
        * Babel's code generator produces invalid JS for negative numbers when
        * run with { compact: true }.
        * See repro https://codesandbox.io/p/devbox/5d47fr
+       *
+       * Note this also covers `-0`, which fails the `value < 0` check but
+       * must still be emitted as a unary negation of `0` in order to
+       * preserve the distinction between `0` and `-0` (Object.is semantics).
        */
       return t.unaryExpression('-', t.numericLiteral(-value), false);
     } else {
