@@ -801,6 +801,15 @@ function collectDependencies(
           const maybeOptionalChain = temporaries.get(operand[1].identifier.id);
           if (maybeOptionalChain) {
             context.visitDependency(maybeOptionalChain);
+          } else if (operand[1].reactive) {
+            /*
+             * A reactive phi operand defined before the current scope flows
+             * through the scope, which may reassign the variable on some paths
+             * and leave the incoming value untouched on others. Without a
+             * dependency on that incoming value, skipping the scope restores a
+             * stale copy over what an earlier scope computed.
+             */
+            context.visitOperand(operand[1]);
           }
         }
       }
