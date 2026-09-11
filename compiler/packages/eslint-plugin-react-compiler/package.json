@@ -3,13 +3,15 @@
   "version": "0.0.0-experimental-9ed098e-20240725",
   "description": "ESLint plugin to display errors found by the React compiler.",
   "main": "dist/index.js",
+  "types": "index.d.ts",
   "scripts": {
     "build": "rimraf dist && tsup",
     "test": "jest",
     "watch": "yarn build --watch"
   },
   "files": [
-    "dist"
+    "dist",
+    "index.d.ts"
   ],
   "dependencies": {
     "@babel/core": "^7.24.4",
