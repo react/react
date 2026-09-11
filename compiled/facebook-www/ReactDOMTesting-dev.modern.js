@@ -27209,7 +27209,7 @@ __DEV__ &&
       if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
         if (null === otherFiber)
           return (
-            (otherFiber = otherNode.ownerDocument),
+            (otherFiber = getOwnerDocumentFromRootContainer(otherNode)),
             otherNode === otherFiber ||
               otherNode === otherFiber.documentElement ||
               otherNode === otherFiber.body
@@ -33830,11 +33830,11 @@ __DEV__ &&
       return_targetInst = null;
     (function () {
       var isomorphicReactPackageVersion = React.version;
-      if ("19.3.0-www-modern-9a785953-20260911" !== isomorphicReactPackageVersion)
+      if ("19.3.0-www-modern-019019be-20260911" !== isomorphicReactPackageVersion)
         throw Error(
           'Incompatible React versions: The "react" and "react-dom" packages must have the exact same version. Instead got:\n  - react:      ' +
             (isomorphicReactPackageVersion +
-              "\n  - react-dom:  19.3.0-www-modern-9a785953-20260911\nLearn more: https://react.dev/warnings/version-mismatch")
+              "\n  - react-dom:  19.3.0-www-modern-019019be-20260911\nLearn more: https://react.dev/warnings/version-mismatch")
         );
     })();
     ("function" === typeof Map &&
@@ -33877,10 +33877,10 @@ __DEV__ &&
       !(function () {
         var internals = {
           bundleType: 1,
-          version: "19.3.0-www-modern-9a785953-20260911",
+          version: "19.3.0-www-modern-019019be-20260911",
           rendererPackageName: "react-dom",
           currentDispatcherRef: ReactSharedInternals,
-          reconcilerVersion: "19.3.0-www-modern-9a785953-20260911"
+          reconcilerVersion: "19.3.0-www-modern-019019be-20260911"
         };
         internals.overrideHookState = overrideHookState;
         internals.overrideHookStateDeletePath = overrideHookStateDeletePath;
@@ -34671,5 +34671,5 @@ __DEV__ &&
     exports.useFormStatus = function () {
       return resolveDispatcher().useHostTransitionStatus();
     };
-    exports.version = "19.3.0-www-modern-9a785953-20260911";
+    exports.version = "19.3.0-www-modern-019019be-20260911";
   })();
