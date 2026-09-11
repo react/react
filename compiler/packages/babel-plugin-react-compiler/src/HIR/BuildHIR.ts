@@ -2450,41 +2450,25 @@ function lowerExpression(
     }
     case 'TaggedTemplateExpression': {
       const expr = exprPath as NodePath<t.TaggedTemplateExpression>;
-      if (expr.get('quasi').get('expressions').length !== 0) {
-        builder.recordError(
-          new CompilerErrorDetail({
-            reason:
-              '(BuildHIR::lowerExpression) Handle tagged template with interpolations',
-            category: ErrorCategory.Todo,
-            loc: exprPath.node.loc ?? null,
-            suggestions: null,
-          }),
+      const subexprs = expr
+        .get('quasi')
+        .get('expressions')
+        .map(subexpr =>
+          lowerExpressionToTemporary(
+            builder,
+            subexpr as NodePath<t.Expression>,
+          ),
         );
-        return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
-      }
-      CompilerError.invariant(expr.get('quasi').get('quasis').length == 1, {
-        reason:
-          "there should be only one quasi as we don't support interpolations yet",
-        loc: expr.node.loc ?? GeneratedSource,
-      });
-      const value = expr.get('quasi').get('quasis').at(0)!.node.value;
-      if (value.raw !== value.cooked) {
-        builder.recordError(
-          new CompilerErrorDetail({
-            reason:
-              '(BuildHIR::lowerExpression) Handle tagged template where cooked value is different from raw value',
-            category: ErrorCategory.Todo,
-            loc: exprPath.node.loc ?? null,
-            suggestions: null,
-          }),
-        );
-        return {kind: 'UnsupportedNode', node: exprNode, loc: exprLoc};
-      }
+      const quasis = expr
+        .get('quasi')
+        .get('quasis')
+        .map(quasi => quasi.node.value);
 
       return {
         kind: 'TaggedTemplateExpression',
         tag: lowerExpressionToTemporary(builder, expr.get('tag')),
-        value,
+        subexprs,
+        quasis,
         loc: exprLoc,
       };
     }

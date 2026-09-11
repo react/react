@@ -37,13 +37,13 @@ import { graphql } from "shared-runtime";
 
 export function Component(t0) {
   const $ = _c(1);
-  const fragment = graphql`
-    fragment Foo on User {
-      name
-    }
-  `;
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
+    const fragment = graphql`
+      fragment Foo on User {
+        name
+      }
+    `;
     t1 = <div>{fragment}</div>;
     $[0] = t1;
   } else {
@@ -51,7 +51,6 @@ export function Component(t0) {
   }
   return t1;
 }
-
 export const FIXTURE_ENTRYPOINT = {
   fn: Component,
   params: [{ a: 0, b: 0 }],

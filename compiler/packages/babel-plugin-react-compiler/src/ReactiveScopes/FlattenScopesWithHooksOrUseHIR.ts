@@ -10,7 +10,10 @@ import {
   BlockId,
   HIRFunction,
   LabelTerminal,
+  Place,
   PrunedScopeTerminal,
+  Effect,
+  ValueKind,
   getHookKind,
   isUseOperator,
 } from '../HIR';
@@ -58,6 +61,14 @@ export function flattenScopesWithHooksOrUseHIR(fn: HIRFunction): void {
             prune.push(...activeScopes.map(entry => entry.block));
             activeScopes.length = 0;
           }
+          break;
+        }
+        case 'TaggedTemplateExpression': {
+          if (!isKnownPureTaggedTemplate(fn, value.tag)) {
+            prune.push(...activeScopes.map(entry => entry.block));
+            activeScopes.length = 0;
+          }
+          break;
         }
       }
     }
@@ -107,4 +118,18 @@ export function flattenScopesWithHooksOrUseHIR(fn: HIRFunction): void {
       scope: terminal.scope,
     } as PrunedScopeTerminal;
   }
+}
+
+function isKnownPureTaggedTemplate(fn: HIRFunction, tag: Place): boolean {
+  if (tag.identifier.type.kind !== 'Function') {
+    return false;
+  }
+  const signature = fn.env.getFunctionSignature(tag.identifier.type);
+  return (
+    signature !== null &&
+    signature.calleeEffect === Effect.Read &&
+    signature.impure !== true &&
+    (signature.returnValueKind === ValueKind.Frozen ||
+      signature.returnValueKind === ValueKind.Primitive)
+  );
 }

@@ -567,7 +567,11 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
       break;
     }
     case 'TaggedTemplateExpression': {
-      value = `${printPlace(instrValue.tag)}\`${instrValue.value.raw}\``;
+      const parts = instrValue.quasis.map((quasi, index) => {
+        const subexpr = instrValue.subexprs[index];
+        return `${quasi.raw}${subexpr === undefined ? '' : `\${${printPlace(subexpr)}}`}`;
+      });
+      value = `${printPlace(instrValue.tag)}\`${parts.join('')}\``;
       break;
     }
     case 'LogicalExpression': {
