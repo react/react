@@ -3167,7 +3167,6 @@ export function hydrateProperties(
       break;
     case 'iframe':
     case 'object':
-    case 'embed':
       // We listen to this event in case to ensure emulated bubble
       // listeners still fire for the load event.
       listenToNonDelegatedEvent('load', domElement);
@@ -3185,6 +3184,7 @@ export function hydrateProperties(
       // listeners still fire for the error event.
       listenToNonDelegatedEvent('error', domElement);
       break;
+    case 'embed':
     case 'img':
     case 'image':
     case 'link':

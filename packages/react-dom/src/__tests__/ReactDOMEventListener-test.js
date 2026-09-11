@@ -633,6 +633,43 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
+  it('should dispatch load and error on a hydrated embed', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    try {
+      const ref = React.createRef();
+      const handleLoad = jest.fn();
+      const handleError = jest.fn();
+      const tree = (
+        <div>
+          <embed ref={ref} onLoad={handleLoad} onError={handleError} />
+        </div>
+      );
+      container.innerHTML = ReactDOMServer.renderToString(tree);
+      await act(() => {
+        ReactDOMClient.hydrateRoot(container, tree);
+      });
+      await act(() => {
+        ref.current.dispatchEvent(
+          new ProgressEvent('load', {
+            bubbles: false,
+          }),
+        );
+        ref.current.dispatchEvent(
+          new Event('error', {
+            bubbles: false,
+          }),
+        );
+      });
+
+      expect(handleLoad).toHaveBeenCalledTimes(1);
+      expect(handleError).toHaveBeenCalledTimes(1);
+    } finally {
+      document.body.removeChild(container);
+    }
+  });
+
   // Unlike browsers, we delegate media events.
   // (This doesn't make a lot of sense but it would be a breaking change not to.)
   it('should delegate media events even without a direct listener', async () => {
