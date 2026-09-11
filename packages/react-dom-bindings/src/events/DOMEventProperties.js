@@ -46,6 +46,7 @@ const simpleEventPluginEvents = [
   'canPlayThrough',
   'click',
   'close',
+  'command',
   'contextMenu',
   'copy',
   'cut',

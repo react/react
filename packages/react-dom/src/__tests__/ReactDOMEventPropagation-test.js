@@ -1434,6 +1434,22 @@ describe('ReactDOMEventListener', () => {
         },
       });
     });
+
+    it('onCommand', async () => {
+      await testNonBubblingEvent({
+        type: 'div',
+        reactEvent: 'onCommand',
+        reactEventType: 'command',
+        nativeEvent: 'command',
+        dispatch(node) {
+          const e = new Event('command', {
+            bubbles: false,
+            cancelable: true,
+          });
+          node.dispatchEvent(e);
+        },
+      });
+    });
   });
 
   // The tests for these events are currently very limited

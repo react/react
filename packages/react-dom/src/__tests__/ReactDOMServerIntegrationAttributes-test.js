@@ -333,6 +333,26 @@ describe('ReactDOMServerIntegration', () => {
       });
     });
 
+    describe('commandFor property', function () {
+      itRenders('commandFor with string value', async render => {
+        const e = await render(<button commandFor="target" />);
+        expect(e.getAttribute('commandfor')).toBe('target');
+      });
+
+      itRenders('command with string value', async render => {
+        const e = await render(<button command="show-popover" />);
+        expect(e.getAttribute('command')).toBe('show-popover');
+      });
+
+      itRenders('commandFor and command together', async render => {
+        const e = await render(
+          <button commandFor="target" command="toggle-popover" />,
+        );
+        expect(e.getAttribute('commandfor')).toBe('target');
+        expect(e.getAttribute('command')).toBe('toggle-popover');
+      });
+    });
+
     describe('numeric properties', function () {
       itRenders(
         'positive numeric property with positive value',
