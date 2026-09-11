@@ -80,29 +80,38 @@ function updateOptions(
       if (options[i].selected !== selected) {
         options[i].selected = selected;
       }
-      if (selected && setDefaultSelected) {
-        options[i].defaultSelected = true;
+      if (setDefaultSelected) {
+        options[i].defaultSelected = selected;
       }
     }
   } else {
     // Do not set `select.value` as exact behavior isn't consistent across all
     // browsers for all cases.
     const selectedValue = toString(getToStringValue(propValue));
-    let defaultSelected = null;
+    // We use null as a signal that an option is explicitly selected.
+    let defaultSelected: void | null | HTMLOptionElement = undefined;
     for (let i = 0; i < options.length; i++) {
-      if (options[i].value === selectedValue) {
-        options[i].selected = true;
-        if (setDefaultSelected) {
-          options[i].defaultSelected = true;
-        }
-        return;
+      const selected = options[i].value === selectedValue;
+      if (setDefaultSelected) {
+        options[i].defaultSelected = selected;
       }
-      if (defaultSelected === null && !options[i].disabled) {
+      if (selected) {
+        options[i].selected = true;
+        defaultSelected = null;
+        if (!setDefaultSelected) {
+          // We need to loop through all options when updating defaultSelected.
+          // Otherwise multiple options may end up with defaultSelected=true
+          // and resetting won't work properly.
+          return;
+        }
+      }
+      if (defaultSelected === undefined && !options[i].disabled) {
         defaultSelected = options[i];
       }
     }
-    if (defaultSelected !== null) {
+    if (defaultSelected !== null && defaultSelected !== undefined) {
       defaultSelected.selected = true;
+      defaultSelected.defaultSelected = true;
     }
   }
 }
@@ -152,7 +161,7 @@ export function initSelect(
   const node: HTMLSelectElement = element as any;
   node.multiple = !!multiple;
   if (value != null) {
-    updateOptions(node, !!multiple, value, false);
+    updateOptions(node, !!multiple, value, true);
   } else if (defaultValue != null) {
     updateOptions(node, !!multiple, defaultValue, true);
   }
@@ -221,7 +230,7 @@ export function updateSelect(
   const node: HTMLSelectElement = element as any;
 
   if (value != null) {
-    updateOptions(node, !!multiple, value, false);
+    updateOptions(node, !!multiple, value, true);
   } else if (!!wasMultiple !== !!multiple) {
     // For simplicity, reapply `defaultValue` if `multiple` is toggled.
     if (defaultValue != null) {
@@ -238,6 +247,6 @@ export function restoreControlledSelectState(element: Element, props: Object) {
   const value = props.value;
 
   if (value != null) {
-    updateOptions(node, !!props.multiple, value, false);
+    updateOptions(node, !!props.multiple, value, true);
   }
 }
