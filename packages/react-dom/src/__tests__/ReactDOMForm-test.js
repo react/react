@@ -945,6 +945,123 @@ describe('ReactDOMForm', () => {
     assertLog(['Async action finished', 'No pending action']);
   });
 
+  it(
+    "useFormStatus reads the submitter's formMethod, which overrides the " +
+      "form's method",
+    async () => {
+      const formRef = React.createRef();
+      const buttonRef = React.createRef();
+      const inputRef = React.createRef();
+      let actionText;
+
+      function Status() {
+        const {pending, method} = useFormStatus();
+        return <Text text={pending ? `Pending ${method}` : 'Not pending'} />;
+      }
+
+      async function myAction() {
+        await getText(actionText);
+      }
+
+      function App() {
+        return (
+          <form action={myAction} ref={formRef}>
+            <button type="submit" formMethod="post" ref={buttonRef} />
+            <input type="submit" formMethod="DIALOG" ref={inputRef} />
+            <Status />
+          </form>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<App />));
+      assertLog(['Not pending']);
+
+      actionText = 'A';
+      await submit(buttonRef.current);
+      assertLog(['Pending post']);
+      await act(() => resolveText('A'));
+      assertLog(['Not pending']);
+
+      // The value is normalized the same way the DOM normalizes it.
+      actionText = 'B';
+      await submit(inputRef.current);
+      assertLog(['Pending dialog']);
+      await act(() => resolveText('B'));
+      assertLog(['Not pending']);
+
+      // A submitter that React doesn't own is read from the DOM instead.
+      const foreignButton = document.createElement('button');
+      foreignButton.type = 'submit';
+      foreignButton.setAttribute('formmethod', 'post');
+      formRef.current.appendChild(foreignButton);
+
+      actionText = 'C';
+      await submit(foreignButton);
+      assertLog(['Pending post']);
+      await act(() => resolveText('C'));
+      assertLog(['Not pending']);
+    },
+  );
+
+  it(
+    "useFormStatus reads the submitter's formMethod if the submit event " +
+      'was preventDefault-ed',
+    async () => {
+      const buttonRef = React.createRef();
+      const overrideRef = React.createRef();
+      const invalidRef = React.createRef();
+      let actionText;
+
+      function Status() {
+        const {pending, method} = useFormStatus();
+        return <Text text={pending ? `Pending ${method}` : 'Not pending'} />;
+      }
+
+      function App() {
+        const [, startFormTransition] = useTransition();
+        function onSubmit(event) {
+          event.preventDefault();
+          startFormTransition(async () => {
+            await getText(actionText);
+          });
+        }
+        return (
+          <form method="dialog" onSubmit={onSubmit}>
+            <button type="submit" ref={buttonRef} />
+            <button type="submit" formMethod="post" ref={overrideRef} />
+            <button type="submit" formMethod="bogus" ref={invalidRef} />
+            <Status />
+          </form>
+        );
+      }
+
+      const root = ReactDOMClient.createRoot(container);
+      await act(() => root.render(<App />));
+      assertLog(['Not pending']);
+
+      // A submitter without a formMethod leaves the form's method alone.
+      actionText = 'A';
+      await submit(buttonRef.current);
+      assertLog(['Pending dialog']);
+      await act(() => resolveText('A'));
+      assertLog(['Not pending']);
+
+      actionText = 'B';
+      await submit(overrideRef.current);
+      assertLog(['Pending post']);
+      await act(() => resolveText('B'));
+      assertLog(['Not pending']);
+
+      // An unknown formMethod uses the attribute's invalid value default.
+      actionText = 'C';
+      await submit(invalidRef.current);
+      assertLog(['Pending get']);
+      await act(() => resolveText('C'));
+      assertLog(['Not pending']);
+    },
+  );
+
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
 

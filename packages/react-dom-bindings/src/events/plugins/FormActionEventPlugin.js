@@ -45,6 +45,26 @@ function coerceFormActionProp(
   }
 }
 
+// Resolves formMethod the way the DOM does. It's an enumerated attribute with
+// no missing value default, so a value that doesn't render an attribute leaves
+// the form's method alone, while an unknown one is treated as GET.
+function coerceFormMethod(methodProp: mixed): string | null {
+  // This should match the logic in setValueForAttribute
+  if (
+    methodProp == null ||
+    typeof methodProp === 'symbol' ||
+    typeof methodProp === 'boolean' ||
+    typeof methodProp === 'function'
+  ) {
+    return null;
+  }
+  if (__DEV__) {
+    checkAttributeStringCoercion(methodProp, 'formMethod');
+  }
+  const method = ('' + (methodProp as any)).toLowerCase();
+  return method === 'post' || method === 'dialog' ? method : 'get';
+}
+
 /**
  * This plugin invokes action functions on forms, inputs and buttons if
  * the form doesn't prevent default.
@@ -71,6 +91,7 @@ function extractEvents(
   let action = coerceFormActionProp(
     (getFiberCurrentPropsFromNode(form) as any).action,
   );
+  let method = form.method;
   let submitter: null | void | HTMLInputElement | HTMLButtonElement = (
     nativeEvent as any
   ).submitter;
@@ -81,6 +102,18 @@ function extractEvents(
       ? coerceFormActionProp((submitterProps as any).formAction)
       : // The built-in Flow type is ?string, wider than the spec
         (submitter.getAttribute('formAction') as any as string | null);
+    // Resolved from props like the action above. A Server Action button gets a
+    // formMethod attribute from the server that isn't in the user's props and
+    // shouldn't override anything here.
+    const submitterMethod = coerceFormMethod(
+      submitterProps
+        ? (submitterProps as any).formMethod
+        : submitter.getAttribute('formMethod'),
+    );
+    if (submitterMethod !== null) {
+      // The submitter overrides the form method.
+      method = submitterMethod;
+    }
     if (submitterAction !== null) {
       // The submitter overrides the form action.
       action = submitterAction;
@@ -110,7 +143,7 @@ function extractEvents(
         const pendingState: FormStatus = {
           pending: true,
           data: formData,
-          method: form.method,
+          method: method,
           action: action,
         };
         if (__DEV__) {
@@ -139,7 +172,7 @@ function extractEvents(
       const pendingState: FormStatus = {
         pending: true,
         data: formData,
-        method: form.method,
+        method: method,
         action: action,
       };
       if (__DEV__) {
