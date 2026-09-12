@@ -2534,6 +2534,56 @@ describe('FragmentRefs', () => {
       );
     });
 
+    it('handles the root container and other ancestors above the React tree', async () => {
+      // The root container and anything above it are outside of the React tree,
+      // the same as document, documentElement and body.
+      const outerElement = document.createElement('div');
+      const rootContainer = document.createElement('div');
+      container.appendChild(outerElement);
+      outerElement.appendChild(rootContainer);
+
+      const fragmentRef = React.createRef();
+      const root = ReactDOMClient.createRoot(rootContainer);
+
+      function Test() {
+        return (
+          <div>
+            <Fragment ref={fragmentRef}>
+              <div />
+            </Fragment>
+          </div>
+        );
+      }
+
+      await act(() => root.render(<Test />));
+
+      // The root container precedes and contains the fragment
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(rootContainer),
+        {
+          preceding: true,
+          following: false,
+          contains: true,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: false,
+        },
+      );
+
+      // So does an element between the root container and body
+      expectPosition(
+        fragmentRef.current.compareDocumentPosition(outerElement),
+        {
+          preceding: true,
+          following: false,
+          contains: true,
+          containedBy: false,
+          disconnected: false,
+          implementationSpecific: false,
+        },
+      );
+    });
+
     it('handles fragment instances with one child', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
