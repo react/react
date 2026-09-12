@@ -2278,7 +2278,7 @@ function renderSuspenseList(
             rows.push(step.value);
             step = iterator.next();
           } while (!step.done);
-          renderSuspenseListRows(request, task, keyPath, children, revealOrder);
+          renderSuspenseListRows(request, task, keyPath, rows, revealOrder);
         }
         return;
       }

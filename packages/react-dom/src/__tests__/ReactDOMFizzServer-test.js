@@ -4083,6 +4083,23 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  // @gate enableSuspenseList
+  it('supports iterable rows in an ordered SuspenseList', async () => {
+    const rows = new Set([<span key="a">A</span>, <span key="b">B</span>]);
+
+    await act(() => {
+      const {pipe} = renderToPipeableStream(
+        <SuspenseList revealOrder="forwards">{rows}</SuspenseList>,
+      );
+      pipe(writable);
+    });
+
+    expect(getVisibleChildren(container)).toEqual([
+      <span>A</span>,
+      <span>B</span>,
+    ]);
+  });
+
   // @gate enableAsyncIterableChildren
   it('supports async generator component', async () => {
     async function* App() {
