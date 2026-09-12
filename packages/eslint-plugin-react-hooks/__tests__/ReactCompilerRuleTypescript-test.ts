@@ -199,3 +199,71 @@ const eslintTester = new ESLintTesterV8({
   parser: require.resolve('@typescript-eslint/parser-v5'),
 });
 eslintTester.run('react-compiler', allRules['immutability'].rule, tests);
+
+const refTests: CompilerTestCases = {
+  valid: [
+    {
+      name: 'Comparing a ref-accessing callback without calling it',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useCallback, useRef, useState} from 'react';
+
+        export default function Home() {
+          const [sampleValue, setSampleValue] = useState(0);
+          const sampleRef = useRef(0);
+          const sampleFunc = useCallback(() => {
+            setSampleValue(++sampleRef.current);
+          }, []);
+
+          const [prevSampleFunc, setPrevSampleFunc] = useState<(() => void) | null>(null);
+          if (sampleFunc !== prevSampleFunc) {
+            setPrevSampleFunc(() => sampleFunc);
+          }
+          return null;
+        }
+      `,
+    },
+  ],
+  invalid: [
+    {
+      name: 'Comparing a ref value during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+        function Component({previous}) {
+          const ref = useRef(0);
+          return ref.current === previous;
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
+    {
+      name: 'Comparing a function read from a ref during render',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+        function Component({previous}) {
+          const ref = useRef<(() => void) | null>(null);
+          const callback = ref.current;
+          return previous !== callback;
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
+    {
+      name: 'Calling a ref-accessing callback in a comparison',
+      filename: 'test.tsx',
+      code: normalizeIndent`
+        import {useRef} from 'react';
+        function Component({previous}) {
+          const ref = useRef(0);
+          const callback = () => ++ref.current;
+          return callback() === previous;
+        }
+      `,
+      errors: [{message: /Cannot access refs during render/}],
+    },
+  ],
+};
+
+eslintTester.run('react-hooks/refs', allRules['refs'].rule, refTests);
