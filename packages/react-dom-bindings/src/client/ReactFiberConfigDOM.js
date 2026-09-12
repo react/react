@@ -3326,11 +3326,16 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
     Instance | Container,
   >(parentHostFiber);
   // Instance is included in the Container type for DOM.
-  const ownerDocument = getOwnerDocumentFromRootContainer(
-    parentInstanceOrContainer,
-  );
-  const activeElement = ownerDocument.activeElement;
-  if (activeElement === null) {
+  // Document.activeElement is retargeted to the shadow host when the container
+  // is inside a shadow tree, and the host is never one of the fragment's
+  // children. Read activeElement from the enclosing DocumentOrShadowRoot.
+  const activeElementRoot = getHoistableRoot(parentInstanceOrContainer);
+  // Flow's ShadowRoot is missing the DocumentOrShadowRoot mixin. activeElement
+  // is also undefined for a detached DocumentFragment container, which is not
+  // a DocumentOrShadowRoot at all.
+  // $FlowFixMe[prop-missing]
+  const activeElement: ?Element = activeElementRoot.activeElement;
+  if (activeElement == null) {
     return;
   }
   traverseFragmentInstancesAndTextInstances(
