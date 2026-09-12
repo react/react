@@ -1,8 +1,8 @@
 # Status
 
-Overall: 1724/1724 passing, 0 failed. All passes ported through ValidatePreservedManualMemoization (#48). Codegen (#49) fully ported. Code comparison: 1724/1724.
+Overall: 1811/1811 passing, 0 failed. All passes ported through ValidatePreservedManualMemoization (#48). Codegen (#49) fully ported. Code comparison: 1811/1811.
 
-Snap (end-to-end): 1725/1725 passed, 0 failed
+Snap (end-to-end): 1812/1812 passed, 0 failed
 
 ## Transformation passes
 
@@ -647,3 +647,14 @@ formatting code (formatCompilerError, categoryToHeading, printCodeFrame) and the
 dependency from babel-plugin-react-compiler-rust. Also fixed JSXExpressionContainer nodes in
 codegen to propagate source locations from place.loc, eliminating the ensureNodeLocs JS post-pass.
 test-rust-port: 1724/1724, Snap: 1725/1725, Snap --rust: 1725/1725.
+
+## 20260703-121344 Port enableOptimisticBuiltinMethodShapes flag (issue #35902)
+
+Ported the new default-off enableOptimisticBuiltinMethodShapes environment flag from TS:
+added the flag to EnvironmentConfig (environment_config.rs) and the flag-gated optimistic
+fallback in Unifier property resolution (infer_types.rs) -- a known non-mutating builtin
+collection method accessed on an unresolved TypeVar receiver resolves against the builtin
+Array shape instead of the conservative may-mutate default. Added the crate's first unit
+tests (3, covering flag on/off and a non-allowlisted method). Fixture corpus grew by 6
+optimistic-builtin-method-shapes-* fixtures (4 snapshot + 2 evaluated).
+test-rust-port: 1811/1811, Snap: 1812/1812, Snap --rust: 1812/1812, cargo test workspace: pass.
