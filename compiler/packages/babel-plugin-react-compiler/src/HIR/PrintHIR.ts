@@ -710,6 +710,10 @@ export function printInstructionValue(instrValue: ReactiveValue): string {
       value = `FinishMemoize decl=${printPlace(instrValue.decl)}${instrValue.pruned ? ' pruned' : ''}`;
       break;
     }
+    case 'NonNullExpression': {
+      value = `NonNullExpression ${printPlace(instrValue.value)}`;
+      break;
+    }
     default: {
       assertExhaustive(
         instrValue,

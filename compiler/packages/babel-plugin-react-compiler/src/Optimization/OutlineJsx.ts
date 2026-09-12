@@ -149,6 +149,7 @@ function outlineJsxImpl(
         case 'StoreLocal':
         case 'TaggedTemplateExpression':
         case 'TemplateLiteral':
+        case 'NonNullExpression':
         case 'TypeCastExpression':
         case 'UnsupportedNode':
         case 'UnaryExpression': {
