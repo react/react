@@ -31,7 +31,7 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
 
     let nodes = name_anonymous_functions_impl(func, env);
 
-    fn visit(node: &Node, prefix: &str, updates: &mut Vec<(FunctionId, String)>) {
+    fn visit(node: &Node, prefix: &mut String, updates: &mut Vec<(FunctionId, String)>) {
         if node.generated_name.is_some() && node.existing_name_hint.is_none() {
             // Only add the prefix to anonymous functions regardless of nesting depth
             let name = format!("{}{}]", prefix, node.generated_name.as_ref().unwrap());
@@ -48,16 +48,19 @@ pub fn name_anonymous_functions(func: &mut HirFunction, env: &mut Environment) {
             fallback = "<anonymous>";
             fallback
         };
-        let next_prefix = format!("{}{} > ", prefix, label);
+        let previous_len = prefix.len();
+        prefix.push_str(label);
+        prefix.push_str(" > ");
         for inner in &node.inner {
-            visit(inner, &next_prefix, updates);
+            visit(inner, prefix, updates);
         }
+        prefix.truncate(previous_len);
     }
 
     let mut updates: Vec<(FunctionId, String)> = Vec::new();
-    let prefix = format!("{}[", fn_id);
+    let mut prefix = format!("{}[", fn_id);
     for node in &nodes {
-        visit(node, &prefix, &mut updates);
+        visit(node, &mut prefix, &mut updates);
     }
 
     if updates.is_empty() {
@@ -264,20 +267,14 @@ fn handle_call(
     let callee_ty = &env.types[callee_ident.type_.0 as usize];
     let hook_kind = env.get_hook_kind_for_type(callee_ty).ok().flatten();
 
-    let callee_name: String = if let Some(hk) = hook_kind {
+    let callee_name = if let Some(hk) = hook_kind {
         if *hk != HookKind::Custom {
-            hk.to_string()
+            hk.as_str()
         } else {
-            names
-                .get(&callee_id)
-                .cloned()
-                .unwrap_or_else(|| "(anonymous)".to_string())
+            names.get(&callee_id).map_or("(anonymous)", String::as_str)
         }
     } else {
-        names
-            .get(&callee_id)
-            .cloned()
-            .unwrap_or_else(|| "(anonymous)".to_string())
+        names.get(&callee_id).map_or("(anonymous)", String::as_str)
     };
 
     // Count how many args are tracked functions
