@@ -690,6 +690,92 @@ describe('FragmentRefs', () => {
         });
         expect(document.activeElement.id).toEqual('child-a');
       });
+
+      it('removes focus from an element inside of the Fragment in a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <input id="shadow-input" />
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          fragmentRef.current.focus();
+        });
+        // Document.activeElement is retargeted to the host element, so the
+        // ShadowRoot is the only place the focused child is observable.
+        expect(shadowRoot.activeElement.id).toEqual('shadow-input');
+
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement).toBe(null);
+      });
+
+      it('does not remove focus from elements outside of the Fragment in a ShadowRoot', async () => {
+        const fragmentRef = React.createRef();
+        const host = document.createElement('div');
+        container.appendChild(host);
+        const shadowRoot = host.attachShadow({mode: 'open'});
+        const root = ReactDOMClient.createRoot(shadowRoot);
+
+        function Test() {
+          return (
+            <div>
+              <Fragment ref={fragmentRef}>
+                <input id="inside" />
+              </Fragment>
+              <input id="outside" />
+            </div>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        await act(() => {
+          shadowRoot.getElementById('outside').focus();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('outside');
+
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement.id).toEqual('outside');
+      });
+
+      it('does not throw when the container is a detached DocumentFragment', async () => {
+        const fragmentRef = React.createRef();
+        const root = ReactDOMClient.createRoot(
+          document.createDocumentFragment(),
+        );
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <input id="detached-input" />
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        expect(() => fragmentRef.current.blur()).not.toThrow();
+      });
     });
   });
 
