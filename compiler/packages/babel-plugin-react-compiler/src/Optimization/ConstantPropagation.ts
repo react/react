@@ -196,7 +196,7 @@ function evaluatePhi(phi: Phi, constants: Constants): Constant | null {
         });
 
         // different constant values, can't constant propogate
-        if (operandValue.value !== value.value) {
+        if (!Object.is(operandValue.value, value.value)) {
           return null;
         }
         break;
