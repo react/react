@@ -31,7 +31,6 @@ export const {
   enableSuspenseyImages,
   enableViewTransition,
   enableScrollEndPolyfill,
-  enableFragmentRefsScrollIntoView,
   enableFragmentRefsTextNodes,
   enableInternalInstanceMap,
   enableParallelTransitions,
