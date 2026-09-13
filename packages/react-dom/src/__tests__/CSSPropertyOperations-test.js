@@ -84,6 +84,25 @@ describe('CSSPropertyOperations', () => {
     expect(/style=".*"/.test(container.innerHTML)).toBe(true);
   });
 
+  it('should support style objects without a prototype', async () => {
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    const styles = Object.create(null);
+    styles.color = 'red';
+    await act(() => {
+      root.render(<div style={styles} />);
+    });
+    expect(container.firstChild.style.color).toBe('red');
+
+    const nextStyles = Object.create(null);
+    nextStyles.backgroundColor = 'blue';
+    await act(() => {
+      root.render(<div style={nextStyles} />);
+    });
+    expect(container.firstChild.style.color).toBe('');
+    expect(container.firstChild.style.backgroundColor).toBe('blue');
+  });
+
   it('should not set style attribute when no styles exist', () => {
     const styles = {
       backgroundColor: null,

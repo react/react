@@ -1432,7 +1432,7 @@ export function unhideInstance(instance: Instance, props: Props): void {
     styleProp !== undefined &&
     // $FlowFixMe[invalid-compare]
     styleProp !== null &&
-    styleProp.hasOwnProperty('display')
+    hasOwnProperty.call(styleProp, 'display')
       ? styleProp.display
       : null;
   instance.style.display =
@@ -1571,9 +1571,9 @@ export function restoreViewTransitionName(
   const styleProp = props[STYLE];
   const viewTransitionName =
     styleProp != null
-      ? styleProp.hasOwnProperty('viewTransitionName')
+      ? hasOwnProperty.call(styleProp, 'viewTransitionName')
         ? styleProp.viewTransitionName
-        : styleProp.hasOwnProperty('view-transition-name')
+        : hasOwnProperty.call(styleProp, 'view-transition-name')
           ? styleProp['view-transition-name']
           : null
       : null;
@@ -1586,9 +1586,9 @@ export function restoreViewTransitionName(
         ('' + viewTransitionName).trim();
   const viewTransitionClass =
     styleProp != null
-      ? styleProp.hasOwnProperty('viewTransitionClass')
+      ? hasOwnProperty.call(styleProp, 'viewTransitionClass')
         ? styleProp.viewTransitionClass
-        : styleProp.hasOwnProperty('view-transition-class')
+        : hasOwnProperty.call(styleProp, 'view-transition-class')
           ? styleProp['view-transition-class']
           : null
       : null;
@@ -1611,12 +1611,12 @@ export function restoreViewTransitionName(
       if (margin != null) {
         style.margin = margin;
       } else {
-        const marginTop = styleProp.hasOwnProperty('marginTop')
+        const marginTop = hasOwnProperty.call(styleProp, 'marginTop')
           ? styleProp.marginTop
           : styleProp['margin-top'];
         style.marginTop =
           marginTop == null || typeof marginTop === 'boolean' ? '' : marginTop;
-        const marginBottom = styleProp.hasOwnProperty('marginBottom')
+        const marginBottom = hasOwnProperty.call(styleProp, 'marginBottom')
           ? styleProp.marginBottom
           : styleProp['margin-bottom'];
         style.marginBottom =
