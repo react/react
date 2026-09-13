@@ -4620,6 +4620,26 @@ describe('ReactDOMFizzServer', () => {
     );
   });
 
+  it('supports resource URLs that collide with object prototype keys', async () => {
+    function App() {
+      ReactDOM.prefetchDNS('hasOwnProperty');
+      ReactDOM.prefetchDNS('other');
+      ReactDOM.prefetchDNS('__proto__');
+      ReactDOM.prefetchDNS('__proto__');
+      return <div>hello</div>;
+    }
+
+    await act(() => {
+      renderToPipeableStream(<App />).pipe(writable);
+    });
+
+    expect(
+      Array.from(document.querySelectorAll('link[rel="dns-prefetch"]')).map(
+        link => link.getAttribute('href'),
+      ),
+    ).toEqual(['hasOwnProperty', 'other', '__proto__']);
+  });
+
   it('provides headers after initial work if onHeaders option used', async () => {
     let headers = null;
     function onHeaders(x) {
