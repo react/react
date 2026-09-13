@@ -1090,11 +1090,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class double ctor', async () => {
@@ -1120,11 +1120,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class double getDerivedStateFromProps', async () => {
@@ -1151,11 +1151,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class double shouldComponentUpdate', async () => {
@@ -1190,11 +1190,11 @@ describe('context legacy', () => {
       });
 
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for class state updaters', async () => {
@@ -1226,11 +1226,11 @@ describe('context legacy', () => {
       });
 
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for function double render', async () => {
@@ -1251,11 +1251,11 @@ describe('context legacy', () => {
         );
       });
       expect(count).toBe(__DEV__ ? 2 : 1);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 2 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 2 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo 1');
+      expect(console.log).toHaveBeenCalledWith('foo 1');
     });
 
     it('does not disable logs for effect double invoke', async () => {
@@ -1284,13 +1284,13 @@ describe('context legacy', () => {
       });
       expect(create).toBe(__DEV__ ? 2 : 1);
       expect(cleanup).toBe(__DEV__ ? 1 : 0);
-      expect(console.log).toBeCalledTimes(__DEV__ ? 3 : 1);
+      expect(console.log).toHaveBeenCalledTimes(__DEV__ ? 3 : 1);
       // Note: we should display the first log because otherwise
       // there is a risk of suppressing warnings when they happen,
       // and on the next render they'd get deduplicated and ignored.
-      expect(console.log).toBeCalledWith('foo create 1');
+      expect(console.log).toHaveBeenCalledWith('foo create 1');
       if (__DEV__) {
-        expect(console.log).toBeCalledWith('foo cleanup 1');
+        expect(console.log).toHaveBeenCalledWith('foo cleanup 1');
       }
     });
   });

@@ -47,16 +47,9 @@ describe('ReactFlightDOMEdge', () => {
   beforeEach(() => {
     // Mock performance.now for timing tests
     let time = 10;
-    const now = jest.fn().mockImplementation(() => {
+    jest.spyOn(performance, 'timeOrigin', 'get').mockReturnValue(time);
+    jest.spyOn(performance, 'now').mockImplementation(() => {
       return time++;
-    });
-    Object.defineProperty(performance, 'timeOrigin', {
-      value: time,
-      configurable: true,
-    });
-    Object.defineProperty(performance, 'now', {
-      value: now,
-      configurable: true,
     });
 
     jest.resetModules();
@@ -1105,6 +1098,233 @@ describe('ReactFlightDOMEdge', () => {
     // TODO: These should be the same
     // expect(items[5]).toBe(items[10]); // two random items are the same instance
     expect(items[5]).toEqual(items[10]);
+  });
+
+  function clientComponent(name, chunkFilename) {
+    return clientExports(
+      function Client() {
+        return <span>{name}</span>;
+      },
+      'chunk-' + name,
+      chunkFilename,
+      Promise.resolve(),
+    );
+  }
+
+  async function renderClients(chunkFilenames) {
+    const Clients = chunkFilenames.map(chunkFilename =>
+      clientComponent('Client', chunkFilename),
+    );
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        <div>
+          {Clients.map((Client, i) => (
+            <Client key={i} />
+          ))}
+        </div>,
+        webpackMap,
+      ),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+    const payload = await readResult(stream1);
+    const model = await ReactServerDOMClient.createFromReadableStream(stream2, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(model),
+    );
+    expect(await readResult(ssrStream)).toBe(
+      '<div>' + '<span>Client</span>'.repeat(Clients.length) + '</div>',
+    );
+    return payload;
+  }
+
+  it('should dedupe strings inside client reference metadata', async () => {
+    // Bundlers repeat the same chunk in the metadata of every client reference
+    // that needs it.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const shared = await renderClients(new Array(10).fill(chunk));
+    // The same length, so sharing is the only difference between the two.
+    const distinct = await renderClients(
+      Array.from(
+        {length: 10},
+        (_, i) => 'unique/hashed-chunk-' + ('' + i).padStart(16, '0') + '.js',
+      ),
+    );
+
+    // However many references there are, the chunk goes on the wire once, as a
+    // row that every import row points at.
+    expect(shared.split(chunk).length - 1).toBe(1);
+    expect(distinct.length - shared.length).toBeGreaterThan(8 * chunk.length);
+
+    // The client resolves a client reference while parsing its row, so the
+    // outlined copy has to arrive before every row that points at it. The
+    // chunk id is too short to be outlined, so it counts the rows.
+    const beforeOutlinedCopy = shared.slice(0, shared.indexOf(chunk));
+    expect(beforeOutlinedCopy).not.toContain('chunk-Client');
+  });
+
+  it('should escape strings inside client reference metadata', async () => {
+    // A leading $ has to be escaped whether the string gets outlined or not.
+    const outlinedChunk = '$shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const inlineChunk = '$chunk.js';
+    const outlined = await renderClients(new Array(3).fill(outlinedChunk));
+    const inline = await renderClients(new Array(3).fill(inlineChunk));
+
+    expect(outlined.split('$' + outlinedChunk).length - 1).toBe(1);
+    expect(inline.split('$' + inlineChunk).length - 1).toBe(3);
+  });
+
+  it('should not dedupe import strings below the size limit', async () => {
+    // A short string costs more to reference than to repeat.
+    const shortChunk = 'abc/chunk-15.js';
+    const longChunk = 'abcd/chunk-16.js';
+    const short = await renderClients(new Array(10).fill(shortChunk));
+    const long = await renderClients(new Array(10).fill(longChunk));
+
+    expect(short.split(shortChunk).length - 1).toBe(10);
+    expect(long.split(longChunk).length - 1).toBe(1);
+    // The longer chunk is the one that produces the smaller payload.
+    expect(long.length).toBeLessThan(short.length);
+  });
+
+  it('should stop tracking new import strings once the budget is spent', async () => {
+    // Every chunk is outlined the first time it's seen, so chunks that never
+    // repeat spend budget too. 32 fillers of 1 KiB fill the 32 KiB budget.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const repeats = new Array(10).fill(chunk);
+    const filler = (count, length) =>
+      Array.from({length: count}, (_, i) =>
+        ('filler/chunk-' + i + '-').padEnd(length - 3, 'x').concat('.js'),
+      );
+    const fitsInTheRest = await renderClients(filler(31, 1024).concat(repeats));
+    const findsItSpent = await renderClients(filler(32, 1024).concat(repeats));
+
+    expect(fitsInTheRest.split(chunk).length - 1).toBe(1);
+    expect(findsItSpent.split(chunk).length - 1).toBe(10);
+
+    // A string outlined before the budget is spent keeps deduping after.
+    const lastFiller = filler(1, 32768 - 31 * 1024 - chunk.length);
+    const trackedBefore = await renderClients(
+      [chunk].concat(filler(31, 1024), lastFiller, repeats),
+    );
+
+    expect(trackedBefore.split(chunk).length - 1).toBe(1);
+
+    const bigChunk = 'path/to/' + 'a'.repeat(40000) + '.js';
+    const big = await renderClients(new Array(3).fill(bigChunk));
+
+    expect(big.split(bigChunk).length - 1).toBe(3);
+  });
+
+  it('should dedupe import strings produced by toJSON', async () => {
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const payload = await renderClients(
+      Array.from({length: 3}, () => ({
+        toJSON() {
+          return chunk;
+        },
+      })),
+    );
+
+    expect(payload.split(chunk).length - 1).toBe(1);
+  });
+
+  it('should error on circular client reference metadata', async () => {
+    const circular = [];
+    circular.push(circular);
+    const Client = clientComponent('Client', circular);
+
+    const errors = [];
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(<Client />, webpackMap, {
+        onError(error) {
+          errors.push(error.message);
+        },
+      }),
+    );
+    await readResult(stream);
+
+    expect(errors).toEqual([
+      expect.stringContaining('Converting circular structure to JSON'),
+    ]);
+  });
+
+  it('should not dedupe strings in the model', async () => {
+    // Only import metadata is deduped. Keying a map on arbitrary model strings
+    // would hold them in memory for the rest of the request.
+    const text = 'a repeated model string well past the import threshold';
+    const model = new Array(10).fill(text);
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model),
+    );
+    const [stream1, stream2] = passThrough(stream).tee();
+
+    const payload = await readResult(stream1);
+    expect(payload.split(text).length - 1).toBe(10);
+
+    const result = await ReactServerDOMClient.createFromReadableStream(
+      stream2,
+      {
+        serverConsumerManifest: {
+          moduleMap: null,
+          moduleLoading: null,
+        },
+      },
+    );
+    expect(result).toEqual(model);
+  });
+
+  // @gate __DEV__
+  it('should not dedupe import metadata on the debug channel', async () => {
+    // The debug channel is a separate transport, so a row it emits can't be
+    // referenced from the main stream and vice versa.
+    const chunk = 'shared/hashed-chunk-0f1e2d3c4b5a6978.js';
+    const A = clientComponent('Client', chunk);
+    const B = clientComponent('Client', chunk);
+    const C = clientComponent('Client', chunk);
+
+    function Server({a, b, c}) {
+      return ReactServer.createElement('div', null, a, b, c);
+    }
+
+    let debugContent = '';
+    const debugChannel = {
+      writable: new WritableStream({
+        write(value) {
+          debugContent += Buffer.from(value).toString('utf8');
+        },
+      }),
+    };
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        // We can't use JSX here because it'll use the Client React.
+        ReactServer.createElement(Server, {
+          a: ReactServer.createElement(A),
+          b: ReactServer.createElement(B),
+          c: ReactServer.createElement(C),
+        }),
+        webpackMap,
+        {debugChannel},
+      ),
+    );
+    const payload = await readResult(stream);
+
+    // The main stream dedupes as usual.
+    expect(payload.split(chunk).length - 1).toBe(1);
+
+    // The debug channel can't point at that row, so every import row it writes
+    // spells the chunk out. The chunk id is too short to be outlined, so it
+    // counts those rows.
+    expect(debugContent).toContain('chunk-Client');
+    expect(debugContent.split(chunk).length).toBe(
+      debugContent.split('chunk-Client').length,
+    );
   });
 
   it('warns if passing a this argument to bind() of a server reference', async () => {
@@ -2368,6 +2588,66 @@ describe('ReactFlightDOMEdge', () => {
     expect(result).toContain(
       'Switched to client rendering because the server rendering errored:\n\nssr-throw',
     );
+  });
+
+  async function renderThroughDebugChannel(chunkFilename) {
+    const Client = clientComponent('Client', chunkFilename);
+    // The client reference shows up in the owner's props on the debug channel.
+    function Server({component}) {
+      return ReactServer.createElement(component, null);
+    }
+
+    let debugReadableStreamController;
+    const debugReadableStream = new ReadableStream({
+      start(controller) {
+        debugReadableStreamController = controller;
+      },
+    });
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(
+        ReactServer.createElement(Server, {component: Client}),
+        webpackMap,
+        {
+          debugChannel: {
+            writable: new WritableStream({
+              write(chunk) {
+                debugReadableStreamController.enqueue(chunk);
+              },
+              close() {
+                debugReadableStreamController.close();
+              },
+            }),
+          },
+        },
+      ),
+    );
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {moduleMap: null, moduleLoading: null},
+      debugChannel: {readable: debugReadableStream},
+    });
+
+    function ClientRoot() {
+      return use(response);
+    }
+
+    const ssrStream = await serverAct(() =>
+      ReactDOMServer.renderToReadableStream(<ClientRoot />),
+    );
+    return readResult(ssrStream);
+  }
+
+  it('can resolve a client reference while debug info is still blocked', async () => {
+    const result = await renderThroughDebugChannel('path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
+  });
+
+  it('should escape strings in import metadata on the debug channel', async () => {
+    const result = await renderThroughDebugChannel('$path/to/chunk.js');
+
+    expect(result).toBe('<span>Client</span>');
   });
 
   it('should properly resolve with deduped objects', async () => {

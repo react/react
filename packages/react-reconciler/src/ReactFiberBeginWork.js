@@ -119,7 +119,6 @@ import {
   enableCPUSuspense,
   disableLegacyMode,
   enableViewTransition,
-  enableFragmentRefs,
 } from 'shared/ReactFeatureFlags';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -1366,9 +1365,7 @@ function updateFragment(
   renderLanes: Lanes,
 ) {
   const nextChildren = workInProgress.pendingProps;
-  if (enableFragmentRefs) {
-    markRef(current, workInProgress);
-  }
+  markRef(current, workInProgress);
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
 }

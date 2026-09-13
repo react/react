@@ -140,13 +140,13 @@ bash compiler/scripts/test-internal-files.sh <config-path> <source-root> [flags]
 
 ```bash
 # Fast check (most common, 214 invocations)
-cargo check --manifest-path compiler/crates/Cargo.toml
+cargo check --manifest-path compiler/Cargo.toml
 
 # Build the NAPI binary for JS interop
-cargo build --manifest-path compiler/crates/Cargo.toml
+cargo build --manifest-path compiler/Cargo.toml
 
 # Run Rust unit tests
-cargo test --manifest-path compiler/crates/Cargo.toml
+cargo test --manifest-path compiler/Cargo.toml
 ```
 
 ---
@@ -325,7 +325,7 @@ yarn snap --rust
 ### Key Commands to Know
 ```bash
 # Fast iteration cycle
-cargo check --manifest-path compiler/crates/Cargo.toml
+cargo check --manifest-path compiler/Cargo.toml
 bash compiler/scripts/test-rust-port.sh
 yarn snap --rust
 
