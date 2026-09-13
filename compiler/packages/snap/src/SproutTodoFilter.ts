@@ -486,8 +486,6 @@ const skipFilter = new Set([
   'fbt/bug-fbt-plural-multiple-function-calls',
   'fbt/bug-fbt-plural-multiple-mixed-call-tag',
   'bug-invalid-phi-as-dependency',
-  'bug-ref-prefix-postfix-operator',
-
   // 'react-compiler-runtime' not yet supported
   'flag-enable-emit-hook-guards',
   'fast-refresh-refresh-on-const-changes-dev',
