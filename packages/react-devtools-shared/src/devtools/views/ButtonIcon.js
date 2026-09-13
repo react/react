@@ -23,6 +23,7 @@ export type IconType =
   | 'expanded'
   | 'export'
   | 'filter'
+  | 'find'
   | 'import'
   | 'log-data'
   | 'more'
@@ -129,6 +130,10 @@ export default function ButtonIcon({className = '', type}: Props): React.Node {
     case 'search':
       pathData = PATH_SEARCH;
       break;
+    case 'find':
+      pathData = PATH_FIND;
+      viewBox = '0 0 16 16';
+      break;
     case 'settings':
       pathData = PATH_SETTINGS;
       break;
@@ -211,11 +216,7 @@ export default function ButtonIcon({className = '', type}: Props): React.Node {
       height="24"
       viewBox={viewBox}>
       <path d="M0 0h24v24H0z" fill="none" />
-      {typeof pathData === 'string' ? (
-        <path fill="currentColor" d={pathData} />
-      ) : (
-        pathData
-      )}
+      <path fill="currentColor" d={pathData} />
     </svg>
   );
 }
@@ -299,6 +300,10 @@ const PATH_SEARCH = `
   M8.5,22H3.7l-1.4-1.5V3.8l1.3-1.5h17.2l1,1.5v4.9h-1.3V4.3l-0.4-0.6H4.2L3.6,4.3V20l0.7,0.7h4.2V22z
   M23,13.9l-4.6,3.6l4.6,4.6l-1.1,1.1l-4.7-4.4l-3.3,4.4l-3.2-12.3L23,13.9z
 `;
+
+const PATH_FIND =
+  'M6.5 0.5a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 1.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z' +
+  'M11.17 10.03l3.7 3.7a0.8 0.8 0 0 1-1.14 1.14l-3.7-3.7z';
 
 const PATH_SETTINGS = `
   M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49

@@ -16,6 +16,17 @@ const {clientManifest, ssrManifest} = require('./webpack-mock');
 const PROFILE_MODE = process.argv.includes('--profile');
 const CONCURRENT_MODE = process.argv.includes('--concurrent');
 const INJECT = !process.argv.includes('--no-injection');
+const JSON_OUT = (function () {
+  const arg = process.argv.find(function (a) {
+    return a.startsWith('--json-out=');
+  });
+  return arg ? arg.slice('--json-out='.length) : null;
+})();
+const jsonResults = [];
+function writeJsonOut(mode) {
+  if (!JSON_OUT) return;
+  fs.writeFileSync(JSON_OUT, JSON.stringify({mode, results: jsonResults}));
+}
 
 // ---------------------------------------------------------------------------
 // Build
@@ -174,6 +185,7 @@ async function runBenchmark(name, fn, iterations, warmup) {
 }
 
 function printResult(result) {
+  jsonResults.push(result);
   console.log('  %s:', result.name);
   console.log('    Mean:   %s ms', result.mean.toFixed(2));
   console.log('    Median: %s ms', result.median.toFixed(2));
@@ -272,6 +284,7 @@ async function runConcurrent(name, fn, total, concurrency, warmup) {
 }
 
 function printConcurrentResult(result) {
+  jsonResults.push(result);
   console.log('  %s:', result.name);
   console.log('    Req/s:  %s', result.reqPerSec.toFixed(1));
   console.log('    Mean:   %s ms', result.mean.toFixed(2));
@@ -664,6 +677,7 @@ async function main() {
       'higher is better'
     );
 
+    writeJsonOut('concurrent');
     return;
   }
 
@@ -768,6 +782,8 @@ async function main() {
     'ms',
     'median, lower is better'
   );
+
+  writeJsonOut(INJECT ? 'inject' : 'bare');
 }
 
 main().catch(function (err) {

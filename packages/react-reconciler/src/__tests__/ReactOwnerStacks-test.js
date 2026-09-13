@@ -27,16 +27,9 @@ describe('ReactOwnerStacks', () => {
       time += timeMS;
     };
 
-    const now = jest.fn().mockImplementation(() => {
+    jest.spyOn(performance, 'timeOrigin', 'get').mockReturnValue(time);
+    jest.spyOn(performance, 'now').mockImplementation(() => {
       return time++;
-    });
-    Object.defineProperty(performance, 'timeOrigin', {
-      value: time,
-      configurable: true,
-    });
-    Object.defineProperty(performance, 'now', {
-      value: now,
-      configurable: true,
     });
 
     jest.resetModules();

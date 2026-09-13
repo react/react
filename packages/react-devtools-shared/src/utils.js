@@ -39,7 +39,6 @@ import {
   LOCAL_STORAGE_ALWAYS_OPEN_IN_EDITOR,
   SESSION_STORAGE_RELOAD_AND_PROFILE_KEY,
   SESSION_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY,
-  SESSION_STORAGE_RECORD_TIMELINE_KEY,
   SUSPENSE_TREE_OPERATION_ADD,
   SUSPENSE_TREE_OPERATION_REMOVE,
   SUSPENSE_TREE_OPERATION_REORDER_CHILDREN,
@@ -1295,30 +1294,20 @@ export function getProfilingSettings(): ProfilingSettings {
     recordChangeDescriptions:
       sessionStorageGetItem(SESSION_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY) ===
       'true',
-    recordTimeline:
-      sessionStorageGetItem(SESSION_STORAGE_RECORD_TIMELINE_KEY) === 'true',
   };
 }
 
-export function onReloadAndProfile(
-  recordChangeDescriptions: boolean,
-  recordTimeline: boolean,
-): void {
+export function onReloadAndProfile(recordChangeDescriptions: boolean): void {
   sessionStorageSetItem(SESSION_STORAGE_RELOAD_AND_PROFILE_KEY, 'true');
   sessionStorageSetItem(
     SESSION_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY,
     recordChangeDescriptions ? 'true' : 'false',
-  );
-  sessionStorageSetItem(
-    SESSION_STORAGE_RECORD_TIMELINE_KEY,
-    recordTimeline ? 'true' : 'false',
   );
 }
 
 export function onReloadAndProfileFlagsReset(): void {
   sessionStorageRemoveItem(SESSION_STORAGE_RELOAD_AND_PROFILE_KEY);
   sessionStorageRemoveItem(SESSION_STORAGE_RECORD_CHANGE_DESCRIPTIONS_KEY);
-  sessionStorageRemoveItem(SESSION_STORAGE_RECORD_TIMELINE_KEY);
 }
 
 export function unionOfTwoArrays<T>(a: Array<T>, b: Array<T>): Array<T> {

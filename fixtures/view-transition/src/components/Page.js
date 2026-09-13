@@ -42,6 +42,15 @@ const b = (
   </div>
 );
 
+function ExampleCard({title, children}) {
+  return (
+    <div className="example-card">
+      {title ? <h2 className="example-card-title">{title}</h2> : null}
+      <div className="example-card-content">{children}</div>
+    </div>
+  );
+}
+
 function Component() {
   // Test inserting fonts with style tags using useInsertionEffect. This is not recommended but
   // used to test that gestures etc works with useInsertionEffect so that stylesheet based
@@ -86,6 +95,9 @@ function Id() {
 }
 
 let wait;
+export function resetPageReveal() {
+  wait = undefined;
+}
 function Suspend() {
   if (!wait) wait = sleep(500);
   return React.use(wait);
@@ -214,116 +226,122 @@ export default function Page({url, navigate}) {
     </ViewTransition>
   );
   return (
-    <div className="swipe-recognizer">
-      <SwipeRecognizer
-        action={swipeAction}
-        gesture={direction => {
-          addTransitionType(
-            direction === 'left' ? 'navigation-forward' : 'navigation-back'
-          );
-          optimisticNavigate(direction);
-        }}
-        direction={show ? 'left' : 'right'}>
-        <button
-          className="button"
-          onClick={() => {
-            navigate(url === '/?b' ? '/?a' : '/?b');
-          }}>
-          {url === '/?b' ? 'Goto A' : 'Goto B'}
-        </button>
-        <ViewTransition default="none">
-          <div>
-            <ViewTransition>
-              <div>
-                <ViewTransition default={transitions['slide-on-nav']}>
-                  <h1>{!show ? 'A' : 'B' + counter}</h1>
+    <div className="examples">
+      <ExampleCard title="Navigation & Gestures">
+        <SwipeRecognizer
+          action={swipeAction}
+          gesture={direction => {
+            addTransitionType(
+              direction === 'left' ? 'navigation-forward' : 'navigation-back'
+            );
+            optimisticNavigate(direction);
+          }}
+          direction={show ? 'left' : 'right'}>
+          <button
+            className="button"
+            onClick={() => {
+              navigate(url === '/?b' ? '/?a' : '/?b');
+            }}>
+            {url === '/?b' ? 'Goto A' : 'Goto B'}
+          </button>
+          <ViewTransition default="none">
+            <div>
+              <ViewTransition>
+                <div>
+                  <ViewTransition default={transitions['slide-on-nav']}>
+                    <h1>{!show ? 'A' : 'B' + counter}</h1>
+                  </ViewTransition>
+                </div>
+              </ViewTransition>
+              <ViewTransition
+                default={{
+                  'navigation-back': transitions['slide-right'],
+                  'navigation-forward': transitions['slide-left'],
+                }}>
+                <h1>{!show ? 'A' + counter : 'B'}</h1>
+              </ViewTransition>
+              {
+                // Using url instead of renderedUrl here lets us only update this on commit.
+                url === '/?b' ? (
+                  <div>
+                    {a}
+                    {b}
+                  </div>
+                ) : (
+                  <div>
+                    {b}
+                    {a}
+                  </div>
+                )
+              }
+              <ViewTransition>
+                {show ? (
+                  <div>hello{exclamation}</div>
+                ) : (
+                  <section>Loading</section>
+                )}
+              </ViewTransition>
+              <p>
+                <Id />
+              </p>
+              {show ? null : (
+                <ViewTransition>
+                  <div>world{exclamation}</div>
                 </ViewTransition>
-              </div>
-            </ViewTransition>
-            <ViewTransition
-              default={{
-                'navigation-back': transitions['slide-right'],
-                'navigation-forward': transitions['slide-left'],
-              }}>
-              <h1>{!show ? 'A' + counter : 'B'}</h1>
-            </ViewTransition>
-            {
-              // Using url instead of renderedUrl here lets us only update this on commit.
-              url === '/?b' ? (
-                <div>
-                  {a}
-                  {b}
-                </div>
-              ) : (
-                <div>
-                  {b}
-                  {a}
-                </div>
-              )
-            }
-            <ViewTransition>
-              {show ? (
-                <div>hello{exclamation}</div>
-              ) : (
-                <section>Loading</section>
               )}
-            </ViewTransition>
-            <p>
-              <Id />
-            </p>
-            {show ? null : (
-              <ViewTransition>
-                <div>world{exclamation}</div>
-              </ViewTransition>
-            )}
-            <Activity mode={show ? 'visible' : 'hidden'}>
-              <ViewTransition>
-                <div>!!</div>
-              </ViewTransition>
-            </Activity>
-            <Suspense
-              fallback={
+              <Activity mode={show ? 'visible' : 'hidden'}>
+                <ViewTransition>
+                  <div>!!</div>
+                </ViewTransition>
+              </Activity>
+              <Suspense
+                fallback={
+                  <ViewTransition>
+                    <div>
+                      <ViewTransition name="shared-reveal">
+                        <h2>█████</h2>
+                      </ViewTransition>
+                      <p>████</p>
+                      <p>███████</p>
+                      <p>████</p>
+                      <p>██</p>
+                      <p>██████</p>
+                      <p>███</p>
+                      <p>████</p>
+                    </div>
+                  </ViewTransition>
+                }>
                 <ViewTransition>
                   <div>
+                    <p>these</p>
+                    <p>rows</p>
                     <ViewTransition name="shared-reveal">
-                      <h2>█████</h2>
+                      <h2>exist</h2>
                     </ViewTransition>
-                    <p>████</p>
-                    <p>███████</p>
-                    <p>████</p>
-                    <p>██</p>
-                    <p>██████</p>
-                    <p>███</p>
-                    <p>████</p>
+                    <p>to</p>
+                    <p>test</p>
+                    <p>scrolling</p>
+                    <p>content</p>
+                    <p>out</p>
+                    <p>of</p>
+                    {portal}
+                    <p>the</p>
+                    <p>viewport</p>
+                    <Suspend />
                   </div>
                 </ViewTransition>
-              }>
-              <ViewTransition>
-                <div>
-                  <p>these</p>
-                  <p>rows</p>
-                  <ViewTransition name="shared-reveal">
-                    <h2>exist</h2>
-                  </ViewTransition>
-                  <p>to</p>
-                  <p>test</p>
-                  <p>scrolling</p>
-                  <p>content</p>
-                  <p>out</p>
-                  <p>of</p>
-                  {portal}
-                  <p>the</p>
-                  <p>viewport</p>
-                  <Suspend />
-                </div>
-              </ViewTransition>
-              {show ? <Component /> : null}
-            </Suspense>
-          </div>
-        </ViewTransition>
-      </SwipeRecognizer>
-      <NestedReveal />
-      <NestedParentExit />
+                {show ? <Component /> : null}
+              </Suspense>
+            </div>
+          </ViewTransition>
+        </SwipeRecognizer>
+      </ExampleCard>
+      <ExampleCard title="Nested Suspense Reveal">
+        <NestedReveal />
+      </ExampleCard>
+      <ExampleCard title="Parent Enter / Exit (SSR)">
+        <NestedParentExit />
+      </ExampleCard>
     </div>
   );
 }

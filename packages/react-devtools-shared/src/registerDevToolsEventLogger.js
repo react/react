@@ -15,6 +15,7 @@ import {enableLogger} from 'react-devtools-feature-flags';
 let currentLoggingIFrame = null;
 let currentSessionId = null;
 let missedEvents: Array<LoggerEvent> = [];
+let hasRegisteredEventLogger = false;
 
 type LoggerContext = {
   page_url: ?string,
@@ -72,8 +73,9 @@ export function registerDevToolsEventLogger(
       typeof loggingUrl === 'string' &&
       loggingUrl.length > 0 &&
       body != null &&
-      currentLoggingIFrame == null
+      !hasRegisteredEventLogger
     ) {
+      hasRegisteredEventLogger = true;
       registerEventLogger(logEvent);
       currentSessionId = window.crypto.randomUUID();
 

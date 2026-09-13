@@ -28,6 +28,7 @@ import ReactVersion from 'shared/ReactVersion';
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
 ensureCorrectIsomorphicReactVersion();
 
+import {browser} from '../shared/ReactDOMBrowser';
 import {
   getInstanceFromNode,
   getNodeFromInstance,
@@ -125,6 +126,7 @@ function unstable_batchedUpdates<A, R>(fn: (a: A) => R, a: A): R {
 }
 
 export {
+  browser,
   createPortal,
   unstable_batchedUpdates,
   flushSync,

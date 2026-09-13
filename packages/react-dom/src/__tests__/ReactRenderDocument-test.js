@@ -248,6 +248,93 @@ describe('rendering React components at document', () => {
       expect(container.textContent).toBe('parsnip');
     });
 
+    it('removes hoisted <title> when hiding an Activity boundary', async () => {
+      const Activity = React.Activity;
+
+      function App({mode, titleText}) {
+        return (
+          <html>
+            <head>
+              <Activity mode={mode}>
+                <title>{titleText}</title>
+              </Activity>
+            </head>
+            <body>Hello</body>
+          </html>
+        );
+      }
+
+      const testDocument = getTestDocument(
+        '<!doctype html><html><head></head><body></body></html>',
+      );
+      const root = ReactDOMClient.createRoot(testDocument);
+
+      await act(() => root.render(<App mode="visible" titleText="A" />));
+      expect(testDocument.head.querySelector('title').textContent).toBe('A');
+
+      await act(() => root.render(<App mode="hidden" titleText="A" />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+
+      await act(() => root.render(<App mode="visible" titleText="B" />));
+      expect(testDocument.head.querySelector('title').textContent).toBe('B');
+    });
+
+    it('does not unmount a hoistable that was never mounted when reappearing', async () => {
+      const Activity = React.Activity;
+
+      function App({mode, showTitle}) {
+        return (
+          <html>
+            <head>
+              <Activity mode={mode}>
+                {showTitle ? <title>Title</title> : null}
+              </Activity>
+            </head>
+            <body>Hello</body>
+          </html>
+        );
+      }
+
+      const testDocument = getTestDocument(
+        '<!doctype html><html><head></head><body></body></html>',
+      );
+      const root = ReactDOMClient.createRoot(testDocument);
+
+      await act(() => root.render(<App mode="hidden" showTitle={true} />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+
+      await act(() => root.render(<App mode="visible" showTitle={false} />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+    });
+
+    it('removes hoistables deleted in the same commit that hides an Activity', async () => {
+      const Activity = React.Activity;
+
+      function App({mode, showTitle}) {
+        return (
+          <html>
+            <head>
+              <Activity mode={mode}>
+                {showTitle ? <title>Title</title> : null}
+              </Activity>
+            </head>
+            <body>Hello</body>
+          </html>
+        );
+      }
+
+      const testDocument = getTestDocument(
+        '<!doctype html><html><head></head><body></body></html>',
+      );
+      const root = ReactDOMClient.createRoot(testDocument);
+
+      await act(() => root.render(<App mode="visible" showTitle={true} />));
+      expect(testDocument.head.querySelector('title')).not.toBe(null);
+
+      await act(() => root.render(<App mode="hidden" showTitle={false} />));
+      expect(testDocument.head.querySelector('title')).toBe(null);
+    });
+
     it('should give helpful errors on state desync', async () => {
       class Component extends React.Component {
         render() {

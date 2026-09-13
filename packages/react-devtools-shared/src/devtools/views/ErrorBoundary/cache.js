@@ -69,7 +69,7 @@ export function findGitHubIssue(errorMessage: string): GitHubIssue | null {
         rejectCallbacks.add(reject);
       },
 
-      // Optional property used by Timeline:
+      // Optional property, read by React to name this I/O in async debug info:
       displayName: `Searching GitHub issues for error "${errorMessage}"`,
     };
     const wake = () => {

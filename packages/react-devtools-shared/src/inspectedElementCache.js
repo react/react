@@ -95,7 +95,7 @@ export function inspectElement(
         rejectCallbacks.add(reject);
       },
 
-      // Optional property used by Timeline:
+      // Optional property, read by React to name this I/O in async debug info:
       displayName: `Inspecting ${element.displayName || 'Unknown'}`,
     };
 

@@ -631,8 +631,10 @@ class CollectDependenciesVisitor extends ReactiveFunctionVisitor<
           rvalues: [],
         };
       }
-      case 'PrefixUpdate':
-      case 'PostfixUpdate': {
+      case 'PrefixUpdateLocal':
+      case 'PrefixUpdateContext':
+      case 'PostfixUpdateContext':
+      case 'PostfixUpdateLocal': {
         const lvalues = [
           {place: value.lvalue, level: MemoizationLevel.Conditional},
         ];

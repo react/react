@@ -119,7 +119,6 @@ import {
   enableCPUSuspense,
   disableLegacyMode,
   enableViewTransition,
-  enableFragmentRefs,
 } from 'shared/ReactFeatureFlags';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentNameFromFiber from 'react-reconciler/src/getComponentNameFromFiber';
@@ -131,6 +130,7 @@ import {
   REACT_MEMO_TYPE,
   REACT_CONTEXT_TYPE,
 } from 'shared/ReactSymbols';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 import {setCurrentFiber} from './ReactCurrentFiber';
 import {resolveTypeForHotReloading} from './ReactFiberHotReloading';
 
@@ -204,6 +204,7 @@ import {
 import {
   pushHiddenContext,
   reuseHiddenContextOnStack,
+  isCurrentTreeHidden,
 } from './ReactFiberHiddenContext';
 import {findFirstSuspended} from './ReactFiberSuspenseComponent';
 import {
@@ -1019,6 +1020,19 @@ function updateDehydratedActivityComponent(
     if (didReceiveUpdate || hasContextChanged) {
       // This boundary has changed since the first render. This means that we are now unable to
       // hydrate it. We might still be able to hydrate it using a higher priority lane.
+      if (isCurrentTreeHidden()) {
+        // This boundary is inside a hidden subtree, where all work is
+        // deferred until the tree is revealed. Selective hydration works by
+        // rendering the boundary at a higher priority before the update
+        // applies, so it can't make progress here; delaying the commit to
+        // wait for it would deadlock. Replacing hidden content isn't
+        // visible, so give up and client render.
+        return retryActivityComponentWithoutHydrating(
+          current,
+          workInProgress,
+          renderLanes,
+        );
+      }
       const root = getWorkInProgressRoot();
       if (root !== null) {
         const attemptHydrationAtLane = getBumpedLaneForHydration(
@@ -1153,6 +1167,13 @@ function updateActivityComponent(
           renderLanes,
         );
         workInProgress.lanes = laneToLanes(OffscreenLane);
+        // This tree hasn't been mounted yet so there are no baseLanes to carry over.
+        const nextState: OffscreenState = {
+          baseLanes: NoLanes,
+          cachePool: null,
+        };
+        primaryChildFragment.memoizedState = nextState;
+
         return bailoutOffscreenComponent(null, primaryChildFragment);
       } else {
         // We must push the suspense handler context *before* attempting to
@@ -1344,9 +1365,7 @@ function updateFragment(
   renderLanes: Lanes,
 ) {
   const nextChildren = workInProgress.pendingProps;
-  if (enableFragmentRefs) {
-    markRef(current, workInProgress);
-  }
+  markRef(current, workInProgress);
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
 }
@@ -2987,25 +3006,29 @@ function updateDehydratedSuspenseComponent(
         ({digest} = getSuspenseInstanceFallbackErrorDetails(suspenseInstance));
       }
 
-      let error: Error;
-      if (__DEV__ && message) {
-        // eslint-disable-next-line react-internal/prod-error-codes
-        error = new Error(message);
-      } else {
-        error = new Error(
-          'The server could not finish this Suspense boundary, likely ' +
-            'due to an error during server rendering. ' +
-            'Switched to client rendering.',
+      // This is unreachable in renderers that do not support hydration.
+      // $FlowFixMe[invalid-compare]
+      if (digest !== REACT_RECOVERABLE_DIGEST) {
+        let error: Error;
+        if (__DEV__ && message) {
+          // eslint-disable-next-line react-internal/prod-error-codes
+          error = new Error(message);
+        } else {
+          error = new Error(
+            'The server could not finish this Suspense boundary, likely ' +
+              'due to an error during server rendering. ' +
+              'Switched to client rendering.',
+          );
+        }
+        // Replace the stack with the server stack
+        error.stack = (__DEV__ && stack) || '';
+        (error as any).digest = digest;
+        const capturedValue = createCapturedValueFromError(
+          error,
+          componentStack === undefined ? null : componentStack,
         );
+        queueHydrationError(capturedValue);
       }
-      // Replace the stack with the server stack
-      error.stack = (__DEV__ && stack) || '';
-      (error as any).digest = digest;
-      const capturedValue = createCapturedValueFromError(
-        error,
-        componentStack === undefined ? null : componentStack,
-      );
-      queueHydrationError(capturedValue);
       return retrySuspenseComponentWithoutHydrating(
         current,
         workInProgress,
@@ -3028,6 +3051,19 @@ function updateDehydratedSuspenseComponent(
     if (didReceiveUpdate || hasContextChanged) {
       // This boundary has changed since the first render. This means that we are now unable to
       // hydrate it. We might still be able to hydrate it using a higher priority lane.
+      if (isCurrentTreeHidden()) {
+        // This boundary is inside a hidden subtree, where all work is
+        // deferred until the tree is revealed. Selective hydration works by
+        // rendering the boundary at a higher priority before the update
+        // applies, so it can't make progress here; delaying the commit to
+        // wait for it would deadlock. Replacing hidden content isn't
+        // visible, so give up and client render.
+        return retrySuspenseComponentWithoutHydrating(
+          current,
+          workInProgress,
+          renderLanes,
+        );
+      }
       const root = getWorkInProgressRoot();
       if (root !== null) {
         const attemptHydrationAtLane = getBumpedLaneForHydration(

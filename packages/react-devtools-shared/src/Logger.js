@@ -81,6 +81,31 @@ export const logEvent: LogFunction =
       }
     : function logEvent() {};
 
+export function logErrorEvent(
+  error: mixed,
+  componentStack: string | null,
+): void {
+  const errorMessage =
+    typeof error === 'object' &&
+    error !== null &&
+    typeof error.message === 'string'
+      ? error.message
+      : null;
+  const errorStack =
+    typeof error === 'object' &&
+    error !== null &&
+    typeof error.stack === 'string'
+      ? error.stack
+      : null;
+
+  logEvent({
+    event_name: 'error',
+    error_message: errorMessage,
+    error_stack: errorStack,
+    error_component_stack: componentStack,
+  });
+}
+
 export const registerEventLogger: (logFunction: LogFunction) => () => void =
   enableLogger === true
     ? function registerEventLogger(logFunction: LogFunction): () => void {

@@ -28,6 +28,24 @@
   white-space: pre;
 }
 
+/* Shown while the (deferred) search is still computing matches. */
+.Spinner {
+  flex: 0 0 auto;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: 0 0.25rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-dim);
+  border-radius: 50%;
+  animation: SearchInput-spin 0.6s linear infinite;
+}
+
+@keyframes SearchInput-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .IndexInput {
   color: var(--color-text);
   font-size: var(--font-size-sans-normal);

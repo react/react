@@ -132,6 +132,16 @@ export function connectToDevTools(options: ?ConnectOptions) {
 
   let bridge: BackendBridge | null = null;
 
+  function shutdownBridge(): void {
+    const bridgeToShutdown = bridge;
+    if (bridgeToShutdown !== null) {
+      // Clear the active reference before shutdown flushes its final message
+      // through a potentially closed socket.
+      bridge = null;
+      bridgeToShutdown.shutdown();
+    }
+  }
+
   const messageListeners = [];
   const uri = protocol + '://' + host + ':' + port + prefixedPath;
 
@@ -153,7 +163,11 @@ export function connectToDevTools(options: ?ConnectOptions) {
           }
         };
       },
-      send(event: string, payload: any, transferable?: Array<any>) {
+      send(
+        event: string,
+        payload: mixed,
+        transferable?: $ReadOnlyArray<mixed>,
+      ) {
         if (ws.readyState === ws.OPEN) {
           // $FlowFixMe[constant-condition]
           if (__DEBUG__) {
@@ -170,10 +184,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
             );
           }
 
-          if (bridge !== null) {
-            bridge.shutdown();
-          }
-
+          shutdownBridge();
           scheduleRetry();
         }
       },
@@ -273,10 +284,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
       debug('WebSocket.onclose');
     }
 
-    if (bridge !== null) {
-      bridge.emit('shutdown');
-    }
-
+    shutdownBridge();
     scheduleRetry();
   }
 
@@ -323,9 +331,9 @@ export function connectToDevTools(options: ?ConnectOptions) {
 }
 
 type ConnectWithCustomMessagingOptions = {
-  onSubscribe: (cb: Function) => void,
-  onUnsubscribe: (cb: Function) => void,
-  onMessage: (event: string, payload: any) => void,
+  onSubscribe: (cb: (message: mixed) => void) => void,
+  onUnsubscribe: (cb: (message: mixed) => void) => void,
+  onMessage: (event: string, payload: mixed) => void,
   nativeStyleEditorValidAttributes?: $ReadOnlyArray<string>,
   resolveRNStyle?: ResolveNativeStyle,
   onSettingsUpdated?: (settings: $ReadOnly<DevToolsHookSettings>) => void,
@@ -354,14 +362,14 @@ export function connectWithCustomMessagingProtocol({
   }
 
   const wall: Wall = {
-    listen(fn: Function) {
+    listen(fn: (message: mixed) => void) {
       onSubscribe(fn);
 
       return () => {
         onUnsubscribe(fn);
       };
     },
-    send(event: string, payload: any) {
+    send(event: string, payload: mixed) {
       onMessage(event, payload);
     },
   };

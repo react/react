@@ -20,7 +20,7 @@ import UnsupportedBridgeOperationError from 'react-devtools-shared/src/Unsupport
 import TimeoutError from 'react-devtools-shared/src/errors/TimeoutError';
 import UserError from 'react-devtools-shared/src/errors/UserError';
 import UnknownHookError from 'react-devtools-shared/src/errors/UnknownHookError';
-import {logEvent} from 'react-devtools-shared/src/Logger';
+import {logErrorEvent} from 'react-devtools-shared/src/Logger';
 
 type Props = {
   children: React$Node,
@@ -97,10 +97,9 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: any, {componentStack}: any) {
-    this._logError(error, componentStack);
-    this.setState({
-      componentStack,
-    });
+    // This is an error trown during render, not a Store error
+    logErrorEvent(error, componentStack);
+    this.setState({componentStack});
   }
 
   componentDidMount() {
@@ -206,18 +205,6 @@ export default class ErrorBoundary extends Component<Props, State> {
     return children;
   }
 
-  _logError: (error: any, componentStack: string | null) => void = (
-    error,
-    componentStack,
-  ) => {
-    logEvent({
-      event_name: 'error',
-      error_message: error.message ?? null,
-      error_stack: error.stack ?? null,
-      error_component_stack: componentStack ?? null,
-    });
-  };
-
   _dismissError: () => void = () => {
     const onBeforeDismissCallback = this.props.onBeforeDismissCallback;
     if (typeof onBeforeDismissCallback === 'function') {
@@ -229,7 +216,6 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   _onStoreError: (error: Error) => void = error => {
     if (!this.state.hasError) {
-      this._logError(error, null);
       this.setState({
         ...ErrorBoundary.getDerivedStateFromError(error),
         canDismiss: true,

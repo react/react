@@ -18,9 +18,9 @@ export const {
   alwaysThrottleRetries,
   disableLegacyContextForFunctionComponents,
   disableSchedulerTimeoutInWorkLoop,
-  enableEffectEventMutationPhase,
   enableInfiniteRenderLoopDetection,
   enableInfiniteRenderLoopDetectionForceThrow,
+  enableConditionalUseWarning,
   enableNoCloningMemoCache,
   enableObjectFiber,
   enableRetryLaneExpiration,
@@ -31,8 +31,6 @@ export const {
   enableSuspenseyImages,
   enableViewTransition,
   enableScrollEndPolyfill,
-  enableFragmentRefs,
-  enableFragmentRefsScrollIntoView,
   enableFragmentRefsTextNodes,
   enableInternalInstanceMap,
   enableParallelTransitions,
@@ -72,6 +70,7 @@ export const disableLegacyContext = __EXPERIMENTAL__;
 export const enableLegacyCache: boolean = true;
 
 export const enableAsyncIterableChildren: boolean = false;
+export const enableFlightWeakThenables: boolean = false;
 
 export const enableTaint: boolean = false;
 
@@ -80,6 +79,10 @@ export const enableTaint: boolean = false;
 export const disableCommentsAsDOMContainers: boolean = false;
 
 export const enableCreateEventHandleAPI: boolean = true;
+
+export const enableBrowserAPI: boolean = true;
+
+export const enableEffectEventMutationPhase: boolean = true;
 
 export const enableScopeAPI: boolean = true;
 

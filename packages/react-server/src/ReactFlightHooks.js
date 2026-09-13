@@ -151,7 +151,11 @@ function use<T>(usable: Usable<T>): T {
   }
 
   if (isClientReference(usable)) {
-    if (usable.value != null && usable.value.$$typeof === REACT_CONTEXT_TYPE) {
+    const clientReference: any = usable;
+    if (
+      clientReference.value != null &&
+      clientReference.value.$$typeof === REACT_CONTEXT_TYPE
+    ) {
       // Show a more specific message since it's a common mistake.
       throw new Error('Cannot read a Client Context from a Server Component.');
     } else {

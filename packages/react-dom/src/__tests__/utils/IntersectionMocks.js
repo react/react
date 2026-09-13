@@ -19,6 +19,9 @@ export function mockIntersectionObserver() {
 
   class IntersectionObserver {
     constructor() {
+      this.root = null;
+      this.rootMargin = '0px';
+      this.thresholds = [0];
       intersectionObserverMock.callback = arguments[0];
     }
 
@@ -28,7 +31,10 @@ export function mockIntersectionObserver() {
     }
 
     observe(target) {
-      intersectionObserverMock.observedTargets.push(target);
+      // Match the spec: observing an already-observed target is a no-op.
+      if (intersectionObserverMock.observedTargets.indexOf(target) === -1) {
+        intersectionObserverMock.observedTargets.push(target);
+      }
     }
 
     unobserve(target) {
