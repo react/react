@@ -202,10 +202,7 @@ function lazyInitializer<T>(payload: Payload<T>): T {
             'Did you accidentally put curly braces around the import?',
           moduleObject,
         );
-      }
-    }
-    if (__DEV__) {
-      if (!('default' in moduleObject)) {
+      } else if (moduleObject == null || !('default' in moduleObject)) {
         console.error(
           'lazy: Expected the result of a dynamic imp' +
             'ort() call. ' +
