@@ -159,13 +159,13 @@ fn collect_scope_info(func: &HirFunction, env: &Environment) -> ScopeInfo {
         .into_iter()
         .map(|(id, scopes)| ScopeStartEntry { id, scopes })
         .collect();
-    scope_starts.sort_by(|a, b| b.id.cmp(&a.id));
+    scope_starts.sort_by_key(|b| std::cmp::Reverse(b.id));
 
     let mut scope_ends: Vec<ScopeEndEntry> = scope_ends_map
         .into_iter()
         .map(|(id, scopes)| ScopeEndEntry { id, scopes })
         .collect();
-    scope_ends.sort_by(|a, b| b.id.cmp(&a.id));
+    scope_ends.sort_by_key(|b| std::cmp::Reverse(b.id));
 
     ScopeInfo {
         scope_starts,

@@ -1260,7 +1260,7 @@ fn lower_expression(
                                         loc: ident_loc.clone(),
                                         description: Some(format!(
                                             "`{}` is declared as const",
-                                            &ident.name
+                                            ident.name
                                         )),
                                         suggestions: None,
                                     })?;
