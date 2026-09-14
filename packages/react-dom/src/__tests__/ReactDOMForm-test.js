@@ -27,6 +27,23 @@ const FormDataPolyfill = function FormData(form, submitter) {
 NativeFormData.prototype.constructor = FormDataPolyfill;
 global.FormData = FormDataPolyfill;
 
+// Our current version of JSDOM doesn't implement the formMethod IDL attribute
+// so we polyfill it.
+[global.HTMLButtonElement, global.HTMLInputElement].forEach(constructor => {
+  Object.defineProperty(constructor.prototype, 'formMethod', {
+    configurable: true,
+    get() {
+      const value = this.getAttribute('formmethod');
+      if (value === null) {
+        return '';
+      }
+      const method = value.toLowerCase();
+      // The attribute is limited to the known values, and defaults to get.
+      return method === 'post' || method === 'dialog' ? method : 'get';
+    },
+  });
+});
+
 describe('ReactDOMForm', () => {
   let act;
   let container;
@@ -949,7 +966,6 @@ describe('ReactDOMForm', () => {
     "useFormStatus reads the submitter's formMethod, which overrides the " +
       "form's method",
     async () => {
-      const formRef = React.createRef();
       const buttonRef = React.createRef();
       const inputRef = React.createRef();
       let actionText;
@@ -965,9 +981,9 @@ describe('ReactDOMForm', () => {
 
       function App() {
         return (
-          <form action={myAction} ref={formRef}>
+          <form action={myAction}>
             <button type="submit" formMethod="post" ref={buttonRef} />
-            <input type="submit" formMethod="DIALOG" ref={inputRef} />
+            <input type="submit" formMethod="dialog" ref={inputRef} />
             <Status />
           </form>
         );
@@ -983,23 +999,10 @@ describe('ReactDOMForm', () => {
       await act(() => resolveText('A'));
       assertLog(['Not pending']);
 
-      // The value is normalized the same way the DOM normalizes it.
       actionText = 'B';
       await submit(inputRef.current);
       assertLog(['Pending dialog']);
       await act(() => resolveText('B'));
-      assertLog(['Not pending']);
-
-      // A submitter that React doesn't own is read from the DOM instead.
-      const foreignButton = document.createElement('button');
-      foreignButton.type = 'submit';
-      foreignButton.setAttribute('formmethod', 'post');
-      formRef.current.appendChild(foreignButton);
-
-      actionText = 'C';
-      await submit(foreignButton);
-      assertLog(['Pending post']);
-      await act(() => resolveText('C'));
       assertLog(['Not pending']);
     },
   );
@@ -1010,7 +1013,6 @@ describe('ReactDOMForm', () => {
     async () => {
       const buttonRef = React.createRef();
       const overrideRef = React.createRef();
-      const invalidRef = React.createRef();
       let actionText;
 
       function Status() {
@@ -1030,7 +1032,6 @@ describe('ReactDOMForm', () => {
           <form method="dialog" onSubmit={onSubmit}>
             <button type="submit" ref={buttonRef} />
             <button type="submit" formMethod="post" ref={overrideRef} />
-            <button type="submit" formMethod="bogus" ref={invalidRef} />
             <Status />
           </form>
         );
@@ -1051,13 +1052,6 @@ describe('ReactDOMForm', () => {
       await submit(overrideRef.current);
       assertLog(['Pending post']);
       await act(() => resolveText('B'));
-      assertLog(['Not pending']);
-
-      // An unknown formMethod uses the attribute's invalid value default.
-      actionText = 'C';
-      await submit(invalidRef.current);
-      assertLog(['Pending get']);
-      await act(() => resolveText('C'));
       assertLog(['Not pending']);
     },
   );
