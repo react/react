@@ -22,6 +22,7 @@ use react_compiler_ast::common::BaseNode;
 use react_compiler_ast::declarations::Declaration;
 use react_compiler_ast::declarations::ExportDefaultDecl;
 use react_compiler_ast::declarations::ExportDefaultDeclaration;
+use react_compiler_ast::declarations::ExportNamedDeclaration;
 use react_compiler_ast::declarations::ImportSpecifier;
 use react_compiler_ast::declarations::ModuleExportName;
 use react_compiler_ast::expressions::*;
@@ -2077,6 +2078,18 @@ struct CompiledFnForReplacement {
     gating: Option<GatingConfig>,
 }
 
+/// Get the function declaration of a top level statement, unwrapping `export function f() {}`.
+fn as_function_declaration(stmt: &Statement) -> Option<&FunctionDeclaration> {
+    match stmt {
+        Statement::FunctionDeclaration(f) => Some(f),
+        Statement::ExportNamedDeclaration(export) => match export.declaration.as_deref() {
+            Some(Declaration::FunctionDeclaration(f)) => Some(f),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Check if a compiled function is referenced before its declaration at the top level.
 /// This is needed for the gating rewrite: hoisted function declarations that are
 /// referenced before their declaration site need a special gating pattern.
@@ -2106,7 +2119,7 @@ fn get_functions_referenced_before_declaration(
     // any of the function names before the function's declaration.
     for stmt in &program.body {
         // Check if this statement IS one of the function declarations
-        if let Statement::FunctionDeclaration(f) = stmt {
+        if let Some(f) = as_function_declaration(stmt) {
             if let Some(ref id) = f.id {
                 fn_names.remove(&id.name);
             }
@@ -3008,12 +3021,14 @@ fn apply_gated_function_hoisted(
     // Find the original function declaration and determine its params
     let mut original_params: Vec<PatternLike> = Vec::new();
     let mut fn_stmt_idx: Option<usize> = None;
+    let mut is_named_export = false;
 
     for (idx, stmt) in program.body.iter().enumerate() {
-        if let Statement::FunctionDeclaration(f) = stmt {
+        if let Some(f) = as_function_declaration(stmt) {
             if f.base.node_id == Some(node_id) {
                 original_params = f.params.clone();
                 fn_stmt_idx = Some(idx);
+                is_named_export = matches!(stmt, Statement::ExportNamedDeclaration(_));
                 break;
             }
         }
@@ -3023,6 +3038,13 @@ fn apply_gated_function_hoisted(
         Some(idx) => idx,
         None => return,
     };
+
+    // The dispatcher keeps the public name, so the export moves onto it instead
+    if is_named_export {
+        if let Some(f) = as_function_declaration(&program.body[fn_idx]).cloned() {
+            program.body[fn_idx] = Statement::FunctionDeclaration(f);
+        }
+    }
 
     // Rename the original function to `_unoptimized`
     if let Statement::FunctionDeclaration(f) = &mut program.body[fn_idx] {
@@ -3160,7 +3182,7 @@ fn apply_gated_function_hoisted(
     //   if (gating_result) return Foo_optimized(arg0, ...);
     //   else return Foo_unoptimized(arg0, ...);
     // }
-    let dispatcher_fn = Statement::FunctionDeclaration(FunctionDeclaration {
+    let dispatcher_fn_decl = FunctionDeclaration {
         base: BaseNode::typed("FunctionDeclaration"),
         id: Some(Identifier {
             base: BaseNode::typed("Identifier"),
@@ -3226,7 +3248,22 @@ fn apply_gated_function_hoisted(
         predicate: None,
         component_declaration: false,
         hook_declaration: false,
-    });
+    };
+    let dispatcher_fn = if is_named_export {
+        Statement::ExportNamedDeclaration(ExportNamedDeclaration {
+            base: BaseNode::typed("ExportNamedDeclaration"),
+            declaration: Some(Box::new(Declaration::FunctionDeclaration(
+                dispatcher_fn_decl,
+            ))),
+            specifiers: vec![],
+            source: None,
+            export_kind: None,
+            assertions: None,
+            attributes: None,
+        })
+    } else {
+        Statement::FunctionDeclaration(dispatcher_fn_decl)
+    };
 
     // Insert nodes. The TS code uses insertBefore for the gating result and optimized fn,
     // and insertAfter for the dispatcher. The order in the output should be:

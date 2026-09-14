@@ -90,29 +90,33 @@ function insertAdditionalFunctionDeclaration(
       genNewArgs.push(() => t.identifier(argName));
     }
   }
-  // insertAfter called in reverse order of how nodes should appear in program
-  fnPath.insertAfter(
-    t.functionDeclaration(
-      originalFnName,
-      newParams,
-      t.blockStatement([
-        t.ifStatement(
-          gatingCondition,
-          t.returnStatement(
-            t.callExpression(
-              compiled.id,
-              genNewArgs.map(fn => fn()),
-            ),
-          ),
-          t.returnStatement(
-            t.callExpression(
-              unoptimizedFnName,
-              genNewArgs.map(fn => fn()),
-            ),
+  const gatedFn = t.functionDeclaration(
+    originalFnName,
+    newParams,
+    t.blockStatement([
+      t.ifStatement(
+        gatingCondition,
+        t.returnStatement(
+          t.callExpression(
+            compiled.id,
+            genNewArgs.map(fn => fn()),
           ),
         ),
-      ]),
-    ),
+        t.returnStatement(
+          t.callExpression(
+            unoptimizedFnName,
+            genNewArgs.map(fn => fn()),
+          ),
+        ),
+      ),
+    ]),
+  );
+  const exportPath = fnPath.parentPath.isExportNamedDeclaration()
+    ? fnPath.parentPath
+    : null;
+  // insertAfter called in reverse order of how nodes should appear in program
+  fnPath.insertAfter(
+    exportPath != null ? t.exportNamedDeclaration(gatedFn) : gatedFn,
   );
   fnPath.insertBefore(
     t.variableDeclaration('const', [
@@ -123,6 +127,9 @@ function insertAdditionalFunctionDeclaration(
     ]),
   );
   fnPath.insertBefore(compiled);
+  if (exportPath != null) {
+    exportPath.replaceWith(fnPath.node);
+  }
 }
 export function insertGatedFunctionDeclaration(
   fnPath: NodePath<
