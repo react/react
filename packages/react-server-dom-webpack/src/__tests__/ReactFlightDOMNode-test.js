@@ -2699,4 +2699,73 @@ describe('ReactFlightDOMNode', () => {
     );
     expect(asyncServerElement.props.ClientModule).toEqual({label: 'module'});
   });
+
+  it.each([false, true])(
+    'preserves leading U+FEFF in outlined text rows (split chunks: %s)',
+    async splitChunks => {
+      const model = {
+        inline: '\uFEFFshort',
+        outlined: '\uFEFF' + 'x'.repeat(1024),
+        repeated: '\uFEFF\uFEFF' + 'y'.repeat(1024),
+      };
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToPipeableStream(model),
+      );
+      const readable = new Stream.Transform({
+        transform(chunk, encoding, callback) {
+          if (splitChunks) {
+            for (let i = 0; i < chunk.length; i++) {
+              this.push(chunk.subarray(i, i + 1));
+            }
+          } else {
+            this.push(chunk);
+          }
+          callback();
+        },
+      });
+      const response = ReactServerDOMClient.createFromNodeStream(readable, {
+        moduleMap: {},
+        moduleLoading: webpackModuleLoading,
+      });
+      stream.pipe(readable);
+
+      const result = await response;
+      expect(result).toEqual(model);
+    },
+  );
+
+  // @gate __DEV__
+  it('consumes a leading byte order mark on the debug channel', async () => {
+    let resolveModel;
+    const model = new Promise(resolve => {
+      resolveModel = resolve;
+    });
+    const onError = jest.fn();
+    const debugChannel = new ReadableStream({
+      start(controller) {
+        const bytes = new TextEncoder().encode('\uFEFFQ:0\n');
+        for (let i = 0; i < bytes.length; i++) {
+          controller.enqueue(bytes.subarray(i, i + 1));
+        }
+        controller.close();
+      },
+    });
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(model, webpackMap, {
+        debugChannel: {readable: debugChannel},
+        onError,
+      }),
+    );
+    const response = ReactServerDOMClient.createFromReadableStream(stream, {
+      serverConsumerManifest: {
+        moduleMap: null,
+        moduleLoading: null,
+      },
+    });
+
+    await serverAct(() => resolveModel('hello'));
+    expect(await response).toBe('hello');
+    expect(onError).not.toHaveBeenCalled();
+    expect(debugChannel.locked).toBe(true);
+  });
 });

@@ -4502,4 +4502,15 @@ describe('ReactFlight', () => {
       </div>,
     );
   });
+
+  it('preserves leading U+FEFF in text rows', async () => {
+    const text = '\uFEFF' + 'x'.repeat(1024);
+    const transport = ReactNoopFlightServer.render(text);
+    expect(await ReactNoopFlightClient.read(transport)).toBe(text);
+
+    const chunks = transport.flatMap(chunk =>
+      Array.from(chunk, byte => new Uint8Array([byte])),
+    );
+    expect(await ReactNoopFlightClient.read(chunks)).toBe(text);
+  });
 });
