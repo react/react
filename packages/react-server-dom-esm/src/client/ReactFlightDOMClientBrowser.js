@@ -26,6 +26,7 @@ import {
   processBinaryChunk,
   processStringChunk,
   close,
+  resolveLedgerTotals,
   injectIntoDevTools,
 } from 'react-client/src/ReactFlightClient';
 
@@ -202,12 +203,16 @@ function createFromReadableStream<T>(
         close(response);
       }
     };
+    const handleMainDone = () => {
+      resolveLedgerTotals(response);
+      handleDone();
+    };
     startReadingFromUniversalStream(
       response,
       options.debugChannel.readable,
       handleDone,
     );
-    startReadingFromStream(response, stream, handleDone, stream);
+    startReadingFromStream(response, stream, handleMainDone, stream);
   } else {
     startReadingFromStream(
       response,
@@ -238,12 +243,16 @@ function createFromFetch<T>(
             close(response);
           }
         };
+        const handleMainDone = () => {
+          resolveLedgerTotals(response);
+          handleDone();
+        };
         startReadingFromUniversalStream(
           response,
           options.debugChannel.readable,
           handleDone,
         );
-        startReadingFromStream(response, r.body as any, handleDone, r);
+        startReadingFromStream(response, r.body as any, handleMainDone, r);
       } else {
         startReadingFromStream(
           response,
