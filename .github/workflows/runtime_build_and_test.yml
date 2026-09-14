@@ -999,6 +999,8 @@ jobs:
     permissions:
       # We use github.token to download the build artifact from a previous runtime_build_and_test.yml run
       actions: read
+      # Used to resolve the merge-base commit through the compare API
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1020,21 +1022,40 @@ jobs:
         if: steps.node_modules.outputs.cache-hit != 'true'
       - run: yarn --cwd scripts/release install --frozen-lockfile
         if: steps.node_modules.outputs.cache-hit != 'true'
+      - name: Resolve base commit for comparison
+        # Compare against the commit this pull request diverged from, not the
+        # current tip of the base branch. Otherwise, once main moves ahead,
+        # unrelated commits show up as size changes on every pull request.
+        id: base
+        run: |
+          echo "sha=$(gh api repos/${{ github.repository }}/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} --jq .merge_base_commit.sha)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Download artifacts for base revision
+        id: download_base
         # The build could have been generated from a fork, so we must download the build without
         # any verification. This is safe since we only use this for sizebot calculation and the
         # unverified artifact is not used. Additionally this workflow runs in the pull_request
         # trigger so only restricted permissions are available.
         run: |
-          GH_TOKEN=${{ github.token }} scripts/release/download-experimental-build.js --commit=$(git rev-parse ${{ github.event.pull_request.base.sha }}) ${{ (github.event.pull_request.head.repo.full_name != github.repository && '--noVerify') || ''}}
-          mv ./build ./base-build
+          if GH_TOKEN=${{ github.token }} scripts/release/download-experimental-build.js --commit=${{ steps.base.outputs.sha }} ${{ (github.event.pull_request.head.repo.full_name != github.repository && '--noVerify') || ''}}; then
+            mv ./build ./base-build
+          else
+            # Rendered as a warning comment by render-comment.js on the
+            # default branch, which also fails the comment workflow's check.
+            jq --null-input --arg baseSha "${{ steps.base.outputs.sha }}" \
+              '{version: 1, status: "base-build-not-found", baseSha: $baseSha}' \
+              > sizebot-results.json
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Delete extraneous files
         # TODO: The `download-experimental-build` script copies the npm
         # packages into the `node_modules` directory. This is a historical
         # quirk of how the release script works. Let's pretend they
         # don't exist.
         run: rm -rf ./base-build/node_modules
-      - name: Display structure of base-build from origin/main
+      - name: Display structure of base-build
+        if: steps.download_base.outputs.missing != 'true'
         run: ls -R base-build
       - name: Ensure clean build directory
         run: rm -rf build
@@ -1056,6 +1077,9 @@ jobs:
         # posted by runtime_sizebot_comment.yml, which runs on the workflow_run
         # trigger because this job's token is read-only for pull requests from
         # forks and so cannot comment.
+        # Skipped when the base build is missing: the download step already
+        # wrote the not-found results.
+        if: steps.download_base.outputs.missing != 'true'
         run: node ./scripts/sizebot/compare-sizes.js
       - name: Archive sizebot results
         uses: actions/upload-artifact@v4
@@ -1063,3 +1087,8 @@ jobs:
           name: sizebot-results
           path: sizebot-results.json
           if-no-files-found: error
+      # Note: a missing base build does not fail this job on purpose. A failed
+      # job would fail the whole run, and render-comment.js only reads the
+      # results of successful runs, so the warning would never be rendered.
+      # Instead the comment workflow fails on the sizebot-problem.txt marker
+      # after posting the warning, same as for build configuration drift.

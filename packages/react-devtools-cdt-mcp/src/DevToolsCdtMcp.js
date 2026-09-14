@@ -118,10 +118,11 @@ const TOOL_DEFINITIONS: Array<ToolDefinition> = [
   {
     name: 'react_get_component_by_dom_element',
     description:
-      'Detailed info for one React DOM component by DOM element reference: ' +
-      '{uid, type, name, key?, props?, hooks?}. The element is an opaque ' +
-      'page-side reference, such as the currently selected Chrome DevTools ' +
-      'element.',
+      'Detailed info for the React host component of a DOM element: ' +
+      '{uid, type, name, key?, props?}. This is the host node (e.g. a ' +
+      'button or div), not the function component that rendered it. The ' +
+      'element is an opaque page-side reference, such as the currently ' +
+      'selected Chrome DevTools element.',
     inputSchema: {
       type: 'object',
       properties: {

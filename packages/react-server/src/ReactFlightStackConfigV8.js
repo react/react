@@ -237,7 +237,7 @@ export function parseStackTrace(
     if (name === '<anonymous>') {
       name = '';
     } else if (name.startsWith('async ')) {
-      name = name.slice(5);
+      name = name.slice(6);
       isAsync = true;
     }
     let filename = parsed[2] || parsed[5] || '';

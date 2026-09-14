@@ -161,6 +161,21 @@ function getContextReassignment(
           }
           break;
         }
+        case 'PostfixUpdateContext':
+        case 'PrefixUpdateContext': {
+          if (isFunctionExpression) {
+            if (
+              contextVariables.has(value.lvalue.identifier.id) ||
+              contextVariables.has(value.value.identifier.id)
+            ) {
+              return value.lvalue;
+            }
+          } else {
+            contextVariables.add(value.lvalue.identifier.id);
+            contextVariables.add(value.value.identifier.id);
+          }
+          break;
+        }
         default: {
           let operands = eachInstructionValueOperand(value);
           // If we're calling a function that doesn't let its arguments escape, only test the callee

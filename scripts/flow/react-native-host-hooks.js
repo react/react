@@ -55,6 +55,14 @@ declare opaque type __PublicTextInstance;
 declare opaque type __PublicRootInstance;
 
 declare module 'react-native/react-private-interface' {
+  declare export type FabricUIManager = __FabricUIManager;
+  declare export const fabricUIManager: __FabricUIManager;
+  // Feature flags owned by React Native. Each accessor is optional so that
+  // removing a flag on the React Native side doesn't throw here.
+  declare export interface ReactNativeFeatureFlags {
+    +enableNativeEventTargetEventDispatching?: () => boolean;
+  }
+  declare export const ReactNativeFeatureFlags: ReactNativeFeatureFlags;
   declare export function deepFreezeAndThrowOnMutationInDev<T>(obj: T): T;
   declare export const ReactFiberErrorDialog: {
     showErrorDialog: (error: __CapturedError) => boolean,
@@ -127,15 +135,8 @@ declare module 'react-native' {
   declare export type MeasureOnSuccessCallback = __MeasureOnSuccessCallback;
 }
 
-// eslint-disable-next-line no-unused-vars
-declare const RN$isNativeEventTargetEventDispatchingEnabled:
-  | (() => boolean)
-  | void;
-
-// This is needed for a short term solution.
 // See https://github.com/facebook/react/pull/15490 for more info
-// eslint-disable-next-line no-unused-vars
-declare const nativeFabricUIManager: {
+type __FabricUIManager = {
   createNode: (
     reactTag: number,
     viewName: string,

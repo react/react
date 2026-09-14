@@ -79,8 +79,6 @@ export const enableSrcObject: boolean = false;
 export const enableHydrationChangeEvent: boolean = false;
 export const enableDefaultTransitionIndicator: boolean = true;
 
-export const enableFragmentRefs: boolean = true;
-export const enableFragmentRefsScrollIntoView: boolean = true;
 export const enableFragmentRefsInstanceHandles: boolean = true;
 export const enableFragmentRefsTextNodes: boolean = true;
 export const ownerStackLimit = 1e4;
