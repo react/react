@@ -75,6 +75,18 @@ pub fn infer_mutation_aliasing_effects(
         initial_state.define(ctx_place.identifier, value_id);
     }
 
+    if let Some(self_binding) = &func.self_binding {
+        let value_id = ValueId::new();
+        initial_state.initialize(
+            value_id,
+            AbstractValue {
+                kind: ValueKind::Mutable,
+                reason: ValueReasonSet::single(ValueReason::Other),
+            },
+        );
+        initial_state.define(self_binding.identifier, value_id);
+    }
+
     let param_kind: AbstractValue = if is_function_expression {
         AbstractValue {
             kind: ValueKind::Mutable,

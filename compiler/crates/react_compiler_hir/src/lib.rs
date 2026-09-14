@@ -159,6 +159,7 @@ pub fn format_js_number(n: f64) -> String {
 pub struct HirFunction {
     pub loc: Option<SourceLocation>,
     pub id: Option<String>,
+    pub self_binding: Option<Place>,
     pub name_hint: Option<String>,
     pub fn_type: ReactFunctionType,
     pub params: Vec<ParamPattern>,

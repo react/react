@@ -336,6 +336,9 @@ fn enter_ssa_impl(
                     None,
                 ));
             }
+            if let Some(self_binding) = &func.self_binding {
+                func.self_binding = Some(builder.define_place(self_binding, env)?);
+            }
             let params = std::mem::take(&mut func.params);
             let mut new_params = Vec::with_capacity(params.len());
             for param in params {
@@ -507,6 +510,7 @@ pub fn placeholder_function() -> HirFunction {
     HirFunction {
         loc: None,
         id: None,
+        self_binding: None,
         name_hint: None,
         fn_type: ReactFunctionType::Other,
         params: Vec::new(),
