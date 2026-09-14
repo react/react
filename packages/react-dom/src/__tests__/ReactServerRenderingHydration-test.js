@@ -707,6 +707,101 @@ describe('ReactDOMServerHydration', () => {
     expect(customElement.obj).toBe(undefined);
   });
 
+  it('should hydrate aria and data boolean attributes on custom elements', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const jsx = (
+      <my-custom-element
+        aria-hidden={true}
+        aria-disabled={false}
+        data-active={true}
+        data-enabled={false}
+      />
+    );
+
+    container.innerHTML = ReactDOMServer.renderToString(jsx);
+    const customElement = container.querySelector('my-custom-element');
+    expect(customElement.getAttribute('aria-hidden')).toBe('true');
+    expect(customElement.getAttribute('aria-disabled')).toBe('false');
+    expect(customElement.getAttribute('data-active')).toBe('true');
+    expect(customElement.getAttribute('data-enabled')).toBe('false');
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(container, jsx);
+    });
+
+    expect(customElement.getAttribute('aria-hidden')).toBe('true');
+    expect(customElement.getAttribute('aria-disabled')).toBe('false');
+    expect(customElement.getAttribute('data-active')).toBe('true');
+    expect(customElement.getAttribute('data-enabled')).toBe('false');
+  });
+
+  it('warns when custom element aria boolean mismatches empty attribute', async () => {
+    const container = document.createElement('div');
+    // Legacy boolean-attribute serialization: presence with empty value.
+    container.innerHTML = '<my-custom-element aria-hidden=""></my-custom-element>';
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(
+        container,
+        <my-custom-element aria-hidden={true} />,
+      );
+    });
+
+    assertConsoleErrorDev([
+      "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
+        "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
+        '\n' +
+        "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
+        "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
+        "- Date formatting in a user's locale which doesn't match the server.\n" +
+        '- External changing data without sending a snapshot of it along with the HTML.\n' +
+        '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension ' +
+        'installed which messes with the HTML before React loaded.\n' +
+        '\n' +
+        'https://react.dev/link/hydration-mismatch\n' +
+        '\n' +
+        '  <my-custom-element\n' +
+        '+   aria-hidden={true}\n' +
+        '-   aria-hidden=""\n' +
+        '  >\n' +
+        '\n    in my-custom-element (at **)',
+    ]);
+  });
+
+  it('warns when custom element aria false mismatches missing attribute', async () => {
+    const container = document.createElement('div');
+    container.innerHTML = '<my-custom-element></my-custom-element>';
+
+    await act(() => {
+      ReactDOMClient.hydrateRoot(
+        container,
+        <my-custom-element aria-hidden={false} />,
+      );
+    });
+
+    assertConsoleErrorDev([
+      "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. " +
+        "This won't be patched up. This can happen if a SSR-ed Client Component used:\n" +
+        '\n' +
+        "- A server/client branch `if (typeof window !== 'undefined')`.\n" +
+        "- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n" +
+        "- Date formatting in a user's locale which doesn't match the server.\n" +
+        '- External changing data without sending a snapshot of it along with the HTML.\n' +
+        '- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension ' +
+        'installed which messes with the HTML before React loaded.\n' +
+        '\n' +
+        'https://react.dev/link/hydration-mismatch\n' +
+        '\n' +
+        '  <my-custom-element\n' +
+        '+   aria-hidden={false}\n' +
+        '-   aria-hidden={null}\n' +
+        '  >\n' +
+        '\n    in my-custom-element (at **)',
+    ]);
+  });
+
   it('refers users to apis that support Suspense when something suspends', async () => {
     const theInfinitePromise = new Promise(() => {});
     function InfiniteSuspend() {
