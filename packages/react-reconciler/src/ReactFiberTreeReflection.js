@@ -658,10 +658,10 @@ function isFiberPrecedingCheck(
   target: Fiber,
   boundary: Fiber,
 ): boolean {
-  if (child === boundary) {
+  if (child === boundary || child.alternate === boundary) {
     return true;
   }
-  if (child === target) {
+  if (child === target || child.alternate === target) {
     pushSearchTarget(child);
     return true;
   }
@@ -695,11 +695,11 @@ function isFiberFollowingCheck(
   target: Fiber,
   boundary: Fiber,
 ): boolean {
-  if (child === boundary) {
+  if (child === boundary || child.alternate === boundary) {
     pushSearchBoundary(child);
     return false;
   }
-  if (child === target) {
+  if (child === target || child.alternate === target) {
     // The target is only following if we already found the boundary.
     if (popSearchBoundary() !== null) {
       pushSearchTarget(child);

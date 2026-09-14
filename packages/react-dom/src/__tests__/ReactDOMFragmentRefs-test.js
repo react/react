@@ -2534,6 +2534,101 @@ describe('FragmentRefs', () => {
       );
     });
 
+    it('keeps sibling positions stable across updates', async () => {
+      const fragmentRef = React.createRef();
+      const beforeRef = React.createRef();
+      const afterRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test({step}) {
+        return (
+          <div>
+            <span ref={beforeRef} />
+            <Fragment ref={fragmentRef}>
+              <span>{step}</span>
+              <span />
+            </Fragment>
+            <span ref={afterRef} />
+          </div>
+        );
+      }
+
+      // Exercise both Fiber generations more than once without changing the DOM order.
+      for (let step = 0; step < 4; step++) {
+        await act(() => root.render(<Test step={step} />));
+        expect(
+          fragmentRef.current.compareDocumentPosition(beforeRef.current),
+        ).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+        expect(
+          fragmentRef.current.compareDocumentPosition(afterRef.current),
+        ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      }
+    });
+
+    it('updates sibling positions when nodes are reordered', async () => {
+      const fragmentRef = React.createRef();
+      const siblingRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test({before}) {
+        const sibling = <span key="sibling" ref={siblingRef} />;
+        const fragment = (
+          <Fragment key="fragment" ref={fragmentRef}>
+            <span />
+          </Fragment>
+        );
+        return <div>{before ? [sibling, fragment] : [fragment, sibling]}</div>;
+      }
+
+      for (let step = 0; step < 4; step++) {
+        const before = step % 2 === 0;
+        await act(() => root.render(<Test before={before} />));
+        expect(
+          fragmentRef.current.compareDocumentPosition(siblingRef.current),
+        ).toBe(
+          before
+            ? Node.DOCUMENT_POSITION_PRECEDING
+            : Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }
+    });
+
+    it('rejects sibling positions that disagree with the Fiber tree after updates', async () => {
+      const fragmentRef = React.createRef();
+      const beforeRef = React.createRef();
+      const afterRef = React.createRef();
+      const root = ReactDOMClient.createRoot(container);
+
+      function Test({step}) {
+        return (
+          <div>
+            <span ref={beforeRef} />
+            <Fragment ref={fragmentRef}>
+              <span>{step}</span>
+            </Fragment>
+            <span ref={afterRef} />
+          </div>
+        );
+      }
+
+      for (let step = 0; step < 4; step++) {
+        await act(() => root.render(<Test step={step} />));
+        const parent = beforeRef.current.parentNode;
+        parent.appendChild(beforeRef.current);
+        parent.insertBefore(afterRef.current, parent.firstChild);
+
+        expect(
+          fragmentRef.current.compareDocumentPosition(beforeRef.current),
+        ).toBe(Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+        expect(
+          fragmentRef.current.compareDocumentPosition(afterRef.current),
+        ).toBe(Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+
+        parent.appendChild(afterRef.current);
+        parent.insertBefore(beforeRef.current, parent.firstChild);
+      }
+    });
+
     it('handles fragment instances with one child', async () => {
       const fragmentRef = React.createRef();
       const beforeRef = React.createRef();
