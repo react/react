@@ -405,7 +405,6 @@ describe('ReactDOM HostSingleton', () => {
     expect(body.innerHTML).toBe('<span>managed child</span>');
   });
 
-  // @gate TODO
   it('preserves imperative attributes when acquiring a singleton', async () => {
     const body = document.body;
     body.setAttribute('data-external', 'true');
@@ -421,6 +420,32 @@ describe('ReactDOM HostSingleton', () => {
 
     expect(document.body).toBe(body);
     expect(body.getAttribute('data-external')).toBe('true');
+  });
+
+  it('preserves imperative attributes when reacquiring a singleton', async () => {
+    const root = ReactDOMClient.createRoot(document);
+    const html = document.documentElement;
+
+    root.render(
+      <html key="first">
+        <head />
+        <body />
+      </html>,
+    );
+    await waitForAll([]);
+
+    html.setAttribute('data-external', 'true');
+
+    root.render(
+      <html key="second">
+        <head />
+        <body />
+      </html>,
+    );
+    await waitForAll([]);
+
+    expect(document.documentElement).toBe(html);
+    expect(html.getAttribute('data-external')).toBe('true');
   });
 
   // @gate TODO
@@ -609,16 +634,17 @@ describe('ReactDOM HostSingleton', () => {
       document.head,
       document.body,
     ]);
-    // Similar to Hydration we don't reset attributes on the instance itself even on a fresh render.
+    // Similar to hydration, a fresh render preserves existing attributes and
+    // resource nodes on singleton instances.
     expect(getVisibleChildren(document)).toEqual(
-      <html data-client-foo="foo">
-        <head>
+      <html data-foo="foo" data-client-foo="foo">
+        <head data-bar="bar">
           <link rel="stylesheet" href="resource" />
           <link rel="stylesheet" href="3rdparty" />
           <link rel="stylesheet" href="3rdparty2" />
           <title>a client title</title>
         </head>
-        <body data-client-baz="baz">
+        <body data-baz="baz" data-client-baz="baz">
           <style>
             {`
                 body: {
@@ -629,6 +655,12 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
     );
+
+    // The remainder of this test focuses on persistent children and resources.
+    // Attribute preservation is covered independently above.
+    document.documentElement.removeAttribute('data-foo');
+    document.head.removeAttribute('data-bar');
+    document.body.removeAttribute('data-baz');
 
     // Render new children and assert they append in the correct locations
     root.render(
