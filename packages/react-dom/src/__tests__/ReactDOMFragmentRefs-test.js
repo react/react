@@ -755,6 +755,41 @@ describe('FragmentRefs', () => {
         });
         expect(shadowRoot.activeElement.id).toEqual('outside');
       });
+      it('removes focus from inside a ShadowRoot owned by a child', async () => {
+        const fragmentRef = React.createRef();
+        const hostRef = React.createRef();
+        const root = ReactDOMClient.createRoot(container);
+
+        function Test() {
+          return (
+            <Fragment ref={fragmentRef}>
+              <div ref={hostRef} />
+            </Fragment>
+          );
+        }
+
+        await act(() => {
+          root.render(<Test />);
+        });
+
+        const shadowRoot = hostRef.current.attachShadow({mode: 'open'});
+        const input = document.createElement('input');
+        input.id = 'shadow-child-input';
+        shadowRoot.appendChild(input);
+
+        await act(() => {
+          input.focus();
+        });
+        // Document.activeElement is retargeted to the child that hosts the
+        // shadow tree, not the input that actually holds focus.
+        expect(document.activeElement).toBe(hostRef.current);
+        expect(shadowRoot.activeElement.id).toEqual('shadow-child-input');
+
+        await act(() => {
+          fragmentRef.current.blur();
+        });
+        expect(shadowRoot.activeElement).toBe(null);
+      });
 
       it('does not throw when the container is a detached DocumentFragment', async () => {
         const fragmentRef = React.createRef();

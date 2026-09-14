@@ -3314,6 +3314,12 @@ function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
   collection.push(child);
   return false;
 }
+// Flow's ShadowRoot is missing the DocumentOrShadowRoot mixin that declares
+// activeElement.
+function getShadowRootActiveElement(shadowRoot: ShadowRoot): null | Element {
+  // $FlowFixMe[prop-missing]
+  return shadowRoot.activeElement;
+}
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
   const parentHostFiber = getFragmentParentInstanceOrContainerFiber(
@@ -3327,15 +3333,22 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
   >(parentHostFiber);
   // Instance is included in the Container type for DOM.
   // Document.activeElement is retargeted to the shadow host when the container
-  // is inside a shadow tree, and the host is never one of the fragment's
-  // children. Read activeElement from the enclosing DocumentOrShadowRoot.
+  // itself sits inside a shadow tree, and that host is never one of the
+  // fragment's children. Read activeElement from the enclosing
+  // DocumentOrShadowRoot so a focused child is still found.
   const activeElementRoot = getHoistableRoot(parentInstanceOrContainer);
-  // Flow's ShadowRoot is missing the DocumentOrShadowRoot mixin. activeElement
-  // is also undefined for a detached DocumentFragment container, which is not
-  // a DocumentOrShadowRoot at all.
-  // $FlowFixMe[prop-missing]
-  const activeElement: ?Element = activeElementRoot.activeElement;
-  if (activeElement == null) {
+  let activeElement = null;
+  if (activeElementRoot.nodeType === DOCUMENT_NODE) {
+    activeElement = (activeElementRoot as any as Document).activeElement;
+  } else if ('host' in activeElementRoot) {
+    // getHoistableRoot types every DocumentFragment as a ShadowRoot, but only
+    // a real one is a DocumentOrShadowRoot. A detached DocumentFragment
+    // container has no activeElement.
+    activeElement = getShadowRootActiveElement(
+      activeElementRoot as any as ShadowRoot,
+    );
+  }
+  if (activeElement === null) {
     return;
   }
   traverseFragmentInstancesAndTextInstances(
@@ -3354,8 +3367,23 @@ function blurActiveElementWithinFragment(
   }
   const instance = getInstanceFromHostFiber<Instance>(child);
   if (instance === activeElement || instance.contains(activeElement)) {
+    // activeElement is retargeted to the outermost shadow host, so when the
+    // fragment holds a custom element that owns a shadow tree, focus is on a
+    // node further in. Blurring the host alone leaves that node focused, so
+    // descend to the innermost focused element. Closed shadow roots cannot be
+    // entered and keep their focus.
+    let target = activeElement;
+    let shadowRoot = target.shadowRoot;
+    while (shadowRoot != null) {
+      const focusedInShadowRoot = getShadowRootActiveElement(shadowRoot);
+      if (focusedInShadowRoot === null) {
+        break;
+      }
+      target = focusedInShadowRoot;
+      shadowRoot = target.shadowRoot;
+    }
     // $FlowFixMe[prop-missing]
-    activeElement.blur();
+    target.blur();
     return true;
   }
   return false;
