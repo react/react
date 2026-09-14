@@ -148,9 +148,11 @@ import type {
   Ledger,
   LedgerCell,
   LedgerTotals,
+  LedgerTotalRecord,
   LedgerEntryWireForm,
   LedgerDelta,
   LedgerDeltaRow,
+  DecodedLedgerTotal,
 } from 'react-server/src/ReactFlightLedgers';
 import type {UnitCacheHooks} from 'react-reconciler/src/ReactInternalTypes';
 import {
@@ -159,6 +161,7 @@ import {
   MIN_LEDGER,
   MAX_LEDGER,
   createLedgerCell,
+  readLedgerTotal,
 } from 'react-server/src/ReactFlightLedgers';
 
 import {
@@ -614,6 +617,14 @@ type LedgerTotal = {
   then: () => mixed,
 };
 
+// A source total, the unit carrying its entries into this response, and what
+// has been emitted so far.
+type ForwardedTotal = {
+  source: LedgerTotalRecord,
+  carrier: Unit,
+  emitted: LedgerCell,
+};
+
 // Defers entering the capture until the input is rendered. Its scope depends
 // on where this wrapper appears, rather than where captureLedgers was called.
 type LedgerDataObject = {
@@ -627,6 +638,8 @@ type RequestLedgers = {
   dirtyUnits: Array<Unit>,
   // Maps each ledger type to its declaration row ID.
   declaredTypes: null | Map<Ledger<empty>, number>,
+  // Totals that may still receive entries from their source responses.
+  forwardedTotals: null | Array<ForwardedTotal>,
 };
 
 interface Reference {}
@@ -1230,6 +1243,7 @@ function createRequestLedgers(): RequestLedgers {
   return {
     dirtyUnits: [],
     declaredTypes: null,
+    forwardedTotals: null,
   };
 }
 
@@ -5477,8 +5491,45 @@ function emitUnitReferences(
   );
 }
 
-// Only the client retains a running total. On the server, writes are
-// combined within each flush and discarded once their deltas are emitted.
+// A destination can skip intermediate source updates. Joining the current
+// reduction accounts for them; emitted only suppresses redundant wire entries.
+function flushForwardedLedgerTotal(forwarded: ForwardedTotal): void {
+  const source = forwarded.source;
+  const reduced = readLedgerTotal(source);
+  const carrier = forwarded.carrier;
+  const emitted = forwarded.emitted;
+  switch (reduced.kind) {
+    case BIT_LEDGER:
+      if (reduced.state && accumulateLedgerEntry(emitted, true)) {
+        writeLedgerEntry(carrier, source.type, true);
+      }
+      break;
+    case MASK_LEDGER:
+      if (accumulateLedgerEntry(emitted, reduced.state)) {
+        writeLedgerEntry(carrier, source.type, reduced.state);
+      }
+      break;
+    case MIN_LEDGER:
+    case MAX_LEDGER: {
+      const state = reduced.state;
+      if (state !== null && accumulateLedgerEntry(emitted, state)) {
+        writeLedgerEntry(carrier, source.type, state);
+      }
+      break;
+    }
+    default:
+      // These writes accumulate in the carrier's dirty cell. The flush emits
+      // all new Set entries together in one Ledger row.
+      reduced.state.forEach(entry => {
+        if (accumulateLedgerEntry(emitted, entry)) {
+          writeLedgerEntry(carrier, source.type, entry);
+        }
+      });
+  }
+}
+
+// Local writes are combined within each flush and discarded after emission.
+// Forwarded totals retain what they emitted to avoid repeating source entries.
 function flushLedgerRecords(request: Request): void {
   const ledgers = request.ledgers;
   if (ledgers === null) {
@@ -5488,6 +5539,21 @@ function flushLedgerRecords(request: Request): void {
     // Wait for a capture before sending ledger records. Earlier work may still
     // be reused by a capture that is created later.
     return;
+  }
+  const forwardedTotals = ledgers.forwardedTotals;
+  if (forwardedTotals !== null) {
+    let pending = 0;
+    for (let i = 0; i < forwardedTotals.length; i++) {
+      const forwarded = forwardedTotals[i];
+      flushForwardedLedgerTotal(forwarded);
+      if (forwarded.source.graph !== null) {
+        forwardedTotals[pending++] = forwarded;
+      }
+    }
+    forwardedTotals.length = pending;
+    if (pending === 0) {
+      ledgers.forwardedTotals = null;
+    }
   }
   const dirtyUnits = ledgers.dirtyUnits;
   for (let i = 0; i < dirtyUnits.length; i++) {
@@ -5515,13 +5581,47 @@ function serializeLedgerTotal(
   parentPropertyName: string,
   total: LedgerTotal,
 ): ReactJSONValue {
-  if (total.request !== request) {
+  if (total.request === request) {
+    return '$y' + total.id.toString(16);
+  }
+  // A total decoded from another response carries the record it was decoded from.
+  const decoded: DecodedLedgerTotal = total as any;
+  const source = decoded.total;
+  if (source === undefined) {
     throw new Error(
       'A ledger total from another Flight request cannot be serialized.' +
         describeObjectForErrorMessage(parent, parentPropertyName),
     );
   }
-  return '$y' + total.id.toString(16);
+  // A render may have assigned the object a model location already. Only
+  // reuse an established Ledger reference here.
+  const existing = request.writtenObjects.get(decoded);
+  if (existing !== undefined && existing.reference[1] === 'y') {
+    return existing.reference;
+  }
+  // Forward it as a total of this request, carried by one rowless unit.
+  const ledgers = ensureRequestLedgers(request);
+  let forwardedTotals = ledgers.forwardedTotals;
+  if (forwardedTotals === null) {
+    ledgers.forwardedTotals = forwardedTotals = [];
+  }
+  const forwarded = createLedgerTotal(request, ledgers, source.type);
+  const unit = createUnit(
+    request,
+    currentUnitForRequest(request),
+    request.nextChunkId++,
+  );
+  unit.totals = [forwarded];
+  declareUnit(request, unit);
+  forwardedTotals.push({
+    source,
+    carrier: unit,
+    emitted: createLedgerCell(source.type),
+  });
+  const reference = '$y' + forwarded.id.toString(16);
+  // Keep identity after the source closes and active forwarding is discarded.
+  writeToDedupeMap(request, decoded, unit.id, reference);
+  return reference;
 }
 
 function emitSymbolChunk(request: Request, id: number, name: string): void {
