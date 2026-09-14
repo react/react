@@ -589,9 +589,18 @@ export function completeBoundaryWithStyles(
 export function completeSegment(containerID, placeholderID) {
   const segmentContainer = document.getElementById(containerID);
   const placeholderNode = document.getElementById(placeholderID);
-  // We always expect both nodes to exist here because, while we might
-  // have navigated away from the main tree, we still expect the detached
-  // tree to exist.
+  // We normally expect both nodes to exist and remain attached because, while we
+  // might have navigated away from the main tree, we still expect the detached
+  // tree to exist. If either node was already removed, there is nothing left to
+  // insert.
+  if (
+    !segmentContainer ||
+    !placeholderNode ||
+    !segmentContainer.parentNode ||
+    !placeholderNode.parentNode
+  ) {
+    return;
+  }
   segmentContainer.parentNode.removeChild(segmentContainer);
   while (segmentContainer.firstChild) {
     placeholderNode.parentNode.insertBefore(
