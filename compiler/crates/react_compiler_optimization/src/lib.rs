@@ -12,7 +12,7 @@ pub mod prune_maybe_throws;
 pub mod prune_unused_labels_hir;
 
 pub use constant_propagation::constant_propagation;
-pub use dead_code_elimination::dead_code_elimination;
+pub use dead_code_elimination::{dead_code_elimination, find_semantic_only_caught_instructions};
 pub use drop_manual_memoization::drop_manual_memoization;
 pub use inline_iifes::inline_immediately_invoked_function_expressions;
 pub use name_anonymous_functions::name_anonymous_functions;
