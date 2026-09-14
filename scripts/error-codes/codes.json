@@ -597,5 +597,7 @@
   "609": "Cannot access %s on the client. You cannot read a Server Reference to an object on the client. You can only pass it back to the server.",
   "610": "Cannot assign to a Server Reference to an object on the client.",
   "611": "Expected a Server Reference to an object to resolve to an object.",
-  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`."
+  "612": "Cannot transport a detached buffer. This usually happens when trying to transport multiple buffer-spanning views on the same underyling buffer. Either reuse the exact same view by identity or copy the underlying buffer manually via `view.slice()`.",
+  "666": "Cannot render captured ledgers because this Server Components renderer has no async context. Use a Node or Edge Server Components entry point.",
+  "669": "A ledger total cannot be read in a Server Components environment. Pass it to the client, where it resolves after the response has finished streaming."
 }
