@@ -1196,6 +1196,18 @@ function codegenForInit(
   init: ReactiveValue,
 ): t.Expression | t.VariableDeclaration | null {
   if (init.kind === 'SequenceExpression') {
+    /*
+     * An omitted initializer is represented by a synthetic `undefined`
+     * instruction so the HIR block is not empty.
+     */
+    if (
+      init.instructions.length === 1 &&
+      init.instructions[0].value.kind === 'Primitive' &&
+      init.instructions[0].value.value === undefined
+    ) {
+      return null;
+    }
+
     const body = codegenBlock(
       cx,
       init.instructions.map(instruction => ({
