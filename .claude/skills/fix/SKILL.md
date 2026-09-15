@@ -8,7 +8,7 @@ description: Use when you have lint errors, formatting issues, or before committ
 ## Instructions
 
 1. Run `yarn prettier` to fix formatting
-2. Run `yarn linc` to check for remaining lint issues
+2. Run `yarn lint` to check for remaining lint issues
 3. Report any remaining manual fixes needed
 
 ## Common Mistakes
