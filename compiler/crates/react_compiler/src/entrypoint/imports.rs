@@ -6,7 +6,7 @@
  */
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use react_compiler_ast::common::BaseNode;
+use react_compiler_ast::common::{BaseNode, Comment};
 use react_compiler_ast::declarations::{
     ImportDeclaration, ImportKind, ImportSpecifier, ImportSpecifierData, ModuleExportName,
 };
@@ -440,10 +440,43 @@ pub fn add_imports_to_program(program: &mut Program, context: &ProgramContext) {
 
     // Prepend new import statements to the program body
     if !stmts.is_empty() {
+        if let Some(first_statement) = program.body.first_mut() {
+            // Downstream JSX transforms only read pragmas before the first statement.
+            // Keep other annotations attached to their original statement.
+            let pragmas = first_statement.take_leading_comments_if(is_jsx_pragma);
+            let base = match &mut stmts[0] {
+                Statement::ImportDeclaration(s) => &mut s.base,
+                Statement::VariableDeclaration(s) => &mut s.base,
+                _ => unreachable!("generated imports are import or require declarations"),
+            };
+            base.leading_comments = Some(pragmas);
+        }
         let mut new_body = stmts;
         new_body.append(&mut program.body);
         program.body = new_body;
     }
+}
+
+fn is_jsx_pragma(comment: &Comment) -> bool {
+    let (Comment::CommentBlock(data) | Comment::CommentLine(data)) = comment;
+    // Match /@jsx(?:ImportSource|Runtime|Frag)?\s/ in Imports.ts, including JS whitespace.
+    data.value.match_indices("@jsx").any(|(index, _)| {
+        ["ImportSource", "Runtime", "Frag", ""]
+            .iter()
+            .any(|suffix| {
+                data.value[index + 4..]
+                    .strip_prefix(suffix)
+                    .is_some_and(|rest| {
+                        rest.starts_with(|c| {
+                            matches!(c,
+                                '\u{9}'..='\u{d}' | ' ' | '\u{a0}' | '\u{1680}' |
+                                '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' |
+                                '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
+                            )
+                        })
+                    })
+            })
+    })
 }
 
 /// Create an ImportSpecifier AST node from a NonLocalImportSpecifier.
@@ -506,5 +539,76 @@ pub fn get_react_compiler_runtime_module(target: &CompilerTarget) -> String {
         CompilerTarget::MetaInternal { runtime_module, .. } => runtime_module.clone(),
         // Default to React 19 runtime for unrecognized versions
         CompilerTarget::Version(_) => "react/compiler-runtime".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn preserves_jsx_pragmas_before_generated_imports() {
+        let pragmas = json!([
+            {"type": "CommentBlock", "value": "* @jsxImportSource custom-jsx "},
+            {"type": "CommentLine", "value": " @jsxRuntime\tautomatic"},
+            {"type": "CommentBlock", "value": "* @jsx customJsx "},
+            {"type": "CommentBlock", "value": "* @jsxFrag\u{feff}CustomFragment "}
+        ]);
+        let annotations = json!([
+            {"type": "CommentLine", "value": " Keep this annotation with the statement."},
+            {"type": "CommentBlock", "value": " @jsxImportSourceSuffix custom-jsx "},
+            {"type": "CommentBlock", "value": " @jsx"},
+            {"type": "CommentBlock", "value": " @jsx\u{85}customJsx "}
+        ]);
+        for source_type in ["module", "script"] {
+            for statement in [
+                json!({"type": "EmptyStatement"}),
+                json!({"type": "ExportDefaultDeclaration", "declaration": {"type": "Identifier", "name": "Component"}}),
+                json!({"type": "TSNamespaceExportDeclaration", "id": {"type": "Identifier", "name": "Library"}}),
+                json!({"type": "ImportDeclaration", "specifiers": [], "source": {"type": "StringLiteral", "value": "react/compiler-runtime"}}),
+            ] {
+                let mut statement = statement;
+                let comments: Vec<_> = pragmas
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .zip(annotations.as_array().unwrap())
+                    .flat_map(|(a, b)| [a.clone(), b.clone()])
+                    .collect();
+                statement["leadingComments"] = json!(comments);
+                let mut program: Program = serde_json::from_value(json!({
+                    "type": "Program", "sourceType": source_type, "body": [statement]
+                }))
+                .unwrap();
+                let opts = serde_json::from_value(json!({
+                    "shouldCompile": true, "enableReanimated": false, "isDev": false
+                }))
+                .unwrap();
+                let mut context = ProgramContext::new(opts, None, None, vec![], false);
+                let original = serde_json::to_value(&program).unwrap();
+                add_imports_to_program(&mut program, &context);
+                assert_eq!(serde_json::to_value(&program).unwrap(), original);
+                context.add_memo_cache_import();
+                add_imports_to_program(&mut program, &context);
+                let output = serde_json::to_value(&program).unwrap();
+                if statement["type"] == "ImportDeclaration" {
+                    assert_eq!(output["body"][0]["leadingComments"], json!(comments));
+                    assert_eq!(program.body.len(), 1);
+                } else {
+                    assert_eq!(output["body"][0]["leadingComments"], pragmas);
+                    assert_eq!(output["body"][1]["leadingComments"], annotations);
+                    let mut expected = statement.clone();
+                    expected["leadingComments"] = annotations.clone();
+                    assert_eq!(
+                        output["body"][1],
+                        serde_json::to_value(
+                            serde_json::from_value::<Statement>(expected).unwrap()
+                        )
+                        .unwrap()
+                    );
+                }
+            }
+        }
     }
 }
