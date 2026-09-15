@@ -11,7 +11,12 @@ import type {AsyncDispatcher} from 'react-reconciler/src/ReactInternalTypes';
 
 import {enableFlightLedgers} from 'shared/ReactFeatureFlags';
 
-import {resolveRequest, getCache, addToLedger} from '../ReactFlightServer';
+import {
+  resolveRequest,
+  getCache,
+  addToLedger,
+  captureLedgers,
+} from '../ReactFlightServer';
 import {resolveOwner} from './ReactFlightCurrentOwner';
 
 function resolveCache(): Map<Function, mixed> {
@@ -45,6 +50,7 @@ export const DefaultAsyncDispatcher: AsyncDispatcher = {
 
 if (enableFlightLedgers) {
   DefaultAsyncDispatcher.addToLedger = addToLedger;
+  DefaultAsyncDispatcher.captureLedgers = captureLedgers;
 }
 
 if (__DEV__) {
