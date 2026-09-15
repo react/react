@@ -9,7 +9,9 @@
 
 export type StringDecoder = null;
 
-export function createStringDecoder(): null {
+export function createStringDecoder(
+  preserveByteOrderMark: boolean = false,
+): null {
   return null;
 }
 
