@@ -2501,17 +2501,6 @@ function getOutlinedModel<T>(
   }
 }
 
-function createMap(
-  response: Response,
-  model: Array<[any, any]>,
-): Map<any, any> {
-  return new Map(model);
-}
-
-function createSet(response: Response, model: Array<any>): Set<any> {
-  return new Set(model);
-}
-
 function createBlob(response: Response, model: Array<any>): Blob {
   return new Blob(model.slice(1), {type: model[0]});
 }
@@ -2733,12 +2722,72 @@ function parseModelString(
       case 'Q': {
         // Map
         const ref = value.slice(2);
-        return getOutlinedModel(response, ref, parentObject, key, createMap);
+        const mapInstance = new Map(); // 1. Create the empty Map immediately!
+        
+        const resolved = getOutlinedModel(response, ref, parentObject, key, function(response, model) {
+          function interceptPatch(entry, initialKey, initialVal) {
+            let mapKey = initialKey;
+            let mapVal = initialVal;
+            Object.defineProperty(entry, 0, {
+              get: () => mapKey,
+              set: (v) => {
+                mapKey = v;
+                mapInstance.clear();
+                for (let j = 0; j < model.length; j++) {
+                  mapInstance.set(model[j][0], model[j][1]);
+                }
+              },
+              configurable: true, enumerable: true
+            });
+            Object.defineProperty(entry, 1, {
+              get: () => mapVal,
+              set: (v) => {
+                mapVal = v;
+                mapInstance.clear();
+                for (let j = 0; j < model.length; j++) {
+                  mapInstance.set(model[j][0], model[j][1]);
+                }
+              },
+              configurable: true, enumerable: true
+            });
+          }
+          // 2. Once the data arrives, fill the Map up!
+          for (let i = 0; i < model.length; i++) {
+            const entry = model[i];
+            mapInstance.set(entry[0], entry[1]);
+            interceptPatch(entry, entry[0], entry[1]);
+          }
+          return mapInstance;
+        });
+        return resolved !== null ? resolved : mapInstance;
       }
       case 'W': {
         // Set
         const ref = value.slice(2);
-        return getOutlinedModel(response, ref, parentObject, key, createSet);
+        const setInstance = new Set(); // 1. Create the empty Set immediately!        
+        const resolved = getOutlinedModel(response, ref, parentObject, key, function(response, model) {
+          function interceptPatch(index, initialValue) {
+            let item = initialValue;
+            Object.defineProperty(model, index, {
+              get: () => item,
+              set: (v) => {
+                item = v;
+                setInstance.clear();
+                for (let j = 0; j < model.length; j++) {
+                  setInstance.add(model[j]);
+                }
+              },
+              configurable: true, enumerable: true
+            });
+          }
+          // 2. Once the data arrives, fill the Set up!
+          for (let i = 0; i < model.length; i++) {
+            setInstance.add(model[i]);
+            interceptPatch(i, model[i]);
+          }
+          return setInstance;
+        });
+        return resolved !== null ? resolved : setInstance;
       }
       case 'B': {
         // Blob
