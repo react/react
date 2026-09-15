@@ -35,6 +35,10 @@ function foo() {
         'infinity' == 1 / 0,
         'INFINITY' == 1 / 0,
         '-inf' == -1 / 0,
+        '\uFEFF42' == 42,
+        '\uFEFF' == 0,
+        '\u008542' == 42,
+        '\u0085' == 0,
       ]}
     />
   );

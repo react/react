@@ -1024,7 +1024,22 @@ fn js_strict_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
 /// Convert a string to a number using JS `ToNumber` semantics.
 /// In JS: `""` → 0, `" "` → 0, `" 42 "` → 42, `"0x1A"` → 26, `"Infinity"` → Infinity.
 fn js_to_number(s: &str) -> f64 {
-    let trimmed = s.trim();
+    let trimmed = s.trim_matches(|c| {
+        matches!(
+            c,
+            '\u{0009}'..='\u{000d}'
+                | '\u{0020}'
+                | '\u{00a0}'
+                | '\u{1680}'
+                | '\u{2000}'..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+        )
+    });
     if trimmed.is_empty() {
         return 0.0;
     }

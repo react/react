@@ -39,6 +39,10 @@ function foo() {
         'infinity' == 1 / 0,
         'INFINITY' == 1 / 0,
         '-inf' == -1 / 0,
+        '\uFEFF42' == 42,
+        '\uFEFF' == 0,
+        '\u008542' == 42,
+        '\u0085' == 0,
       ]}
     />
   );
@@ -84,6 +88,10 @@ function foo() {
           false,
           false,
           false,
+          true,
+          true,
+          false,
+          false,
         ]}
       />
     );
@@ -103,4 +111,4 @@ export const FIXTURE_ENTRYPOINT = {
 ```
       
 ### Eval output
-(kind: ok) <div>{"value":[true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,false,false,false]}</div>
+(kind: ok) <div>{"value":[true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,false,false,false,true,true,false,false]}</div>
