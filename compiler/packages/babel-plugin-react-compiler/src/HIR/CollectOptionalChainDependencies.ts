@@ -156,6 +156,42 @@ function traverseFunction(
   }
 }
 /**
+ * `maybe-throw` terminals wrap individual instructions with an edge to the
+ * enclosing try block's exception handler (e.g. every instruction inside a
+ * `try {}` gets its own `maybe-throw`-terminated block). They don't change
+ * the value(s) produced by evaluating the wrapped instruction(s), they just
+ * add a possible early exit to the handler. The structural pattern-matching
+ * below (matching the lowered form of an optional chain, e.g. `a?.b`) was
+ * written assuming instructions are grouped into larger blocks and doesn't
+ * otherwise account for this per-instruction splitting, which previously
+ * caused optional chains inside a `try` block to silently go unrecognized,
+ * losing dependency precision (see
+ * https://github.com/facebook/react/issues/36902). Flatten through any
+ * `maybe-throw` terminals to recover the underlying instruction sequence and
+ * terminal so the existing pattern-matching logic keeps working unchanged
+ * whether or not the code is wrapped in a `try` block.
+ */
+function flattenMaybeThrows(
+  blockId: BlockId,
+  blocks: ReadonlyMap<BlockId, BasicBlock>,
+): BasicBlock | {instructions: Array<Instruction>; terminal: Terminal} {
+  const original = assertNonNull(blocks.get(blockId));
+  if (original.terminal.kind !== 'maybe-throw') {
+    return original;
+  }
+  const instructions: Array<Instruction> = [];
+  let block: BasicBlock = original;
+  const seen = new Set<BlockId>();
+  while (block.terminal.kind === 'maybe-throw' && !seen.has(block.id)) {
+    seen.add(block.id);
+    instructions.push(...block.instructions);
+    block = assertNonNull(blocks.get(block.terminal.continuation));
+  }
+  instructions.push(...block.instructions);
+  return {instructions, terminal: block.terminal};
+}
+
+/**
  * Match the consequent and alternate blocks of an optional.
  * @returns propertyload computed by the consequent block, or null if the
  * consequent block is not a simple PropertyLoad.
@@ -171,7 +207,7 @@ function matchOptionalTestBlock(
   consequentGoto: BlockId;
   propertyLoadLoc: SourceLocation;
 } | null {
-  const consequentBlock = assertNonNull(blocks.get(terminal.consequent));
+  const consequentBlock = flattenMaybeThrows(terminal.consequent, blocks);
   if (
     consequentBlock.instructions.length === 2 &&
     consequentBlock.instructions[0].value.kind === 'PropertyLoad' &&
@@ -204,7 +240,7 @@ function matchOptionalTestBlock(
     ) {
       return null;
     }
-    const alternate = assertNonNull(blocks.get(terminal.alternate));
+    const alternate = flattenMaybeThrows(terminal.alternate, blocks);
 
     CompilerError.invariant(
       alternate.instructions.length === 2 &&
@@ -243,7 +279,7 @@ function traverseOptionalBlock(
   outerAlternate: BlockId | null,
 ): IdentifierId | null {
   context.seenOptionals.add(optional.id);
-  const maybeTest = context.blocks.get(optional.terminal.test)!;
+  const maybeTest = flattenMaybeThrows(optional.terminal.test, context.blocks);
   let test: BranchTerminal;
   let baseObject: ReactiveScopeDependency;
   if (maybeTest.terminal.kind === 'branch') {
@@ -309,7 +345,10 @@ function traverseOptionalBlock(
      * - <inner_optional> <other operation>
      * - a optional base block with a separate nested optional-chain (e.g. a(c?.d)?.d)
      */
-    const testBlock = context.blocks.get(maybeTest.terminal.fallthrough)!;
+    const testBlock = flattenMaybeThrows(
+      maybeTest.terminal.fallthrough,
+      context.blocks,
+    );
     /**
      * Fallthrough of the inner optional should be a block with no
      * instructions, terminating with Test($<temporary written to from
