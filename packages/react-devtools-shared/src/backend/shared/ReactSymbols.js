@@ -63,6 +63,9 @@ export const STRICT_MODE_SYMBOL_STRING = 'Symbol(react.strict_mode)';
 export const SUSPENSE_NUMBER = 0xead1;
 export const SUSPENSE_SYMBOL_STRING = 'Symbol(react.suspense)';
 
+export const SERVER_ERROR_BOUNDARY_SYMBOL_STRING =
+  'Symbol(react.server_error_boundary)';
+
 export const SUSPENSE_LIST_NUMBER = 0xead8;
 export const SUSPENSE_LIST_SYMBOL_STRING = 'Symbol(react.suspense_list)';
 
