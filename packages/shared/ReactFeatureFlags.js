@@ -85,6 +85,9 @@ export const enableAsyncIterableChildren = __EXPERIMENTAL__;
 // left unfulfilled.
 export const enableFlightWeakThenables = __EXPERIMENTAL__;
 
+// Track metadata such as cache lifetimes and tags during a Flight render.
+export const enableFlightLedgers = __EXPERIMENTAL__;
+
 export const enableTaint = __EXPERIMENTAL__;
 
 export const enableViewTransition: boolean = true;

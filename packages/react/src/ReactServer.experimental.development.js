@@ -38,6 +38,7 @@ import {forwardRef} from './ReactForwardRef';
 import {lazy} from './ReactLazy';
 import {memo} from './ReactMemo';
 import {cache, cacheSignal} from './ReactCacheServer';
+import {createMaskLedger, addToLedger} from './ReactLedgers';
 import {startTransition} from './ReactStartTransition';
 import {captureOwnerStack} from './ReactOwnerStack';
 import version from 'shared/ReactVersion';
@@ -74,6 +75,8 @@ export {
   memo,
   cache,
   cacheSignal,
+  createMaskLedger,
+  addToLedger,
   startTransition,
   getCacheForType as unstable_getCacheForType,
   useId,
