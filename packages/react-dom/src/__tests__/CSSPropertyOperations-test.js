@@ -287,4 +287,108 @@ describe('CSSPropertyOperations', () => {
 
     expect(container.children[0].style.getPropertyValue('--foo')).toEqual('5');
   });
+
+  it('should support initial rendering with null-prototype style objects', async () => {
+    const style = Object.create(null);
+    style.color = 'red';
+    style.fontSize = '14px';
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div style={style} />);
+    });
+
+    const div = container.firstChild;
+    expect(div.style.color).toBe('red');
+    expect(div.style.fontSize).toBe('14px');
+  });
+
+  it('should support updating between null-prototype style objects and clearing removed properties', async () => {
+    const style1 = Object.create(null);
+    style1.color = 'red';
+    style1.fontSize = '14px';
+
+    const style2 = Object.create(null);
+    style2.color = 'blue';
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div style={style1} />);
+    });
+
+    const div = container.firstChild;
+    expect(div.style.color).toBe('red');
+    expect(div.style.fontSize).toBe('14px');
+
+    await act(() => {
+      root.render(<div style={style2} />);
+    });
+
+    expect(div.style.color).toBe('blue');
+    expect(div.style.fontSize).toBe('');
+  });
+
+  it('should support transitions between normal and null-prototype style objects', async () => {
+    const nullStyle = Object.create(null);
+    nullStyle.color = 'green';
+    nullStyle.margin = '10px';
+
+    const normalStyle = {
+      color: 'yellow',
+      padding: '5px',
+    };
+
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+
+    // Initial render with normal object
+    await act(() => {
+      root.render(<div style={normalStyle} />);
+    });
+    const div = container.firstChild;
+    expect(div.style.color).toBe('yellow');
+    expect(div.style.padding).toBe('5px');
+
+    // Update to null-prototype object
+    await act(() => {
+      root.render(<div style={nullStyle} />);
+    });
+    expect(div.style.color).toBe('green');
+    expect(div.style.margin).toBe('10px');
+    expect(div.style.padding).toBe('');
+
+    // Update back to normal object
+    await act(() => {
+      root.render(<div style={normalStyle} />);
+    });
+    expect(div.style.color).toBe('yellow');
+    expect(div.style.margin).toBe('');
+    expect(div.style.padding).toBe('5px');
+
+    // Update from null-prototype object to null
+    await act(() => {
+      root.render(<div style={nullStyle} />);
+    });
+    expect(div.style.color).toBe('green');
+    expect(div.style.padding).toBe('');
+
+    await act(() => {
+      root.render(<div style={null} />);
+    });
+    expect(div.style.color).toBe('');
+    expect(div.style.margin).toBe('');
+  });
+
+  it('should render null-prototype style objects on the server', () => {
+    const style = Object.create(null);
+    style.color = 'red';
+    style.fontSize = 14;
+
+    const div = <div style={style} />;
+    const html = ReactDOMServer.renderToString(div);
+    expect(html).toContain('style="color:red;font-size:14px"');
+  });
 });
+
