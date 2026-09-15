@@ -703,7 +703,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  it('should bubble non-native bubbling toggle events', async () => {
+  it('should not bubble non-native toggle events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
     const onToggle = jest.fn();
@@ -724,7 +724,7 @@ describe('ReactDOMEventListener', () => {
           }),
         );
       });
-      expect(onToggle).toHaveBeenCalledTimes(2);
+      expect(onToggle).toHaveBeenCalledTimes(1);
     } finally {
       document.body.removeChild(container);
     }

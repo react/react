@@ -1305,7 +1305,7 @@ describe('ReactDOMEventListener', () => {
     });
 
     it('onToggle', async () => {
-      await testEmulatedBubblingEvent({
+      await testNonBubblingEvent({
         type: 'details',
         reactEvent: 'onToggle',
         reactEventType: 'toggle',
@@ -1321,7 +1321,7 @@ describe('ReactDOMEventListener', () => {
     });
 
     it('onBeforeToggle Popover API', async () => {
-      await testEmulatedBubblingEvent({
+      await testNonBubblingEvent({
         type: 'div',
         targetProps: {popover: 'any'},
         reactEvent: 'onBeforeToggle',
@@ -1338,7 +1338,7 @@ describe('ReactDOMEventListener', () => {
     });
 
     it('onToggle Popover API', async () => {
-      await testEmulatedBubblingEvent({
+      await testNonBubblingEvent({
         type: 'div',
         targetProps: {popover: 'any'},
         reactEvent: 'onToggle',
@@ -1355,7 +1355,7 @@ describe('ReactDOMEventListener', () => {
     });
 
     it('onBeforeToggle Dialog API', async () => {
-      await testEmulatedBubblingEvent({
+      await testNonBubblingEvent({
         type: 'dialog',
         reactEvent: 'onBeforeToggle',
         reactEventType: 'beforetoggle',
@@ -1371,7 +1371,7 @@ describe('ReactDOMEventListener', () => {
     });
 
     it('onToggle Dialog API', async () => {
-      await testEmulatedBubblingEvent({
+      await testNonBubblingEvent({
         type: 'dialog',
         reactEvent: 'onToggle',
         reactEventType: 'toggle',
@@ -2147,6 +2147,7 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
+          ...eventConfig.targetProps,
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
@@ -2307,11 +2308,10 @@ describe('ReactDOMEventListener', () => {
       <Fixture
         type={eventConfig.type}
         targetRef={targetRef}
-        targetProps={
-          {
-            // No listener on the target itself.
-          }
-        }
+        targetProps={{
+          ...eventConfig.targetProps,
+          // No listener on the target itself.
+        }}
         parentProps={{
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');

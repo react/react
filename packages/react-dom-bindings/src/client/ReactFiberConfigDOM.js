@@ -71,6 +71,7 @@ import {
   traverseFragmentInstancesAndTextInstancesDeeply,
   fiberIsPortaledIntoHost,
   getFragmentPortalContainerInfo,
+  getFragmentRootContainerInfo,
   isFiberContainedByFragment,
   isFragmentContainedByFiber,
 } from 'react-reconciler/src/ReactFiberTreeReflection';
@@ -3715,13 +3716,13 @@ function validateDocumentPositionWithFiberTree(
   }
   if (documentPosition & Node.DOCUMENT_POSITION_CONTAINS) {
     if (otherFiber === null) {
-      // otherFiber could be null if its the document, documentElement, or body
-      const ownerDocument = getOwnerDocumentFromRootContainer(otherNode);
-      return (
-        (otherNode as Instance | Document) === ownerDocument ||
-        otherNode === ownerDocument.documentElement ||
-        otherNode === ownerDocument.body
-      );
+      // otherFiber is null when otherNode is not part of a React tree. That
+      // includes the document, documentElement and body, but also the root
+      // container and any element above it. All of them contain the whole
+      // React tree, so check containment of the root container rather than
+      // enumerating the nodes above it.
+      const rootContainer = getFragmentRootContainerInfo(fragmentFiber);
+      return rootContainer !== null && otherNode.contains(rootContainer);
     }
     return isFragmentContainedByFiber(fragmentFiber, otherFiber);
   }
