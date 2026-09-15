@@ -84,6 +84,9 @@ describe('ReactFlightDOMBrowser', () => {
     ReactDOM = require('react-dom');
     ReactDOMClient = require('react-dom/client');
     ReactDOMFizzServer = require('react-dom/server.browser');
+    jest.mock('react-server-dom-webpack/client', () =>
+      require('react-server-dom-webpack/client.browser'),
+    );
     ReactServerDOMClient = require('react-server-dom-webpack/client');
     Suspense = React.Suspense;
     use = React.use;
@@ -3067,9 +3070,9 @@ describe('ReactFlightDOMBrowser', () => {
               [
                 "Object.<anonymous>",
                 "/packages/react-server-dom-webpack/src/__tests__/ReactFlightDOMBrowser-test.js",
-                2989,
+                2992,
                 19,
-                2973,
+                2976,
                 89,
               ],
             ],
@@ -3438,6 +3441,70 @@ describe('ReactFlightDOMBrowser', () => {
     );
   });
 
+  it('should not exponentially accumulate debug info when deduplicated references are blocked', async () => {
+    // Regression test for debug info that grows exponentially, along the path
+    // that resolves a reference asynchronously. A form streams its field groups
+    // in parallel. Every group derives its descriptors from the group above it.
+    // Those descriptors deduplicate to the row of that group, which gives this
+    // row one reference per descriptor. Every descriptor names the client
+    // component of the field, and that chunk has not loaded, so every row
+    // blocks and the references wait for it. A row hands its debug info to the
+    // references that wait on it, so each of them copies the whole array and
+    // the count doubles at every group.
+    let loadFieldChunk;
+    const fieldChunkLoaded = new Promise(resolve => (loadFieldChunk = resolve));
+    const Field = clientExports(
+      function Field() {
+        return null;
+      },
+      '1',
+      '/field.js',
+      fieldChunkLoaded,
+    );
+
+    async function loadGroup(descriptors) {
+      return descriptors;
+    }
+
+    const groupCount = 10;
+    const groups = [];
+    let descriptors = [{name: 'a'}, {name: 'b'}];
+    for (let i = 0; i < groupCount; i++) {
+      descriptors = descriptors.map(descriptor => ({
+        parent: descriptor,
+        Field,
+      }));
+      groups.push(loadGroup(descriptors));
+    }
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream({groups}, webpackMap),
+    );
+
+    const response = ReactServerDOMClient.createFromReadableStream(stream);
+
+    // The root row holds only Promises, so it resolves while the field chunk is
+    // still loading. Subscribing to every group initializes its row, and a
+    // group finds the group above it blocked.
+    const form = await response;
+    const allGroups = Promise.all(form.groups);
+    loadFieldChunk();
+    const resolvedGroups = await allGroups;
+
+    expect(resolvedGroups).toHaveLength(groupCount);
+
+    if (__DEV__) {
+      // A group resolves to an array, so Flight hands the debug info of the row
+      // to that array, which is what DevTools reads. Every group contributes a
+      // fixed number of entries, so the last group holds a multiple of the
+      // group count. Without deduplication in transferReferencedDebugInfo the
+      // count doubles at every group.
+      expect(resolvedGroups[groupCount - 1]._debugInfo.length).toBeLessThan(
+        100,
+      );
+    }
+  });
+
   describe('abort signal lifetime', () => {
     // Collects the lifetime signal that React bounds each abort listener with.
     // React passes that signal to addEventListener instead of calling
@@ -3649,5 +3716,80 @@ describe('ReactFlightDOMBrowser', () => {
       // task that the component renders in marks the boundary into the client.
       expect(taskWhileRendering).toBe('\n"use client"');
     });
+  });
+
+  it('rejects a value that waits on a row that fails to parse', async () => {
+    const foo = {};
+    const x = {};
+    // The server outlines a Set into its own row, and that row refers to foo by
+    // id. The client parses the Set's row nested inside foo's row, and queues a
+    // reference from the Set's row back onto foo's row. x is a member of the
+    // Set, so a later reference to x is a path into the Set's row that does not
+    // go through foo's row.
+    const bar = new Set([foo, x]);
+    foo.bar = bar;
+    // The server cannot serialize a function, so the row it outlines for
+    // `foo.broken` is an error row. foo's row refers to that error row.
+    foo.broken = new Set([() => {}]);
+    const object = {
+      foo: Promise.resolve(foo),
+      x: Promise.resolve(x),
+    };
+
+    const stream = await serverAct(() =>
+      ReactServerDOMServer.renderToReadableStream(object, webpackMap, {
+        onError() {},
+      }),
+    );
+    // Error rows come last in the stream. The client parses foo's row when foo
+    // is first read, so the whole stream is delivered as one Uint8Array to make
+    // sure the error row has been processed by then.
+    const reader = stream.getReader();
+    const parts = [];
+    for (;;) {
+      const {done, value} = await reader.read();
+      if (done) {
+        break;
+      }
+      parts.push(value);
+    }
+    const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (let i = 0; i < parts.length; i++) {
+      bytes.set(parts[i], offset);
+      offset += parts[i].byteLength;
+    }
+
+    const response = await ReactServerDOMClient.createFromReadableStream(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+    );
+
+    // Reading foo first parses foo's row, and the nested Set row along with it.
+    // The Set row then waits on foo's row, and foo's row fails on the error
+    // row. The client must reject the reference the Set row queued on foo's
+    // row, so that the Set row errors as well and x errors with the Set row.
+    const fooError = await Promise.resolve(response.foo).then(
+      () => null,
+      error => error,
+    );
+    expect(fooError).toBeInstanceOf(Error);
+    if (__DEV__) {
+      expect(fooError.message).toContain(
+        'Functions cannot be passed directly to Client Components',
+      );
+    }
+    // The error object travels by identity from the error row into every row it
+    // errors, so x rejects with the same object that rejected foo.
+    const xError = await Promise.resolve(response.x).then(
+      () => null,
+      error => error,
+    );
+    expect(xError).toBe(fooError);
   });
 });

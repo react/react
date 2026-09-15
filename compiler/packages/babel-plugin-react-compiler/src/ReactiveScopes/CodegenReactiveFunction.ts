@@ -2042,7 +2042,8 @@ function codegenInstructionValue(
       value = codegenPlaceToExpression(cx, instrValue.value);
       break;
     }
-    case 'PostfixUpdate': {
+    case 'PostfixUpdateLocal':
+    case 'PostfixUpdateContext': {
       value = t.updateExpression(
         instrValue.operation,
         codegenPlaceToExpression(cx, instrValue.lvalue),
@@ -2050,7 +2051,8 @@ function codegenInstructionValue(
       );
       break;
     }
-    case 'PrefixUpdate': {
+    case 'PrefixUpdateLocal':
+    case 'PrefixUpdateContext': {
       value = t.updateExpression(
         instrValue.operation,
         codegenPlaceToExpression(cx, instrValue.lvalue),

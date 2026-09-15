@@ -26,7 +26,11 @@ const {existsSync, readFileSync, writeFileSync} = require('fs');
 // Results shapes this file knows how to read. `compare-sizes.js` on the pull
 // request branch may be older or newer than this list.
 const SUPPORTED_VERSIONS = new Set([1]);
-const SUPPORTED_STATUSES = new Set(['ok', 'base-artifacts-unavailable']);
+const SUPPORTED_STATUSES = new Set([
+  'ok',
+  'base-artifacts-unavailable',
+  'base-build-not-found',
+]);
 
 const CRITICAL_THRESHOLD = 0.02;
 const SIGNIFICANCE_THRESHOLD = 0.002;
@@ -160,6 +164,15 @@ function validateResults(raw) {
   }
   if (raw.status === 'base-artifacts-unavailable') {
     return {ok: true, results: {status: raw.status}};
+  }
+  if (raw.status === 'base-build-not-found') {
+    return {
+      ok: true,
+      results: {
+        status: raw.status,
+        baseSha: isSha(raw.baseSha) ? raw.baseSha : null,
+      },
+    };
   }
   if (!isSha(raw.baseSha) || !isSha(raw.headSha)) {
     return {ok: false, reason: 'malformed'};
@@ -337,6 +350,23 @@ function renderCompletedReport(context) {
     };
   }
 
+  if (validated.results.status === 'base-build-not-found') {
+    const {baseSha} = validated.results;
+    return {
+      markdown:
+        `No build was found for the base commit${
+          baseSha === null ? '' : ` (${baseSha})`
+        } that this pull request diverged from, so there is no size report. ` +
+        'The build for that commit may have failed, or its artifacts may be ' +
+        'older than the retention window. Rebase the pull request onto a ' +
+        'newer `main` to compare against a base commit that has a build.',
+      missingCriticalPaths: [],
+      problem: `No base build found for ${
+        baseSha === null ? 'the merge-base' : baseSha
+      }`,
+    };
+  }
+
   return renderTable(validated.results);
 }
 
@@ -370,6 +400,7 @@ function renderBody(context) {
   let reportHead;
   let report;
   let missingCriticalPaths = [];
+  let problem;
 
   if (context.action === 'requested') {
     // Only a comment that names the commit it describes holds real numbers. A
@@ -392,6 +423,7 @@ function renderBody(context) {
     const rendered = renderCompletedReport(context);
     report = rendered.markdown;
     missingCriticalPaths = rendered.missingCriticalPaths;
+    problem = rendered.problem;
   }
 
   if (missingCriticalPaths.length > 0) {
@@ -428,6 +460,7 @@ ${REPORT_END}
     assemble,
     reportHead,
     missingCriticalPaths,
+    problem,
   };
 }
 
@@ -454,7 +487,8 @@ function parseReportHead(body) {
 
 function main() {
   const context = JSON.parse(readFileSync(CONTEXT_PATH, 'utf8'));
-  const {body, report, assemble, missingCriticalPaths} = renderBody(context);
+  const {body, report, assemble, missingCriticalPaths, problem} =
+    renderBody(context);
 
   let comment = body;
   if (body.length > MAX_COMMENT_LENGTH) {
@@ -472,6 +506,9 @@ function main() {
       PROBLEM_PATH,
       `Missing expected bundles:\n${missingCriticalPaths.join('\n')}\n`
     );
+  }
+  if (problem !== undefined) {
+    writeFileSync(PROBLEM_PATH, problem + '\n');
   }
 
   process.stdout.write(comment);

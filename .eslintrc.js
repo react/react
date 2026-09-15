@@ -459,13 +459,6 @@ module.exports = {
       },
     },
     {
-      files: ['packages/react-native-renderer/**/*.js'],
-      globals: {
-        nativeFabricUIManager: 'readonly',
-        RN$isNativeEventTargetEventDispatchingEnabled: 'readonly',
-      },
-    },
-    {
       files: ['packages/react-server-dom-webpack/**/*.js'],
       globals: {
         __webpack_chunk_load__: 'readonly',

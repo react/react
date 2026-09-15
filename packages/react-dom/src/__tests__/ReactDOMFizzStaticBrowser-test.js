@@ -1584,6 +1584,32 @@ describe('ReactDOMFizzStaticBrowser', () => {
       expect(lifetimes[0].aborted).toBe(true);
     });
 
+    it('constructs no abort controller when no signal is passed', async () => {
+      // The render lifetime exists only to bound the caller's abort listener,
+      // so a render that is given no signal has nothing to bound and should not
+      // pay for a controller. It also means such a render never requires
+      // AbortController to exist or to work.
+      const RealAbortController = globalThis.AbortController;
+      let constructed = 0;
+      globalThis.AbortController = class extends RealAbortController {
+        constructor() {
+          super();
+          constructed++;
+        }
+      };
+
+      try {
+        const stream = await serverAct(() =>
+          ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>),
+        );
+        await readContent(stream);
+      } finally {
+        globalThis.AbortController = RealAbortController;
+      }
+
+      expect(constructed).toBe(0);
+    });
+
     it('attaches no listener when the signal is already aborted', async () => {
       const controller = new AbortController();
       controller.abort();

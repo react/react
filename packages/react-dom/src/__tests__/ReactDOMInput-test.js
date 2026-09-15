@@ -762,7 +762,7 @@ describe('ReactDOMInput', () => {
       await act(() => {
         root.render(<input defaultValue={new TemporalLike()} type="date" />);
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -788,7 +788,7 @@ describe('ReactDOMInput', () => {
       await act(() => {
         root.render(<input defaultValue={new TemporalLike()} type="text" />);
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -816,7 +816,7 @@ describe('ReactDOMInput', () => {
           <input value={new TemporalLike()} type="date" onChange={() => {}} />,
         );
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +
@@ -844,7 +844,7 @@ describe('ReactDOMInput', () => {
           <input value={new TemporalLike()} type="text" onChange={() => {}} />,
         );
       });
-    }).rejects.toThrowError(new TypeError('prod message'));
+    }).rejects.toThrow(new TypeError('prod message'));
     assertConsoleErrorDev([
       'Form field values (value, checked, defaultValue, or defaultChecked props) must be ' +
         'strings, not TemporalLike. This value must be coerced to a string before using it here.\n' +

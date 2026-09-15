@@ -1381,13 +1381,14 @@ impl<'a> PrintFormatter<'a> {
             InstructionValue::Debugger { loc } => {
                 self.line(&format!("Debugger {{ loc: {} }}", format_loc(loc)));
             }
-            InstructionValue::PostfixUpdate {
+            InstructionValue::PostfixUpdateLocal {
                 lvalue,
                 operation,
                 value: val,
                 loc,
+                ..
             } => {
-                self.line("PostfixUpdate {");
+                self.line("PostfixUpdateLocal {");
                 self.indent();
                 self.format_place_field("lvalue", lvalue);
                 self.line(&format!("operation: \"{}\"", operation));
@@ -1396,13 +1397,44 @@ impl<'a> PrintFormatter<'a> {
                 self.dedent();
                 self.line("}");
             }
-            InstructionValue::PrefixUpdate {
+            InstructionValue::PostfixUpdateContext {
                 lvalue,
                 operation,
                 value: val,
                 loc,
             } => {
-                self.line("PrefixUpdate {");
+                self.line("PostfixUpdateContext {");
+                self.indent();
+                self.format_place_field("lvalue", lvalue);
+                self.line(&format!("operation: \"{}\"", operation));
+                self.format_place_field("value", val);
+                self.line(&format!("loc: {}", format_loc(loc)));
+                self.dedent();
+                self.line("}");
+            }
+            InstructionValue::PrefixUpdateLocal {
+                lvalue,
+                operation,
+                value: val,
+                loc,
+                ..
+            } => {
+                self.line("PrefixUpdateLocal {");
+                self.indent();
+                self.format_place_field("lvalue", lvalue);
+                self.line(&format!("operation: \"{}\"", operation));
+                self.format_place_field("value", val);
+                self.line(&format!("loc: {}", format_loc(loc)));
+                self.dedent();
+                self.line("}");
+            }
+            InstructionValue::PrefixUpdateContext {
+                lvalue,
+                operation,
+                value: val,
+                loc,
+            } => {
+                self.line("PrefixUpdateContext {");
                 self.indent();
                 self.format_place_field("lvalue", lvalue);
                 self.line(&format!("operation: \"{}\"", operation));

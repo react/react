@@ -221,17 +221,13 @@ describe('ReactJSXElementValidator', () => {
       root.render(<Foo />);
     });
     assertConsoleErrorDev([
-      gate('enableFragmentRefs')
-        ? 'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
-          'can only have `key`, `ref`, and `children` props.\n' +
-          '    in Foo (at **)'
-        : 'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
-          'can only have `key` and `children` props.\n' +
-          '    in Foo (at **)',
+      'Invalid prop `a` supplied to `React.Fragment`. React.Fragment ' +
+        'can only have `key`, `ref`, and `children` props.\n' +
+        '    in Foo (at **)',
     ]);
   });
 
-  it('warns for fragments with refs', async () => {
+  it('does not warn for fragments with refs', async () => {
     class Foo extends React.Component {
       render() {
         return (
@@ -250,15 +246,6 @@ describe('ReactJSXElementValidator', () => {
     await act(() => {
       root.render(<Foo />);
     });
-    assertConsoleErrorDev(
-      gate('enableFragmentRefs')
-        ? []
-        : [
-            'Invalid prop `ref` supplied to `React.Fragment`.' +
-              ' React.Fragment can only have `key` and `children` props.\n' +
-              '    in Foo (at **)',
-          ],
-    );
   });
 
   it('does not warn for fragments of multiple elements without keys', async () => {
