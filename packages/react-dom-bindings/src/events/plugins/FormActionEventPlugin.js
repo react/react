@@ -77,10 +77,9 @@ function extractEvents(
   ).submitter;
   let submitterAction;
   if (submitter) {
-    // The submitter overrides the form method. The IDL attribute is already
-    // limited to the known values, and is the empty string if it's not set.
-    // The built-in Flow type for HTMLButtonElement is missing formMethod.
-    method = (submitter as any).formMethod || method;
+    // The submitter overrides the form method.
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-fs-formmethod
+    method = submitter.formMethod || method;
     const submitterProps = getFiberCurrentPropsFromNode(submitter);
     submitterAction = submitterProps
       ? coerceFormActionProp((submitterProps as any).formAction)
