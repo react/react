@@ -87,6 +87,62 @@ describe('ReactDOMFizzServerNode', () => {
     expect(result).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
+  it('removes AbortSignal listeners when renderToReadableStream completes', async () => {
+    // Regression for #36763: long-lived/shared AbortSignals must not accumulate
+    // abort listeners across successful SSR requests.
+    //
+    // attachAbortSignal() ties the caller's listener to the request's own
+    // AbortController via the `signal` addEventListener option, so removal
+    // happens inside the platform's AbortSignal implementation, not through
+    // an explicit removeEventListener() call this test can spy on.
+    //
+    // KNOWN GAP: this test's jest environment (@jest-environment node)
+    // installs abortcontroller-polyfill as `global.AbortController` (see
+    // the `window === undefined` branch in scripts/jest/setupEnvironment.js).
+    // That polyfill's Emitter stores each listener's `options` but never
+    // reads `options.signal`, so the very cleanup this test exists to check
+    // is inert under it, independent of whether the production code is
+    // correct. The equivalent Browser-environment test in
+    // ReactDOMFizzServerBrowser-test.js uses jsdom's native, spec-compliant
+    // AbortSignal and DOES catch a regression here; that test is the real
+    // coverage for this bug on the request-creation path shared by both
+    // entry points. This assertion is left in, skipped, so a future
+    // native-AbortController test environment re-enables it automatically
+    // (the `if` below only skips when the polyfill's own storage shape is
+    // detected) rather than silently losing coverage forever.
+    const {getEventListeners} = require('node:events');
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const usingInertPolyfill = signal.listeners !== undefined;
+
+    function activeAbortListenerCount() {
+      if (usingInertPolyfill) {
+        return (signal.listeners.abort || []).length;
+      }
+      return getEventListeners(signal, 'abort').length;
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const stream = await act(() =>
+        ReactDOMFizzServer.renderToReadableStream(<div>hello {i}</div>, {
+          signal,
+        }),
+      );
+      await readContentWeb(stream);
+      await stream.allReady;
+    }
+
+    if (usingInertPolyfill) {
+      // Not verifiable in this environment; see comment above. Assert the
+      // dumber but still-true invariant: exactly one addEventListener per
+      // request, so a change that e.g. attaches a listener per boundary
+      // instead of per request is still caught.
+      expect(activeAbortListenerCount()).toBe(3);
+    } else {
+      expect(activeAbortListenerCount()).toBe(0);
+    }
+  });
+
   it('flush fully if piping in on onShellReady', async () => {
     const {writable, output} = getTestWritable();
     await act(() => {

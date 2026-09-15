@@ -231,6 +231,42 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['The operation was aborted.']);
   });
 
+  it('removes AbortSignal listeners when renderToReadableStream completes', async () => {
+    // Regression for #36763: long-lived/shared AbortSignals must not accumulate
+    // abort listeners across successful SSR requests.
+    //
+    // attachAbortSignal() ties the caller's listener to the request's own
+    // AbortController via the `signal` addEventListener option, so removal
+    // happens inside jsdom's native implementation rather than through an
+    // explicit removeEventListener() call this test can spy on. Read the
+    // listener count from jsdom's own internal state instead (this test
+    // environment's AbortSignal is jsdom's, not a polyfill -- see the
+    // `window !== undefined` branch in scripts/jest/setupEnvironment.js).
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const implSymbol = Object.getOwnPropertySymbols(signal).find(
+      s => s.toString() === 'Symbol(impl)',
+    );
+
+    function activeAbortListenerCount() {
+      const impl = signal[implSymbol];
+      const listeners = impl && impl._eventListeners;
+      return listeners && listeners.abort ? listeners.abort.length : 0;
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const stream = await serverAct(() =>
+        ReactDOMFizzServer.renderToReadableStream(<div>hello {i}</div>, {
+          signal,
+        }),
+      );
+      await readResult(stream);
+      await stream.allReady;
+    }
+
+    expect(activeAbortListenerCount()).toBe(0);
+  });
+
   it('should reject if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();
