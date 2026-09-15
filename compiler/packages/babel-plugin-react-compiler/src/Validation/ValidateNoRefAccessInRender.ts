@@ -15,7 +15,9 @@ import {
   GeneratedSource,
   HIRFunction,
   IdentifierId,
+  ObjectPropertyKey,
   Place,
+  PropertyLiteral,
   SourceLocation,
   getHookKindForType,
   isRefValueType,
@@ -74,7 +76,21 @@ type RefAccessType =
 type RefAccessRefType =
   | {kind: 'Ref'; refId: RefId}
   | {kind: 'RefValue'; loc?: SourceLocation; refId?: RefId}
-  | {kind: 'Structure'; value: null | RefAccessRefType; fn: null | RefFnType};
+  | {
+      kind: 'Structure';
+      value: null | RefAccessRefType;
+      fn: null | RefFnType;
+      /*
+       * Tracks the ref-access type of each *statically known* property of
+       * this object, keyed by property name. This lets us answer "is this
+       * specific property a ref" precisely, instead of collapsing every
+       * property of the object into a single `value` (which previously
+       * caused a ref-taint on one property, e.g. from a JSX `ref` attribute,
+       * to incorrectly bleed into unrelated sibling properties).
+       * See https://github.com/facebook/react/issues/37507.
+       */
+      properties: null | Map<string, RefAccessType>;
+    };
 
 type RefFnType = {readRefEffect: boolean; returnType: RefAccessType};
 
@@ -82,6 +98,13 @@ class Env {
   #changed = false;
   #data: Map<IdentifierId, RefAccessType> = new Map();
   #temporaries: Map<IdentifierId, Place> = new Map();
+  /*
+   * Tracks a canonical Place for each (object identifier, property name) pair
+   * so that ref-taint inferred for one property (e.g. via a JSX `ref`
+   * attribute) does not bleed into sibling properties of the same object.
+   * See https://github.com/facebook/react/issues/37507.
+   */
+  #propertyTemporaries: Map<string, Place> = new Map();
 
   lookup(place: Place): Place {
     return this.#temporaries.get(place.identifier.id) ?? place;
@@ -89,6 +112,23 @@ class Env {
 
   define(place: Place, value: Place): void {
     this.#temporaries.set(place.identifier.id, value);
+  }
+
+  lookupProperty(
+    object: Place,
+    property: PropertyLiteral,
+  ): Place | undefined {
+    const objectId = this.lookup(object).identifier.id;
+    return this.#propertyTemporaries.get(`${objectId}.${property}`);
+  }
+
+  defineProperty(
+    object: Place,
+    property: PropertyLiteral,
+    value: Place,
+  ): void {
+    const objectId = this.lookup(object).identifier.id;
+    this.#propertyTemporaries.set(`${objectId}.${property}`, value);
   }
 
   resetChanged(): void {
@@ -156,9 +196,19 @@ function collectTemporariesSidemap(fn: HIRFunction, env: Env): void {
           ) {
             continue;
           }
-          const temp = env.lookup(value.object);
-          if (temp != null) {
-            env.define(lvalue, temp);
+          /*
+           * Alias this property load to the canonical temporary for the same
+           * (object, property) path, rather than to the object as a whole.
+           * Aliasing to the whole object would cause a ref-taint inferred for
+           * one property (e.g. `ctx.foo` passed to a JSX `ref` attribute) to
+           * incorrectly propagate to unrelated sibling properties read from
+           * the same object (e.g. `ctx.files`).
+           */
+          const existing = env.lookupProperty(value.object, value.property);
+          if (existing != null) {
+            env.define(lvalue, existing);
+          } else {
+            env.defineProperty(value.object, value.property, lvalue);
           }
           break;
         }
@@ -211,13 +261,66 @@ function tyEqual(a: RefAccessType, b: RefAccessType): boolean {
           b.fn !== null &&
           a.fn.readRefEffect === b.fn.readRefEffect &&
           tyEqual(a.fn.returnType, b.fn.returnType));
-      return (
-        fnTypesEqual &&
-        (a.value === b.value ||
-          (a.value !== null && b.value !== null && tyEqual(a.value, b.value)))
-      );
+      const valueEqual =
+        a.value === b.value ||
+        (a.value !== null && b.value !== null && tyEqual(a.value, b.value));
+      return fnTypesEqual && valueEqual && propertiesEqual(a.properties, b.properties);
     }
   }
+}
+
+function objectPropertyKeyToString(key: ObjectPropertyKey): string | null {
+  switch (key.kind) {
+    case 'string':
+    case 'identifier':
+      return key.name;
+    case 'number':
+      return String(key.name);
+    case 'computed':
+      return null;
+    default: {
+      return null;
+    }
+  }
+}
+
+function propertiesEqual(
+  a: null | Map<string, RefAccessType>,
+  b: null | Map<string, RefAccessType>,
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a === null || b === null) {
+    return a === null && b === null;
+  }
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const [key, aType] of a) {
+    const bType = b.get(key);
+    if (bType === undefined || !tyEqual(aType, bType)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function joinPropertiesMaps(
+  a: null | Map<string, RefAccessType>,
+  b: null | Map<string, RefAccessType>,
+): null | Map<string, RefAccessType> {
+  if (a === null || b === null) {
+    return null;
+  }
+  const result = new Map<string, RefAccessType>();
+  const keys = new Set([...a.keys(), ...b.keys()]);
+  for (const key of keys) {
+    const aType = a.get(key) ?? {kind: 'None'};
+    const bType = b.get(key) ?? {kind: 'None'};
+    result.set(key, joinRefAccessTypes(aType, bType));
+  }
+  return result;
 }
 
 function joinRefAccessTypes(...types: Array<RefAccessType>): RefAccessType {
@@ -263,10 +366,12 @@ function joinRefAccessTypes(...types: Array<RefAccessType>): RefAccessType {
           : b.value === null
             ? a.value
             : joinRefAccessRefTypes(a.value, b.value);
+      const properties = joinPropertiesMaps(a.properties, b.properties);
       return {
         kind: 'Structure',
         fn,
         value,
+        properties,
       };
     }
   }
@@ -369,7 +474,35 @@ function validateNoRefAccessInRenderImpl(
             const objType = env.get(instr.value.object.identifier.id);
             let lookupType: null | RefAccessType = null;
             if (objType?.kind === 'Structure') {
-              lookupType = objType.value;
+              /*
+               * Prefer the exact per-property type when statically known
+               * (e.g. `{ref, other}.other`) rather than falling back to the
+               * merged `value`, which represents "does this object have some
+               * ref-typed property" and would otherwise incorrectly taint
+               * unrelated sibling properties. See
+               * https://github.com/facebook/react/issues/37507.
+               */
+              const propertyType =
+                instr.value.kind === 'PropertyLoad' &&
+                objType.properties != null
+                  ? objType.properties.get(String(instr.value.property))
+                  : undefined;
+              if (propertyType !== undefined) {
+                lookupType = propertyType;
+              } else if (objType.properties == null) {
+                /*
+                 * No precise per-property info is available for this object
+                 * (e.g. it resulted from a whole-object merge such as
+                 * `object.foo = fn`, or from a spread/array). Conservatively
+                 * fall back to the object's merged type, matching this
+                 * validation's pre-existing (coarser) behavior for these
+                 * cases. When the object is known to hold a ref-accessing
+                 * function (`fn`), propagate the whole structure so that
+                 * function is still detected when called through this
+                 * property (e.g. `object.foo()`).
+                 */
+                lookupType = objType.fn != null ? objType : objType.value;
+              }
             } else if (objType?.kind === 'Ref') {
               lookupType = {
                 kind: 'RefValue',
@@ -451,6 +584,7 @@ function validateNoRefAccessInRenderImpl(
                 returnType,
               },
               value: null,
+              properties: null,
             });
             break;
           }
@@ -627,6 +761,38 @@ function validateNoRefAccessInRenderImpl(
               types.push(env.get(operand.identifier.id) ?? {kind: 'None'});
             }
             const value = joinRefAccessTypes(...types);
+            /*
+             * For object literals with statically known keys, also record the
+             * exact ref-access type of each property. This lets later
+             * `PropertyLoad`s of a *specific* property (e.g. `ctx.files`)
+             * answer precisely, instead of relying solely on `value` (the
+             * join of every property, including unrelated ones such as
+             * `ctx.inputRef`). See
+             * https://github.com/facebook/react/issues/37507.
+             */
+            let properties: null | Map<string, RefAccessType> = null;
+            if (instr.value.kind === 'ObjectExpression') {
+              properties = new Map();
+              for (const property of instr.value.properties) {
+                if (property.kind !== 'ObjectProperty') {
+                  /*
+                   * Spread element: we don't statically know which keys it
+                   * contributes, so we can't build a precise properties map.
+                   */
+                  properties = null;
+                  break;
+                }
+                const key = objectPropertyKeyToString(property.key);
+                if (key == null) {
+                  properties = null;
+                  break;
+                }
+                properties.set(
+                  key,
+                  env.get(property.place.identifier.id) ?? {kind: 'None'},
+                );
+              }
+            }
             if (
               value.kind === 'None' ||
               value.kind === 'Guard' ||
@@ -638,6 +804,7 @@ function validateNoRefAccessInRenderImpl(
                 kind: 'Structure',
                 value,
                 fn: null,
+                properties,
               });
             }
             break;
