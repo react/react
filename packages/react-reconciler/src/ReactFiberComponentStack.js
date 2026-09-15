@@ -182,7 +182,7 @@ export function getOwnerStackByFiberInDev(workInProgress: Fiber): string {
         // In a real app it's typically not useful since the root app is always controlled
         // by the framework. These also tend to have noisy stacks because they're not rooted
         // in a React render but in some imperative bootstrapping code. It could be useful
-        // if the element was created in module scope. E.g. hoisted. We could add a a single
+        // if the element was created in module scope. E.g. hoisted. We could add a single
         // stack frame for context for example but it doesn't say much if that's a wrapper.
         if (owner && debugStack) {
           const formattedStack = formatOwnerStack(debugStack);
