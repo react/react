@@ -30,6 +30,14 @@ export function assertExhaustive(_: never, errorMsg: string): never {
   throw new Error(errorMsg);
 }
 
+/*
+ * Escapes special regular expression characters in @param str so that it can
+ * be safely embedded in a RegExp and matched literally.
+ */
+export function escapeStringRegexp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Modifies @param array in place, retaining only the items where the predicate returns true.
 export function retainWhere<T>(
   array: Array<T>,
