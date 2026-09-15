@@ -596,7 +596,9 @@
   "608": "A client reference was blocked on a row that has not been received yet. This is a bug in React.",
   "664": "captureLedgers() can only be called in a Server Components environment.",
   "666": "Cannot capture ledgers in captureLedgers() because this Flight renderer has no async context. Render with a Node or Edge Server Components entry point.",
+  "668": "Only a primitive can be added to a set ledger. A set ledger nets entries by value, but a Set can only compare this entry by reference, so structurally equal entries would silently count as distinct. Primitives are the only entries whose equality is well defined.",
   "669": "A ledger total cannot be read in a Server Components environment. Pass it to the client, where it resolves after the response has finished streaming.",
   "670": "A ledger total from another Flight request cannot be serialized.%s",
-  "671": "Ledger data from another Flight request cannot be rendered."
+  "671": "Ledger data from another Flight request cannot be rendered.",
+  "672": "Only a global symbol received from Symbol.for(...) can be added to a set ledger. A set ledger nets entries by value, but a symbol that is not registered has no name to net it by, so no other entry could ever equal it and it could not reach the client."
 }
