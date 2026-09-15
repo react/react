@@ -919,7 +919,7 @@ fn evaluate_binary_op(
         },
         BinaryOperator::Exponent => match (lhs, rhs) {
             (PrimitiveValue::Number(l), PrimitiveValue::Number(r)) => Some(PrimitiveValue::Number(
-                FloatValue::new(l.value().powf(r.value())),
+                FloatValue::new(js_exponentiate(l.value(), r.value())),
             )),
             _ => None,
         },
@@ -1106,6 +1106,15 @@ fn js_abstract_equal(lhs: &PrimitiveValue, rhs: &PrimitiveValue) -> bool {
 // =============================================================================
 // JavaScript Number.toString() approximation
 // =============================================================================
+
+/// ECMAScript Number::exponentiate (`**`). `f64::powf` follows IEEE 754, which
+/// returns 1 for `1 ** NaN` and `(±1) ** ±Infinity`; JavaScript returns NaN.
+fn js_exponentiate(base: f64, exponent: f64) -> f64 {
+    if base.abs() == 1.0 && !exponent.is_finite() {
+        return f64::NAN;
+    }
+    base.powf(exponent)
+}
 
 /// ECMAScript ToInt32: convert f64 to i32 with modular (wrapping) semantics.
 fn js_to_int32(n: f64) -> i32 {
