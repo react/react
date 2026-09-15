@@ -109,8 +109,7 @@ pub struct FunctionSignature {
     pub mutable_only_if_operands_are_mutable: bool,
     pub impure: bool,
     /// When true, `impure` only applies if the call/construct has no arguments.
-    /// Ported from TS `impureIfNoArgs`. Used for `Date`: `new Date()` reads the
-    /// clock, `new Date(timestamp)` does not.
+    /// Example: `new Date()` reads the clock and is impure, `new Date(timestamp)` is not.
     pub impure_if_no_args: bool,
     pub known_incompatible: Option<String>,
     pub canonical_name: Option<String>,
