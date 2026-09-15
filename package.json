@@ -48,7 +48,6 @@
     "@types/invariant": "^2.2.35",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
-    "abortcontroller-polyfill": "^1.7.5",
     "art": "0.10.1",
     "babel-jest": "^30.4.1",
     "babel-plugin-syntax-hermes-parser": "^0.36.1",
