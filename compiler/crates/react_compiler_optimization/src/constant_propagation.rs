@@ -1034,6 +1034,13 @@ fn js_to_number(s: &str) -> f64 {
     if trimmed == "-Infinity" {
         return f64::NEG_INFINITY;
     }
+    let unsigned = trimmed
+        .strip_prefix('+')
+        .or_else(|| trimmed.strip_prefix('-'))
+        .unwrap_or(trimmed);
+    if unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity") {
+        return f64::NAN;
+    }
     // Handle hex literals (0x/0X)
     if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
         return parse_power_of_two_radix_number(&trimmed[2..], 16).unwrap_or(f64::NAN);

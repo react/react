@@ -35,6 +35,10 @@ function foo() {
         overflow + 'g' == 1 / 0,
         '0x' == 0,
         '0b2' == 2,
+        'inf' == 1 / 0,
+        'infinity' == 1 / 0,
+        'INFINITY' == 1 / 0,
+        '-inf' == -1 / 0,
       ]}
     />
   );
@@ -76,6 +80,10 @@ function foo() {
           false,
           false,
           false,
+          false,
+          false,
+          false,
+          false,
         ]}
       />
     );
@@ -95,4 +103,4 @@ export const FIXTURE_ENTRYPOINT = {
 ```
       
 ### Eval output
-(kind: ok) <div>{"value":[true,true,true,true,true,true,true,true,true,true,true,false,false,false]}</div>
+(kind: ok) <div>{"value":[true,true,true,true,true,true,true,true,true,true,true,false,false,false,false,false,false,false]}</div>

@@ -31,6 +31,10 @@ function foo() {
         overflow + 'g' == 1 / 0,
         '0x' == 0,
         '0b2' == 2,
+        'inf' == 1 / 0,
+        'infinity' == 1 / 0,
+        'INFINITY' == 1 / 0,
+        '-inf' == -1 / 0,
       ]}
     />
   );
