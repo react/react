@@ -792,7 +792,7 @@ describe('ReactDOMSelect', () => {
     });
     assertConsoleErrorDev([
       'Use the `defaultValue` or `value` props on <select> instead of ' +
-        'setting `selected` on <option>.\n' +
+        'setting `selected` on <option>. Otherwise form reset may not work as expected.\n' +
         '    in option (at **)\n' +
         '    in App (at **)',
     ]);
