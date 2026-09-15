@@ -127,6 +127,8 @@ fn ast_to_diag_loc(loc: &AstSourceLocation) -> DiagSourceLocation {
             column: loc.end.column,
             index: loc.end.index,
         },
+        start_offset: None,
+        end_offset: None,
     }
 }
 

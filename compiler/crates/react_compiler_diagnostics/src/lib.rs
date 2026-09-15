@@ -100,6 +100,12 @@ pub struct CompilerSuggestion {
 pub struct SourceLocation {
     pub start: Position,
     pub end: Position,
+    /// Offsets from the AST node's `start`/`end` fields. These are intentionally
+    /// separate from `loc.start.index`/`loc.end.index`, which belong to `loc`.
+    #[serde(skip)]
+    pub start_offset: Option<u32>,
+    #[serde(skip)]
+    pub end_offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
