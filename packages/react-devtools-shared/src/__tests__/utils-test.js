@@ -163,6 +163,16 @@ describe('utils', () => {
       );
     });
 
+    it('should keep specifiers literal when arguments run out', () => {
+      expect(formatConsoleArgumentsToSingleString('%s %s', 'value')).toEqual(
+        'value %s',
+      );
+      expect(formatConsoleArgumentsToSingleString('%d %d', 1)).toEqual('1 %d');
+      expect(formatConsoleArgumentsToSingleString('%f %f', 0.5)).toEqual(
+        '0.5 %f',
+      );
+    });
+
     it('should gracefully handle Symbol types', () => {
       expect(
         formatConsoleArgumentsToSingleString(Symbol('a'), 'b', Symbol('c')),
