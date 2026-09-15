@@ -1407,14 +1407,14 @@ describe('ReactFlightDOMNode', () => {
   // perform Construct on a detached ArrayBuffer") for chunks that are using
   // Node's internal Buffer pool.
   it('should not corrupt the Node.js Buffer pool by detaching ArrayBuffers when using Web Streams', async () => {
-    // Create a temp file smaller than 4KB to ensure it uses the Buffer pool.
+    // Create a temp file smaller than VIEW_SIZE to ensure it uses the Buffer pool.
     const file = path.join(os.tmpdir(), 'test.bin');
-    fs.writeFileSync(file, Buffer.alloc(4095));
+    fs.writeFileSync(file, Buffer.alloc((Buffer.poolSize >>> 1) - 1));
     const fileChunk = fs.readFileSync(file);
     fs.unlinkSync(file);
 
-    // Verify this chunk uses the Buffer pool (8192 bytes for files < 4KB).
-    expect(fileChunk.buffer.byteLength).toBe(8192);
+    // Verify this chunk uses the Buffer pool.
+    expect(fileChunk.buffer.byteLength).toBe(Buffer.poolSize);
 
     const readable = await serverAct(() =>
       ReactServerDOMServer.renderToReadableStream(fileChunk, webpackMap),
@@ -2310,13 +2310,13 @@ describe('ReactFlightDOMNode', () => {
     function Client1() {
       return <span>client1</span>;
     }
-    // Client1's Import row must exceed VIEW_SIZE (4096) so writeStringChunk
+    // Client1's Import row must exceed VIEW_SIZE (Buffer.poolSize >>> 1) so writeStringChunk
     // takes its BIG path and calls destination.write directly. That write
     // returning false is what triggers the backpressure we want to test.
     const Client1Reference = clientExports(
       Client1,
       1,
-      '/' + 'a'.repeat(5000),
+      '/' + 'a'.repeat(Buffer.poolSize),
       Promise.resolve(),
     );
 
