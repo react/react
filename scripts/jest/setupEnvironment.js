@@ -19,11 +19,3 @@ global.__EXPERIMENTAL__ =
     : true;
 
 global.__VARIANT__ = !!process.env.VARIANT;
-
-if (typeof window !== 'undefined') {
-} else {
-  if (typeof AbortController === 'undefined') {
-    global.AbortController =
-      require('abortcontroller-polyfill/dist/cjs-ponyfill').AbortController;
-  }
-}
