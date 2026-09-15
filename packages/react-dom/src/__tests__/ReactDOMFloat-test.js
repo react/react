@@ -753,7 +753,7 @@ describe('ReactDOMFloat', () => {
     ).toEqual(['<script src="src-of-external-runtime" async=""></script>']);
   });
 
-  it('can send style insertion implementation independent of boundary commpletion instruction implementation', async () => {
+  it('can send style insertion implementation independent of boundary completion instruction implementation', async () => {
     await act(() => {
       renderToPipeableStream(
         <html>
@@ -2840,7 +2840,7 @@ body {
       </html>,
     );
 
-    // We inject some styles, divs, scripts into the begginning, middle, and end
+    // We inject some styles, divs, scripts into the beginning, middle, and end
     // of the head / body.
     const injectedStyle = document.createElement('style');
     injectedStyle.textContent = 'body { background-color: blue; }';
@@ -2853,7 +2853,7 @@ body {
     document.head.prepend(injectedDiv);
     document.head.appendChild(injectedDiv.cloneNode(true));
     // We do not prepend a <div> in body because this will conflict with hyration
-    // We still mostly hydrate by matchign tag and <div> does not have any attributes to
+    // We still mostly hydrate by matching tag and <div> does not have any attributes to
     // differentiate between likely-inject and likely-rendered cases. If a <div> is prepended
     // in the <body> and you render a <div> as the first child of <body> there will be a conflict.
     // We consider this a rare edge case and even if it does happen the fallback to client rendering
@@ -4275,7 +4275,7 @@ body {
 
   it('uses imageSrcSet and imageSizes when keying image preloads', async () => {
     function App({isClient}) {
-      // Will key off href in absense of imageSrcSet
+      // Will key off href in absence of imageSrcSet
       ReactDOM.preload('foo', {as: 'image'});
       ReactDOM.preload('foo', {as: 'image'});
 
@@ -4295,7 +4295,7 @@ body {
         imageSizes: 'foosizes',
       });
 
-      // Will key off href in absense of imageSrcSet, imageSizes is ignored. these should match the
+      // Will key off href in absence of imageSrcSet, imageSizes is ignored. these should match the
       // first preloads not not emit a new preload tag
       ReactDOM.preload('foo', {as: 'image', imageSizes: 'foosizes'});
       ReactDOM.preload('foo', {as: 'image', imageSizes: 'foosizes'});
@@ -4314,7 +4314,7 @@ body {
       });
 
       if (isClient) {
-        // Will key off href in absense of imageSrcSet
+        // Will key off href in absence of imageSrcSet
         ReactDOM.preload('client', {as: 'image'});
         ReactDOM.preload('client', {as: 'image'});
 
@@ -4334,7 +4334,7 @@ body {
           imageSizes: 'clientsizes',
         });
 
-        // Will key off href in absense of imageSrcSet, imageSizes is ignored. these should match the
+        // Will key off href in absence of imageSrcSet, imageSizes is ignored. these should match the
         // first preloads not not emit a new preload tag
         ReactDOM.preload('client', {as: 'image', imageSizes: 'clientsizes'});
         ReactDOM.preload('client', {as: 'image', imageSizes: 'clientsizes'});
@@ -4705,11 +4705,11 @@ body {
           <link rel="preload" as="image" href="9" />
           <link rel="preload" as="image" href="10" />
           {/* The "a" image was rendered a few times but since at least one of those was with
-          fetchPriorty="high" it ends up in the high priority queue */}
+          fetchPriority="high" it ends up in the high priority queue */}
           <link rel="preload" as="image" href="a" />
           {/* Stylesheets come in between high priority images and regular preloads */}
           <link rel="stylesheet" href="foo" data-precedence="default" />
-          {/* The remainig images that preloaded at regular priority */}
+          {/* The remaining images that preloaded at regular priority */}
           <link rel="preload" as="image" href="b" />
           <link rel="preload" as="image" href="11" />
           <link rel="preload" as="image" href="12" />
@@ -4980,7 +4980,7 @@ body {
     });
     assertConsoleErrorDev([
       'React encountered a hoistable style tag for the same href as a preload: "foo". ' +
-        'When using a style tag to inline styles you should not also preload it as a stylsheet.\n' +
+        'When using a style tag to inline styles you should not also preload it as a stylesheet.\n' +
         '    in style (at **)\n' +
         '    in App (at **)',
     ]);
@@ -8280,14 +8280,14 @@ body {
       assertConsoleErrorDev(
         [
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
-            'expected the `href` prop to be a non-empty string but ecountered `undefined` instead. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'expected the `href` prop to be a non-empty string but encountered `undefined` instead. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop ensure there is a non-empty string `href` prop as well, ' +
             'otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
-            'expected the `href` prop to be a non-empty string but ecountered an empty string instead. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'expected the `href` prop to be a non-empty string but encountered an empty string instead. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop ensure there is a non-empty string `href` prop as well, ' +
             'otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
@@ -8297,28 +8297,28 @@ body {
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
             '`onLoad` and `onError` props. The presence of loading and error handlers indicates ' +
-            'an intent to manage the stylesheet loading state from your from your Component code ' +
+            'an intent to manage the stylesheet loading state from your Component code ' +
             'and React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop remove the `onLoad` and `onError` props, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and ' +
             '`onLoad` prop. The presence of loading and error handlers indicates an intent to ' +
-            'manage the stylesheet loading state from your from your Component code and ' +
+            'manage the stylesheet loading state from your Component code and ' +
             'React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the ' +
             '`precedence` prop remove the `onLoad` prop, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and `onError` prop. ' +
             'The presence of loading and error handlers indicates an intent to manage the stylesheet loading state ' +
-            'from your from your Component code and React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` ' +
+            'from your Component code and React will not hoist or deduplicate this stylesheet. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` ' +
             'prop remove the `onError` prop, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
           'React encountered a `<link rel="stylesheet" .../>` with a `precedence` prop and a `disabled` prop. ' +
             'The presence of the `disabled` prop indicates an intent to manage the stylesheet active state from ' +
-            'your from your Component code and React will not hoist or deduplicate this stylesheet. ' +
-            'If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` ' +
+            'your Component code and React will not hoist or deduplicate this stylesheet. ' +
+            'If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` ' +
             'prop remove the `disabled` prop, otherwise remove the `precedence` prop.\n' +
             '    in link (at **)',
         ].filter(Boolean),
@@ -8343,8 +8343,8 @@ body {
         'React encountered a <link rel="stylesheet" href="foo" ... /> with a `precedence` ' +
           'prop that also included the `onLoad` and `onError` props. ' +
           'The presence of loading and error handlers indicates an intent to manage the stylesheet ' +
-          'loading state from your from your Component code and React will not hoist or deduplicate this stylesheet. ' +
-          'If your intent was to have React hoist and deduplciate this stylesheet using the `precedence` ' +
+          'loading state from your Component code and React will not hoist or deduplicate this stylesheet. ' +
+          'If your intent was to have React hoist and deduplicate this stylesheet using the `precedence` ' +
           'prop remove the `onLoad` and `onError` props, otherwise remove the `precedence` prop.\n' +
           '    in body (at **)',
       ]);
@@ -8935,9 +8935,9 @@ background-color: green;
       });
       assertConsoleErrorDev([
         'React expected the `href` prop for a <style> tag opting into hoisting semantics ' +
-          'using the `precedence` prop to not have any spaces but ecountered spaces instead. ' +
+          'using the `precedence` prop to not have any spaces but encountered spaces instead. ' +
           'using spaces in this prop will cause hydration of this style to fail on the client. ' +
-          'The href for the <style> where this ocurred is "foo bar".\n' +
+          'The href for the <style> where this occurred is "foo bar".\n' +
           '    in style (at **)',
       ]);
     });
