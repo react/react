@@ -181,7 +181,7 @@ export function revealCompletedBoundariesWithViewTransitions(
         // this if it's just in a hidden tree in general.
         // TODO: Should we skip it if it's out of viewport? It's possible that it gets
         // brought into the viewport by changing size.
-        // TODO: There's a another case where an inner boundary is inside a fallback that
+        // TODO: There's another case where an inner boundary is inside a fallback that
         // is about to be deleted. In that case we should not run exit animations on the inner.
         continue;
       }
