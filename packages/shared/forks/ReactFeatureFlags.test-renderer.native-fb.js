@@ -46,6 +46,7 @@ export const enablePerformanceIssueReporting = false;
 export const enableScopeAPI = false;
 export const enableEffectEventMutationPhase = true;
 export const enableSuspenseAvoidThisFallback = false;
+export const enableServerErrorBoundary: boolean = false;
 export const enableSuspenseCallback = false;
 export const enableTaint = true;
 export const enableTransitionTracing = false;

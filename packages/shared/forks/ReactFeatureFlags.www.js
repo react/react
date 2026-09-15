@@ -46,6 +46,7 @@ export const enableProfilerNestedUpdatePhase = __PROFILE__;
 export const enableUpdaterTracking = __PROFILE__;
 export const enableTrustedTypesIntegration: boolean = true;
 export const enableSuspenseAvoidThisFallback: boolean = true;
+export const enableServerErrorBoundary: boolean = false;
 
 export const enableAsyncDebugInfo: boolean = true;
 export const enableCPUSuspense: boolean = true;

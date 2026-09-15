@@ -88,6 +88,12 @@ describe('ReactIs', () => {
     expect(ReactIs.isContextConsumer(<div />)).toBe(false);
   });
 
+  it('recognizes the server error boundary only when enabled', () => {
+    expect(
+      ReactIs.isValidElementType(Symbol.for('react.server_error_boundary')),
+    ).toBe(gate(flags => flags.enableServerErrorBoundary));
+  });
+
   it('should identify context providers', () => {
     const Context = React.createContext(false);
     expect(ReactIs.isValidElementType(Context.Provider)).toBe(true);

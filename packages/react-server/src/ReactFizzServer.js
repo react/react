@@ -163,6 +163,7 @@ import {
   REACT_PORTAL_TYPE,
   REACT_LAZY_TYPE,
   REACT_SUSPENSE_TYPE,
+  REACT_SERVER_ERROR_BOUNDARY_TYPE,
   REACT_LEGACY_HIDDEN_TYPE,
   REACT_STRICT_MODE_TYPE,
   REACT_PROFILER_TYPE,
@@ -179,6 +180,7 @@ import {
   REACT_RECOVERABLE_TYPE,
 } from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
+import ServerErrorBoundary from 'shared/ReactServerErrorBoundary';
 import {
   disableLegacyContext,
   disableLegacyContextForFunctionComponents,
@@ -189,6 +191,7 @@ import {
   enableFizzBlockingRender,
   enableAsyncDebugInfo,
   enableCPUSuspense,
+  enableServerErrorBoundary,
 } from 'shared/ReactFeatureFlags';
 
 import assign from 'shared/assign';
@@ -267,6 +270,8 @@ type SuspenseBoundary = {
   completedSegments: Array<Segment>, // completed but not yet flushed segments.
   byteSize: number, // used to determine whether to inline children boundaries.
   defer: boolean, // never inline deferred boundaries
+  errorBoundary: boolean, // fallback is only rendered after an error
+  blockedFallbackTask: null | RenderTask,
   fallbackAbortableTasks: Set<Task>, // used to cancel task on the fallback if the boundary completes or gets canceled.
   contentState: HoistableState,
   fallbackState: HoistableState,
@@ -516,6 +521,7 @@ function isEligibleForOutlining(
   // The larger this limit is, the more we can save on preparing fallbacks in case we end up
   // outlining.
   return (
+    (!enableServerErrorBoundary || !boundary.errorBoundary) &&
     (boundary.byteSize > 500 ||
       hasSuspenseyContent(boundary.contentState, /* flushingInShell */ false) ||
       boundary.defer) &&
@@ -887,6 +893,7 @@ function createSuspenseBoundary(
   fallbackAbortableTasks: Set<Task>,
   preamble: null | Preamble,
   defer: boolean,
+  errorBoundary: boolean,
 ): SuspenseBoundary {
   const boundary: SuspenseBoundary = {
     status: PENDING,
@@ -897,6 +904,8 @@ function createSuspenseBoundary(
     completedSegments: [],
     byteSize: 0,
     defer: defer,
+    errorBoundary,
+    blockedFallbackTask: null,
     fallbackAbortableTasks,
     errorDigest: null,
     contentState: createHoistableState(),
@@ -1346,6 +1355,13 @@ function encodeErrorForBoundary(
   thrownInfo: ThrownInfo,
   wasAborted: boolean,
 ) {
+  if (enableServerErrorBoundary) {
+    const fallbackTask = boundary.blockedFallbackTask;
+    if (fallbackTask !== null) {
+      boundary.blockedFallbackTask = null;
+      fallbackTask.ping.resolve();
+    }
+  }
   boundary.errorDigest = digest;
   if (__DEV__) {
     if (isRecoverableError(error)) {
@@ -1489,7 +1505,10 @@ function renderSuspenseBoundary(
       request.resumableState,
       prevContext,
     );
-    someTask.row = null;
+    someTask.row =
+      enableServerErrorBoundary && props.unstable_errorBoundary === true
+        ? prevRow
+        : null;
     const content: ReactNodeList = props.children;
     try {
       renderNode(request, someTask, content, -1);
@@ -1517,15 +1536,21 @@ function renderSuspenseBoundary(
   // in case it ends up generating a large subtree of content.
   const fallback: ReactNodeList = props.fallback;
   const content: ReactNodeList = props.children;
-  const defer: boolean = enableCPUSuspense && props.defer === true;
+  const errorBoundary: boolean =
+    enableServerErrorBoundary && props.unstable_errorBoundary === true;
+  const defer: boolean =
+    enableCPUSuspense && props.defer === true && !errorBoundary;
 
   const fallbackAbortSet: Set<Task> = new Set();
+  // Error boundaries do not coordinate loading reveal order. Pending content
+  // still blocks its row through the retained fallback task below.
   const newBoundary = createSuspenseBoundary(
     request,
-    task.row,
+    errorBoundary ? null : task.row,
     fallbackAbortSet,
     canHavePreamble(task.formatContext) ? createPreamble() : null,
     defer,
+    errorBoundary,
   );
 
   const insertionIndex = parentSegment.chunks.length;
@@ -1558,34 +1583,31 @@ function renderSuspenseBoundary(
   contentRootSegment.parentFlushed = true;
 
   const trackedPostpones = request.trackedPostpones;
-  if (trackedPostpones !== null || defer) {
+  const fallbackKeyPath: KeyNode = [
+    keyPath[0],
+    'Suspense Fallback',
+    keyPath[2],
+  ];
+  if (trackedPostpones !== null) {
+    const fallbackReplayNode: ReplayNode = [
+      fallbackKeyPath[1],
+      fallbackKeyPath[2],
+      [] as Array<ReplayNode>,
+      null,
+    ];
+    trackedPostpones.workingMap.set(fallbackKeyPath, fallbackReplayNode);
+    newBoundary.tracked = {
+      contentKeyPath: keyPath,
+      fallbackNode: fallbackReplayNode,
+    };
+  }
+  if ((trackedPostpones !== null || defer) && !errorBoundary) {
     // This is a prerender or deferred boundary. In this mode we want to render the fallback synchronously
     // and schedule the content to render later. This is the opposite of what we do during a normal render
     // where we try to skip rendering the fallback if the content itself can render synchronously
 
     // Stash the original stack frame.
     const suspenseComponentStack = task.componentStack;
-
-    const fallbackKeyPath: KeyNode = [
-      keyPath[0],
-      'Suspense Fallback',
-      keyPath[2],
-    ];
-    if (trackedPostpones !== null) {
-      const fallbackReplayNode: ReplayNode = [
-        fallbackKeyPath[1],
-        fallbackKeyPath[2],
-        [] as Array<ReplayNode>,
-        null,
-      ];
-      trackedPostpones.workingMap.set(fallbackKeyPath, fallbackReplayNode);
-      newBoundary.tracked = {
-        contentKeyPath: keyPath,
-        // We are rendering the fallback before the boundary content so we keep track of
-        // the fallback replay node until we determine if the primary content suspends
-        fallbackNode: fallbackReplayNode,
-      };
-    }
 
     task.blockedSegment = boundarySegment;
     task.blockedPreamble =
@@ -1672,7 +1694,7 @@ function renderSuspenseBoundary(
       request.resumableState,
       prevContext,
     );
-    task.row = null;
+    task.row = errorBoundary ? prevRow : null;
     try {
       // We use the safe form because we don't handle suspending here. Only error handling.
       renderNode(request, task, content, -1);
@@ -1692,7 +1714,7 @@ function renderSuspenseBoundary(
         // the fallback. However, if this boundary ended up big enough to be eligible for outlining
         // we can't do that because we might still need the fallback if we outline it.
         if (!isEligibleForOutlining(request, newBoundary)) {
-          if (prevRow !== null) {
+          if (newBoundary.row !== null && prevRow !== null) {
             // If we have synchronously completed the boundary and it's not eligible for outlining
             // then we don't have to wait for it to be flushed before we unblock future rows.
             // This lets us inline small rows in order.
@@ -1756,11 +1778,6 @@ function renderSuspenseBoundary(
       task.row = prevRow;
     }
 
-    const fallbackKeyPath: KeyNode = [
-      keyPath[0],
-      'Suspense Fallback',
-      keyPath[2],
-    ];
     // We create suspended task for the fallback because we don't want to actually work
     // on it yet in case we finish the main content, so we queue for later.
     const suspendedFallbackTask = createRenderTask(
@@ -1790,7 +1807,15 @@ function renderSuspenseBoundary(
     pushComponentStack(suspendedFallbackTask);
     // TODO: This should be queued at a separate lower priority queue so that we only work
     // on preparing fallbacks if we don't have any more main content to task on.
-    request.pingedTasks.push(suspendedFallbackTask);
+    if (errorBoundary && newBoundary.status === PENDING) {
+      // Keep the parent pending until these children either complete or error.
+      // Unlike a loading boundary, an error boundary must not reveal its fallback
+      // just because a child suspended. Completion cancels this task, while an
+      // error wakes it through encodeErrorForBoundary.
+      newBoundary.blockedFallbackTask = suspendedFallbackTask;
+    } else {
+      request.pingedTasks.push(suspendedFallbackTask);
+    }
   }
 }
 
@@ -1815,15 +1840,19 @@ function replaySuspenseBoundary(
 
   const content: ReactNodeList = props.children;
   const fallback: ReactNodeList = props.fallback;
-  const defer: boolean = enableCPUSuspense && props.defer === true;
+  const errorBoundary: boolean =
+    enableServerErrorBoundary && props.unstable_errorBoundary === true;
+  const defer: boolean =
+    enableCPUSuspense && props.defer === true && !errorBoundary;
 
   const fallbackAbortSet: Set<Task> = new Set();
   const resumedBoundary = createSuspenseBoundary(
     request,
-    task.row,
+    errorBoundary ? null : task.row,
     fallbackAbortSet,
     canHavePreamble(task.formatContext) ? createPreamble() : null,
     defer,
+    errorBoundary,
   );
   resumedBoundary.parentFlushed = true;
   // We restore the same id of this boundary as was used during prerender.
@@ -1839,7 +1868,7 @@ function replaySuspenseBoundary(
     request.resumableState,
     prevContext,
   );
-  task.row = null;
+  task.row = errorBoundary ? prevRow : null;
   task.replay = {nodes: childNodes, slots: childSlots, pendingTasks: 1};
 
   try {
@@ -3140,6 +3169,20 @@ function renderElement(
     case REACT_SUSPENSE_TYPE: {
       renderSuspenseBoundary(request, task, keyPath, props);
       return;
+    }
+    // $FlowFixMe[invalid-compare]
+    case REACT_SERVER_ERROR_BOUNDARY_TYPE: {
+      if (enableServerErrorBoundary) {
+        renderClassComponent(
+          request,
+          task,
+          keyPath,
+          ServerErrorBoundary,
+          props,
+        );
+        return;
+      }
+      break;
     }
   }
 
@@ -4698,6 +4741,7 @@ function abortRemainingSuspenseBoundary(
     new Set(),
     null,
     false,
+    false,
   );
   resumedBoundary.parentFlushed = true;
   // We restore the same id of this boundary as was used during prerender.
@@ -5247,6 +5291,9 @@ function finishedTask(
           // fan-outs so a nested finishedTask can't observe 0 and call completeAll
           // before this outer call reaches its own zero check.
           request.allPendingTasks++;
+          if (enableServerErrorBoundary) {
+            boundary.blockedFallbackTask = null;
+          }
           boundary.fallbackAbortableTasks.forEach(abortTaskSoft, request);
           boundary.fallbackAbortableTasks.clear();
           if (boundaryRow !== null) {
