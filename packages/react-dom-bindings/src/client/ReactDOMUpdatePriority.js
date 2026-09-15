@@ -38,7 +38,8 @@ export function resolveUpdatePriority(): EventPriority {
     return updatePriority;
   }
   const currentEvent = window.event;
-  if (currentEvent === undefined) {
+  // IE11 is undefined, IE10 is null
+  if (currentEvent == null) {
     return DefaultEventPriority;
   }
   return getEventPriority(currentEvent.type);
