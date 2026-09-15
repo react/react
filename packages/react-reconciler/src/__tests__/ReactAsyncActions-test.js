@@ -1696,6 +1696,175 @@ describe('ReactAsyncActions', () => {
     expect(root).toMatchRenderedOutput(<span>Updated</span>);
   });
 
+  it('useOptimistic reverts while an unrelated useOptimistic action is still pending', async () => {
+    let startSlowOptimisticAction;
+    let startOptimisticAction;
+    function App() {
+      const [, startSlowOptimistic] = useTransition();
+      const [, startOptimistic] = useTransition();
+      const [canonicalCount] = useState(0);
+      const [optimisticCount, setOptimisticCount] =
+        useOptimistic(canonicalCount);
+      const [slowOptimisticCount, setSlowOptimisticCount] =
+        useOptimistic(canonicalCount);
+
+      startSlowOptimisticAction = () => {
+        startSlowOptimistic(async () => {
+          Scheduler.log('Slow optimistic action started');
+          setSlowOptimisticCount(9);
+          await getText('Slow optimistic action');
+          Scheduler.log('Slow optimistic action ended');
+        });
+      };
+
+      startOptimisticAction = () => {
+        startOptimistic(async () => {
+          Scheduler.log('Independent optimistic action started');
+          setOptimisticCount(1);
+          await getText('Independent optimistic action');
+          Scheduler.log('Independent optimistic action ended');
+        });
+      };
+
+      return (
+        <>
+          <Text text={'Count: ' + optimisticCount} />
+          <Text text={'Slow count: ' + slowOptimisticCount} />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App />));
+    assertLog(['Count: 0', 'Slow count: 0']);
+
+    await act(() => startSlowOptimisticAction());
+    assertLog(['Slow optimistic action started', 'Count: 0', 'Slow count: 9']);
+    expect(root).toMatchRenderedOutput('Count: 0Slow count: 9');
+
+    await act(() => startOptimisticAction());
+    assertLog([
+      'Independent optimistic action started',
+      'Count: 1',
+      'Slow count: 9',
+    ]);
+    expect(root).toMatchRenderedOutput('Count: 1Slow count: 9');
+
+    await act(() => resolveText('Independent optimistic action'));
+    assertLog([
+      'Independent optimistic action ended',
+      'Count: 0',
+      'Slow count: 9',
+    ]);
+    expect(root).toMatchRenderedOutput('Count: 0Slow count: 9');
+
+    await act(() => resolveText('Slow optimistic action'));
+    assertLog(['Slow optimistic action ended', 'Count: 0', 'Slow count: 0']);
+    expect(root).toMatchRenderedOutput('Count: 0Slow count: 0');
+  });
+
+  it('useOptimistic reverts while two unrelated actions are still pending', async () => {
+    let startSlowActionA;
+    let startSlowActionB;
+    let startOptimisticAction;
+    function App() {
+      const [isSlowAPending, startSlowA] = useTransition();
+      const [isSlowBPending, startSlowB] = useTransition();
+      const [, startOptimistic] = useTransition();
+      const [canonicalCount] = useState(0);
+      const [optimisticCount, setOptimisticCount] =
+        useOptimistic(canonicalCount);
+
+      startSlowActionA = () => {
+        startSlowA(async () => {
+          Scheduler.log('Slow action A started');
+          await getText('Slow action A');
+          Scheduler.log('Slow action A ended');
+        });
+      };
+
+      startSlowActionB = () => {
+        startSlowB(async () => {
+          Scheduler.log('Slow action B started');
+          await getText('Slow action B');
+          Scheduler.log('Slow action B ended');
+        });
+      };
+
+      startOptimisticAction = () => {
+        startOptimistic(async () => {
+          Scheduler.log('Optimistic multi-pending action started');
+          setOptimisticCount(1);
+          await getText('Optimistic multi-pending action');
+          Scheduler.log('Optimistic multi-pending action ended');
+        });
+      };
+
+      return (
+        <>
+          <Text text={'Multi count: ' + optimisticCount} />
+          <Text text={'Pending A: ' + isSlowAPending} />
+          <Text text={'Pending B: ' + isSlowBPending} />
+        </>
+      );
+    }
+
+    const root = ReactNoop.createRoot();
+    await act(() => root.render(<App />));
+    assertLog(['Multi count: 0', 'Pending A: false', 'Pending B: false']);
+
+    await act(() => startSlowActionA());
+    assertLog([
+      'Slow action A started',
+      'Multi count: 0',
+      'Pending A: true',
+      'Pending B: false',
+    ]);
+
+    await act(() => startSlowActionB());
+    assertLog([
+      'Slow action B started',
+      'Multi count: 0',
+      'Pending A: true',
+      'Pending B: true',
+    ]);
+
+    await act(() => startOptimisticAction());
+    assertLog([
+      'Optimistic multi-pending action started',
+      'Multi count: 1',
+      'Pending A: true',
+      'Pending B: true',
+    ]);
+    expect(root).toMatchRenderedOutput(
+      'Multi count: 1Pending A: truePending B: true',
+    );
+
+    await act(() => resolveText('Optimistic multi-pending action'));
+    assertLog([
+      'Optimistic multi-pending action ended',
+      'Multi count: 0',
+      'Pending A: true',
+      'Pending B: true',
+    ]);
+    expect(root).toMatchRenderedOutput(
+      'Multi count: 0Pending A: truePending B: true',
+    );
+
+    await act(() => resolveText('Slow action A'));
+    assertLog(['Slow action A ended']);
+    expect(root).toMatchRenderedOutput(
+      'Multi count: 0Pending A: truePending B: true',
+    );
+
+    await act(() => resolveText('Slow action B'));
+    const afterSlowB = Scheduler.unstable_clearLog();
+    expect(afterSlowB).toEqual(expect.arrayContaining(['Slow action B ended']));
+    expect(root).toMatchRenderedOutput(
+      'Multi count: 0Pending A: falsePending B: false',
+    );
+  });
+
   it(
     'regression: updates in an action passed to React.startTransition are batched ' +
       'even if there were no updates before the first await',
