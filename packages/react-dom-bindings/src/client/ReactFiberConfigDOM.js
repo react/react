@@ -37,6 +37,7 @@ import {runWithFiberInDEV} from 'react-reconciler/src/ReactCurrentFiber';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
 import {REACT_CONTEXT_TYPE} from 'shared/ReactSymbols';
+import {REACT_RECOVERABLE_DIGEST} from 'shared/ReactRecoverable';
 
 export {
   setCurrentUpdatePriority,
@@ -4496,7 +4497,17 @@ export function getFirstHydratableChildWithinActivityInstance(
 export function getFirstHydratableChildWithinSuspenseInstance(
   parentInstance: SuspenseInstance,
 ): null | HydratableInstance {
-  return getNextHydratable(parentInstance.nextSibling);
+  let first = parentInstance.nextSibling;
+  if (
+    isSuspenseInstanceFallback(parentInstance) &&
+    first !== null &&
+    first.nodeName === 'TEMPLATE' &&
+    (first: any).hasAttribute('data-dgst')
+  ) {
+    // Fizz's failure metadata template is not a rendered fallback child.
+    first = first.nextSibling;
+  }
+  return getNextHydratable(first);
 }
 
 // If it were possible to have more than one scope singleton in a DOM tree
@@ -4750,6 +4761,43 @@ export function commitHydratedActivityInstance(
 export function commitHydratedSuspenseInstance(
   suspenseInstance: SuspenseInstance,
 ): void {
+  const parent = suspenseInstance.parentNode;
+  const metadata = suspenseInstance.nextSibling;
+  if (
+    parent !== null &&
+    suspenseInstance.data === SUSPENSE_FALLBACK_START_DATA &&
+    metadata !== null &&
+    metadata.nodeName === 'TEMPLATE' &&
+    (metadata: any).getAttribute('data-dgst') === REACT_RECOVERABLE_DIGEST
+  ) {
+    // The fallback has become an ordinary hydrated fiber tree. Remove only
+    // Fizz's enclosing metadata, retaining every claimed content node.
+    let end = suspenseInstance.nextSibling;
+    let depth = 0;
+    while (end !== null) {
+      if (end.nodeType === COMMENT_NODE) {
+        const data = (end: any).data;
+        if (data === SUSPENSE_END_DATA || data === ACTIVITY_END_DATA) {
+          if (depth === 0) break;
+          depth--;
+        } else if (
+          data === SUSPENSE_START_DATA ||
+          data === SUSPENSE_FALLBACK_START_DATA ||
+          data === SUSPENSE_PENDING_START_DATA ||
+          data === SUSPENSE_QUEUED_START_DATA ||
+          data === ACTIVITY_START_DATA
+        ) {
+          depth++;
+        }
+      }
+      end = end.nextSibling;
+    }
+    if (end !== null) {
+      parent.removeChild(metadata);
+      parent.removeChild(end);
+      parent.removeChild(suspenseInstance);
+    }
+  }
   // Retry if any event replaying was blocked on this.
   retryIfBlockedOn(suspenseInstance);
 }

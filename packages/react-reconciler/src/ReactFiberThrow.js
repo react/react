@@ -81,6 +81,7 @@ import {
 } from './ReactFiberLane';
 import {
   getIsHydrating,
+  markFallbackHydrationFailed,
   markDidThrowWhileHydratingDEV,
   queueHydrationError,
   HydrationMismatchException,
@@ -554,7 +555,29 @@ function throwException(
     (disableLegacyMode || sourceFiber.mode & ConcurrentMode)
   ) {
     markDidThrowWhileHydratingDEV();
-    const hydrationBoundary = getSuspenseHandler();
+    let hydrationBoundary = getSuspenseHandler();
+    // A fallback normally skips its own Suspense handler. While hydrating its
+    // existing server nodes, however, an error must first abandon this local
+    // hydration attempt; escalating it to an already-hydrated root retries the
+    // same failure and can bypass an ordinary error boundary.
+    let fallbackBoundary = returnFiber;
+    while (
+      fallbackBoundary !== null &&
+      fallbackBoundary !== hydrationBoundary
+    ) {
+      if (fallbackBoundary.tag === SuspenseComponent) {
+        const state = fallbackBoundary.memoizedState;
+        if (state !== null && state.isHydratingFallback === true) {
+          const current = fallbackBoundary.alternate;
+          if (current !== null && current.memoizedState !== null) {
+            markFallbackHydrationFailed(current);
+          }
+          hydrationBoundary = fallbackBoundary;
+          break;
+        }
+      }
+      fallbackBoundary = fallbackBoundary.return;
+    }
     // If the error was thrown during hydration, we may be able to recover by
     // discarding the dehydrated content and switching to a client render.
     // Instead of surfacing the error, find the nearest Suspense boundary

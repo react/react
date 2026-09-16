@@ -132,6 +132,7 @@ import {isRootDehydrated} from './ReactFiberShellHydration';
 import {
   getIsHydrating,
   popHydrationStateOnInterruptedWork,
+  resetFallbackHydrationFailures,
 } from './ReactFiberHydrationContext';
 import {
   NoMode,
@@ -2252,6 +2253,7 @@ function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   pendingEffectsLanes = NoLanes;
 
   resetWorkInProgressStack();
+  resetFallbackHydrationFailures();
   workInProgressRoot = root;
   const rootWorkInProgress = createWorkInProgress(root.current, null);
   workInProgress = rootWorkInProgress;
